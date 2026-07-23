@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::catalog;
 use crate::container;
+use crate::entity_table;
 #[cfg(test)]
 use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 use crate::object_graph::{
@@ -16,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 84;
+pub const CATIA_NATIVE_VERSION: u32 = 85;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -28,6 +29,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_pcurves",
     "consolidated_vertex_identities",
     "design_objects",
+    "entity_records",
     "external_references",
     "finjpl_segments",
     "object_graph_records",
@@ -532,6 +534,37 @@ pub struct CatiaCatalogEntry {
     pub value: String,
 }
 
+/// One `7C05` entity-table record paired with a `7C09` object record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaEntityRecord {
+    /// Globally unique entity-record identity.
+    pub id: String,
+    /// Object graph whose record occupies the same table position.
+    pub object_graph: String,
+    /// Positionally paired `7C09` object record.
+    pub object_record: String,
+    /// Stable serialized order within the table run.
+    pub ordinal: u64,
+    /// Byte offset of the `7C05` marker.
+    pub byte_offset: u64,
+    /// Total framed byte length.
+    pub byte_len: u64,
+    /// Byte between the `7C05` length and nested `7C06` marker.
+    pub lead: u8,
+    /// Stored nested `7C06` length.
+    pub definition_len: u32,
+    /// Exact definition prefix before the `0xEA` identity delimiter.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub definition_prefix: Vec<u8>,
+    /// Stored identity used by object-record owner and payload references.
+    pub entity_id: u32,
+    /// Exact bytes after the identity through the `7C05` frame end.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub tail: Vec<u8>,
+}
+
 /// One outer `7C08` ownership graph in source order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaObjectGraph {
@@ -559,9 +592,15 @@ pub struct CatiaObjectRecord {
     pub id: String,
     /// Containing [`CatiaObjectGraph`] identity.
     pub parent: String,
-    /// Design object selected by this record's owner ordinal.
+    /// Design object selected by this record's owner entity identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_object: Option<String>,
+    /// Positionally paired `7C05` entity-table record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_record: Option<String>,
+    /// Stored entity-table identity used to select this record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<u32>,
     /// Stable serialized order within the graph.
     pub ordinal: u64,
     /// Byte offset of the `7C09` record.
@@ -572,8 +611,8 @@ pub struct CatiaObjectRecord {
     pub lead: u8,
     /// Decoded head tokens in serialized order.
     pub head: Vec<HeadToken>,
-    /// First head reference, identifying the owner by one-based record ordinal.
-    pub owner_ref: Option<u32>,
+    /// First head reference, identifying the owner by stored entity identity.
+    pub owner_entity_id: Option<u32>,
     /// Second head reference, identifying the per-file class ordinal.
     pub class_ref: Option<u32>,
     /// UTF-8 class name resolved through the graph's schema catalog.
@@ -596,13 +635,13 @@ pub struct CatiaObjectRecord {
 /// One typed payload reference from a `7C09` record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaObjectRecordReference {
-    /// Stored one-based record ordinal.
-    pub ordinal: u32,
+    /// Stored entity identity.
+    pub entity_id: u32,
     /// Byte offset of the reference field within the payload.
     pub payload_offset: u64,
     /// Structural container of the reference occurrence.
     pub source: CatiaObjectRecordReferenceSource,
-    /// Exact selected record; absent when the ordinal is outside the graph.
+    /// Exact selected record; absent when the identity is outside the graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
     /// Design object owning the selected record.
@@ -645,9 +684,9 @@ pub struct CatiaDesignObjectRelation {
     pub source_payload_offset: u64,
     /// Structural container of the source reference occurrence.
     pub source: CatiaObjectRecordReferenceSource,
-    /// Stored one-based target-record ordinal.
-    pub target_ordinal: u32,
-    /// Exact field record selected by the stored ordinal.
+    /// Stored target entity identity.
+    pub target_entity_id: u32,
+    /// Exact field record selected by the stored identity.
     pub target_field: String,
     /// Exact schema class of the selected target field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -656,7 +695,7 @@ pub struct CatiaDesignObjectRelation {
     pub target_design_object: String,
 }
 
-/// One serialized design object formed by a shared `7C09` owner ordinal.
+/// One serialized design object formed by a shared `7C09` owner identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaDesignObject {
     /// Globally unique design-object identity.
@@ -665,11 +704,11 @@ pub struct CatiaDesignObject {
     pub parent: String,
     /// Zero-based order of this owner group by its first field in the graph.
     pub ordinal: u64,
-    /// Byte offset of the first field carrying this owner ordinal.
+    /// Byte offset of the first field carrying this owner identity.
     pub first_field_byte_offset: u64,
-    /// One-based owner ordinal stored by every field record.
-    pub owner_ordinal: u32,
-    /// Record selected by `owner_ordinal` when it lies inside the graph.
+    /// Owner entity identity stored by every field record.
+    pub owner_entity_id: u32,
+    /// Record selected by `owner_entity_id` when it lies inside the graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_record: Option<String>,
     /// Design object whose field set contains `owner_record`.
@@ -681,7 +720,7 @@ pub struct CatiaDesignObject {
     /// Class-specific storage selector of a separator-form owner declaration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_storage_ref: Option<u32>,
-    /// Field records carrying this owner ordinal, in serialized order.
+    /// Field records carrying this owner identity, in serialized order.
     pub fields: Vec<String>,
     /// Distinct exact field classes, in first field order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -695,10 +734,16 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
     graphs
         .iter()
         .flat_map(|graph| {
+            let record_indices = graph
+                .records
+                .iter()
+                .enumerate()
+                .filter_map(|(index, record)| Some((record.entity_id?, index)))
+                .collect::<HashMap<_, _>>();
             let mut fields = Vec::<(u32, Vec<&CatiaObjectRecord>)>::new();
             let mut owner_indices = HashMap::<u32, usize>::new();
             for record in &graph.records {
-                if let Some(owner) = record.owner_ref {
+                if let Some(owner) = record.owner_entity_id {
                     let index = owner_indices.get(&owner).copied().unwrap_or_else(|| {
                         let index = fields.len();
                         fields.push((owner, Vec::new()));
@@ -711,21 +756,22 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
             fields
                 .into_iter()
                 .enumerate()
-                .map(move |(ordinal, (owner_ordinal, records))| {
-                    let owner_record = object_record_index(owner_ordinal, graph.records.len())
-                        .and_then(|index| graph.records.get(index));
-                    let id = design_object_id(graph.byte_offset, owner_ordinal);
+                .map(move |(ordinal, (owner_entity_id, records))| {
+                    let owner_record = record_indices
+                        .get(&owner_entity_id)
+                        .and_then(|index| graph.records.get(*index));
+                    let id = design_object_id(graph.byte_offset, owner_entity_id);
                     CatiaDesignObject {
                         id: id.clone(),
                         parent: graph.id.clone(),
                         ordinal: ordinal as u64,
                         first_field_byte_offset: records[0].byte_offset,
-                        owner_ordinal,
+                        owner_entity_id,
                         owner_record: owner_record.map(|record| record.id.clone()),
                         owner_design_object: owner_record
-                            .and_then(|record| record.owner_ref)
+                            .and_then(|record| record.owner_entity_id)
                             .filter(|owner| {
-                                *owner != owner_ordinal && owner_indices.contains_key(owner)
+                                *owner != owner_entity_id && owner_indices.contains_key(owner)
                             })
                             .map(|owner| design_object_id(graph.byte_offset, owner)),
                         owner_class: owner_record
@@ -751,16 +797,16 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                                     let target_design_object =
                                         reference.design_object.as_ref()?.clone();
                                     let target_field = reference.target.as_ref()?.clone();
-                                    let target_record =
-                                        object_record_index(reference.ordinal, graph.records.len())
-                                            .and_then(|index| graph.records.get(index))?;
+                                    let target_record = record_indices
+                                        .get(&reference.entity_id)
+                                        .and_then(|index| graph.records.get(*index))?;
                                     (target_design_object != id).then_some(
                                         CatiaDesignObjectRelation {
                                             source_field: record.id.clone(),
                                             source_class: design_class(record),
                                             source_payload_offset: reference.payload_offset,
                                             source: reference.source.clone(),
-                                            target_ordinal: reference.ordinal,
+                                            target_entity_id: reference.entity_id,
                                             target_field,
                                             target_class: design_class(target_record),
                                             target_design_object,
@@ -786,13 +832,8 @@ fn record_has_separator_roles(record: &CatiaObjectRecord) -> bool {
     matches!(record.head.get(1), Some(HeadToken::Separator))
 }
 
-fn object_record_index(ordinal: u32, record_count: usize) -> Option<usize> {
-    let index = usize::try_from(ordinal).ok()?.checked_sub(1)?;
-    (index < record_count).then_some(index)
-}
-
-fn design_object_id(graph_offset: u64, owner_ordinal: u32) -> String {
-    format!("catia:outer:design-object#{graph_offset:010}-{owner_ordinal:010}")
+fn design_object_id(graph_offset: u64, owner_entity_id: u32) -> String {
+    format!("catia:outer:design-object#{graph_offset:010}-{owner_entity_id:010}")
 }
 
 fn payload_references(
@@ -837,12 +878,13 @@ fn resolved_payload_references(
     payload: &ObjectPayload,
     record_ids: &[String],
     record_design_objects: &[Option<String>],
+    record_indices: &HashMap<u32, usize>,
 ) -> Vec<CatiaObjectRecordReference> {
     payload_references(payload)
-        .map(|(ordinal, payload_offset, source)| {
-            let index = object_record_index(ordinal, record_ids.len());
+        .map(|(entity_id, payload_offset, source)| {
+            let index = record_indices.get(&entity_id).copied();
             CatiaObjectRecordReference {
-                ordinal,
+                entity_id,
                 payload_offset: u64::try_from(payload_offset)
                     .expect("bounded CATIA payload offset fits u64"),
                 source,
@@ -882,9 +924,12 @@ pub struct CatiaNative {
     /// Global endpoint identities and their consolidated edge incidence.
     #[serde(default)]
     pub consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity>,
-    /// Design objects grouped by their serialized owner ordinal.
+    /// Design objects grouped by their serialized owner entity identity.
     #[serde(default)]
     pub design_objects: Vec<CatiaDesignObject>,
+    /// Exact `7C05` entity-table records paired with object records.
+    #[serde(default)]
+    pub entity_records: Vec<CatiaEntityRecord>,
     /// External CATIA document references in source order.
     #[serde(default)]
     pub external_references: Vec<CatiaExternalReference>,
@@ -914,6 +959,7 @@ impl Default for CatiaNative {
             consolidated_pcurves: Vec::new(),
             consolidated_vertex_identities: Vec::new(),
             design_objects: Vec::new(),
+            entity_records: Vec::new(),
             external_references: Vec::new(),
             finjpl_segments: Vec::new(),
             object_graphs: Vec::new(),
@@ -1886,6 +1932,7 @@ impl CatiaNative {
     #[must_use]
     pub fn decode(bytes: &[u8]) -> Self {
         let mut parsed_catalogs = catalog::parse(bytes);
+        let entity_runs = entity_table::parse_runs(bytes);
         let mut alias_rows = object_graph::surface_aliases(bytes)
             .into_iter()
             .map(CatiaAliasRow::from)
@@ -1913,10 +1960,25 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();
-        let mut object_graphs: Vec<CatiaObjectGraph> = parsed_object_graphs
+        let mut entity_runs = entity_runs
             .into_iter()
-            .map(CatiaObjectGraph::from)
-            .collect();
+            .filter_map(|run| {
+                let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+                (bytes.get(end) == Some(&0xde)).then_some(((end + 1, run.len()), run))
+            })
+            .collect::<HashMap<_, _>>();
+        let mut entity_records = Vec::new();
+        let mut object_graphs = parsed_object_graphs
+            .into_iter()
+            .map(|graph| {
+                let entities = entity_runs
+                    .remove(&(graph.pos, graph.records.len()))
+                    .unwrap_or_default();
+                let (graph, mut entities) = native_object_graph(graph, entities);
+                entity_records.append(&mut entities);
+                graph
+            })
+            .collect::<Vec<_>>();
         for graph in &mut object_graphs {
             let catalog = graph.catalog_byte_offset.and_then(|offset| {
                 catalogs
@@ -2015,6 +2077,7 @@ impl CatiaNative {
             consolidated_pcurves,
             consolidated_vertex_identities,
             design_objects,
+            entity_records,
             external_references,
             finjpl_segments,
             object_graphs,
@@ -2073,6 +2136,7 @@ impl CatiaNative {
         }
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
         let records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
+        let entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
         let graph_ids = graphs
             .iter()
             .map(|graph| graph.id.as_str())
@@ -2091,6 +2155,28 @@ impl CatiaNative {
                 record.id, record.parent
             )));
         }
+        let record_ids = records
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect::<HashSet<_>>();
+        let entity_record_ids = entity_records
+            .iter()
+            .map(|record| record.id.as_str())
+            .collect::<HashSet<_>>();
+        if record_ids.len() != records.len() || entity_record_ids.len() != entity_records.len() {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "duplicate CATIA object or entity-record identity".to_string(),
+            ));
+        }
+        if let Some(entity) = entity_records.iter().find(|entity| {
+            !graph_ids.contains(entity.object_graph.as_str())
+                || !record_ids.contains(entity.object_record.as_str())
+        }) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "entity record `{}` has a missing graph or object-record link",
+                entity.id
+            )));
+        }
         for graph in &mut graphs {
             graph.records = records
                 .iter()
@@ -2098,6 +2184,36 @@ impl CatiaNative {
                 .cloned()
                 .collect();
             graph.records.sort_by_key(|record| record.ordinal);
+            let mut graph_entities = entity_records
+                .iter()
+                .filter(|entity| entity.object_graph == graph.id)
+                .collect::<Vec<_>>();
+            graph_entities.sort_by_key(|entity| entity.ordinal);
+            if !graph_entities.is_empty()
+                && (graph_entities.len() != graph.records.len()
+                    || graph_entities
+                        .iter()
+                        .enumerate()
+                        .any(|(ordinal, entity)| entity.ordinal != ordinal as u64)
+                    || graph_entities
+                        .windows(2)
+                        .any(|pair| pair[0].entity_id >= pair[1].entity_id)
+                    || graph_entities.windows(2).any(|pair| {
+                        pair[0].byte_offset.checked_add(pair[0].byte_len)
+                            != Some(pair[1].byte_offset)
+                    })
+                    || graph_entities.last().and_then(|entity| {
+                        entity
+                            .byte_offset
+                            .checked_add(entity.byte_len)?
+                            .checked_add(1)
+                    }) != Some(graph.byte_offset))
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object graph `{}` has an invalid entity-table sequence",
+                    graph.id
+                )));
+            }
             let record_ids = graph
                 .records
                 .iter()
@@ -2108,17 +2224,40 @@ impl CatiaNative {
                 .iter()
                 .map(|record| record.design_object.clone())
                 .collect::<Vec<_>>();
+            let record_indices = graph
+                .records
+                .iter()
+                .enumerate()
+                .filter_map(|(index, record)| Some((record.entity_id?, index)))
+                .collect::<HashMap<_, _>>();
+            if record_indices.len()
+                != graph
+                    .records
+                    .iter()
+                    .filter(|record| record.entity_id.is_some())
+                    .count()
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object graph `{}` has duplicate entity identities",
+                    graph.id
+                )));
+            }
             for (ordinal, record) in graph.records.iter().enumerate() {
                 let expected_design_object = record
-                    .owner_ref
+                    .owner_entity_id
                     .map(|owner| design_object_id(graph.byte_offset, owner));
+                let paired_entity = graph_entities.get(ordinal).copied();
                 if usize::try_from(record.ordinal).ok() != Some(ordinal)
                     || record.design_object != expected_design_object
+                    || record.entity_record != paired_entity.map(|entity| entity.id.clone())
+                    || record.entity_id != paired_entity.map(|entity| entity.entity_id)
+                    || paired_entity.is_some_and(|entity| entity.object_record != record.id)
                     || record.references
                         != resolved_payload_references(
                             &record.payload,
                             &record_ids,
                             &record_design_objects,
+                            &record_indices,
                         )
                 {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -2253,6 +2392,7 @@ impl CatiaNative {
             consolidated_pcurves,
             consolidated_vertex_identities,
             design_objects,
+            entity_records,
             external_references,
             finjpl_segments,
             object_graphs: graphs,
@@ -2323,6 +2463,7 @@ impl CatiaNative {
             &self.consolidated_vertex_identities,
         )?;
         namespace.set_arena("design_objects", &self.design_objects)?;
+        namespace.set_arena("entity_records", &self.entity_records)?;
         namespace.set_arena("external_references", &self.external_references)?;
         namespace.set_arena("finjpl_segments", &self.finjpl_segments)?;
         namespace.set_arena("alias_rows", &self.alias_rows)?;
@@ -2356,6 +2497,7 @@ impl CatiaNative {
             consolidated_pcurves,
             consolidated_vertex_identities,
             design_objects,
+            entity_records,
             external_references,
             finjpl_segments,
             mut object_graphs,
@@ -2386,6 +2528,7 @@ impl CatiaNative {
             &consolidated_vertex_identities,
         )?;
         namespace.set_arena("design_objects", &design_objects)?;
+        namespace.set_arena("entity_records", &entity_records)?;
         namespace.set_arena("external_references", &external_references)?;
         namespace.set_arena("catalog_entries", &entries)?;
         namespace.set_arena("object_graphs", &object_graphs)?;
@@ -2528,22 +2671,30 @@ impl From<catalog::Catalog> for CatiaCatalog {
     }
 }
 
-impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
-    fn from(graph: object_graph::ObjectGraph) -> Self {
-        let id = format!("catia:outer:object-graph#{:010}", graph.pos);
-        let mut records = graph
-            .records
-            .into_iter()
-            .map(|record| CatiaObjectRecord {
+fn native_object_graph(
+    graph: object_graph::ObjectGraph,
+    entity_records: Vec<entity_table::EntityRecord>,
+) -> (CatiaObjectGraph, Vec<CatiaEntityRecord>) {
+    let id = format!("catia:outer:object-graph#{:010}", graph.pos);
+    let mut records = graph
+        .records
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, record)| {
+            let entity = entity_records.get(ordinal);
+            CatiaObjectRecord {
                 id: format!("catia:outer:object-record#{:010}", record.pos),
                 parent: id.clone(),
                 design_object: None,
+                entity_record: entity
+                    .map(|entity| format!("catia:outer:entity-record#{:010}", entity.pos)),
+                entity_id: entity.map(|entity| entity.entity_id),
                 ordinal: record.index as u64,
                 byte_offset: record.pos as u64,
                 byte_len: record.total_len as u64,
                 lead: record.lead,
                 head: record.head,
-                owner_ref: record.owner_ref,
+                owner_entity_id: record.owner_ref,
                 class_ref: record.class_ref,
                 class_name: record.class_name,
                 class_entry: None,
@@ -2551,32 +2702,66 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
                 payload: record.payload,
                 subtype: record.subtype,
                 references: Vec::new(),
+            }
+        })
+        .collect::<Vec<_>>();
+    for record in &mut records {
+        record.design_object = record
+            .owner_entity_id
+            .map(|owner| design_object_id(graph.pos as u64, owner));
+    }
+    let record_ids = records
+        .iter()
+        .map(|record| record.id.clone())
+        .collect::<Vec<_>>();
+    let record_design_objects = records
+        .iter()
+        .map(|record| record.design_object.clone())
+        .collect::<Vec<_>>();
+    let record_indices = records
+        .iter()
+        .enumerate()
+        .filter_map(|(index, record)| Some((record.entity_id?, index)))
+        .collect::<HashMap<_, _>>();
+    for record in &mut records {
+        record.references = resolved_payload_references(
+            &record.payload,
+            &record_ids,
+            &record_design_objects,
+            &record_indices,
+        );
+    }
+    let entities = entity_records
+        .into_iter()
+        .enumerate()
+        .filter_map(|(ordinal, entity)| {
+            let object_record = records.get(ordinal)?;
+            Some(CatiaEntityRecord {
+                id: format!("catia:outer:entity-record#{:010}", entity.pos),
+                object_graph: id.clone(),
+                object_record: object_record.id.clone(),
+                ordinal: u64::try_from(ordinal).expect("bounded entity-table ordinal fits u64"),
+                byte_offset: u64::try_from(entity.pos)
+                    .expect("bounded entity-table offset fits u64"),
+                byte_len: u64::try_from(entity.total_len)
+                    .expect("bounded entity-table length fits u64"),
+                lead: entity.lead,
+                definition_len: entity.definition_len,
+                definition_prefix: entity.definition_prefix,
+                entity_id: entity.entity_id,
+                tail: entity.tail,
             })
-            .collect::<Vec<_>>();
-        for record in &mut records {
-            record.design_object = record
-                .owner_ref
-                .map(|owner| design_object_id(graph.pos as u64, owner));
-        }
-        let record_ids = records
-            .iter()
-            .map(|record| record.id.clone())
-            .collect::<Vec<_>>();
-        let record_design_objects = records
-            .iter()
-            .map(|record| record.design_object.clone())
-            .collect::<Vec<_>>();
-        for record in &mut records {
-            record.references =
-                resolved_payload_references(&record.payload, &record_ids, &record_design_objects);
-        }
-        Self {
+        })
+        .collect();
+    (
+        CatiaObjectGraph {
             id,
             byte_offset: graph.pos as u64,
             byte_len: graph.total_len as u64,
             catalog_byte_offset: graph.catalog_pos.map(|pos| pos as u64),
             catalog: None,
             records,
-        }
-    }
+        },
+        entities,
+    )
 }

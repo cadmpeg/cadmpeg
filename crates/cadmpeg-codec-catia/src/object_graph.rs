@@ -20,24 +20,6 @@ pub struct ObjectGraph {
     pub records: Vec<ObjectRecord>,
 }
 
-impl ObjectGraph {
-    /// Resolve a one-based serialized object ordinal.
-    #[must_use]
-    #[cfg(test)]
-    pub fn record(&self, ordinal: u32) -> Option<&ObjectRecord> {
-        let index = usize::try_from(ordinal.checked_sub(1)?).ok()?;
-        self.records.get(index)
-    }
-
-    /// Return records directly owned by `owner_ordinal`, in serialization order.
-    #[cfg(test)]
-    pub fn children(&self, owner_ordinal: u32) -> impl Iterator<Item = &ObjectRecord> {
-        self.records
-            .iter()
-            .filter(move |record| record.owner_ref == Some(owner_ordinal))
-    }
-}
-
 /// One `7C09` ownership record and its nested `7C0A` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ObjectRecord {
@@ -51,7 +33,7 @@ pub struct ObjectRecord {
     pub lead: u8,
     /// Decoded head tokens.
     pub head: Vec<HeadToken>,
-    /// First head reference, identifying the owner by one-based record ordinal.
+    /// First head reference, identifying the owner by stored entity identity.
     pub owner_ref: Option<u32>,
     /// Second head reference, identifying the per-file class.
     pub class_ref: Option<u32>,

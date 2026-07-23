@@ -1525,6 +1525,35 @@ fn object_graph_from_records(records: &[Vec<u8>]) -> Vec<u8> {
     bytes
 }
 
+fn entity_table_record(entity_id: u32) -> Vec<u8> {
+    let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0x00, 0x7c, 0x06];
+    bytes.extend_from_slice(&6_u32.to_le_bytes());
+    bytes.push(0x01);
+    bytes.push(0xea);
+    bytes.extend_from_slice(&entity_id.to_le_bytes());
+    bytes.extend_from_slice(&[0x7c, 0x07, 0x06, 0, 0, 0]);
+    let total_len = u32::try_from(bytes.len()).expect("generated 7C05 length");
+    bytes[2..6].copy_from_slice(&total_len.to_le_bytes());
+    bytes
+}
+
+fn entity_backed_object_graph(records: &[Vec<u8>], entity_ids: &[u32]) -> Vec<u8> {
+    assert_eq!(records.len(), entity_ids.len());
+    let mut bytes = entity_ids
+        .iter()
+        .flat_map(|entity_id| entity_table_record(*entity_id))
+        .collect::<Vec<_>>();
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(records));
+    bytes
+}
+
+fn sequential_entity_backed_object_graph(records: &[Vec<u8>]) -> Vec<u8> {
+    let entity_ids = (1..=u32::try_from(records.len()).expect("bounded generated entity count"))
+        .collect::<Vec<_>>();
+    entity_backed_object_graph(records, &entity_ids)
+}
+
 fn object_graph_stream() -> Vec<u8> {
     let records = [
         object_graph_record(
@@ -1573,7 +1602,17 @@ fn value_block_stream(payload: &[u8]) -> Vec<u8> {
 }
 
 fn standard_catpart_with_object_graph() -> Vec<u8> {
-    let graph = object_graph_stream();
+    let records = [
+        object_graph_record(
+            &[0x04, 0x01, 0x82, 0x83, 0x84],
+            &[0x81, 0x85, 0x3a, 0x87, 0xfe],
+        ),
+        object_graph_record(
+            &[0x14, 0x01, 0x82, 0x84],
+            &[0xe5, 0x02, 0, 0, 0, 0xaa, 0xbb, 0xfe],
+        ),
+    ];
+    let graph = entity_backed_object_graph(&records, &[1, 2]);
     let mut file = standard_catpart();
     file.splice(16..16, graph);
     let file_len = u32::try_from(file.len()).unwrap();
@@ -1582,11 +1621,12 @@ fn standard_catpart_with_object_graph() -> Vec<u8> {
 }
 
 fn standard_catpart_with_nested_design_objects() -> Vec<u8> {
-    let graph = object_graph_from_records(&[
+    let records = [
         object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
         object_graph_record(&[0x12, 0x83, 0x84], &[0xfe]),
         object_graph_record(&[0x12, 0x83, 0x84], &[0xfe]),
-    ]);
+    ];
+    let graph = entity_backed_object_graph(&records, &[1, 2, 3]);
     let mut file = standard_catpart();
     file.splice(16..16, graph);
     let file_len = u32::try_from(file.len()).unwrap();
@@ -3719,17 +3759,6 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
         ]
     ));
     assert_eq!(graph.records[1].subtype, PayloadSubtype::Blob);
-    assert_eq!(graph.record(1).map(|record| record.index), Some(0));
-    assert_eq!(graph.record(2).map(|record| record.index), Some(1));
-    assert!(graph.record(0).is_none());
-    assert!(graph.record(3).is_none());
-    assert_eq!(
-        graph
-            .children(2)
-            .map(|record| record.index)
-            .collect::<Vec<_>>(),
-        vec![0, 1]
-    );
 }
 
 #[test]
@@ -3910,7 +3939,7 @@ fn outer_object_graph_reads_compact_owner_and_field_roles() {
 fn object_graph_payload_reads_fixed_width_escaped_values() {
     use crate::object_graph::PayloadField;
 
-    let bytes = object_graph_from_records(&[
+    let records = [
         object_graph_record(
             &[0x04, 0x01, 0x81, 0x83],
             &[
@@ -3918,7 +3947,8 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
             ],
         ),
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
-    ]);
+    ];
+    let bytes = object_graph_from_records(&records);
     let graph = crate::object_graph::parse(&bytes).expect("fixed-width object payload");
     assert_eq!(
         graph.records[0].payload.fields,
@@ -3938,19 +3968,20 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
             PayloadField::Terminator,
         ]
     );
-    let native = crate::native::CatiaNative::decode(&bytes);
+    let native =
+        crate::native::CatiaNative::decode(&sequential_entity_backed_object_graph(&records));
     assert_eq!(
         native.object_graphs[0].records[0].references,
         [
             crate::native::CatiaObjectRecordReference {
-                ordinal: 2,
+                entity_id: 2,
                 payload_offset: 5,
                 source: crate::native::CatiaObjectRecordReferenceSource::Field,
                 target: Some(native.object_graphs[0].records[1].id.clone()),
                 design_object: native.object_graphs[0].records[1].design_object.clone(),
             },
             crate::native::CatiaObjectRecordReference {
-                ordinal: 0x89ab_cdef,
+                entity_id: 0x89ab_cdef,
                 payload_offset: 10,
                 source: crate::native::CatiaObjectRecordReferenceSource::Field,
                 target: None,
@@ -3990,7 +4021,7 @@ fn incomplete_object_payload_tags_do_not_consume_the_terminator() {
 
 #[test]
 fn native_design_objects_preserve_payload_references_to_target_owners() {
-    let bytes = object_graph_from_records(&[
+    let bytes = sequential_entity_backed_object_graph(&[
         object_graph_record(
             &[0x04, 0x01, 0x81, 0x83],
             &[0x3b, 0x82, 0x81, 0x83, 0x81, 0x83, 0xfe],
@@ -4000,7 +4031,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
     ]);
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.design_objects.len(), 2);
-    assert_eq!(native.design_objects[0].owner_ordinal, 1);
+    assert_eq!(native.design_objects[0].owner_entity_id, 1);
     assert_eq!(native.design_objects[0].ordinal, 0);
     assert_eq!(
         native.design_objects[0].first_field_byte_offset,
@@ -4017,7 +4048,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         graph.records[0].references,
         [
             crate::native::CatiaObjectRecordReference {
-                ordinal: 3,
+                entity_id: 3,
                 payload_offset: 2,
                 source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
                     list_payload_offset: 0,
@@ -4027,7 +4058,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                 design_object: graph.records[2].design_object.clone(),
             },
             crate::native::CatiaObjectRecordReference {
-                ordinal: 3,
+                entity_id: 3,
                 payload_offset: 4,
                 source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
                     list_payload_offset: 0,
@@ -4049,7 +4080,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                     list_payload_offset: 0,
                     item_ordinal: 0,
                 },
-                target_ordinal: 3,
+                target_entity_id: 3,
                 target_field: graph.records[2].id.clone(),
                 target_class: None,
                 target_design_object: native.design_objects[1].id.clone(),
@@ -4062,7 +4093,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                     list_payload_offset: 0,
                     item_ordinal: 1,
                 },
-                target_ordinal: 3,
+                target_entity_id: 3,
                 target_field: graph.records[2].id.clone(),
                 target_class: None,
                 target_design_object: native.design_objects[1].id.clone(),
@@ -4072,14 +4103,14 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
     assert_eq!(
         graph.records[1].references,
         [crate::native::CatiaObjectRecordReference {
-            ordinal: 1,
+            entity_id: 1,
             payload_offset: 0,
             source: crate::native::CatiaObjectRecordReferenceSource::Field,
             target: Some(graph.records[0].id.clone()),
             design_object: graph.records[0].design_object.clone(),
         }]
     );
-    assert_eq!(native.design_objects[1].owner_ordinal, 3);
+    assert_eq!(native.design_objects[1].owner_entity_id, 3);
     assert_eq!(native.design_objects[1].ordinal, 1);
     assert_eq!(
         native.design_objects[1].first_field_byte_offset,
@@ -4092,7 +4123,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
             source_class: None,
             source_payload_offset: 0,
             source: crate::native::CatiaObjectRecordReferenceSource::Field,
-            target_ordinal: 1,
+            target_entity_id: 1,
             target_field: graph.records[0].id.clone(),
             target_class: None,
             target_design_object: native.design_objects[0].id.clone(),
@@ -4101,8 +4132,53 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
 }
 
 #[test]
+fn native_object_references_select_sparse_entity_identities() {
+    let records = [
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0x81, 0x83, 0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x85], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x87, 0x86], &[0xfe]),
+    ];
+    let native =
+        crate::native::CatiaNative::decode(&entity_backed_object_graph(&records, &[1, 3, 7]));
+    let graph = &native.object_graphs[0];
+
+    assert_eq!(
+        native
+            .entity_records
+            .iter()
+            .map(|record| record.entity_id)
+            .collect::<Vec<_>>(),
+        [1, 3, 7]
+    );
+    assert_eq!(
+        graph
+            .records
+            .iter()
+            .map(|record| record.entity_id)
+            .collect::<Vec<_>>(),
+        [Some(1), Some(3), Some(7)]
+    );
+    assert_eq!(
+        graph.records[0].references[0].target.as_deref(),
+        Some(graph.records[1].id.as_str())
+    );
+    assert_ne!(
+        graph.records[0].references[0].target.as_deref(),
+        Some(graph.records[2].id.as_str())
+    );
+    assert_eq!(
+        native
+            .design_objects
+            .iter()
+            .map(|object| object.owner_entity_id)
+            .collect::<Vec<_>>(),
+        [1, 3, 7]
+    );
+}
+
+#[test]
 fn native_design_relations_preserve_both_endpoint_schema_classes() {
-    let mut bytes = object_graph_from_records(&[
+    let mut bytes = sequential_entity_backed_object_graph(&[
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0x81, 0x83, 0xfe]),
         object_graph_record(&[0x04, 0x01, 0x81, 0x85], &[0xfe]),
         object_graph_record(&[0x04, 0x01, 0x83, 0x86], &[0xfe]),
@@ -4150,7 +4226,7 @@ fn native_design_relations_preserve_both_endpoint_schema_classes() {
 
 #[test]
 fn compact_design_objects_use_field_vocabulary_not_anchor_class() {
-    let mut bytes = object_graph_from_records(&[
+    let mut bytes = sequential_entity_backed_object_graph(&[
         object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
         object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
     ]);
@@ -4167,7 +4243,7 @@ fn compact_design_objects_use_field_vocabulary_not_anchor_class() {
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.design_objects.len(), 1);
     let object = &native.design_objects[0];
-    assert_eq!(object.owner_ordinal, 2);
+    assert_eq!(object.owner_entity_id, 2);
     assert!(object.owner_record.is_some());
     assert_eq!(object.owner_class, None);
     assert_eq!(object.owner_storage_ref, None);
@@ -4219,15 +4295,15 @@ fn native_design_objects_preserve_unresolved_owner_identities() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let graph = &native.object_graphs[0];
 
-    assert_eq!(graph.records[0].owner_ref, Some(0));
-    assert_eq!(graph.records[1].owner_ref, Some(4));
+    assert_eq!(graph.records[0].owner_entity_id, Some(0));
+    assert_eq!(graph.records[1].owner_entity_id, Some(4));
     assert!(graph
         .records
         .iter()
         .all(|record| record.design_object.is_some()));
     assert_eq!(native.design_objects.len(), 2);
-    assert_eq!(native.design_objects[0].owner_ordinal, 0);
-    assert_eq!(native.design_objects[1].owner_ordinal, 4);
+    assert_eq!(native.design_objects[0].owner_entity_id, 0);
+    assert_eq!(native.design_objects[1].owner_entity_id, 4);
     assert!(native
         .design_objects
         .iter()
@@ -4247,7 +4323,7 @@ fn native_design_objects_follow_first_field_order() {
         native
             .design_objects
             .iter()
-            .map(|object| object.owner_ordinal)
+            .map(|object| object.owner_entity_id)
             .collect::<Vec<_>>(),
         [3, 1]
     );
@@ -4275,7 +4351,7 @@ fn native_design_objects_follow_first_field_order() {
         loaded
             .design_objects
             .iter()
-            .map(|object| object.owner_ordinal)
+            .map(|object| object.owner_entity_id)
             .collect::<Vec<_>>(),
         [3, 1]
     );
@@ -4376,7 +4452,11 @@ fn outer_object_graph_resolves_class_names_from_following_schema() {
     assert_eq!(graph.catalog_pos, Some(catalog_pos));
     assert_eq!(graph.records[0].class_name.as_deref(), Some(""));
     assert_eq!(graph.records[1].class_name.as_deref(), Some("Sketch"));
-    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut native_bytes = entity_table_record(1);
+    native_bytes.extend(entity_table_record(2));
+    native_bytes.push(0xde);
+    native_bytes.extend_from_slice(&bytes);
+    let native = crate::native::CatiaNative::decode(&native_bytes);
     assert_eq!(
         native.object_graphs[0].catalog,
         Some(native.catalogs[0].id.clone())
@@ -4738,16 +4818,16 @@ fn decode_retains_outer_object_graph_order_and_references() {
     let graph = &native.object_graphs[0];
     assert_eq!(graph.records.len(), 2);
     assert_eq!(graph.records[0].ordinal, 0);
-    assert_eq!(graph.records[0].owner_ref, Some(2));
+    assert_eq!(graph.records[0].owner_entity_id, Some(2));
     assert_eq!(graph.records[0].class_ref, Some(3));
     assert_eq!(graph.records[0].storage_ref, Some(4));
     assert_eq!(graph.records[1].ordinal, 1);
-    assert_eq!(graph.records[1].owner_ref, Some(2));
+    assert_eq!(graph.records[1].owner_entity_id, Some(2));
     assert_eq!(graph.records[1].class_ref, Some(4));
     assert_eq!(native.design_objects.len(), 1);
     let object = &native.design_objects[0];
     assert_eq!(object.parent, graph.id);
-    assert_eq!(object.owner_ordinal, 2);
+    assert_eq!(object.owner_entity_id, 2);
     assert_eq!(
         object.owner_record.as_deref(),
         Some(graph.records[1].id.as_str())
@@ -4812,8 +4892,8 @@ fn decode_links_design_objects_through_their_owner_record_group() {
     .expect("load CATIA native records");
 
     assert_eq!(native.design_objects.len(), 2);
-    assert_eq!(native.design_objects[0].owner_ordinal, 2);
-    assert_eq!(native.design_objects[1].owner_ordinal, 3);
+    assert_eq!(native.design_objects[0].owner_entity_id, 2);
+    assert_eq!(native.design_objects[1].owner_entity_id, 3);
     assert_eq!(
         native.design_objects[0].owner_design_object.as_deref(),
         Some(native.design_objects[1].id.as_str())
