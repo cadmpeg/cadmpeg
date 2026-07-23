@@ -9,17 +9,14 @@ use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{CadirEncoder, Codec, CodecError, Confidence, Encoder};
+use cadmpeg_ir::codec::{Codec, Confidence};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::Finding;
-use cadmpeg_ir::SourceFidelity;
-use cadmpeg_step::{StepCodec, StepEncoder};
+use cadmpeg_step::StepCodec;
 
 /// Native codecs available to the CLI.
 pub struct Registry {
     codecs: Vec<Box<dyn Codec>>,
-    encoders: Vec<Box<dyn Encoder>>,
 }
 
 impl Registry {
@@ -36,14 +33,6 @@ impl Registry {
                 Box::new(RhinoCodec),
                 Box::new(StepCodec),
                 Box::new(IgesCodec),
-            ],
-            encoders: vec![
-                Box::new(FcstdCodec),
-                Box::new(F3dCodec),
-                Box::new(SldprtCodec),
-                Box::new(RhinoCodec),
-                Box::new(StepEncoder::default()),
-                Box::new(CadirEncoder),
             ],
         }
     }
@@ -74,79 +63,11 @@ impl Registry {
             .flat_map(|codec| codec.validate_native(ir))
             .collect()
     }
-
-    /// Return the encoder with the given stable output-format identifier.
-    pub fn encoder_by_id(&self, id: &str) -> Option<&dyn Encoder> {
-        self.encoders
-            .iter()
-            .find(|encoder| encoder.id() == id)
-            .map(Box::as_ref)
-    }
-
-    /// Replace the STEP encoder configuration used by subsequent exports.
-    pub fn set_step_options(&mut self, options: cadmpeg_step::StepWriteOptions) {
-        if let Some(encoder) = self
-            .encoders
-            .iter_mut()
-            .find(|encoder| encoder.id() == "step")
-        {
-            *encoder = Box::new(StepEncoder { options });
-        }
-    }
-
-    /// Encode through the registered format path with optional target selection.
-    pub fn encode_by_id(
-        &self,
-        id: &str,
-        rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
-        ir: &CadIr,
-        source_fidelity: Option<&SourceFidelity>,
-        output: &mut dyn std::io::Write,
-    ) -> Option<Result<ExportReport, CodecError>> {
-        if rhino_version.is_some() && id != "rhino" {
-            return Some(Err(CodecError::Malformed(
-                "Rhino archive version requires the Rhino encoder".into(),
-            )));
-        }
-        if id == "rhino" {
-            if let Some(version) = rhino_version {
-                return Some(
-                    cadmpeg_codec_rhino::RhinoEncoder::new(version).encode_with_source_fidelity(
-                        ir,
-                        source_fidelity,
-                        output,
-                    ),
-                );
-            }
-        }
-        self.encoder_by_id(id)
-            .map(|encoder| encoder.encode_with_source_fidelity(ir, source_fidelity, output))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Registry;
-    use crate::format::Format;
-
-    #[test]
-    fn every_exportable_format_has_an_encoder() {
-        let registry = Registry::with_builtins();
-        for format in [
-            Format::Cadir,
-            Format::Step,
-            Format::Fcstd,
-            Format::F3d,
-            Format::Sldprt,
-            Format::Rhino,
-        ] {
-            assert!(
-                registry.encoder_by_id(format.name()).is_some(),
-                "{}",
-                format.name()
-            );
-        }
-    }
 
     #[test]
     fn ambiguous_zip_uses_last_registered_codec_precedence() {

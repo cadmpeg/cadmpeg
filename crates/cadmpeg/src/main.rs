@@ -14,9 +14,10 @@ mod registry;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use cadmpeg_ir::codec::{CadirEncoder, Encoder};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use crate::format::{ForcedInput, Format, InputFormat};
+use crate::format::{resolve_format, ForcedInput, Format, InputFormat};
 use crate::registry::Registry;
 
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -28,19 +29,6 @@ enum StepTarget {
     Ap242e1,
     Ap242e2,
     Ap242e3,
-}
-
-impl StepTarget {
-    fn schema(self) -> cadmpeg_step::StepSchema {
-        match self {
-            Self::Ap203e1 => cadmpeg_step::StepSchema::Ap203Edition1,
-            Self::Ap203e2 => cadmpeg_step::StepSchema::Ap203Edition2,
-            Self::Ap214 => cadmpeg_step::StepSchema::Ap214,
-            Self::Ap242e1 => cadmpeg_step::StepSchema::Ap242Edition1,
-            Self::Ap242e2 => cadmpeg_step::StepSchema::Ap242Edition2,
-            Self::Ap242e3 => cadmpeg_step::StepSchema::Ap242Edition3,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -55,8 +43,16 @@ struct StepOutputArgs {
 
 impl StepOutputArgs {
     fn options(&self) -> cadmpeg_step::StepWriteOptions {
+        let schema = match self.step_target {
+            StepTarget::Ap203e1 => cadmpeg_step::StepSchema::Ap203Edition1,
+            StepTarget::Ap203e2 => cadmpeg_step::StepSchema::Ap203Edition2,
+            StepTarget::Ap214 => cadmpeg_step::StepSchema::Ap214,
+            StepTarget::Ap242e1 => cadmpeg_step::StepSchema::Ap242Edition1,
+            StepTarget::Ap242e2 => cadmpeg_step::StepSchema::Ap242Edition2,
+            StepTarget::Ap242e3 => cadmpeg_step::StepSchema::Ap242Edition3,
+        };
         cadmpeg_step::StepWriteOptions {
-            schema: self.step_target.schema(),
+            schema,
             unsupported: if self.reject_step_losses {
                 cadmpeg_step::StepUnsupportedPolicy::Reject
             } else {
@@ -96,15 +92,37 @@ enum RhinoVersion {
     V8,
 }
 
-impl RhinoVersion {
-    const fn codec(self) -> cadmpeg_codec_rhino::RhinoArchiveVersion {
-        match self {
-            Self::V5 => cadmpeg_codec_rhino::RhinoArchiveVersion::V5,
-            Self::V6 => cadmpeg_codec_rhino::RhinoArchiveVersion::V6,
-            Self::V7 => cadmpeg_codec_rhino::RhinoArchiveVersion::V7,
-            Self::V8 => cadmpeg_codec_rhino::RhinoArchiveVersion::V8,
-        }
+/// Build the encoder for a resolved output format.
+///
+/// A Rhino version against a non-Rhino format is an error. The caller carries
+/// this result unresolved and unwraps it only when export runs, so the guard
+/// surfaces after the decode and validation diagnostics, not before them.
+fn select_encoder(
+    format: Format,
+    step: &StepOutputArgs,
+    rhino_version: Option<RhinoVersion>,
+) -> anyhow::Result<Box<dyn Encoder>> {
+    if rhino_version.is_some() && format != Format::Rhino {
+        anyhow::bail!("--rhino-version requires Rhino output");
     }
+    let encoder: Box<dyn Encoder> = match format {
+        Format::Cadir => Box::new(CadirEncoder),
+        Format::Step => Box::new(cadmpeg_step::StepEncoder {
+            options: step.options(),
+        }),
+        Format::Fcstd => Box::new(cadmpeg_codec_freecad::FcstdCodec),
+        Format::F3d => Box::new(cadmpeg_codec_f3d::F3dCodec),
+        Format::Sldprt => Box::new(cadmpeg_codec_sldprt::SldprtCodec),
+        Format::Rhino => Box::new(cadmpeg_codec_rhino::RhinoEncoder::new(
+            match rhino_version {
+                Some(RhinoVersion::V5) => cadmpeg_codec_rhino::RhinoArchiveVersion::V5,
+                Some(RhinoVersion::V6) => cadmpeg_codec_rhino::RhinoArchiveVersion::V6,
+                Some(RhinoVersion::V7) => cadmpeg_codec_rhino::RhinoArchiveVersion::V7,
+                Some(RhinoVersion::V8) | None => cadmpeg_codec_rhino::RhinoArchiveVersion::V8,
+            },
+        )),
+    };
+    Ok(encoder)
 }
 
 #[derive(Debug, Clone, Args)]
@@ -286,13 +304,7 @@ enum Command {
 
 fn main() -> ExitCode {
     let command = Cli::parse().command;
-    let mut registry = Registry::with_builtins();
-    match &command {
-        Command::Export { step, .. } | Command::Convert { step, .. } => {
-            registry.set_step_options(step.options());
-        }
-        _ => {}
-    }
+    let registry = Registry::with_builtins();
     let result = match command {
         Command::Inspect {
             input,
@@ -335,23 +347,26 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
-            step: _,
-        } => commands::export(
-            &registry,
-            &input,
-            format,
-            output.as_deref(),
-            commands::ExportSettings {
-                force,
-                report,
-                allow_empty,
-                reject_lossy,
-                rhino_version: rhino_version.map(RhinoVersion::codec),
-                forced_input: input_args.forced(),
-            },
-            &decode,
-        )
-        .map(|()| ExitCode::SUCCESS),
+            step,
+        } => match resolve_format(format, output.as_deref()) {
+            Ok(resolved) => commands::export(
+                &registry,
+                &input,
+                resolved,
+                output.as_deref(),
+                select_encoder(resolved, &step, rhino_version),
+                commands::ExportSettings {
+                    force,
+                    report,
+                    allow_empty,
+                    reject_lossy,
+                    forced_input: input_args.forced(),
+                },
+                &decode,
+            )
+            .map(|()| ExitCode::SUCCESS),
+            Err(error) => Err(error),
+        },
         Command::Diff { a, b, json, decode } => commands::diff(&registry, &a, &b, &decode, json),
         Command::Convert {
             input,
@@ -365,24 +380,27 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
-            step: _,
-        } => commands::convert(
-            &registry,
-            &input,
-            format,
-            output.as_deref(),
-            &commands::ConvertSettings {
-                force,
-                report,
-                allow_invalid,
-                allow_empty,
-                reject_lossy,
-                rhino_version: rhino_version.map(RhinoVersion::codec),
-                forced_input: input_args.forced(),
-            },
-            &decode,
-        )
-        .map(|()| ExitCode::SUCCESS),
+            step,
+        } => match resolve_format(format, output.as_deref()) {
+            Ok(resolved) => commands::convert(
+                &registry,
+                &input,
+                resolved,
+                output.as_deref(),
+                select_encoder(resolved, &step, rhino_version),
+                &commands::ConvertSettings {
+                    force,
+                    report,
+                    allow_invalid,
+                    allow_empty,
+                    reject_lossy,
+                    forced_input: input_args.forced(),
+                },
+                &decode,
+            )
+            .map(|()| ExitCode::SUCCESS),
+            Err(error) => Err(error),
+        },
     };
     result.unwrap_or_else(|err| {
         eprintln!("error: {err:#}");
@@ -392,4 +410,43 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{select_encoder, RhinoVersion, StepOutputArgs, StepTarget};
+    use crate::format::Format;
+
+    fn step_args() -> StepOutputArgs {
+        StepOutputArgs {
+            step_target: StepTarget::default(),
+            reject_step_losses: false,
+        }
+    }
+
+    #[test]
+    fn select_encoder_covers_every_format() {
+        let step = step_args();
+        for format in [
+            Format::Cadir,
+            Format::Step,
+            Format::Fcstd,
+            Format::F3d,
+            Format::Sldprt,
+            Format::Rhino,
+        ] {
+            let encoder = select_encoder(format, &step, None)
+                .expect("every format resolves to an encoder without a Rhino version");
+            assert_eq!(encoder.id(), format.name());
+        }
+    }
+
+    #[test]
+    fn select_encoder_rejects_rhino_version_on_non_rhino_format() {
+        let step = step_args();
+        match select_encoder(Format::Step, &step, Some(RhinoVersion::V6)) {
+            Ok(_) => panic!("a Rhino version against a non-Rhino format must be rejected"),
+            Err(error) => assert!(error.to_string().contains("requires Rhino output")),
+        }
+    }
 }

@@ -8,12 +8,13 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
+use cadmpeg_ir::codec::{CadirEncoder, Encoder};
 use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::validate::ValidationReport;
 use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
 
-use crate::format::{resolve_format, ForcedInput, Format};
+use crate::format::{ForcedInput, Format};
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::Registry;
 use crate::DecodeArgs;
@@ -56,8 +57,6 @@ pub struct ConvertSettings {
     pub allow_empty: bool,
     /// Refuse to export when the decode reported any loss.
     pub reject_lossy: bool,
-    /// Explicit Rhino output archive version.
-    pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -154,14 +153,12 @@ pub fn decode(
 ) -> Result<()> {
     let loaded = loader::load_ir(registry, path, args.options(), forced)?;
     export_ir(
-        registry,
+        &CadirEncoder,
         &loaded.ir,
         loaded.source_fidelity.as_ref(),
-        Format::Cadir,
         out,
         path,
         force,
-        None,
     )?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
@@ -230,8 +227,6 @@ pub struct ExportSettings {
     pub allow_empty: bool,
     /// Refuse to export when the decode reported any loss.
     pub reject_lossy: bool,
-    /// Explicit Rhino output archive version.
-    pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -240,8 +235,9 @@ pub struct ExportSettings {
 pub fn export(
     registry: &Registry,
     path: &Path,
-    format: Option<Format>,
+    format: Format,
     out: Option<&Path>,
+    encoder: Result<Box<dyn Encoder>>,
     settings: ExportSettings,
     args: &DecodeArgs,
 ) -> Result<()> {
@@ -250,10 +246,8 @@ pub fn export(
         report: report_path,
         allow_empty,
         reject_lossy,
-        rhino_version,
         forced_input,
     } = settings;
-    let format = resolve_format(format, out)?;
     let loaded = loader::load_ir(registry, path, args.options(), forced_input)?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
@@ -293,14 +287,12 @@ pub fn export(
         )));
     }
     let report = export_ir(
-        registry,
+        &*encoder?,
         &loaded.ir,
         loaded.source_fidelity.as_ref(),
-        format,
         out,
         path,
         force,
-        rhino_version,
     )?;
     write_command_report(
         path,
@@ -317,12 +309,12 @@ pub fn export(
 pub fn convert(
     registry: &Registry,
     path: &Path,
-    format: Option<Format>,
+    format: Format,
     out: Option<&Path>,
+    encoder: Result<Box<dyn Encoder>>,
     settings: &ConvertSettings,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let format = resolve_format(format, out)?;
     let loaded = loader::load_ir(registry, path, args.options(), settings.forced_input)?;
     let mut stderr = io::stderr();
     if let Some(report) = &loaded.decode_report {
@@ -387,14 +379,12 @@ pub fn convert(
         )));
     }
     let report = export_ir(
-        registry,
+        &*encoder?,
         &loaded.ir,
         loaded.source_fidelity.as_ref(),
-        format,
         out,
         path,
         settings.force,
-        settings.rhino_version,
     )?;
     write_command_report(
         path,
@@ -605,30 +595,16 @@ fn lossy_refusal(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn export_ir(
-    registry: &Registry,
+    encoder: &dyn Encoder,
     ir: &CadIr,
     source_fidelity: Option<&SourceFidelity>,
-    format: Format,
     out: Option<&Path>,
     input: &Path,
     force: bool,
-    rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
 ) -> Result<ExportReport> {
     let mut bytes = Vec::new();
-    if rhino_version.is_some() && format != Format::Rhino {
-        bail!("--rhino-version requires Rhino output");
-    }
-    let report = registry
-        .encode_by_id(
-            format.name(),
-            rhino_version,
-            ir,
-            source_fidelity,
-            &mut bytes,
-        )
-        .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
+    let report = encoder.encode_with_source_fidelity(ir, source_fidelity, &mut bytes)?;
     if let Some(path) = out {
         write_output(input, path, &bytes, force)?;
         eprintln!(
