@@ -3398,6 +3398,13 @@ fn advance_boundary_component_states(
         for mut candidate in candidates {
             let mut next_oriented = oriented_edges.clone();
             next_oriented.extend(domain_edges.iter().copied());
+            if !budget.charge_by(
+                candidate
+                    .signature_work()
+                    .saturating_add(next_oriented.len().max(1)),
+            ) {
+                return None;
+            }
             let mut oriented_signature = next_oriented.iter().copied().collect::<Vec<_>>();
             oriented_signature.sort_unstable();
             if signatures.insert((candidate.signature(), oriented_signature)) {
@@ -3496,11 +3503,11 @@ pub(crate) fn propagate_common_boundary_components(
             selected_edges.extend(mesh_boundary_domain_edges(&domains[face]));
             ordered_faces.push(face);
         }
+        let budget = MeshConstraintBudget::new(MAX_COMPONENT_OPERATIONS);
         for _ in 0..MAX_COMPONENT_ROUNDS {
             let before = quotient.monotone_measure();
             let mut cursor = 0usize;
             while cursor < ordered_faces.len() {
-                let budget = MeshConstraintBudget::new(MAX_COMPONENT_OPERATIONS);
                 let mut states = vec![(quotient.clone(), HashSet::<usize>::new())];
                 let mut processed = 0usize;
                 while let Some(&face) = ordered_faces.get(cursor + processed) {

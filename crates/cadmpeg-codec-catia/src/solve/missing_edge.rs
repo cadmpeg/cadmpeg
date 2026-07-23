@@ -878,7 +878,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
     defer_validation: bool,
-) -> Option<Vec<MeshFaceAssignmentDomain>> {
+) -> Option<(Vec<MeshFaceAssignmentDomain>, Vec<MeshEdgeRun>)> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
     // A contradictory face can visit factorially many partial orders without
     // producing one complete assignment, so the assignment cap alone is not a
@@ -1608,9 +1608,8 @@ fn standard_mesh_missing_edge_assignment_domains(
         let domains = assignment_results.collect::<Option<Vec<_>>>()?;
         solutions.push(domains);
     }
-    <[Vec<MeshFaceAssignmentDomain>; 1]>::try_from(solutions)
-        .ok()
-        .map(|[domains]| domains)
+    let [domains] = <[Vec<MeshFaceAssignmentDomain>; 1]>::try_from(solutions).ok()?;
+    Some((domains, edge_runs))
 }
 
 pub(crate) fn standard_mesh_missing_edge_assignments(
@@ -1626,6 +1625,7 @@ pub(crate) fn standard_mesh_missing_edge_assignments(
         canonicalize_spans,
         false,
     )?
+    .0
     .into_iter()
     .map(|domain| match domain {
         MeshFaceAssignmentDomain::Ordered(assignments) => Some(assignments),
@@ -1682,14 +1682,13 @@ pub(crate) fn standard_mesh_boundary_domains_impl(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     defer_validation: bool,
 ) -> Option<Vec<MeshFaceBoundaryDomain>> {
-    let domains = standard_mesh_missing_edge_assignment_domains(
+    let (domains, runs) = standard_mesh_missing_edge_assignment_domains(
         bytes,
         edge_faces,
         edge_candidates,
         true,
         defer_validation,
     )?;
-    let runs = standard_mesh_edge_runs(bytes)?;
     let (face_start, face_count, _) = largest_fbb_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
         .into_iter()
