@@ -10,6 +10,7 @@ mod entities;
 mod global;
 mod graph;
 mod layout;
+mod loss;
 mod native;
 mod parameter;
 mod profile;

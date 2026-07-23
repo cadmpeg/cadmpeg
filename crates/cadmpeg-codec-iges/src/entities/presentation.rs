@@ -3,10 +3,11 @@
 
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
+use crate::loss::IgesLossCode;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
-use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,18 +24,7 @@ struct TextFontDefinition {
 }
 
 fn loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
-    LossNote {
-        code: cadmpeg_ir::LossCode::MaterialNotTransferred,
-        category: LossCategory::Material,
-        severity: Severity::Warning,
-        message: format!(
-            "IGES entity type {} form {} display data was not projected: {}",
-            entry.entity_type,
-            entry.form,
-            message.into()
-        ),
-        provenance: None,
-    }
+    IgesLossCode::PresentationEntityNotProjected.note_for(entry, message)
 }
 
 fn standard_color(number: i64) -> Option<Color> {

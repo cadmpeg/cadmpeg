@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
+use crate::loss::IgesLossCode;
 use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -81,13 +82,10 @@ pub(crate) fn decode(
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
     if product_occurrences_truncated {
-        losses.push(LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: "IGES product occurrence expansion reached its configured output limit".into(),
-            provenance: None,
-        });
+        losses.push(
+            IgesLossCode::ProductOccurrenceTruncated
+                .note("IGES product occurrence expansion reached its configured output limit"),
+        );
     }
     if !options.container_only {
         losses.extend(
@@ -98,11 +96,9 @@ pub(crate) fn decode(
                         && (!crate::profile::envelope_a_admits(entry.entity_type, entry.form)
                             || !projection.handled.contains(&entry.sequence))
                 })
-                .map(|entry| LossNote {
-                    code: cadmpeg_ir::LossCode::RecordNotTyped,
-                    category: LossCategory::Other,
-                    severity: Severity::Warning,
-                    message: if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+                .map(|entry| {
+                    let message = if crate::profile::envelope_a_admits(entry.entity_type, entry.form)
+                    {
                         format!(
                             "IGES entity type {} form {} retained without neutral projection",
                             entry.entity_type, entry.form
@@ -112,8 +108,8 @@ pub(crate) fn decode(
                             "IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
                             entry.entity_type, entry.form
                         )
-                    },
-                    provenance: None,
+                    };
+                    IgesLossCode::RecordRetainedUntyped.note(message)
                 }),
         );
     }
