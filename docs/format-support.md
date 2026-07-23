@@ -208,7 +208,7 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 **Kernel:** ASM, derived from ACIS
 
-**Ladder: L4 tested.** Undefined carrier payloads and tolerant-topology variants block L5. Native writing exceeds the scored gates.
+**Ladder: L4 tested.** Undefined geometry-carrier payloads block L5. Tolerant coedge, edge, and vertex records decode across their release-gated layouts and round-trip through retained and source-less native writing. Native writing exceeds the scored gates.
 
 ### Read profile
 
