@@ -25,9 +25,9 @@ use crate::curve::{
 use crate::datum::{self, DatumPlane};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
-    FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopRestoreDirection,
-    FeatureOperation, FeatureRecipe, FeatureReferenceName, FeatureReplayAffectedIds,
-    FeatureRevolutionExtent, FeatureRow,
+    FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopHistoryEntry,
+    FeatureLoopRestoreDirection, FeatureOperation, FeatureRecipe, FeatureReferenceName,
+    FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
@@ -377,6 +377,8 @@ pub struct FeatureScan {
     pub choice_fields: Vec<FeatureChoiceField>,
     /// Generated-geometry namespace headers owned by decoded features.
     pub geometry_tables: Vec<FeatureGeometryTable>,
+    /// Ordered feature-local loop identities from complete `lo_hist` rosters.
+    pub loop_history_entries: Vec<FeatureLoopHistoryEntry>,
     /// Complete named affected-ID arrays owned by decoded features.
     pub affected_ids: Vec<FeatureAffectedIds>,
     /// Affected-ID runs from unlabeled positional replay feature rows.
@@ -1883,6 +1885,8 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let mut feature_geometry_tables = feature::geometry_tables(&feature_rows);
     feature_geometry_tables.extend(feature::geometry_tables(&depdb_recipe_rows));
     feature_geometry_tables.sort_by_key(|table| table.offset);
+    let feature_loop_history_entries =
+        feature::loop_history_entries(&feature_rows, &feature_geometry_tables);
     let mut feature_affected_ids = feature::affected_ids(&feature_rows);
     feature_affected_ids.extend(feature::affected_ids(&depdb_recipe_rows));
     feature_affected_ids.sort_by_key(|record| record.offset);
@@ -2057,6 +2061,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
             choices: feature_choices,
             choice_fields: feature_choice_fields,
             geometry_tables: feature_geometry_tables,
+            loop_history_entries: feature_loop_history_entries,
             affected_ids: feature_affected_ids,
             replay_affected_ids: feature_replay_affected_ids,
             loop_restore_directions: feature_loop_restore_directions,

@@ -124,6 +124,16 @@ pub(super) struct CreoFeatureGeometryTableRecord {
 }
 
 #[derive(Serialize)]
+pub(super) struct CreoFeatureLoopHistoryEntryRecord {
+    pub(super) id: String,
+    pub(super) owner_feature_id: u32,
+    pub(super) ordinal: u32,
+    pub(super) loop_id: u32,
+    pub(super) offset: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
 pub(super) struct CreoFeatureAffectedIdsRecord {
     pub(super) id: String,
     pub(super) owner_feature_id: u32,
@@ -553,6 +563,23 @@ pub(super) fn feature_geometry_table_records(
             entry_ids: table.entry_ids.clone(),
             offset: table.offset,
             source_section: source_section(scan, table.offset),
+        })
+        .collect()
+}
+
+pub(super) fn feature_loop_history_entry_records(
+    scan: &ContainerScan,
+) -> Vec<CreoFeatureLoopHistoryEntryRecord> {
+    scan.features
+        .loop_history_entries
+        .iter()
+        .map(|entry| CreoFeatureLoopHistoryEntryRecord {
+            id: format!("creo:feature:loop_history_entry#{}", entry.offset),
+            owner_feature_id: entry.feature_id,
+            ordinal: entry.ordinal,
+            loop_id: entry.loop_id,
+            offset: entry.offset,
+            source_section: source_section(scan, entry.offset),
         })
         .collect()
 }

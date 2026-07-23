@@ -2863,6 +2863,49 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
 }
 
 #[test]
+fn scan_decodes_complete_allfeatur_loop_history_rosters() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = b"\x04\xeb\x04\xe0\x00lo_id_tab_ptr\0\xf8\x02\xf7\x60\xfb\xe3\
+        \xe0\x01lo_hist\0\xf8\x06\x2a\x01\xf6\xe5\x02\xf1\xf7\x60\xe3\
+        \x2b\x03\x04\xe4\xf6\x05\xe0\x00next\0"
+        .to_vec();
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(data.clone());
+
+    assert_eq!(scan.features.loop_history_entries.len(), 2);
+    assert_eq!(scan.features.loop_history_entries[0].feature_id, 4);
+    assert_eq!(scan.features.loop_history_entries[0].ordinal, 0);
+    assert_eq!(scan.features.loop_history_entries[0].loop_id, 42);
+    assert_eq!(scan.features.loop_history_entries[1].ordinal, 1);
+    assert_eq!(scan.features.loop_history_entries[1].loop_id, 43);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let records =
+        &result.ir.native.namespace("creo").unwrap().arenas["feature_loop_history_entries"];
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].fields["owner_feature_id"], 4);
+    assert_eq!(records[0].fields["ordinal"], 0);
+    assert_eq!(records[0].fields["loop_id"], 42);
+    assert_eq!(records[1].fields["ordinal"], 1);
+    assert_eq!(records[1].fields["loop_id"], 43);
+    assert_annotation(
+        &result.source_fidelity.annotations,
+        &records[0].id,
+        "creo:AllFeatur",
+        scan.features.loop_history_entries[0].offset as u64,
+        "feature_loop_history_entry",
+        Exactness::ByteExact,
+    );
+    assert_eq!(
+        result.report.coverage["decoded_feature_loop_history_entry_count"],
+        2
+    );
+}
+
+#[test]
 fn scan_decodes_allfeatur_affected_id_arrays() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

@@ -618,6 +618,19 @@ pub struct FeatureLoopRestoreDirection {
     pub offset: usize,
 }
 
+/// One ordered feature-local loop identity from a complete `lo_hist` roster.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureLoopHistoryEntry {
+    /// Owning feature identifier.
+    pub feature_id: u32,
+    /// Zero-based position in the feature's loop roster.
+    pub ordinal: u32,
+    /// Feature-local loop identifier.
+    pub loop_id: u32,
+    /// Byte offset of the loop identifier in the original stream.
+    pub offset: usize,
+}
+
 /// Angular termination selected by a rotational feature row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureRevolutionExtentKind {
@@ -5925,6 +5938,121 @@ pub fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRestoreDir
     result
 }
 
+/// Decode complete ordered `lo_hist` rosters paired with named loop tables.
+pub fn loop_history_entries(
+    rows: &[FeatureRow],
+    geometry_tables: &[FeatureGeometryTable],
+) -> Vec<FeatureLoopHistoryEntry> {
+    const LABEL: &[u8] = b"\xe0\x01lo_hist\0";
+    const RECORD_WIDTH: u32 = 6;
+    let mut result = Vec::new();
+    for table in geometry_tables
+        .iter()
+        .filter(|table| table.kind == FeatureGeometryTableKind::LoopIds)
+    {
+        let Some(row) = rows.iter().find(|row| {
+            row.feature_id == table.feature_id
+                && table.offset >= row.body_offset
+                && table.offset < row.body_offset.saturating_add(row.body.len())
+        }) else {
+            continue;
+        };
+        let table_offset = table.offset - row.body_offset;
+        let Some(label_offset) = row.body[table_offset..]
+            .windows(LABEL.len())
+            .position(|window| window == LABEL)
+            .map(|offset| table_offset + offset)
+        else {
+            continue;
+        };
+        let label_stream_offset = row.body_offset + label_offset;
+        if geometry_tables.iter().any(|other| {
+            other.kind == FeatureGeometryTableKind::LoopIds
+                && other.feature_id == table.feature_id
+                && other.offset > table.offset
+                && other.offset < label_stream_offset
+        }) {
+            continue;
+        }
+        let array_offset = label_offset + LABEL.len();
+        if row.body.get(array_offset) != Some(&psb::token::ARRAY_OPEN) {
+            continue;
+        }
+        let (width, roster_offset) = psb::compact_int(&row.body, array_offset + 1);
+        if width != RECORD_WIDTH || roster_offset == array_offset + 1 {
+            continue;
+        }
+        let Ok(count) = usize::try_from(table.count) else {
+            continue;
+        };
+        let Some(entries) = loop_history_roster(&row.body, roster_offset, count) else {
+            continue;
+        };
+        result.extend(
+            (0..table.count)
+                .zip(entries)
+                .map(|(ordinal, (loop_id, offset))| FeatureLoopHistoryEntry {
+                    feature_id: row.feature_id,
+                    ordinal,
+                    loop_id,
+                    offset: row.body_offset + offset,
+                }),
+        );
+    }
+    result.sort_by_key(|entry| entry.offset);
+    result
+}
+
+fn loop_history_roster(body: &[u8], mut cursor: usize, count: usize) -> Option<Vec<(u32, usize)>> {
+    const FIELD_COUNT: usize = 4;
+    (count > 0 && count <= body.len().saturating_sub(cursor) / 2).then_some(())?;
+    let mut entries = Vec::with_capacity(count);
+    for index in 0..count {
+        let offset = cursor;
+        let (loop_id, after_id) = psb::compact_int(body, cursor);
+        (after_id > cursor && body[cursor] <= 0xbf).then_some(())?;
+        cursor = after_id;
+        for _ in 0..FIELD_COUNT {
+            let token = psb::token_at(body, cursor)?;
+            (!matches!(
+                token.kind,
+                psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
+            ))
+            .then_some(())?;
+            cursor = cursor.checked_add(token.length)?;
+        }
+        if body.get(cursor) == Some(&0xe3) {
+            cursor += 1;
+        } else if body
+            .get(cursor)
+            .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
+        {
+            (body.get(cursor + 1) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (_, after_reference) = psb::reference_id(body, cursor + 2).ok()?;
+            (body.get(after_reference) == Some(&0xe3)).then_some(())?;
+            cursor = after_reference + 1;
+        } else {
+            (index + 1 == count).then_some(())?;
+            let token = psb::token_at(body, cursor)?;
+            if token.kind != psb::TokenKind::NamedRecord {
+                (!matches!(
+                    token.kind,
+                    psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
+                ))
+                .then_some(())?;
+                cursor = cursor.checked_add(token.length)?;
+                matches!(
+                    psb::token_at(body, cursor).map(|token| token.kind),
+                    Some(psb::TokenKind::NamedRecord)
+                )
+                .then_some(())?;
+            }
+        }
+        entries.push((loop_id, offset));
+    }
+    Some(entries)
+}
+
 /// Decode full-turn rotational termination from the positional
 /// `param_choice_ptr` body of section-sweep feature rows.
 pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
@@ -7000,6 +7128,69 @@ mod tests {
         assert_eq!(decoded[1].entity_class, 87);
         assert_eq!(decoded[1].entry_ids, Some(vec![145, 146]));
         assert_eq!(decoded[1].offset, 201);
+    }
+
+    #[test]
+    fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
+        let mut body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x03\xf7\x60\xfb\xe3\
+                         \xe0\x01lo_hist\0\xf8\x06"
+            .to_vec();
+        let first_offset = body.len();
+        body.extend_from_slice(&[42, 1, 0xf6, 0xe5, 2, 0xf1, 0xf7, 96, 0xe3]);
+        let second_offset = body.len();
+        body.extend_from_slice(&[43, 3, 0xf6, 0xe5, 4, 0xe3]);
+        let third_offset = body.len();
+        body.extend_from_slice(&[44, 5, 6, 0xe4, 0xf6, 7]);
+        body.extend_from_slice(b"\xe0\x00next\0");
+        let rows = [FeatureRow {
+            feature_id: 7,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(917),
+            stream_offset: 10,
+            body,
+            body_offset: 1_000,
+            offset: 998,
+        }];
+
+        let tables = geometry_tables(&rows);
+        let entries = loop_history_entries(&rows, &tables);
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (entry.feature_id, entry.ordinal, entry.loop_id, entry.offset))
+                .collect::<Vec<_>>(),
+            vec![
+                (7, 0, 42, 1_000 + first_offset),
+                (7, 1, 43, 1_000 + second_offset),
+                (7, 2, 44, 1_000 + third_offset),
+            ]
+        );
+    }
+
+    #[test]
+    fn loop_history_roster_rejects_incomplete_and_early_boundaries() {
+        assert!(loop_history_roster(&[1, 2, 0xe3], 0, 1).is_none());
+        assert!(loop_history_roster(&[1, 2, 3, 4, 5, 0xe3], 0, 2).is_none());
+        assert_eq!(
+            loop_history_roster(b"\x01\x02\xf6\xe5\x03\xe0\x00next\0", 0, 1),
+            Some(vec![(1, 0)])
+        );
+
+        let body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x01\xf7\x60\xfb\xe3\
+                     \xe0\x01lo_hist\0\xf8\x05\x2a\xe3"
+            .to_vec();
+        let rows = [FeatureRow {
+            feature_id: 7,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(917),
+            stream_offset: 10,
+            body,
+            body_offset: 1_000,
+            offset: 998,
+        }];
+        assert!(loop_history_entries(&rows, &geometry_tables(&rows)).is_empty());
     }
 
     #[test]

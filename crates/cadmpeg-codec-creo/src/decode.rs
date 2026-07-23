@@ -25089,6 +25089,23 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             );
         },
     )?;
+    let feature_loop_history_entries = feature_loop_history_entry_records(scan);
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_loop_history_entries",
+        &feature_loop_history_entries,
+        |annotations, entry| {
+            annotate(
+                annotations,
+                &entry.id,
+                &entry.source_section,
+                entry.offset as u64,
+                "feature_loop_history_entry",
+                Exactness::ByteExact,
+            );
+        },
+    )?;
     let feature_affected_ids = feature_affected_id_records(scan);
     emit_arena(
         &mut ir,
@@ -25634,6 +25651,10 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     coverage.insert(
         "decoded_feature_geometry_table_count".to_string(),
         scan.features.geometry_tables.len(),
+    );
+    coverage.insert(
+        "decoded_feature_loop_history_entry_count".to_string(),
+        scan.features.loop_history_entries.len(),
     );
     coverage.insert(
         "decoded_feature_affected_id_array_count".to_string(),

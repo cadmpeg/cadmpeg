@@ -78,6 +78,7 @@ const CREO_ARENAS: &[&str] = &[
     "feature_entity_tables",
     "feature_surface_replays",
     "feature_geometry_tables",
+    "feature_loop_history_entries",
     "feature_affected_ids",
     "feature_replay_affected_ids",
     "feature_loop_restore_directions",
