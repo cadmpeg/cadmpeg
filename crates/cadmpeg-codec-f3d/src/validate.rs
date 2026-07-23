@@ -1498,8 +1498,9 @@ fn validate_fillet_operand_groups<'a>(
     for group in &native.design_construction_operand_groups {
         let native_stream = design_stream(&group.id);
         let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
-        let is_fillet =
-            scope.is_some_and(|scope| matches!(scope.kind.as_str(), "Fillet" | "Congé"));
+        let is_fillet = scope.is_some_and(|scope| {
+            design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Fillet)
+        });
         let has_fixed_assignment = scope
             .and_then(|scope| {
                 scope
