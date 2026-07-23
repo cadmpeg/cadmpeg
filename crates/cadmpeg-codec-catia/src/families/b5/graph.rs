@@ -170,6 +170,8 @@ pub enum B5Surface {
         angular_bounds: [[f64; 2]; 2],
         /// Positive radius of the enclosing support-bound construction.
         construction_radius: f64,
+        /// Origin of the native periodic V coordinate, in length units.
+        chart_origin: f64,
     },
     /// `b5 03 2b`: a torus in its two arc-length angular coordinates.
     Torus {
@@ -321,8 +323,22 @@ pub struct B5Pcurve {
     pub lifted_endpoints: Option<[[f64; 3]; 2]>,
 }
 
-/// An identity- and support-resolved pcurve with opaque chart geometry.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Exact great-circle fields carried by a class-`1d` sphere pcurve.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B5SphereGreatCirclePcurve {
+    /// Length-valued shift contributing to the great-circle plane phase.
+    pub chart_shift: f64,
+    /// Sphere radius repeated by the pcurve.
+    pub radius: f64,
+    /// Signed slope in `tan(latitude) = slope * cos(azimuth - phase)`.
+    pub slope: f64,
+    /// Stored phase term. The geometric phase is `chart_shift / radius + phase`.
+    pub phase: f64,
+}
+
+/// An identity- and support-resolved pcurve whose native chart equation is
+/// opaque or only partly assigned.
+#[derive(Debug, Clone, PartialEq)]
 pub struct B5OpaquePcurve {
     /// This record's stream `object_id`.
     pub object_id: u32,
@@ -332,6 +348,9 @@ pub struct B5OpaquePcurve {
     pub class: u8,
     /// Exact source payload.
     pub payload: Vec<u8>,
+    /// Exact great-circle carrier fields when this is a validated class-`1d`
+    /// sphere pcurve.
+    pub sphere_great_circle: Option<B5SphereGreatCirclePcurve>,
 }
 
 /// One length-framed `b5 03` record as found by the stream walk ([spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#6-object-stream-record-framing-a5-03-a8-03-b5-03)).
@@ -609,10 +628,18 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             lifted_endpoints: None,
         });
     }
-    let opaque_pcurves: BTreeMap<u32, B5OpaquePcurve> = records
+    let mut opaque_pcurves: BTreeMap<u32, B5OpaquePcurve> = records
         .iter()
         .filter_map(|record| parse_opaque_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
         .collect();
+    for pcurve in opaque_pcurves.values_mut() {
+        let Some(record) = by_id.get(&pcurve.object_id) else {
+            continue;
+        };
+        pcurve.sphere_great_circle = surfaces
+            .get(&pcurve.surface)
+            .and_then(|surface| parse_sphere_great_circle_pcurve(record, surface));
+    }
     let parameter_incidences: BTreeMap<u32, B5ParameterIncidence> = records
         .iter()
         .filter_map(|record| {
@@ -1429,7 +1456,8 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let stored_y = point(&record.payload, 49)?;
             let stored_axis = point(&record.payload, 73)?;
             let radius = scalar(&record.payload, 97)?;
-            let [u0, u1, v0, v1, construction_radius, _] = line_values::<6>(&record.payload, 105)?;
+            let [u0, u1, v0, v1, construction_radius, chart_origin] =
+                line_values::<6>(&record.payload, 105)?;
             let vector_length = |value: [f64; 3]| {
                 value
                     .iter()
@@ -1456,6 +1484,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                     radius,
                     angular_bounds: [[u0, u1], [v0, v1]],
                     construction_radius,
+                    chart_origin,
                 })
         }
         0x2b => {
@@ -2286,6 +2315,55 @@ fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
         surface,
         class: record.class,
         payload: record.payload.clone(),
+        sphere_great_circle: None,
+    })
+}
+
+fn parse_sphere_great_circle_pcurve(
+    record: &B5Record,
+    surface: &B5Surface,
+) -> Option<B5SphereGreatCirclePcurve> {
+    let B5Surface::Sphere {
+        radius: sphere_radius,
+        angular_bounds,
+        chart_origin,
+        ..
+    } = surface
+    else {
+        return None;
+    };
+    (record.family == 0xb5 && record.class == 0x1d && record.payload.first() == Some(&0x81))
+        .then_some(())?;
+    let mut position = 1;
+    wire::object_ref(&record.payload, &mut position, true)?;
+    (record.payload.len() == position.checked_add(99)?).then_some(())?;
+    let [u0, u1, v0, v1] = line_values::<4>(&record.payload, position)?;
+    position += 32;
+    (record.payload.get(position..position + 2) == Some(&[0x05, 0x81])).then_some(())?;
+    let [chart_shift, direction, zero0] = line_values::<3>(&record.payload, position + 2)?;
+    position += 26;
+    (record.payload.get(position) == Some(&0x1d)).then_some(())?;
+    let [radius, slope, reciprocal_scale, phase, zero1] =
+        line_values::<5>(&record.payload, position + 1)?;
+
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= 1e-12 * left.abs().max(right.abs()).max(1.0)
+    };
+    (direction.abs() == 1.0
+        && zero0 == 0.0
+        && zero1 == 0.0
+        && radius > 0.0
+        && close(radius, *sphere_radius)
+        && close(reciprocal_scale, -direction / radius)
+        && close(u0, radius * angular_bounds[0][0])
+        && close(u1, radius * angular_bounds[0][1])
+        && close(v0, *chart_origin)
+        && close(v1, chart_origin + std::f64::consts::TAU * radius))
+    .then_some(B5SphereGreatCirclePcurve {
+        chart_shift,
+        radius,
+        slope,
+        phase,
     })
 }
 
@@ -2971,6 +3049,7 @@ mod tests {
                 radius: 2.0,
                 angular_bounds: [[0.0, 1.0], [-1.0, 1.0]],
                 construction_radius: 3.0,
+                chart_origin: 0.0,
             })
         );
         let mut left_handed = record;
@@ -3148,6 +3227,7 @@ mod tests {
                 surface: 2,
                 class: 0x1a,
                 payload: ellipse,
+                sphere_great_circle: None,
             })
         );
 
@@ -3169,6 +3249,57 @@ mod tests {
                 surface: 2,
                 class: 0x1d,
                 payload: class_1d,
+                sphere_great_circle: None,
+            })
+        );
+    }
+
+    #[test]
+    fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
+        let radius = 5.0;
+        let chart_origin = 11.0;
+        let mut payload = vec![0x81, 0x82];
+        for value in [
+            radius * 0.25,
+            radius * 1.25,
+            chart_origin,
+            chart_origin + std::f64::consts::TAU * radius,
+        ] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x05, 0x81]);
+        for value in [2.0_f64, -1.0, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.push(0x1d);
+        for value in [radius, -0.75, 1.0 / radius, -1.25, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x1d,
+            object_id: 7,
+            payload,
+        };
+        let sphere = B5Surface::Sphere {
+            center: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius,
+            angular_bounds: [[0.25, 1.25], [-1.0, 1.0]],
+            construction_radius: 8.0,
+            chart_origin,
+        };
+
+        assert_eq!(
+            parse_sphere_great_circle_pcurve(&record, &sphere),
+            Some(B5SphereGreatCirclePcurve {
+                chart_shift: 2.0,
+                radius,
+                slope: -0.75,
+                phase: -1.25,
             })
         );
     }

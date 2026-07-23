@@ -33,8 +33,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 ## Object stream
 
 - Multi-surface `b5 03 5f` face semantics.
-- The parameter equations for noncircular `b5 03 1a` conics and the scalar roles and equations of class `1d` conic pcurves are unresolved.
-- The semantic role of the final `chart_scalar` in `b5 03 2a` sphere carriers is unresolved.
+- The parameter equation for noncircular `b5 03 1a` conics and the native station-to-chart branch equation of class-`1d` sphere great circles are unresolved.
 - The field or relation fixing each `b5 03 5f` face's normal sense against its surface frame is unresolved. Closed endpoint chains determine coedge traversal but not this face-level sign.
 - The object-stream body-kind and outward-shell sign fields are unresolved; one-body ownership and incidence determine a stable topology gauge but do not identify the source sign bytes.
 - The operation name and semantic roles of the six control bytes in `b5 03 37` support-bound surface constructions are unresolved.

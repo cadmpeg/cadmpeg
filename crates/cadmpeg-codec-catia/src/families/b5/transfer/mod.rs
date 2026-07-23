@@ -36,6 +36,7 @@ use faces::{orient_loop_members, ownership_plan};
 use pcurves::{
     cylinder_helix, isocurve_endpoint_parameters, lifted_curve_geometry, neutral_pcurve_point,
     nurbs_isocurve, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
+    sphere_great_circle_geometry,
 };
 use vertices::transfer_vertex_tolerances;
 
@@ -261,12 +262,48 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         loop_senses.insert(loop_.object_id, senses);
         for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
             let Some(pcurve) = graph.pcurves.get(&pcurve_id) else {
-                if graph
+                if let Some(opaque) = graph
                     .opaque_pcurves
                     .get(&pcurve_id)
-                    .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                    || graph.implicit_pcurves.get(&pcurve_id) == Some(&loop_.surface)
+                    .filter(|pcurve| pcurve.surface == loop_.surface)
                 {
+                    if let Some(geometry) = opaque
+                        .sphere_great_circle
+                        .as_ref()
+                        .and_then(|pcurve| {
+                            sphere_great_circle_geometry(
+                                pcurve,
+                                graph.surfaces.get(&loop_.surface)?,
+                            )
+                        })
+                        .filter(|geometry| {
+                            let endpoints = graph.edge_vertices[&edge_id];
+                            let Some(points) = endpoints
+                                .map(|vertex| b5_vertex_point(graph, vertex))
+                                .into_iter()
+                                .collect::<Option<Vec<_>>>()
+                            else {
+                                return false;
+                            };
+                            circle_contains_points(geometry, &points)
+                        })
+                    {
+                        merge_curve_plan(
+                            &mut edge_curve_plan,
+                            &mut conflicting_edge_curves,
+                            edge_id,
+                            CurvePlan {
+                                geometry,
+                                parameter_range: None,
+                                edge_tolerance: None,
+                                cache_fit_tolerance: None,
+                            },
+                        );
+                    }
+                    edge_ids.insert(edge_id);
+                    continue;
+                }
+                if graph.implicit_pcurves.get(&pcurve_id) == Some(&loop_.surface) {
                     edge_ids.insert(edge_id);
                     continue;
                 }
@@ -706,6 +743,25 @@ fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
         .sqrt()
 }
 
+fn circle_contains_points(geometry: &CurveGeometry, points: &[[f64; 3]]) -> bool {
+    let CurveGeometry::Circle {
+        center,
+        axis,
+        radius,
+        ..
+    } = geometry
+    else {
+        return false;
+    };
+    let center = [center.x, center.y, center.z];
+    let axis = [axis.x, axis.y, axis.z];
+    points.iter().all(|point| {
+        let offset = subtract(*point, center);
+        (length(offset) - radius).abs() <= POINT_TOLERANCE
+            && dot(offset, axis).abs() <= POINT_TOLERANCE
+    })
+}
+
 // `unit` normalizes by per-component division, a bit-level-distinct form from
 // the parse graph's reciprocal-multiply (`graph::unit`). The two must NOT be
 // unified: the affected profiles depend on the exact rounding of each form.
@@ -717,7 +773,7 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::super::graph::{
         loop_chain_senses, B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile,
-        B5Surface,
+        B5SphereGreatCirclePcurve, B5Surface,
     };
     use super::edges::{
         b5_edge_support_definition, b5_supports_follow_edge, bounded_occurrence_range,
@@ -728,6 +784,7 @@ mod tests {
     use super::pcurves::{
         cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
         neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
+        sphere_great_circle_geometry,
     };
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
@@ -1831,6 +1888,44 @@ mod tests {
         assert_eq!(center, Point3::new(0.0, 0.0, 4.0 * half_angle.cos()));
         assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
         assert!((radius - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
+        let sphere = B5Surface::Sphere {
+            center: [1.0, 2.0, 3.0],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 5.0,
+            angular_bounds: [[0.0, std::f64::consts::TAU], [-1.0, 1.0]],
+            construction_radius: 8.0,
+            chart_origin: 0.0,
+        };
+        let pcurve = B5SphereGreatCirclePcurve {
+            chart_shift: 0.0,
+            radius: 5.0,
+            slope: -1.0,
+            phase: -std::f64::consts::FRAC_PI_2,
+        };
+        let Some(CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        }) = sphere_great_circle_geometry(&pcurve, &sphere)
+        else {
+            panic!("expected great circle");
+        };
+        assert_eq!(center, Point3::new(1.0, 2.0, 3.0));
+        assert!((radius - 5.0).abs() < 1e-12);
+        assert!((axis.x * axis.x + axis.y * axis.y + axis.z * axis.z - 1.0).abs() < 1e-12);
+        assert!(
+            (axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z).abs()
+                < 1e-12
+        );
+        assert!((axis.y + std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
+        assert!((axis.z - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
     }
 
     #[test]

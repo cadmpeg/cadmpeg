@@ -13,13 +13,53 @@ use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use super::super::graph::{evaluate_pcurve, B5Graph, B5Pcurve, B5Surface};
+use super::super::graph::{
+    evaluate_pcurve, B5Graph, B5Pcurve, B5SphereGreatCirclePcurve, B5Surface,
+};
 use super::super::vecmath::{add, cross, scale};
 use super::edges::{edge_pcurve_parameters, ordered_subrange};
 use super::{
-    annotate, distance, dot, expand_knots, length, point3, subtract, vector, CurvePlan, HelixPlan,
-    TransferPlan, POINT_TOLERANCE,
+    annotate, distance, dot, expand_knots, length, point3, subtract, unit, vector, CurvePlan,
+    HelixPlan, TransferPlan, POINT_TOLERANCE,
 };
+
+pub(super) fn sphere_great_circle_geometry(
+    pcurve: &B5SphereGreatCirclePcurve,
+    surface: &B5Surface,
+) -> Option<CurveGeometry> {
+    let B5Surface::Sphere {
+        center,
+        direction_x,
+        direction_y,
+        axis: sphere_axis,
+        radius,
+        ..
+    } = surface
+    else {
+        return None;
+    };
+    if (pcurve.radius - radius).abs() > 1e-12 * pcurve.radius.abs().max(radius.abs()).max(1.0) {
+        return None;
+    }
+    let phase = pcurve.chart_shift / pcurve.radius + pcurve.phase;
+    let plane_axis = unit(add(
+        scale(*sphere_axis, 1.0),
+        add(
+            scale(*direction_x, -pcurve.slope * phase.cos()),
+            scale(*direction_y, -pcurve.slope * phase.sin()),
+        ),
+    ))?;
+    let ref_direction = add(
+        scale(*direction_x, -phase.sin()),
+        scale(*direction_y, phase.cos()),
+    );
+    Some(CurveGeometry::Circle {
+        center: point3(*center),
+        axis: vector(plane_axis),
+        ref_direction: vector(ref_direction),
+        radius: *radius,
+    })
+}
 
 pub(super) fn oriented_line_plan(
     geometry: &CurveGeometry,
