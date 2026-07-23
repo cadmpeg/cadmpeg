@@ -1127,6 +1127,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
                 parameter: None,
                 operands: Vec::new(),
                 native_state: None,
+                native_flags: None,
             },
         ),
         constraint(
@@ -2854,6 +2855,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         parameter: None,
         operands: Vec::new(),
         native_state: None,
+        native_flags: None,
     };
     assert!(reconcile_constraint_entity_references(
         &mut native,
@@ -2889,6 +2891,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         parameter: Some(ParameterId("missing".to_string())),
         operands: Vec::new(),
         native_state: None,
+        native_flags: None,
     };
     assert!(reconcile_constraint_parameter_reference(
         &mut native_parameter,
@@ -6572,6 +6575,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         SketchConstraintDefinition::Native {
             native_kind: "creo:skamp:7".to_string(),
             native_state: Some(1),
+            native_flags: Some(0),
             entities: vec![SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )],
@@ -6592,6 +6596,12 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .expect("relations")
         .skamps[2]
         .status = 34;
+    stored_skamp_state
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[2]
+        .flags = 0x4000;
     let stored_skamp_state = section_skamp_constraints(
         &stored_skamp_state,
         &SketchId("creo:model:sketch#917".into()),
@@ -6600,6 +6610,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         stored_skamp_state[2].0.definition,
         SketchConstraintDefinition::Native {
             native_state: Some(34),
+            native_flags: Some(0x4000),
             ..
         }
     ));
@@ -7978,6 +7989,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         SketchConstraintDefinition::Native {
             native_kind: "creo:relation:99".to_string(),
             native_state: Some(1),
+            native_flags: None,
             entities: Vec::new(),
             parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string(),)),
             operands: vec![SketchNativeOperand {
@@ -8024,6 +8036,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         stored_state[0].0.definition,
         SketchConstraintDefinition::Native {
             native_state: Some(34),
+            native_flags: None,
             ..
         }
     ));

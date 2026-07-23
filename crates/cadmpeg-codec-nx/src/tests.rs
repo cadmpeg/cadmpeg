@@ -901,6 +901,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
             parameter: None,
             operands: Vec::new(),
             native_state: None,
+            native_flags: None,
         },
         name: None,
         driving: None,

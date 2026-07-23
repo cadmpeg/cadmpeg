@@ -2285,6 +2285,7 @@ fn sketch_constraint_native_ref_must_resolve() {
             definition: crate::sketches::SketchConstraintDefinition::Native {
                 native_kind: "test".into(),
                 native_state: None,
+                native_flags: Some(0x4000),
                 entities: Vec::new(),
                 parameter: None,
                 operands: vec![crate::sketches::SketchNativeOperand {
@@ -2317,6 +2318,14 @@ fn sketch_constraint_native_ref_must_resolve() {
             && finding.entity.as_deref() == Some(id.0.as_str())
             && finding.message.contains("native:missing-operand#0")
     }));
+    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    assert!(matches!(
+        round_trip.model.sketch_constraints[0].definition,
+        crate::sketches::SketchConstraintDefinition::Native {
+            native_flags: Some(0x4000),
+            ..
+        }
+    ));
     let crate::sketches::SketchConstraintDefinition::Native { operands, .. } =
         &mut ir.model.sketch_constraints[0].definition
     else {

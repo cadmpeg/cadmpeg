@@ -23602,6 +23602,7 @@ pub(crate) fn project_relation_bindings(
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: native_kind.into(),
                 native_state: None,
+                native_flags: None,
                 entities,
                 parameter: parameter_id,
                 operands: relation
@@ -23837,6 +23838,7 @@ fn typed_marker_relation_definition_in_sketch(
                 _ => unreachable!("non-relation markers were rejected"),
             },
             native_state: None,
+            native_flags: None,
             entities,
             parameter: None,
             operands,
@@ -33204,6 +33206,7 @@ mod profile_join_tests {
             Some(SketchConstraintDefinition::Native {
                 native_kind: "sldprt:marker-relation:28".into(),
                 native_state: None,
+                native_flags: None,
                 entities: vec![first.clone(), second.clone()],
                 parameter: None,
                 operands: vec![
@@ -33297,6 +33300,7 @@ mod profile_join_tests {
             Some(SketchConstraintDefinition::Native {
                 native_kind: "sldprt:marker-relation:11".into(),
                 native_state: None,
+                native_flags: None,
                 entities: vec![first.clone(), SketchEntityId("second".into())],
                 parameter: None,
                 operands: vec![

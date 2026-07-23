@@ -1295,6 +1295,7 @@ fn parse_constraints(
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: constraint_kind(type_code).into(),
                 native_state: None,
+                native_flags: None,
                 entities: resolved.iter().map(locus_entity).cloned().collect(),
                 parameter,
                 operands: operands

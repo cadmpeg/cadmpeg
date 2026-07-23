@@ -1050,6 +1050,9 @@ pub enum SketchConstraintDefinition {
         /// Source-native constraint-state mask, when the format carries one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_state: Option<u64>,
+        /// Source-native constraint flags, when distinct from constraint state.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_flags: Option<u64>,
         /// Referenced entities.
         entities: Vec<SketchEntityId>,
         /// Driving or driven parameter attached to the relation.
