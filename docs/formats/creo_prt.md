@@ -1956,6 +1956,11 @@ one feature identifier but carrying conflicting root schema classes still
 define one native history feature; the conflicting classes remain source
 properties and do not select a neutral operation family.
 
+The row's leading entity-reference identifier occupies the model-feature
+namespace. Identical nonzero identifiers in `MdlStatus` or `DEPDB_DATA`
+operation states and `MdlRefInfo` feature-name entries establish row ownership
+without a materialized geometry row.
+
 Each `DEPDB_DATA` recipe row ends with its canonical `f7` recipe binding. Its
 body begins at the section boundary or immediately after the preceding recipe
 binding. Multiple bindings in one persistence section define independent

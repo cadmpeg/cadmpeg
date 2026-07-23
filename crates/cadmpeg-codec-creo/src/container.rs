@@ -1221,9 +1221,27 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
     planes
 }
 
-fn feature_ids(data: &[u8], sections: &[Section], rows: &[SurfaceRow]) -> Vec<u32> {
+fn feature_ids(
+    data: &[u8],
+    sections: &[Section],
+    rows: &[SurfaceRow],
+    operations: &[FeatureOperation],
+    reference_names: &[FeatureReferenceName],
+) -> Vec<u32> {
     let mut ids = std::collections::BTreeSet::new();
     ids.extend(rows.iter().map(|row| row.feature_id).filter(|id| *id != 0));
+    ids.extend(
+        operations
+            .iter()
+            .map(|operation| operation.feature_id)
+            .filter(|id| *id != 0),
+    );
+    ids.extend(
+        reference_names
+            .iter()
+            .map(|reference| reference.feature_id)
+            .filter(|id| *id != 0),
+    );
     for section in sections
         .iter()
         .filter(|section| section.role == role::GEOMETRY)
@@ -1776,7 +1794,16 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let (topological_vertices, half_edge_vertex_incidence) = topology::vertex_orbits(&half_edges);
     let face_components = topology::face_components(&curve_topology_rows);
     let datum_planes = datum_planes(&data, &sections);
-    let feature_ids = feature_ids(&data, &sections, &surface_rows);
+    let feature_operation_states = feature_operation_states(&data, &sections);
+    let feature_operations = feature_operations(&data, &sections);
+    let feature_reference_names = feature_reference_names(&data, &sections);
+    let feature_ids = feature_ids(
+        &data,
+        &sections,
+        &surface_rows,
+        &feature_operations,
+        &feature_reference_names,
+    );
     let feature_rows = feature_rows(&data, &sections, &feature_ids);
     let feature_choices = feature::choices(&feature_rows);
     let feature_choice_fields = feature::choice_fields(&feature_choices);
@@ -1791,9 +1818,6 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
-    let feature_operation_states = feature_operation_states(&data, &sections);
-    let feature_operations = feature_operations(&data, &sections);
-    let feature_reference_names = feature_reference_names(&data, &sections);
     let mut feature_definitions = feature_definitions(&data, &sections);
     feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
     feature::bind_trimmed_definition_owners(&mut feature_definitions, &feature_entity_tables);
@@ -2088,6 +2112,37 @@ mod feature_row_definition_tests {
         let data = b"#UGC_TOC 2 18446744073709551615 0#\n";
 
         assert!(toc_sections(data, 0).is_empty());
+    }
+
+    #[test]
+    fn stored_feature_identities_bound_allfeatur_row_owners() {
+        let operation = FeatureOperation {
+            feature_id: 42,
+            kind: "Round".to_string(),
+            display_name_stored: true,
+            stored_name: Some("Round id 42".to_string()),
+            stored_name_bytes: Some(b"Round id 42".to_vec()),
+            identifier_keyword: Some("id".to_string()),
+            stored_name_prefix: None,
+            recipe: None,
+            root_schema_class: None,
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        };
+        let reference = FeatureReferenceName {
+            feature_id: 73,
+            name: "SKETCH_1".to_string(),
+            name_bytes: b"SKETCH_1".to_vec(),
+            own_reference_id: 9,
+            reference_type: 1,
+            offset: 0,
+        };
+
+        assert_eq!(
+            feature_ids(b"", &[], &[], &[operation], &[reference]),
+            vec![42, 73]
+        );
     }
 
     #[test]

@@ -418,7 +418,7 @@ pub struct FeatureEntityTableEntry {
     pub end_offset: usize,
 }
 
-/// One byte-bounded positional `AllFeatur` row for a known geometry owner.
+/// One byte-bounded positional `AllFeatur` row for a known model feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureRow {
     /// Feature identifier decoded from the row prefix.
@@ -1520,8 +1520,8 @@ fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usize, usize, 
         .collect()
 }
 
-/// Decode positional `AllFeatur` rows whose feature identifiers are proven by
-/// geometry ownership. Unknown feature-like byte sequences remain unclaimed.
+/// Decode positional `AllFeatur` rows whose identifiers exist in a decoded
+/// model-feature namespace. Unknown feature-like byte sequences remain unclaimed.
 pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
     row_spans(payload, feature_ids)
         .into_iter()
