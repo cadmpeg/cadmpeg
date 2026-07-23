@@ -12,7 +12,8 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_ir::container::{walk_admitted, WalkConfig};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::wire::hash::sha256_hex;
 use zip::CompressionMethod;
 
@@ -22,8 +23,6 @@ use crate::asm_header;
 const INPUT_CAP: u64 = 256 * 1024 * 1024;
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = INPUT_CAP;
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
-
-const EXPAND_CHUNK: usize = 16 * 1024;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
@@ -185,57 +184,15 @@ impl<'a> ContainerScan<'a> {
     }
 }
 
-/// Admit one archive entry and enforce its declared uncompressed size.
-pub(crate) fn admit_entry<'a>(
-    ctx: &DecodeContext<'a>,
-    parent: View<'a>,
-    file: &mut zip::read::ZipFile<'_, Cursor<&'a [u8]>>,
-    name: &str,
-) -> Result<View<'a>, CodecError> {
-    let compression = file.compression();
-    let compressed_size = file.compressed_size();
-    let uncompressed_size = file.size();
-    let data_start = file
-        .data_start()
-        .ok_or_else(|| CodecError::Malformed(format!("entry {name} has no local data offset")))?;
-    let data_end = data_start
-        .checked_add(compressed_size)
-        .ok_or_else(|| CodecError::Malformed(format!("entry {name} data range overflows")))?;
-
-    if compression == CompressionMethod::Stored {
-        let view = ctx.register_slice(
-            parent,
-            ByteRange {
-                start: data_start,
-                end: data_end,
-            },
-        )?;
-        return Ok(view);
-    }
-
-    let source = child_range(parent, data_start, data_end).ok_or_else(|| {
-        CodecError::Malformed(format!("entry {name} data range escapes its parent space"))
-    })?;
-    let mut writer = ctx.begin_expand(source, ExpandSpec::Exact(uncompressed_size))?;
-    let mut chunk = [0u8; EXPAND_CHUNK];
-    loop {
-        let read = file
-            .read(&mut chunk)
-            .map_err(|e| CodecError::Malformed(format!("cannot inflate {name}: {e}")))?;
-        if read == 0 {
-            break;
-        }
-        writer.write(&chunk[..read])?;
-    }
-    writer.finalize()
-}
-
-/// Build a child view over an absolute `[start, end)` root range, refusing a
-/// range that escapes the root window or overflows the address space.
-fn child_range(root: View<'_>, start: u64, end: u64) -> Option<View<'_>> {
-    let start = usize::try_from(start).ok()?;
-    let end = usize::try_from(end).ok()?;
-    root.child(start, end)
+/// A ZIP-entry name validator that accepts every name.
+///
+/// The `.f3d` scan admits every entry and classifies it by role; unlike freecad
+/// it does not reject names, so the shared [`WalkConfig`] gets a hook that always
+/// succeeds. The fallible signature is fixed by [`WalkConfig::validate_name`], so
+/// the always-`Ok` body cannot be simplified away.
+#[allow(clippy::unnecessary_wraps)]
+fn accept_any_name(_name: &str) -> Result<(), CodecError> {
+    Ok(())
 }
 
 /// Read and classify every entry, decoding ASM headers for BREP streams.
@@ -253,42 +210,29 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     let mut archive = zip::ZipArchive::new(Cursor::new(source_image))
         .map_err(|e| CodecError::Malformed(format!("not a readable ZIP: {e}")))?;
 
+    // The shared walker replicates the two f3d caps exactly: the per-entry
+    // declared-inflated cap ([`MAX_INFLATED_ENTRY_BYTES`], byte-floored before
+    // any allocation) and the total-declared-inflated cap ([`MAX_ARCHIVE_BYTES`],
+    // accumulated across entries). `.f3d` admits every name, so `validate_name`
+    // always succeeds.
+    let config = WalkConfig {
+        classify,
+        validate_name: accept_any_name,
+        max_entry_bytes: MAX_INFLATED_ENTRY_BYTES,
+        max_total_bytes: MAX_ARCHIVE_BYTES,
+    };
+
     let mut entries = Vec::new();
     let mut breps = Vec::new();
     let mut asset_folder = None;
     let mut inflated_entries = BTreeMap::new();
-    let mut total_declared_inflated = 0_u64;
 
-    for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| CodecError::Malformed(format!("bad ZIP entry {i}: {e}")))?;
-        let name = file.name().to_string();
-        let role = classify(&name);
-        let method = file.compression();
-        let compression = compression_label(method);
-        let compressed_size = file.compressed_size();
-        let uncompressed_size = file.size();
-        if uncompressed_size > MAX_INFLATED_ENTRY_BYTES {
-            return Err(CodecError::Malformed(format!(
-                "ZIP entry {name} declares {uncompressed_size} inflated bytes, exceeding the \
-                 {MAX_INFLATED_ENTRY_BYTES}-byte entry limit"
-            )));
-        }
-        total_declared_inflated = total_declared_inflated
-            .checked_add(uncompressed_size)
-            .ok_or_else(|| CodecError::Malformed("F3D total inflated size overflows u64".into()))?;
-        if total_declared_inflated > MAX_ARCHIVE_BYTES {
-            return Err(CodecError::Malformed(format!(
-                "F3D entries declare {total_declared_inflated} inflated bytes, exceeding the \
-                 {MAX_ARCHIVE_BYTES}-byte archive limit"
-            )));
-        }
+    walk_admitted(ctx, root, &mut archive, &config, |entry, view| {
+        let name = &entry.name;
+        let role = entry.role;
         let mut attributes = BTreeMap::new();
 
         let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
-        let view = admit_entry(ctx, root, &mut file, &name)?;
-        drop(file);
         let buf = view.window();
         if is_brep {
             if asset_folder.is_none() {
@@ -348,7 +292,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             breps.push(BrepFacts {
                 name: name.clone(),
                 is_smbh: role == role::BREP_SMBH,
-                uncompressed_len: uncompressed_size,
+                uncompressed_len: entry.uncompressed_size,
                 header,
                 delta_state_offset: delta,
                 sha256: sha,
@@ -358,13 +302,14 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         entries.push(ContainerEntry {
             name: name.clone(),
             role: role.to_string(),
-            compression,
-            compressed_size,
-            uncompressed_size,
+            compression: compression_label(entry.compression),
+            compressed_size: entry.compressed_size,
+            uncompressed_size: entry.uncompressed_size,
             attributes,
         });
-        inflated_entries.insert(name, view);
-    }
+        inflated_entries.insert(name.clone(), view);
+        Ok(())
+    })?;
 
     Ok(ContainerScan {
         source_image,

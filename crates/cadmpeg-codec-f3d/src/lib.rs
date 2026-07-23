@@ -122,7 +122,7 @@ impl Codec for F3dCodec {
         if container::DETECT_MARKERS
             .iter()
             .chain(container::F3Z_DETECT_MARKERS)
-            .any(|m| contains_subslice(prefix, m))
+            .any(|m| memchr::memmem::find(prefix, m).is_some())
         {
             Confidence::High
         } else {
@@ -230,13 +230,6 @@ impl Encoder for F3dCodec {
             notes,
         })
     }
-}
-
-fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return false;
-    }
-    haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 #[cfg(test)]

@@ -16,6 +16,7 @@ categories = ["encoding", "parser-implementations", "graphics"]
 [dependencies]
 cadmpeg-ir.workspace = true
 zip.workspace = true
+memchr.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 serde.workspace = true
