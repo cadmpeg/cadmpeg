@@ -3856,11 +3856,11 @@ fn incomplete_object_payload_tags_do_not_consume_the_terminator() {
 }
 
 #[test]
-fn native_design_objects_follow_payload_references_to_target_owners() {
+fn native_design_objects_preserve_payload_references_to_target_owners() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x04, 0x01, 0x81, 0x83], &[0x81, 0x83, 0xfe]),
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
-        object_graph_record(&[0x04, 0x01, 0x83, 0x85], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x85], &[0x81, 0x81, 0xfe]),
     ]);
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.design_objects.len(), 2);
@@ -3886,7 +3886,7 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
         }]
     );
     assert_eq!(
-        native.design_objects[0].dependencies,
+        native.design_objects[0].object_references,
         vec![native.design_objects[1].id.clone()]
     );
     assert_eq!(native.design_objects[1].owner_ordinal, 3);
@@ -3895,7 +3895,10 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
         native.design_objects[1].first_field_byte_offset,
         native.object_graphs[0].records[2].byte_offset
     );
-    assert!(native.design_objects[1].dependencies.is_empty());
+    assert_eq!(
+        native.design_objects[1].object_references,
+        vec![native.design_objects[0].id.clone()]
+    );
 }
 
 #[test]
@@ -4040,7 +4043,7 @@ fn incomplete_object_lists_do_not_assert_reference_links() {
     let native = crate::native::CatiaNative::decode(&bytes);
 
     assert!(native.object_graphs[0].records[0].references.is_empty());
-    assert!(native.design_objects[0].dependencies.is_empty());
+    assert!(native.design_objects[0].object_references.is_empty());
     assert!(matches!(
         &native.object_graphs[0].records[0].payload.fields[0],
         crate::object_graph::PayloadField::List {
@@ -4064,7 +4067,7 @@ fn incomplete_object_list_tags_do_not_consume_the_payload_terminator() {
     let record = &native.object_graphs[0].records[0];
 
     assert!(record.references.is_empty());
-    assert!(native.design_objects[0].dependencies.is_empty());
+    assert!(native.design_objects[0].object_references.is_empty());
     assert!(matches!(
         record.payload.fields.as_slice(),
         [
@@ -4098,7 +4101,7 @@ fn incomplete_object_list_headers_do_not_consume_the_payload_terminator() {
         ]
     );
     assert!(record.references.is_empty());
-    assert!(native.design_objects[0].dependencies.is_empty());
+    assert!(native.design_objects[0].object_references.is_empty());
 }
 
 #[test]
@@ -4451,7 +4454,7 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
 }
 
 #[test]
-fn decode_retains_outer_object_graph_order_and_dependencies() {
+fn decode_retains_outer_object_graph_order_and_references() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_object_graph()),
@@ -4497,6 +4500,10 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
     assert_eq!(decoded.report.coverage["decoded_object_record_count"], 2);
     assert_eq!(decoded.report.coverage["decoded_design_object_count"], 1);
     assert_eq!(decoded.report.coverage["decoded_design_field_count"], 2);
+    assert_eq!(
+        decoded.report.coverage["decoded_design_object_reference_count"],
+        0
+    );
     assert_eq!(decoded.report.coverage["classified_design_object_count"], 0);
     assert_eq!(decoded.report.coverage["unresolved_design_owner_count"], 0);
     assert_eq!(decoded.report.coverage["transferred_feature_count"], 0);

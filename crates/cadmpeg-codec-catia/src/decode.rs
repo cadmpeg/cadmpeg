@@ -77,10 +77,10 @@ fn finish_decode(
         .iter()
         .filter(|object| object.owner_class.is_some() || !object.field_classes.is_empty())
         .count();
-    let design_dependency_count = native
+    let design_object_reference_count = native
         .design_objects
         .iter()
-        .map(|object| object.dependencies.len())
+        .map(|object| object.object_references.len())
         .sum();
     let unresolved_design_owner_count = native
         .design_objects
@@ -116,8 +116,8 @@ fn finish_decode(
             classified_design_object_count,
         ),
         (
-            "decoded_design_dependency_count".to_string(),
-            design_dependency_count,
+            "decoded_design_object_reference_count".to_string(),
+            design_object_reference_count,
         ),
         (
             "unresolved_design_owner_count".to_string(),
@@ -159,7 +159,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {design_dependency_count} object dependency link(s), {} value block(s), {value_field_count} value field(s), and {value_selection_count} schema-selected value(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {design_object_reference_count} inter-object reference(s), {} value block(s), {value_field_count} value field(s), and {value_selection_count} schema-selected value(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len(),
             ),

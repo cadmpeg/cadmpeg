@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 73;
+pub const CATIA_NATIVE_VERSION: u32 = 74;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -553,7 +553,7 @@ pub struct CatiaDesignObject {
     pub field_classes: Vec<CatiaDesignClass>,
     /// Referenced design objects, in first field-reference order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<String>,
+    pub object_references: Vec<String>,
 }
 
 fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
@@ -579,7 +579,7 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                 .map(move |(ordinal, (owner_ordinal, records))| {
                     let owner_record = object_record_index(owner_ordinal, graph.records.len())
                         .and_then(|index| graph.records.get(index));
-                    let mut dependency_owners = Vec::new();
+                    let mut referenced_owners = Vec::new();
                     for reference in records
                         .iter()
                         .flat_map(|record| payload_references(&record.payload))
@@ -590,9 +590,9 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                         if let Some(target_owner) = target_owner.filter(|target| {
                             *target != owner_ordinal
                                 && owner_indices.contains_key(target)
-                                && !dependency_owners.contains(target)
+                                && !referenced_owners.contains(target)
                         }) {
-                            dependency_owners.push(target_owner);
+                            referenced_owners.push(target_owner);
                         }
                     }
                     CatiaDesignObject {
@@ -628,7 +628,7 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                                 }
                                 classes
                             }),
-                        dependencies: dependency_owners
+                        object_references: referenced_owners
                             .into_iter()
                             .map(|owner| design_object_id(graph.byte_offset, owner))
                             .collect(),
