@@ -20,8 +20,9 @@ use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
     ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
     FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm,
-    HoleKind, Length, ParameterId, ParameterValue, PatternForm, PatternKind, ProfileRef,
-    RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent, Termination,
+    HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef,
+    RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent, SurfaceBoundary,
+    Termination,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -107,6 +108,17 @@ fn unique_feature_definition_for_transform<'a>(
     });
     let definition = matches.next()?;
     matches.next().is_none().then_some(definition)
+}
+
+fn unique_owned_transformed_definition<'a>(
+    definitions: &'a [crate::feature::FeatureDefinition],
+    transforms: &[crate::placement::FeatureSectionTransform],
+    feature_id: u32,
+) -> Option<&'a crate::feature::FeatureDefinition> {
+    let definition = unique_owned_feature_definition(definitions, feature_id)?;
+    let section = definition.section_3d.as_ref()?;
+    let transform = unique_feature_section_transform(transforms, definition.id, section.offset)?;
+    (transform.feature_id == Some(feature_id)).then_some(definition)
 }
 
 fn unique_feature_datum_plane(
@@ -13543,6 +13555,35 @@ fn unique_positive_length(values: &[f64]) -> Option<f64> {
         .then_some(value)
 }
 
+fn filled_surface_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> IrFeatureDefinition {
+    let boundary = unique_owned_transformed_definition(
+        &scan.features.definitions,
+        &scan.features.section_transforms,
+        feature_id,
+    )
+    .map(|definition| model_sketch_id(scan, definition))
+    .filter(|sketch| {
+        ir.model
+            .sketches
+            .iter()
+            .any(|candidate| candidate.id == *sketch)
+    })
+    .map_or(
+        SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+        |sketch| SurfaceBoundary::Path(PathRef::Sketch(sketch)),
+    );
+    IrFeatureDefinition::FilledSurface {
+        boundary,
+        support_faces: FaceSelection::Unresolved,
+        continuity: None,
+        merge_result: None,
+    }
+}
+
 fn schema_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -13550,6 +13591,9 @@ fn schema_feature_definition(
     schema_class: u32,
     kind: &str,
 ) -> IrFeatureDefinition {
+    if numbered_feature_name_has_family(kind, "Fill") {
+        return filled_surface_feature_definition(scan, ir, feature_id);
+    }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return definition;
     }
@@ -14170,6 +14214,9 @@ fn named_feature_definition(
     feature_id: u32,
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
+    if numbered_feature_name_has_family(kind, "Fill") {
+        return Some(filled_surface_feature_definition(scan, ir, feature_id));
+    }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);
     }
@@ -14300,12 +14347,7 @@ fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition>
     if numbered_feature_name_has_family(kind, "Merge") {
         return Some(unresolved_surface_merge_feature_definition());
     }
-    numbered_feature_name_has_family(kind, "Fill").then_some(IrFeatureDefinition::FilledSurface {
-        boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
-        support_faces: FaceSelection::Unresolved,
-        continuity: None,
-        merge_result: None,
-    })
+    None
 }
 
 fn unresolved_surface_merge_feature_definition() -> IrFeatureDefinition {

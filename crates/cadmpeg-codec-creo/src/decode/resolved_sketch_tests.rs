@@ -1529,15 +1529,7 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
             side: None,
         })
     ));
-    assert!(matches!(
-        reference_named_feature_definition("Fill 1"),
-        Some(IrFeatureDefinition::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
-            support_faces: FaceSelection::Unresolved,
-            continuity: None,
-            merge_result: None,
-        })
-    ));
+    assert!(reference_named_feature_definition("Fill 1").is_none());
     assert!(matches!(
         reference_named_feature_definition("Merge 2"),
         Some(IrFeatureDefinition::KnitSurface {
@@ -1564,6 +1556,76 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
             ..
         }
     ));
+}
+
+#[test]
+fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owner() {
+    let definition = crate::feature::FeatureDefinition {
+        id: 822,
+        owner_feature_id: Some(822),
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: Some(crate::feature::FeatureSection3d {
+            sketch_plane_entity_id: None,
+            sketch_plane_flip: None,
+            reference_plane_entity_ids: Vec::new(),
+            reference_plane_datum_geometry_id: None,
+            orientation: crate::feature::FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 90,
+        }),
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 80,
+    };
+    let transform = crate::placement::FeatureSectionTransform {
+        definition_id: 822,
+        feature_id: Some(822),
+        origin: [0.0; 3],
+        u_axis: [1.0, 0.0, 0.0],
+        v_axis: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 1.0],
+        offset: 90,
+    };
+
+    assert_eq!(
+        unique_owned_transformed_definition(
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&transform),
+            822,
+        )
+        .map(|definition| definition.id),
+        Some(822)
+    );
+    assert!(unique_owned_transformed_definition(
+        &[definition.clone(), definition.clone()],
+        std::slice::from_ref(&transform),
+        822,
+    )
+    .is_none());
+    assert!(unique_owned_transformed_definition(
+        std::slice::from_ref(&definition),
+        &[transform.clone(), transform.clone()],
+        822,
+    )
+    .is_none());
+    let mismatched_transform = crate::placement::FeatureSectionTransform {
+        feature_id: Some(900),
+        ..transform
+    };
+    assert!(unique_owned_transformed_definition(
+        std::slice::from_ref(&definition),
+        std::slice::from_ref(&mismatched_transform),
+        822,
+    )
+    .is_none());
 }
 
 #[test]

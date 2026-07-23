@@ -3044,6 +3044,10 @@ consumer in construction order. Duplicate transforms remain native placement
 records. When the transform names a generating feature, it also requires
 exactly one transform for that feature; two definitions claiming the same
 feature do not select a profile snapshot.
+A filled-surface feature with one owned section definition and that definition's
+unique generating-feature transform consumes the corresponding sketch as its
+boundary path. A missing or ambiguous definition, transform, or generated
+sketch leaves the boundary selection unresolved.
 
 `FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table
 pointer. The configuration-root identity is
