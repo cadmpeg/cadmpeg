@@ -184,7 +184,7 @@ pub(crate) fn spatial_sketches(
                 .filter_map(|marker| {
                     let offset = usize::try_from(marker.offset).ok()?;
                     marker_spatial_coordinates(&lane.native_payload, offset)
-                        .map(|point| (marker.id.clone(), point))
+                        .map(|point| (marker.id.clone(), point, offset))
                 })
                 .collect::<Vec<_>>();
             if !points.is_empty() {
@@ -195,8 +195,8 @@ pub(crate) fn spatial_sketches(
             point_candidates.iter().all(|(_, candidate)| {
                 candidate
                     .iter()
-                    .map(|(_, point)| point)
-                    .eq(points.iter().map(|(_, point)| point))
+                    .map(|(_, point, _)| point)
+                    .eq(points.iter().map(|(_, point, _)| point))
             })
         }) {
             let sketch_id = SpatialSketchId(feature.id.0.replacen(
@@ -204,19 +204,52 @@ pub(crate) fn spatial_sketches(
                 ":model:spatial-sketch#",
                 1,
             ));
-            let projected = points
+            let mut projected = points
                 .iter()
-                .enumerate()
-                .map(|(index, (native_ref, point))| SpatialSketchEntity {
-                    id: SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                    sketch: sketch_id.clone(),
-                    construction: false,
-                    native_ref: Some(native_ref.clone()),
-                    geometry_ref: None,
-                    endpoint_refs: Vec::new(),
-                    geometry: SpatialSketchGeometry::Point { position: *point },
+                .map(|(native_ref, point, offset)| {
+                    (
+                        *offset,
+                        Some(native_ref.clone()),
+                        SpatialSketchGeometry::Point { position: *point },
+                    )
                 })
                 .collect::<Vec<_>>();
+            let lines = feature_object_name(record, lane)
+                .and_then(|name| {
+                    let start = usize::try_from(name.offset).ok()?;
+                    let end = histories
+                        .iter()
+                        .flat_map(|history| &history.features)
+                        .filter_map(|candidate| feature_object_name(candidate, lane))
+                        .filter(|candidate| candidate.offset > name.offset)
+                        .map(|candidate| candidate.offset)
+                        .min()
+                        .and_then(|offset| usize::try_from(offset).ok())
+                        .unwrap_or(lane.native_payload.len());
+                    let object = lane.native_payload.get(start..end)?;
+                    let offsets = spatial_vertex_offsets(object);
+                    let vertices = spatial_vertex_coordinates(object);
+                    (offsets.len().is_multiple_of(2)
+                        && offsets.len() == vertices.len()
+                        && vertices
+                            .chunks_exact(2)
+                            .all(|vertices| vertices[0] != vertices[1]))
+                    .then_some((start, offsets, vertices))
+                })
+                .unwrap_or_default();
+            projected.extend(lines.1.chunks_exact(2).zip(lines.2.chunks_exact(2)).map(
+                |(offsets, vertices)| {
+                    (
+                        lines.0 + offsets[0],
+                        None,
+                        SpatialSketchGeometry::Line {
+                            start: vertices[0],
+                            end: vertices[1],
+                        },
+                    )
+                },
+            ));
+            projected.sort_unstable_by_key(|(offset, ..)| *offset);
             sketches.push(SpatialSketch {
                 id: sketch_id.clone(),
                 name: feature.name.clone(),
@@ -228,7 +261,17 @@ pub(crate) fn spatial_sketches(
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             });
-            entities.extend(projected);
+            entities.extend(projected.into_iter().enumerate().map(
+                |(index, (_, native_ref, geometry))| SpatialSketchEntity {
+                    id: SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry,
+                },
+            ));
             feature.definition = FeatureDefinition::SpatialSketch {
                 sketch: Some(sketch_id),
             };
@@ -307,8 +350,7 @@ pub(crate) fn spatial_sketches(
     (sketches, entities)
 }
 
-fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
-    const NATIVE_TO_IR: f64 = 1000.0;
+fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) -> Option<usize> {
     let locus = payload.get(offset + 23..offset + 27)?;
     let (coordinate_offset, requires_profile_role) =
         match payload.get(offset..offset + SKETCH_MARKER.len())? {
@@ -384,9 +426,13 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
             }
             _ => return None,
         };
-    if requires_profile_role && marker_profile_curve_role(payload, offset) != Some(1) {
-        return None;
-    }
+    (!requires_profile_role || marker_profile_curve_role(payload, offset) == Some(1))
+        .then_some(coordinate_offset)
+}
+
+fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    let coordinate_offset = marker_spatial_coordinate_offset(payload, offset)?;
     let coordinate = |offset: usize| {
         let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
         (value == 0.0 || value.is_normal()).then_some(value * NATIVE_TO_IR)
@@ -35038,11 +35084,11 @@ pub fn prepare_sketches_for_write(
             "SLDPRT sketch write-back requires retained feature-input lanes".into(),
         )
     })?;
-    patch_spatial_line_sketches(ir, retained)?;
+    patch_spatial_sketches(ir, retained)?;
     patch_line_profiles(ir, retained)
 }
 
-fn patch_spatial_line_sketches(
+fn patch_spatial_sketches(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), cadmpeg_ir::codec::CodecError> {
@@ -35095,6 +35141,61 @@ fn patch_spatial_line_sketches(
                 sketch.id.0
             )));
         }
+        let point_entities = entities
+            .iter()
+            .copied()
+            .filter(|entity| matches!(entity.geometry, SpatialSketchGeometry::Point { .. }))
+            .collect::<Vec<_>>();
+        for entity in &point_entities {
+            let SpatialSketchGeometry::Point { position } = entity.geometry else {
+                unreachable!("spatial point filter establishes the geometry family");
+            };
+            let native_ref = entity.native_ref.as_deref().ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "SLDPRT spatial sketch point {} requires a retained native marker",
+                    entity.id.0
+                ))
+            })?;
+            let candidates = native
+                .feature_input_lanes
+                .iter()
+                .enumerate()
+                .filter_map(|(lane_index, lane)| {
+                    let marker = lane
+                        .sketch_entities
+                        .iter()
+                        .find(|marker| marker.id == native_ref)?;
+                    let offset = usize::try_from(marker.offset).ok()?;
+                    marker_spatial_coordinate_offset(&lane.native_payload, offset)?;
+                    Some((lane_index, offset))
+                })
+                .collect::<Vec<_>>();
+            let [(lane_index, offset)] = candidates.as_slice() else {
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "SLDPRT spatial sketch point {} does not resolve to one native marker",
+                    entity.id.0
+                )));
+            };
+            patch_spatial_marker_point(
+                &mut native.feature_input_lanes[*lane_index].native_payload,
+                *offset,
+                position,
+            )?;
+        }
+        let line_entities = entities
+            .iter()
+            .copied()
+            .filter(|entity| matches!(entity.geometry, SpatialSketchGeometry::Line { .. }))
+            .collect::<Vec<_>>();
+        if entities.len() != line_entities.len() + point_entities.len() {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "SLDPRT spatial sketch {} supports retained point and line geometry only",
+                sketch.id.0
+            )));
+        }
+        if line_entities.is_empty() {
+            continue;
+        }
         let candidates = native
             .feature_input_lanes
             .iter()
@@ -35115,7 +35216,7 @@ fn patch_spatial_line_sketches(
                     .unwrap_or(lane.native_payload.len());
                 let offsets =
                     spatial_vertex_offsets(lane.native_payload.get(object_start..object_end)?);
-                if entities
+                if line_entities
                     .len()
                     .checked_mul(2)
                     .is_none_or(|expected| offsets.len() != expected)
@@ -35138,7 +35239,7 @@ fn patch_spatial_line_sketches(
             )));
         };
         let payload = &mut native.feature_input_lanes[*lane_index].native_payload;
-        for (entity, offsets) in entities.iter().zip(offsets.chunks_exact(2)) {
+        for (entity, offsets) in line_entities.iter().zip(offsets.chunks_exact(2)) {
             let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
                 return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch {} supports retained line geometry only",
@@ -35169,6 +35270,30 @@ fn patch_spatial_line_sketches(
             "SLDPRT spatial sketch edit has no complete native lane encoding".into(),
         ));
     }
+    Ok(())
+}
+
+fn patch_spatial_marker_point(
+    payload: &mut [u8],
+    offset: usize,
+    point: Point3,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    let native = spatial_point_native_coordinates(point)?;
+    let coordinate_offset = marker_spatial_coordinate_offset(payload, offset).ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::Malformed(
+            "SLDPRT spatial point marker changed native storage shape".into(),
+        )
+    })?;
+    let coordinates = payload
+        .get_mut(coordinate_offset..coordinate_offset + 24)
+        .ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::Malformed(
+                "SLDPRT spatial point marker coordinates lie outside its feature-input lane".into(),
+            )
+        })?;
+    coordinates[0..8].copy_from_slice(&native[0].to_le_bytes());
+    coordinates[8..16].copy_from_slice(&native[1].to_le_bytes());
+    coordinates[16..24].copy_from_slice(&native[2].to_le_bytes());
     Ok(())
 }
 
@@ -36157,20 +36282,27 @@ fn source_less_lanes(
             )));
         }
         for entity in entities {
-            let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
-                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-                    "source-less SLDPRT spatial sketch {} supports line geometry only",
-                    sketch.id.0
-                )));
-            };
-            if start == end {
-                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
-                    "source-less SLDPRT spatial sketch {} has a zero-length line",
-                    sketch.id.0
-                )));
+            match entity.geometry {
+                SpatialSketchGeometry::Point { position } => {
+                    append_spatial_point_marker(&mut payload, position, object_id)?;
+                }
+                SpatialSketchGeometry::Line { start, end } => {
+                    if start == end {
+                        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                            "source-less SLDPRT spatial sketch {} has a zero-length line",
+                            sketch.id.0
+                        )));
+                    }
+                    append_spatial_vertex(&mut payload, start);
+                    append_spatial_vertex(&mut payload, end);
+                }
+                _ => {
+                    return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                        "source-less SLDPRT spatial sketch {} supports point and line geometry only",
+                        sketch.id.0
+                    )));
+                }
             }
-            append_spatial_vertex(&mut payload, start);
-            append_spatial_vertex(&mut payload, end);
         }
         objects.push((configuration, owner.ordinal, payload));
     }
@@ -36235,6 +36367,44 @@ fn append_spatial_vertex(payload: &mut Vec<u8>, point: Point3) {
     payload[start + 45..start + 53].copy_from_slice(&point.x.to_le_bytes());
     payload[start + 53..start + 61].copy_from_slice(&point.y.to_le_bytes());
     payload[start + 61..start + 69].copy_from_slice(&point.z.to_le_bytes());
+}
+
+fn append_spatial_point_marker(
+    payload: &mut Vec<u8>,
+    point: Point3,
+    object_id: u32,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    let native = spatial_point_native_coordinates(point)?;
+    payload.extend_from_slice(&object_id.to_le_bytes());
+    let start = payload.len();
+    payload.resize(start + 90, 0);
+    payload[start..start + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[start + 5..start + 13].fill(0xff);
+    payload[start + 13..start + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[start + 23..start + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[start + 27..start + 29].copy_from_slice(&1u16.to_le_bytes());
+    payload[start + 48..start + 56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[start + 64..start + 66].copy_from_slice(&[0x0e, 0x00]);
+    payload[start + 66..start + 74].copy_from_slice(&native[0].to_le_bytes());
+    payload[start + 74..start + 82].copy_from_slice(&native[1].to_le_bytes());
+    payload[start + 82..start + 90].copy_from_slice(&native[2].to_le_bytes());
+    Ok(())
+}
+
+fn spatial_point_native_coordinates(
+    point: Point3,
+) -> Result<[f64; 3], cadmpeg_ir::codec::CodecError> {
+    let native = [point.x * 0.001, point.y * 0.001, point.z * 0.001];
+    if native
+        .iter()
+        .any(|value| *value != 0.0 && !value.is_normal())
+    {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(
+            "SLDPRT spatial point coordinates must be zero or normal finite native f64 values"
+                .into(),
+        ));
+    }
+    Ok(native)
 }
 
 #[cfg(test)]
