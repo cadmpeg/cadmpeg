@@ -483,9 +483,13 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
         })
         .enumerate()
         .map(|(ordinal, (offset, code))| {
-            let coordinates_m = marker_coordinates(payload, offset);
+            let linked_point = linked_profile_point(payload, offset);
+            let coordinates_m = linked_point
+                .map(|(coordinates, _)| coordinates)
+                .or_else(|| marker_coordinates(payload, offset));
             let kind = if marker_spatial_coordinates(payload, offset).is_some()
                 || legacy_line_handle_coordinates(payload, offset).is_some()
+                || linked_point.is_some()
                 || coordinates_m.is_some()
                     && (compact_legacy_profile_vertex(payload, offset)
                         || indexed_profile_vertex(payload, offset)
@@ -776,6 +780,9 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     }
     if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX {
         return None;
+    }
+    if let Some((coordinates, _)) = linked_profile_point(payload, offset) {
+        return Some(coordinates);
     }
     let compact_indexed_value_body =
         matches!(
@@ -1073,9 +1080,11 @@ fn indexed_profile_vertex(payload: &[u8], offset: usize) -> bool {
 
 type LinkedProfilePoint = ([f64; 2], [(u16, u16); 2]);
 
-fn current_linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePoint> {
-    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(0)
+fn linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePoint> {
+    if !matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    ) || marker_native_code(payload, offset) != Some(0)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
@@ -1141,7 +1150,7 @@ fn current_reverse_incidence_endpoint_offsets(
         .filter(|marker| marker.feature_ref == curve.feature_ref)
     {
         let marker_offset = usize::try_from(marker.offset).ok()?;
-        let Some((_, links)) = current_linked_profile_point(payload, marker_offset) else {
+        let Some((_, links)) = linked_profile_point(payload, marker_offset) else {
             continue;
         };
         for (selector, linked_curve) in links {
@@ -1246,39 +1255,40 @@ mod marker_tests {
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, current_coordinate_linked_line_endpoints,
-        current_indexed_arc_reverses_center_sweep, current_linked_profile_point,
-        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
-        current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
-        enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, fixed_reference_plane_frame, generated_surface_identities,
-        indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
-        legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
+        current_indexed_arc_reverses_center_sweep, current_reverse_incidence_endpoint_offsets,
+        current_wide_arc_direct_markers, current_wide_undetailed_line,
+        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
+        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
+        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
+        inline_surface_reference_at, legacy_compact_diameter_arc_center,
+        legacy_compact_direct_endpoint_markers,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_diagonal_rectangle,
         legacy_extended_profile_curve_kind, legacy_feature_input_section,
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
         legacy_reference_axis_triads, legacy_single_face_reference_path_at,
         legacy_state_five_curve_endpoint_indices, legacy_terminal_indexed_profile_line,
-        marker_coordinates, marker_is_geometry_locus, marker_is_selected_construction_line,
-        marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
-        matrix_reference_plane_frame, minimal_reference_plane_frame,
-        mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
-        native_scalar_matches_discrete_parameter, normalize_indexed_curve_entities, object_names,
-        offset_plane_reference_frame_matches, offset_plane_reference_source,
-        offset_reference_plane_frame_pair, ordered_compact_line_profile, ordered_rectangle_corners,
-        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
-        principal_sketch_frame, profile_roster_construction_axis,
-        profile_roster_origin_axis_endpoints, profile_roster_principal_axis_endpoints,
-        reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
-        resolve_scalar_operand_markers, revolution_line_reference_inputs, revolution_operation,
-        revolution_temporary_axis, roster_curve_endpoint_markers,
-        sketch_block_identity_normalization_origin, sketch_block_record_origin,
-        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        tangent_bounded_curve, unique_arc_center_marker, unique_dimensioned_rectangle_markers,
-        unique_locus, unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle,
-        BooleanOp, CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
-        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
+        linked_profile_point, marker_coordinates, marker_is_geometry_locus,
+        marker_is_selected_construction_line, marker_local_id, marker_local_links,
+        marker_object_index, marker_spatial_coordinates, matrix_reference_plane_frame,
+        minimal_reference_plane_frame, mirror_pattern_component_path_at,
+        mirror_surface_component_path_at, named_scalars, native_scalar_matches_discrete_parameter,
+        normalize_indexed_curve_entities, object_names, offset_plane_reference_frame_matches,
+        offset_plane_reference_source, offset_reference_plane_frame_pair,
+        ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
+        plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
+        profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
+        profile_roster_principal_axis_endpoints, reconcile_reference_plane_frame,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
+        roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
+        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, tangent_bounded_curve, unique_arc_center_marker,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
+        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
+        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
+        SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -4297,11 +4307,10 @@ mod marker_tests {
     }
 
     #[test]
-    fn current_linked_profile_point_carries_coordinates() {
+    fn linked_profile_point_carries_coordinates_for_both_prefixes() {
         let offset = 4;
         let mut payload = vec![0; offset + 154 + SKETCH_MARKER.len()];
         payload[..offset].copy_from_slice(&7u32.to_le_bytes());
-        payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         payload[offset + 5..offset + 13].fill(0xff);
         payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[offset + 23..offset + 29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
@@ -4318,12 +4327,23 @@ mod marker_tests {
             payload[offset + start + 4..offset + start + 8].fill(0xff);
         }
         payload[offset + 102..offset + 108].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
-        payload[offset + 154..].copy_from_slice(SKETCH_MARKER);
+        for prefix in [SKETCH_MARKER, LEGACY_EXTENDED_SKETCH_MARKER] {
+            payload[offset..offset + prefix.len()].copy_from_slice(prefix);
+            payload[offset + 154..offset + 154 + prefix.len()].copy_from_slice(prefix);
 
-        assert_eq!(
-            current_linked_profile_point(&payload, offset),
-            Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
-        );
+            assert_eq!(
+                linked_profile_point(&payload, offset),
+                Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
+            );
+            assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+            let entities = super::sketch_input_entities(&payload, "lane");
+            let point = entities
+                .iter()
+                .find(|entity| entity.offset == offset as u64)
+                .expect("linked profile point");
+            assert_eq!(point.kind, SketchInputKind::Point);
+            assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
+        }
     }
 
     #[test]
@@ -10521,8 +10541,7 @@ fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
             .flatten()
             .filter_map(|offset| {
                 let native_offset = usize::try_from(offset).ok()?;
-                let (coordinates, _) =
-                    current_linked_profile_point(&lane.native_payload, native_offset)?;
+                let (coordinates, _) = linked_profile_point(&lane.native_payload, native_offset)?;
                 Some((offset, coordinates))
             })
             .collect::<HashMap<_, _>>()
