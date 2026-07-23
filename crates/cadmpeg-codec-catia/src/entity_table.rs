@@ -1,6 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framing and identity decode for outer `7C05` entity-table records.
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+/// One fully consumed numeric-tuple production in a nested `7C07` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NumericTuple {
+    /// Two one-byte compact atoms preceding the nested value frame.
+    pub prefix_atoms: [u32; 2],
+    /// Compact nested-frame type atom following `0xE8`.
+    pub type_atom: u32,
+    /// First one-byte compact atom after the `0x37` delimiter.
+    pub layout_atom: u32,
+    /// Second one-byte compact atom after the `0x37` delimiter.
+    pub value_atom: u32,
+    /// Tagged numeric values and control markers in serialized order.
+    pub items: Vec<NumericTupleItem>,
+}
+
+/// One item in a complete [`NumericTuple`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum NumericTupleItem {
+    /// `0xE6` followed by the exact IEEE-754 binary64 bits.
+    Binary64 {
+        /// Stored little-endian binary64 bits.
+        bits: u64,
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+    /// One zero-payload control marker in `0xE7..=0xE9`.
+    Control {
+        /// Stored control code.
+        code: u8,
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+}
+
 /// One length-closed `7C05` entity-table record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityRecord {
@@ -22,6 +59,8 @@ pub struct EntityRecord {
     pub value_len: u32,
     /// Exact nested `7C07` payload.
     pub value_payload: Vec<u8>,
+    /// Complete numeric-tuple view when the entire value payload has that production.
+    pub numeric_tuple: Option<NumericTuple>,
     /// Exact bytes after the nested `7C07` frame.
     pub record_suffix: Vec<u8>,
 }
@@ -126,8 +165,75 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<EntityRecord> {
         definition_suffix: data[identity_end..definition_end].to_vec(),
         value_len,
         value_payload: data[definition_end + 6..value_end].to_vec(),
+        numeric_tuple: parse_numeric_tuple(&data[definition_end + 6..value_end]),
         record_suffix: data[value_end..end].to_vec(),
     })
+}
+
+pub(crate) fn parse_numeric_tuple(payload: &[u8]) -> Option<NumericTuple> {
+    let (prefix0, mut at) = one_byte_atom(payload, 0)?;
+    let (prefix1, next) = one_byte_atom(payload, at)?;
+    at = next;
+    if payload.get(at) != Some(&0xe8) {
+        return None;
+    }
+    at += 1;
+    let (type_atom, next) = compact_atom(payload, at)?;
+    at = next;
+    if payload.get(at) != Some(&0x37) {
+        return None;
+    }
+    at += 1;
+    let (layout_atom, next) = one_byte_atom(payload, at)?;
+    let (value_atom, next) = one_byte_atom(payload, next)?;
+    at = next;
+
+    let mut items = Vec::new();
+    let mut binary64_count = 0;
+    while payload.get(at..at.checked_add(2)?) != Some(&[0xfe, 0xfe]) {
+        let offset = at;
+        match *payload.get(at)? {
+            0xe6 => {
+                let end = at.checked_add(9)?;
+                let bits = u64::from_le_bytes(payload.get(at + 1..end)?.try_into().ok()?);
+                items.push(NumericTupleItem::Binary64 { bits, offset });
+                binary64_count += 1;
+                at = end;
+            }
+            code @ 0xe7..=0xe9 => {
+                items.push(NumericTupleItem::Control { code, offset });
+                at += 1;
+            }
+            _ => return None,
+        }
+    }
+    (binary64_count != 0 && at + 2 == payload.len()).then_some(NumericTuple {
+        prefix_atoms: [prefix0, prefix1],
+        type_atom,
+        layout_atom,
+        value_atom,
+        items,
+    })
+}
+
+fn one_byte_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
+    let byte = *data.get(at)?;
+    match byte {
+        0x80..=0xd0 => Some((u32::from(byte - 0x80), at + 1)),
+        _ => None,
+    }
+}
+
+fn compact_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
+    let byte = *data.get(at)?;
+    match byte {
+        0x80..=0xd0 => Some((u32::from(byte - 0x80), at + 1)),
+        0xd1..=0xe4 => Some((
+            u32::from(byte - 0xd1) * 256 + u32::from(*data.get(at + 1)?) + 1,
+            at + 2,
+        )),
+        _ => None,
+    }
 }
 
 fn u32_le(data: &[u8], at: usize) -> Option<u32> {
@@ -138,7 +244,7 @@ fn u32_le(data: &[u8], at: usize) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_runs;
+    use super::{parse_numeric_tuple, parse_runs, NumericTuple, NumericTupleItem};
 
     fn record(prefix: &[u8], entity_id: u32) -> Vec<u8> {
         let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0, 0x7c, 0x06];
@@ -180,5 +286,44 @@ mod tests {
         records.extend(record(&[0x12], 2));
 
         assert!(parse_runs(&records).is_empty());
+    }
+
+    #[test]
+    fn numeric_tuple_requires_one_complete_nested_production() {
+        let payload = [
+            0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe8, 0xe6, 0, 0, 0, 0, 0, 0, 0x12,
+            0x40, 0xfe, 0xfe,
+        ];
+
+        assert_eq!(
+            parse_numeric_tuple(&payload),
+            Some(NumericTuple {
+                prefix_atoms: [17, 4],
+                type_atom: 4872,
+                layout_atom: 3,
+                value_atom: 1,
+                items: vec![
+                    NumericTupleItem::Control {
+                        code: 0xe8,
+                        offset: 8,
+                    },
+                    NumericTupleItem::Binary64 {
+                        bits: 4.5_f64.to_bits(),
+                        offset: 9,
+                    },
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn marker_bytes_in_opaque_regions_do_not_create_numeric_tuples() {
+        let opaque = [
+            0x73, 0x83, 0xe8, 0xe0, 0x0a, 0x37, 0xd1, 0x51, 0x81, 0x4e, 0x29, 0x42, 0x27, 0x59,
+            0xf4, 0xcb, 0x1b, 0x4f, 0xbe, 0x76, 0xaf, 0x2c, 0x10, 0xdf, 0x90, 0xe6, 0, 0, 0, 0, 0,
+            0, 0, 0, 0xfe, 0xfe,
+        ];
+
+        assert_eq!(parse_numeric_tuple(&opaque), None);
     }
 }

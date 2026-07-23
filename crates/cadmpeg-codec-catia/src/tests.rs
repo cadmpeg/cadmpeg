@@ -1526,12 +1526,22 @@ fn object_graph_from_records(records: &[Vec<u8>]) -> Vec<u8> {
 }
 
 fn entity_table_record(entity_id: u32) -> Vec<u8> {
+    entity_table_record_with_value(entity_id, &[])
+}
+
+fn entity_table_record_with_value(entity_id: u32, value: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0x00, 0x7c, 0x06];
     bytes.extend_from_slice(&12_u32.to_le_bytes());
     bytes.push(0x01);
     bytes.push(0xea);
     bytes.extend_from_slice(&entity_id.to_le_bytes());
-    bytes.extend_from_slice(&[0x7c, 0x07, 0x06, 0, 0, 0]);
+    bytes.extend_from_slice(&[0x7c, 0x07]);
+    bytes.extend_from_slice(
+        &u32::try_from(value.len() + 6)
+            .expect("generated 7C07 length")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(value);
     let total_len = u32::try_from(bytes.len()).expect("generated 7C05 length");
     bytes[2..6].copy_from_slice(&total_len.to_le_bytes());
     bytes
@@ -5182,6 +5192,46 @@ fn native_load_rejects_noncanonical_entity_frame_lengths() {
             Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     }
+}
+
+#[test]
+fn native_namespace_retains_and_validates_complete_entity_numeric_tuples() {
+    let value = [
+        0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6, 0, 0, 0, 0, 0, 0, 0x12, 0x40, 0xfe,
+        0xfe,
+    ];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let mut bytes = entity_table_record_with_value(1, &value);
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let tuple = native.entity_records[0]
+        .numeric_tuple
+        .as_ref()
+        .expect("complete numeric tuple");
+    assert!(tuple.items.iter().any(|item| {
+        matches!(
+            item,
+            crate::entity_table::NumericTupleItem::Binary64 { bits, .. }
+                if *bits == 4.5_f64.to_bits()
+        )
+    }));
+
+    let mut malformed = native;
+    malformed.entity_records[0]
+        .numeric_tuple
+        .as_mut()
+        .expect("complete numeric tuple")
+        .value_atom += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed numeric-tuple view");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]

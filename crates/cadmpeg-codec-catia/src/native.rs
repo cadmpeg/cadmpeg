@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 86;
+pub const CATIA_NATIVE_VERSION: u32 = 87;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -569,6 +569,9 @@ pub struct CatiaEntityRecord {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub value_payload: Vec<u8>,
+    /// Complete numeric tuple when the entire `7C07` payload has that production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numeric_tuple: Option<entity_table::NumericTuple>,
     /// Exact bytes after the nested `7C07` frame.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
@@ -941,6 +944,7 @@ fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
     u64::from(record.definition_len) == definition_body_len + 6
         && u64::from(record.value_len) == value_len
         && record.byte_len == total_len
+        && record.numeric_tuple == entity_table::parse_numeric_tuple(&record.value_payload)
 }
 
 /// CATIA-native records retained outside the format-neutral model.
@@ -2800,6 +2804,7 @@ fn native_object_graph(
                 definition_suffix: entity.definition_suffix,
                 value_len: entity.value_len,
                 value_payload: entity.value_payload,
+                numeric_tuple: entity.numeric_tuple,
                 record_suffix: entity.record_suffix,
             })
         })
