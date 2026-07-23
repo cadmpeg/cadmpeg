@@ -313,6 +313,13 @@ Text-wrapped envelope:
 
 The partition zlib stream is preceded by `c0 d1 f1 ed`. Small zlib streams use repeating `<u32 BE count> 0x02000002` marker pairs. The wrapper-header counts are segment or record counts.
 
+Each compressed member uses the zlib wrapper: a standards-conforming CMF/FLG
+header, one DEFLATE stream, and the terminal big-endian Adler-32 of the complete
+inflated bytes. The member boundary is the first successful zlib stream end and
+includes the complete four-byte integrity trailer. A checksum mismatch,
+truncated trailer, or DEFLATE error invalidates the complete candidate; partial
+inflated bytes do not form a stream.
+
 Inflated prologue text classifies each stream:
 
 | Prologue bytes                                      | Stream kind         |

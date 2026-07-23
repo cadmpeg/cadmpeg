@@ -7,11 +7,9 @@
 //! Other inflated payloads are classified as [`StreamKind::Preview`].
 #![deny(clippy::disallowed_methods)]
 
-use std::io::Read;
-
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::decode::{ByteRange, DecodeContext, ExpandSpec, View};
-use flate2::read::ZlibDecoder;
+use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::container::Container;
 
@@ -536,24 +534,45 @@ fn inflate_stream<'a>(
     let Some(source) = part_view.child(offset, part_view.end()) else {
         return Ok(None);
     };
-    let mut decoder = ZlibDecoder::new(source.window());
+    let input = source.window();
+    let mut decoder = Decompress::new(true);
     let mut writer = ctx.begin_expand(source, ExpandSpec::Unknown)?;
     let mut inflated = Vec::new();
     let mut chunk = [0u8; INFLATE_CHUNK];
+    let mut source_offset = 0usize;
     loop {
-        match decoder.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(read) => {
-                writer.write(&chunk[..read])?;
-                inflated.extend_from_slice(&chunk[..read]);
-            }
-            Err(_) => break,
+        let before_in = decoder.total_in();
+        let before_out = decoder.total_out();
+        let Ok(status) =
+            decoder.decompress(&input[source_offset..], &mut chunk, FlushDecompress::None)
+        else {
+            return Ok(None);
+        };
+        let Ok(consumed) = usize::try_from(decoder.total_in() - before_in) else {
+            return Ok(None);
+        };
+        let Some(next_source_offset) = source_offset.checked_add(consumed) else {
+            return Ok(None);
+        };
+        source_offset = next_source_offset;
+        let Ok(produced) = usize::try_from(decoder.total_out() - before_out) else {
+            return Ok(None);
+        };
+        writer.write(&chunk[..produced])?;
+        inflated.extend_from_slice(&chunk[..produced]);
+        if status == Status::StreamEnd {
+            break;
+        }
+        if consumed == 0 && produced == 0 {
+            return Ok(None);
         }
     }
     if inflated.len() < MIN_INFLATED {
         return Ok(None);
     }
-    let consumed = decoder.total_in();
+    let Ok(consumed) = u64::try_from(source_offset) else {
+        return Ok(None);
+    };
     writer.finalize()?;
     Ok(Some((inflated, consumed)))
 }

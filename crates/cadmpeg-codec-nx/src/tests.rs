@@ -9373,6 +9373,21 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
 }
 
+#[test]
+fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
+    let compressed = zlib_compress(&partition_stream());
+    let mut corrupt = compressed.clone();
+    *corrupt.last_mut().expect("zlib integrity trailer") ^= 0x01;
+    let corrupt = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", corrupt)]);
+    assert!(extract_streams(&corrupt).is_empty());
+
+    let truncated = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        compressed[..compressed.len() - 1].to_vec(),
+    )]);
+    assert!(extract_streams(&truncated).is_empty());
+}
+
 /// Phase 0 golden serialized-output snapshots.
 ///
 /// These freeze the NX codec's complete observable output before the native-tier
