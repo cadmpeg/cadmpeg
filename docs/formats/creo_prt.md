@@ -287,6 +287,12 @@ retains its typed-wrapper bytes. `dum_array`, `data_dbls`, and `data_type` are
 separate named fields. A count-prefixed compact-integer array is typed as such
 only when exactly the declared number of compact integers consumes the entire
 bounded field body; trailing bytes make the field opaque.
+`parent_feats` may append the exact trailer
+`f7 <class-id> <entity-id> [e1 [f6 f6]]` after its declared compact-integer
+array. Both trailer identifiers use the canonical entity-reference grammar and
+are nonzero. The trailer does not add parent-feature identifiers.
+Each array identifier names a feature that consumes the prototype surface. The
+consuming feature depends on the adjacent surface row's `feat_id`.
 In a counted `params` scalar array, `e5` supplies two consecutive zero slots
 and `e6` supplies three. The expanded slots must exactly match the declared
 count and the scalar tokens must consume the complete bounded field body.

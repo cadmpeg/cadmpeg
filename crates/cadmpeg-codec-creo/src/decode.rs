@@ -12668,13 +12668,25 @@ fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<
     properties
 }
 
-fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<IrFeatureId> {
+fn feature_dependencies(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
+) -> Vec<IrFeatureId> {
     agreed_feature_parent_ids(&scan.features.affected_ids, feature_id)
         .into_iter()
         .chain(current_feature_recipe_parent(
             &scan.features.operations,
             feature_id,
         ))
+        .chain(
+            prototype_dependencies
+                .get(&feature_id)
+                .into_iter()
+                .flatten()
+                .copied(),
+        )
         .chain(feature_entity_dependencies(
             &scan.features.entity_tables,
             feature_id,
@@ -12786,6 +12798,43 @@ fn agreed_feature_parent_ids(
     ids
 }
 
+fn surface_prototype_feature_dependencies(scan: &ContainerScan) -> BTreeMap<u32, Vec<u32>> {
+    let mut dependencies = BTreeMap::new();
+    for (prototype, row, _) in unique_surface_prototype_associations(scan) {
+        let mut fields = prototype
+            .parameters
+            .iter()
+            .filter(|field| field.name == "parent_feats");
+        let Some(field) = fields.next() else {
+            continue;
+        };
+        if fields.next().is_some() {
+            continue;
+        }
+        let crate::surface::SurfaceNamedValue::CompactIntArray(consumers) = &field.value else {
+            continue;
+        };
+        add_surface_prototype_feature_dependencies(&mut dependencies, row.feature_id, consumers);
+    }
+    dependencies
+}
+
+fn add_surface_prototype_feature_dependencies(
+    dependencies: &mut BTreeMap<u32, Vec<u32>>,
+    producer: u32,
+    consumers: &[u32],
+) {
+    for &consumer in consumers {
+        if consumer == 0 || consumer == producer {
+            continue;
+        }
+        let producers = dependencies.entry(consumer).or_default();
+        if !producers.contains(&producer) {
+            producers.push(producer);
+        }
+    }
+}
+
 fn agreed_feature_replay_geometry_ids(
     records: &[crate::feature::FeatureReplayAffectedIds],
     feature_id: u32,
@@ -12812,7 +12861,11 @@ fn agreed_feature_replay_edge_ids(
         .then_some(ids)
 }
 
-fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
+fn reconcile_feature_links(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
+) {
     let emitted = ir
         .model
         .features
@@ -12835,6 +12888,13 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
                     &scan.features.operations,
                     feature_id,
                 ))
+                .chain(
+                    prototype_dependencies
+                        .get(&feature_id)
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                )
                 .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
                 .filter(|dependency| emitted.contains(dependency))
                 .filter(|dependency| *dependency != feature.id)
@@ -24265,6 +24325,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             relation_constraint_coverage.active_typed(),
         );
     }
+    let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     let operation_feature_ids = scan
         .features
         .operations
@@ -24366,7 +24427,12 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             },
         );
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
-        let dependencies = feature_dependencies(scan, &ir, operation.feature_id);
+        let dependencies = feature_dependencies(
+            scan,
+            &ir,
+            operation.feature_id,
+            &prototype_feature_dependencies,
+        );
         let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
             .and_then(|parent_feature_id| {
                 let parent = IrFeatureId(format!("creo:model:feature#{parent_feature_id}"));
@@ -24539,7 +24605,12 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             ),
             suppressed: Some(false),
             parent: None,
-            dependencies: feature_dependencies(scan, &ir, feature_id),
+            dependencies: feature_dependencies(
+                scan,
+                &ir,
+                feature_id,
+                &prototype_feature_dependencies,
+            ),
             source_properties,
             source_tag: None,
             source_text: None,
@@ -24550,7 +24621,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         });
     }
     link_feature_sketch_history(scan, &mut ir);
-    reconcile_feature_links(scan, &mut ir);
+    reconcile_feature_links(scan, &mut ir, &prototype_feature_dependencies);
     let (transferred_feature_dimension_count, dimension_parameters) =
         transfer_feature_dimensions(scan, &mut ir, &mut annotations);
     let transferred_curve_expression_assignment_count =

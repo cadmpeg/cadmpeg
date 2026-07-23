@@ -2008,6 +2008,12 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
             {
                 return SurfaceNamedValue::CompactIntArray(values);
             }
+            if name == "parent_feats"
+                && values.len() == usize::try_from(count).unwrap_or(usize::MAX)
+                && parent_feature_array_trailer(&body[cursor..])
+            {
+                return SurfaceNamedValue::CompactIntArray(values);
+            }
             if name == "params" {
                 let remaining = body.len().saturating_sub(values_start);
                 let Some(slot_count) = usize::try_from(count)
@@ -2210,6 +2216,22 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
     }
     records.sort_by_key(|record| record.offset);
     records
+}
+
+fn parent_feature_array_trailer(body: &[u8]) -> bool {
+    let Some(rest) = body.strip_prefix(&[psb::token::ENTITY_REF]) else {
+        return false;
+    };
+    let Ok((class_id, cursor)) = psb::reference_id(rest, 0) else {
+        return false;
+    };
+    let Ok((entity_id, cursor)) = psb::reference_id(rest, cursor) else {
+        return false;
+    };
+    if class_id == 0 || entity_id == 0 {
+        return false;
+    }
+    matches!(&rest[cursor..], [] | [0xe1] | [0xe1, 0xf6, 0xf6])
 }
 
 fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
@@ -8486,6 +8508,37 @@ mod tests {
             records[0].field("radius").map(|field| &field.value),
             Some(&SurfaceNamedValue::ScalarSequence(vec![value]))
         );
+    }
+
+    #[test]
+    fn parent_feature_array_accepts_its_exact_reference_trailer() {
+        let payload = b"srf_prim_ptr(plane)\0\xe0\0parent_feats\0\
+            \xf8\x02\x07\x08\xf7\x03\x09\xe1\xf6\xf6";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].field("parent_feats").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactIntArray(vec![7, 8]))
+        );
+    }
+
+    #[test]
+    fn parent_feature_array_rejects_malformed_reference_trailers() {
+        for trailer in [
+            &[0xf7][..],
+            &[0xf7, 0x00, 0x09],
+            &[0xf7, 0x03, 0x00],
+            &[0xf7, 0x03, 0x09, 0xf6],
+            &[0xf7, 0x03, 0x09, 0xe1, 0xf6],
+            &[0xf7, 0x03, 0x09, 0xe1, 0xf6, 0xf6, 0x00],
+        ] {
+            let mut body = vec![0xf8, 0x01, 0x07];
+            body.extend_from_slice(trailer);
+            assert_eq!(
+                named_surface_value("parent_feats", &body, &scalar::ScalarCache::default()),
+                SurfaceNamedValue::Opaque(body)
+            );
+        }
     }
 
     #[test]

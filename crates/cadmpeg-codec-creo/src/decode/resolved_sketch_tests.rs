@@ -1,5 +1,17 @@
 use super::*;
 
+#[test]
+fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
+    let mut dependencies = BTreeMap::new();
+    add_surface_prototype_feature_dependencies(&mut dependencies, 40, &[0, 40, 286, 286, 1111]);
+    add_surface_prototype_feature_dependencies(&mut dependencies, 41, &[286]);
+
+    assert_eq!(
+        dependencies,
+        BTreeMap::from([(286, vec![40, 41]), (1111, vec![40])])
+    );
+}
+
 fn synchronize_skamp_count(definition: &mut crate::feature::FeatureDefinition) {
     let relations = definition.relations.as_mut().expect("relations");
     relations
