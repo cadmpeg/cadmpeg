@@ -1739,6 +1739,29 @@ fn standard_catpart_with_entity_value_schema_selection() -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_crossing_entity_value_packet() -> Vec<u8> {
+    let value = [
+        0x32, 4, 0, 0, 0, 0x81, 0x82, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6, 0x32, 4, 0, 0, 0,
+        0, 0, 0, 0xfe,
+    ];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
+    let mut stream = entity_table_record_with_value(1, &value);
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "TargetValue",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_visualization_values_only() -> Vec<u8> {
     let mut stream = value_block_stream(&[0x32, 4, 0, 0, 0, 0x83]);
     stream.extend(catalog_stream(&[
@@ -5534,6 +5557,24 @@ fn native_namespace_resolves_and_validates_entity_value_schema_selections() {
     };
     *value_selector += 1;
     assert_rejected(wrong_packet);
+}
+
+#[test]
+fn entity_value_schema_selection_excludes_a_packet_crossing_its_boundary() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_crossing_entity_value_packet());
+    assert_eq!(native.entity_records[0].value_packets.len(), 1);
+    assert_eq!(native.entity_records[0].value_schema_selections.len(), 2);
+    assert!(native.entity_records[0]
+        .value_schema_selections
+        .iter()
+        .all(|selection| selection.packets.is_empty()));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store crossing packet fixture");
+    crate::native::CatiaNative::load(&namespace).expect("validate canonical packet ownership");
 }
 
 #[test]

@@ -112,6 +112,28 @@ pub enum EntityValuePacket {
     },
 }
 
+impl EntityValuePacket {
+    /// Complete byte range occupied by this packet within its value payload.
+    pub(crate) fn byte_range(&self) -> Option<std::ops::Range<usize>> {
+        match self {
+            Self::Numeric {
+                offset,
+                items,
+                terminator_count,
+                ..
+            } => {
+                let item_end = match items.last()? {
+                    NumericTupleItem::Binary64 { offset, .. } => offset.checked_add(9)?,
+                    NumericTupleItem::Control { offset, .. } => offset.checked_add(1)?,
+                };
+                Some(*offset..item_end.checked_add(*terminator_count)?)
+            }
+            Self::Compact { offset, .. } => Some(*offset..offset.checked_add(6)?),
+            Self::Layout { offset, .. } => Some(*offset..offset.checked_add(7)?),
+        }
+    }
+}
+
 /// Decode every exact packet in source order from a `7C07` value payload.
 #[must_use]
 pub fn value_packets(payload: &[u8], fields: &[value_block::ValueField]) -> Vec<EntityValuePacket> {
@@ -257,18 +279,17 @@ fn parse_numeric_value_packet(
     if offset == 0 && at == payload.len() && terminator_count >= 2 {
         return None;
     }
-    Some((
-        EntityValuePacket::Numeric {
-            offset,
-            prefix_atoms: [prefix0, prefix1],
-            type_selector: selector,
-            layout_atom,
-            value_atom,
-            items,
-            terminator_count,
-        },
-        offset..at,
-    ))
+    let packet = EntityValuePacket::Numeric {
+        offset,
+        prefix_atoms: [prefix0, prefix1],
+        type_selector: selector,
+        layout_atom,
+        value_atom,
+        items,
+        terminator_count,
+    };
+    let range = packet.byte_range()?;
+    (range.end == at).then_some((packet, range))
 }
 
 /// One length-closed `7C05` entity-table record.

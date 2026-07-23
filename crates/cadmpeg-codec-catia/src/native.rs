@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 103;
+pub const CATIA_NATIVE_VERSION: u32 = 104;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1100,8 +1100,9 @@ fn entity_value_schema_selections(
                 packets: packets
                     .iter()
                     .filter(|packet| {
-                        let offset = entity_value_packet_offset(packet);
-                        offset >= value_start_offset && offset < value_end_offset
+                        packet.byte_range().is_some_and(|range| {
+                            range.start >= value_start_offset && range.end <= value_end_offset
+                        })
                     })
                     .cloned()
                     .collect(),
@@ -1121,14 +1122,6 @@ fn value_field_offset(field: &value_block::ValueField) -> usize {
         | value_block::ValueField::Atom { offset, .. }
         | value_block::ValueField::Terminator { offset }
         | value_block::ValueField::Literal { offset, .. } => *offset,
-    }
-}
-
-fn entity_value_packet_offset(packet: &entity_table::EntityValuePacket) -> usize {
-    match packet {
-        entity_table::EntityValuePacket::Numeric { offset, .. }
-        | entity_table::EntityValuePacket::Compact { offset, .. }
-        | entity_table::EntityValuePacket::Layout { offset, .. } => *offset,
     }
 }
 
