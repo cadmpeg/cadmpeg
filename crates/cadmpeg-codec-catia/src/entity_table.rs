@@ -38,6 +38,27 @@ pub enum NumericTupleItem {
     },
 }
 
+/// One fully consumed reference-signature production in a nested `7C07` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ReferenceSignature {
+    /// First fixed-width reference.
+    pub first_reference: u32,
+    /// Compact atom preceding the nested signature frame.
+    pub prefix_atom: u32,
+    /// Compact nested-frame type atom following the first `0xE8`.
+    pub type_atom: u32,
+    /// One-byte layout atom following the first `0x37`.
+    pub layout_atom: u32,
+    /// Printable signature bytes between `0x81` and the first terminator.
+    pub signature: String,
+    /// Second fixed-width reference.
+    pub second_reference: u32,
+    /// One-byte atom preceding the closing nested frame.
+    pub closing_atom: u32,
+    /// Compact closing-frame type atom following `0xE9`.
+    pub closing_type_atom: u32,
+}
+
 /// One length-closed `7C05` entity-table record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityRecord {
@@ -61,6 +82,8 @@ pub struct EntityRecord {
     pub value_payload: Vec<u8>,
     /// Complete numeric-tuple view when the entire value payload has that production.
     pub numeric_tuple: Option<NumericTuple>,
+    /// Complete reference-signature view when the entire value payload has that production.
+    pub reference_signature: Option<ReferenceSignature>,
     /// Exact bytes after the nested `7C07` frame.
     pub record_suffix: Vec<u8>,
 }
@@ -166,6 +189,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<EntityRecord> {
         value_len,
         value_payload: data[definition_end + 6..value_end].to_vec(),
         numeric_tuple: parse_numeric_tuple(&data[definition_end + 6..value_end]),
+        reference_signature: parse_reference_signature(&data[definition_end + 6..value_end]),
         record_suffix: data[value_end..end].to_vec(),
     })
 }
@@ -216,6 +240,64 @@ pub(crate) fn parse_numeric_tuple(payload: &[u8]) -> Option<NumericTuple> {
     })
 }
 
+pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSignature> {
+    if payload.first() != Some(&0x32) {
+        return None;
+    }
+    let first_reference = u32_le(payload, 1)?;
+    let (prefix_atom, mut at) = one_byte_atom(payload, 5)?;
+    if payload.get(at) != Some(&0xe8) {
+        return None;
+    }
+    at += 1;
+    let (type_atom, next) = compact_atom(payload, at)?;
+    at = next;
+    if payload.get(at) != Some(&0x37) {
+        return None;
+    }
+    let (layout_atom, next) = one_byte_atom(payload, at + 1)?;
+    at = next;
+    if payload.get(at) != Some(&0x81) {
+        return None;
+    }
+    at += 1;
+    let signature_end = payload.get(at..)?.iter().position(|byte| *byte == 0xfe)? + at;
+    let signature_bytes = payload.get(at..signature_end)?;
+    if signature_bytes.is_empty()
+        || !signature_bytes
+            .iter()
+            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
+        return None;
+    }
+    let signature = std::str::from_utf8(signature_bytes).ok()?.to_owned();
+    at = signature_end + 1;
+    if payload.get(at) != Some(&0x32) {
+        return None;
+    }
+    let second_reference = u32_le(payload, at + 1)?;
+    let (closing_atom, next) = one_byte_atom(payload, at + 5)?;
+    at = next;
+    if payload.get(at) != Some(&0xe9) {
+        return None;
+    }
+    let (closing_type_atom, next) = compact_atom(payload, at + 1)?;
+    at = next;
+    if payload.get(at..at + 5) != Some(&[0x08, 0x37, 0xfe, 0xfe, 0xfe]) {
+        return None;
+    }
+    (at + 5 == payload.len()).then_some(ReferenceSignature {
+        first_reference,
+        prefix_atom,
+        type_atom,
+        layout_atom,
+        signature,
+        second_reference,
+        closing_atom,
+        closing_type_atom,
+    })
+}
+
 fn one_byte_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
     let byte = *data.get(at)?;
     match byte {
@@ -244,7 +326,10 @@ fn u32_le(data: &[u8], at: usize) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_numeric_tuple, parse_runs, NumericTuple, NumericTupleItem};
+    use super::{
+        parse_numeric_tuple, parse_reference_signature, parse_runs, NumericTuple, NumericTupleItem,
+        ReferenceSignature,
+    };
 
     fn record(prefix: &[u8], entity_id: u32) -> Vec<u8> {
         let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0, 0x7c, 0x06];
@@ -325,5 +410,38 @@ mod tests {
         ];
 
         assert_eq!(parse_numeric_tuple(&opaque), None);
+    }
+
+    #[test]
+    fn reference_signature_requires_one_complete_nested_production() {
+        let payload = [
+            0x32, 0xcf, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b',', b'0',
+            b'(', b'E', b',', b'4', b')', b')', 0xfe, 0x32, 0xd0, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17,
+            0x08, 0x37, 0xfe, 0xfe, 0xfe,
+        ];
+
+        assert_eq!(
+            parse_reference_signature(&payload),
+            Some(ReferenceSignature {
+                first_reference: 207,
+                prefix_atom: 2,
+                type_atom: 3851,
+                layout_atom: 12,
+                signature: "(E,0(E,4))".to_owned(),
+                second_reference: 208,
+                closing_atom: 3,
+                closing_type_atom: 3864,
+            })
+        );
+    }
+
+    #[test]
+    fn embedded_reference_markers_do_not_create_reference_signatures() {
+        let payload = [
+            0x90, 0x32, 0xcf, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b')',
+            0xfe, 0x32, 0xd0, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
+        ];
+
+        assert_eq!(parse_reference_signature(&payload), None);
     }
 }

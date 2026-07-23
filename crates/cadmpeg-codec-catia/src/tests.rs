@@ -5235,6 +5235,42 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_tuples() {
 }
 
 #[test]
+fn native_namespace_retains_and_validates_complete_entity_reference_signatures() {
+    let value = [
+        0x32, 0xcf, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b')', 0xfe,
+        0x32, 0xd0, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
+    ];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let mut bytes = entity_table_record_with_value(1, &value);
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let signature = native.entity_records[0]
+        .reference_signature
+        .as_ref()
+        .expect("complete reference signature");
+    assert_eq!(signature.first_reference, 207);
+    assert_eq!(signature.second_reference, 208);
+    assert_eq!(signature.signature, "(E)");
+
+    let mut malformed = native;
+    malformed.entity_records[0]
+        .reference_signature
+        .as_mut()
+        .expect("complete reference signature")
+        .second_reference += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed reference-signature view");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
 fn native_load_rejects_noncanonical_graph_catalog_views() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     assert!(native.object_graphs[0].catalog_byte_offset.is_some());
