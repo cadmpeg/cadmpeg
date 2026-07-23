@@ -1216,29 +1216,36 @@ pub(crate) fn attach_standard_topology(
         .iter()
         .copied()
         .collect::<Option<Vec<_>>>();
-    let roster_endpoint_pairs =
-        crate::families::standard::records::standard_vertex_roster(source, ir.model.points.len())
-            .map(|roster| {
-                let point_by_identity = roster
-                    .into_iter()
-                    .enumerate()
-                    .map(|(point, identity)| (identity, point))
-                    .collect::<HashMap<_, _>>();
-                supports
-                    .iter()
-                    .map(|support| {
-                        let identities = native_edges.get(&support.tag)?;
-                        Some([
-                            *point_by_identity.get(&identities[0])?,
-                            *point_by_identity.get(&identities[1])?,
-                        ])
-                    })
-                    .collect::<Vec<_>>()
-            });
+    let vertex_roster =
+        crate::families::standard::records::standard_vertex_roster(source, ir.model.points.len());
+    let roster_endpoint_pairs = vertex_roster.as_ref().map(|roster| {
+        let point_by_identity = roster
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(point, identity)| (identity, point))
+            .collect::<HashMap<_, _>>();
+        supports
+            .iter()
+            .map(|support| {
+                let identities = native_edges.get(&support.tag)?;
+                Some([
+                    *point_by_identity.get(&identities[0])?,
+                    *point_by_identity.get(&identities[1])?,
+                ])
+            })
+            .collect::<Vec<_>>()
+    });
+    let allocation_endpoint_pairs = vertex_roster
+        .as_ref()
+        .map(|roster| standard_successor_endpoint_pairs(&supports, roster));
     let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
         graph_endpoint_pairs.as_deref(),
         roster_endpoint_pairs.as_deref(),
-    ) else {
+    )
+    .and_then(|evidence| {
+        merge_native_endpoint_evidence(evidence.as_deref(), allocation_endpoint_pairs.as_deref())
+    }) else {
         return false;
     };
     if let Some(pairs) = &native_endpoint_evidence {
@@ -2458,6 +2465,27 @@ pub(crate) fn merge_native_endpoint_evidence(
     }
 }
 
+pub(crate) fn standard_successor_endpoint_pairs(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    vertex_roster: &[u32],
+) -> Vec<Option<[usize; 2]>> {
+    let point_by_identity = vertex_roster
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(point, identity)| (identity, point))
+        .collect::<HashMap<_, _>>();
+    supports
+        .iter()
+        .map(|support| {
+            Some([
+                *point_by_identity.get(&support.tag.checked_add(1)?)?,
+                *point_by_identity.get(&support.tag.checked_add(2)?)?,
+            ])
+        })
+        .collect()
+}
+
 pub(crate) fn unique_native_identity_points(
     identities: &[u32],
     coordinates: &[[f64; 3]],
@@ -3591,7 +3619,8 @@ mod route_tests {
         point_on_known_surface, point_on_standard_face, resolve_standard_endpoint_pairs,
         standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
-        standard_plane_normal_from_circle_centers, unique_native_identity_points,
+        standard_plane_normal_from_circle_centers, standard_successor_endpoint_pairs,
+        unique_native_identity_points,
     };
 
     use crate::families::standard::records::{
@@ -4072,6 +4101,29 @@ mod route_tests {
         bind_ordered_standard_curve_branches(&supports, &mut candidates);
 
         assert_eq!(candidates, [vec![[2, 8]], vec![[2, 9]]]);
+    }
+
+    #[test]
+    fn standard_edge_allocation_binds_two_successor_vertices() {
+        let supports = [
+            StandardCurveSupport {
+                pos: 8,
+                tag: 100,
+                faces: [1, 2],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+            StandardCurveSupport {
+                pos: 9,
+                tag: 200,
+                faces: [2, 3],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+        ];
+
+        assert_eq!(
+            standard_successor_endpoint_pairs(&supports, &[99, 101, 102, 202]),
+            [Some([1, 2]), None]
+        );
     }
 
     #[test]

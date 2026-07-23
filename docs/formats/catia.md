@@ -274,7 +274,7 @@ spline:  60 <tag> 00 00 00 <face_ref> <face_ref>
 face_ref := <u8>  |  ff <u32le>   (widened when the ordinal needs it)
 ```
 
-The table begins immediately after the complete face-local surface roster and has one row per spine edge. Circle center and radius use BE f32. The two trailing references are adjacent face ordinals and form an edge-to-face incidence graph. The `u24` `tag` is a local allocation identifier. A resolved native edge record's second and third references are the row's native endpoint identities. Shared identities constrain analytic and spline rows to one injective vertex-coordinate assignment. The byte sequence `ff 46` encodes a widened face ordinal as `ff <u32le>`.
+The table begins immediately after the complete face-local surface roster and has one row per spine edge. Circle center and radius use BE f32. The two trailing references are adjacent face ordinals and form an edge-to-face incidence graph. The `u24` `tag` is a local allocation identifier. When both `tag+1` and `tag+2` occur in the positional vertex roster, they are the row's two endpoint allocation identities in that order. Checked successor arithmetic and membership of both identities are required; one successor alone establishes no endpoint. A resolved native edge record's second and third references are also the row's native endpoint identities. Shared identities constrain analytic and spline rows to one injective vertex-coordinate assignment. The byte sequence `ff 46` encodes a widened face ordinal as `ff <u32le>`.
 
 The allocation-local curve reference in a consolidated class-`5e` historical edge run is not a standard-row `tag`. Equal numeric values across those namespaces do not bind a historical run to a final standard edge row.
 
