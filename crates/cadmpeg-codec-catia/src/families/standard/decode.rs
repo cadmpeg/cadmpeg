@@ -1598,7 +1598,6 @@ pub(crate) fn attach_standard_topology(
             | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
         })
         .collect();
-    let motif_topology = fbb::parse_standard_motif(brep, &edge_faces, &circle_anchors);
     let circle_constraint_edges = supports
         .iter()
         .enumerate()
@@ -1652,7 +1651,7 @@ pub(crate) fn attach_standard_topology(
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = motif_topology {
+    } else if let Some(topology) = fbb::parse_standard_motif(brep, &edge_faces, &circle_anchors) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
