@@ -1554,6 +1554,9 @@ pub(crate) fn attach_standard_topology(
             *options = pruned;
         }
     }
+    if let Some(options) = &mut constrained_endpoint_options {
+        bind_ordered_standard_curve_branches(&supports, options);
+    }
     let resolved_endpoint_pairs = propagated_endpoint_pairs
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
     if let Some(pairs) = &resolved_endpoint_pairs {
@@ -2086,6 +2089,205 @@ pub(crate) fn resolve_standard_endpoint_pairs(
             .collect();
     }
     Some(resolved)
+}
+
+/// Bind same-incidence curve branches when their surviving endpoint relation
+/// and serialized cardinality establish corresponding allocation ranks.
+pub(crate) fn bind_ordered_standard_curve_branches(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &mut [Vec<[usize; 2]>],
+) {
+    if supports.len() != candidates.len() {
+        return;
+    }
+    let normalized = candidates
+        .iter()
+        .map(|pairs| {
+            let mut pairs = pairs
+                .iter()
+                .copied()
+                .map(|mut pair| {
+                    pair.sort_unstable();
+                    pair
+                })
+                .collect::<Vec<_>>();
+            pairs.sort_unstable();
+            pairs.dedup();
+            pairs
+        })
+        .collect::<Vec<_>>();
+    let mut grouped = vec![false; supports.len()];
+    for first in 0..supports.len() {
+        if grouped[first]
+            || !matches!(
+                supports[first].geometry,
+                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
+            )
+            || normalized[first].len() < 2
+        {
+            continue;
+        }
+        let mut faces = supports[first].faces;
+        faces.sort_unstable();
+        let edges = (first..supports.len())
+            .filter(|edge| {
+                let mut candidate_faces = supports[*edge].faces;
+                candidate_faces.sort_unstable();
+                let same_circle = match (&supports[*edge].geometry, &supports[first].geometry) {
+                    (
+                        crate::families::standard::records::StandardCurveGeometry::Circle {
+                            center: candidate_center,
+                            radius: candidate_radius,
+                        },
+                        crate::families::standard::records::StandardCurveGeometry::Circle {
+                            center,
+                            radius,
+                        },
+                    ) => candidate_center == center && candidate_radius == radius,
+                    _ => false,
+                };
+                !grouped[*edge]
+                    && same_circle
+                    && candidate_faces == faces
+                    && normalized[*edge] == normalized[first]
+            })
+            .collect::<Vec<_>>();
+        if edges.len() != normalized[first].len() {
+            continue;
+        }
+        for (pair, edge) in normalized[first].iter().copied().zip(edges) {
+            candidates[edge] = vec![pair];
+            grouped[edge] = true;
+        }
+    }
+    for first in 0..supports.len() {
+        if grouped[first]
+            || !matches!(
+                supports[first].geometry,
+                crate::families::standard::records::StandardCurveGeometry::Bspline
+            )
+            || normalized[first].len() < 4
+        {
+            continue;
+        }
+        let mut faces = supports[first].faces;
+        faces.sort_unstable();
+        let edges = (first..supports.len())
+            .filter(|edge| {
+                let mut candidate_faces = supports[*edge].faces;
+                candidate_faces.sort_unstable();
+                !grouped[*edge]
+                    && matches!(
+                        supports[*edge].geometry,
+                        crate::families::standard::records::StandardCurveGeometry::Bspline
+                    )
+                    && candidate_faces == faces
+                    && normalized[*edge] == normalized[first]
+            })
+            .collect::<Vec<_>>();
+        let branch_count = edges.len();
+        if branch_count < 2 {
+            continue;
+        }
+        let vertices = normalized[first]
+            .iter()
+            .flatten()
+            .copied()
+            .collect::<HashSet<_>>();
+        if vertices.len() != branch_count.saturating_mul(2) {
+            continue;
+        }
+        let fixed_relations = normalized
+            .iter()
+            .enumerate()
+            .filter(|(edge, pairs)| {
+                !edges.contains(edge)
+                    && pairs.len() == 1
+                    && supports[*edge]
+                        .faces
+                        .iter()
+                        .any(|face| faces.contains(face))
+                    && pairs[0].iter().all(|point| vertices.contains(point))
+            })
+            .map(|(_, pairs)| pairs[0])
+            .collect::<HashSet<_>>();
+        let relation = normalized[first]
+            .iter()
+            .copied()
+            .filter(|pair| !fixed_relations.contains(pair))
+            .collect::<Vec<_>>();
+        if relation.len() != branch_count.saturating_mul(branch_count) {
+            continue;
+        }
+        let mut adjacency = HashMap::<usize, Vec<usize>>::new();
+        for &[left, right] in &relation {
+            if left == right {
+                adjacency.clear();
+                break;
+            }
+            adjacency.entry(left).or_default().push(right);
+            adjacency.entry(right).or_default().push(left);
+        }
+        if adjacency.len() != branch_count.saturating_mul(2)
+            || adjacency
+                .values()
+                .any(|neighbors| neighbors.len() != branch_count)
+        {
+            continue;
+        }
+        let Some(&root) = adjacency.keys().min() else {
+            continue;
+        };
+        let mut colors = HashMap::from([(root, false)]);
+        let mut stack = vec![root];
+        let mut valid = true;
+        while let Some(vertex) = stack.pop() {
+            let color = colors[&vertex];
+            for &neighbor in &adjacency[&vertex] {
+                match colors.get(&neighbor) {
+                    Some(stored) if *stored == color => valid = false,
+                    Some(_) => {}
+                    None => {
+                        colors.insert(neighbor, !color);
+                        stack.push(neighbor);
+                    }
+                }
+            }
+        }
+        if !valid || colors.len() != adjacency.len() {
+            continue;
+        }
+        let mut sides = [Vec::new(), Vec::new()];
+        for (vertex, color) in colors {
+            sides[usize::from(color)].push(vertex);
+        }
+        sides[0].sort_unstable();
+        sides[1].sort_unstable();
+        if sides.iter().any(|side| side.len() != branch_count) {
+            continue;
+        }
+        let cross_relations = sides[0]
+            .iter()
+            .flat_map(|left| {
+                sides[1].iter().map(move |right| {
+                    let mut pair = [*left, *right];
+                    pair.sort_unstable();
+                    pair
+                })
+            })
+            .collect::<HashSet<_>>();
+        if relation.iter().copied().collect::<HashSet<_>>() != cross_relations
+            || normalized[first]
+                .iter()
+                .any(|pair| !cross_relations.contains(pair) && !fixed_relations.contains(pair))
+        {
+            continue;
+        }
+        for (rank, edge) in edges.into_iter().enumerate() {
+            candidates[edge] = vec![[sides[0][rank], sides[1][rank]]];
+            grouped[edge] = true;
+        }
+    }
 }
 
 pub(crate) fn standard_circle_endpoint_candidates(
@@ -3383,10 +3585,10 @@ mod route_tests {
     };
     use crate::families::e5::decode::reverse_e5_pcurve_geometry;
     use crate::families::standard::decode::{
-        build_standard_edge_curve, circular_ranges_are_nonoverlapping_or_coincident,
-        combine_propagated_endpoint_pairs, include_native_endpoint_pairs,
-        intersection_line_direction, merge_native_endpoint_evidence, point_on_known_surface,
-        point_on_standard_face, resolve_standard_endpoint_pairs,
+        bind_ordered_standard_curve_branches, build_standard_edge_curve,
+        circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
+        include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
+        point_on_known_surface, point_on_standard_face, resolve_standard_endpoint_pairs,
         standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, unique_native_identity_points,
@@ -3835,6 +4037,100 @@ mod route_tests {
         .expect("endpoint option pass");
 
         assert_eq!(choices, [vec![[0, 2]], vec![[1, 3]]]);
+    }
+
+    #[test]
+    fn standard_spline_rows_bind_complete_bipartite_domains_by_allocation_rank() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        });
+        let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
+        let mut candidates = [domain.clone(), domain];
+
+        bind_ordered_standard_curve_branches(&supports, &mut candidates);
+
+        assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
+    }
+
+    #[test]
+    fn standard_circle_rows_bind_equal_domains_by_allocation_rank() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 2.0),
+                radius: 4.0,
+            },
+        });
+        let domain = vec![[2, 8], [2, 9]];
+        let mut candidates = [domain.clone(), domain];
+
+        bind_ordered_standard_curve_branches(&supports, &mut candidates);
+
+        assert_eq!(candidates, [vec![[2, 8]], vec![[2, 9]]]);
+    }
+
+    #[test]
+    fn standard_spline_rows_exclude_adjacent_fixed_boundary_relations() {
+        let supports = [
+            StandardCurveSupport {
+                pos: 8,
+                tag: 8,
+                faces: [1, 3],
+                geometry: StandardCurveGeometry::Circle {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    radius: 1.0,
+                },
+            },
+            StandardCurveSupport {
+                pos: 9,
+                tag: 9,
+                faces: [3, 4],
+                geometry: StandardCurveGeometry::Circle {
+                    center: Point3::new(0.0, 0.0, 1.0),
+                    radius: 1.0,
+                },
+            },
+            StandardCurveSupport {
+                pos: 10,
+                tag: 10,
+                faces: [3, 7],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+            StandardCurveSupport {
+                pos: 11,
+                tag: 11,
+                faces: [3, 7],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+        ];
+        let complete = vec![[2, 3], [2, 8], [2, 9], [3, 8], [3, 9], [8, 9]];
+        let mut candidates = [vec![[2, 3]], vec![[8, 9]], complete.clone(), complete];
+
+        bind_ordered_standard_curve_branches(&supports, &mut candidates);
+
+        assert_eq!(candidates[2], [[2, 8]]);
+        assert_eq!(candidates[3], [[3, 9]]);
+    }
+
+    #[test]
+    fn standard_spline_branch_rank_leaves_incomplete_relations_unresolved() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        });
+        let domain = vec![[2, 8], [2, 9], [3, 9]];
+        let mut candidates = [domain.clone(), domain.clone()];
+
+        bind_ordered_standard_curve_branches(&supports, &mut candidates);
+
+        assert_eq!(candidates, [domain.clone(), domain]);
     }
 
     #[test]
