@@ -458,6 +458,8 @@ A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for co
 
 The same lane supplies configuration-local feature operation state. Feature classes, operation discriminators, compact termination records, profile adjacency, path references, and selection records are evaluated within their `Config-N-ResolvedFeatures` lane. They do not define document-global feature semantics unless every applicable lane yields the same state. A resolved configuration carries one evaluated feature state for every document feature.
 
+Configuration slot identity uses final partition source indices. A configuration's explicit partition source index selects the same-numbered lane before regeneration ordinal fallback. Another configuration whose regeneration ordinal has the same value does not receive that lane's snapshot.
+
 When exactly one configuration is active and no configuration-scoped lane supplies its state, the document-level feature and parameter projections are its evaluated state. Its snapshot contains the final document-level state of every feature and every parameter with an evaluated value. Configuration-scoped lanes take precedence and supply independently evaluated snapshots.
 
 An unquoted Keywords expression identifier does not begin with an ASCII digit or `.`. A numeric-leading token is a numeric literal, including when a parameter in the same owner has that token as its name. A numeric parameter name is referenced with double quotes.

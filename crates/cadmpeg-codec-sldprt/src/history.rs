@@ -7537,6 +7537,10 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
 ) {
+    for configuration in &mut ir.model.configurations {
+        configuration.parameter_values.clear();
+        configuration.feature_states.clear();
+    }
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {

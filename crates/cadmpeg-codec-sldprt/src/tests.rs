@@ -12497,6 +12497,50 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
             ..
         }
     ));
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &combine_payload(false),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-1-ResolvedFeatures",
+        &resolved_selection,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature_id = decoded.ir.model.features[0].id.clone();
+    assert!(decoded.ir.model.configurations[0].active);
+    assert_eq!(decoded.ir.model.configurations[0].source_index, Some(1));
+    assert!(matches!(
+        &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Native(target),
+            tools: BodySelection::Native(tools),
+            ..
+        } if target.starts_with("sldprt:feature-input:body-path:")
+            && tools.starts_with("sldprt:feature-input:body-path:")
+    ));
+    assert!(decoded.ir.model.configurations[1].feature_states.is_empty());
 }
 
 #[test]
