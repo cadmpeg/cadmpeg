@@ -287,6 +287,9 @@ retains its typed-wrapper bytes. `dum_array`, `data_dbls`, and `data_type` are
 separate named fields. A count-prefixed compact-integer array is typed as such
 only when exactly the declared number of compact integers consumes the entire
 bounded field body; trailing bytes make the field opaque.
+In a counted `params` scalar array, `e5` supplies two consecutive zero slots
+and `e6` supplies three. The expanded slots must exactly match the declared
+count and the scalar tokens must consume the complete bounded field body.
 
 Named prototype fields describe the first surface instance. The first instance is the adjacent same-family positional surface row. The preceding adjacent row is the first instance when the prototype separates it from replay rows; otherwise the following adjacent row is the first instance. Positional row bodies carry the per-instance values for subsequent instances.
 

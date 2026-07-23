@@ -2009,15 +2009,18 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 return SurfaceNamedValue::CompactIntArray(values);
             }
             if name == "params" {
-                // Each declared slot is at least a one-byte scalar token in the
-                // value bytes, so the count cannot exceed the remaining bytes.
-                let Some(slot_count) =
-                    bounded_len(u64::from(count), 1, body.len().saturating_sub(values_start))
+                let remaining = body.len().saturating_sub(values_start);
+                let Some(slot_count) = usize::try_from(count)
+                    .ok()
+                    .filter(|count| *count <= remaining.saturating_mul(3))
                 else {
                     return SurfaceNamedValue::Opaque(body.to_vec());
                 };
-                let slots =
-                    named_spline_scalar_slots(name, &body[values_start..], slot_count, cache);
+                let Some(slots) =
+                    counted_parameter_scalar_slots(&body[values_start..], slot_count, cache)
+                else {
+                    return SurfaceNamedValue::Opaque(body.to_vec());
+                };
                 return SurfaceNamedValue::CountedScalarArray {
                     count,
                     values: slots.iter().map(|slot| slot.0).collect(),
@@ -4537,6 +4540,35 @@ fn named_spline_scalar_slots(
     slots
 }
 
+fn counted_parameter_scalar_slots(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<ScalarTokenSlot>> {
+    let mut slots = Vec::with_capacity(count);
+    let mut cursor = 0;
+    while cursor < body.len() && slots.len() < count {
+        let run = match body[cursor] {
+            0xe5 => 2,
+            0xe6 => 3,
+            _ => 0,
+        };
+        if run > 0 {
+            (slots.len().checked_add(run)? <= count).then_some(())?;
+            slots.push((Some(0.0), vec![body[cursor]]));
+            slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
+            cursor += 1;
+            continue;
+        }
+        let start = cursor;
+        let (value, next) = named_spline_scalar_slot("params", body, cursor, cache)?;
+        (next > cursor).then_some(())?;
+        slots.push((value, body[start..next].to_vec()));
+        cursor = next;
+    }
+    (slots.len() == count && cursor == body.len()).then_some(slots)
+}
+
 fn named_spline_scalar_slot(
     name: &str,
     body: &[u8],
@@ -5699,6 +5731,38 @@ mod tests {
                     vec![0x2d, 8, 0, 0, 0, 0, 0, 0],
                 ],
             })
+        );
+    }
+
+    #[test]
+    fn counted_parameters_expand_compact_zero_runs() {
+        let body = [0xe4, 0xe5, 0x0f, 0xe6];
+
+        assert_eq!(
+            counted_parameter_scalar_slots(&body, 7, &scalar::ScalarCache::default()),
+            Some(vec![
+                (Some(1.0), vec![0xe4]),
+                (Some(0.0), vec![0xe5]),
+                (Some(0.0), vec![]),
+                (Some(0.0), vec![0x0f]),
+                (Some(0.0), vec![0xe6]),
+                (Some(0.0), vec![]),
+                (Some(0.0), vec![]),
+            ])
+        );
+    }
+
+    #[test]
+    fn counted_parameters_require_exact_zero_run_cardinality() {
+        let body = [0xe4, 0xe5, 0x0f, 0xe6];
+
+        assert_eq!(
+            counted_parameter_scalar_slots(&body, 6, &scalar::ScalarCache::default()),
+            None
+        );
+        assert_eq!(
+            counted_parameter_scalar_slots(&body, 8, &scalar::ScalarCache::default()),
+            None
         );
     }
 
