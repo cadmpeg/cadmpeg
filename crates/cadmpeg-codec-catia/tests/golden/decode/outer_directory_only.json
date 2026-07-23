@@ -1,0 +1,115 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "catia",
+      "attributes": {
+        "external_reference_count": "0",
+        "file_size": "163",
+        "finjpl_segment_count": "0",
+        "outer_dir_offset": "36",
+        "preview_count": "0",
+        "variant": "unknown"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [],
+      "regions": [],
+      "shells": [],
+      "faces": [],
+      "loops": [],
+      "coedges": [],
+      "edges": [],
+      "vertices": [],
+      "points": [],
+      "surfaces": [],
+      "curves": [],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "catia": {
+        "version": 71,
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_pcurves": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "unknowns": [],
+          "value_blocks": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "catia",
+    "container_only": false,
+    "geometry_transferred": false,
+    "losses": [
+      {
+        "code": "geometry_not_transferred",
+        "category": "geometry",
+        "severity": "blocking",
+        "message": "No B-rep geometry was transferred. This file's storage variant is `unknown` (unrecognized storage layout); the applicable decoded record families transfer geometry in this codec."
+      },
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "blocking",
+        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file."
+      }
+    ],
+    "notes": [
+      "outer V5_CFV2 container: directory offset 36 + length 127 = 163 (file size 163); variant: unrecognized storage layout",
+      "outer CATIA_V5 CB0001 directory with 1 stream(s)",
+      "no nested V5_CFV2 sub-container (outer-preamble record families only)",
+      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {}
+  }
+}

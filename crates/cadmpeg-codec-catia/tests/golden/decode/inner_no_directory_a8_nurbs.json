@@ -1,0 +1,232 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "catia",
+      "attributes": {
+        "external_reference_count": "0",
+        "file_size": "539",
+        "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "539",
+        "preview_count": "0",
+        "stream_count": "2",
+        "variant": "inner_no_directory"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [],
+      "regions": [],
+      "shells": [],
+      "faces": [],
+      "loops": [],
+      "coedges": [],
+      "edges": [],
+      "vertices": [],
+      "points": [],
+      "surfaces": [
+        {
+          "id": "catia:a8:surf#0",
+          "geometry": {
+            "kind": "nurbs",
+            "u_degree": 2,
+            "v_degree": 2,
+            "u_knots": [
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "v_knots": [
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "u_count": 3,
+            "v_count": 3,
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              {
+                "x": 2.0,
+                "y": 0.0,
+                "z": 2.0
+              },
+              {
+                "x": 3.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              {
+                "x": 4.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              {
+                "x": 5.0,
+                "y": 1.0,
+                "z": 2.0
+              },
+              {
+                "x": 6.0,
+                "y": 2.0,
+                "z": 0.0
+              },
+              {
+                "x": 7.0,
+                "y": 2.0,
+                "z": 1.0
+              },
+              {
+                "x": 8.0,
+                "y": 2.0,
+                "z": 2.0
+              }
+            ],
+            "u_periodic": false,
+            "v_periodic": false
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-surface:decafbad"
+          }
+        }
+      ],
+      "curves": [],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "catia": {
+        "version": 71,
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_pcurves": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "unknowns": [
+            {
+              "id": "catia:payload:unknown#freeform",
+              "links": [
+                "catia:a8:surf#0"
+              ]
+            }
+          ],
+          "value_blocks": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "catia",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "blocking",
+        "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
+      }
+    ],
+    "notes": [
+      "outer V5_CFV2 container: directory offset 539 + length 0 = 539 (file size 539); variant: nested V5_CFV2 with no BREP-body directory (contiguous inner body): freeform carrier decode supported",
+      "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
+      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "catia:CATPart",
+        "catia:object_stream_a8_03"
+      ],
+      "provenance": {
+        "catia:a8:surf#0": {
+          "stream": 1,
+          "offset": 32,
+          "tag": "freeform:object_id:decafbad"
+        },
+        "catia:payload:unknown#freeform": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "inner_no_directory"
+        }
+      },
+      "exactness": {
+        "catia:payload:unknown#freeform": {
+          "entity": "unknown",
+          "fields": {
+            "links": "derived"
+          }
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "catia:payload:unknown#freeform",
+        "stream": "catia:CATPart",
+        "offset": 0,
+        "byte_len": 539,
+        "sha256": "f3373383af38ab949d2ea0c075daefa0e5e938f4984cb4d22d0a69ea685a7d08",
+        "data": "VjVfQ0ZWMgAAAAIbAAAAAFY1X0NGVjIAAAABJAAAAOeoAzQIAQAArfvK3gAJAAAJAQAAAAAAAAAAAAAAAAAA8D8NDQkAAAkBAAAAAAAAAAAAAAAAAADwPw0NAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAhAAAAAAAAA8D8AAAAAAAAAAAAAAAAAABBAAAAAAAAA8D8AAAAAAADwPwAAAAAAABRAAAAAAAAA8D8AAAAAAAAAQAAAAAAAABhAAAAAAAAAAEAAAAAAAAAAAAAAAAAAABxAAAAAAAAAAEAAAAAAAADwPwAAAAAAACBAAAAAAAAAAEAAAAAAAAAAQABDQVRJQV9WNSBDQjAwMDEAAAAAAAAAAAAAAAAAAAABE1gAYQBpAG4ARABhAHQAYQBTAHQAcgBlAGEAbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAEAAAARMAAAETAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABUwB1AHIAZgBhAGMAaQBjAFIAZQBwAHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAEjAAAAAQAAAAEAAAAAAAAAAENCX19FTkQ="
+      }
+    ]
+  }
+}

@@ -1,0 +1,271 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "catia",
+      "attributes": {
+        "brep_stream_len": "324",
+        "brep_stream_sha256": "867e7b5fa60057a348df5093bcadcc75d8e7c8f8795b5f954091bbf7985295fe",
+        "external_reference_count": "0",
+        "fbb_runs": "2",
+        "file_size": "587",
+        "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "587",
+        "preview_count": "0",
+        "stream_count": "2",
+        "variant": "fbb_only",
+        "vertex_records": "3"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [],
+      "regions": [],
+      "shells": [],
+      "faces": [],
+      "loops": [],
+      "coedges": [],
+      "edges": [],
+      "vertices": [],
+      "points": [],
+      "surfaces": [
+        {
+          "id": "catia:standard:surf#0",
+          "geometry": {
+            "kind": "cylinder",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "radius": 5.0
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-carrier:ccbbaa"
+          }
+        },
+        {
+          "id": "catia:standard:surf#1",
+          "geometry": {
+            "kind": "plane",
+            "origin": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-carrier:332211"
+          }
+        }
+      ],
+      "curves": [
+        {
+          "id": "catia:standard:circle#0",
+          "geometry": {
+            "kind": "circle",
+            "center": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "radius": 5.0
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge-support:665544"
+          }
+        }
+      ],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "catia": {
+        "version": 71,
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_pcurves": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "unknowns": [
+            {
+              "id": "catia:payload:unknown#brep-stream",
+              "links": [
+                "catia:standard:surf#0",
+                "catia:standard:surf#1",
+                "catia:standard:circle#0"
+              ]
+            }
+          ],
+          "value_blocks": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "catia",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "carrier_summary",
+        "category": "geometry",
+        "severity": "info",
+        "message": "0 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 2 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 1 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus."
+      },
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "blocking",
+        "message": "The B-rep boundary graph was not emitted: 2 face outer-bound run(s) were detected, but a complete trim/spine/support-table parse and unique surface-constrained logical-vertex assignment were not all available."
+      },
+      {
+        "code": "geometry_not_transferred",
+        "category": "geometry",
+        "severity": "warning",
+        "message": "1 analytic surface record(s) had a non-finite or out-of-range inline payload and were not decoded."
+      },
+      {
+        "code": "attributes_not_transferred",
+        "category": "attribute",
+        "severity": "warning",
+        "message": "Standard circles with an exact adjacent-carrier section normal and plane-plane lines are transferred as curves. Standard spline edges retain exact two-surface intersection constructions, but their serialized NURBS caches, persistent cache bindings, materials, and document metadata are not yet transferred."
+      }
+    ],
+    "notes": [
+      "outer V5_CFV2 container: directory offset 587 + length 0 = 587 (file size 587); variant: FBB-only partial spine (u24be edge tables, no standard delimiter): vertex and analytic carrier decode supported",
+      "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
+      "reconstructed BREP stream from MainDataStream + SurfacicReps: 2 FBB run(s), 3 vertex record(s), 0 edge-table delimiter(s)",
+      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "catia:MainDataStream+SurfacicReps"
+      ],
+      "provenance": {
+        "catia:payload:unknown#brep-stream": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "fbb_only"
+        },
+        "catia:standard:circle#0": {
+          "stream": 0,
+          "offset": 297,
+          "tag": "curve_support_60_circle"
+        },
+        "catia:standard:surf#0": {
+          "stream": 0,
+          "offset": 131,
+          "tag": "surfacic_reps_33"
+        },
+        "catia:standard:surf#1": {
+          "stream": 0,
+          "offset": 204,
+          "tag": "surfacic_reps_32"
+        }
+      },
+      "exactness": {
+        "catia:payload:unknown#brep-stream": {
+          "entity": "unknown",
+          "fields": {
+            "links": "derived"
+          }
+        },
+        "catia:standard:circle#0": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.axis": "derived"
+          }
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "catia:payload:unknown#brep-stream",
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "offset": 0,
+        "byte_len": 324,
+        "sha256": "867e7b5fa60057a348df5093bcadcc75d8e7c8f8795b5f954091bbf7985295fe",
+        "data": "AUEB/wMAAAAAAAABAAIBSQH/AwAAAAAAAAAAAAAAAACAPwAAAAEAAjAEBP/S0tLSMAQE/9LS0tIBAQARJAT//wAAAAECABEkBP//AAAAAQYDBQgBAAAAAAAAAAAAAAAABQgBAAAgQQAAAAAAAAAABQgBAAAAAAAAIEEAAAAAqrvMABoAMzMAAAAAAAAAAAAAAAAAAAAAAAAAAECgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAREiMwACADMyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//ESIzAAIAMzIAAIA/AAAAQAAAQEAAAAAAAACAQAAAAAAAAIA/AAAAQAAAQEAAAIBAYERVZgASADM3AAAAAAAAAAAAAAAAQKAAAAAB"
+      }
+    ]
+  }
+}

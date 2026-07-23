@@ -1,0 +1,227 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "catia",
+      "attributes": {
+        "external_reference_count": "0",
+        "file_size": "320",
+        "finjpl_segment_count": "0",
+        "outer_dir_offset": "0",
+        "preview_count": "0",
+        "variant": "zero_entity"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [],
+      "regions": [],
+      "shells": [],
+      "faces": [],
+      "loops": [],
+      "coedges": [],
+      "edges": [],
+      "vertices": [],
+      "points": [],
+      "surfaces": [
+        {
+          "id": "catia:zero-entity:surf#0",
+          "geometry": {
+            "kind": "nurbs",
+            "u_degree": 2,
+            "v_degree": 2,
+            "u_knots": [
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "v_knots": [
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "u_count": 3,
+            "v_count": 3,
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              {
+                "x": 2.0,
+                "y": 0.0,
+                "z": 2.0
+              },
+              {
+                "x": 3.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              {
+                "x": 4.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              {
+                "x": 5.0,
+                "y": 1.0,
+                "z": 2.0
+              },
+              {
+                "x": 6.0,
+                "y": 2.0,
+                "z": 0.0
+              },
+              {
+                "x": 7.0,
+                "y": 2.0,
+                "z": 1.0
+              },
+              {
+                "x": 8.0,
+                "y": 2.0,
+                "z": 2.0
+              }
+            ],
+            "u_periodic": false,
+            "v_periodic": false
+          }
+        }
+      ],
+      "curves": [],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "catia": {
+        "version": 71,
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_pcurves": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "unknowns": [
+            {
+              "id": "catia:payload:unknown#zero-entity",
+              "links": [
+                "catia:zero-entity:surf#0"
+              ]
+            }
+          ],
+          "value_blocks": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "catia",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "blocking",
+        "message": "Zero-entity analytic surface carriers were decoded, but the face/loop/coedge/edge/vertex graph is not yet transferred."
+      }
+    ],
+    "notes": [
+      "outer V5_CFV2 container: directory offset 0 + length 0 = 0 (file size 320); variant: zero-entity a9 03 (no nested container): analytic carriers decoded",
+      "no nested V5_CFV2 sub-container (outer-preamble record families only)",
+      "record-family census: 1 a9 03, 0 e5 0d 03",
+      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "catia:CATPart",
+        "catia:zero_entity_a9_03"
+      ],
+      "provenance": {
+        "catia:payload:unknown#zero-entity": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "zero_entity"
+        },
+        "catia:zero-entity:surf#0": {
+          "stream": 1,
+          "offset": 16,
+          "tag": "analytic_surface"
+        }
+      },
+      "exactness": {
+        "catia:payload:unknown#zero-entity": {
+          "entity": "unknown",
+          "fields": {
+            "links": "derived"
+          }
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "catia:payload:unknown#zero-entity",
+        "stream": "catia:CATPart",
+        "offset": 0,
+        "byte_len": 320,
+        "sha256": "b5e8dfd99ad8f0177c5a7811a8f82b86c54cb1a2c0d9cd582e335dd6c9942a19",
+        "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDNMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxADAAAAEAMAAAAAAAAAAAAAAAAAAAAAAADwPxADAAAAEAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAIQAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAQQAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAUQAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAYQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAcQAAAAAAAAABAAAAAAAAA8D8AAAAAAAAgQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAA="
+      }
+    ]
+  }
+}

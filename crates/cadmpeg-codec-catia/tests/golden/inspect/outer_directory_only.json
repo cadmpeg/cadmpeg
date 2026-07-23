@@ -1,0 +1,24 @@
+{
+  "container_kind": "v5-cfv2",
+  "entries": [
+    {
+      "attributes": {
+        "desc_offset": "16",
+        "directory": "outer",
+        "extent_count": "1"
+      },
+      "compressed_size": 20,
+      "compression": "none",
+      "name": "RootStorage",
+      "role": "stream",
+      "uncompressed_size": 20
+    }
+  ],
+  "format": "catia",
+  "notes": [
+    "outer V5_CFV2 container: directory offset 36 + length 127 = 163 (file size 163); variant: unrecognized storage layout",
+    "outer CATIA_V5 CB0001 directory with 1 stream(s)",
+    "no nested V5_CFV2 sub-container (outer-preamble record families only)",
+    "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "container_kind": "v5-cfv2",
+  "entries": [
+    {
+      "attributes": {
+        "desc_offset": "16",
+        "directory": "inner",
+        "extent_count": "1"
+      },
+      "compressed_size": 126,
+      "compression": "none",
+      "name": "MainDataStream",
+      "role": "stream",
+      "uncompressed_size": 126
+    },
+    {
+      "attributes": {
+        "desc_offset": "120",
+        "directory": "inner",
+        "extent_count": "1"
+      },
+      "compressed_size": 198,
+      "compression": "none",
+      "name": "SurfacicReps",
+      "role": "stream",
+      "uncompressed_size": 198
+    }
+  ],
+  "format": "catia",
+  "notes": [
+    "outer V5_CFV2 container: directory offset 1120 + length 0 = 1120 (file size 1120); variant: standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry decode supported",
+    "nested V5_CFV2 at file offset 549 with a CATIA_V5 CB0001 directory of 2 stream(s)",
+    "reconstructed BREP stream from MainDataStream + SurfacicReps: 2 FBB run(s), 3 vertex record(s), 2 edge-table delimiter(s)",
+    "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+  ]
+}

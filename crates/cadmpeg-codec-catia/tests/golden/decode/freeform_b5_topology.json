@@ -1,0 +1,945 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "catia",
+      "attributes": {
+        "brep_stream_len": "416",
+        "brep_stream_sha256": "98a1afc06fb070d7e0f51e857e79d7a100b6e564321d2216831e321856e77386",
+        "external_reference_count": "0",
+        "fbb_runs": "0",
+        "file_size": "679",
+        "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "679",
+        "preview_count": "0",
+        "stream_count": "2",
+        "variant": "float_packed_inner_no_fbb",
+        "vertex_records": "3"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [
+        {
+          "id": "catia:b5:body#0",
+          "kind": "sheet",
+          "regions": [
+            "catia:b5:region#0"
+          ]
+        }
+      ],
+      "regions": [
+        {
+          "id": "catia:b5:region#0",
+          "body": "catia:b5:body#0",
+          "shells": [
+            "catia:b5:shell#0"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "catia:b5:shell#0",
+          "region": "catia:b5:region#0",
+          "faces": [
+            "catia:b5:face#500"
+          ]
+        }
+      ],
+      "faces": [
+        {
+          "id": "catia:b5:face#500",
+          "shell": "catia:b5:shell#0",
+          "surface": "catia:b5:surface#100",
+          "sense": "forward",
+          "loops": [
+            "catia:b5:loop#400"
+          ]
+        }
+      ],
+      "loops": [
+        {
+          "id": "catia:b5:loop#400",
+          "face": "catia:b5:face#500",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "catia:b5:coedge#400-0",
+            "catia:b5:coedge#400-1",
+            "catia:b5:coedge#400-2"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "id": "catia:b5:coedge#400-0",
+          "owner_loop": "catia:b5:loop#400",
+          "edge": "catia:b5:edge#300",
+          "next": "catia:b5:coedge#400-1",
+          "previous": "catia:b5:coedge#400-2",
+          "radial_next": "catia:b5:coedge#400-0",
+          "sense": "forward",
+          "pcurves": [
+            {
+              "pcurve": "catia:b5:pcurve#200"
+            }
+          ]
+        },
+        {
+          "id": "catia:b5:coedge#400-1",
+          "owner_loop": "catia:b5:loop#400",
+          "edge": "catia:b5:edge#301",
+          "next": "catia:b5:coedge#400-2",
+          "previous": "catia:b5:coedge#400-0",
+          "radial_next": "catia:b5:coedge#400-1",
+          "sense": "forward",
+          "pcurves": [
+            {
+              "pcurve": "catia:b5:pcurve#201"
+            }
+          ]
+        },
+        {
+          "id": "catia:b5:coedge#400-2",
+          "owner_loop": "catia:b5:loop#400",
+          "edge": "catia:b5:edge#302",
+          "next": "catia:b5:coedge#400-0",
+          "previous": "catia:b5:coedge#400-1",
+          "radial_next": "catia:b5:coedge#400-2",
+          "sense": "forward",
+          "pcurves": [
+            {
+              "pcurve": "catia:b5:pcurve#202"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "catia:b5:edge#300",
+          "curve": "catia:b5:curve#300",
+          "start": "catia:b5:vertex#0",
+          "end": "catia:b5:vertex#1"
+        },
+        {
+          "id": "catia:b5:edge#301",
+          "curve": "catia:b5:curve#301",
+          "start": "catia:b5:vertex#1",
+          "end": "catia:b5:vertex#2"
+        },
+        {
+          "id": "catia:b5:edge#302",
+          "curve": "catia:b5:curve#302",
+          "start": "catia:b5:vertex#2",
+          "end": "catia:b5:vertex#0"
+        }
+      ],
+      "vertices": [
+        {
+          "id": "catia:b5:vertex#0",
+          "point": "catia:b5:point#0"
+        },
+        {
+          "id": "catia:b5:vertex#1",
+          "point": "catia:b5:point#1"
+        },
+        {
+          "id": "catia:b5:vertex#2",
+          "point": "catia:b5:point#2"
+        }
+      ],
+      "points": [
+        {
+          "id": "catia:b5:point#0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "catia:b5:point#1",
+          "position": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "catia:b5:point#2",
+          "position": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "id": "catia:b5:surface#100",
+          "geometry": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-surface:000064"
+          }
+        }
+      ],
+      "curves": [
+        {
+          "id": "catia:b5:curve#300",
+          "geometry": {
+            "kind": "nurbs",
+            "degree": 1,
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            ],
+            "periodic": false
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge:00012c"
+          }
+        },
+        {
+          "id": "catia:b5:curve#301",
+          "geometry": {
+            "kind": "nurbs",
+            "degree": 1,
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "control_points": [
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
+            ],
+            "periodic": false
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge:00012d"
+          }
+        },
+        {
+          "id": "catia:b5:curve#302",
+          "geometry": {
+            "kind": "nurbs",
+            "degree": 1,
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            ],
+            "periodic": false
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge:00012e"
+          }
+        }
+      ],
+      "subds": [],
+      "pcurves": [
+        {
+          "id": "catia:b5:pcurve#200",
+          "geometry": {
+            "kind": "nurbs",
+            "degree": 1,
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "control_points": [
+              {
+                "u": 0.0,
+                "v": 0.0
+              },
+              {
+                "u": 1.0,
+                "v": 0.0
+              }
+            ],
+            "periodic": false
+          },
+          "parameter_range": [
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "id": "catia:b5:pcurve#201",
+          "geometry": {
+            "kind": "nurbs",
+            "degree": 1,
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "control_points": [
+              {
+                "u": 1.0,
+                "v": 0.0
+              },
+              {
+                "u": 0.0,
+                "v": 1.0
+              }
+            ],
+            "periodic": false
+          },
+          "parameter_range": [
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "id": "catia:b5:pcurve#202",
+          "geometry": {
+            "kind": "nurbs",
+            "degree": 1,
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "control_points": [
+              {
+                "u": 0.0,
+                "v": 1.0
+              },
+              {
+                "u": 0.0,
+                "v": 0.0
+              }
+            ],
+            "periodic": false
+          },
+          "parameter_range": [
+            0.0,
+            1.0
+          ]
+        }
+      ],
+      "procedural_surfaces": [],
+      "procedural_curves": [
+        {
+          "id": "catia:b5:surface-curve#300",
+          "curve": "catia:b5:curve#300",
+          "definition": {
+            "kind": "surface_curve",
+            "family": "parametric",
+            "context": {
+              "sides": [
+                {
+                  "surface": "catia:b5:surface#100",
+                  "pcurve": {
+                    "kind": "nurbs",
+                    "degree": 1,
+                    "knots": [
+                      0.0,
+                      0.0,
+                      1.0,
+                      1.0
+                    ],
+                    "control_points": [
+                      {
+                        "u": 0.0,
+                        "v": 0.0
+                      },
+                      {
+                        "u": 1.0,
+                        "v": 0.0
+                      }
+                    ],
+                    "periodic": false
+                  }
+                },
+                {}
+              ],
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "discontinuities": [
+                [],
+                [],
+                []
+              ]
+            }
+          }
+        },
+        {
+          "id": "catia:b5:surface-curve#301",
+          "curve": "catia:b5:curve#301",
+          "definition": {
+            "kind": "surface_curve",
+            "family": "parametric",
+            "context": {
+              "sides": [
+                {
+                  "surface": "catia:b5:surface#100",
+                  "pcurve": {
+                    "kind": "nurbs",
+                    "degree": 1,
+                    "knots": [
+                      0.0,
+                      0.0,
+                      1.0,
+                      1.0
+                    ],
+                    "control_points": [
+                      {
+                        "u": 1.0,
+                        "v": 0.0
+                      },
+                      {
+                        "u": 0.0,
+                        "v": 1.0
+                      }
+                    ],
+                    "periodic": false
+                  }
+                },
+                {}
+              ],
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "discontinuities": [
+                [],
+                [],
+                []
+              ]
+            }
+          }
+        },
+        {
+          "id": "catia:b5:surface-curve#302",
+          "curve": "catia:b5:curve#302",
+          "definition": {
+            "kind": "surface_curve",
+            "family": "parametric",
+            "context": {
+              "sides": [
+                {
+                  "surface": "catia:b5:surface#100",
+                  "pcurve": {
+                    "kind": "nurbs",
+                    "degree": 1,
+                    "knots": [
+                      0.0,
+                      0.0,
+                      1.0,
+                      1.0
+                    ],
+                    "control_points": [
+                      {
+                        "u": 0.0,
+                        "v": 1.0
+                      },
+                      {
+                        "u": 0.0,
+                        "v": 0.0
+                      }
+                    ],
+                    "periodic": false
+                  }
+                },
+                {}
+              ],
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "discontinuities": [
+                [],
+                [],
+                []
+              ]
+            }
+          }
+        }
+      ],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "catia": {
+        "version": 71,
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_pcurves": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "unknowns": [
+            {
+              "id": "catia:payload:unknown#freeform",
+              "links": [
+                "catia:b5:surface#100",
+                "catia:b5:curve#300",
+                "catia:b5:curve#301",
+                "catia:b5:curve#302"
+              ]
+            }
+          ],
+          "value_blocks": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "catia",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "warning",
+        "message": "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
+      }
+    ],
+    "notes": [
+      "outer V5_CFV2 container: directory offset 679 + length 0 = 679 (file size 679); variant: float-packed inner-no-FBB (object-stream b5 03 topology): freeform carrier decode supported",
+      "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
+      "reconstructed BREP stream from MainDataStream + SurfacicReps: 0 FBB run(s), 3 vertex record(s), 0 edge-table delimiter(s)",
+      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "catia:MainDataStream+SurfacicReps",
+        "catia:object_stream_b5_03"
+      ],
+      "provenance": {
+        "catia:b5:body#0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "single_body"
+        },
+        "catia:b5:coedge#400-0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "serialized_loop_member"
+        },
+        "catia:b5:coedge#400-1": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "serialized_loop_member"
+        },
+        "catia:b5:coedge#400-2": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "serialized_loop_member"
+        },
+        "catia:b5:curve#300": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "pcurve_lifted_3d_curve"
+        },
+        "catia:b5:curve#301": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "pcurve_lifted_3d_curve"
+        },
+        "catia:b5:curve#302": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "pcurve_lifted_3d_curve"
+        },
+        "catia:b5:edge#300": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "5e_edge"
+        },
+        "catia:b5:edge#301": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "5e_edge"
+        },
+        "catia:b5:edge#302": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "5e_edge"
+        },
+        "catia:b5:face#500": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "5f_face"
+        },
+        "catia:b5:loop#400": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "62_loop"
+        },
+        "catia:b5:pcurve#200": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "21_pcurve"
+        },
+        "catia:b5:pcurve#201": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "21_pcurve"
+        },
+        "catia:b5:pcurve#202": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "21_pcurve"
+        },
+        "catia:b5:point#0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "05_08_01_vertex"
+        },
+        "catia:b5:point#1": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "05_08_01_vertex"
+        },
+        "catia:b5:point#2": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "05_08_01_vertex"
+        },
+        "catia:b5:region#0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "derived_region"
+        },
+        "catia:b5:shell#0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "derived_shell"
+        },
+        "catia:b5:surface#100": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "face_surface"
+        },
+        "catia:b5:surface-curve#300": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "parametric_surface_curve"
+        },
+        "catia:b5:surface-curve#301": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "parametric_surface_curve"
+        },
+        "catia:b5:surface-curve#302": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "parametric_surface_curve"
+        },
+        "catia:b5:vertex#0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "05_08_01_vertex"
+        },
+        "catia:b5:vertex#1": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "05_08_01_vertex"
+        },
+        "catia:b5:vertex#2": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "05_08_01_vertex"
+        },
+        "catia:payload:unknown#freeform": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "float_packed_inner_no_fbb"
+        }
+      },
+      "exactness": {
+        "catia:b5:body#0": {
+          "entity": "inferred",
+          "fields": {
+            "kind": "derived",
+            "regions": "derived"
+          }
+        },
+        "catia:b5:coedge#400-0": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "pcurves": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:b5:coedge#400-1": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "pcurves": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:b5:coedge#400-2": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "pcurves": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:b5:curve#300": {
+          "entity": "derived",
+          "fields": {
+            "geometry": "derived"
+          }
+        },
+        "catia:b5:curve#301": {
+          "entity": "derived",
+          "fields": {
+            "geometry": "derived"
+          }
+        },
+        "catia:b5:curve#302": {
+          "entity": "derived",
+          "fields": {
+            "geometry": "derived"
+          }
+        },
+        "catia:b5:edge#300": {
+          "entity": "byte_exact",
+          "fields": {
+            "end": "derived",
+            "start": "derived"
+          }
+        },
+        "catia:b5:edge#301": {
+          "entity": "byte_exact",
+          "fields": {
+            "end": "derived",
+            "start": "derived"
+          }
+        },
+        "catia:b5:edge#302": {
+          "entity": "byte_exact",
+          "fields": {
+            "end": "derived",
+            "start": "derived"
+          }
+        },
+        "catia:b5:face#500": {
+          "entity": "inferred",
+          "fields": {
+            "loops": "derived",
+            "sense": "derived",
+            "shell": "derived",
+            "surface": "derived"
+          }
+        },
+        "catia:b5:loop#400": {
+          "entity": "byte_exact",
+          "fields": {
+            "coedges": "derived",
+            "face": "derived"
+          }
+        },
+        "catia:b5:pcurve#200": {
+          "entity": "byte_exact",
+          "fields": {
+            "parameter_range": "derived"
+          }
+        },
+        "catia:b5:pcurve#201": {
+          "entity": "byte_exact",
+          "fields": {
+            "parameter_range": "derived"
+          }
+        },
+        "catia:b5:pcurve#202": {
+          "entity": "byte_exact",
+          "fields": {
+            "parameter_range": "derived"
+          }
+        },
+        "catia:b5:region#0": {
+          "entity": "inferred",
+          "fields": {
+            "body": "derived",
+            "shells": "derived"
+          }
+        },
+        "catia:b5:shell#0": {
+          "entity": "inferred",
+          "fields": {
+            "faces": "derived",
+            "region": "derived"
+          }
+        },
+        "catia:b5:surface-curve#300": {
+          "entity": "derived",
+          "fields": {
+            "curve": "derived",
+            "definition": "derived"
+          }
+        },
+        "catia:b5:surface-curve#301": {
+          "entity": "derived",
+          "fields": {
+            "curve": "derived",
+            "definition": "derived"
+          }
+        },
+        "catia:b5:surface-curve#302": {
+          "entity": "derived",
+          "fields": {
+            "curve": "derived",
+            "definition": "derived"
+          }
+        },
+        "catia:b5:vertex#0": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        },
+        "catia:b5:vertex#1": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        },
+        "catia:b5:vertex#2": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        },
+        "catia:payload:unknown#freeform": {
+          "entity": "unknown",
+          "fields": {
+            "links": "derived"
+          }
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "catia:payload:unknown#freeform",
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "offset": 0,
+        "byte_len": 416,
+        "sha256": "98a1afc06fb070d7e0f51e857e79d7a100b6e564321d2216831e321856e77386",
+        "data": "tQMnSWQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAtQMhQMgAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAABQUHtQMhQMkAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/BQUHtQMhQMoAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAABQUHtQNeACwBAAC1A14ALQEAALUDXgAuAQAAtQNiGZABAACHGMgAGCwBGMkAGC0BGMoAGC4BGGQAgwUFtQNfCPQBAACCGGQAGJABBQUIAQAAAAAAAAAAAAAAAAUIAQAAgD8AAAAAAAAAAAUIAQAAAAAAAIA/AAAAAAA="
+      }
+    ]
+  }
+}

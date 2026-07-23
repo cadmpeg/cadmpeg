@@ -1,0 +1,318 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "catia",
+      "attributes": {
+        "brep_stream_len": "280",
+        "brep_stream_sha256": "c97d160a4e1cab022f297a75a98047f86019686f879b6b3fd0e84def83f25ee2",
+        "external_reference_count": "0",
+        "fbb_runs": "0",
+        "file_size": "543",
+        "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "543",
+        "preview_count": "0",
+        "stream_count": "2",
+        "variant": "e5_stream",
+        "vertex_records": "2"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [
+        {
+          "id": "catia:e5:body#unbound-points",
+          "kind": "wire",
+          "regions": [
+            "catia:e5:region#unbound-points"
+          ]
+        }
+      ],
+      "regions": [
+        {
+          "id": "catia:e5:region#unbound-points",
+          "body": "catia:e5:body#unbound-points",
+          "shells": [
+            "catia:e5:shell#unbound-points"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "catia:e5:shell#unbound-points",
+          "region": "catia:e5:region#unbound-points",
+          "faces": [],
+          "free_vertices": [
+            "catia:e5:v#0",
+            "catia:e5:v#1"
+          ]
+        }
+      ],
+      "faces": [],
+      "loops": [],
+      "coedges": [],
+      "edges": [],
+      "vertices": [
+        {
+          "id": "catia:e5:v#0",
+          "point": "catia:e5:pt#0"
+        },
+        {
+          "id": "catia:e5:v#1",
+          "point": "catia:e5:pt#1"
+        }
+      ],
+      "points": [
+        {
+          "id": "catia:e5:pt#0",
+          "position": {
+            "x": 12.5,
+            "y": 20.0,
+            "z": 30.0
+          }
+        },
+        {
+          "id": "catia:e5:pt#1",
+          "position": {
+            "x": 7.5,
+            "y": 20.0,
+            "z": 30.0
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "id": "catia:e5:surf#0",
+          "geometry": {
+            "kind": "cylinder",
+            "origin": {
+              "x": 10.0,
+              "y": 20.0,
+              "z": 30.0
+            },
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "radius": 2.5
+          }
+        }
+      ],
+      "curves": [
+        {
+          "id": "catia:e5:curve#0",
+          "geometry": {
+            "kind": "circle",
+            "center": {
+              "x": 10.0,
+              "y": 20.0,
+              "z": 30.0
+            },
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "radius": 2.5
+          }
+        }
+      ],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "catia": {
+        "version": 71,
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_pcurves": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "unknowns": [
+            {
+              "id": "catia:payload:unknown#e5",
+              "links": [
+                "catia:e5:surf#0",
+                "catia:e5:curve#0"
+              ]
+            }
+          ],
+          "value_blocks": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "catia",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "blocking",
+        "message": "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding."
+      }
+    ],
+    "notes": [
+      "outer V5_CFV2 container: directory offset 543 + length 0 = 543 (file size 543); variant: E5 0D 03 record stream: direct analytic carrier decode supported",
+      "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
+      "reconstructed BREP stream from MainDataStream + SurfacicReps: 0 FBB run(s), 2 vertex record(s), 0 edge-table delimiter(s)",
+      "record-family census: 0 a9 03, 11 e5 0d 03",
+      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "catia:MainDataStream+SurfacicReps",
+        "catia:e5_0d_03"
+      ],
+      "provenance": {
+        "catia:e5:body#unbound-points": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "unbound_point_owner"
+        },
+        "catia:e5:curve#0": {
+          "stream": 1,
+          "offset": 32,
+          "tag": "circle_carrier"
+        },
+        "catia:e5:pt#0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:e5:pt#1": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:e5:region#unbound-points": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "unbound_point_owner"
+        },
+        "catia:e5:shell#unbound-points": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "unbound_point_owner"
+        },
+        "catia:e5:surf#0": {
+          "stream": 1,
+          "offset": 32,
+          "tag": "analytic_surface"
+        },
+        "catia:e5:v#0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:e5:v#1": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:payload:unknown#e5": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "e5_stream"
+        }
+      },
+      "exactness": {
+        "catia:e5:body#unbound-points": {
+          "entity": "inferred"
+        },
+        "catia:e5:region#unbound-points": {
+          "entity": "inferred"
+        },
+        "catia:e5:shell#unbound-points": {
+          "entity": "inferred"
+        },
+        "catia:e5:v#0": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        },
+        "catia:e5:v#1": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        },
+        "catia:payload:unknown#e5": {
+          "entity": "unknown",
+          "fields": {
+            "links": "derived"
+          }
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "catia:payload:unknown#e5",
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "offset": 0,
+        "byte_len": 280,
+        "sha256": "c97d160a4e1cab022f297a75a98047f86019686f879b6b3fd0e84def83f25ee2",
+        "data": "5Q0DyQBkAAAAAAAAAAAAAAAAAAAkQAAAAAAAADRAAAAAAAAAPkAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAEQAAAAAAAAAAAAAAAAAAAAAAAAADlDQP/AAYAAAAAAAAAhYCBgoCABQgBAABIQQAAoEEAAPBBBQgBAADwQAAAoEEAAPBB5Q0D/gAAAAAAAgAAAOUNA/4AAAAAAAMAAADlDQP+AAAAAAAEAAAA5Q0D/gAAAAAABQAAAOUNA/4AAAAAAAYAAADlDQP+AAAAAAAHAAAA5Q0D/gAAAAAACAAAAOUNA/4AAAAAAAkAAADlDQP+AAAAAAAKAAAAAA=="
+      }
+    ]
+  }
+}

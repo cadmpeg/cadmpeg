@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
+#[cfg(test)]
+mod tests;
+
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, PcurveGeometry,

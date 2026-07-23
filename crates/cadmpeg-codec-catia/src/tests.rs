@@ -1865,7 +1865,7 @@ fn a8_catpart() -> Vec<u8> {
     object_main_catpart(&a8_surface_stream())
 }
 
-fn object_main_catpart(main: &[u8]) -> Vec<u8> {
+pub(crate) fn object_main_catpart(main: &[u8]) -> Vec<u8> {
     let surf = vec![0u8];
     let main_off = 16u32;
     let surf_off = main_off + main.len() as u32;
@@ -5526,4 +5526,382 @@ fn every_decode_path_populates_v1_annotations() {
         &container_only.ir,
         &container_only.source_fidelity.annotations,
     );
+}
+
+/// Golden-snapshot harness over a covering set of hand-built `.CATPart` byte
+/// images. Each fixture is committed under `tests/golden/fixtures/*.catpart`; its
+/// decode output (canonical IR + `DecodeReport` + `SourceFidelity`) is pinned in
+/// `tests/golden/decode/<name>.json` and its container-inspection output
+/// (`ContainerSummary`) in `tests/golden/inspect/<name>.json`. Regenerate with
+/// `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-catia golden`.
+///
+/// # Route-coverage ledger
+///
+/// [`crate::families`] declares four ordered decode routes. The covering
+/// set pins each route, each freeform-applicable variant, and the record
+/// vocabularies (`b5`, `a5a8`, `b2`, `consolidated`) reachable through them.
+///
+/// | Route (variant) | Fixtures |
+/// |---|---|
+/// | `standard` (`StandardNested`) | `standard_part`, `tetrahedron_topology`, and the four spliced `standard`-route fixtures below |
+/// | `standard` then `freeform` (`FbbOnly`) | `fbb_only_fallthrough` (standard declines, freeform completes) |
+/// | `zero_entity` (`ZeroEntity`) | `zero_entity_markers`, `zero_entity_cylinder`, `zero_entity_nurbs` |
+/// | `e5` (`E5Stream`) | `e5_circle` |
+/// | `freeform` (`FloatPackedInnerNoFbb`) | `freeform_a8_nurbs`, `freeform_b5_topology`, `freeform_a8_rolling_ball`, `freeform_a5_surface`, `freeform_b2_cone` |
+/// | `freeform` (`InnerNoDirectory`) | `inner_no_directory_a8_nurbs`, `inner_no_directory_b2_cylinder` |
+/// | none (`Unknown`, container-only) | `outer_directory_only` |
+///
+/// Record-vocabulary coverage. `b5` object topology: `freeform_b5_topology`.
+/// `a5a8`: a8 surfaces (`freeform_a8_nurbs`, `inner_no_directory_a8_nurbs`), a5
+/// surfaces (`freeform_a5_surface`), a8/a5 rolling-ball jets
+/// (`freeform_a8_rolling_ball`, `standard_a5_rolling_ball`), a5 guide curves
+/// (`consolidated_guide_curve`). `b2`: cylinders
+/// (`inner_no_directory_b2_cylinder`, `consolidated_cylinder_surface_curve`),
+/// cones (`freeform_b2_cone`). `consolidated`: cylinder, NURBS, and guide surface
+/// curves (`consolidated_*`) — these carriers are transferred by the `standard`
+/// route's `append_freeform_surface_pools` pass, so their fixtures are
+/// `StandardNested` images with the carrier records spliced into the inner body.
+///
+/// Unpinned (intentionally). The `standard` family's design-tree vocabularies
+/// (object graph, catalog, value block, design class) and the `zero_entity` /
+/// `b2` owner-packet, offset-support, and pcurve sub-forms are covered by the
+/// white-box tests above and are not additionally golden-pinned; adding a golden
+/// fixture per sub-form would duplicate that coverage without pinning a distinct
+/// route or IR shape. No real `.CATPart` corpus is pinned — none exists in this
+/// repo and none may be added.
+mod golden {
+    use std::path::{Path, PathBuf};
+
+    use cadmpeg_ir::decode::InspectOptions;
+
+    use super::*;
+
+    /// Splice carrier records into the inner body of a `StandardNested` part and
+    /// repair the outer size header, matching the recipe the white-box
+    /// consolidated/surface-pool tests use. The spliced records are scanned by
+    /// the `standard` route's freeform surface-pool pass.
+    fn standard_with_spliced_records(records: Vec<u8>) -> Vec<u8> {
+        let mut file = standard_catpart();
+        file.splice(16..16, records);
+        let file_len = u32::try_from(file.len()).expect("spliced fixture length");
+        file[8..12].copy_from_slice(&be32(file_len));
+        file
+    }
+
+    /// A co-parametric cylinder edge run: a b2 cylinder support, two lifted
+    /// vertex endpoints, and a native edge-run identity.
+    fn consolidated_cylinder_records() -> Vec<u8> {
+        let mut records = b2_cylinder_stream();
+        for point in [
+            [1.0f32, 4.0, 3.0],
+            [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
+        ] {
+            records.extend_from_slice(&[0x05, 0x08, 0x01]);
+            for value in point {
+                records.extend_from_slice(&le_f32(value));
+            }
+        }
+        records.extend_from_slice(&a5_native_edge_run_stream(6, 139, 142));
+        records
+    }
+
+    /// The covering fixture set: (golden name, full `.CATPart` bytes). Each
+    /// entry is assembled from the module-level builders in [`super`], wrapped so
+    /// the bytes route through the family the entry names in the ledger.
+    fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
+        vec![
+            // --- standard route (StandardNested) ---
+            ("standard_part", standard_catpart()),
+            ("tetrahedron_topology", tetrahedron_topology_catpart()),
+            // --- standard route: consolidated / a5a8 surface pools ---
+            (
+                "consolidated_cylinder_surface_curve",
+                standard_with_spliced_records(consolidated_cylinder_records()),
+            ),
+            (
+                "consolidated_nurbs_surface_curve",
+                standard_with_spliced_records(a5_nurbs_bound_edge_stream(0.0)),
+            ),
+            (
+                "consolidated_guide_curve",
+                standard_with_spliced_records(a5_guide_curve_stream()),
+            ),
+            (
+                "standard_a5_rolling_ball",
+                standard_with_spliced_records(a5_freeform_curve_stream()),
+            ),
+            // --- standard then freeform (FbbOnly fall-through) ---
+            ("fbb_only_fallthrough", fbb_only_catpart()),
+            // --- zero_entity route ---
+            ("zero_entity_markers", zero_entity_catpart()),
+            ("zero_entity_cylinder", zero_entity_cylinder_catpart()),
+            ("zero_entity_nurbs", zero_entity_nurbs_catpart()),
+            // --- e5 route ---
+            ("e5_circle", e5_catpart()),
+            // --- freeform route (FloatPackedInnerNoFbb) ---
+            ("freeform_a8_nurbs", a8_catpart()),
+            (
+                "freeform_b5_topology",
+                object_main_catpart(&b5_closed_triangle_stream()),
+            ),
+            (
+                "freeform_a8_rolling_ball",
+                object_main_catpart(&a8_freeform_curve_stream()),
+            ),
+            (
+                "freeform_a5_surface",
+                object_main_catpart(&a5_surface_stream()),
+            ),
+            ("freeform_b2_cone", object_main_catpart(&b2_cone_stream())),
+            // --- freeform route (InnerNoDirectory) ---
+            (
+                "inner_no_directory_a8_nurbs",
+                inner_no_directory_a8_catpart(),
+            ),
+            (
+                "inner_no_directory_b2_cylinder",
+                inner_no_directory_b2_catpart(),
+            ),
+            // --- no matching route (Unknown, container-only) ---
+            ("outer_directory_only", outer_directory_catpart()),
+        ]
+    }
+
+    fn golden_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+    }
+
+    fn fixtures_dir() -> PathBuf {
+        golden_dir().join("fixtures")
+    }
+
+    fn decode_dir() -> PathBuf {
+        golden_dir().join("decode")
+    }
+
+    fn inspect_dir() -> PathBuf {
+        golden_dir().join("inspect")
+    }
+
+    /// Nest a pretty-JSON block under an object key, preserving the block's own
+    /// key order (a `serde_json::Value` round-trip would re-sort object keys and
+    /// so would not reflect `to_canonical_json` faithfully).
+    fn indent_block(block: &str) -> String {
+        let mut lines = block.lines();
+        let mut out = String::new();
+        if let Some(first) = lines.next() {
+            out.push_str(first);
+        }
+        for line in lines {
+            out.push('\n');
+            out.push_str("  ");
+            out.push_str(line);
+        }
+        out
+    }
+
+    /// The decode snapshot: the canonical IR (via `CadIr::to_canonical_json`),
+    /// the `DecodeReport`, and the `SourceFidelity` sidecar, as one stable pretty
+    /// document. A decode error is frozen as `{"decode_error": ...}` (a `.CATPart`
+    /// that fails to decode is contract-relevant behavior), so this never panics.
+    fn decode_snapshot(bytes: &[u8]) -> String {
+        match CatiaCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+            Ok(result) => {
+                let ir = result
+                    .ir
+                    .to_canonical_json()
+                    .expect("serialize canonical ir");
+                let report =
+                    serde_json::to_string_pretty(&result.report).expect("serialize report");
+                let fidelity = serde_json::to_string_pretty(&result.source_fidelity)
+                    .expect("serialize source_fidelity");
+                let mut out = String::from("{\n");
+                out.push_str("  \"ir\": ");
+                out.push_str(&indent_block(&ir));
+                out.push_str(",\n  \"report\": ");
+                out.push_str(&indent_block(&report));
+                out.push_str(",\n  \"source_fidelity\": ");
+                out.push_str(&indent_block(&fidelity));
+                out.push_str("\n}\n");
+                out
+            }
+            Err(err) => {
+                let value = serde_json::json!({ "decode_error": err.to_string() });
+                let mut text =
+                    serde_json::to_string_pretty(&value).expect("serialize decode error");
+                text.push('\n');
+                text
+            }
+        }
+    }
+
+    /// The inspect snapshot: the `ContainerSummary` as stable pretty JSON, with
+    /// inspect errors frozen the same way decode errors are.
+    fn inspect_snapshot(bytes: &[u8]) -> String {
+        let value = match CatiaCodec
+            .inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
+        {
+            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+            Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+        };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// First line that differs between two documents, 1-based, both sides
+    /// truncated for a readable failure. Length-only differences report the
+    /// short side as `<end of file>`.
+    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
+        let mut exp = expected.lines();
+        let mut act = actual.lines();
+        let mut line = 0usize;
+        loop {
+            line += 1;
+            match (exp.next(), act.next()) {
+                (Some(e), Some(a)) if e == a => {}
+                (e, a) => {
+                    let trunc = |s: Option<&str>| match s {
+                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
+                        Some(s) => s.to_string(),
+                        None => "<end of file>".to_string(),
+                    };
+                    return (line, trunc(e), trunc(a));
+                }
+            }
+        }
+    }
+
+    fn update_requested() -> bool {
+        std::env::var_os("UPDATE_GOLDEN").is_some()
+    }
+
+    /// Reads a committed `.CATPart` fixture; the bytes, not the builder, are the
+    /// snapshot source of truth so a builder drift cannot silently repin.
+    fn read_fixture(name: &str) -> Result<Vec<u8>, String> {
+        let path = fixtures_dir().join(format!("{name}.catpart"));
+        std::fs::read(&path).map_err(|e| {
+            format!(
+                "fixture `{name}`: cannot read {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-catia golden`",
+                path.display()
+            )
+        })
+    }
+
+    #[test]
+    fn golden_snapshots_are_byte_identical() {
+        let update = update_requested();
+        if update {
+            for dir in [fixtures_dir(), decode_dir(), inspect_dir()] {
+                std::fs::create_dir_all(&dir).expect("create golden dir");
+            }
+        }
+        let mut failures: Vec<String> = Vec::new();
+        for (name, builder_bytes) in fixtures() {
+            if update {
+                std::fs::write(
+                    fixtures_dir().join(format!("{name}.catpart")),
+                    &builder_bytes,
+                )
+                .unwrap_or_else(|e| panic!("write fixture {name}: {e}"));
+                std::fs::write(
+                    decode_dir().join(format!("{name}.json")),
+                    decode_snapshot(&builder_bytes),
+                )
+                .unwrap_or_else(|e| panic!("write decode golden {name}: {e}"));
+                std::fs::write(
+                    inspect_dir().join(format!("{name}.json")),
+                    inspect_snapshot(&builder_bytes),
+                )
+                .unwrap_or_else(|e| panic!("write inspect golden {name}: {e}"));
+                continue;
+            }
+            let bytes = match read_fixture(name) {
+                Ok(bytes) => bytes,
+                Err(message) => {
+                    failures.push(message);
+                    continue;
+                }
+            };
+            for (kind, dir, actual) in [
+                ("decode", decode_dir(), decode_snapshot(&bytes)),
+                ("inspect", inspect_dir(), inspect_snapshot(&bytes)),
+            ] {
+                let path = dir.join(format!("{name}.json"));
+                let expected = match std::fs::read_to_string(&path) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        failures.push(format!(
+                            "fixture `{name}` ({kind}): cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-catia golden`",
+                            path.display()
+                        ));
+                        continue;
+                    }
+                };
+                if expected != actual {
+                    let (line, exp_line, act_line) = first_line_diff(&expected, &actual);
+                    failures.push(format!(
+                        "fixture `{name}` ({kind}): output diverged from golden at line {line}\n    golden: {exp_line}\n    actual: {act_line}"
+                    ));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} golden snapshot(s) drifted; if the change is intended run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-catia golden` and review the diff:\n\n{}",
+            failures.len(),
+            failures.join("\n\n")
+        );
+    }
+
+    /// Guards against nondeterministic codec output (`HashMap` iteration order,
+    /// timestamps): decoding and inspecting the same bytes twice must produce
+    /// identical JSON. Runs on the builder bytes so it holds before the first
+    /// `UPDATE_GOLDEN` generation.
+    #[test]
+    fn golden_output_is_deterministic() {
+        for (name, bytes) in fixtures() {
+            for (kind, first, second) in [
+                ("decode", decode_snapshot(&bytes), decode_snapshot(&bytes)),
+                (
+                    "inspect",
+                    inspect_snapshot(&bytes),
+                    inspect_snapshot(&bytes),
+                ),
+            ] {
+                if first != second {
+                    let (line, a, b) = first_line_diff(&first, &second);
+                    panic!("fixture `{name}` ({kind}): nondeterministic output at line {line}\n    run 1: {a}\n    run 2: {b}");
+                }
+            }
+        }
+    }
+
+    /// The committed `.CATPart` fixtures still reproduce the builder bytes. This
+    /// is a corruption check on the frozen fixtures, not a drift gate; skipped
+    /// during generation. When it fails after an intentional builder edit,
+    /// regenerate with `UPDATE_GOLDEN=1`.
+    #[test]
+    fn golden_fixtures_match_builders() {
+        if update_requested() {
+            return;
+        }
+        let mut failures: Vec<String> = Vec::new();
+        for (name, builder_bytes) in fixtures() {
+            match read_fixture(name) {
+                Ok(bytes) if bytes == builder_bytes => {}
+                Ok(bytes) => failures.push(format!(
+                    "fixture `{name}`: committed {} bytes, builder produces {} bytes",
+                    bytes.len(),
+                    builder_bytes.len()
+                )),
+                Err(message) => failures.push(message),
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "committed fixtures diverged from their builders; regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-catia golden`:\n\n{}",
+            failures.join("\n")
+        );
+    }
 }
