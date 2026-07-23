@@ -521,7 +521,7 @@ A complete numeric-tuple value payload is `<prefix0:one_byte_atom> <prefix1:one_
 
 A complete reference-signature value payload is `32 <first:u32le> <prefix:one_byte_atom> E8 <type:compact_atom> 37 <layout:one_byte_atom> 81 <signature:printable_utf8+> FE 32 <second:u32le> <closing:one_byte_atom> E9 <closing_type:compact_atom> 08 37 FE FE FE`. Both references and the signature are assigned only when this production consumes the complete `7C07` payload.
 
-Every complete `7C07` payload also uses the lossless value-field tokenization defined for `7C0B`: schema selectors, binary64 values, zero-payload markers, inline byte strings, compact atoms, and literal bytes. Typed multi-byte fields take precedence over marker-shaped bytes inside their payloads. Bytes outside an assigned production remain ordered literal fields.
+Every complete `7C07` payload also uses the lossless value-field tokenization defined for `7C0B`: schema selectors, binary64 values, tagged zero-payload markers, untagged `E6..E9` opcodes, inline byte strings, compact atoms, `FE` terminators, and literal bytes. Typed multi-byte fields take precedence over marker-shaped bytes inside their payloads. Bytes outside an assigned production remain ordered literal fields.
 
 Each `32 <ordinal:u32le>` value field whose ordinal is within the object graph's associated schema catalog selects that entry. Preserve its payload-relative offset, ordinal, selected entry identity and name, and the complete ordered token sequence through the byte before the next catalog-valid selector or through payload end. A marker with an out-of-range ordinal remains part of the preceding encoded value and does not create a selection.
 

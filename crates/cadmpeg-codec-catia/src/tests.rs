@@ -5457,10 +5457,7 @@ fn native_namespace_tokenizes_and_validates_complete_entity_values() {
                 code: 0xe8,
                 offset: 15,
             },
-            crate::value_block::ValueField::Literal {
-                value: 0xfe,
-                offset: 17,
-            },
+            crate::value_block::ValueField::Terminator { offset: 17 },
         ]
     );
 
@@ -5492,10 +5489,7 @@ fn native_namespace_resolves_and_validates_entity_value_schema_selections() {
                 bits: 12.5_f64.to_bits(),
                 offset: 5,
             },
-            crate::value_block::ValueField::Literal {
-                value: 0xfe,
-                offset: 15,
-            },
+            crate::value_block::ValueField::Terminator { offset: 15 },
         ]
     );
 

@@ -44,6 +44,13 @@ pub enum ValueField {
         /// Byte offset within the value payload.
         offset: usize,
     },
+    /// One untagged value-program opcode in `E6..E9`.
+    Opcode {
+        /// Stored opcode byte.
+        code: u8,
+        /// Byte offset within the value payload.
+        offset: usize,
+    },
     /// `8E E8..EF 84` followed by one through eight inline bytes.
     Inline {
         /// Length code; the payload length is `code - E7`.
@@ -61,6 +68,11 @@ pub enum ValueField {
         value: u32,
         /// Stored width, one or two bytes.
         width: u8,
+        /// Byte offset within the value payload.
+        offset: usize,
+    },
+    /// `0xFE` value-program terminator.
+    Terminator {
         /// Byte offset within the value payload.
         offset: usize,
     },
@@ -138,6 +150,15 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 offset,
             });
             at += 2;
+        } else if payload
+            .get(at)
+            .is_some_and(|code| (0xe6..=0xe9).contains(code))
+        {
+            fields.push(ValueField::Opcode {
+                code: payload[at],
+                offset,
+            });
+            at += 1;
         } else if payload.get(at) == Some(&0x8e)
             && payload
                 .get(at + 1)
@@ -192,6 +213,9 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 offset,
             });
             at += 2;
+        } else if payload[at] == 0xfe {
+            fields.push(ValueField::Terminator { offset });
+            at += 1;
         } else {
             fields.push(ValueField::Literal {
                 value: payload[at],
@@ -259,6 +283,32 @@ mod tests {
                     value: 1,
                     offset: 3,
                 },
+            ]
+        );
+    }
+
+    #[test]
+    fn untagged_value_opcodes_and_terminators_remain_distinct() {
+        assert_eq!(
+            tokenize(&[0xe6, 0xe7, 0xe8, 0xe9, 0xfe]),
+            vec![
+                ValueField::Opcode {
+                    code: 0xe6,
+                    offset: 0,
+                },
+                ValueField::Opcode {
+                    code: 0xe7,
+                    offset: 1,
+                },
+                ValueField::Opcode {
+                    code: 0xe8,
+                    offset: 2,
+                },
+                ValueField::Opcode {
+                    code: 0xe9,
+                    offset: 3,
+                },
+                ValueField::Terminator { offset: 4 },
             ]
         );
     }
