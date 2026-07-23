@@ -55,6 +55,21 @@ pub struct SegmentIndex<'a> {
     pub byte_len: usize,
 }
 
+/// One segment-index word whose target frames a compressed stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SegmentStreamWrapper {
+    /// Zero-based segment-index row ordinal.
+    pub row_ordinal: usize,
+    /// Zero-based word ordinal within the row.
+    pub word_ordinal: usize,
+    /// Absolute file offset of the wrapper.
+    pub wrapper_offset: usize,
+    /// Bytes from the wrapper start through its extension.
+    pub wrapper_byte_len: usize,
+    /// Absolute file offset of the candidate zlib member.
+    pub zlib_offset: usize,
+}
+
 /// One fixed-width member of the `RMFastLoad` object-id table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RmFastLoadObjectId {
@@ -123,6 +138,66 @@ impl Container {
                 byte_len,
             },
         ))
+    }
+
+    /// Resolve every in-bounds compressed-stream wrapper addressed by the
+    /// canonical segment index, preserving row and word order.
+    pub(crate) fn segment_stream_wrappers(&self) -> Vec<SegmentStreamWrapper> {
+        let Some((entry, index)) = self.segment_index() else {
+            return Vec::new();
+        };
+        let Some((entry_offset, entry_size)) = entry.file_span else {
+            return Vec::new();
+        };
+        let (Ok(entry_start), Ok(entry_size)) =
+            (usize::try_from(entry_offset), usize::try_from(entry_size))
+        else {
+            return Vec::new();
+        };
+        let Some(entry_end) = entry_start.checked_add(entry_size) else {
+            return Vec::new();
+        };
+        let Some(payload) = self.data.get(entry_start..entry_end) else {
+            return Vec::new();
+        };
+        let mut wrappers = Vec::new();
+        for (row_ordinal, row) in index.rows.iter().enumerate() {
+            for (word_ordinal, relative) in [row.type_code, row.subtype_code, row.value]
+                .into_iter()
+                .enumerate()
+            {
+                let relative = relative as usize;
+                let Some(wrapper) = payload.get(relative..) else {
+                    continue;
+                };
+                let Some(wrapper_word) = u32_le(wrapper, 0) else {
+                    continue;
+                };
+                let extension = (wrapper_word & 0x3fff_ffff) as usize;
+                let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
+                    0x8000_0000 => 8usize.checked_add(extension),
+                    0xc000_0000 => 33usize.checked_add(extension),
+                    _ => continue,
+                };
+                let Some(wrapper_byte_len) = wrapper_byte_len else {
+                    continue;
+                };
+                let Some(zlib_relative) = relative.checked_add(wrapper_byte_len) else {
+                    continue;
+                };
+                if zlib_relative >= payload.len() {
+                    continue;
+                }
+                wrappers.push(SegmentStreamWrapper {
+                    row_ordinal,
+                    word_ordinal,
+                    wrapper_offset: entry_start + relative,
+                    wrapper_byte_len,
+                    zlib_offset: entry_start + zlib_relative,
+                });
+            }
+        }
+        wrappers
     }
 
     /// Locate independently size-framed NX object-model sections.

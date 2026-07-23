@@ -32,7 +32,7 @@ the assembly gates, not the single-part body, feature, or sketch gates.
 | Gate | State | Required closure |
 | --- | --- | --- |
 | L0 | Claimed in the current envelope | Representative release and layout fixtures with closed physical ledgers. |
-| L1 | Incomplete | Close remaining object-model control forms, deltas record families, checksums, and stream classifications. |
+| L1 | Incomplete | Close remaining object-model control forms, deltas record families, and non-Parasolid stream classifications. |
 | L2 | Incomplete | Close finite branch and range selection, NURBS-offset blend spines, and remaining carrier records. |
 | L3 | Incomplete | Resolve cached-body ownership and terminal lineage for every multi-partition history. |
 | L4 | Incomplete | Resolve suppression, sketch placement and entities, complete operands and outputs, configuration body state, and every admitted operation construction. |

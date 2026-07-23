@@ -9386,6 +9386,46 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
         compressed[..compressed.len() - 1].to_vec(),
     )]);
     assert!(extract_streams(&truncated).is_empty());
+
+    let mut indexed = segment_stream_payload();
+    *indexed.last_mut().expect("indexed zlib integrity trailer") ^= 0x01;
+    let indexed = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", indexed)]);
+    let arena = cadmpeg_ir::decode::DecodeArena::new();
+    let policy = cadmpeg_ir::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(&indexed, &arena, &policy)
+        .expect("bounded test input");
+    let container = container::scan_bytes(indexed.clone()).expect("test SPLMSSTR container");
+    assert!(parasolid::extract_streams(&ctx, root, &container).is_err());
+}
+
+#[test]
+fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
+    let decoy = zlib_compress(
+        b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed payload with more than sixty-four inflated bytes........",
+    );
+    let real = zlib_compress(
+        b"PS\0\0 (deltas) SCH_REAL_1_9999 indexed payload with more than sixty-four inflated bytes..........",
+    );
+    let mut payload = Vec::new();
+    for word in [0_u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&decoy);
+    let wrapper_offset = payload.len();
+    payload[0..4].copy_from_slice(
+        &u32::try_from(wrapper_offset)
+            .expect("synthetic wrapper offset")
+            .to_le_bytes(),
+    );
+    payload.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
+    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&real);
+
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let streams = extract_streams(&file);
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].kind, StreamKind::Deltas);
+    assert_eq!(streams[0].schema.as_deref(), Some("SCH_REAL_1_9999"));
 }
 
 /// Phase 0 golden serialized-output snapshots.

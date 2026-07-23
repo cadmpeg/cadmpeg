@@ -71,7 +71,7 @@ pub struct SegmentStreamLink {
     pub row: String,
     /// Row word containing the wrapper offset.
     pub slot: SegmentIndexSlot,
-    /// Zero-based stream ordinal in source-file order.
+    /// Zero-based stream ordinal in first segment-wrapper order.
     pub stream_ordinal: u32,
     /// Decoded stream classification.
     pub stream_kind: String,
@@ -88,7 +88,7 @@ pub struct SegmentBodyBinding {
     pub id: String,
     /// Validated stream-wrapper link owning the metadata tuple.
     pub stream_link: String,
-    /// Zero-based stream ordinal in source-file order.
+    /// Zero-based stream ordinal in first segment-wrapper order.
     pub stream_ordinal: u32,
     /// Partition or plain cached-body stream classification.
     pub stream_kind: String,
@@ -375,58 +375,36 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
 
 /// Resolve segment-index words that point to validated compressed wrappers.
 pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<SegmentStreamLink> {
-    let Some((entry, index)) = container.segment_index() else {
-        return Vec::new();
-    };
-    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-    let entry_start = usize::try_from(entry_offset).expect("in-bounds directory offset");
     let mut links = Vec::new();
-    for (row_ordinal, row) in index.rows.into_iter().enumerate() {
-        for (slot, relative) in [
-            (SegmentIndexSlot::TypeCode, row.type_code),
-            (SegmentIndexSlot::SubtypeCode, row.subtype_code),
-            (SegmentIndexSlot::Value, row.value),
-        ] {
-            let relative = relative as usize;
-            let Some(wrapper) = container.data.get(entry_start + relative..) else {
-                continue;
-            };
-            let Some(wrapper_word) = cadmpeg_ir::le::u32_at(wrapper, 0) else {
-                continue;
-            };
-            let extension = (wrapper_word & 0x3fff_ffff) as usize;
-            let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
-                0x8000_0000 => 8usize.checked_add(extension),
-                0xc000_0000 => 33usize.checked_add(extension),
-                _ => continue,
-            };
-            let Some(wrapper_byte_len) = wrapper_byte_len else {
-                continue;
-            };
-            let zlib_offset = entry_start + relative + wrapper_byte_len;
-            let Some((stream_ordinal, stream)) = streams
-                .iter()
-                .enumerate()
-                .find(|(_, stream)| stream.file_offset == zlib_offset)
-            else {
-                continue;
-            };
-            links.push(SegmentStreamLink {
-                id: format!("nx:segment-stream-links:link#{}", links.len()),
-                row: format!("nx:segment-index:row#{row_ordinal}"),
-                slot,
-                stream_ordinal: stream_ordinal as u32,
-                stream_kind: match stream.kind {
-                    StreamKind::Partition => "partition",
-                    StreamKind::Deltas => "deltas",
-                    StreamKind::Plain => "plain",
-                    StreamKind::Preview => "preview",
-                }
-                .to_string(),
-                wrapper_byte_len: wrapper_byte_len as u32,
-                source_offset: entry_offset + relative as u64,
-            });
-        }
+    for wrapper in container.segment_stream_wrappers() {
+        let slot = match wrapper.word_ordinal {
+            0 => SegmentIndexSlot::TypeCode,
+            1 => SegmentIndexSlot::SubtypeCode,
+            2 => SegmentIndexSlot::Value,
+            _ => continue,
+        };
+        let Some((stream_ordinal, stream)) = streams
+            .iter()
+            .enumerate()
+            .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
+        else {
+            continue;
+        };
+        links.push(SegmentStreamLink {
+            id: format!("nx:segment-stream-links:link#{}", links.len()),
+            row: format!("nx:segment-index:row#{}", wrapper.row_ordinal),
+            slot,
+            stream_ordinal: stream_ordinal as u32,
+            stream_kind: match stream.kind {
+                StreamKind::Partition => "partition",
+                StreamKind::Deltas => "deltas",
+                StreamKind::Plain => "plain",
+                StreamKind::Preview => "preview",
+            }
+            .to_string(),
+            wrapper_byte_len: wrapper.wrapper_byte_len as u32,
+            source_offset: wrapper.wrapper_offset as u64,
+        });
     }
     links
 }

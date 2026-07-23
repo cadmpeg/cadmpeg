@@ -7,6 +7,8 @@
 //! Other inflated payloads are classified as [`StreamKind::Preview`].
 #![deny(clippy::disallowed_methods)]
 
+use std::collections::BTreeSet;
+
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use flate2::{Decompress, FlushDecompress, Status};
@@ -460,8 +462,8 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
     definitions
 }
 
-/// The minimum inflated length for a candidate to count as a real stream; below
-/// this a `78 01` match is almost certainly a coincidence in packed data.
+/// The minimum inflated length for an unindexed scan candidate to count as a
+/// real stream; indexed wrappers admit any complete member length.
 const MIN_INFLATED: usize = 64;
 
 /// Chunk size for streaming inflated output through the expander.
@@ -497,10 +499,41 @@ pub fn extract_streams<'a>(
     let part = part_view.window();
 
     let mut streams = Vec::new();
+    if container.segment_index().is_some() {
+        let mut seen = BTreeSet::new();
+        for wrapper in container.segment_stream_wrappers() {
+            let Some(offset) = wrapper.zlib_offset.checked_sub(start) else {
+                continue;
+            };
+            if !seen.insert(offset)
+                || part
+                    .get(offset..offset.saturating_add(2))
+                    .is_none_or(|header| !is_zlib_header(header[0], header[1]))
+            {
+                continue;
+            }
+            let Some((inflated, consumed)) = inflate_stream(ctx, part_view, offset, 0)? else {
+                return Err(CodecError::Malformed(format!(
+                    "invalid indexed zlib member at file offset {}",
+                    start + offset
+                )));
+            };
+            let (kind, schema) = classify(&inflated);
+            streams.push(Stream {
+                file_offset: start + offset,
+                consumed,
+                inflated,
+                kind,
+                schema,
+            });
+        }
+        return Ok(streams);
+    }
+
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
-            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
+            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i, MIN_INFLATED)? {
                 let (kind, schema) = classify(&inflated);
                 streams.push(Stream {
                     file_offset: start + i,
@@ -530,6 +563,7 @@ fn inflate_stream<'a>(
     ctx: &DecodeContext<'a>,
     part_view: View<'a>,
     offset: usize,
+    minimum_inflated: usize,
 ) -> Result<Option<(Vec<u8>, u64)>, CodecError> {
     let Some(source) = part_view.child(offset, part_view.end()) else {
         return Ok(None);
@@ -567,7 +601,7 @@ fn inflate_stream<'a>(
             return Ok(None);
         }
     }
-    if inflated.len() < MIN_INFLATED {
+    if inflated.len() < minimum_inflated {
         return Ok(None);
     }
     let Ok(consumed) = u64::try_from(source_offset) else {

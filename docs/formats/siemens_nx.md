@@ -87,6 +87,15 @@ The pointed stream is valid only when that exact computed position begins a
 complete zlib payload accepted by the stream grammar. The containing row
 ordinal and word position preserve the wrapper's segment order.
 
+When the canonical segment index is present, its validated wrapper words are
+the complete compressed-stream directory. Unique physical members are ordered
+by the first wrapper that addresses them in row and word order; additional
+words addressing the same zlib header remain additional links to that member.
+A standards-conforming zlib member elsewhere in the payload is not an indexed
+stream. When an indexed wrapper target begins with a standards-conforming zlib
+header, failure to reach its checksum-validated stream end rejects the indexed
+stream directory atomically.
+
 A partition or plain cached-body wrapper word begins a five-word segment tuple.
 The following word is zero, the next two words are object-index aliases naming
 the same body image, and the final word is the stream role. Either body alias
