@@ -69,6 +69,18 @@ pub(super) fn neutral_surface(
                 half_angle: *half_angle,
             }
         }
+        B5Surface::Sphere {
+            center,
+            direction_x,
+            axis,
+            radius,
+            ..
+        } => SurfaceGeometry::Sphere {
+            center: point(*center),
+            axis: vector(*axis),
+            ref_direction: vector(*direction_x),
+            radius: *radius,
+        },
         B5Surface::Torus {
             center,
             direction_x,

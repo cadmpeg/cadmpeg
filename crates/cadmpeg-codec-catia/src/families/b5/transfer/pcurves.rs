@@ -307,7 +307,8 @@ pub(super) fn lifted_curve_geometry(
     match surface {
         B5Surface::UnresolvedNurbs { .. }
         | B5Surface::Unknown { .. }
-        | B5Surface::RollingBall { .. } => None,
+        | B5Surface::RollingBall { .. }
+        | B5Surface::Sphere { .. } => None,
         B5Surface::Plane {
             origin,
             direction_u,

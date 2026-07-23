@@ -154,6 +154,19 @@ pub enum B5Surface {
         /// Divisor mapping native U to azimuth.
         angular_scale: f64,
     },
+    /// `b5 03 2a`: a sphere with a radius-scaled right-handed frame.
+    Sphere {
+        /// Sphere center.
+        center: [f64; 3],
+        /// Zero-azimuth unit direction.
+        direction_x: [f64; 3],
+        /// Quarter-turn azimuth unit direction.
+        direction_y: [f64; 3],
+        /// Polar-axis unit direction.
+        axis: [f64; 3],
+        /// Positive sphere radius.
+        radius: f64,
+    },
     /// `b5 03 2b`: a torus in its two arc-length angular coordinates.
     Torus {
         /// Torus center.
@@ -498,12 +511,11 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 (construction.radius - minor_radius).abs()
                     <= 1e-12 * construction.radius.abs().max(minor_radius.abs()).max(1.0)
             }
-            B5Surface::RollingBall { .. }
-            | B5Surface::Unknown {
-                family: 0xb5,
-                class: 0x2a,
-                ..
-            } => true,
+            B5Surface::Sphere { radius, .. } => {
+                (construction.radius - radius).abs()
+                    <= 1e-12 * construction.radius.abs().max(radius.abs()).max(1.0)
+            }
+            B5Surface::RollingBall { .. } => true,
             _ => false,
         };
         surfaces.insert(record.object_id, carrier);
@@ -1388,6 +1400,39 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                     angular_scale,
                 })
         }
+        0x2a => {
+            (record.payload.len() == 153 && record.payload.first() == Some(&0x80)).then_some(())?;
+            let center = point(&record.payload, 1)?;
+            let stored_x = point(&record.payload, 25)?;
+            let stored_y = point(&record.payload, 49)?;
+            let stored_axis = point(&record.payload, 73)?;
+            let radius = scalar(&record.payload, 97)?;
+            let [u0, u1, v0, v1, _, _] = line_values::<6>(&record.payload, 105)?;
+            let vector_length = |value: [f64; 3]| {
+                value
+                    .iter()
+                    .map(|component| component * component)
+                    .sum::<f64>()
+                    .sqrt()
+            };
+            let direction_x = unit(stored_x)?;
+            let direction_y = unit(stored_y)?;
+            let axis = unit(stored_axis)?;
+            (radius > 0.0
+                && u0 < u1
+                && v0 < v1
+                && [stored_x, stored_y, stored_axis].iter().all(|direction| {
+                    (vector_length(*direction) - radius).abs() <= 1e-12 * radius.abs().max(1.0)
+                })
+                && distance_squared(cross(direction_x, direction_y), axis) <= 1e-24)
+                .then_some(B5Surface::Sphere {
+                    center,
+                    direction_x,
+                    direction_y,
+                    axis,
+                    radius,
+                })
+        }
         0x2b => {
             let major_radius = scalar(&record.payload, 97)?;
             let minor_radius = scalar(&record.payload, 105)?;
@@ -1849,6 +1894,7 @@ fn lift_pcurve_endpoints(
                 ),
             )
         })),
+        B5Surface::Sphere { .. } => None,
         B5Surface::Revolution {
             profile_curve,
             axis_origin,
@@ -2488,7 +2534,19 @@ fn is_reference_dependency_class(family: u8, class: u8) -> bool {
 fn is_surface_class(class: u8) -> bool {
     matches!(
         class,
-        0x27 | 0x28 | 0x29 | 0x2b | 0x2c | 0x2d | 0x2e | 0x30 | 0x31 | 0x34 | 0x37 | 0x38 | 0x3b
+        0x27 | 0x28
+            | 0x29
+            | 0x2a
+            | 0x2b
+            | 0x2c
+            | 0x2d
+            | 0x2e
+            | 0x30
+            | 0x31
+            | 0x34
+            | 0x37
+            | 0x38
+            | 0x3b
     )
 }
 
@@ -2848,6 +2906,49 @@ mod tests {
                 angular_scale: 3.0,
             })
         );
+    }
+
+    #[test]
+    fn sphere_surface_reads_radius_scaled_right_handed_frame() {
+        let mut payload = vec![0; 153];
+        payload[0] = 0x80;
+        for (offset, value) in [
+            (1usize, 1.0f64),
+            (9, 2.0),
+            (17, 3.0),
+            (25, 2.0),
+            (57, 2.0),
+            (89, 2.0),
+            (97, 2.0),
+            (105, 0.0),
+            (113, 1.0),
+            (121, -1.0),
+            (129, 1.0),
+            (137, 2.0),
+            (145, 0.0),
+        ] {
+            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x2a,
+            object_id: 7,
+            payload,
+        };
+        assert_eq!(
+            parse_surface(&record),
+            Some(B5Surface::Sphere {
+                center: [1.0, 2.0, 3.0],
+                direction_x: [1.0, 0.0, 0.0],
+                direction_y: [0.0, 1.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                radius: 2.0,
+            })
+        );
+        let mut left_handed = record;
+        left_handed.payload[89..97].copy_from_slice(&(-2.0f64).to_le_bytes());
+        assert_eq!(parse_surface(&left_handed), None);
     }
 
     #[test]
