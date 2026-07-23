@@ -298,6 +298,9 @@ three following scalars are the origin coordinates.
 A trailing-rank orthogonal form stores `a, 0, b, e4, 0, m`, a zero-rank
 triple, and three origin coordinates. It has the same `a² + b² = 1`,
 `|m| = |a|`, copied-`b`, and negated-`a` semantics as the prefixed form.
+A reflected-component form stores `(a, 0, b)`, a zero-rank triple,
+`(b, 0, a)`, and three origin coordinates. The final stored `a` is reflected
+across zero, so the second support direction is `(b, 0, -a)`.
 
 Two five-coordinate type-26 rows for one zero-`radius1` prototype encode the
 two hemispheres of one Z-axis sphere. Each row stores
