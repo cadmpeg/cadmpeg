@@ -181,6 +181,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+ "zip 8.6.0",
 ]
 
 [[package]]
