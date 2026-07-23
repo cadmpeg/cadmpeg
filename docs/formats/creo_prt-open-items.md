@@ -78,6 +78,9 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The partition of shared surface references into face instances is unspecified.
 - The referents and traversal roles of `lo_restore` `direction` and
   `direction2` compact integers are unspecified.
+- The semantic roles of the four required `lo_hist` fields, its optional final
+  field, and the join from feature-local loop identifiers to boundary-surface
+  curve networks are unspecified.
 - Bindings for rowless face-use references outside the round-feature rowless-cylinder table are unspecified.
 - The byte-backed relation that assigns shells to body identifiers when face-adjacency components and body-count fields disagree is unspecified.
 - Face-instance bindings for `element_colors`, `NeuPrtSld`, and display-table elements are unspecified.

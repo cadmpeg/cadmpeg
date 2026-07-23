@@ -2889,8 +2889,16 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
     assert_eq!(records[0].fields["owner_feature_id"], 4);
     assert_eq!(records[0].fields["ordinal"], 0);
     assert_eq!(records[0].fields["loop_id"], 42);
+    assert_eq!(records[0].fields["field_bytes"][0][0], 1);
+    assert_eq!(records[0].fields["boundary"], "reference_continue");
+    assert_eq!(records[0].fields["boundary_reference"], 96);
     assert_eq!(records[1].fields["ordinal"], 1);
     assert_eq!(records[1].fields["loop_id"], 43);
+    assert_eq!(
+        records[1].fields["field_bytes"].as_array().unwrap().len(),
+        5
+    );
+    assert_eq!(records[1].fields["boundary"], "named_record");
     assert_annotation(
         &result.source_fidelity.annotations,
         &records[0].id,

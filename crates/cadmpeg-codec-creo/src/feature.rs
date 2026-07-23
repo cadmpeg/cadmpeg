@@ -627,8 +627,27 @@ pub struct FeatureLoopHistoryEntry {
     pub ordinal: u32,
     /// Feature-local loop identifier.
     pub loop_id: u32,
+    /// Four required row fields and the optional final field, in stored order.
+    pub field_bytes: Vec<Vec<u8>>,
+    /// Stored row boundary form.
+    pub boundary: FeatureLoopHistoryBoundary,
     /// Byte offset of the loop identifier in the original stream.
     pub offset: usize,
+    /// Byte offset immediately after the row, excluding a following named header.
+    pub end_offset: usize,
+}
+
+/// Boundary form terminating one `lo_hist` row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureLoopHistoryBoundary {
+    /// Bare `e3` terminator.
+    CompoundClose,
+    /// `f1 f7 <reference> e3` terminator.
+    ReferenceContinue(u32),
+    /// `f2 f7 <reference> e3` terminator.
+    ReferenceFinal(u32),
+    /// The next named-record header bounds the final row.
+    NamedRecord,
 }
 
 /// Angular termination selected by a rotational feature row.
@@ -5988,22 +6007,27 @@ pub fn loop_history_entries(
         let Some(entries) = loop_history_roster(&row.body, roster_offset, count) else {
             continue;
         };
-        result.extend(
-            (0..table.count)
-                .zip(entries)
-                .map(|(ordinal, (loop_id, offset))| FeatureLoopHistoryEntry {
-                    feature_id: row.feature_id,
-                    ordinal,
-                    loop_id,
-                    offset: row.body_offset + offset,
-                }),
-        );
+        result.extend((0..table.count).zip(entries).map(|(ordinal, entry)| {
+            FeatureLoopHistoryEntry {
+                feature_id: row.feature_id,
+                ordinal,
+                loop_id: entry.loop_id,
+                field_bytes: entry.field_bytes,
+                boundary: entry.boundary,
+                offset: row.body_offset + entry.offset,
+                end_offset: row.body_offset + entry.end_offset,
+            }
+        }));
     }
     result.sort_by_key(|entry| entry.offset);
     result
 }
 
-fn loop_history_roster(body: &[u8], mut cursor: usize, count: usize) -> Option<Vec<(u32, usize)>> {
+fn loop_history_roster(
+    body: &[u8],
+    mut cursor: usize,
+    count: usize,
+) -> Option<Vec<ParsedLoopHistoryEntry>> {
     const FIELD_COUNT: usize = 4;
     (count > 0 && count <= body.len().saturating_sub(cursor) / 2).then_some(())?;
     let mut entries = Vec::with_capacity(count);
@@ -6012,6 +6036,7 @@ fn loop_history_roster(body: &[u8], mut cursor: usize, count: usize) -> Option<V
         let (loop_id, after_id) = psb::compact_int(body, cursor);
         (after_id > cursor && body[cursor] <= 0xbf).then_some(())?;
         cursor = after_id;
+        let mut field_bytes = Vec::with_capacity(FIELD_COUNT + 1);
         for _ in 0..FIELD_COUNT {
             let token = psb::token_at(body, cursor)?;
             (!matches!(
@@ -6019,18 +6044,29 @@ fn loop_history_roster(body: &[u8], mut cursor: usize, count: usize) -> Option<V
                 psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
             ))
             .then_some(())?;
+            field_bytes.push(
+                body.get(cursor..cursor.checked_add(token.length)?)?
+                    .to_vec(),
+            );
             cursor = cursor.checked_add(token.length)?;
         }
-        if body.get(cursor) == Some(&0xe3) {
+        let boundary = if body.get(cursor) == Some(&0xe3) {
             cursor += 1;
+            FeatureLoopHistoryBoundary::CompoundClose
         } else if body
             .get(cursor)
             .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
         {
+            let marker = body[cursor];
             (body.get(cursor + 1) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let (_, after_reference) = psb::reference_id(body, cursor + 2).ok()?;
+            let (reference, after_reference) = psb::reference_id(body, cursor + 2).ok()?;
             (body.get(after_reference) == Some(&0xe3)).then_some(())?;
             cursor = after_reference + 1;
+            if marker == 0xf1 {
+                FeatureLoopHistoryBoundary::ReferenceContinue(reference)
+            } else {
+                FeatureLoopHistoryBoundary::ReferenceFinal(reference)
+            }
         } else {
             (index + 1 == count).then_some(())?;
             let token = psb::token_at(body, cursor)?;
@@ -6040,6 +6076,10 @@ fn loop_history_roster(body: &[u8], mut cursor: usize, count: usize) -> Option<V
                     psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
                 ))
                 .then_some(())?;
+                field_bytes.push(
+                    body.get(cursor..cursor.checked_add(token.length)?)?
+                        .to_vec(),
+                );
                 cursor = cursor.checked_add(token.length)?;
                 matches!(
                     psb::token_at(body, cursor).map(|token| token.kind),
@@ -6047,10 +6087,25 @@ fn loop_history_roster(body: &[u8], mut cursor: usize, count: usize) -> Option<V
                 )
                 .then_some(())?;
             }
-        }
-        entries.push((loop_id, offset));
+            FeatureLoopHistoryBoundary::NamedRecord
+        };
+        entries.push(ParsedLoopHistoryEntry {
+            loop_id,
+            field_bytes,
+            boundary,
+            offset,
+            end_offset: cursor,
+        });
     }
     Some(entries)
+}
+
+struct ParsedLoopHistoryEntry {
+    loop_id: u32,
+    field_bytes: Vec<Vec<u8>>,
+    boundary: FeatureLoopHistoryBoundary,
+    offset: usize,
+    end_offset: usize,
 }
 
 /// Decode full-turn rotational termination from the positional
@@ -7141,6 +7196,7 @@ mod tests {
         body.extend_from_slice(&[43, 3, 0xf6, 0xe5, 4, 0xe3]);
         let third_offset = body.len();
         body.extend_from_slice(&[44, 5, 6, 0xe4, 0xf6, 7]);
+        let named_boundary_offset = body.len();
         body.extend_from_slice(b"\xe0\x00next\0");
         let rows = [FeatureRow {
             feature_id: 7,
@@ -7159,23 +7215,55 @@ mod tests {
         assert_eq!(
             entries
                 .iter()
-                .map(|entry| (entry.feature_id, entry.ordinal, entry.loop_id, entry.offset))
+                .map(|entry| (
+                    entry.feature_id,
+                    entry.ordinal,
+                    entry.loop_id,
+                    entry.offset,
+                    entry.end_offset,
+                ))
                 .collect::<Vec<_>>(),
             vec![
-                (7, 0, 42, 1_000 + first_offset),
-                (7, 1, 43, 1_000 + second_offset),
-                (7, 2, 44, 1_000 + third_offset),
+                (7, 0, 42, 1_000 + first_offset, 1_000 + second_offset),
+                (7, 1, 43, 1_000 + second_offset, 1_000 + third_offset),
+                (
+                    7,
+                    2,
+                    44,
+                    1_000 + third_offset,
+                    1_000 + named_boundary_offset
+                ),
             ]
         );
+        assert_eq!(
+            entries[0].field_bytes,
+            vec![vec![1], vec![0xf6], vec![0xe5], vec![2]]
+        );
+        assert_eq!(
+            entries[0].boundary,
+            FeatureLoopHistoryBoundary::ReferenceContinue(96)
+        );
+        assert_eq!(
+            entries[1].boundary,
+            FeatureLoopHistoryBoundary::CompoundClose
+        );
+        assert_eq!(entries[2].field_bytes.len(), 5);
+        assert_eq!(entries[2].boundary, FeatureLoopHistoryBoundary::NamedRecord);
     }
 
     #[test]
     fn loop_history_roster_rejects_incomplete_and_early_boundaries() {
         assert!(loop_history_roster(&[1, 2, 0xe3], 0, 1).is_none());
         assert!(loop_history_roster(&[1, 2, 3, 4, 5, 0xe3], 0, 2).is_none());
+        let direct_named = loop_history_roster(b"\x01\x02\xf6\xe5\x03\xe0\x00next\0", 0, 1)
+            .expect("direct named boundary");
+        assert_eq!(direct_named.len(), 1);
+        assert_eq!(direct_named[0].loop_id, 1);
+        assert_eq!(direct_named[0].offset, 0);
+        assert_eq!(direct_named[0].end_offset, 5);
         assert_eq!(
-            loop_history_roster(b"\x01\x02\xf6\xe5\x03\xe0\x00next\0", 0, 1),
-            Some(vec![(1, 0)])
+            direct_named[0].boundary,
+            FeatureLoopHistoryBoundary::NamedRecord
         );
 
         let body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x01\xf7\x60\xfb\xe3\

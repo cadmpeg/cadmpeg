@@ -129,7 +129,11 @@ pub(super) struct CreoFeatureLoopHistoryEntryRecord {
     pub(super) owner_feature_id: u32,
     pub(super) ordinal: u32,
     pub(super) loop_id: u32,
+    pub(super) field_bytes: Vec<Vec<u8>>,
+    pub(super) boundary: &'static str,
+    pub(super) boundary_reference: Option<u32>,
     pub(super) offset: usize,
+    pub(super) end_offset: usize,
     pub(super) source_section: String,
 }
 
@@ -578,7 +582,25 @@ pub(super) fn feature_loop_history_entry_records(
             owner_feature_id: entry.feature_id,
             ordinal: entry.ordinal,
             loop_id: entry.loop_id,
+            field_bytes: entry.field_bytes.clone(),
+            boundary: match entry.boundary {
+                crate::feature::FeatureLoopHistoryBoundary::CompoundClose => "compound_close",
+                crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(_) => {
+                    "reference_continue"
+                }
+                crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(_) => "reference_final",
+                crate::feature::FeatureLoopHistoryBoundary::NamedRecord => "named_record",
+            },
+            boundary_reference: match entry.boundary {
+                crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(reference)
+                | crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(reference) => {
+                    Some(reference)
+                }
+                crate::feature::FeatureLoopHistoryBoundary::CompoundClose
+                | crate::feature::FeatureLoopHistoryBoundary::NamedRecord => None,
+            },
             offset: entry.offset,
+            end_offset: entry.end_offset,
             source_section: source_section(scan, entry.offset),
         })
         .collect()
