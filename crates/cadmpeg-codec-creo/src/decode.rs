@@ -22688,7 +22688,7 @@ fn transfer_cross_section_planes(
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan_bytes(root.window().to_vec());
+    let scan = container::scan(ctx, root);
 
     let (mut ir, annotations, unknowns, coverage) = if ctx.container_only() {
         build_container_ir(&scan)?

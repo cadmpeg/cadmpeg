@@ -15,6 +15,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
+use cadmpeg_ir::decode::{DecodeContext, View};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
@@ -1606,8 +1607,19 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     (after > value_offset).then_some(count)
 }
 
-/// Parse a whole `.prt` byte image. Split out so tests drive it from a synthetic
-/// buffer without a reader.
+/// Scan a `.prt` decode root into its container structure.
+///
+/// The decode/inspect entry point, matching the other container codecs'
+/// `scan(ctx, root)` signature. `_ctx` is taken for parity; the scan is a pure
+/// function of the source bytes and charges no decode budget. Copies the root
+/// window into the owned buffer [`scan_bytes`] parses.
+pub fn scan(_ctx: &DecodeContext<'_>, root: View<'_>) -> ContainerScan {
+    scan_bytes(root.window().to_vec())
+}
+
+/// Parse a whole `.prt` byte image. The owned-buffer core reached by [`scan`]
+/// for the decode/inspect paths, and called directly by the tests and the
+/// container-scan fuzz target.
 pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let version_line = line_at(&data, 0);
     let (model_name, model_name_offset) =
