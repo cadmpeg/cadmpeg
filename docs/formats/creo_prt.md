@@ -1848,19 +1848,21 @@ is its owning modeling feature identifier. This boundary ends the preceding
 labelled template or positional instance.
 
 An unlabeled positional definition begins at `e3 S2D<digits> 00`. The next
-such boundary ends the instance. Its owner is the unique unclaimed feature
-whose nonempty class-200 source-entity identifier set is contained in the
-instance's `order_table.ext_id` set, provided that feature selects exactly one
-unlabeled instance. Definitions without this reciprocal unique join have no
-owner. They remain section definitions and retain their complete bounded body.
-Replay order does not define feature identity.
+such boundary ends the instance. A uniquely keyed `ent_tab` selects the unique
+unclaimed feature whose nonempty class-200 source-entity identifier set exactly
+equals its `ext_id` set. When no exact candidate exists, the source-entity set
+must be contained in the instance's `order_table.ext_id` set. In either form the
+feature must select exactly one unlabeled instance. Definitions without this
+reciprocal unique join have no owner. They remain section definitions and
+retain their complete bounded body. Replay order does not define feature
+identity.
 
 An unowned instantiated saved section joins the unique unclaimed feature whose
 nonempty class-200 source-entity identifier set exactly equals the section's
-`ent_tab.ext_id` set, provided that feature selects exactly one such section.
-This join assigns the canonical feature owner and preserves the stored
-`feat_defs_<id>` schema identifier. A partial, competing, or reused set does not
-assign an owner.
+uniquely keyed `ent_tab.ext_id` set, provided that feature selects exactly one
+such section. This join assigns the canonical feature owner and preserves the
+stored `feat_defs_<id>` schema identifier. A partial, competing, or reused set
+does not assign an owner.
 
 DEPDB also stores an internal sketch-datum chain. A procedural recipe feature
 `F` immediately followed in feature-state order by a non-recipe feature

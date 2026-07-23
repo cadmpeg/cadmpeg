@@ -6737,17 +6737,7 @@ pub fn bind_trimmed_definition_owners(
     let candidates = definitions
         .iter()
         .map(|definition| {
-            let external_ids = definition
-                .trim_entities
-                .as_ref()
-                .map(|table| {
-                    table
-                        .rows
-                        .iter()
-                        .map(|row| row.external_id)
-                        .collect::<BTreeSet<_>>()
-                })
-                .unwrap_or_default();
+            let external_ids = unique_trimmed_external_ids(definition);
             if definition.owner_feature_id.is_some() || external_ids.is_empty() {
                 return BTreeSet::new();
             }
@@ -6758,11 +6748,7 @@ pub fn bind_trimmed_definition_owners(
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
-                    let source_ids = table
-                        .entries
-                        .iter()
-                        .filter_map(|entry| entry.source_entity_id)
-                        .collect::<BTreeSet<_>>();
+                    let source_ids = generated_source_entity_ids(table);
                     (source_ids == external_ids).then_some(owner)
                 })
                 .collect::<BTreeSet<_>>()
@@ -6785,9 +6771,10 @@ pub fn bind_trimmed_definition_owners(
     }
 }
 
-/// Bind unlabeled positional definitions through exact section-entity IDs in
-/// the owning generated-entity table. Empty and non-unique joins remain
-/// unbound.
+/// Bind unlabeled positional definitions through section-entity IDs in the
+/// owning generated-entity table. A uniquely keyed trimmed-entity roster is
+/// exact; otherwise the generated IDs must be a nonempty subset of the order
+/// table. Empty and non-unique joins remain unbound.
 pub fn bind_replay_definition_owners(
     definitions: &mut [FeatureDefinition],
     entity_tables: &[FeatureEntityTable],
@@ -6796,7 +6783,11 @@ pub fn bind_replay_definition_owners(
     let candidates = definitions
         .iter()
         .map(|definition| {
-            let external_ids = definition
+            if definition.owner_feature_id.is_some() {
+                return BTreeSet::new();
+            }
+            let trimmed_external_ids = unique_trimmed_external_ids(definition);
+            let order_external_ids = definition
                 .order_table
                 .as_ref()
                 .map(|table| {
@@ -6807,8 +6798,23 @@ pub fn bind_replay_definition_owners(
                         .collect::<BTreeSet<_>>()
                 })
                 .unwrap_or_default();
-            if definition.owner_feature_id.is_some() || external_ids.is_empty() {
+            if trimmed_external_ids.is_empty() && order_external_ids.is_empty() {
                 return BTreeSet::new();
+            }
+            let exact_candidates = entity_tables
+                .iter()
+                .filter_map(|table| {
+                    let owner = table.feature_id?;
+                    if claimed_owner_ids.contains(&owner) {
+                        return None;
+                    }
+                    let source_ids = generated_source_entity_ids(table);
+                    (!trimmed_external_ids.is_empty() && source_ids == trimmed_external_ids)
+                        .then_some(owner)
+                })
+                .collect::<BTreeSet<_>>();
+            if !exact_candidates.is_empty() {
+                return exact_candidates;
             }
             entity_tables
                 .iter()
@@ -6817,14 +6823,11 @@ pub fn bind_replay_definition_owners(
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
-                    let source_ids = table
-                        .entries
-                        .iter()
-                        .filter_map(|entry| entry.source_entity_id)
-                        .collect::<BTreeSet<_>>();
-                    (!source_ids.is_empty() && source_ids.is_subset(&external_ids)).then_some(owner)
+                    let source_ids = generated_source_entity_ids(table);
+                    (!source_ids.is_empty() && source_ids.is_subset(&order_external_ids))
+                        .then_some(owner)
                 })
-                .collect::<BTreeSet<_>>()
+                .collect()
         })
         .collect::<Vec<_>>();
     let mut owner_candidate_counts = BTreeMap::new();
@@ -6843,6 +6846,23 @@ pub fn bind_replay_definition_owners(
         definition.id = owner;
         definition.owner_feature_id = Some(owner);
     }
+}
+
+fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> {
+    definition
+        .trim_entities
+        .as_ref()
+        .filter(|table| table.has_unique_external_ids())
+        .map(|table| table.rows.iter().map(|row| row.external_id).collect())
+        .unwrap_or_default()
+}
+
+fn generated_source_entity_ids(table: &FeatureEntityTable) -> BTreeSet<u32> {
+    table
+        .entries
+        .iter()
+        .filter_map(|entry| entry.source_entity_id)
+        .collect()
 }
 
 /// Bind a DEPDB section through the consecutive recipe, internal datum, and
@@ -7552,6 +7572,57 @@ mod tests {
     }
 
     #[test]
+    fn binds_replay_owner_from_exact_trimmed_entity_set() {
+        let mut definition = pending_trimmed_definition(&[9, 10, 11, 12]);
+        definition.id = 0;
+        definition.order_table = pending_replay(&[10, 11, 12]).order_table;
+        let mut definitions = [definition];
+        bind_replay_definition_owners(
+            &mut definitions,
+            &[
+                generated_entity_table(42, &[12, 11, 10, 9]),
+                generated_entity_table(43, &[10]),
+            ],
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(definitions[0].id, 42);
+        assert_eq!(definitions[0].owner_feature_id, Some(42));
+    }
+
+    #[test]
+    fn falls_back_to_replay_order_when_trimmed_entities_do_not_join() {
+        let mut definition = pending_trimmed_definition(&[9, 10]);
+        definition.id = 0;
+        definition.order_table = pending_replay(&[10, 11, 12]).order_table;
+        let mut definitions = [definition];
+        bind_replay_definition_owners(
+            &mut definitions,
+            &[generated_entity_table(42, &[10, 12])],
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(definitions[0].id, 42);
+        assert_eq!(definitions[0].owner_feature_id, Some(42));
+    }
+
+    #[test]
+    fn falls_back_to_replay_order_for_duplicate_trimmed_entity_ids() {
+        let mut definition = pending_trimmed_definition(&[9, 9]);
+        definition.id = 0;
+        definition.order_table = pending_replay(&[9]).order_table;
+        let mut definitions = [definition];
+        bind_replay_definition_owners(
+            &mut definitions,
+            &[generated_entity_table(42, &[9])],
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(definitions[0].id, 42);
+        assert_eq!(definitions[0].owner_feature_id, Some(42));
+    }
+
+    #[test]
     fn binds_saved_section_owner_from_exact_trimmed_entity_set() {
         let mut definitions = [pending_trimmed_definition(&[9, 10, 11, 14, 21])];
         bind_trimmed_definition_owners(
@@ -7564,7 +7635,7 @@ mod tests {
     }
 
     #[test]
-    fn withholds_saved_section_owner_for_partial_or_reused_entity_sets() {
+    fn withholds_saved_section_owner_for_partial_reused_or_duplicate_entity_sets() {
         let mut partial = [pending_trimmed_definition(&[9, 10, 11])];
         bind_trimmed_definition_owners(&mut partial, &[generated_entity_table(667, &[9, 10])]);
         assert_eq!(partial[0].owner_feature_id, None);
@@ -7577,6 +7648,10 @@ mod tests {
         assert!(reused
             .iter()
             .all(|definition| definition.owner_feature_id.is_none()));
+
+        let mut duplicate = [pending_trimmed_definition(&[9, 9])];
+        bind_trimmed_definition_owners(&mut duplicate, &[generated_entity_table(667, &[9])]);
+        assert_eq!(duplicate[0].owner_feature_id, None);
     }
 
     #[test]
@@ -7617,6 +7692,20 @@ mod tests {
             &BTreeSet::from([42]),
         );
         assert_eq!(claimed[0].owner_feature_id, None);
+
+        let mut exact_ambiguous = pending_trimmed_definition(&[9, 10]);
+        exact_ambiguous.id = 0;
+        exact_ambiguous.order_table = pending_replay(&[9]).order_table;
+        let mut exact_ambiguous = [exact_ambiguous];
+        bind_replay_definition_owners(
+            &mut exact_ambiguous,
+            &[
+                generated_entity_table(42, &[9, 10]),
+                generated_entity_table(43, &[10, 9]),
+            ],
+            &BTreeSet::new(),
+        );
+        assert_eq!(exact_ambiguous[0].owner_feature_id, None);
     }
 
     fn operation(
