@@ -4715,6 +4715,17 @@ fn sequential_named_local_system_slots(
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
+        if body.get(cursor) == Some(&0xe7) {
+            let (inherited_count, next) = compact_int(body, cursor + 1);
+            let inherited_count = usize::try_from(inherited_count).ok()?;
+            (next > cursor + 1
+                && inherited_count > 0
+                && slots.len().checked_add(inherited_count)? <= count)
+                .then_some(())?;
+            slots.extend(std::iter::repeat_n(None, inherited_count));
+            cursor = next;
+            continue;
+        }
         if body[cursor] == 0x18 && cursor + 1 == body.len() {
             slots.push(Some(0.0));
             cursor += 1;
@@ -4729,7 +4740,7 @@ fn sequential_named_local_system_slots(
         if body.get(cursor) == Some(&0x18)
             && (body
                 .get(cursor + 1)
-                .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
+                .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6 | 0xe7))
                 || (body
                     .get(cursor + 1)
                     .is_some_and(|byte| scalar::is_named_local_system_coordinate_opener(*byte))
@@ -8248,6 +8259,46 @@ mod tests {
                 tokens: Vec::new(),
             })
         );
+    }
+
+    #[test]
+    fn named_local_system_advances_across_inherited_slots() {
+        let body = [
+            0xe4, 0x0f, 0xe7, 0x03, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+        ];
+
+        assert_eq!(
+            sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default()),
+            Some(vec![
+                Some(1.0),
+                Some(0.0),
+                None,
+                None,
+                None,
+                Some(1.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+            ])
+        );
+    }
+
+    #[test]
+    fn named_local_system_rejects_invalid_inherited_slot_transitions() {
+        for body in [
+            &[0xe7][..],
+            &[0xe7, 0x00],
+            &[0xe7, 0x0d],
+            &[0xe4, 0xe7, 0x0c],
+        ] {
+            assert_eq!(
+                sequential_named_local_system_slots(body, 12, &scalar::ScalarCache::default()),
+                None
+            );
+        }
     }
 
     #[test]
