@@ -1943,7 +1943,7 @@ fn ap203e1_does_not_emit_invisibility_entities() {
 
 #[test]
 fn rigid_transform_rejects_reflections() {
-    assert!(!crate::is_rigid_transform(&[
+    assert!(!crate::build::is_rigid_transform(&[
         [-1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
@@ -2053,7 +2053,7 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     });
     let output = export(&ir);
     assert!(!output.contains("COMPOSITE_CURVE("));
-    let mut builder = crate::Builder::new(&ir, StepSchema::Ap242Edition3);
+    let mut builder = crate::build::Builder::new(&ir, StepSchema::Ap242Edition3);
     assert!(builder.emit_curve("composite").is_none());
     assert!(builder.active_curves.is_empty());
     assert!(builder.emit_curve("composite").is_none());
@@ -2177,7 +2177,7 @@ fn every_region_of_a_body_is_retained_as_a_shape_item() {
     region.id.0 = "zzzz:test:region#second".into();
     ir.model.bodies[0].regions.push(region.id.clone());
     ir.model.regions.push(region);
-    let mut builder = crate::Builder::new(&ir, StepSchema::Ap242Edition3);
+    let mut builder = crate::build::Builder::new(&ir, StepSchema::Ap242Edition3);
     builder.build();
     assert_eq!(builder.body_item_refs[body.as_str()].len(), 2);
 }

@@ -588,6 +588,8 @@ impl TopologyBuilder {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
 
     fn face_spec() -> FaceSpec {
@@ -919,5 +921,178 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["f_first", "f_zero", "f_mid"]
         );
+    }
+
+    /// Reconstruct [`crate::examples::unit_cube`]'s topology through the builder
+    /// using the same id strings, and prove the two finalized models are equal.
+    ///
+    /// This freezes the emit semantics the codecs will adopt: given identical
+    /// geometry carriers, the builder reproduces byte-identical topology. Only
+    /// the topology is rebuilt here; surfaces and curves are geometry carriers a
+    /// codec pushes directly (the builder owns no surface/curve arena), so they
+    /// are copied verbatim to isolate the topology under test.
+    #[test]
+    fn reconstructs_unit_cube_topology() {
+        use crate::document::CadIr;
+        use crate::units::Units;
+
+        let expected = crate::examples::unit_cube();
+
+        let mut got = CadIr::empty(Units::default());
+        got.model.surfaces = expected.model.surfaces.clone();
+        got.model.curves = expected.model.curves.clone();
+
+        let scale = 10.0_f64;
+        let corners = [
+            (0.0, 0.0, 0.0),
+            (scale, 0.0, 0.0),
+            (scale, scale, 0.0),
+            (0.0, scale, 0.0),
+            (0.0, 0.0, scale),
+            (scale, 0.0, scale),
+            (scale, scale, scale),
+            (0.0, scale, scale),
+        ];
+        let edge_defs = [
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 0),
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 4),
+            (0, 4),
+            (1, 5),
+            (2, 6),
+            (3, 7),
+        ];
+        // (face name, ring of (edge index, forward)).
+        let face_defs: [(&str, [(usize, bool); 4]); 6] = [
+            ("bottom", [(0, true), (1, true), (2, true), (3, true)]),
+            ("top", [(7, false), (6, false), (5, false), (4, false)]),
+            ("front", [(0, false), (8, true), (4, true), (9, false)]),
+            ("right", [(1, false), (9, true), (5, true), (10, false)]),
+            ("back", [(2, false), (10, true), (6, true), (11, false)]),
+            ("left", [(3, false), (11, true), (7, true), (8, false)]),
+        ];
+
+        let mut builder = TopologyBuilder::new();
+
+        let body = BodyId("synthetic:cube:body#0".into());
+        builder
+            .body(
+                body.clone(),
+                BodySpec {
+                    kind: BodyKind::Solid,
+                    transform: None,
+                    name: Some("unit cube".into()),
+                    color: None,
+                    visible: None,
+                },
+            )
+            .unwrap();
+        let region = RegionId("synthetic:cube:region#0".into());
+        builder.region(region.clone(), &body).unwrap();
+        let shell = ShellId("synthetic:cube:shell#0".into());
+        builder.shell(shell.clone(), &region).unwrap();
+
+        // Faces, loops, and coedges; collect the two coedges of each edge.
+        let mut edge_to_coedges: HashMap<usize, Vec<CoedgeId>> = HashMap::new();
+        for (name, ring) in &face_defs {
+            let face = FaceId(format!("synthetic:cube:face#{name}"));
+            builder
+                .face(
+                    face.clone(),
+                    &shell,
+                    FaceSpec {
+                        surface: SurfaceId(format!("synthetic:cube:surface#{name}")),
+                        sense: Sense::Forward,
+                        name: Some(format!("{name} face")),
+                        color: None,
+                        tolerance: None,
+                    },
+                )
+                .unwrap();
+            let coedges = ring
+                .iter()
+                .enumerate()
+                .map(|(index, (edge_index, forward))| {
+                    let id = CoedgeId(format!("synthetic:cube:coedge#{name}:{index}"));
+                    edge_to_coedges
+                        .entry(*edge_index)
+                        .or_default()
+                        .push(id.clone());
+                    CoedgeSpec {
+                        id,
+                        edge: EdgeId(format!("synthetic:cube:edge#{edge_index}")),
+                        sense: if *forward {
+                            Sense::Forward
+                        } else {
+                            Sense::Reversed
+                        },
+                        pcurves: Vec::new(),
+                        use_curve: None,
+                        use_curve_parameter_range: None,
+                    }
+                })
+                .collect();
+            builder
+                .ring(
+                    LoopId(format!("synthetic:cube:loop#{name}")),
+                    &face,
+                    LoopBoundaryRole::Outer,
+                    coedges,
+                    Vec::new(),
+                )
+                .unwrap();
+        }
+
+        // Edges (the line curve carriers were copied above).
+        for (index, (from, to)) in edge_defs.iter().enumerate() {
+            let (ax, ay, az) = corners[*from];
+            let (bx, by, bz) = corners[*to];
+            let len = ((bx - ax).powi(2) + (by - ay).powi(2) + (bz - az).powi(2)).sqrt();
+            builder
+                .edge(
+                    EdgeId(format!("synthetic:cube:edge#{index}")),
+                    EdgeSpec {
+                        curve: Some(CurveId(format!("synthetic:cube:curve#{index}"))),
+                        start: VertexId(format!("synthetic:cube:vertex#{from}")),
+                        end: VertexId(format!("synthetic:cube:vertex#{to}")),
+                        param_range: Some([0.0, len]),
+                        tolerance: None,
+                    },
+                )
+                .unwrap();
+        }
+
+        // Points and vertices.
+        for (index, (x, y, z)) in corners.iter().enumerate() {
+            builder
+                .point(
+                    PointId(format!("synthetic:cube:point#{index}")),
+                    Point3::new(*x, *y, *z),
+                    None,
+                )
+                .unwrap();
+            builder
+                .vertex(
+                    VertexId(format!("synthetic:cube:vertex#{index}")),
+                    PointId(format!("synthetic:cube:point#{index}")),
+                    None,
+                )
+                .unwrap();
+        }
+
+        // Radial rings: each edge is shared by exactly two coedges.
+        for coedges in edge_to_coedges.values() {
+            builder.radial_ring(coedges);
+        }
+
+        builder.finish(&mut got.model).unwrap();
+        got.finalize();
+
+        assert_eq!(got.model, expected.model);
     }
 }
