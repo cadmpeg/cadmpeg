@@ -8,7 +8,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_f3d::F3dCodec;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
