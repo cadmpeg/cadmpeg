@@ -9364,7 +9364,11 @@ fn compact_line_reference_directions(
         }
         if record.get(16..32) == Some(&[0; 16])
             && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
-            && record.get(112..128) == Some(&[0; 16])
+            && (record.get(112..128) == Some(&[0; 16])
+                || record.get(112..126).is_some_and(|tail| {
+                    let token = u16::from_le_bytes([tail[12], tail[13]]);
+                    tail[..12] == [0; 12] && token & 0x8000 != 0 && token != u16::MAX
+                }))
         {
             if let Some(direction) = direction_at(80) {
                 directions.push(direction);
@@ -33715,6 +33719,38 @@ mod profile_join_tests {
         assert_eq!(
             compact_line_reference_direction(&six_scalar_payload, 0, six_scalar_payload.len(), &[],),
             Some(Vector3::new(0.0, 1.0, 0.0))
+        );
+        let mut token_terminated_payload = vec![0; 130];
+        token_terminated_payload[..8]
+            .copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        token_terminated_payload[12..16].copy_from_slice(&9000u32.to_le_bytes());
+        for (index, value) in [1.0_f64, 0.0, 0.25, 0.855, 0.0, 0.0, 1.0, 0.0, 0.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = 32 + index * 8;
+            token_terminated_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        token_terminated_payload[104..112].copy_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+        token_terminated_payload[124..126].copy_from_slice(&0x82c0u16.to_le_bytes());
+        assert_eq!(
+            compact_line_reference_direction(
+                &token_terminated_payload,
+                0,
+                token_terminated_payload.len(),
+                &[],
+            ),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+        token_terminated_payload[124..126].copy_from_slice(&0x02c0u16.to_le_bytes());
+        assert_eq!(
+            compact_line_reference_direction(
+                &token_terminated_payload,
+                0,
+                token_terminated_payload.len(),
+                &[],
+            ),
+            None
         );
         let short_handles = 200;
         compact_payload[short_handles..short_handles + 8]
