@@ -56,6 +56,7 @@ pub fn inspect(
     path: &Path,
     forced: Option<ForcedInput>,
     json: bool,
+    report: Option<&Path>,
 ) -> Result<()> {
     let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
     let (codec, confidence) = match forced {
@@ -77,15 +78,23 @@ pub fn inspect(
     let summary = codec
         .inspect(&mut file, &InspectOptions::default())
         .with_context(|| format!("inspecting {}", path.display()))?;
-    if json {
-        print_json(&envelope(
-            "inspect",
-            serde_json::json!({
-                "confidence": confidence,
-                "summary": summary,
-            }),
-        ))?;
-        return Ok(());
+    if json || report.is_some() {
+        let payload = serde_json::json!({
+            "confidence": confidence,
+            "summary": serde_json::to_value(&summary)?,
+        });
+        let sink = ReportSink {
+            input: path,
+            output: report,
+            force: false,
+            command: "inspect",
+        };
+        if json {
+            sink.write_payload(payload.clone())?;
+            print_json(&envelope("inspect", payload))?;
+            return Ok(());
+        }
+        sink.write_payload(payload)?;
     }
     println!(
         "format: {}{}\ncontainer: {}\nentries: {}",
@@ -155,10 +164,11 @@ pub fn validate_cmd(
     forced: Option<ForcedInput>,
     options: DecodeOptions,
     json: bool,
+    report_path: Option<&Path>,
 ) -> Result<()> {
     let loaded = loader::load_ir(registry, path, options, forced)?;
-    if let Some(report) = &loaded.decode_report {
-        print_decode_report(&mut io::stderr(), report)?;
+    if let Some(decode_report) = &loaded.decode_report {
+        print_decode_report(&mut io::stderr(), decode_report)?;
     }
     let report = validate_ir(
         registry,
@@ -166,14 +176,24 @@ pub fn validate_cmd(
         loaded.source_fidelity.as_ref(),
         losses(loaded.decode_report.as_ref()),
     );
-    if json {
-        print_json(&envelope(
-            "validate",
-            serde_json::json!({
-                "decode_report": loaded.decode_report,
-                "validation_report": report,
-            }),
-        ))?;
+    if json || report_path.is_some() {
+        let payload = serde_json::json!({
+            "decode_report": serde_json::to_value(&loaded.decode_report)?,
+            "validation_report": serde_json::to_value(&report)?,
+        });
+        let sink = ReportSink {
+            input: path,
+            output: report_path,
+            force: false,
+            command: "validate",
+        };
+        if json {
+            sink.write_payload(payload.clone())?;
+            print_json(&envelope("validate", payload))?;
+        } else {
+            sink.write_payload(payload)?;
+            print_validation_report(&mut io::stdout(), &report)?;
+        }
     } else {
         print_validation_report(&mut io::stdout(), &report)?;
     }

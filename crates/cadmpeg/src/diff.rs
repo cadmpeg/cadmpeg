@@ -8,7 +8,7 @@ use anyhow::Result;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::SourceFidelity;
 
-use crate::envelope::{envelope, print_json};
+use crate::envelope::{envelope, print_json, ReportSink};
 use crate::loader;
 use crate::registry::Registry;
 
@@ -19,6 +19,7 @@ pub fn diff(
     b: &Path,
     options: DecodeOptions,
     json: bool,
+    report: Option<&Path>,
 ) -> Result<ExitCode> {
     let left = loader::load_ir(registry, a, options, None)?;
     let right = loader::load_ir(registry, b, options, None)?;
@@ -28,20 +29,28 @@ pub fn diff(
         right.source_fidelity.as_ref(),
     );
     let different = !result.is_empty() || fidelity_differs(&fidelity);
-    if json {
-        print_json(&envelope(
-            "diff",
-            serde_json::json!({
-                "different": different,
-                "diff": result,
-                "source_fidelity": fidelity_json(&fidelity),
-            }),
-        ))?;
-        return Ok(if different {
-            ExitCode::from(1)
-        } else {
-            ExitCode::SUCCESS
+    if json || report.is_some() {
+        let payload = serde_json::json!({
+            "different": different,
+            "diff": serde_json::to_value(&result)?,
+            "source_fidelity": fidelity_json(&fidelity),
         });
+        let sink = ReportSink {
+            input: a,
+            output: report,
+            force: false,
+            command: "diff",
+        };
+        if json {
+            sink.write_payload(payload.clone())?;
+            print_json(&envelope("diff", payload))?;
+            return Ok(if different {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            });
+        }
+        sink.write_payload(payload)?;
     }
     println!("diff {} vs {}", a.display(), b.display());
     if let Some((before, after)) = &result.unit_change {

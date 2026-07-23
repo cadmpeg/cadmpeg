@@ -190,6 +190,9 @@ enum Command {
         /// Write a versioned JSON summary to standard output.
         #[arg(long)]
         json: bool,
+        /// Write a versioned JSON summary to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
         #[command(flatten)]
         input_args: InputArgs,
     },
@@ -218,6 +221,9 @@ enum Command {
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
+        /// Write a versioned JSON result to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -264,6 +270,9 @@ enum Command {
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
+        /// Write a versioned JSON result to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
         #[command(flatten)]
         decode: DecodeArgs,
     },
@@ -311,9 +320,16 @@ fn main() -> ExitCode {
         Command::Inspect {
             input,
             json,
+            report,
             input_args,
-        } => commands::inspect(&registry, &input, input_args.forced(), json)
-            .map(|()| ExitCode::SUCCESS),
+        } => commands::inspect(
+            &registry,
+            &input,
+            input_args.forced(),
+            json,
+            report.as_deref(),
+        )
+        .map(|()| ExitCode::SUCCESS),
         Command::Decode {
             input,
             output,
@@ -334,6 +350,7 @@ fn main() -> ExitCode {
         Command::Validate {
             input,
             json,
+            report,
             input_args,
             decode,
         } => commands::validate_cmd(
@@ -342,6 +359,7 @@ fn main() -> ExitCode {
             input_args.forced(),
             decode.options(),
             json,
+            report.as_deref(),
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Export {
@@ -376,9 +394,13 @@ fn main() -> ExitCode {
             .map(|()| ExitCode::SUCCESS),
             Err(error) => Err(error),
         },
-        Command::Diff { a, b, json, decode } => {
-            diff::diff(&registry, &a, &b, decode.options(), json)
-        }
+        Command::Diff {
+            a,
+            b,
+            json,
+            report,
+            decode,
+        } => diff::diff(&registry, &a, &b, decode.options(), json, report.as_deref()),
         Command::Convert {
             input,
             format,

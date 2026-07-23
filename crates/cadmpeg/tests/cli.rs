@@ -1204,3 +1204,75 @@ fn explicit_format_warns_when_known_extension_disagrees() {
             "explicit format step disagrees with output extension format cadir",
         ));
 }
+
+#[test]
+fn inspect_report_writes_versioned_summary_to_file() {
+    let dir = tempdir().unwrap();
+    let input = minimal_rhino_archive(dir.path(), "empty.3dm", "50");
+    let report = dir.path().join("inspect-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "inspect",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("format: rhino (detected high)"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["command"], "inspect");
+    assert_eq!(value["confidence"], "high");
+    assert_eq!(value["summary"]["format"], "rhino");
+}
+
+#[test]
+fn validate_report_writes_versioned_result_to_file() {
+    let dir = tempdir().unwrap();
+    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let report = dir.path().join("validate-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "validate",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("validation: OK"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["command"], "validate");
+    assert!(value["decode_report"].is_null());
+    assert!(value["validation_report"].is_object());
+}
+
+#[test]
+fn diff_report_writes_versioned_result_to_file() {
+    let dir = tempdir().unwrap();
+    let cube = unit_cube();
+    let a = fixture(dir.path(), "a.cadir.json", &cube);
+    let b = fixture(dir.path(), "b.cadir.json", &cube);
+    let report = dir.path().join("diff-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("identical"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["command"], "diff");
+    assert_eq!(value["different"], false);
+    assert!(value["diff"].is_object());
+}

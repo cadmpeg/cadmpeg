@@ -50,24 +50,28 @@ pub(crate) struct ReportSink<'a> {
 }
 
 impl ReportSink<'_> {
-    /// Write the command report, or do nothing when no output path is set.
+    /// Write the five-key command report, or nothing when no output path is set.
     pub(crate) fn write(
         &self,
         decode_report: Option<&DecodeReport>,
         validation_report: Option<&ValidationReport>,
         export: Option<&ExportReport>,
     ) -> Result<()> {
+        self.write_payload(serde_json::json!({
+            "decode_report": decode_report,
+            "validation_report": validation_report,
+            "export": export,
+        }))
+    }
+
+    /// Wrap a payload in the command envelope and write it, or nothing when no
+    /// output path is set. Analysis commands write the same body they print with
+    /// `--json`; the five-key [`ReportSink::write`] is one such payload.
+    pub(crate) fn write_payload(&self, payload: serde_json::Value) -> Result<()> {
         let Some(output) = self.output else {
             return Ok(());
         };
-        let mut bytes = serde_json::to_vec_pretty(&envelope(
-            self.command,
-            serde_json::json!({
-                "decode_report": decode_report,
-                "validation_report": validation_report,
-                "export": export,
-            }),
-        ))?;
+        let mut bytes = serde_json::to_vec_pretty(&envelope(self.command, payload))?;
         bytes.push(b'\n');
         write_output(self.input, output, &bytes, self.force)?;
         eprintln!("wrote report {}", output.display());
