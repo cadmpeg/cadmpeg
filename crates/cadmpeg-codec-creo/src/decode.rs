@@ -24942,6 +24942,24 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         );
         store_arena(&mut ir, "configuration", &[family_table])?;
     }
+    let native_feature_count = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| matches!(feature.definition, IrFeatureDefinition::Native { .. }))
+        .count();
+    coverage.insert(
+        "transferred_feature_count".to_string(),
+        ir.model.features.len(),
+    );
+    coverage.insert(
+        "transferred_typed_feature_count".to_string(),
+        ir.model.features.len() - native_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_feature_count".to_string(),
+        native_feature_count,
+    );
     Ok((ir, annotations.build(), unknowns, coverage))
 }
 

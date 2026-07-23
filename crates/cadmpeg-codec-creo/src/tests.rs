@@ -2035,6 +2035,12 @@ fn decode_types_class_911_as_unresolved_hole() {
             ..
         }
     ));
+    assert_eq!(result.report.coverage["transferred_feature_count"], 1);
+    assert_eq!(result.report.coverage["transferred_typed_feature_count"], 1);
+    assert_eq!(
+        result.report.coverage["transferred_native_feature_count"],
+        0
+    );
 }
 
 #[test]
@@ -3124,6 +3130,12 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     assert_eq!(parameters["loop_restore.direction"], "0");
     assert_eq!(parameters["loop_restore.direction#2"], "1");
     assert_eq!(parameters["loop_restore.direction2"], "167");
+    assert_eq!(result.report.coverage["transferred_feature_count"], 1);
+    assert_eq!(result.report.coverage["transferred_typed_feature_count"], 0);
+    assert_eq!(
+        result.report.coverage["transferred_native_feature_count"],
+        1
+    );
 }
 
 #[test]
