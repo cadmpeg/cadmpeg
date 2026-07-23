@@ -79,7 +79,6 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The referents and traversal roles of `lo_restore` `direction` and
   `direction2` compact integers are unspecified.
 - Bindings for rowless face-use references outside the round-feature rowless-cylinder table are unspecified.
-- Positional-replay field alignment for non-class-913 edge-treatment schemas is unspecified.
 - The byte-backed relation that assigns shells to body identifiers when face-adjacency components and body-count fields disagree is unspecified.
 - Face-instance bindings for `element_colors`, `NeuPrtSld`, and display-table elements are unspecified.
 - The remaining RGB and component scalar lanes used by appearance records are unspecified.

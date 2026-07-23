@@ -5774,14 +5774,25 @@ fn unique_unanchored_replay_pair(
         .filter_map(|(offset, window)| (window == [0xe1, 0xe1]).then_some(offset))
     {
         let (row_id, after_id) = psb::compact_int(&row.body, suffix + 2);
-        if after_id == suffix + 2
-            || row.body.get(after_id..after_id + 2) != Some(&[psb::token::COMPOUND_CLOSE; 2])
-        {
+        if after_id == suffix + 2 || row.body.get(after_id) != Some(&psb::token::COMPOUND_CLOSE) {
             continue;
         }
-        let (_, after_selector) = psb::compact_int(&row.body, after_id + 2);
+        let selector_start = if row.body.get(after_id + 1) == Some(&psb::token::COMPOUND_CLOSE) {
+            after_id + 2
+        } else if row.body.get(after_id + 1) == Some(&psb::token::ENTITY_REF) {
+            let Ok((_, after_reference)) = psb::reference_id(&row.body, after_id + 2) else {
+                continue;
+            };
+            if row.body.get(after_reference) != Some(&psb::token::COMPOUND_CLOSE) {
+                continue;
+            }
+            after_reference + 1
+        } else {
+            continue;
+        };
+        let (_, after_selector) = psb::compact_int(&row.body, selector_start);
         let (repeated_row_id, after_repeated_id) = psb::compact_int(&row.body, after_selector);
-        if after_selector == after_id + 2
+        if after_selector == selector_start
             || after_repeated_id == after_selector
             || repeated_row_id != row_id
             || row.body.get(after_repeated_id..after_repeated_id + 4)
@@ -5805,7 +5816,7 @@ fn unique_unanchored_replay_pair(
     candidates.pop()
 }
 
-/// Decode the two affected-ID array positions in class-913 replay rows.
+/// Decode the two affected-ID array positions in class-913 and class-914 replay rows.
 ///
 /// Array extents are stateful within one `AllFeatur` stream and schema class.
 /// An omitted `f8` opener reuses the preceding extent at the same array
@@ -5816,17 +5827,19 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
     const ANCHOR_LEN: usize = ANCHOR_PREFIX.len() + 1 + ANCHOR_SUFFIX.len();
     const TERMINATOR: &[u8] = &[0xf5, 0x96, 0x92];
     let mut result = Vec::new();
-    let mut extents = BTreeMap::<usize, [Option<u32>; 2]>::new();
+    let mut extents = BTreeMap::<(usize, u32), [Option<u32>; 2]>::new();
     for row in rows {
-        if row.root_schema_class != Some(913) {
+        let Some(schema_class @ (913 | 914)) = row.root_schema_class else {
             continue;
-        }
+        };
         let anchor = row.body.windows(ANCHOR_LEN).rposition(|window| {
             window.starts_with(ANCHOR_PREFIX)
                 && matches!(window[ANCHOR_PREFIX.len()], 0xc8 | 0xd8)
                 && window.ends_with(ANCHOR_SUFFIX)
         });
-        let state = extents.entry(row.stream_offset).or_default();
+        let state = extents
+            .entry((row.stream_offset, schema_class))
+            .or_default();
         let (pair, source_offset) = if let Some(anchor) = anchor {
             let run_start = anchor + ANCHOR_LEN;
             let Some(term_relative) = row.body[run_start..]
@@ -7035,24 +7048,29 @@ mod tests {
         }
     }
 
-    fn unanchored_replay_row(feature_id: u32, row_id: u8, operands: &[u8]) -> FeatureRow {
+    fn unanchored_replay_row(
+        feature_id: u32,
+        row_id: u8,
+        suffix_reference: Option<u8>,
+        operands: &[u8],
+    ) -> FeatureRow {
         let mut row = replay_row(feature_id, operands);
         row.body.clear();
         row.body.push(psb::token::COMPOUND_CLOSE);
         row.body.extend_from_slice(operands);
-        row.body.extend_from_slice(&[
-            0xe1,
-            0xe1,
-            row_id,
-            psb::token::COMPOUND_CLOSE,
-            psb::token::COMPOUND_CLOSE,
-            3,
-            row_id,
-            0x00,
-            0xe1,
-            0x00,
-            psb::token::COMPOUND_CLOSE,
-        ]);
+        row.body
+            .extend_from_slice(&[0xe1, 0xe1, row_id, psb::token::COMPOUND_CLOSE]);
+        if let Some(reference) = suffix_reference {
+            row.body.extend_from_slice(&[
+                psb::token::ENTITY_REF,
+                reference,
+                psb::token::COMPOUND_CLOSE,
+            ]);
+        } else {
+            row.body.push(psb::token::COMPOUND_CLOSE);
+        }
+        row.body
+            .extend_from_slice(&[3, row_id, 0x00, 0xe1, 0x00, psb::token::COMPOUND_CLOSE]);
         row
     }
 
@@ -7083,8 +7101,8 @@ mod tests {
     #[test]
     fn positional_round_replay_uses_repeated_row_id_suffix() {
         let rows = [
-            unanchored_replay_row(1, 40, &[0xf8, 2, 10, 11, 0xf8, 2, 20, 21]),
-            unanchored_replay_row(2, 41, &[12, 13, 22, 23]),
+            unanchored_replay_row(1, 40, None, &[0xf8, 2, 10, 11, 0xf8, 2, 20, 21]),
+            unanchored_replay_row(2, 41, None, &[12, 13, 22, 23]),
         ];
 
         let decoded = replay_affected_ids(&rows);
@@ -7096,6 +7114,18 @@ mod tests {
         assert_eq!(decoded[1].edge_ids, vec![22, 23]);
         assert_eq!(decoded[1].geometry_extent, ReplayExtentSource::Inherited);
         assert_eq!(decoded[1].edge_extent, ReplayExtentSource::Inherited);
+    }
+
+    #[test]
+    fn positional_chamfer_replay_uses_referenced_row_id_suffix() {
+        let mut row = unanchored_replay_row(1, 40, Some(74), &[0xf8, 2, 10, 11, 0xf8, 2, 20, 21]);
+        row.root_schema_class = Some(914);
+
+        let decoded = replay_affected_ids(&[row]);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].geometry_ids, vec![10, 11]);
+        assert_eq!(decoded[0].edge_ids, vec![20, 21]);
     }
 
     #[test]

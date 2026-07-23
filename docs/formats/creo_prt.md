@@ -1877,9 +1877,9 @@ or extent fields.
 
 Named procedural-choice fields belong to their containing feature row. Complete compact integers, compact-integer arrays, entity references, empty alternatives, and fully decoded `f9` scalar arrays are operation parameters qualified by choice and field name. A repeated qualified field name denotes ordered occurrences of the same parameter slot. Incomplete scalar wrappers and undefined field bodies remain opaque.
 
-Class 913 stores `geoms_affected` and `edgs_affected` as the first and second
+Classes 913 and 914 store `geoms_affected` and `edgs_affected` as the first and second
 affected-array schema positions. Each position has independent extent state
-within one `AllFeatur` stream. `f8 <count>` replaces that position's current
+within one `AllFeatur` stream and schema class. `f8 <count>` replaces that position's current
 extent; omission of `f8` reuses its preceding extent. Exactly that many compact
 identifiers belong to the position before the next position begins. The first
 row can carry the field labels; positional rows omit them without changing the
@@ -1888,10 +1888,11 @@ where `<variant>` is `c8` or `d8`. Before an explicit second-position `f8`,
 `f7 <canonical-reference>` identifies the replayed schema position and does
 not belong to either identifier array. An omitted second-position extent also
 omits that reference. The unanchored positional form ends the pair immediately
-before `e1 e1 <row-id> e3 e3 <selector> <row-id> 00 e1 00 e3`. The repeated
-compact `row-id` values must agree. The pair begins immediately after a
-compound close, and its two stateful extents must consume the bytes up to that
-suffix exactly. More than one exact start leaves the row opaque.
+before `e1 e1 <row-id> e3 <suffix> <selector> <row-id> 00 e1 00 e3`.
+`<suffix>` is either `e3` or `f7 <canonical-reference> e3`. The repeated compact
+`row-id` values must agree. The pair begins immediately after a compound close,
+and its two stateful extents must consume the bytes up to that suffix exactly.
+More than one exact start leaves the row opaque.
 
 Repeated named affected-ID arrays for one feature and namespace are distinct
 stored states. They define a neutral edge selection, parent set, generated
