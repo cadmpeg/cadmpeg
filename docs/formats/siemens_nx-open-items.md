@@ -9,6 +9,7 @@ This document records unresolved NX `.prt` byte semantics.
 - The relation between graph-only `OFFSET_SURF` constructions and NURBS carriers owned by the topology of the same partition is unspecified when the NURBS surfaces are not geometrically equivalent to the procedural surfaces within the document tolerance. Common signed distance and partition identity do not establish that the NURBS faces are solved caches of those constructions.
 - Terminal folds and selection among multiple corrected branches remain unspecified for procedural curves with degenerate support-0 arrays, sentinel-truncated marker-4 plane-support arrays, and NURBS-offset blend spines.
 - Full-record layouts for deltas-stream node types outside the topology and procedural families defined in the specification are unspecified.
+- The status-framed state tail following the eight-reference deltas BODY revision prefix is unspecified.
 - Status-byte placement and complete-record boundaries for deltas-stream NURBS support records types 125–128 and 135–136 are unspecified.
 - Delta tag `0x5a` uses the `intersection_data` layout shared with type 38; its canonical later-schema node-type name is unspecified.
 

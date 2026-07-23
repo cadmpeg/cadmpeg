@@ -195,6 +195,12 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                 }
             } else if stream.kind == parasolid::StreamKind::Deltas {
                 let census = deltas::walk(&stream.inflated);
+                if !census.body_revisions.is_empty() {
+                    attributes.insert(
+                        "records.delta.body_revisions".to_string(),
+                        census.body_revisions.len().to_string(),
+                    );
+                }
                 for (family, count) in census.full_counts {
                     attributes.insert(
                         format!("records.delta.full.{}", family.to_ascii_lowercase()),

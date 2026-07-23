@@ -38,6 +38,19 @@ pub struct Tombstone {
     pub offset: usize,
 }
 
+/// Validated prefix of one deltas BODY revision envelope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyRevision {
+    /// Monotonic kernel revision identity.
+    pub node_id: u32,
+    /// Eight ordered BODY references decoded from status-framed XMT fields.
+    pub references: [u32; 8],
+    /// Record start offset in the inflated deltas stream.
+    pub offset: usize,
+    /// First byte after the validated prefix.
+    pub prefix_end: usize,
+}
+
 /// Result of a deterministic deltas topology walk.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Census {
@@ -45,6 +58,8 @@ pub struct Census {
     pub records: Vec<Record>,
     /// Compact tombstones in source order.
     pub tombstones: Vec<Tombstone>,
+    /// BODY revision prefixes in source order.
+    pub body_revisions: Vec<BodyRevision>,
     /// Complete-record counts keyed by Parasolid family name.
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
@@ -109,7 +124,7 @@ const POINT: &[Token] = &[
     Token::Position,
 ];
 const LOOP: &[Token] = &[Token::Ref; 4];
-const BODY_OR_SHELL: &[Token] = &[Token::Ref; 8];
+const SHELL: &[Token] = &[Token::Ref; 8];
 const REGION: &[Token] = &[Token::Ref; 4];
 const FIN: &[Token] = &[
     Token::Ref,
@@ -315,6 +330,13 @@ pub fn walk(stream: &[u8]) -> Census {
             offset += 1;
             continue;
         };
+        if kind == 12 {
+            if let Some(revision) = body_revision_prefix(stream, offset) {
+                offset = revision.prefix_end;
+                census.body_revisions.push(revision);
+                continue;
+            }
+        }
         let decoded = fixed_signature(kind)
             .and_then(|signature| consume_fixed(stream, offset, kind, signature))
             .filter(|record| plausible_next(stream, record.end));
@@ -336,6 +358,28 @@ pub fn walk(stream: &[u8]) -> Census {
         offset += 1;
     }
     census
+}
+
+fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
+    let (xmt, consumed) = read_xmt(stream, offset + 2)?;
+    (xmt == 3).then_some(())?;
+    let node_id_at = offset + 2 + consumed;
+    let node_id = be::u32_at(stream, node_id_at)?;
+    let mut at = node_id_at + 4;
+    let mut references = [0; 8];
+    for reference in &mut references {
+        let (value, consumed) = read_xmt(stream, at)?;
+        at += consumed;
+        (stream.get(at) == Some(&1)).then_some(())?;
+        at += 1;
+        *reference = value;
+    }
+    Some(BodyRevision {
+        node_id,
+        references,
+        offset,
+        prefix_end: at,
+    })
 }
 
 /// Overlay supported complete deltas records onto one paired partition stream.
@@ -666,7 +710,7 @@ fn family_name(kind: u16) -> Option<&'static str> {
 fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
     Some(match kind {
         14 => FACE,
-        12 | 13 => BODY_OR_SHELL,
+        13 => SHELL,
         15 => LOOP,
         16 => EDGE,
         17 => FIN,

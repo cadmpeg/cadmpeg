@@ -6485,6 +6485,12 @@ fn source_meta(scan: &Scan) -> SourceMeta {
             format!("deltas.{index}.bytes_decoded"),
             census.bytes_decoded.to_string(),
         );
+        if !census.body_revisions.is_empty() {
+            attributes.insert(
+                format!("deltas.{index}.body_revisions"),
+                census.body_revisions.len().to_string(),
+            );
+        }
         for (name, count) in census.full_counts {
             attributes.insert(format!("deltas.{index}.full.{name}"), count.to_string());
         }

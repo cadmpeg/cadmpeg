@@ -6033,6 +6033,29 @@ fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
 }
 
 #[test]
+fn deltas_body_revision_prefix_retains_node_and_reference_identities() {
+    let mut bytes = vec![0, 12, 0, 3];
+    bytes.extend_from_slice(&223u32.to_be_bytes());
+    bytes.extend_from_slice(&[0xe3, 0xbf, 0, 1, 1]);
+    for reference in [6u16, 1, 1, 1, 1, 1, 1] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.extend_from_slice(&[0x40, 0x8f, 0x40, 0, 0, 0, 0, 0]);
+
+    let census = crate::deltas::walk(&bytes);
+
+    assert!(census.records.is_empty());
+    assert_eq!(census.body_revisions.len(), 1);
+    assert_eq!(census.body_revisions[0].node_id, 223);
+    assert_eq!(
+        census.body_revisions[0].references,
+        [40_000, 6, 1, 1, 1, 1, 1, 1]
+    );
+    assert_eq!(census.body_revisions[0].prefix_end, 34);
+}
+
+#[test]
 fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();

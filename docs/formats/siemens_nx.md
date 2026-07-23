@@ -1098,7 +1098,7 @@ live = partition ∪ delta_full − tombstones
 - A full record with `xmt ∉ partition` (high range) adds a new entity.
 - The deltas stream adds entities through explicit high-range records.
 
-BODY (`00 0c`, xmt=3) records delimit body revisions. `node_id` is a monotonic per-body revision counter. A partition containing a validated body-shape SHELL is the authoritative current topology image. BODY through REGION records in its paired deltas stream are revision history and do not replace or delete that topology image.
+BODY (`00 0c`, xmt=3) records delimit body revisions. The record prefix is `type:u16 BE`, XMT `3`, `node_id:u32 BE`, and eight ordered status-framed XMT references. `node_id` is a monotonic per-body revision counter. A partition containing a validated body-shape SHELL is the authoritative current topology image. BODY through REGION records in its paired deltas stream are revision history and do not replace or delete that topology image.
 
 `RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table is a little-endian `count:u32` followed by exactly `count` ordered `object_id:u32` words. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 
