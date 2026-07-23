@@ -16,7 +16,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 79;
+pub const CATIA_NATIVE_VERSION: u32 = 80;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -75,8 +75,10 @@ pub struct CatiaOwnerAllocationLink {
 pub struct CatiaOwnerNumericTail {
     /// Five-byte class-specific header.
     pub header: [u8; 5],
-    /// Four finite binary64 values in serialization order.
-    pub scalar64: [f64; 4],
+    /// Lower coordinate pair of a strictly increasing binary64 box.
+    pub lower: [f64; 2],
+    /// Upper coordinate pair of a strictly increasing binary64 box.
+    pub upper: [f64; 2],
     /// Three strictly increasing binary32 bounds in serialization order.
     pub bounds: [[f32; 2]; 3],
 }
@@ -924,7 +926,8 @@ fn consolidated_owner_packets(bytes: &[u8]) -> Vec<CatiaConsolidatedOwnerPacket>
                     references: packet.references,
                     numeric_tail: CatiaOwnerNumericTail {
                         header: packet.numeric_tail.header,
-                        scalar64: packet.numeric_tail.scalar64,
+                        lower: packet.numeric_tail.lower,
+                        upper: packet.numeric_tail.upper,
                         bounds: packet.numeric_tail.bounds,
                     },
                 },
@@ -1272,7 +1275,10 @@ fn validate_consolidated_owner_packets(
                 numeric_tail.header[0] == 0x84
                     && matches!(numeric_tail.header[1], 0x41 | 0xc1)
                     && numeric_tail.header[4] == 0x0d
-                    && numeric_tail.scalar64.iter().all(|value| value.is_finite())
+                    && numeric_tail.lower.iter().all(|value| value.is_finite())
+                    && numeric_tail.upper.iter().all(|value| value.is_finite())
+                    && numeric_tail.lower[0] < numeric_tail.upper[0]
+                    && numeric_tail.lower[1] < numeric_tail.upper[1]
                     && numeric_tail.bounds.iter().all(|bounds| {
                         bounds[0].is_finite() && bounds[1].is_finite() && bounds[0] < bounds[1]
                     })

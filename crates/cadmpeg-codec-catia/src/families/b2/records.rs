@@ -77,8 +77,10 @@ pub struct B2ReferenceList {
 pub struct B2OwnerNumericTail {
     /// Five-byte class-specific header.
     pub header: [u8; 5],
-    /// Four finite little-endian binary64 values.
-    pub scalar64: [f64; 4],
+    /// Lower coordinate pair of a strictly increasing binary64 box.
+    pub lower: [f64; 2],
+    /// Upper coordinate pair of a strictly increasing binary64 box.
+    pub upper: [f64; 2],
     /// Three strictly increasing binary32 bounds in serialization order.
     pub bounds: [[f32; 2]; 3],
 }
@@ -484,7 +486,12 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
         return None;
     }
 
-    let scalar64 = read_f64_array(data, 5)?;
+    let values = read_f64_array::<4>(data, 5)?;
+    let lower = [values[0], values[1]];
+    let upper = [values[2], values[3]];
+    if lower[0] >= upper[0] || lower[1] >= upper[1] {
+        return None;
+    }
     if data.get(37) != Some(&0x01) {
         return None;
     }
@@ -500,7 +507,8 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
     }
     Some(B2OwnerNumericTail {
         header,
-        scalar64,
+        lower,
+        upper,
         bounds,
     })
 }
