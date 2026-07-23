@@ -14,12 +14,11 @@ use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::validate::ValidationReport;
 use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
 
+use crate::envelope::{envelope, print_json, write_output, ReportSink};
 use crate::format::{ForcedInput, Format};
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::Registry;
 use crate::DecodeArgs;
-
-const CLI_SCHEMA_VERSION: u32 = 4;
 
 fn validate_ir(
     registry: &Registry,
@@ -101,15 +100,13 @@ pub fn inspect(
         .inspect(&mut file, &InspectOptions::default())
         .with_context(|| format!("inspecting {}", path.display()))?;
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": CLI_SCHEMA_VERSION,
-                "command": "inspect",
+        print_json(&envelope(
+            "inspect",
+            serde_json::json!({
                 "confidence": confidence,
                 "summary": summary,
-            }))?
-        );
+            }),
+        ))?;
         return Ok(());
     }
     println!(
@@ -163,15 +160,13 @@ pub fn decode(
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
-    write_command_report(
-        path,
-        report_path,
+    ReportSink {
+        input: path,
+        output: report_path,
         force,
-        "decode",
-        loaded.decode_report.as_ref(),
-        None,
-        None,
-    )?;
+        command: "decode",
+    }
+    .write(loaded.decode_report.as_ref(), None, None)?;
     Ok(())
 }
 
@@ -184,7 +179,6 @@ pub fn validate_cmd(
     json: bool,
 ) -> Result<()> {
     let loaded = loader::load_ir(registry, path, args.options(), forced)?;
-    let mut stdout = io::stdout();
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
@@ -195,18 +189,15 @@ pub fn validate_cmd(
         losses(loaded.decode_report.as_ref()),
     );
     if json {
-        writeln!(
-            stdout,
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": CLI_SCHEMA_VERSION,
-                "command": "validate",
+        print_json(&envelope(
+            "validate",
+            serde_json::json!({
                 "decode_report": loaded.decode_report,
                 "validation_report": report,
-            }))?
-        )?;
+            }),
+        ))?;
     } else {
-        print_validation_report(&mut stdout, &report)?;
+        print_validation_report(&mut io::stdout(), &report)?;
     }
     if !report.is_ok() {
         return Err(semantic(format!(
@@ -249,20 +240,18 @@ pub fn export(
         forced_input,
     } = settings;
     let loaded = loader::load_ir(registry, path, args.options(), forced_input)?;
+    let sink = ReportSink {
+        input: path,
+        output: report_path.as_deref(),
+        force,
+        command: "export",
+    };
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
         eprintln!("note: export skips IR validation; use `convert` to validate");
     }
     if let Some(refusal) = lossy_refusal(reject_lossy, loaded.decode_report.as_ref(), format) {
-        write_command_report(
-            path,
-            report_path.as_deref(),
-            force,
-            "export",
-            loaded.decode_report.as_ref(),
-            None,
-            None,
-        )?;
+        sink.write(loaded.decode_report.as_ref(), None, None)?;
         return Err(refusal);
     }
     if format.is_geometry_export()
@@ -272,15 +261,7 @@ pub fn export(
             .is_some_and(|report| !report.geometry_transferred)
         && !allow_empty
     {
-        write_command_report(
-            path,
-            report_path.as_deref(),
-            force,
-            "export",
-            loaded.decode_report.as_ref(),
-            None,
-            None,
-        )?;
+        sink.write(loaded.decode_report.as_ref(), None, None)?;
         return Err(semantic(format!(
             "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
             format.name()
@@ -294,15 +275,7 @@ pub fn export(
         path,
         force,
     )?;
-    write_command_report(
-        path,
-        report_path.as_deref(),
-        force,
-        "export",
-        loaded.decode_report.as_ref(),
-        None,
-        Some(&report),
-    )
+    sink.write(loaded.decode_report.as_ref(), None, Some(&report))
 }
 
 /// Decode if needed, validate CADIR, and export.
@@ -316,6 +289,12 @@ pub fn convert(
     args: &DecodeArgs,
 ) -> Result<()> {
     let loaded = loader::load_ir(registry, path, args.options(), settings.forced_input)?;
+    let sink = ReportSink {
+        input: path,
+        output: settings.report.as_deref(),
+        force: settings.force,
+        command: "convert",
+    };
     let mut stderr = io::stderr();
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut stderr, report)?;
@@ -324,15 +303,7 @@ pub fn convert(
     if let Some(refusal) =
         lossy_refusal(settings.reject_lossy, loaded.decode_report.as_ref(), format)
     {
-        write_command_report(
-            path,
-            settings.report.as_deref(),
-            settings.force,
-            "convert",
-            loaded.decode_report.as_ref(),
-            None,
-            None,
-        )?;
+        sink.write(loaded.decode_report.as_ref(), None, None)?;
         return Err(refusal);
     }
     let validation = validate_ir(
@@ -343,15 +314,7 @@ pub fn convert(
     );
     print_validation_report(&mut stderr, &validation)?;
     if !validation.is_ok() && !settings.allow_invalid {
-        write_command_report(
-            path,
-            settings.report.as_deref(),
-            settings.force,
-            "convert",
-            loaded.decode_report.as_ref(),
-            Some(&validation),
-            None,
-        )?;
+        sink.write(loaded.decode_report.as_ref(), Some(&validation), None)?;
         return Err(semantic(format!(
             "validation found {} error(s); refusing to export (use --allow-invalid to override)",
             validation.error_count()
@@ -364,15 +327,7 @@ pub fn convert(
             .is_some_and(|report| !report.geometry_transferred)
         && !settings.allow_empty
     {
-        write_command_report(
-            path,
-            settings.report.as_deref(),
-            settings.force,
-            "convert",
-            loaded.decode_report.as_ref(),
-            Some(&validation),
-            None,
-        )?;
+        sink.write(loaded.decode_report.as_ref(), Some(&validation), None)?;
         return Err(semantic(format!(
             "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
             format.name()
@@ -386,11 +341,7 @@ pub fn convert(
         path,
         settings.force,
     )?;
-    write_command_report(
-        path,
-        settings.report.as_deref(),
-        settings.force,
-        "convert",
+    sink.write(
         loaded.decode_report.as_ref(),
         Some(&validation),
         Some(&report),
@@ -414,16 +365,14 @@ pub fn diff(
     );
     let different = !result.is_empty() || fidelity_differs(&fidelity);
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": CLI_SCHEMA_VERSION,
-                "command": "diff",
+        print_json(&envelope(
+            "diff",
+            serde_json::json!({
                 "different": different,
                 "diff": result,
                 "source_fidelity": fidelity_json(&fidelity),
-            }))?
-        );
+            }),
+        ))?;
         return Ok(if different {
             ExitCode::from(1)
         } else {
@@ -622,65 +571,6 @@ fn export_ir(
         }
     }
     Ok(report)
-}
-
-fn write_command_report(
-    input: &Path,
-    output: Option<&Path>,
-    force: bool,
-    command: &'static str,
-    decode_report: Option<&DecodeReport>,
-    validation_report: Option<&ValidationReport>,
-    export: Option<&ExportReport>,
-) -> Result<()> {
-    let Some(output) = output else {
-        return Ok(());
-    };
-    let mut bytes = serde_json::to_vec_pretty(&serde_json::json!({
-        "schema_version": CLI_SCHEMA_VERSION,
-        "command": command,
-        "decode_report": decode_report,
-        "validation_report": validation_report,
-        "export": export,
-    }))?;
-    bytes.push(b'\n');
-    write_output(input, output, &bytes, force)?;
-    eprintln!("wrote report {}", output.display());
-    Ok(())
-}
-
-fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
-    let input = std::fs::canonicalize(input)
-        .with_context(|| format!("canonicalizing {}", input.display()))?;
-    let parent = output
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let output_absolute = if output.exists() {
-        std::fs::canonicalize(output)?
-    } else {
-        std::fs::canonicalize(parent)?.join(
-            output
-                .file_name()
-                .ok_or_else(|| anyhow!("output path has no filename"))?,
-        )
-    };
-    if input == output_absolute {
-        bail!("refusing to overwrite input {}", input.display());
-    }
-    if output.exists() && !force {
-        bail!("{} exists; pass --force to overwrite", output.display());
-    }
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("creating temporary output in {}", parent.display()))?;
-    temporary
-        .write_all(bytes)
-        .with_context(|| format!("writing temporary output for {}", output.display()))?;
-    temporary
-        .persist(output)
-        .map_err(|error| error.error)
-        .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-    Ok(())
 }
 
 fn print_id_delta(label: &str, ids: &[String]) {

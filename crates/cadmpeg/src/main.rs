@@ -7,6 +7,7 @@
 //! limits, loss reporting, and exit-status semantics.
 
 mod commands;
+mod envelope;
 mod format;
 mod loader;
 mod registry;
