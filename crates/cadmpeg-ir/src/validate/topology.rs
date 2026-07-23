@@ -1776,18 +1776,6 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
     let mut configuration_ordinals = HashSet::new();
     let mut configuration_source_indices = HashSet::new();
     let mut active_configurations = 0;
-    let parameter_ids = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| parameter.id.0.as_str())
-        .collect::<HashSet<_>>();
-    let feature_ids = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| feature.id.0.as_str())
-        .collect::<HashSet<_>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
@@ -1826,7 +1814,7 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
             }
         }
         for parameter in configuration.parameter_overrides.keys() {
-            if !parameter_ids.contains(parameter.0.as_str()) {
+            if !index.parameters.contains_key(parameter.0.as_str()) {
                 ref_error(
                     findings,
                     &configuration.id.0,
@@ -1836,7 +1824,7 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
             }
         }
         for feature in &configuration.suppressed_features {
-            if !feature_ids.contains(feature.0.as_str()) {
+            if !index.features.contains_key(feature.0.as_str()) {
                 ref_error(
                     findings,
                     &configuration.id.0,
@@ -4438,14 +4426,7 @@ fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
     }
 }
 
-pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let by_id: HashMap<&str, &Coedge> = ir
-        .model
-        .coedges
-        .iter()
-        .map(|c| (c.id.0.as_str(), c))
-        .collect();
-
+pub(super) fn check_loops(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     for face in &ir.model.faces {
         let outer_count = face
             .loops
@@ -4495,7 +4476,7 @@ pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !visited.insert(cur) {
                 break; // returned early to an already-seen node
             }
-            match by_id.get(cur) {
+            match index.coedges.get(cur) {
                 Some(ce) => cur = ce.next.0.as_str(),
                 None => {
                     broke = true; // dangling next; referential check already flags it
@@ -4520,19 +4501,17 @@ pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-pub(super) fn check_coedge_pairing(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let by_id: HashMap<&str, &Coedge> = ir
-        .model
-        .coedges
-        .iter()
-        .map(|c| (c.id.0.as_str(), c))
-        .collect();
+pub(super) fn check_coedge_pairing(
+    ir: &CadIr,
+    index: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
     for coedge in &ir.model.coedges {
         let mut current = coedge;
         let mut closed = false;
         let mut members = 1usize;
         for _ in 0..=ir.model.coedges.len() {
-            let Some(next) = by_id.get(current.radial_next.0.as_str()) else {
+            let Some(next) = index.coedges.get(current.radial_next.0.as_str()) else {
                 break;
             };
             if next.edge != coedge.edge {
@@ -4559,7 +4538,7 @@ pub(super) fn check_coedge_pairing(ir: &CadIr, findings: &mut Vec<Finding>) {
                 entity: Some(coedge.id.0.clone()),
             });
         } else if members == 2 {
-            if let Some(other) = by_id.get(coedge.radial_next.0.as_str()) {
+            if let Some(other) = index.coedges.get(coedge.radial_next.0.as_str()) {
                 if other.sense == coedge.sense {
                     findings.push(Finding {
                         check: Check::CoedgePairing,
@@ -4573,7 +4552,7 @@ pub(super) fn check_coedge_pairing(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_wire_topology(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     let coedge_edges = ir
         .model
         .coedges
@@ -4646,18 +4625,6 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
 
-    let regions = ir
-        .model
-        .regions
-        .iter()
-        .map(|region| (region.id.0.as_str(), region))
-        .collect::<HashMap<_, _>>();
-    let shells = ir
-        .model
-        .shells
-        .iter()
-        .map(|shell| (shell.id.0.as_str(), shell))
-        .collect::<HashMap<_, _>>();
     for body in &ir.model.bodies {
         if body
             .transform
@@ -4672,13 +4639,17 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if body.kind == crate::topology::BodyKind::Wire
             && body.regions.iter().any(|region_id| {
-                regions.get(region_id.0.as_str()).is_some_and(|region| {
-                    region.shells.iter().any(|shell_id| {
-                        shells
-                            .get(shell_id.0.as_str())
-                            .is_some_and(|shell| !shell.faces.is_empty())
+                index
+                    .regions
+                    .get(region_id.0.as_str())
+                    .is_some_and(|region| {
+                        region.shells.iter().any(|shell_id| {
+                            index
+                                .shells
+                                .get(shell_id.0.as_str())
+                                .is_some_and(|shell| !shell.faces.is_empty())
+                        })
                     })
-                })
             })
         {
             wire_error(findings, &body.id.0, "wire body contains faces");
@@ -4686,13 +4657,11 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let faces = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| (face.id.0.as_str(), face))
-        .collect::<HashMap<_, _>>();
+pub(super) fn check_shell_connectivity(
+    ir: &CadIr,
+    index: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
     let loop_faces = ir
         .model
         .loops
@@ -4722,7 +4691,8 @@ pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) 
     for shell in &ir.model.shells {
         if shell.faces.len() < 2
             || shell.faces.iter().any(|face| {
-                faces
+                index
+                    .faces
                     .get(face.0.as_str())
                     .is_none_or(|face| face.loops.is_empty())
             })

@@ -90,10 +90,10 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_references(ir, &index, &mut findings);
     check_step_products(ir, &mut findings);
     check_pmi(ir, &mut findings);
-    check_loops(ir, &mut findings);
-    check_coedge_pairing(ir, &mut findings);
-    check_shell_connectivity(ir, &mut findings);
-    check_wire_topology(ir, &mut findings);
+    check_loops(ir, &index, &mut findings);
+    check_coedge_pairing(ir, &index, &mut findings);
+    check_shell_connectivity(ir, &index, &mut findings);
+    check_wire_topology(ir, &index, &mut findings);
     check_carrier_reachability(ir, &mut findings);
     check_native_links(ir, &index, &mut findings);
     check_parameter_domains(ir, &mut findings);
