@@ -11,6 +11,11 @@ use cadmpeg_ir::tessellation::Tessellation;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::GeometryResult;
+use crate::vocab::{
+    COMPLEX_TRIANGULATED_FACE, COMPLEX_TRIANGULATED_SURFACE_SET, COORDINATES_LIST,
+    TESSELLATED_SHAPE_REPRESENTATION, TESSELLATED_SHELL, TESSELLATED_SOLID, TRIANGULATED_FACE,
+    TRIANGULATED_SURFACE_SET,
+};
 
 pub(super) struct TessellationResult {
     pub typed_records: BTreeSet<u64>,
@@ -26,7 +31,7 @@ pub(super) fn decode(
         .records
         .iter()
         .filter_map(|(&id, record)| {
-            if record.simple_name() != Some("COORDINATES_LIST") {
+            if record.simple_name() != Some(COORDINATES_LIST) {
                 return None;
             }
             coordinate_rows(record, geometry.length_scale).map(|vertices| (id, vertices))
@@ -37,7 +42,7 @@ pub(super) fn decode(
     let mut item_bodies = BTreeMap::new();
     for (&id, record) in &exchange.records {
         let body = match record.simple_name() {
-            Some("TESSELLATED_SOLID") => record
+            Some(TESSELLATED_SOLID) => record
                 .parameter(2)
                 .and_then(ValueExt::reference)
                 .map(|solid| BodyId(format!("step:data:body#{solid}")))
@@ -47,7 +52,7 @@ pub(super) fn decode(
                         .iter()
                         .any(|candidate| candidate.id == *body)
                 }),
-            Some("TESSELLATED_SHELL") => record
+            Some(TESSELLATED_SHELL) => record
                 .parameter(2)
                 .and_then(ValueExt::reference)
                 .and_then(|shell| body_for_shell(shell, ir)),
@@ -78,10 +83,10 @@ pub(super) fn decode(
         if !matches!(
             record.simple_name(),
             Some(
-                "TRIANGULATED_FACE"
-                    | "COMPLEX_TRIANGULATED_FACE"
-                    | "TRIANGULATED_SURFACE_SET"
-                    | "COMPLEX_TRIANGULATED_SURFACE_SET"
+                TRIANGULATED_FACE
+                    | COMPLEX_TRIANGULATED_FACE
+                    | TRIANGULATED_SURFACE_SET
+                    | COMPLEX_TRIANGULATED_SURFACE_SET
             )
         ) {
             continue;
@@ -101,14 +106,14 @@ pub(super) fn decode(
             continue;
         };
         let (triangles, strip_lengths) = match record.simple_name() {
-            Some("TRIANGULATED_FACE") => (record.parameter(6).and_then(triangle_rows), Vec::new()),
-            Some("TRIANGULATED_SURFACE_SET") => {
+            Some(TRIANGULATED_FACE) => (record.parameter(6).and_then(triangle_rows), Vec::new()),
+            Some(TRIANGULATED_SURFACE_SET) => {
                 (record.parameter(5).and_then(triangle_rows), Vec::new())
             }
-            Some("COMPLEX_TRIANGULATED_FACE") => {
+            Some(COMPLEX_TRIANGULATED_FACE) => {
                 complex_triangles(record.parameter(6), record.parameter(7))
             }
-            Some("COMPLEX_TRIANGULATED_SURFACE_SET") => {
+            Some(COMPLEX_TRIANGULATED_SURFACE_SET) => {
                 complex_triangles(record.parameter(5), record.parameter(6))
             }
             _ => (None, Vec::new()),
@@ -121,7 +126,7 @@ pub(super) fn decode(
             continue;
         };
         let pnindex_parameter = match record.simple_name() {
-            Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE") => 5,
+            Some(TRIANGULATED_FACE | COMPLEX_TRIANGULATED_FACE) => 5,
             _ => 4,
         };
         let pnindex = match record.parameter(pnindex_parameter) {
@@ -228,9 +233,7 @@ pub(super) fn decode(
         for (&id, record) in &exchange.records {
             if matches!(
                 record.simple_name(),
-                Some(
-                    "TESSELLATED_SHAPE_REPRESENTATION" | "TESSELLATED_SOLID" | "TESSELLATED_SHELL"
-                )
+                Some(TESSELLATED_SHAPE_REPRESENTATION | TESSELLATED_SOLID | TESSELLATED_SHELL)
             ) {
                 typed.insert(id);
             }

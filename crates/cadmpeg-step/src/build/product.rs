@@ -11,6 +11,13 @@ use crate::geometry;
 use crate::writer::{refs, string, Ref};
 
 use super::{is_identity, is_rigid_transform, Builder};
+use crate::vocab::{
+    APPLICATION_CONTEXT, APPLICATION_PROTOCOL_DEFINITION, CONTEXT_DEPENDENT_SHAPE_REPRESENTATION,
+    ITEM_DEFINED_TRANSFORMATION, NEXT_ASSEMBLY_USAGE_OCCURRENCE, PRODUCT, PRODUCT_CONTEXT,
+    PRODUCT_DEFINITION, PRODUCT_DEFINITION_CONTEXT, PRODUCT_DEFINITION_FORMATION,
+    PRODUCT_DEFINITION_SHAPE, REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION,
+    SHAPE_DEFINITION_REPRESENTATION, SHAPE_REPRESENTATION,
+};
 
 impl Builder<'_> {
     pub(super) fn emit_product_structure(&mut self) -> Ref {
@@ -23,11 +30,9 @@ impl Builder<'_> {
             .unwrap_or_else(|| "cadmpeg_model".to_string());
 
         let (application, protocol, year) = self.schema.application_protocol();
-        let app_ctx = self
-            .emitter
-            .emit("APPLICATION_CONTEXT", &string(application));
+        let app_ctx = self.emitter.emit(APPLICATION_CONTEXT, &string(application));
         self.emitter.emit(
-            "APPLICATION_PROTOCOL_DEFINITION",
+            APPLICATION_PROTOCOL_DEFINITION,
             &format!(
                 "{},{},{year},{app_ctx}",
                 string("international standard"),
@@ -35,18 +40,18 @@ impl Builder<'_> {
             ),
         );
         let prod_ctx = self.emitter.emit(
-            "PRODUCT_CONTEXT",
+            PRODUCT_CONTEXT,
             &format!("'',{app_ctx},{}", string("mechanical")),
         );
         let product = self.emitter.emit(
-            "PRODUCT",
+            PRODUCT,
             &format!("{},{},'',({prod_ctx})", string(&name), string(&name)),
         );
         let formation = self
             .emitter
-            .emit("PRODUCT_DEFINITION_FORMATION", &format!("'','',{product}"));
+            .emit(PRODUCT_DEFINITION_FORMATION, &format!("'','',{product}"));
         let pd_ctx = self.emitter.emit(
-            "PRODUCT_DEFINITION_CONTEXT",
+            PRODUCT_DEFINITION_CONTEXT,
             &format!(
                 "{},{app_ctx},{}",
                 string("part definition"),
@@ -54,20 +59,18 @@ impl Builder<'_> {
             ),
         );
         let product_def = self.emitter.emit(
-            "PRODUCT_DEFINITION",
+            PRODUCT_DEFINITION,
             &format!("{},'',{formation},{pd_ctx}", string("design")),
         );
         self.emitter
-            .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{product_def}"))
+            .emit(PRODUCT_DEFINITION_SHAPE, &format!("'','',{product_def}"))
     }
 
     pub(super) fn emit_product_graph(&mut self, context: Ref) {
         let (application, protocol, year) = self.schema.application_protocol();
-        let app_context = self
-            .emitter
-            .emit("APPLICATION_CONTEXT", &string(application));
+        let app_context = self.emitter.emit(APPLICATION_CONTEXT, &string(application));
         self.emitter.emit(
-            "APPLICATION_PROTOCOL_DEFINITION",
+            APPLICATION_PROTOCOL_DEFINITION,
             &format!(
                 "{},{},{year},{app_context}",
                 string("international standard"),
@@ -75,11 +78,11 @@ impl Builder<'_> {
             ),
         );
         let product_context = self.emitter.emit(
-            "PRODUCT_CONTEXT",
+            PRODUCT_CONTEXT,
             &format!("'',{app_context},{}", string("mechanical")),
         );
         let definition_context = self.emitter.emit(
-            "PRODUCT_DEFINITION_CONTEXT",
+            PRODUCT_DEFINITION_CONTEXT,
             &format!(
                 "{},{app_context},{}",
                 string("part definition"),
@@ -139,7 +142,7 @@ impl Builder<'_> {
         for product in products {
             let name = product.name.as_deref().unwrap_or(&product.product_id);
             let product_ref = self.emitter.emit(
-                "PRODUCT",
+                PRODUCT,
                 &format!(
                     "{},{},'',({product_context})",
                     string(&product.product_id),
@@ -147,11 +150,11 @@ impl Builder<'_> {
                 ),
             );
             let formation = self.emitter.emit(
-                "PRODUCT_DEFINITION_FORMATION",
+                PRODUCT_DEFINITION_FORMATION,
                 &format!("'','',{product_ref}"),
             );
             let definition = self.emitter.emit(
-                "PRODUCT_DEFINITION",
+                PRODUCT_DEFINITION,
                 &format!(
                     "{},'',{formation},{definition_context}",
                     string(&product.product_id)
@@ -159,7 +162,7 @@ impl Builder<'_> {
             );
             let shape = self
                 .emitter
-                .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
+                .emit(PRODUCT_DEFINITION_SHAPE, &format!("'','',{definition}"));
             self.links
                 .default_product_definition_shape
                 .get_or_insert(shape);
@@ -182,11 +185,11 @@ impl Builder<'_> {
                 body_items.extend(placements);
             }
             let representation = self.emitter.emit(
-                "SHAPE_REPRESENTATION",
+                SHAPE_REPRESENTATION,
                 &format!("{},{},{context}", string(name), refs(&body_items)),
             );
             self.emitter.emit(
-                "SHAPE_DEFINITION_REPRESENTATION",
+                SHAPE_DEFINITION_REPRESENTATION,
                 &format!("{shape},{representation}"),
             );
             definitions.insert(product.id.clone(), definition);
@@ -242,7 +245,7 @@ impl Builder<'_> {
             }
             let occurrence_name = occurrence.name.as_deref().unwrap_or(occurrence.id.as_str());
             let usage = self.emitter.emit(
-                "NEXT_ASSEMBLY_USAGE_OCCURRENCE",
+                NEXT_ASSEMBLY_USAGE_OCCURRENCE,
                 &format!(
                     "{},{},'',{parent_definition},{child_definition},$",
                     string(occurrence.id.as_str()),
@@ -251,21 +254,21 @@ impl Builder<'_> {
             );
             let usage_shape = self
                 .emitter
-                .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
+                .emit(PRODUCT_DEFINITION_SHAPE, &format!("'','',{usage}"));
             let Some(&(from, to)) = occurrence_placements.get(&occurrence.id) else {
                 continue;
             };
             let transform = self
                 .emitter
-                .emit("ITEM_DEFINED_TRANSFORMATION", &format!("'','',{from},{to}"));
+                .emit(ITEM_DEFINED_TRANSFORMATION, &format!("'','',{from},{to}"));
             let relationship = self.emitter.emit_raw(
-                "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION",
+                REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION,
                 &format!(
                     "( REPRESENTATION_RELATIONSHIP('','',{child_representation},{parent_representation}) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION({transform}) SHAPE_REPRESENTATION_RELATIONSHIP() )"
                 ),
             );
             self.emitter.emit(
-                "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
+                CONTEXT_DEPENDENT_SHAPE_REPRESENTATION,
                 &format!("{relationship},{usage_shape}"),
             );
         }

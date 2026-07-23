@@ -4,17 +4,21 @@
 use crate::writer::{real, string, Ref};
 
 use super::Builder;
+use crate::vocab::{
+    GEOMETRIC_REPRESENTATION_CONTEXT, LENGTH_UNIT, PLANE_ANGLE_UNIT, RATIO_UNIT, SOLID_ANGLE_UNIT,
+    UNCERTAINTY_MEASURE_WITH_UNIT,
+};
 
 impl Builder<'_> {
     pub(super) fn emit_context(&mut self) -> Ref {
         let len = self.emit_length_unit();
         let angle = self.emit_angle_unit();
         let solid = self.emitter.emit_raw(
-            "SOLID_ANGLE_UNIT",
+            SOLID_ANGLE_UNIT,
             "( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() )",
         );
         let unc = self.emitter.emit(
-            "UNCERTAINTY_MEASURE_WITH_UNIT",
+            UNCERTAINTY_MEASURE_WITH_UNIT,
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
                 real(self.ir.tolerances.linear),
@@ -23,7 +27,7 @@ impl Builder<'_> {
             ),
         );
         self.emitter.emit_raw(
-            "GEOMETRIC_REPRESENTATION_CONTEXT",
+            GEOMETRIC_REPRESENTATION_CONTEXT,
             &format!(
                 "( GEOMETRIC_REPRESENTATION_CONTEXT(3) \
                  GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc})) \
@@ -38,7 +42,7 @@ impl Builder<'_> {
             return unit;
         }
         let unit = self.emitter.emit_raw(
-            "LENGTH_UNIT",
+            LENGTH_UNIT,
             "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )",
         );
         self.units.length = Some(unit);
@@ -50,7 +54,7 @@ impl Builder<'_> {
             return unit;
         }
         let unit = self.emitter.emit_raw(
-            "PLANE_ANGLE_UNIT",
+            PLANE_ANGLE_UNIT,
             "( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )",
         );
         self.units.angle = Some(unit);
@@ -63,7 +67,7 @@ impl Builder<'_> {
         }
         let unit = self
             .emitter
-            .emit_raw("RATIO_UNIT", "( NAMED_UNIT(*) RATIO_UNIT() )");
+            .emit_raw(RATIO_UNIT, "( NAMED_UNIT(*) RATIO_UNIT() )");
         self.units.ratio = Some(unit);
         unit
     }

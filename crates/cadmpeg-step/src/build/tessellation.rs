@@ -7,6 +7,10 @@ use cadmpeg_ir::topology::BodyKind;
 use crate::writer::{real, refs, string, Ref};
 
 use super::Builder;
+use crate::vocab::{
+    COORDINATES_LIST, TESSELLATED_SHAPE_REPRESENTATION, TESSELLATED_SHELL, TESSELLATED_SOLID,
+    TRIANGULATED_FACE, TRIANGULATED_SURFACE_SET,
+};
 
 impl Builder<'_> {
     pub(super) fn emit_tessellations(&mut self, context: Ref) {
@@ -56,7 +60,7 @@ impl Builder<'_> {
                 .collect::<Vec<_>>()
                 .join(",");
             let coordinates = self.emitter.emit(
-                "COORDINATES_LIST",
+                COORDINATES_LIST,
                 &format!(
                     "{}, {},({coordinates})",
                     string(&mesh.id),
@@ -104,7 +108,7 @@ impl Builder<'_> {
                     .collect::<Vec<_>>()
                     .join(",");
                 let face = self.emitter.emit(
-                    "TRIANGULATED_FACE",
+                    TRIANGULATED_FACE,
                     &format!(
                         "{},{coordinates},{},{normals},$,({point_indices}),({triangles})",
                         string(&mesh.id),
@@ -113,9 +117,9 @@ impl Builder<'_> {
                 );
                 self.emitter.emit(
                     if kind == BodyKind::Solid {
-                        "TESSELLATED_SOLID"
+                        TESSELLATED_SOLID
                     } else {
-                        "TESSELLATED_SHELL"
+                        TESSELLATED_SHELL
                     },
                     &format!("{},({face}),{link}", string(&mesh.id)),
                 )
@@ -134,7 +138,7 @@ impl Builder<'_> {
                     .collect::<Vec<_>>()
                     .join(",");
                 self.emitter.emit(
-                    "TRIANGULATED_SURFACE_SET",
+                    TRIANGULATED_SURFACE_SET,
                     &format!(
                         "{},{coordinates},{},{normals},({point_indices}),({triangles})",
                         string(&mesh.id),
@@ -149,7 +153,7 @@ impl Builder<'_> {
         }
         if !representation_items.is_empty() {
             self.emitter.emit(
-                "TESSELLATED_SHAPE_REPRESENTATION",
+                TESSELLATED_SHAPE_REPRESENTATION,
                 &format!("'',{},{context}", refs(&representation_items)),
             );
         }

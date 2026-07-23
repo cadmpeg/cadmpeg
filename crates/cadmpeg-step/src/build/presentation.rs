@@ -9,6 +9,12 @@ use cadmpeg_ir::report::{LossCategory, LossCode, Severity};
 use crate::writer::{real, refs, string, Ref};
 
 use super::Builder;
+use crate::vocab::{
+    COLOUR_RGB, CURVE_STYLE, DRAUGHTING_PRE_DEFINED_CURVE_FONT, FILL_AREA_STYLE,
+    FILL_AREA_STYLE_COLOUR, MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION, POINT_STYLE,
+    PRESENTATION_LAYER_ASSIGNMENT, PRESENTATION_STYLE_ASSIGNMENT, STYLED_ITEM, SURFACE_SIDE_STYLE,
+    SURFACE_STYLE_FILL_AREA, SURFACE_STYLE_USAGE,
+};
 
 #[derive(Clone, Copy)]
 struct ColorSpec<'a> {
@@ -132,7 +138,7 @@ impl Builder<'_> {
             let style = self.surface_style(spec.color, name, &mut style_refs);
             styled.push(
                 self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{face}")),
+                    .emit(STYLED_ITEM, &format!("'color',({style}),{face}")),
             );
         }
         let mut direct_unstyled = BTreeSet::new();
@@ -202,7 +208,7 @@ impl Builder<'_> {
                 .insert(binding.id.clone());
             styled.push(
                 self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
+                    .emit(STYLED_ITEM, &format!("'color',({style}),{target}")),
             );
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
@@ -231,7 +237,7 @@ impl Builder<'_> {
             return;
         }
         self.emitter.emit(
-            "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION",
+            MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION,
             &format!("'',{},{context}", refs(&styled)),
         );
     }
@@ -254,25 +260,25 @@ impl Builder<'_> {
         }
         let colour = self
             .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+            .emit(COLOUR_RGB, &format!("{},{rgb}", string(name)));
         let fill_colour = self
             .emitter
-            .emit("FILL_AREA_STYLE_COLOUR", &format!("'',{colour}"));
+            .emit(FILL_AREA_STYLE_COLOUR, &format!("'',{colour}"));
         let fill = self
             .emitter
-            .emit("FILL_AREA_STYLE", &format!("'',({fill_colour})"));
+            .emit(FILL_AREA_STYLE, &format!("'',({fill_colour})"));
         let style_fill = self
             .emitter
-            .emit("SURFACE_STYLE_FILL_AREA", &fill.to_string());
+            .emit(SURFACE_STYLE_FILL_AREA, &fill.to_string());
         let side = self
             .emitter
-            .emit("SURFACE_SIDE_STYLE", &format!("'',({style_fill})"));
+            .emit(SURFACE_SIDE_STYLE, &format!("'',({style_fill})"));
         let usage = self
             .emitter
-            .emit("SURFACE_STYLE_USAGE", &format!(".BOTH.,{side}"));
+            .emit(SURFACE_STYLE_USAGE, &format!(".BOTH.,{side}"));
         let assignment = self
             .emitter
-            .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({usage})"));
+            .emit(PRESENTATION_STYLE_ASSIGNMENT, &format!("({usage})"));
         cache.insert(key, assignment);
         assignment
     }
@@ -295,17 +301,17 @@ impl Builder<'_> {
         }
         let colour = self
             .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+            .emit(COLOUR_RGB, &format!("{},{rgb}", string(name)));
         let font = self
             .emitter
-            .emit("DRAUGHTING_PRE_DEFINED_CURVE_FONT", &string("continuous"));
+            .emit(DRAUGHTING_PRE_DEFINED_CURVE_FONT, &string("continuous"));
         let curve = self.emitter.emit(
-            "CURVE_STYLE",
+            CURVE_STYLE,
             &format!("'',{font},POSITIVE_LENGTH_MEASURE(0.1),{colour}"),
         );
         let assignment = self
             .emitter
-            .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({curve})"));
+            .emit(PRESENTATION_STYLE_ASSIGNMENT, &format!("({curve})"));
         cache.insert(key, assignment);
         assignment
     }
@@ -328,14 +334,14 @@ impl Builder<'_> {
         }
         let colour = self
             .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+            .emit(COLOUR_RGB, &format!("{},{rgb}", string(name)));
         let point = self.emitter.emit(
-            "POINT_STYLE",
+            POINT_STYLE,
             &format!("'',.DOT.,POSITIVE_LENGTH_MEASURE(1.),{colour}"),
         );
         let assignment = self
             .emitter
-            .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({point})"));
+            .emit(PRESENTATION_STYLE_ASSIGNMENT, &format!("({point})"));
         cache.insert(key, assignment);
         assignment
     }
@@ -392,7 +398,7 @@ impl Builder<'_> {
             }
             if !assigned.is_empty() {
                 self.emitter.emit(
-                    "PRESENTATION_LAYER_ASSIGNMENT",
+                    PRESENTATION_LAYER_ASSIGNMENT,
                     &format!(
                         "{},{},{}",
                         string(&layer.name),
