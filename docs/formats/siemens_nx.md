@@ -916,14 +916,12 @@ The owning `BLOCK` feature links the complete typed dimension set and constructi
 
 A `BLOCK` operation projects as a neutral rectangular block. A complete typed
 dimension set supplies its ordered local x, y, and z dimensions. The feature
-source content references all three exact expression parameters once in
-dimension order after any independently positioned payload content; an
-expression already present through a direct input binding is not duplicated.
-Each parameter names the dimension-set identity and owning block feature as a
-consumer. The block depends on every equations feature owning those dimensions
-even when no direct operation-input binding repeats the expression. Placement
-transfers only when the planar extents uniquely map to that ordered dimension
-set; absent placement does not imply the identity transform.
+depends on every equations feature owning those dimensions, even when no direct
+operation-input binding repeats the expression. Each parameter names the
+dimension-set identity and block feature as a consumer. The dimension
+references do not become block-owned source content. Placement transfers only
+when the planar extents uniquely map to that ordered dimension set; absent
+placement does not imply the identity transform.
 
 A complete block construction requires nineteen contiguous reference ordinals, one uniform control byte, exactly eighteen nonterminal members, one final terminal reference, and unique data-block resolution for every reference. It retains the member lane and terminal reference as distinct fields. Missing, reordered, differently controlled, incorrectly terminated, or unresolved inputs reject the construction atomically.
 
@@ -937,10 +935,11 @@ An operation input slot depends on every uniquely resolved parameter declaration
 
 All binding occurrences for one operation and one expression form one parameter
 use. Its occurrences retain ascending source-offset order, including repeated
-slots. A feature's ordered source content merges its payload strings and every
-parameter-use occurrence by absolute source offset; repeated consumption emits
-the same parameter identity at each serialized position.
-Each expression table is one equations feature; equations features follow their first physical expression-record offsets and precede operation features. Within an acyclic table, neutral parameter order is a stable dependency order with physical record order as its tie-breaker. A cyclic table retains exact formula text without neutral dependency edges. An operation depends once on each equations feature owning a parameter in its final ordered source content, in first-content-use order. Parameter consumer metadata follows the first physical use occurrence.
+slots. Parameter uses are references, not ownership: they remain in the native
+feature graph and do not become operation-owned source content. Operation source
+content retains its ordered payload strings.
+
+Each expression table is one equations feature; equations features follow their first physical expression-record offsets and precede operation features. The equations feature owns each table parameter and contains each owned parameter exactly once in neutral parameter order. Within an acyclic table, neutral parameter order is a stable dependency order with physical record order as its tie-breaker. A cyclic table retains exact formula text without neutral dependency edges. An operation depends once on each equations feature owning a parameter referenced by its parameter uses or typed construction fields, in first-reference order. Parameter consumer metadata follows the first physical use occurrence.
 
 A source-native feature definition retains every resolved parameter use as `parameter_name -> exact_expression_text` when all referenced expression records exist and their names are unique within the operation. A missing expression record or duplicate parameter name rejects the definition-level parameter map atomically without rejecting the exact parameter-use relations. Typed neutral feature definitions retain their operation-specific parameter fields instead of this source-native map.
 

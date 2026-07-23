@@ -3578,12 +3578,8 @@ mod tests {
         let dependencies = crate::native::attach::parameter_owner_dependencies(
             &parameter_owners,
             &[
-                cadmpeg_ir::features::FeatureSourceContent::Parameter(
-                    cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
-                ),
-                cadmpeg_ir::features::FeatureSourceContent::Parameter(
-                    cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
-                ),
+                cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
+                cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
             ],
         );
 

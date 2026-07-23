@@ -7321,7 +7321,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nx_feature_source_content_orders_parameter_occurrences_with_text() {
+    fn nx_feature_source_content_orders_payload_text() {
         let text = super::FeaturePayloadString {
             id: "text".into(),
             operation_record: "record".into(),
@@ -7329,28 +7329,21 @@ mod tests {
             value: "Through".into(),
             source_offset: 30,
         };
-        let parameter_use = super::FeatureParameterUse {
-            id: "use".into(),
-            operation_label: "operation".into(),
-            expression: "nx:test:expression#20".into(),
-            bindings: vec!["first".into(), "second".into()],
-            source_offsets: vec![20, 40],
+        let later = super::FeaturePayloadString {
+            id: "later".into(),
+            operation_record: "record".into(),
+            ordinal: 1,
+            value: "Later".into(),
+            source_offset: 40,
         };
-        let content = crate::native::attach::feature_source_content(&[&text], &[&parameter_use]);
-        assert_eq!(content.len(), 3);
+        let content = crate::native::attach::feature_source_content(&[&later, &text]);
         assert!(matches!(
             &content[0],
-            cadmpeg_ir::features::FeatureSourceContent::Parameter(id)
-                if id.0 == "nx:test:parameter#20"
-        ));
-        assert!(matches!(
-            &content[1],
             cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Through"
         ));
         assert!(matches!(
-            &content[2],
-            cadmpeg_ir::features::FeatureSourceContent::Parameter(id)
-                if id.0 == "nx:test:parameter#20"
+            &content[1],
+            cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Later"
         ));
     }
 

@@ -1756,12 +1756,20 @@ fn attach_feature_operations(
             .note(&id, stream, label.source_offset)
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
-        let mut source_content =
-            feature_source_content(operation_payload_string_records, operation_parameter_uses);
+        let source_content = feature_source_content(operation_payload_string_records);
+        let mut referenced_parameters = operation_parameter_uses
+            .iter()
+            .filter_map(|parameter_use| expression_parameter_id(&parameter_use.expression))
+            .collect::<Vec<_>>();
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
-            append_feature_expression_content(&mut source_content, &dimensions.expressions);
+            referenced_parameters.extend(
+                dimensions
+                    .expressions
+                    .iter()
+                    .filter_map(|expression| expression_parameter_id(expression)),
+            );
         }
-        for owner in parameter_owner_dependencies(&parameter_owners, &source_content) {
+        for owner in parameter_owner_dependencies(&parameter_owners, &referenced_parameters) {
             if !dependencies.contains(&owner) {
                 dependencies.push(owner);
             }
@@ -2163,13 +2171,10 @@ fn text_semantic_annotation(
 
 pub(crate) fn parameter_owner_dependencies(
     parameter_owners: &BTreeMap<ParameterId, Option<FeatureId>>,
-    source_content: &[FeatureSourceContent],
+    parameter_references: &[ParameterId],
 ) -> Vec<FeatureId> {
     let mut dependencies = Vec::new();
-    for parameter_id in source_content.iter().filter_map(|content| match content {
-        FeatureSourceContent::Parameter(parameter) => Some(parameter),
-        FeatureSourceContent::Text(_) | FeatureSourceContent::Feature(_) => None,
-    }) {
+    for parameter_id in parameter_references {
         let Some(owner) = parameter_owners.get(parameter_id).and_then(Option::as_ref) else {
             continue;
         };
@@ -2712,7 +2717,6 @@ fn uniform_face_sense(senses: &[Sense]) -> Option<Sense> {
 
 pub(crate) fn feature_source_content(
     payload_strings: &[&crate::native::features::FeaturePayloadString],
-    parameter_uses: &[&crate::native::features::FeatureParameterUse],
 ) -> Vec<FeatureSourceContent> {
     let mut content = payload_strings
         .iter()
@@ -2723,34 +2727,8 @@ pub(crate) fn feature_source_content(
             )
         })
         .collect::<Vec<_>>();
-    for parameter_use in parameter_uses {
-        let Some(parameter) = expression_parameter_id(&parameter_use.expression) else {
-            continue;
-        };
-        content.extend(
-            parameter_use
-                .source_offsets
-                .iter()
-                .map(|offset| (*offset, FeatureSourceContent::Parameter(parameter.clone()))),
-        );
-    }
     content.sort_by_key(|(offset, _)| *offset);
     content.into_iter().map(|(_, content)| content).collect()
-}
-
-fn append_feature_expression_content<const N: usize>(
-    content: &mut Vec<FeatureSourceContent>,
-    expressions: &[String; N],
-) {
-    for expression in expressions {
-        let Some(parameter) = expression_parameter_id(expression) else {
-            continue;
-        };
-        let item = FeatureSourceContent::Parameter(parameter);
-        if !content.contains(&item) {
-            content.push(item);
-        }
-    }
 }
 
 fn simple_hole_native_properties(
@@ -4030,6 +4008,15 @@ pub(crate) fn attach_expression_parameters(
             .note(&feature_id, stream, first_offset)
             .tag("hostglobalvariables");
         annotations.exactness(&feature_id, Exactness::Derived);
+        let source_content = expressions
+            .iter()
+            .filter_map(|expression| {
+                expression_parameter_id(&expression.id).map(FeatureSourceContent::Parameter)
+            })
+            .collect::<Vec<_>>();
+        if !source_content.is_empty() {
+            annotations.derived(&feature_id, "source_content");
+        }
         ir.model.features.push(Feature {
             id: feature_id.clone(),
             ordinal: base_ordinal + table_ordinal as u64,
@@ -4040,7 +4027,7 @@ pub(crate) fn attach_expression_parameters(
             source_properties: BTreeMap::new(),
             source_tag: Some("hostglobalvariables".to_string()),
             source_text: None,
-            source_content: Vec::new(),
+            source_content,
             outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::Equations,
@@ -4422,31 +4409,6 @@ mod tests {
     }
 
     #[test]
-    fn nx_block_source_content_includes_complete_ordered_dimension_run() {
-        use cadmpeg_ir::features::{FeatureSourceContent, ParameterId};
-
-        let mut content = vec![FeatureSourceContent::Parameter(ParameterId(
-            "nx:test:parameter#20".into(),
-        ))];
-        super::append_feature_expression_content(
-            &mut content,
-            &[
-                "nx:test:expression#20".into(),
-                "nx:test:expression#21".into(),
-                "nx:test:expression#22".into(),
-            ],
-        );
-        assert_eq!(
-            content,
-            [
-                FeatureSourceContent::Parameter(ParameterId("nx:test:parameter#20".into())),
-                FeatureSourceContent::Parameter(ParameterId("nx:test:parameter#21".into())),
-                FeatureSourceContent::Parameter(ParameterId("nx:test:parameter#22".into())),
-            ]
-        );
-    }
-
-    #[test]
     fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         let expression = |key: u32| crate::native::om::Expression {
             id: format!("nx:test:expression#{key}"),
@@ -4486,11 +4448,24 @@ mod tests {
             .iter()
             .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
             .collect();
-        let mut content = Vec::new();
-        super::append_feature_expression_content(&mut content, &dimensions.expressions);
+        let parameter_references = dimensions
+            .expressions
+            .iter()
+            .filter_map(|expression| super::expression_parameter_id(expression))
+            .collect::<Vec<_>>();
         assert_eq!(
-            super::parameter_owner_dependencies(&parameter_owners, &content),
+            super::parameter_owner_dependencies(&parameter_owners, &parameter_references),
             [ir.model.features[0].id.clone()]
+        );
+        assert_eq!(
+            ir.model.features[0].source_content,
+            ir.model
+                .parameters
+                .iter()
+                .map(|parameter| {
+                    cadmpeg_ir::features::FeatureSourceContent::Parameter(parameter.id.clone())
+                })
+                .collect::<Vec<_>>()
         );
         super::attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations);
         assert_eq!(ir.model.parameters.len(), 3);
