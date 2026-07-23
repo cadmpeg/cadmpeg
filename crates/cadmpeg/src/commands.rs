@@ -46,8 +46,24 @@ impl fmt::Display for SemanticFailure {
 
 impl std::error::Error for SemanticFailure {}
 
+impl SemanticFailure {
+    /// Whether this failure carries no message and should print nothing.
+    pub fn is_silent(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 fn semantic(message: impl Into<String>) -> anyhow::Error {
     SemanticFailure(message.into()).into()
+}
+
+/// A semantic failure carrying no message.
+///
+/// `diff` writes its comparison to stdout, then returns this to report a
+/// non-empty diff as exit status 1 without printing an error line — the
+/// quiet-stderr half of the diff exit contract.
+pub(crate) fn semantic_silent() -> anyhow::Error {
+    SemanticFailure(String::new()).into()
 }
 
 /// Inspect a native container and print its entries.

@@ -2,27 +2,41 @@
 //! Structural comparison of two decoded models and their source-fidelity sidecars.
 
 use std::path::Path;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::SourceFidelity;
 
+use crate::commands::semantic_silent;
 use crate::envelope::{envelope, print_json, ReportSink};
+use crate::format::ForcedInput;
 use crate::loader;
 use crate::registry::Registry;
 
+/// One positional input to compare: its path and an optional forced reader.
+#[derive(Clone, Copy)]
+pub struct DiffInput<'a> {
+    /// Model file to load.
+    pub path: &'a Path,
+    /// Explicit input format for this input, bypassing content detection.
+    pub forced: Option<ForcedInput>,
+}
+
 /// Structurally compare two decoded models.
+///
+/// Returns `Ok(())` when the models match and a silent `SemanticFailure` when
+/// they differ, so a non-empty diff exits 1 with the comparison on stdout and no
+/// error line, while operational errors still exit 2.
 pub fn diff(
     registry: &Registry,
-    a: &Path,
-    b: &Path,
+    a: DiffInput<'_>,
+    b: DiffInput<'_>,
     options: DecodeOptions,
     json: bool,
     report: Option<&Path>,
-) -> Result<ExitCode> {
-    let left = loader::load_ir(registry, a, options, None)?;
-    let right = loader::load_ir(registry, b, options, None)?;
+) -> Result<()> {
+    let left = loader::load_ir(registry, a.path, options, a.forced)?;
+    let right = loader::load_ir(registry, b.path, options, b.forced)?;
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(
         left.source_fidelity.as_ref(),
@@ -36,7 +50,7 @@ pub fn diff(
             "source_fidelity": fidelity_json(&fidelity),
         });
         let sink = ReportSink {
-            input: a,
+            input: a.path,
             output: report,
             force: false,
             command: "diff",
@@ -44,15 +58,11 @@ pub fn diff(
         if json {
             sink.write_payload(payload.clone())?;
             print_json(&envelope("diff", payload))?;
-            return Ok(if different {
-                ExitCode::from(1)
-            } else {
-                ExitCode::SUCCESS
-            });
+            return diff_status(different);
         }
         sink.write_payload(payload)?;
     }
-    println!("diff {} vs {}", a.display(), b.display());
+    println!("diff {} vs {}", a.path.display(), b.path.display());
     if let Some((before, after)) = &result.unit_change {
         println!("  units: {before:?} → {after:?}");
     }
@@ -80,11 +90,18 @@ pub fn diff(
         print_id_delta("modified", &modified);
     }
     print_fidelity_summary(&fidelity);
-    if different {
-        Ok(ExitCode::from(1))
-    } else {
+    if !different {
         println!("  identical");
-        Ok(ExitCode::SUCCESS)
+    }
+    diff_status(different)
+}
+
+/// A non-empty diff is a model-level result: exit 1 with no error line.
+fn diff_status(different: bool) -> Result<()> {
+    if different {
+        Err(semantic_silent())
+    } else {
+        Ok(())
     }
 }
 

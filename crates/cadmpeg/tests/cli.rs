@@ -1276,3 +1276,45 @@ fn diff_report_writes_versioned_result_to_file() {
     assert_eq!(value["different"], false);
     assert!(value["diff"].is_object());
 }
+
+#[test]
+fn diff_input_format_forces_the_reader_per_input() {
+    let dir = tempdir().unwrap();
+    let a = fixture(dir.path(), "a.cadir.json", &unit_cube());
+    let b = fixture(dir.path(), "b.cadir.json", &unit_cube());
+
+    // Two identical CADIR documents compare equal.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("identical"));
+
+    // Forcing only the first input through the Rhino reader bypasses CADIR
+    // parsing and fails to decode the JSON bytes as a 3DM archive.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--input-format-a",
+            "rhino",
+        ])
+        .assert()
+        .code(2);
+
+    // The second-input flag targets its input independently.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--input-format-b",
+            "rhino",
+        ])
+        .assert()
+        .code(2);
+}

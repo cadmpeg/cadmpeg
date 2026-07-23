@@ -267,6 +267,12 @@ enum Command {
         a: PathBuf,
         /// Second model.
         b: PathBuf,
+        /// Bypass content detection and read the first model as this format.
+        #[arg(long, value_enum)]
+        input_format_a: Option<InputFormat>,
+        /// Bypass content detection and read the second model as this format.
+        #[arg(long, value_enum)]
+        input_format_b: Option<InputFormat>,
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
@@ -397,10 +403,26 @@ fn main() -> ExitCode {
         Command::Diff {
             a,
             b,
+            input_format_a,
+            input_format_b,
             json,
             report,
             decode,
-        } => diff::diff(&registry, &a, &b, decode.options(), json, report.as_deref()),
+        } => diff::diff(
+            &registry,
+            diff::DiffInput {
+                path: &a,
+                forced: input_format_a.map(InputFormat::resolution),
+            },
+            diff::DiffInput {
+                path: &b,
+                forced: input_format_b.map(InputFormat::resolution),
+            },
+            decode.options(),
+            json,
+            report.as_deref(),
+        )
+        .map(|()| ExitCode::SUCCESS),
         Command::Convert {
             input,
             format,
@@ -435,14 +457,20 @@ fn main() -> ExitCode {
             Err(error) => Err(error),
         },
     };
-    result.unwrap_or_else(|err| {
-        eprintln!("error: {err:#}");
-        if err.downcast_ref::<commands::SemanticFailure>().is_some() {
-            ExitCode::from(1)
-        } else {
-            ExitCode::from(2)
-        }
-    })
+    result.unwrap_or_else(
+        |err| match err.downcast_ref::<commands::SemanticFailure>() {
+            Some(failure) => {
+                if !failure.is_silent() {
+                    eprintln!("error: {err:#}");
+                }
+                ExitCode::from(1)
+            }
+            None => {
+                eprintln!("error: {err:#}");
+                ExitCode::from(2)
+            }
+        },
+    )
 }
 
 #[cfg(test)]
