@@ -527,6 +527,8 @@ Each `32 <ordinal:u32le>` value field whose ordinal is within the object graph's
 
 `E8 <value:compact-atom> 37 FE FE` is a double-terminated compact value packet. Preserve the `E8` payload offset, decoded atom, and its one- or two-byte stored width. Packet assignment requires the complete five-token production.
 
+`E8 F4 <value-high:u8> 37 FE FE` is the fixed-width form of the compact value packet. Its value selector is the little-endian `u16` `F4 <value-high>`. Preserve the `E8` payload offset, decoded selector, and fixed-width representation. Packet assignment requires the complete six-token production.
+
 `<opcode:E8|E9> <type:compact-atom> <layout:u8> 37 FE FE` is a layout-bearing value packet. Preserve the opcode and its payload offset, decoded type atom and stored width, and the uninterpreted layout byte and its payload offset. Packet assignment requires the complete six-token production.
 
 `<opcode:E8|E9> F4 <type-high:u8> <layout:u8> 37 FE FE` is the fixed-width form of the layout-bearing value packet. Its type selector is the little-endian `u16` `F4 <type-high>`. Preserve the opcode and its payload offset, decoded type selector and fixed-width representation, and the uninterpreted layout byte and its payload offset. Packet assignment requires the complete seven-token production.

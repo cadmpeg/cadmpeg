@@ -5507,8 +5507,10 @@ fn native_namespace_resolves_and_validates_entity_value_schema_selections() {
         selection.packets,
         [crate::entity_table::EntityValuePacket::Compact {
             offset: 15,
-            value: 3851,
-            width: 2,
+            value_type: crate::entity_table::EntityValueType::CompactAtom {
+                value: 3851,
+                width: 2,
+            },
         }]
     );
 
@@ -5528,8 +5530,10 @@ fn native_namespace_resolves_and_validates_entity_value_schema_selections() {
     assert_rejected(wrong_name);
 
     let mut wrong_packet = native;
-    let crate::entity_table::EntityValuePacket::Compact { value, .. } =
-        &mut wrong_packet.entity_records[0].value_schema_selections[0].packets[0]
+    let crate::entity_table::EntityValuePacket::Compact {
+        value_type: crate::entity_table::EntityValueType::CompactAtom { value, .. },
+        ..
+    } = &mut wrong_packet.entity_records[0].value_schema_selections[0].packets[0]
     else {
         panic!("compact value packet");
     };

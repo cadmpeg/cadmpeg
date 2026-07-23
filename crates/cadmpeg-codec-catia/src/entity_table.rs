@@ -77,10 +77,8 @@ pub enum EntityValuePacket {
     Compact {
         /// Byte offset of the `E8` opcode within the value payload.
         offset: usize,
-        /// Decoded compact atom.
-        value: u32,
-        /// Stored width of the compact atom.
-        width: u8,
+        /// Decoded value selector and its exact stored representation.
+        value_type: EntityValueType,
     },
     /// `<opcode:E8|E9> <type> <layout:u8> 37 FE FE`.
     Layout {
@@ -122,22 +120,38 @@ pub fn value_packets(fields: &[value_block::ValueField]) -> Vec<EntityValuePacke
             if let Some(packet) = layout_value_packet(fields, index) {
                 return Some(packet);
             }
-            match fields.get(index..index + 5) {
-                Some([
-                    value_block::ValueField::Opcode { code: 0xe8, offset },
-                    value_block::ValueField::Atom { value, width, .. },
-                    value_block::ValueField::Separator { .. },
-                    value_block::ValueField::Terminator { .. },
-                    value_block::ValueField::Terminator { .. },
-                ]) => Some(EntityValuePacket::Compact {
-                    offset: *offset,
-                    value: *value,
-                    width: *width,
-                }),
-                _ => None,
-            }
+            compact_value_packet(fields, index)
         })
         .collect()
+}
+
+fn compact_value_packet(
+    fields: &[value_block::ValueField],
+    index: usize,
+) -> Option<EntityValuePacket> {
+    let (offset, value_type) = match fields.get(index..index + 5) {
+        Some(
+            [value_block::ValueField::Opcode { code: 0xe8, offset }, value_block::ValueField::Atom { value, width, .. }, value_block::ValueField::Separator { .. }, value_block::ValueField::Terminator { .. }, value_block::ValueField::Terminator { .. }],
+        ) => (
+            *offset,
+            EntityValueType::CompactAtom {
+                value: *value,
+                width: *width,
+            },
+        ),
+        _ => match fields.get(index..index + 6) {
+            Some(
+                [value_block::ValueField::Opcode { code: 0xe8, offset }, value_block::ValueField::Literal { value: 0xf4, .. }, value_block::ValueField::Literal { value: high, .. }, value_block::ValueField::Separator { .. }, value_block::ValueField::Terminator { .. }, value_block::ValueField::Terminator { .. }],
+            ) => (
+                *offset,
+                EntityValueType::FixedU16 {
+                    value: u16::from_le_bytes([0xf4, *high]),
+                },
+            ),
+            _ => return None,
+        },
+    };
+    Some(EntityValuePacket::Compact { offset, value_type })
 }
 
 fn layout_value_packet(
@@ -620,8 +634,22 @@ mod tests {
             value_packets(&fields),
             [EntityValuePacket::Compact {
                 offset: 0,
-                value: 3851,
-                width: 2,
+                value_type: EntityValueType::CompactAtom {
+                    value: 3851,
+                    width: 2,
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn compact_value_packet_accepts_the_fixed_u16_type() {
+        let fields = value_block::tokenize(&[0xe8, 0xf4, 0x1a, 0x37, 0xfe, 0xfe]);
+        assert_eq!(
+            value_packets(&fields),
+            [EntityValuePacket::Compact {
+                offset: 0,
+                value_type: EntityValueType::FixedU16 { value: 0x1af4 },
             }]
         );
     }
