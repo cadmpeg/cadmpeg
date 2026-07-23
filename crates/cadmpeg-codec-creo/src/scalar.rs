@@ -866,6 +866,9 @@ fn decode_plane_support_coordinate(
     slot: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
+    if slot == 8 && body.get(offset) == Some(&0x50) {
+        return ieee7_with_prefix(body, offset, 0xbf, 0xc2);
+    }
     if slot.is_multiple_of(3) {
         decode_tabulated_cylinder_first_coordinate(body, offset, cache)
     } else {
@@ -1216,6 +1219,28 @@ mod tests {
         assert_eq!(
             decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
             Some([0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 0.0, 0.8, -0.6, 0.0, 0.0, 0.0])
+        );
+    }
+
+    #[test]
+    fn plane_support_slot_eight_decodes_compact_negated_component() {
+        let first_x = f64::from_be_bytes([0x3f, 0xc2, 0, 0, 0, 0, 0, 0]);
+        let first_z = (1.0 - first_x * first_x).sqrt();
+        let first_x_bytes = positive_subunit_coordinate(first_x);
+        let mut body = Vec::new();
+        body.extend_from_slice(&first_x_bytes);
+        body.push(0x18);
+        body.extend_from_slice(&positive_subunit_coordinate(first_z));
+        body.extend_from_slice(&[0x18, 0x0f, 0x18]);
+        body.extend_from_slice(&positive_subunit_coordinate(first_z));
+        body.push(0x18);
+        body.push(0x50);
+        body.extend_from_slice(&first_x_bytes[2..]);
+        body.extend_from_slice(&[0x18, 0x18, 0x18]);
+
+        assert_eq!(
+            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
+            Some([first_x, 0.0, first_z, 0.0, 0.0, 0.0, first_z, 0.0, -first_x, 0.0, 0.0, 0.0])
         );
     }
 

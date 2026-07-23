@@ -305,6 +305,9 @@ A trailing-rank reflected form stores `(0, a, b)`, `(0, b, a)`, the rank
 triple `(0, 0, 1)`, and three origin coordinates. The first two stored triples
 satisfy `a² + b² = 1`; reflecting the final stored `a` gives support directions
 `(0, a, b)` and `(0, b, -a)`.
+In plane-support slot 8, prefix `50` stores a negative component in seven
+bytes. IEEE-754 bytes zero and one are implicit `bf c2`; the six bytes after
+the prefix are bytes two through seven.
 
 Two five-coordinate type-26 rows for one zero-`radius1` prototype encode the
 two hemispheres of one Z-axis sphere. Each row stores
