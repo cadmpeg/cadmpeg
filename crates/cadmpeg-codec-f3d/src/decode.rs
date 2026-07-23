@@ -2119,6 +2119,8 @@ fn extend_related_design_records(
         scan,
         &native.design_entity_headers,
     )?;
+    native.design_canvas_images =
+        crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         &mut native.design_parameter_scopes,
         &native.design_parameter_owners,

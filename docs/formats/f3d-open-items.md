@@ -59,6 +59,6 @@ This document records F3D semantics that the format specification does not yet d
 ## Material assets
 
 - The semantic roles of the u8 preceding a TextureURI path count and the u32 prelude before `texture_RealWorldOffsetX`, the complete Distance and unit-tag namespaces, and the application-defined meanings of texture map-channel integer values are unresolved.
-- The complete Design-record grammar binding canvas and decal objects to `Images.BlobParts` entries is unresolved.
+- Canvas records resolve their image asset, supporting construction-plane entity, owning component, and plane-local rectangular bounds. The meanings of the 77-byte geometry payload and the differing scope and geometry prologue markers, including opacity, visibility, mirroring, and crop state, are unresolved. The construction-plane entity's exact model-space frame join and the Design-record grammar for decal objects remain unresolved.
 - The resolution of preset phrases against the external material library is unresolved.
 - The precedence of `color-adesk-attrib`, `material-adesk-attrib`, and `rh_material` library records relative to direct colors and appearance assignments is unresolved.

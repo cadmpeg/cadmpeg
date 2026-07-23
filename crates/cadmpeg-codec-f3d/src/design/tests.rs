@@ -3080,6 +3080,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(discovered.len(), 1);
     assert_eq!(discovered[0].record_index, 12);
 
+    let mut compact_tail = bytes.clone();
+    compact_tail.remove(paired_at - 1);
+    let compact =
+        parse_parameter_scope(&compact_tail, &header).expect("scope with compact fixed tail");
+    assert_eq!(compact.kind, "Sketch");
+    assert_eq!(compact.frame_length, paired_at as u64 - 1);
+    assert_eq!(compact.previous_history_state_id, Some(2));
+
     let mut copy_scope = Vec::new();
     copy_scope.extend_from_slice(&3u32.to_le_bytes());
     copy_scope.extend_from_slice(b"316");

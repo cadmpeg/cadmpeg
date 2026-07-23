@@ -2,6 +2,7 @@
 //! Parse Design metadata and bulk-stream byte frames by domain.
 
 pub mod body;
+pub mod canvas;
 pub mod dimension_frames;
 pub mod operands;
 pub mod parameters;

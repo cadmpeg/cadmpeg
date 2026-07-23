@@ -2517,6 +2517,67 @@ pub struct DesignEntityHeader {
     pub member_offsets: Vec<u64>,
 }
 
+/// Exact image-plane binding owned by one Design `Canvas` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignCanvasImage {
+    /// Globally unique deterministic identifier for this native binding.
+    pub id: String,
+    /// Canvas scope record index.
+    pub scope_record_index: u32,
+    /// Byte offset of the marked scope reference in the geometry record.
+    pub scope_reference_offset: u64,
+    /// Dynamic class tag of the primary geometry record.
+    pub geometry_class_tag: String,
+    /// Geometry record index.
+    pub geometry_record_index: u32,
+    /// Byte offset of the scope's marked geometry-record reference.
+    pub geometry_reference_offset: u64,
+    /// Byte offset of the primary geometry record.
+    pub geometry_byte_offset: u64,
+    /// Fixed geometry prologue immediately following the primary record header.
+    pub geometry_prologue: [u8; 15],
+    /// Byte length from the primary geometry header to its paired header.
+    pub geometry_frame_length: u64,
+    /// Dynamic class tag of the paired geometry record.
+    pub paired_geometry_class_tag: String,
+    /// Byte offset of the paired geometry record.
+    pub paired_geometry_byte_offset: u64,
+    /// Byte offset of the paired record's marked component reference.
+    pub paired_component_reference_offset: u64,
+    /// Two opposite boundary segments in plane-local coordinates.
+    pub boundary_segments: [[Point2; 2]; 2],
+    /// Byte offsets of the eight boundary-coordinate f64 values.
+    pub boundary_coordinate_offsets: [u64; 8],
+    /// Byte offset of the presence marker preceding the second boundary segment.
+    pub second_boundary_present_offset: u64,
+    /// Design entity suffix of the supporting construction plane.
+    pub plane_entity_suffix: u32,
+    /// Byte offset of the marked construction-plane reference.
+    pub plane_reference_offset: u64,
+    /// Design entity suffix of the component owning the Canvas.
+    pub component_entity_suffix: u32,
+    /// Byte offset of the marked component reference.
+    pub component_reference_offset: u64,
+    /// Dynamic class tag of the standalone image-asset record.
+    pub asset_class_tag: String,
+    /// Image-asset record index.
+    pub asset_record_index: u32,
+    /// Byte offset of the marked image-asset reference.
+    pub asset_reference_offset: u64,
+    /// Byte offset of the image-asset record.
+    pub asset_byte_offset: u64,
+    /// Archive entry basename stored by the image-asset record.
+    pub asset_name: String,
+    /// Byte offset of the asset name's UTF-16LE code units.
+    pub asset_name_offset: u64,
+    /// Persistent Canvas label stored after the boundary segments.
+    pub label: String,
+    /// Byte offset of the label's UTF-16LE code units.
+    pub label_offset: u64,
+    /// Uninterpreted fixed geometry payload between the plane reference and scope link.
+    pub geometry_payload: Vec<u8>,
+}
+
 /// One indexed record header in the recursive Design `BulkStream` tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignRecordHeader {

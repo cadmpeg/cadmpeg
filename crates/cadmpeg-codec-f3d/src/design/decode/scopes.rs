@@ -1071,7 +1071,7 @@ pub(crate) fn parse_parameter_scope(
             let Some(tail_length) = paired_at.checked_sub(end) else {
                 continue;
             };
-            if (matches!(tail_length, 78) || (tail_length == 110 && kind == "CopyPasteBodies"))
+            if (matches!(tail_length, 77 | 78) || (tail_length == 110 && kind == "CopyPasteBodies"))
                 && kind.chars().all(|character| !character.is_control())
             {
                 candidates.push((at, end, kind));
