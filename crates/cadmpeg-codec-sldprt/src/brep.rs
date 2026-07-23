@@ -21,12 +21,12 @@ use cadmpeg_ir::be::{f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-mod entity;
+pub(crate) mod entity;
 mod intersection;
-mod spline;
+pub(crate) mod spline;
 mod subset;
 mod sweep;
-mod topology;
+pub(crate) mod topology;
 
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 pub(crate) const LEN_TO_MM: f64 = 1000.0;

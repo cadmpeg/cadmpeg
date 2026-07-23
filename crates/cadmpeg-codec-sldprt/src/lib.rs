@@ -86,6 +86,11 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
+// Thin `()`-returning wrappers over the crate-private `brep` leaf scanners so
+// the `cadmpeg-fuzz` harness can reach them without widening the stable API.
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
+
 use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
