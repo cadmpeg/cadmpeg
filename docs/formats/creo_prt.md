@@ -1940,7 +1940,17 @@ construction transfers a carrier only when the feature has exactly one
 unplaced materialized cylinder row and every support plane satisfies these
 constraints.
 
-The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Class 916 is a subtractive section-sweep definition and class 917 is an additive section-sweep definition; their recipes discriminate linear extrusion from rotation. Class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, class 923 is a datum-plane definition, and class 926 is a saved section. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
+The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The
+compact integer is the root `FeatDefs` schema class for that feature. This
+class dispatches the row to its operation-definition grammar. Class 916 is a
+subtractive section-sweep definition and class 917 is an additive
+section-sweep definition; their recipes discriminate linear extrusion from
+rotation. Class 911 is a hole definition, class 913 is a round definition,
+class 914 is a chamfer definition, class 923 is a datum-plane definition, and
+class 926 is a saved section. In a DEPDB recipe prefix, the root schema class
+performs the same dispatch. Class 979 with the exact model-reference name
+`PRT_CSYS_DEF` is the default part coordinate-system feature. Its frame remains
+unresolved until a model-space coordinate-system payload is joined.
 
 A class-926 row containing one section definition is the history node for that
 planar sketch. The contained definition identifier selects the neutral sketch
@@ -1951,10 +1961,12 @@ containment join uses a definition-scoped sketch history node.
 Every byte-bounded `AllFeatur` row denotes a history feature independently of
 whether the feature owns a materialized surface row. A recognized root schema
 class selects its neutral operation type. Other root schema classes retain a
-native operation with the schema class as a typed source property. Rows sharing
-one feature identifier but carrying conflicting root schema classes still
-define one native history feature; the conflicting classes remain source
-properties and do not select a neutral operation family.
+native operation with the schema class as a typed source property unless an
+independent stored operation name selects a defined family. Rows sharing one
+feature identifier but carrying conflicting root schema classes retain the
+conflicting classes as source properties. Those classes do not select a
+neutral operation family; an independent stored operation name can still do
+so.
 
 The row's leading entity-reference identifier occupies the model-feature
 namespace. Identical nonzero identifiers in `MdlStatus` or `DEPDB_DATA`

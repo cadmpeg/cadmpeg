@@ -13807,8 +13807,16 @@ fn schema_feature_definition(
     if schema_class == 946 {
         return unresolved_surface_merge_feature_definition();
     }
+    if schema_class == 979 && kind == "PRT_CSYS_DEF" {
+        return IrFeatureDefinition::DatumCoordinateSystemUnresolved;
+    }
     if numbered_feature_name_has_family(kind, "Extrude") {
         return unresolved_extrude_feature_definition(feature_id);
+    }
+    if schema_operation_kind(schema_class).is_none() {
+        if let Some(definition) = named_feature_definition(scan, ir, feature_id, kind) {
+            return definition;
+        }
     }
     IrFeatureDefinition::Native {
         kind: kind.to_string(),

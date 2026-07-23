@@ -2082,6 +2082,66 @@ fn decode_types_class_914_as_unresolved_chamfer() {
 }
 
 #[test]
+fn decode_uses_stored_family_when_row_schema_is_not_registered() {
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x84, 0x50, 0xe1,
+    ];
+    let data = build_prt(
+        "c",
+        &[
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("round feature");
+
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet { .. }
+    ));
+    assert_eq!(feature.source_properties["featdefs_schema_class"], "1104");
+}
+
+#[test]
+fn decode_types_default_part_coordinate_system() {
+    let allfeatur = vec![
+        7, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0xd3, 0xe1,
+    ];
+    let reference_name = b"\xf7\x71\x09\x01\x07PRT_CSYS_DEF\0\x09\x09".to_vec();
+    let data = build_prt(
+        "c",
+        &[("AllFeatur", allfeatur), ("MdlRefInfo", reference_name)],
+    );
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#7")
+        .expect("coordinate-system feature");
+
+    assert_eq!(feature.name.as_deref(), Some("PRT_CSYS_DEF"));
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
+    ));
+}
+
+#[test]
 fn decode_types_class_946_as_unresolved_surface_merge() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
