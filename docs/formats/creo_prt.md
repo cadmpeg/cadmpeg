@@ -932,6 +932,12 @@ slots 6..8    support direction or [0, 0, 0]
 slots 9..11   support-frame origin
 ```
 
+Within slots 0 through 8, the first component of each support triple uses the
+signed first-coordinate lane and the second and third components use the
+signed second-coordinate lane. These component lanes take precedence over the
+generic positional-row scalar lane. `18` immediately before a complete
+coordinate token occupies one zero slot; the coordinate begins the next slot.
+
 The twelve-slot macro language must consume the complete local-system body. A
 terminal `e1` after a complete frame is a null row-tail marker and is not a
 scalar slot. If any other bytes remain, none of the twelve slot positions is

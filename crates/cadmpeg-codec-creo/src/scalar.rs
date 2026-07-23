@@ -550,6 +550,15 @@ fn decode_local_system_slot_prefix(
             cursor += 1;
             continue;
         }
+        if matches!(variant, LocalSystemVariant::PlaneSupport)
+            && body.get(cursor) == Some(&0x18)
+            && values.len() < 11
+            && decode_plane_support_coordinate(body, cursor + 1, values.len() + 1, cache).is_some()
+        {
+            values.push(0.0);
+            cursor += 1;
+            continue;
+        }
         if body.get(cursor) == Some(&0x10) {
             values.push(0.0);
             cursor += 1;
@@ -565,6 +574,9 @@ fn decode_local_system_slot_prefix(
         }
         let row = decode_in_row_lane(body, cursor, cache);
         let (value, next) = match (variant, values.len()) {
+            (LocalSystemVariant::PlaneSupport, 0..=8) => {
+                decode_plane_support_coordinate(body, cursor, values.len(), cache)?
+            }
             (LocalSystemVariant::PlaneSupport, 9..=11) if body.get(cursor) == Some(&0x0e) => {
                 (0.5, cursor + 1)
             }
@@ -599,6 +611,19 @@ fn decode_local_system_slot_prefix(
             cursor,
         )
     })
+}
+
+fn decode_plane_support_coordinate(
+    body: &[u8],
+    offset: usize,
+    slot: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if slot.is_multiple_of(3) {
+        decode_tabulated_cylinder_first_coordinate(body, offset, cache)
+    } else {
+        decode_tabulated_cylinder_second_coordinate(body, offset, cache)
+    }
 }
 
 /// Decode one scalar in a replay-bound tabulated-cylinder envelope frame.
@@ -837,6 +862,26 @@ mod tests {
         assert_eq!(
             decode_positional_plane_local_system_slots(&body, &cache).map(|slots| slots[9]),
             Some(-0.5)
+        );
+    }
+
+    #[test]
+    fn plane_support_directions_use_component_coordinate_lanes() {
+        let body = [
+            0x4e, 0xf0, 0, 0, 0, 0, 0,    // first direction x = 1
+            0x18, // first direction y = 0
+            0x4c, 0xf0, 0, 0, 0, 0, 0, // first direction z = 1
+            0x10, 0x10, 0x10, // zero rank marker
+            0x10, 0x10, 0x4c, 0xf0, 0, 0, 0, 0, 0, // second direction
+            0x10, 0x10, 0x18, // origin
+        ];
+
+        assert_eq!(
+            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
+            Some([1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert!(
+            decode_positional_plane_local_system_slots(&body, &ScalarCache::default()).is_none()
         );
     }
 
