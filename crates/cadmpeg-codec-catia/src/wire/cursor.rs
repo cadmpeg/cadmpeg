@@ -1,29 +1,40 @@
 //! Bounded byte cursor for CATIA record payloads.
 //!
-//! The cursor is the shared reader the per-family scan loops migrate onto.
-//! It backs the compact-int and reference-token readers (`object_ref`,
-//! `compact_uint`) and the finite-checked scalar and compound reads (`f64`,
-//! `point3`, `vector3`, `unit3`, `skip`) that drive the analytic surface
-//! frame readers in `analytic.rs`.
+//! `Cursor` is a newtype over the shared poisoned
+//! [`cadmpeg_ir::wire::cursor::Cursor`]. It keeps CATIA's format-specific token
+//! readers — `object_ref` and `compact_uint`, whose variable-width lead-byte
+//! encodings the shared cursor does not model — reading them off the shared
+//! cursor's `u8`/`take` primitives. The finite-checked scalar and compound
+//! reads (`f64`, `point3`, `vector3`, `unit3`, `skip`) that drive the analytic
+//! surface frame readers in `analytic.rs` delegate to the shared cursor's
+//! `f64_le`/`point3_le`/`vector3_le`/`unit3_le` and translate its recorded
+//! fault back into the `Option`-returning contract those call sites read
+//! against.
+//!
+//! Every `f64`-bearing read is finite-checked and maps to the shared `f64_le`;
+//! no CATIA call site reads raw bits, so the shared `f64_le_raw` escape hatch
+//! is unused here.
 
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::cursor::Cursor as WireCursor;
 
 /// A cursor over a CATIA record payload, tracking an absolute byte offset.
+///
+/// Wraps the shared poisoned cursor: token reads return `None` and compound
+/// reads translate the underlying fault to `None`, so a failed read abandons
+/// the cursor at the call site's `?`.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Cursor<'a> {
-    bytes: &'a [u8],
-    position: usize,
-}
+pub(crate) struct Cursor<'a>(WireCursor<'a>);
 
 impl<'a> Cursor<'a> {
     /// Creates a cursor positioned at `position` within `bytes`.
     pub(crate) fn new_at(bytes: &'a [u8], position: usize) -> Self {
-        Self { bytes, position }
+        Self(WireCursor::new(bytes).window(position, bytes.len()))
     }
 
     /// Returns the absolute cursor offset.
     pub(crate) fn position(&self) -> usize {
-        self.position
+        self.0.position()
     }
 
     /// Reads the reference token at the cursor, advancing past it.
@@ -33,20 +44,42 @@ impl<'a> Cursor<'a> {
     /// `0x80..=0xff`. The extended dialect (used by `b5`) additionally
     /// recognises `0x30`, `0x28`, and `0x20`. See `wire::object_ref`.
     pub(crate) fn object_ref(&mut self, extended: bool) -> Option<u32> {
-        let lead = *self.bytes.get(self.position)?;
-        let get = |offset: usize| self.bytes.get(self.position + offset).copied();
-        let (value, width) = match lead {
-            0x38 => (u32::from_le_bytes([get(1)?, get(2)?, get(3)?, 0]), 4),
-            0x30 if extended => (u32::from(u16::from_le_bytes([get(1)?, get(2)?])) << 8, 3),
-            0x28 if extended => (u32::from(get(1)?) | (u32::from(get(2)?) << 16), 3),
-            0x20 if extended => (u32::from(get(1)?) << 16, 2),
-            0x18 => (u32::from(u16::from_le_bytes([get(1)?, get(2)?])), 3),
-            0x10 => (u32::from(get(1)?) << 8, 2),
-            0x08 => (u32::from(get(1)?), 2),
-            0x80..=0xff => (u32::from(lead - 0x80), 1),
+        let lead = self.0.u8();
+        if self.0.is_poisoned() {
+            return None;
+        }
+        let value = match lead {
+            0x38 => {
+                let [b1, b2, b3] = self.0.take(3).try_into().ok()?;
+                u32::from_le_bytes([b1, b2, b3, 0])
+            }
+            0x30 if extended => {
+                let [b1, b2] = self.0.take(2).try_into().ok()?;
+                u32::from(u16::from_le_bytes([b1, b2])) << 8
+            }
+            0x28 if extended => {
+                let [b1, b2] = self.0.take(2).try_into().ok()?;
+                u32::from(b1) | (u32::from(b2) << 16)
+            }
+            0x20 if extended => {
+                let [b1] = self.0.take(1).try_into().ok()?;
+                u32::from(b1) << 16
+            }
+            0x18 => {
+                let [b1, b2] = self.0.take(2).try_into().ok()?;
+                u32::from(u16::from_le_bytes([b1, b2]))
+            }
+            0x10 => {
+                let [b1] = self.0.take(1).try_into().ok()?;
+                u32::from(b1) << 8
+            }
+            0x08 => {
+                let [b1] = self.0.take(1).try_into().ok()?;
+                u32::from(b1)
+            }
+            0x80..=0xff => u32::from(lead - 0x80),
             _ => return None,
         };
-        self.position += width;
         Some(value)
     }
 
@@ -56,25 +89,25 @@ impl<'a> Cursor<'a> {
     /// A nonzero lead with `lead % 4 == 0` encodes a `lead / 4`-byte
     /// little-endian value (width at most four). See `wire::compact_uint`.
     pub(crate) fn compact_uint(&mut self) -> Option<u32> {
-        let lead = *self.bytes.get(self.position)?;
+        let lead = self.0.u8();
+        if self.0.is_poisoned() {
+            return None;
+        }
         if lead % 4 == 1 {
-            self.position += 1;
             Some(u32::from((lead - 1) / 4))
-        } else if lead != 0 && lead % 4 == 0 {
+        } else if lead != 0 && lead.is_multiple_of(4) {
             let width = usize::from(lead / 4);
             if width > 4 {
                 return None;
             }
+            let bytes = self.0.take(width);
+            if self.0.is_poisoned() {
+                return None;
+            }
             let mut value = 0u32;
-            for (shift, byte) in self
-                .bytes
-                .get(self.position + 1..self.position + 1 + width)?
-                .iter()
-                .enumerate()
-            {
+            for (shift, byte) in bytes.iter().enumerate() {
                 value |= u32::from(*byte) << (8 * shift);
             }
-            self.position += width + 1;
             Some(value)
         } else {
             None
@@ -85,45 +118,42 @@ impl<'a> Cursor<'a> {
 /// Finite-checked scalar and compound reads.
 ///
 /// The analytic surface readers (`analytic.rs`) consume `f64`, `point3`,
-/// `vector3`, `unit3`, and `skip`, backed by the private `f64_raw` helper.
+/// `vector3`, `unit3`, and `skip`. Each delegates to the shared cursor's
+/// finite-checked reader and reports the first recorded fault as `None`.
 impl Cursor<'_> {
-    fn take(&mut self, count: usize) -> Option<&[u8]> {
-        let end = self.position.checked_add(count)?;
-        let bytes = self.bytes.get(self.position..end)?;
-        self.position = end;
-        Some(bytes)
-    }
-
     /// Advances past `count` bytes, failing if they run past the end.
     pub(crate) fn skip(&mut self, count: usize) -> Option<()> {
-        self.take(count).map(|_| ())
-    }
-
-    /// Reads an eight-byte little-endian `f64` without a finiteness check.
-    fn f64_raw(&mut self) -> Option<f64> {
-        Some(f64::from_le_bytes(self.take(8)?.try_into().ok()?))
+        self.0.skip(count);
+        self.0.finish().ok()
     }
 
     /// Reads a finite eight-byte little-endian `f64`, rejecting NaN/infinity.
     pub(crate) fn f64(&mut self) -> Option<f64> {
-        let value = self.f64_raw()?;
-        value.is_finite().then_some(value)
+        let value = self.0.f64_le();
+        self.0.finish().ok()?;
+        Some(value)
     }
 
     /// Reads three finite `f64` components as a point.
     pub(crate) fn point3(&mut self) -> Option<Point3> {
-        Some(Point3::new(self.f64()?, self.f64()?, self.f64()?))
+        let value = self.0.point3_le();
+        self.0.finish().ok()?;
+        Some(value)
     }
 
     /// Reads three finite `f64` components as a vector, without normalising.
     pub(crate) fn vector3(&mut self) -> Option<Vector3> {
-        Some(Vector3::new(self.f64()?, self.f64()?, self.f64()?))
+        let value = self.0.vector3_le();
+        self.0.finish().ok()?;
+        Some(value)
     }
 
     /// Reads three finite `f64` components and normalises them to a unit
     /// direction, failing on a degenerate (near-zero-length) vector.
     pub(crate) fn unit3(&mut self) -> Option<Vector3> {
-        self.vector3()?.unit()
+        let value = self.0.unit3_le();
+        self.0.finish().ok()?;
+        Some(value)
     }
 }
 
