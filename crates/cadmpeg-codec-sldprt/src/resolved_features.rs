@@ -856,7 +856,7 @@ fn extended_compact_linked_line_handle_coordinates(
 ) -> Option<[f64; 2]> {
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || !matches!(marker_native_code(payload, offset), Some(0 | 1))
+        || !matches!(marker_native_code(payload, offset), Some(0..=2))
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
@@ -5473,6 +5473,12 @@ mod marker_tests {
         assert_eq!(
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
+        );
+
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            extended_compact_linked_line_handle_coordinates(&payload, 0),
+            Some([0.8, 0.0125])
         );
 
         payload[88..90].copy_from_slice(&8u16.to_le_bytes());
