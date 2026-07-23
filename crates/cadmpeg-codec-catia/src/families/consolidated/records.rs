@@ -21,12 +21,11 @@ use crate::families::b2::records::{
     point_distance, B2Circle, B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode,
     B2EdgeParameters, B2EmbeddedCylinder, B2UseMetadata,
 };
-use crate::wire::bytes::{
-    allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
-};
+use crate::wire::bytes::{allocation_ref, finite_f64_lane, persistent_ref, read_f64_array};
 use crate::wire::records::{
     consolidated_records, scan_vertex_records, ConsolidatedFamily, ConsolidatedPcurve,
 };
+use crate::wire::tokens::compact_uint;
 
 /// Serialized consolidated edge block formed by two pcurves and one range packet.
 #[derive(Debug, Clone)]
@@ -179,7 +178,7 @@ pub fn consolidated_edge_definition_data(
 ) -> Option<ConsolidatedEdgeDefinitionData> {
     if class == 0x24 && payload.first() == Some(&0x81) {
         let mut at = 1;
-        let operand = compact_int(payload, &mut at)?;
+        let operand = compact_uint(payload, &mut at)?;
         return (payload.get(at..) == Some(&[0x0f, 0x87][..]))
             .then_some(ConsolidatedEdgeDefinitionData::Compact24 { operand });
     }
@@ -222,8 +221,8 @@ pub fn consolidated_edge_definition_data(
     }
     let mut at = 1;
     let operands = [
-        compact_int(payload, &mut at)?,
-        compact_int(payload, &mut at)?,
+        compact_uint(payload, &mut at)?,
+        compact_uint(payload, &mut at)?,
         persistent_ref(payload, &mut at)?,
     ];
     let scalar_bytes = payload.get(at..)?;
@@ -253,7 +252,7 @@ fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Option<u
             *at += 3;
             Some((value, Some(lead)))
         }
-        _ => Some((compact_int(bytes, at)?, None)),
+        _ => Some((compact_uint(bytes, at)?, None)),
     }
 }
 

@@ -12,10 +12,11 @@ use cadmpeg_ir::wire::le::{u16_at as u16_le, u32_at as u32_le};
 use std::collections::HashSet;
 
 use crate::nurbs::{expand_knots, pole_count};
-use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
+use crate::wire::bytes::{f64_le, f64_point, read_f64_array, u32_le_24};
 use crate::wire::records::{
     a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
 };
+use crate::wire::tokens::compact_uint;
 
 /// A decoded common-form object-stream NURBS surface (`a8 03 34`).
 #[derive(Debug, Clone)]
@@ -168,9 +169,9 @@ pub fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
 
 fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5GuideCurve> {
     let mut at = frame.payload;
-    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-    let degree = compact_int(data, &mut at)?;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
+    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
+    let degree = compact_uint(data, &mut at)?;
+    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count
         || !(2..=4096).contains(&count)
         || !(1..=9).contains(&degree)
     {
@@ -308,10 +309,10 @@ pub fn a8_freeform_curves(data: &[u8]) -> Vec<A8FreeformCurve> {
 fn parse_a8_curve(data: &[u8], pos: usize, end: usize) -> Option<A8FreeformCurve> {
     let object_id = u32_le(data, pos + 7)?;
     let mut at = pos + 12;
-    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-    let degree = compact_int(data, &mut at)?;
+    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
+    let degree = compact_uint(data, &mut at)?;
     at = at.checked_add(2)?;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
+    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count
         || !(2..=8192).contains(&count)
         || degree != 5
     {
@@ -325,7 +326,7 @@ fn parse_a8_curve(data: &[u8], pos: usize, end: usize) -> Option<A8FreeformCurve
     }
     let mut multiplicities = Vec::with_capacity(count);
     for _ in 0..count {
-        multiplicities.push(compact_int(data, &mut at)?);
+        multiplicities.push(compact_uint(data, &mut at)?);
     }
     if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] >= v[1]) {
         return None;
@@ -387,9 +388,9 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         header_token,
     } = frame;
     let mut at = payload;
-    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-    let degree = compact_int(data, &mut at)?;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
+    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
+    let degree = compact_uint(data, &mut at)?;
+    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count
         || !(2..=4096).contains(&count)
         || degree != 5
     {
@@ -523,10 +524,10 @@ fn parse_object_stream_pcurve(
     let _ = pos;
     let mut at = payload + 1;
     let support_id = object_stream_reference(data, &mut at)?;
-    let degree = compact_int(data, &mut at)?;
+    let degree = compact_uint(data, &mut at)?;
     at += 2;
     data.get(..at)?;
-    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
     at += if data.get(at) == Some(&0x08) { 2 } else { 1 };
     if !(2..=8192).contains(&count) || degree != 5 {
         return None;
@@ -542,9 +543,9 @@ fn parse_object_stream_pcurve(
     let knots = read(&mut at)?;
     let mut multiplicities = Vec::with_capacity(count);
     for _ in 0..count {
-        multiplicities.push(compact_int(data, &mut at)?);
+        multiplicities.push(compact_uint(data, &mut at)?);
     }
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
+    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count {
         return None;
     }
     let mode = *data.get(at)?;
@@ -856,15 +857,15 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
         return None;
     }
     let mut at = pos + 12; // framing + lead byte
-    let u_degree = compact_int(data, &mut at)?;
+    let u_degree = compact_uint(data, &mut at)?;
     at = at.checked_add(2)?; // flags
-    let u_distinct_count = compact_int(data, &mut at)? as usize;
+    let u_distinct_count = compact_uint(data, &mut at)? as usize;
     at = consume_array_marker(data, at)?;
     let u_distinct = f64_values(data, &mut at, u_distinct_count, end)?;
     let u_mults = compact_values(data, &mut at, u_distinct_count)?;
-    let v_degree = compact_int(data, &mut at)?;
+    let v_degree = compact_uint(data, &mut at)?;
     at = at.checked_add(2)?;
-    let v_distinct_count = compact_int(data, &mut at)? as usize;
+    let v_distinct_count = compact_uint(data, &mut at)? as usize;
     at = consume_array_marker(data, at)?;
     let v_distinct = f64_values(data, &mut at, v_distinct_count, end)?;
     let v_mults = compact_values(data, &mut at, v_distinct_count)?;
@@ -1028,7 +1029,7 @@ fn f64_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) -> Option<
 }
 
 fn compact_values(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
-    (0..count).map(|_| compact_int(bytes, at)).collect()
+    (0..count).map(|_| compact_uint(bytes, at)).collect()
 }
 
 fn monotonic(values: &[f64]) -> bool {

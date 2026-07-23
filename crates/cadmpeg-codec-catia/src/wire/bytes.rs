@@ -1,11 +1,12 @@
 //! Free-function byte readers shared across CATIA record families.
 //!
 //! Absolute-offset scalar and reference readers used by the per-family scan
-//! loops: finite-checked `f64` scalars, points, and vectors; 24-bit and
-//! compact integer decoders; persistent and allocation reference tokens; and
-//! fixed-size `f64` array reads.
+//! loops: finite-checked `f64` scalars, points, and vectors; 24-bit integer
+//! decoding; persistent and allocation reference tokens; and fixed-size `f64`
+//! array reads. The persistent and allocation tokens fall back to the compact
+//! unsigned reader in [`super::tokens`].
 
-use super::cursor::Cursor;
+use super::tokens::compact_uint;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::wire::le::{f64_at, u16_at as u16_le};
 
@@ -60,20 +61,13 @@ pub(crate) fn u32_le_24(bytes: &[u8], at: usize) -> Option<u32> {
     ]))
 }
 
-pub(crate) fn compact_int(bytes: &[u8], at: &mut usize) -> Option<u32> {
-    let mut cursor = Cursor::new_at(bytes, *at);
-    let value = cursor.compact_uint()?;
-    *at = cursor.position();
-    Some(value)
-}
-
 pub(crate) fn persistent_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     if bytes.get(*at) == Some(&0x0a) {
         let value = u32::from(u16_le(bytes, *at + 1)?);
         *at += 3;
         Some(value)
     } else {
-        compact_int(bytes, at)
+        compact_uint(bytes, at)
     }
 }
 
@@ -93,6 +87,6 @@ pub(crate) fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
             *at += 1;
             Some(u32::from(byte))
         }
-        _ => compact_int(bytes, at),
+        _ => compact_uint(bytes, at),
     }
 }

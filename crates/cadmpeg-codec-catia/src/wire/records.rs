@@ -15,7 +15,8 @@ use std::ops::Range;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::wire::le::u32_at as u32_le;
 
-use super::bytes::{compact_int, f64_le};
+use super::bytes::f64_le;
+use super::tokens::compact_uint;
 
 /// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
 #[derive(Debug, Clone)]
@@ -49,9 +50,9 @@ pub(crate) fn parse_consolidated_pcurve(
     end: usize,
 ) -> Option<ConsolidatedPcurve> {
     let mut at = payload;
-    let support_id = compact_int(data, &mut at)?;
-    let degree = compact_int(data, &mut at)?;
-    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+    let support_id = compact_uint(data, &mut at)?;
+    let degree = compact_uint(data, &mut at)?;
+    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
     if degree != 5 || !(2..=4096).contains(&count) {
         return None;
     }
@@ -79,7 +80,7 @@ pub(crate) fn parse_consolidated_pcurve(
         Some(values)
     };
     let knots = read(&mut at)?;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
+    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count {
         return None;
     }
     at += 1;

@@ -13,14 +13,13 @@ use std::collections::BTreeMap;
 use crate::families::a5a8::records::A8Surface;
 #[cfg(test)]
 use crate::wire::bytes::persistent_ref;
-use crate::wire::bytes::{
-    allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
-};
+use crate::wire::bytes::{allocation_ref, f64_le, finite_f64_lane, read_f64_array, u32_le_24};
 #[cfg(test)]
 use crate::wire::records::consolidated_records;
 use crate::wire::records::{
     b_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
 };
+use crate::wire::tokens::compact_uint;
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
@@ -272,7 +271,7 @@ pub fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
                 let mut at = frame.payload + 1;
                 let mut references = Vec::new();
                 for _ in 0..count {
-                    references.push(compact_int(data, &mut at)?);
+                    references.push(compact_uint(data, &mut at)?);
                 }
                 (at == end).then_some(references)
             });
@@ -322,11 +321,11 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
         .into_iter()
         .filter_map(|frame| {
             let mut at = frame.payload;
-            let curve_ref = compact_int(data, &mut at)?;
+            let curve_ref = compact_uint(data, &mut at)?;
             let start_vertex_ref = allocation_ref(data, &mut at)?;
             let end_vertex_ref = allocation_ref(data, &mut at)?;
-            let start_parameter_ref = compact_int(data, &mut at)?;
-            let end_parameter_ref = compact_int(data, &mut at)?;
+            let start_parameter_ref = compact_uint(data, &mut at)?;
+            let end_parameter_ref = compact_uint(data, &mut at)?;
             let tail = *data.get(at)?;
             (at + 1 == frame.end).then_some(B2EdgeNode {
                 pos: frame.pos,
@@ -363,7 +362,7 @@ pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
             let mut at = frame.payload;
             let mut references = Vec::new();
             while at < scalar_at {
-                references.push(compact_int(data, &mut at)?);
+                references.push(compact_uint(data, &mut at)?);
             }
             (at == scalar_at).then_some(B2ConeFace {
                 pos: frame.pos,
@@ -392,7 +391,7 @@ pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
             let mut at = frame.payload;
             let mut references = Vec::new();
             while at < refs_end {
-                references.push(compact_int(data, &mut at)?);
+                references.push(compact_uint(data, &mut at)?);
             }
             (at == refs_end).then_some(B2ReferenceList {
                 pos: frame.pos,
@@ -453,7 +452,7 @@ pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
                     }
                     (B2OwnerReferenceEncoding::TaggedU16Strong, 1)
                     | (B2OwnerReferenceEncoding::WidthCodedStrong, 0) => {
-                        compact_int(data, &mut at)?
+                        compact_uint(data, &mut at)?
                     }
                     (B2OwnerReferenceEncoding::WidthCodedStrong, 1) => {
                         let value = u32::from(*data.get(at)?);
@@ -490,7 +489,7 @@ pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
             }
             let mut at = frame.payload + 1;
             let references = (0..count)
-                .map(|_| compact_int(data, &mut at))
+                .map(|_| compact_uint(data, &mut at))
                 .collect::<Option<Vec<_>>>()?;
             let tail = data.get(at..frame.end)?;
             if tail.is_empty() || tail.last() != Some(&0x03) {
@@ -571,7 +570,7 @@ pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
                 return None;
             }
             let mut at = frame.payload + 1;
-            let target = compact_int(data, &mut at)?;
+            let target = compact_uint(data, &mut at)?;
             (at + 2 == frame.end && data.get(at..frame.end) == Some(&[0x03, 0x05])).then_some(
                 B2Link5f {
                     pos: frame.pos,
@@ -696,7 +695,7 @@ pub fn b2_class25_descriptors(data: &[u8]) -> Vec<B2Class25Descriptor> {
                 return None;
             }
             let mut at = frame.payload;
-            let record_id = compact_int(data, &mut at)?;
+            let record_id = compact_uint(data, &mut at)?;
             let control = *data.get(at)?;
             at += 1;
             if !matches!(control, 0x02 | 0x0a) {
@@ -939,7 +938,7 @@ pub fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
             let marker = search + relative;
             search = marker + 3;
             let mut payload = marker + 3;
-            let Some(object_id) = compact_int(data, &mut payload) else {
+            let Some(object_id) = compact_uint(data, &mut payload) else {
                 continue;
             };
             let Some(payload_end) = payload.checked_add(90) else {
@@ -1160,10 +1159,10 @@ pub fn b2_groups(data: &[u8]) -> Vec<B2Group> {
             let mut at = frame.payload;
             // Advances `at` past the compact group id; the value is retained
             // only for test inspection.
-            let group_id = compact_int(data, &mut at)?;
+            let group_id = compact_uint(data, &mut at)?;
             #[cfg(not(test))]
             let _ = group_id;
-            let group_type = compact_int(data, &mut at)?;
+            let group_type = compact_uint(data, &mut at)?;
             (at == frame.end).then_some(B2Group {
                 pos: frame.pos,
                 #[cfg(test)]
@@ -1335,7 +1334,7 @@ pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
             continue;
         };
         let mut at = frame.payload;
-        let Some(record_id) = compact_int(data, &mut at) else {
+        let Some(record_id) = compact_uint(data, &mut at) else {
             continue;
         };
         let Some(values) = read_f64_array::<5>(data, at) else {
