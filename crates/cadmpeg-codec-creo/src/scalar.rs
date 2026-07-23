@@ -434,10 +434,23 @@ pub fn decode_named_surface_radius(
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
-    let head = *data.get(offset)?;
-    if head == 0x28 {
+    if data.get(offset) == Some(&0x28) {
         return ieee8(data, offset, 0x3f);
     }
+    decode_named_positive_dict_scalar(data, offset, cache)
+}
+
+/// Decode one scalar in a named field using the positive DICT lane.
+///
+/// Generic named-scalar forms take precedence. Otherwise prefixes
+/// `0x5b..=0xa3` encode the first two IEEE bytes as `0x3f75 + prefix`; their
+/// six-byte payload supplies the remaining bytes.
+pub fn decode_named_positive_dict_scalar(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    let head = *data.get(offset)?;
     if LANE_OPENERS.contains(&head) {
         return decode_in_lane(data, offset, cache);
     }

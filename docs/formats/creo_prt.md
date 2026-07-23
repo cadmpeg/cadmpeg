@@ -264,6 +264,8 @@ Within `5b` through `a3`, prefixes not assigned a generic named-scalar form
 store a positive DICT scalar in seven bytes. The first two IEEE-754 bytes equal
 the big-endian integer `3f75 + prefix`; the six bytes after the prefix are
 bytes two through seven. Generic named-scalar forms retain precedence.
+The `par_v_0` and `par_v_1` fillet parameter bounds use this positive DICT
+lane and the generic named-scalar forms, but not the radius-only `28` form.
 The family name inside `srf_prim_ptr(<family>)` is retained independently of
 the normalized surface family; `tab_cyl` and `ruled_srf` remain distinct names.
 

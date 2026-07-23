@@ -1955,7 +1955,9 @@ fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> b
 }
 
 fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
-    let scalar_field = matches!(name, "radius" | "radius1" | "radius2" | "half_angle");
+    let radius_field = matches!(name, "radius" | "radius1" | "radius2");
+    let parameter_bound_field = matches!(name, "par_v_0" | "par_v_1");
+    let scalar_field = radius_field || parameter_bound_field || name == "half_angle";
     let compact_integer_field = matches!(
         name,
         "id" | "type" | "tan_cond" | "degree" | "frst_cntr_crv_hdr_ptr" | "data_type"
@@ -2108,8 +2110,10 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
             Some((if body[cursor] == 0x0d { 0.25 } else { 0.5 }, cursor + 1))
         } else if name == "half_angle" {
             scalar::decode_positive_dict(body, cursor).filter(|(value, _)| valid_half_angle(*value))
-        } else if scalar_field {
+        } else if radius_field {
             scalar::decode_named_surface_radius(body, cursor, cache)
+        } else if parameter_bound_field {
+            scalar::decode_named_positive_dict_scalar(body, cursor, cache)
         } else {
             scalar::decode_in_lane(body, cursor, cache)
         };
@@ -8613,6 +8617,43 @@ mod tests {
         assert_eq!(
             records[0].field("radius").map(|field| &field.value),
             Some(&SurfaceNamedValue::ScalarSequence(vec![value]))
+        );
+    }
+
+    #[test]
+    fn fillet_parameter_bounds_use_the_named_positive_dict_lane() {
+        let upper = 4.5_f64;
+        let raw = upper.to_be_bytes();
+        let prefix = u8::try_from(u16::from_be_bytes([raw[0], raw[1]]) - 0x3f75)
+            .expect("synthetic value lies in the named positive DICT lattice");
+        let mut payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x01par_v_0\0\x18\
+            \xe0\x01par_v_1\0"
+            .to_vec();
+        payload.push(prefix);
+        payload.extend_from_slice(&raw[2..]);
+
+        let records = named_prototype_records(&payload);
+
+        assert_eq!(
+            records[0].field("par_v_0").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![0.0]))
+        );
+        assert_eq!(
+            records[0].field("par_v_1").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![upper]))
+        );
+    }
+
+    #[test]
+    fn fillet_parameter_bounds_do_not_use_the_radius_only_28_form() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x01par_v_1\0\x28\x01\x02\x03\x04\x05\x06\x07";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].field("par_v_1").map(|field| &field.value),
+            Some(&SurfaceNamedValue::Opaque(vec![0x28, 1, 2, 3, 4, 5, 6, 7]))
         );
     }
 
