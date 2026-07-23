@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 93;
+pub const CATIA_NATIVE_VERSION: u32 = 94;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -549,6 +549,22 @@ pub struct CatiaDefinitionSchemaSelection {
     pub name: Option<String>,
 }
 
+/// One schema selector and its following encoded `7C07` value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaEntityValueSchemaSelection {
+    /// Byte offset of the selector marker within the value payload.
+    pub offset: u64,
+    /// Stored zero-based source-schema ordinal.
+    pub ordinal: u32,
+    /// Selected catalog entry.
+    pub entry: String,
+    /// UTF-8 source-schema name stored by the selected entry.
+    pub name: String,
+    /// Complete token sequence after this selector and before the next selector.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub encoded_value: Vec<value_block::ValueField>,
+}
+
 /// One repeated-reference preamble selector resolved through its graph catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaRepeatedReferenceSchemaSelection {
@@ -616,6 +632,9 @@ pub struct CatiaEntityRecord {
     /// Lossless tokenization of the complete `7C07` payload.
     #[serde(default)]
     pub value_fields: Vec<value_block::ValueField>,
+    /// Value selectors resolved against the containing graph's source schema.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub value_schema_selections: Vec<CatiaEntityValueSchemaSelection>,
     /// Complete numeric tuple when the entire `7C07` payload has that production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub numeric_tuple: Option<entity_table::NumericTuple>,
@@ -1022,6 +1041,52 @@ fn definition_schema_selections(
                 entry: catalog_entry.map(|entry| entry.id.clone()),
                 name: catalog_entry.map(|entry| entry.value.clone()),
             }
+        })
+        .collect()
+}
+
+fn entity_value_schema_selections(
+    fields: &[value_block::ValueField],
+    catalog: Option<&CatiaCatalog>,
+) -> Vec<CatiaEntityValueSchemaSelection> {
+    let Some(catalog) = catalog else {
+        return Vec::new();
+    };
+    let selector_indices = fields
+        .iter()
+        .enumerate()
+        .filter_map(|(index, field)| {
+            let value_block::ValueField::SchemaSelector { ordinal, .. } = field else {
+                return None;
+            };
+            usize::try_from(*ordinal)
+                .ok()
+                .filter(|ordinal| *ordinal < catalog.entries.len())
+                .map(|_| index)
+        })
+        .collect::<Vec<_>>();
+    selector_indices
+        .iter()
+        .enumerate()
+        .filter_map(|(rank, index)| {
+            let value_block::ValueField::SchemaSelector { ordinal, offset } = &fields[*index]
+            else {
+                return None;
+            };
+            let catalog_entry = usize::try_from(*ordinal)
+                .ok()
+                .and_then(|ordinal| catalog.entries.get(ordinal))?;
+            let value_end = selector_indices
+                .get(rank + 1)
+                .copied()
+                .unwrap_or(fields.len());
+            Some(CatiaEntityValueSchemaSelection {
+                offset: *offset as u64,
+                ordinal: *ordinal,
+                entry: catalog_entry.id.clone(),
+                name: catalog_entry.value.clone(),
+                encoded_value: fields[index + 1..value_end].to_vec(),
+            })
         })
         .collect()
 }
@@ -2167,6 +2232,8 @@ impl CatiaNative {
                     &entity_table::parse_definition_schema_selectors(&entity.definition_prefix),
                     catalog,
                 );
+                entity.value_schema_selections =
+                    entity_value_schema_selections(&entity.value_fields, catalog);
             }
         }
         alias_rows.retain(|row| {
@@ -2387,6 +2454,10 @@ impl CatiaNative {
                                 ),
                                 catalog,
                             )
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        entity.value_schema_selections
+                            != entity_value_schema_selections(&entity.value_fields, catalog)
                     })
                     || graph_entities.windows(2).any(|pair| {
                         pair[0].byte_offset.checked_add(pair[0].byte_len)
@@ -2949,6 +3020,7 @@ fn native_object_graph(
                 value_len: entity.value_len,
                 value_payload: entity.value_payload,
                 value_fields,
+                value_schema_selections: Vec::new(),
                 numeric_tuple: entity.numeric_tuple,
                 reference_signature: entity.reference_signature,
                 record_suffix: entity.record_suffix,

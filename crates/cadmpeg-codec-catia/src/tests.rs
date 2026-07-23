@@ -1717,6 +1717,28 @@ fn standard_catpart_with_repeated_reference_schema_selection() -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_entity_value_schema_selection() -> Vec<u8> {
+    let mut value = vec![0x32, 4, 0, 0, 0, 0x87, 0xe6];
+    value.extend_from_slice(&12.5_f64.to_bits().to_le_bytes());
+    value.push(0xfe);
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
+    let mut stream = entity_table_record_with_value(1, &value);
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "TargetValue",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_visualization_values_only() -> Vec<u8> {
     let mut stream = value_block_stream(&[0x32, 4, 0, 0, 0, 0x83]);
     stream.extend(catalog_stream(&[
@@ -5448,6 +5470,41 @@ fn native_namespace_tokenizes_and_validates_complete_entity_values() {
     malformed
         .store(&mut namespace)
         .expect("store malformed entity-value view");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn native_namespace_resolves_and_validates_entity_value_schema_selections() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_entity_value_schema_selection());
+    let selection = &native.entity_records[0].value_schema_selections[0];
+    assert_eq!(selection.ordinal, 4);
+    assert_eq!(selection.offset, 0);
+    assert_eq!(selection.name, "TargetValue");
+    assert!(!selection.entry.is_empty());
+    assert_eq!(
+        selection.encoded_value,
+        [
+            crate::value_block::ValueField::Binary64 {
+                bits: 12.5_f64.to_bits(),
+                offset: 5,
+            },
+            crate::value_block::ValueField::Literal {
+                value: 0xfe,
+                offset: 15,
+            },
+        ]
+    );
+
+    let mut malformed = native;
+    malformed.entity_records[0].value_schema_selections[0].name = "WrongValue".to_string();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed entity-value schema view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
