@@ -5160,16 +5160,23 @@ fn native_load_rejects_noncanonical_value_block_views() {
 }
 
 #[test]
-fn native_load_rejects_noncanonical_entity_frame_lengths() {
+fn native_load_rejects_noncanonical_entity_frame_views() {
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
     let native =
         crate::native::CatiaNative::decode(&sequential_entity_backed_object_graph(&records));
 
-    for mutate in [
+    for (case, mutate) in ([
         |record: &mut crate::native::CatiaEntityRecord| record.definition_len += 1,
         |record: &mut crate::native::CatiaEntityRecord| record.value_len += 1,
         |record: &mut crate::native::CatiaEntityRecord| record.byte_len += 1,
-    ] as [fn(&mut crate::native::CatiaEntityRecord); 3]
+        |record: &mut crate::native::CatiaEntityRecord| {
+            record
+                .value_fields
+                .push(crate::entity_table::ValueField::Terminator { offset: 999 });
+        },
+    ] as [fn(&mut crate::native::CatiaEntityRecord); 4])
+        .into_iter()
+        .enumerate()
     {
         let mut malformed = native.clone();
         mutate(&mut malformed.entity_records[0]);
@@ -5177,10 +5184,13 @@ fn native_load_rejects_noncanonical_entity_frame_lengths() {
         malformed
             .store(&mut namespace)
             .expect("store malformed entity frame");
-        assert!(matches!(
-            crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-        ));
+        assert!(
+            matches!(
+                crate::native::CatiaNative::load(&namespace),
+                Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+            ),
+            "malformed entity frame case {case} was accepted"
+        );
     }
 }
 
