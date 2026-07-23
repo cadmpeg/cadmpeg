@@ -16,7 +16,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 78;
+pub const CATIA_NATIVE_VERSION: u32 = 79;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -77,8 +77,8 @@ pub struct CatiaOwnerNumericTail {
     pub header: [u8; 5],
     /// Four finite binary64 values in serialization order.
     pub scalar64: [f64; 4],
-    /// Six finite binary32 values in serialization order.
-    pub scalar32: [f32; 6],
+    /// Three strictly increasing binary32 bounds in serialization order.
+    pub bounds: [[f32; 2]; 3],
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
@@ -925,7 +925,7 @@ fn consolidated_owner_packets(bytes: &[u8]) -> Vec<CatiaConsolidatedOwnerPacket>
                     numeric_tail: CatiaOwnerNumericTail {
                         header: packet.numeric_tail.header,
                         scalar64: packet.numeric_tail.scalar64,
-                        scalar32: packet.numeric_tail.scalar32,
+                        bounds: packet.numeric_tail.bounds,
                     },
                 },
             )
@@ -1273,7 +1273,9 @@ fn validate_consolidated_owner_packets(
                     && matches!(numeric_tail.header[1], 0x41 | 0xc1)
                     && numeric_tail.header[4] == 0x0d
                     && numeric_tail.scalar64.iter().all(|value| value.is_finite())
-                    && numeric_tail.scalar32.iter().all(|value| value.is_finite())
+                    && numeric_tail.bounds.iter().all(|bounds| {
+                        bounds[0].is_finite() && bounds[1].is_finite() && bounds[0] < bounds[1]
+                    })
             }
             CatiaOwnerPacketPayload::Counted { references, tail } => {
                 !references.is_empty() && !tail.is_empty()

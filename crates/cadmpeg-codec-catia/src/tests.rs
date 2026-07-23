@@ -1035,7 +1035,7 @@ fn owner_numeric_tail() -> Vec<u8> {
         tail.extend_from_slice(&value.to_le_bytes());
     }
     tail.push(0x01);
-    for value in [1.0f32, -2.0, 3.5, 4.0, 5.25, 6.0] {
+    for value in [-2.0f32, 1.0, 3.5, 4.0, 5.25, 6.0] {
         tail.extend_from_slice(&value.to_le_bytes());
     }
     tail
@@ -2888,7 +2888,7 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
     assert_eq!(*references, [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]);
     assert_eq!(numeric_tail.header, [0x84, 0x41, 0xbb, 0x05, 0x0d]);
     assert_eq!(numeric_tail.scalar64, [-0.0, 4.5, 12.25, 7.0]);
-    assert_eq!(numeric_tail.scalar32, [1.0, -2.0, 3.5, 4.0, 5.25, 6.0]);
+    assert_eq!(numeric_tail.bounds, [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]);
     let link = packet.allocation_link.expect("allocation-successor link");
     assert_eq!(link.byte_len, 11);
     assert_eq!(link.target, 1003);

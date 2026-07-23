@@ -25,7 +25,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - Standard-path topology membership across multiple separate FBB face groups.
 - The standard-path arc branch is unspecified for arcs with no witnessed adjacent face.
 - The `a5 03 20` `op1` or persistent-tag reference to serialized-record mapping is unspecified.
-- The semantic roles of the five-byte header, four binary64 values, and six binary32 values in the fixed `b2/b3/b4 03 62` owner tail, and the owner packet's binding to a face record, are unspecified.
+- The semantic roles of the five-byte header, four binary64 values, and three binary32 bounds in the fixed `b2/b3/b4 03 62` owner tail, and the owner packet's binding to a face record, are unspecified.
 - The `b2 03 28` layout-`0x62` token-to-3D cylinder frame mapping is unspecified.
 - The semantic roles of counted `b2/b3/b4 03 61` references and tails, and of the long-form `61` prefix, members, references, and scalar, are unspecified.
 - The higher-level object role of each `b2/b3/b4 03 5f` → `62` allocation-linked owner remains unspecified.

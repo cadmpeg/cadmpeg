@@ -79,8 +79,8 @@ pub struct B2OwnerNumericTail {
     pub header: [u8; 5],
     /// Four finite little-endian binary64 values.
     pub scalar64: [f64; 4],
-    /// Six finite little-endian binary32 values.
-    pub scalar32: [f32; 6],
+    /// Three strictly increasing binary32 bounds in serialization order.
+    pub bounds: [[f32; 2]; 3],
 }
 
 /// Nine-reference owner packet stored in a `b2/b3/b4 03 62` record with a
@@ -488,18 +488,20 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
     if data.get(37) != Some(&0x01) {
         return None;
     }
-    let mut scalar32 = [0.0; 6];
-    for (index, value) in scalar32.iter_mut().enumerate() {
-        let start = 38 + index * 4;
-        *value = f32::from_le_bytes(data.get(start..start + 4)?.try_into().ok()?);
-        if !value.is_finite() {
+    let mut bounds = [[0.0; 2]; 3];
+    for (index, bound) in bounds.iter_mut().enumerate() {
+        for (side, value) in bound.iter_mut().enumerate() {
+            let start = 38 + (2 * index + side) * 4;
+            *value = f32::from_le_bytes(data.get(start..start + 4)?.try_into().ok()?);
+        }
+        if !bound[0].is_finite() || !bound[1].is_finite() || bound[0] >= bound[1] {
             return None;
         }
     }
     Some(B2OwnerNumericTail {
         header,
         scalar64,
-        scalar32,
+        bounds,
     })
 }
 

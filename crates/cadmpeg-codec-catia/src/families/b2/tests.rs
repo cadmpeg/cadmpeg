@@ -73,8 +73,8 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
     );
     assert_eq!(packets[0].numeric_tail.scalar64, [-0.0, 4.5, 12.25, 7.0]);
     assert_eq!(
-        packets[0].numeric_tail.scalar32,
-        [1.0, -2.0, 3.5, 4.0, 5.25, 6.0]
+        packets[0].numeric_tail.bounds,
+        [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]
     );
 
     let packets =
@@ -101,6 +101,7 @@ fn b2_owner_packet_parser_rejects_invalid_numeric_tail_framing() {
         (37, vec![0x00]),
         (5, f64::NAN.to_le_bytes().to_vec()),
         (38, f32::INFINITY.to_le_bytes().to_vec()),
+        (38, 2.0f32.to_le_bytes().to_vec()),
     ] {
         let mut invalid = valid.clone();
         invalid[tail + offset..tail + offset + replacement.len()].copy_from_slice(&replacement);
