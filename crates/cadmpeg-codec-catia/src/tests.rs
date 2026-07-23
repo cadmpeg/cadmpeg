@@ -3945,12 +3945,14 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
             crate::native::CatiaObjectRecordReference {
                 ordinal: 2,
                 payload_offset: 5,
+                source: crate::native::CatiaObjectRecordReferenceSource::Field,
                 target: Some(native.object_graphs[0].records[1].id.clone()),
                 design_object: native.object_graphs[0].records[1].design_object.clone(),
             },
             crate::native::CatiaObjectRecordReference {
                 ordinal: 0x89ab_cdef,
                 payload_offset: 10,
+                source: crate::native::CatiaObjectRecordReferenceSource::Field,
                 target: None,
                 design_object: None,
             },
@@ -4017,12 +4019,20 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
             crate::native::CatiaObjectRecordReference {
                 ordinal: 3,
                 payload_offset: 2,
+                source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
+                    list_payload_offset: 0,
+                    item_ordinal: 0,
+                },
                 target: Some(graph.records[2].id.clone()),
                 design_object: graph.records[2].design_object.clone(),
             },
             crate::native::CatiaObjectRecordReference {
                 ordinal: 3,
                 payload_offset: 4,
+                source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
+                    list_payload_offset: 0,
+                    item_ordinal: 1,
+                },
                 target: Some(graph.records[2].id.clone()),
                 design_object: graph.records[2].design_object.clone(),
             },
@@ -4035,6 +4045,10 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                 source_field: graph.records[0].id.clone(),
                 source_class: None,
                 source_payload_offset: 2,
+                source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
+                    list_payload_offset: 0,
+                    item_ordinal: 0,
+                },
                 target_ordinal: 3,
                 target_field: graph.records[2].id.clone(),
                 target_class: None,
@@ -4044,6 +4058,10 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                 source_field: graph.records[0].id.clone(),
                 source_class: None,
                 source_payload_offset: 4,
+                source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
+                    list_payload_offset: 0,
+                    item_ordinal: 1,
+                },
                 target_ordinal: 3,
                 target_field: graph.records[2].id.clone(),
                 target_class: None,
@@ -4056,6 +4074,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         [crate::native::CatiaObjectRecordReference {
             ordinal: 1,
             payload_offset: 0,
+            source: crate::native::CatiaObjectRecordReferenceSource::Field,
             target: Some(graph.records[0].id.clone()),
             design_object: graph.records[0].design_object.clone(),
         }]
@@ -4072,6 +4091,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
             source_field: graph.records[2].id.clone(),
             source_class: None,
             source_payload_offset: 0,
+            source: crate::native::CatiaObjectRecordReferenceSource::Field,
             target_ordinal: 1,
             target_field: graph.records[0].id.clone(),
             target_class: None,

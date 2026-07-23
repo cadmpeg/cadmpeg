@@ -16,7 +16,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 83;
+pub const CATIA_NATIVE_VERSION: u32 = 84;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -600,12 +600,28 @@ pub struct CatiaObjectRecordReference {
     pub ordinal: u32,
     /// Byte offset of the reference field within the payload.
     pub payload_offset: u64,
+    /// Structural container of the reference occurrence.
+    pub source: CatiaObjectRecordReferenceSource,
     /// Exact selected record; absent when the ordinal is outside the graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
     /// Design object owning the selected record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_object: Option<String>,
+}
+
+/// Structural container of one payload-reference occurrence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaObjectRecordReferenceSource {
+    /// Standalone compact or fixed-width payload field.
+    Field,
+    /// Item in one count-framed list.
+    ListItem {
+        /// Byte offset of the list's `0x3b` tag within the payload.
+        list_payload_offset: u64,
+        /// Zero-based item position within the list, including atom items.
+        item_ordinal: u64,
+    },
 }
 
 /// One exact schema class retained on a grouped design object.
@@ -627,6 +643,8 @@ pub struct CatiaDesignObjectRelation {
     pub source_class: Option<CatiaDesignClass>,
     /// Byte offset of the reference occurrence within the source payload.
     pub source_payload_offset: u64,
+    /// Structural container of the source reference occurrence.
+    pub source: CatiaObjectRecordReferenceSource,
     /// Stored one-based target-record ordinal.
     pub target_ordinal: u32,
     /// Exact field record selected by the stored ordinal.
@@ -741,6 +759,7 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                                             source_field: record.id.clone(),
                                             source_class: design_class(record),
                                             source_payload_offset: reference.payload_offset,
+                                            source: reference.source.clone(),
                                             target_ordinal: reference.ordinal,
                                             target_field,
                                             target_class: design_class(target_record),
@@ -776,17 +795,31 @@ fn design_object_id(graph_offset: u64, owner_ordinal: u32) -> String {
     format!("catia:outer:design-object#{graph_offset:010}-{owner_ordinal:010}")
 }
 
-fn payload_references(payload: &ObjectPayload) -> impl Iterator<Item = (u32, usize)> + '_ {
+fn payload_references(
+    payload: &ObjectPayload,
+) -> impl Iterator<Item = (u32, usize, CatiaObjectRecordReferenceSource)> + '_ {
     payload.fields.iter().flat_map(|field| match field {
-        PayloadField::Reference { value, offset } => vec![(*value, *offset)],
+        PayloadField::Reference { value, offset } => {
+            vec![(*value, *offset, CatiaObjectRecordReferenceSource::Field)]
+        }
         PayloadField::List {
             declared_count,
             items,
-            ..
+            offset: list_offset,
         } if usize::try_from(*declared_count).ok() == Some(items.len()) => items
             .iter()
-            .filter_map(|item| match item {
-                ListItem::Reference { value, offset } => Some((*value, *offset)),
+            .enumerate()
+            .filter_map(|(item_ordinal, item)| match item {
+                ListItem::Reference { value, offset } => Some((
+                    *value,
+                    *offset,
+                    CatiaObjectRecordReferenceSource::ListItem {
+                        list_payload_offset: u64::try_from(*list_offset)
+                            .expect("bounded CATIA list offset fits u64"),
+                        item_ordinal: u64::try_from(item_ordinal)
+                            .expect("bounded CATIA list item ordinal fits u64"),
+                    },
+                )),
                 ListItem::Atom { .. } => None,
             })
             .collect(),
@@ -806,12 +839,13 @@ fn resolved_payload_references(
     record_design_objects: &[Option<String>],
 ) -> Vec<CatiaObjectRecordReference> {
     payload_references(payload)
-        .map(|(ordinal, payload_offset)| {
+        .map(|(ordinal, payload_offset, source)| {
             let index = object_record_index(ordinal, record_ids.len());
             CatiaObjectRecordReference {
                 ordinal,
                 payload_offset: u64::try_from(payload_offset)
                     .expect("bounded CATIA payload offset fits u64"),
+                source,
                 target: index.and_then(|index| record_ids.get(index)).cloned(),
                 design_object: index
                     .and_then(|index| record_design_objects.get(index))
