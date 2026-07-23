@@ -1554,12 +1554,16 @@ fn surface_node(
 }
 
 fn surface_alias_target(record: &B5Record) -> Option<u32> {
-    (record.family == 0xb5 && record.class == 0x2e).then_some(())?;
+    (record.family == 0xb5 && matches!(record.class, 0x2e | 0x38)).then_some(())?;
     let mut position = 0;
     if record.payload.first() == Some(&0x81) {
         position += 1;
     }
     let target = wire::object_ref(&record.payload, &mut position, true)?;
+    if record.class == 0x38 {
+        (record.payload.get(position..) == Some(&[0x05, 0x05, 0x09])).then_some(())?;
+        position += 3;
+    }
     (position == record.payload.len()).then_some(target)
 }
 
@@ -3363,7 +3367,7 @@ mod tests {
     }
 
     #[test]
-    fn freeform_surface_alias_requires_one_complete_reference() {
+    fn surface_aliases_require_their_complete_class_layout() {
         let alias = B5Record {
             offset: 0,
             family: 0xb5,
@@ -3382,6 +3386,17 @@ mod tests {
         let mut tailed = alias.clone();
         tailed.payload.push(0x05);
         assert_eq!(surface_alias_target(&tailed), None);
+
+        let chart_alias = B5Record {
+            class: 0x38,
+            payload: vec![0x81, 0x38, 0x34, 0x12, 0x00, 0x05, 0x05, 0x09],
+            ..alias
+        };
+        assert_eq!(surface_alias_target(&chart_alias), Some(0x1234));
+
+        let mut truncated_chart_alias = chart_alias;
+        truncated_chart_alias.payload.pop();
+        assert_eq!(surface_alias_target(&truncated_chart_alias), None);
     }
 
     #[test]
