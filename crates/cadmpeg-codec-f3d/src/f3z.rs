@@ -14,9 +14,10 @@ use serde_value::Value;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::DecodeContext;
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::LossNote;
 
 use crate::container::ContainerScan;
+use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use crate::records::XrefReference;
 use crate::xref::{self, XrefTable};
@@ -131,30 +132,24 @@ fn merge_references(
             |design| design.display_name.clone(),
         );
         if stack.contains(&reference.relative_path) {
-            parent.report.losses.push(LossNote {
-                code: LossCode::AssemblyComponentsExternal,
-                category: LossCategory::Geometry,
-                severity: Severity::Error,
-                message: format!(
+            parent
+                .report
+                .losses
+                .push(F3dLossCode::AssemblyOccurrenceUnresolved.note(format!(
                     "xref {label}: reference cycle through {}; the occurrence was not resolved",
                     reference.relative_path
-                ),
-                provenance: None,
-            });
+                )));
             continue;
         }
         let Some(member_view) = scan.entry_view(&reference.relative_path) else {
-            parent.report.losses.push(LossNote {
-                code: LossCode::AssemblyComponentsExternal,
-                category: LossCategory::Geometry,
-                severity: Severity::Error,
-                message: format!(
+            parent
+                .report
+                .losses
+                .push(F3dLossCode::AssemblyOccurrenceUnresolved.note(format!(
                     "xref {label}: member {} is not present in the archive; the occurrence was \
                      not resolved",
                     reference.relative_path
-                ),
-                provenance: None,
-            });
+                )));
             continue;
         };
         let mut component = crate::decode::decode(ctx, member_view).map_err(|error| {
@@ -164,16 +159,13 @@ fn merge_references(
             ))
         })?;
         if component.ir.units != parent.ir.units {
-            parent.report.losses.push(LossNote {
-                code: LossCode::AssemblyComponentsExternal,
-                category: LossCategory::Geometry,
-                severity: Severity::Error,
-                message: format!(
+            parent
+                .report
+                .losses
+                .push(F3dLossCode::AssemblyOccurrenceUnresolved.note(format!(
                     "xref {label}: component units differ from the containing document; the \
                      occurrence was not merged"
-                ),
-                provenance: None,
-            });
+                )));
             continue;
         }
         let child_table = xref_table_from_ir(&component.ir)?;

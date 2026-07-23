@@ -81,6 +81,7 @@ pub mod f3z;
 pub mod history;
 mod history_records;
 mod ids;
+pub mod loss;
 pub mod materials;
 mod native;
 pub mod nurbs;
