@@ -331,6 +331,8 @@ A sequential walker over the SURFACE section consumes exactly one fixed-length a
 
 **Standard analytic parameter records** (BE f32 unless noted): sphere `00 12 00 33 35 [cx cy cz radius]`; torus `00 1e 00 33 38 [cx cy cz ax ay major minor]` (`az = sign(major)·sqrt(1−ax²−ay²)`, major radius `|major|`); cone `00 1a 00 33 34 [apex_x apex_y apex_z ax ay semi_angle]` (`apex` is where radius=0, `az = sign(semi_angle)·sqrt(1−ax²−ay²)`, half-angle `|semi_angle|`); cylinder `00 1a 00 33 33 [px py pz ax ay radius]` (`az` sign carried by the sign of `radius`, radius `|radius|`). Sphere, torus, and cone parameters are inline in the kind record. Plane parameters use a tag-bridged record. Cylinder and torus records carry an LE-f32 witness point at cylinder `+24..+35` and torus `+28..+39`. The witness selects the angular interval containing that point.
 
+The reconstructed analytic axis is normalized after recovering `az`; this removes f32 unit-sphere roundoff while preserving the stored axis direction and hemisphere. A tag-bridged plane normal is normalized under the same rule. A zero or non-finite reconstructed direction does not define a carrier.
+
 **Two-step param→face binding:** param→surface by shared tag (`plane.tag_u24 == prefix.target_u24`), then surface→face positionally (`surface_prefix[i]` → FBB row `i` by ascending offset). `0x60` `curve_support_row[i]` → spine `edge_row[i]` positionally.
 
 ### 5.9 Surface-of-revolution record `b2 03 2d`

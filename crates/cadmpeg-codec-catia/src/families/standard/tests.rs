@@ -4041,6 +4041,58 @@ mod record_decoders {
     }
 
     #[test]
+    fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
+        let component = (0.5_f64 + 4.0e-6).sqrt() as f32;
+        let mut bytes = vec![0x00, 0x33, 0x33];
+        for value in [0.0_f32, 0.0, 0.0, component, component, 5.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        let surface = crate::families::standard::records::decode_curved(
+            &bytes,
+            &crate::families::standard::records::SurfacePrefix {
+                pos: 0,
+                target: 0,
+                kind: 0x33,
+            },
+        )
+        .expect("near-unit cylinder carrier");
+        let SurfaceGeometry::Cylinder {
+            axis,
+            ref_direction,
+            ..
+        } = surface
+        else {
+            panic!("cylinder geometry");
+        };
+        assert!((axis.norm() - 1.0).abs() < 1.0e-12);
+        assert!((ref_direction.norm() - 1.0).abs() < 1.0e-12);
+        assert!(axis.dot(ref_direction).abs() < 1.0e-12);
+
+        let plane = crate::families::standard::records::decode_plane(
+            &crate::families::standard::records::PlaneParams {
+                target: 0,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 0.999_999),
+            },
+        )
+        .expect("near-unit plane carrier");
+        let SurfaceGeometry::Plane { normal, u_axis, .. } = plane else {
+            panic!("plane geometry");
+        };
+        assert!((normal.norm() - 1.0).abs() < 1.0e-12);
+        assert!((u_axis.norm() - 1.0).abs() < 1.0e-12);
+        assert!(normal.dot(u_axis).abs() < 1.0e-12);
+        assert!(crate::families::standard::records::decode_plane(
+            &crate::families::standard::records::PlaneParams {
+                target: 0,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 0.0),
+            },
+        )
+        .is_none());
+    }
+
+    #[test]
     fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
         let topology =
             crate::families::standard::fbb::parse_standard(&standard_quad_topology_stream())

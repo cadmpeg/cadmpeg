@@ -338,12 +338,13 @@ pub fn plane_params<S: std::hash::BuildHasher>(
 }
 
 /// Decode a plane carrier from its bridged bounds and trim-frame records.
-pub fn decode_plane(params: &PlaneParams) -> SurfaceGeometry {
-    SurfaceGeometry::Plane {
+pub fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
+    let normal = unit_vector(params.normal)?;
+    Some(SurfaceGeometry::Plane {
         origin: params.origin,
-        normal: params.normal,
-        u_axis: cadmpeg_ir::geometry::derive_reference_direction(params.normal),
-    }
+        normal,
+        u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+    })
 }
 
 /// A circle carrier in the standard `0x60` edge-support table.
@@ -613,7 +614,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             {
                 return None;
             }
-            let axis = axis_from_xy(ax, ay, major);
+            let axis = axis_from_xy(ax, ay, major)?;
             Some(SurfaceGeometry::Torus {
                 center: pt(cx, cy, cz),
                 axis,
@@ -631,12 +632,11 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             if !(radius.abs() > 0.0 && radius.abs() < 1e6) || ax * ax + ay * ay > 1.0 + 1e-4 {
                 return None;
             }
+            let axis = axis_from_xy(ax, ay, radius)?;
             Some(SurfaceGeometry::Cylinder {
                 origin: pt(px, py, pz),
-                axis: axis_from_xy(ax, ay, radius),
-                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis_from_xy(
-                    ax, ay, radius,
-                )),
+                axis,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius: radius.abs() as f64,
             })
         }
@@ -649,12 +649,11 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             if !(semi.abs() > 0.0 && semi.abs() < std::f32::consts::FRAC_PI_2) {
                 return None;
             }
+            let axis = axis_from_xy(ax, ay, semi)?;
             Some(SurfaceGeometry::Cone {
                 origin: pt(x, y, z),
-                axis: axis_from_xy(ax, ay, semi),
-                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis_from_xy(
-                    ax, ay, semi,
-                )),
+                axis,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius: 0.0,
                 ratio: 1.0,
                 half_angle: semi.abs() as f64,
@@ -695,10 +694,15 @@ fn pt(x: f32, y: f32, z: f32) -> Point3 {
 /// Recover the third axis component from the unit-norm constraint, taking its
 /// sign from a companion signed field (the cone/cylinder store `sign(az)` in the
 /// sign of the semi-angle / radius).
-fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Vector3 {
+fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Option<Vector3> {
     let az2 = (1.0 - (ax * ax + ay * ay) as f64).max(0.0);
     let az = az2.sqrt().copysign(signed as f64);
-    Vector3::new(ax as f64, ay as f64, az)
+    unit_vector(Vector3::new(ax as f64, ay as f64, az))
+}
+
+fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (norm.is_finite() && norm > f64::EPSILON).then(|| vector.scale(1.0 / norm))
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {

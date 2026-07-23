@@ -299,7 +299,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         let decoded = if prefix.kind == 0x32 {
             planes
                 .get(&prefix.target)
-                .map(crate::families::standard::records::decode_plane)
+                .and_then(crate::families::standard::records::decode_plane)
         } else {
             curved_surfaces[i].clone()
         };
