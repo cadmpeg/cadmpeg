@@ -10166,4 +10166,167 @@ mod golden {
             }
         }
     }
+
+    /// Seed-replay equivalence gate for the Parasolid platform adoption.
+    ///
+    /// The NX codec keeps its own `extract_streams` scan loop and reuses only the
+    /// [`cadmpeg_ir::parasolid`] primitives [`has_prologue`](cadmpeg_ir::parasolid::has_prologue)
+    /// and [`schema_token`](cadmpeg_ir::parasolid::schema_token). This test is the
+    /// evidence for that choice and the guard that keeps it honest.
+    ///
+    /// Over the covering fixture set plus the `nx_parasolid`/`nx_container` seed
+    /// corpora, for every container with a `/Root/UG_PART/UG_PART` span it asserts:
+    ///
+    /// 1. The platform prologue predicate agrees with nx's own classification on
+    ///    every inflated stream: `has_prologue(inflated) == kind.is_parasolid()`.
+    /// 2. The platform schema read reproduces nx's schema token on every Parasolid
+    ///    stream: `schema_token(inflated) == stream.schema`.
+    /// 3. [`locate_streams`](cadmpeg_ir::parasolid::locate_streams) under both
+    ///    `Inflate::Bounded` and `Inflate::With(nx-flate2)` reproduces nx's
+    ///    *Parasolid* stream set exactly — `(payload-relative offset, inflated
+    ///    bytes, schema)` for every non-preview stream.
+    ///
+    /// It also confirms the divergence that forces the fallback: nx additionally
+    /// returns non-Parasolid *preview* streams (schema-less inflated members that
+    /// lack the `PS\0\0` prologue) which `locate_streams` drops. The corpus
+    /// exercises at least one such stream, so full `locate_streams` adoption would
+    /// lose a stream nx keeps. Reproducing nx's full stream set is therefore not
+    /// possible through the platform sniff, and the codec keeps its scan loop.
+    #[test]
+    fn parasolid_platform_reproduces_nx_stream_primitives() {
+        use cadmpeg_ir::parasolid::{
+            has_prologue, locate_streams, schema_token, Inflate, ParasolidStream,
+        };
+        use std::io::Read as _;
+
+        // nx's flate2 inflater: chunked ZlibDecoder, break on error, keep prefix.
+        fn nx_inflate(member: &[u8]) -> Option<Vec<u8>> {
+            let mut decoder = flate2::read::ZlibDecoder::new(member);
+            let mut inflated = Vec::new();
+            let mut chunk = [0u8; 8192];
+            loop {
+                match decoder.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(read) => inflated.extend_from_slice(&chunk[..read]),
+                    Err(_) => break,
+                }
+            }
+            (!inflated.is_empty()).then_some(inflated)
+        }
+
+        // The `/Root/UG_PART/UG_PART` window nx scans, and its file-start offset.
+        fn part_window(container: &crate::container::Container) -> Option<(usize, Vec<u8>)> {
+            let (off, size) = container
+                .entries
+                .iter()
+                .find(|e| e.name == "/Root/UG_PART/UG_PART")
+                .and_then(|e| e.file_span)?;
+            let start = usize::try_from(off).ok()?;
+            let size = usize::try_from(size).ok()?;
+            let end = start.checked_add(size)?;
+            let bytes = container.data.get(start..end)?.to_vec();
+            Some((start, bytes))
+        }
+
+        type Set = std::collections::BTreeSet<(usize, Vec<u8>, Option<String>)>;
+
+        fn located_set(payload: &[u8], inflate: Inflate) -> Set {
+            locate_streams(payload, inflate)
+                .into_iter()
+                .map(|ParasolidStream { offset, bytes, schema }| (offset, bytes, schema))
+                .collect()
+        }
+
+        // Corpus: the covering golden fixtures plus the on-disk seed corpora.
+        let mut corpus: Vec<(String, Vec<u8>)> = fixtures()
+            .into_iter()
+            .map(|(n, b)| (format!("fixture:{n}"), b))
+            .collect();
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        for dir in [
+            manifest.join("../../seeds/nx_parasolid"),
+            manifest.join("../cadmpeg-fuzz/seeds/nx_container"),
+        ] {
+            if let Ok(rd) = std::fs::read_dir(&dir) {
+                for entry in rd.flatten() {
+                    if let Ok(bytes) = std::fs::read(entry.path()) {
+                        corpus.push((format!("seed:{}", entry.path().display()), bytes));
+                    }
+                }
+            }
+        }
+
+        let mut containers_with_span = 0usize;
+        let mut preview_streams = 0usize;
+
+        for (name, bytes) in corpus {
+            let arena = cadmpeg_ir::decode::DecodeArena::new();
+            let policy = cadmpeg_ir::decode::DecodePolicy::default();
+            let Ok((ctx, root)) =
+                cadmpeg_ir::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            else {
+                continue;
+            };
+            let Ok(container) = crate::container::scan_bytes(bytes.clone()) else {
+                continue;
+            };
+            let Some((start, part)) = part_window(&container) else {
+                continue;
+            };
+            containers_with_span += 1;
+
+            let streams = crate::parasolid::extract_streams(&ctx, root, &container)
+                .expect("bounded corpus decodes");
+            let mut nx_parasolid: Set = Set::new();
+            for stream in &streams {
+                // (1) prologue predicate agrees with nx's classification.
+                assert_eq!(
+                    has_prologue(&stream.inflated),
+                    stream.kind.is_parasolid(),
+                    "{name}: has_prologue disagrees with nx classification at offset {}",
+                    stream.file_offset
+                );
+                if stream.kind.is_parasolid() {
+                    // (2) platform schema read reproduces nx's schema.
+                    assert_eq!(
+                        schema_token(&stream.inflated),
+                        stream.schema,
+                        "{name}: schema_token diverges at offset {}",
+                        stream.file_offset
+                    );
+                    nx_parasolid.insert((
+                        stream.file_offset - start,
+                        stream.inflated.clone(),
+                        stream.schema.clone(),
+                    ));
+                } else {
+                    preview_streams += 1;
+                }
+            }
+
+            // (3) locate_streams reproduces nx's Parasolid set under both strategies.
+            assert_eq!(
+                located_set(&part, Inflate::Bounded),
+                nx_parasolid,
+                "{name}: locate_streams(Bounded) != nx Parasolid set"
+            );
+            assert_eq!(
+                located_set(&part, Inflate::With(nx_inflate)),
+                nx_parasolid,
+                "{name}: locate_streams(With) != nx Parasolid set"
+            );
+        }
+
+        assert!(
+            containers_with_span >= 90,
+            "corpus regressed: only {containers_with_span} containers had a UG_PART span"
+        );
+        // The forced-fallback divergence must remain exercised: nx keeps preview
+        // (non-`PS\0\0`) streams that the platform sniff drops.
+        assert!(
+            preview_streams >= 1,
+            "no preview stream in corpus; the divergence justifying the scan-loop \
+             fallback is no longer exercised"
+        );
+    }
 }

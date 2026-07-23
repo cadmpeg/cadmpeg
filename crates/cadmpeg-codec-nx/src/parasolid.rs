@@ -11,6 +11,7 @@ use std::io::Read;
 
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_ir::parasolid::{has_prologue, schema_token};
 use flate2::read::ZlibDecoder;
 
 use crate::container::Container;
@@ -568,8 +569,13 @@ fn is_zlib_header(cmf: u8, flg: u8) -> bool {
 }
 
 /// Classify an inflated payload from its prologue text and read the schema token.
+///
+/// The `PS\0\0` prologue test and the `SCH_` schema read are the shared platform
+/// primitives [`cadmpeg_ir::parasolid::has_prologue`] and
+/// [`cadmpeg_ir::parasolid::schema_token`]; the subtype split
+/// (`(partition)`/`(deltas)`) is nx-specific and stays here.
 fn classify(inflated: &[u8]) -> (StreamKind, Option<String>) {
-    if !inflated.starts_with(b"PS\x00\x00") {
+    if !has_prologue(inflated) {
         return (StreamKind::Preview, None);
     }
     let window = &inflated[..inflated.len().min(512)];
@@ -580,18 +586,7 @@ fn classify(inflated: &[u8]) -> (StreamKind, Option<String>) {
     } else {
         StreamKind::Plain
     };
-    (kind, read_schema(window))
-}
-
-/// Read a `SCH_<...>` schema token: the `SCH_` prefix followed by the run of
-/// token characters (alphanumeric and `_`).
-fn read_schema(window: &[u8]) -> Option<String> {
-    let pos = find(window, b"SCH_")?;
-    let mut end = pos;
-    while end < window.len() && (window[end].is_ascii_alphanumeric() || window[end] == b'_') {
-        end += 1;
-    }
-    Some(String::from_utf8_lossy(&window[pos..end]).into_owned())
+    (kind, schema_token(inflated))
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
