@@ -13894,6 +13894,9 @@ fn schema_feature_definition(
         {
             return definition;
         }
+        if let Some(definition) = unbounded_feature_plane_definition(scan, ir, feature_id) {
+            return definition;
+        }
     }
     IrFeatureDefinition::Native {
         kind: kind.to_string(),
@@ -13916,6 +13919,51 @@ fn datum_plane_feature_definition(datum: &crate::datum::DatumPlane) -> IrFeature
             datum.normal[2],
         )),
     }
+}
+
+fn unbounded_feature_plane_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<IrFeatureDefinition> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+        })
+        .collect::<Vec<_>>();
+    let [row] = rows.as_slice() else {
+        return None;
+    };
+    (row.boundary_type == 1
+        && row.next_surface == 0
+        && crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(*row))
+    .then_some(())?;
+    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id == id)
+        .collect::<Vec<_>>();
+    let [surface] = surfaces.as_slice() else {
+        return None;
+    };
+    let SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = surface.geometry
+    else {
+        return None;
+    };
+    Some(IrFeatureDefinition::DatumPlane {
+        origin,
+        normal,
+        u_axis,
+    })
 }
 
 fn numbered_feature_name_has_family(name: &str, family: &str) -> bool {
@@ -24320,6 +24368,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                             )
                         })
                     })
+                    .or_else(|| unbounded_feature_plane_definition(scan, &ir, operation.feature_id))
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
                         kind: current_operation
                             .map_or("Native Feature", |operation| operation.kind.as_str())
@@ -24471,13 +24520,13 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
             || {
-                named_feature_definition(scan, &ir, feature_id, kind).unwrap_or_else(|| {
-                    IrFeatureDefinition::Native {
+                named_feature_definition(scan, &ir, feature_id, kind)
+                    .or_else(|| unbounded_feature_plane_definition(scan, &ir, feature_id))
+                    .unwrap_or_else(|| IrFeatureDefinition::Native {
                         kind: kind.to_string(),
                         parameters: parameters.clone(),
                         properties: BTreeMap::new(),
-                    }
-                })
+                    })
             },
             |schema_class| schema_feature_definition(scan, &ir, feature_id, schema_class, kind),
         );

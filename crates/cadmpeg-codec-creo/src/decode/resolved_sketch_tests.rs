@@ -1695,6 +1695,14 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
             u_axis: Vector3::new(0.0, 0.0, 1.0),
         }
     );
+    assert_eq!(
+        schema_feature_definition(&scan, &ir, 5, 0, "Native Feature"),
+        IrFeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 1.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+        }
+    );
 
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
@@ -1710,6 +1718,10 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         schema_feature_definition(&scan, &ir, 5, 923, "Datum Plane"),
         IrFeatureDefinition::DatumPlaneUnresolved
     );
+    assert!(matches!(
+        schema_feature_definition(&scan, &ir, 5, 0, "Native Feature"),
+        IrFeatureDefinition::Native { .. }
+    ));
 }
 
 #[test]

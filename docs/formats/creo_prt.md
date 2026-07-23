@@ -235,6 +235,9 @@ A nonzero `next_geom_ptr` may reference a rowless face use, so materialization o
 its target is not a row-acceptance condition.
 Plane envelope and post-envelope local-system bodies use the same grammar for
 each defined boundary byte; `boundary_type` does not select their scalar layout.
+A `geom_type = 22`, `boundary_type = 01`, `next_geom_ptr = 0` row is an
+unbounded feature plane. When it is the unique plane row carrying its
+`feat_id`, its placed carrier is the datum-plane definition for that feature.
 
 ### 3.1 Surface families
 
