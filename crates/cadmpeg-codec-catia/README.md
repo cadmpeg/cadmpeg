@@ -69,6 +69,7 @@ tracks coverage by model layer.
 
 - [API documentation][docs]
 - [CATIA format model][spec]
+- [CATIA coverage contract][coverage]
 - [Format support matrix][support]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]
@@ -81,6 +82,7 @@ not affiliated with, endorsed by, or sponsored by any CAD vendor. See the
 [clean-room and legal policy][legal].
 
 [docs]: https://docs.rs/cadmpeg-codec-catia
+[coverage]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia-coverage.md
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [repo]: https://github.com/cadmpeg/cadmpeg
 [spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md

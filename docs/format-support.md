@@ -279,7 +279,7 @@ See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-op
 
 Open gates include endpoint incidence for additional variants, orientation signs, pcurve attachment, spline edge curves, remaining persistent edge/cache bindings, attributes, and the consolidated-stream tag resolver.
 
-See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](formats/catia-open-items.md).
+See the [coverage contract](formats/catia-coverage.md), [format specification](formats/catia.md), and [open items](formats/catia-open-items.md).
 
 ## Creo Parametric `.prt`
 
