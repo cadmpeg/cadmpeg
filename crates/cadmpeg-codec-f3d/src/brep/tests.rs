@@ -298,6 +298,14 @@ fn normalized_topology_heads_are_not_other_records() {
 }
 
 #[test]
+fn unreferenced_carrier_heads_are_not_application_records() {
+    for head in ["spline", "intcurve", "pcurve"] {
+        assert!(is_known_record_head(head), "{head}");
+    }
+    assert!(!is_known_record_head("ATTRIB_CUSTOM"));
+}
+
+#[test]
 fn asm_stream_delimiters_are_not_application_records() {
     for name in ["Begin-of-ASM-History-Data", "End-of-ASM-data"] {
         assert!(is_asm_stream_delimiter(name));
