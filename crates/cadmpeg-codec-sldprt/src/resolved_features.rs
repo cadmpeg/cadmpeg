@@ -5637,6 +5637,18 @@ mod marker_tests {
             super::legacy_profile_roster_selected_axis_endpoint_indices(&payload, 0),
             None
         );
+        payload[84..88].copy_from_slice(&1u32.to_le_bytes());
+        payload[88..92].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            super::legacy_profile_roster_selected_axis_endpoint_indices(&payload, 0),
+            Some([8, 9])
+        );
+        assert!(marker_is_selected_construction_line(&payload, 0));
+        payload[88..92].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            super::legacy_profile_roster_selected_axis_endpoint_indices(&payload, 0),
+            None
+        );
     }
 
     #[test]
@@ -27439,6 +27451,17 @@ fn legacy_profile_roster_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
+    let state_trailer = matches!(
+        payload.get(offset + 80..offset + 84),
+        Some([0x00, 0x00, 0x01 | 0x02, 0x00])
+    ) && payload.get(offset + 84..offset + 88) == Some(&[0; 4]);
+    let identity_trailer = payload.get(offset + 80..offset + 84) == Some(&[0; 4])
+        && payload
+            .get(offset + 84..offset + 88)
+            .zip(payload.get(offset + 88..offset + 92))
+            .is_some_and(|(first, second)| {
+                first == second && first != [0; 4] && first != u32::MAX.to_le_bytes()
+            });
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -27452,11 +27475,7 @@ fn legacy_profile_roster_selected_axis_endpoint_indices(
         || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
         || payload.get(offset + 68..offset + 72) != Some(&[0; 4])
         || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
-        || !matches!(
-            payload.get(offset + 80..offset + 84),
-            Some([0x00, 0x00, 0x01 | 0x02, 0x00])
-        )
-        || payload.get(offset + 84..offset + 88) != Some(&[0; 4])
+        || !(state_trailer || identity_trailer)
         || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
     {
         return None;
