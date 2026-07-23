@@ -523,7 +523,7 @@ A complete reference-signature value payload is `32 <first:u32le> <prefix:one_by
 
 Every complete `7C07` payload also uses the lossless value-field tokenization defined for `7C0B`: schema selectors, binary64 values, tagged zero-payload markers, untagged `E6..E9` opcodes, `37` packet separators, inline byte strings, compact atoms, `FE` terminators, and literal bytes. Typed multi-byte fields take precedence over marker-shaped bytes inside their payloads. Bytes outside an assigned production remain ordered literal fields.
 
-Each `32 <ordinal:u32le>` value field whose ordinal is within the object graph's associated schema catalog selects that entry. Preserve its payload-relative offset, ordinal, selected entry identity and name, and the complete ordered token sequence through the byte before the next catalog-valid selector or through payload end. A marker with an out-of-range ordinal remains part of the preceding encoded value and does not create a selection.
+Each `32 <ordinal:u32le>` value field whose ordinal is within the object graph's associated schema catalog selects that entry. Preserve its payload-relative offset, ordinal, selected entry identity and name, the complete ordered token sequence through the byte before the next catalog-valid selector or through payload end, and every complete value packet within that token sequence. A marker with an out-of-range ordinal remains part of the preceding encoded value and does not create a selection.
 
 `E8 <value:compact-atom> 37 FE FE` is a double-terminated compact value packet. Preserve the `E8` payload offset, decoded atom, and its one- or two-byte stored width. Packet assignment requires the complete five-token production.
 

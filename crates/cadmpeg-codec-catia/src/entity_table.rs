@@ -70,97 +70,93 @@ pub struct ReferenceSignature {
     pub closing_type_atom: u32,
 }
 
-/// One `E8 <compact-atom> 37 FE FE` packet in a `7C07` value program.
+/// One exact packet in a tokenized `7C07` value program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct CompactValuePacket {
-    /// Byte offset of the `E8` opcode within the value payload.
-    pub offset: usize,
-    /// Decoded compact atom.
-    pub value: u32,
-    /// Stored width of the compact atom.
-    pub width: u8,
+pub enum EntityValuePacket {
+    /// `E8 <value:compact-atom> 37 FE FE`.
+    Compact {
+        /// Byte offset of the `E8` opcode within the value payload.
+        offset: usize,
+        /// Decoded compact atom.
+        value: u32,
+        /// Stored width of the compact atom.
+        width: u8,
+    },
+    /// `<opcode:E8|E9> <type:compact-atom> <layout:u8> 37 FE FE`.
+    Layout {
+        /// Stored packet opcode, either `E8` or `E9`.
+        opcode: u8,
+        /// Byte offset of the opcode within the value payload.
+        offset: usize,
+        /// Decoded compact type atom.
+        type_atom: u32,
+        /// Stored width of the type atom.
+        type_width: u8,
+        /// Uninterpreted one-byte layout code.
+        layout: u8,
+        /// Byte offset of the layout code within the value payload.
+        layout_offset: usize,
+    },
 }
 
-/// One `E8|E9 <type:compact-atom> <layout:u8> 37 FE FE` value packet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct LayoutValuePacket {
-    /// Stored packet opcode, either `E8` or `E9`.
-    pub opcode: u8,
-    /// Byte offset of the opcode within the value payload.
-    pub offset: usize,
-    /// Decoded compact type atom.
-    pub type_atom: u32,
-    /// Stored width of the type atom.
-    pub type_width: u8,
-    /// Uninterpreted one-byte layout code.
-    pub layout: u8,
-    /// Byte offset of the layout code within the value payload.
-    pub layout_offset: usize,
-}
-
-/// Decode every exact double-terminated compact packet in a tokenized value payload.
+/// Decode every exact packet in source order from a tokenized value payload.
 #[must_use]
-pub fn compact_value_packets(fields: &[value_block::ValueField]) -> Vec<CompactValuePacket> {
-    fields
-        .windows(5)
-        .filter_map(|fields| match fields {
-            [
-                value_block::ValueField::Opcode { code: 0xe8, offset },
-                value_block::ValueField::Atom { value, width, .. },
-                value_block::ValueField::Separator { .. },
-                value_block::ValueField::Terminator { .. },
-                value_block::ValueField::Terminator { .. },
-            ] => Some(CompactValuePacket {
-                offset: *offset,
-                value: *value,
-                width: *width,
-            }),
-            _ => None,
-        })
-        .collect()
-}
-
-/// Decode every exact layout-bearing packet in a tokenized value payload.
-#[must_use]
-pub fn layout_value_packets(fields: &[value_block::ValueField]) -> Vec<LayoutValuePacket> {
-    fields
-        .windows(6)
-        .filter_map(|fields| {
-            let [
-                value_block::ValueField::Opcode { code, offset },
-                value_block::ValueField::Atom {
-                    value: type_atom,
-                    width: type_width,
-                    ..
-                },
-                layout,
-                value_block::ValueField::Separator { .. },
-                value_block::ValueField::Terminator { .. },
-                value_block::ValueField::Terminator { .. },
-            ] = fields
-            else {
-                return None;
-            };
-            if !matches!(code, 0xe8 | 0xe9) {
-                return None;
+pub fn value_packets(fields: &[value_block::ValueField]) -> Vec<EntityValuePacket> {
+    (0..fields.len())
+        .filter_map(|index| {
+            if let Some(
+                [
+                    value_block::ValueField::Opcode { code, offset },
+                    value_block::ValueField::Atom {
+                        value: type_atom,
+                        width: type_width,
+                        ..
+                    },
+                    layout,
+                    value_block::ValueField::Separator { .. },
+                    value_block::ValueField::Terminator { .. },
+                    value_block::ValueField::Terminator { .. },
+                ],
+            ) = fields.get(index..index + 6)
+            {
+                if matches!(code, 0xe8 | 0xe9) {
+                    let layout = match layout {
+                        value_block::ValueField::Atom {
+                            value,
+                            width: 1,
+                            offset,
+                        } => Some((u8::try_from(value.checked_add(0x80)?).ok()?, *offset)),
+                        value_block::ValueField::Literal { value, offset } => {
+                            Some((*value, *offset))
+                        }
+                        _ => None,
+                    };
+                    if let Some((layout, layout_offset)) = layout {
+                        return Some(EntityValuePacket::Layout {
+                            opcode: *code,
+                            offset: *offset,
+                            type_atom: *type_atom,
+                            type_width: *type_width,
+                            layout,
+                            layout_offset,
+                        });
+                    }
+                }
             }
-            let (layout, layout_offset) = match layout {
-                value_block::ValueField::Atom {
-                    value,
-                    width: 1,
-                    offset,
-                } => (u8::try_from(value.checked_add(0x80)?).ok()?, *offset),
-                value_block::ValueField::Literal { value, offset } => (*value, *offset),
-                _ => return None,
-            };
-            Some(LayoutValuePacket {
-                opcode: *code,
-                offset: *offset,
-                type_atom: *type_atom,
-                type_width: *type_width,
-                layout,
-                layout_offset,
-            })
+            match fields.get(index..index + 5) {
+                Some([
+                    value_block::ValueField::Opcode { code: 0xe8, offset },
+                    value_block::ValueField::Atom { value, width, .. },
+                    value_block::ValueField::Separator { .. },
+                    value_block::ValueField::Terminator { .. },
+                    value_block::ValueField::Terminator { .. },
+                ]) => Some(EntityValuePacket::Compact {
+                    offset: *offset,
+                    value: *value,
+                    width: *width,
+                }),
+                _ => None,
+            }
         })
         .collect()
 }
@@ -454,10 +450,9 @@ fn u32_le(data: &[u8], at: usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compact_value_packets, layout_value_packets, parse_definition_schema_selectors,
-        parse_numeric_tuple, parse_reference_signature, parse_runs, CompactValuePacket,
-        DefinitionSchemaSelector, LayoutValuePacket, NumericTuple, NumericTupleItem,
-        ReferenceSignature,
+        parse_definition_schema_selectors, parse_numeric_tuple, parse_reference_signature,
+        parse_runs, value_packets, DefinitionSchemaSelector, EntityValuePacket, NumericTuple,
+        NumericTupleItem, ReferenceSignature,
     };
     use crate::value_block;
 
@@ -592,8 +587,8 @@ mod tests {
         let fields =
             value_block::tokenize(&[0xe8, 0xe0, 0x0a, 0x37, 0xfe, 0xfe, 0xe8, 0x82, 0x37, 0xfe]);
         assert_eq!(
-            compact_value_packets(&fields),
-            [CompactValuePacket {
+            value_packets(&fields),
+            [EntityValuePacket::Compact {
                 offset: 0,
                 value: 3851,
                 width: 2,
@@ -605,8 +600,8 @@ mod tests {
     fn layout_value_packet_requires_the_layout_and_double_terminator() {
         let fields = value_block::tokenize(&[0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe]);
         assert_eq!(
-            layout_value_packets(&fields),
-            [LayoutValuePacket {
+            value_packets(&fields),
+            [EntityValuePacket::Layout {
                 opcode: 0xe9,
                 offset: 0,
                 type_atom: 3864,

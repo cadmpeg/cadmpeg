@@ -20,6 +20,7 @@ use cadmpeg_ir::SourceFidelity;
 
 use crate::assemble::{build_container_report, build_metadata_ir};
 use crate::container::{self, ContainerScan};
+use crate::entity_table;
 use crate::families;
 use crate::native::CatiaNative;
 
@@ -117,13 +118,15 @@ fn finish_decode(
     let compact_entity_value_packet_count = native
         .entity_records
         .iter()
-        .map(|record| record.compact_value_packets.len())
-        .sum();
+        .flat_map(|record| &record.value_packets)
+        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::Compact { .. }))
+        .count();
     let layout_entity_value_packet_count = native
         .entity_records
         .iter()
-        .map(|record| record.layout_value_packets.len())
-        .sum();
+        .flat_map(|record| &record.value_packets)
+        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::Layout { .. }))
+        .count();
     let unresolved_design_owner_count = native
         .design_objects
         .iter()
