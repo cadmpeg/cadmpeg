@@ -1931,6 +1931,13 @@ fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
             }
         }
     }
+    let cache_backed_curves = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| !matches!(&curve.geometry, CurveGeometry::Procedural { .. }))
+        .map(|curve| curve.id.clone())
+        .collect::<BTreeSet<_>>();
     for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
         let Some(procedural) = ir
             .model
@@ -1946,12 +1953,14 @@ fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
         };
         if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
             context.sides[side].pcurve = Some(pcurve);
-            procedural.cache_fit_tolerance = Some(
-                procedural
-                    .cache_fit_tolerance
-                    .unwrap_or(0.0)
-                    .max(effective_fit_tolerance),
-            );
+            if cache_backed_curves.contains(&procedural.curve) {
+                procedural.cache_fit_tolerance = Some(
+                    procedural
+                        .cache_fit_tolerance
+                        .unwrap_or(0.0)
+                        .max(effective_fit_tolerance),
+                );
+            }
         }
     }
     complete_coupled_support_uv(ir, pending);
@@ -2238,8 +2247,19 @@ pub(crate) fn attach_completed_intersection_pcurves(
             else {
                 return None;
             };
-            pcurve_matches_edge(ir, &coedge.edge, surface, &candidate.0, candidate.2)
-                .then(|| (coedge.id.clone(), candidate.clone()))
+            let fit_tolerance = candidate.2.or_else(|| {
+                ir.model
+                    .edges
+                    .iter()
+                    .find(|edge| edge.id == coedge.edge)
+                    .and_then(|edge| edge.tolerance)
+            });
+            pcurve_matches_edge(ir, &coedge.edge, surface, &candidate.0, fit_tolerance).then(|| {
+                (
+                    coedge.id.clone(),
+                    (candidate.0.clone(), candidate.1, fit_tolerance),
+                )
+            })
         })
         .collect::<Vec<_>>();
     for (coedge_id, (geometry, parameter_range, fit_tolerance)) in replacements {
@@ -5382,10 +5402,16 @@ pub(crate) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
                 context.parameter_range,
                 tolerance,
             )?;
-            Some((procedural.id.clone(), target, pcurve, tolerance))
+            Some((
+                procedural.id.clone(),
+                target,
+                pcurve,
+                tolerance,
+                curve_is_cache_backed(ir, &procedural.curve),
+            ))
         })
         .collect::<Vec<_>>();
-    for (procedural_id, side, pcurve, tolerance) in replacements {
+    for (procedural_id, side, pcurve, tolerance, cache_backed) in replacements {
         let Some(procedural) = ir
             .model
             .procedural_curves
@@ -5400,8 +5426,10 @@ pub(crate) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
         };
         if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
             context.sides[side].pcurve = Some(pcurve);
-            procedural.cache_fit_tolerance =
-                Some(procedural.cache_fit_tolerance.unwrap_or(0.0).max(tolerance));
+            if cache_backed {
+                procedural.cache_fit_tolerance =
+                    Some(procedural.cache_fit_tolerance.unwrap_or(0.0).max(tolerance));
+            }
         }
     }
 }
@@ -5501,10 +5529,15 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
                 ],
                 [None, None] => return None,
             };
-            Some((procedural.id.clone(), pcurves, tolerance))
+            Some((
+                procedural.id.clone(),
+                pcurves,
+                tolerance,
+                curve_is_cache_backed(ir, &procedural.curve),
+            ))
         })
         .collect::<Vec<_>>();
-    for (procedural_id, pcurves, tolerance) in replacements {
+    for (procedural_id, pcurves, tolerance, cache_backed) in replacements {
         let Some(procedural) = ir
             .model
             .procedural_curves
@@ -5525,9 +5558,19 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
             for (side, pcurve) in context.sides.iter_mut().zip(pcurves) {
                 side.pcurve = Some(pcurve);
             }
-            procedural.cache_fit_tolerance = Some(tolerance);
+            if cache_backed {
+                procedural.cache_fit_tolerance = Some(tolerance);
+            }
         }
     }
+}
+
+fn curve_is_cache_backed(ir: &CadIr, curve: &CurveId) -> bool {
+    ir.model
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == curve)
+        .is_some_and(|carrier| !matches!(&carrier.geometry, CurveGeometry::Procedural { .. }))
 }
 
 fn isoparametric_boundary_pcurve(

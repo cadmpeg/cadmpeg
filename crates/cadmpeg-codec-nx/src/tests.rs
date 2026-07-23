@@ -5010,6 +5010,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     else {
         unreachable!()
     };
+    assert_eq!(ir.model.procedural_curves[0].cache_fit_tolerance, None);
     assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let points = context.sides.each_ref().map(|side| {
@@ -6744,6 +6745,12 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .find(|candidate| candidate.id == edge)
         .and_then(|edge| edge.curve.clone())
         .expect("edge curve");
+    let edge_tolerance = ir
+        .model
+        .edges
+        .iter()
+        .find(|candidate| candidate.id == edge)
+        .and_then(|edge| edge.tolerance);
     ir.model
         .procedural_curves
         .push(cadmpeg_ir::geometry::ProceduralCurve {
@@ -6793,6 +6800,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .iter()
         .find(|pcurve| pcurve.id.0.contains("intersection-pcurve-completed"))
         .expect("validated completed support lane attaches");
+    assert_eq!(completed.fit_tolerance, edge_tolerance);
     assert!(ir.model.coedges.iter().any(|coedge| coedge
         .pcurves
         .iter()
