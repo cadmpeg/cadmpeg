@@ -166,6 +166,10 @@ pub enum B5Surface {
         axis: [f64; 3],
         /// Positive sphere radius.
         radius: f64,
+        /// Increasing native azimuth and latitude bounds, in radians.
+        angular_bounds: [[f64; 2]; 2],
+        /// Positive radius of the enclosing support-bound construction.
+        construction_radius: f64,
     },
     /// `b5 03 2b`: a torus in its two arc-length angular coordinates.
     Torus {
@@ -273,8 +277,8 @@ pub struct B5SupportedSurface {
     pub support_pcurves: [u32; 2],
     /// Six native control bytes surrounding the scalar fields.
     pub controls: [u8; 6],
-    /// Positive radius of the result carrier.
-    pub radius: f64,
+    /// Positive radius of the support-bound construction.
+    pub construction_radius: f64,
 }
 
 /// One class-`06` incidence lane connecting curves to parameters at a vertex.
@@ -504,16 +508,34 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         };
         let radius_matches_carrier = match &carrier {
             B5Surface::Cylinder { radius, .. } => {
-                (construction.radius - radius).abs()
-                    <= 1e-12 * construction.radius.abs().max(radius.abs()).max(1.0)
+                (construction.construction_radius - radius).abs()
+                    <= 1e-12
+                        * construction
+                            .construction_radius
+                            .abs()
+                            .max(radius.abs())
+                            .max(1.0)
             }
             B5Surface::Torus { minor_radius, .. } => {
-                (construction.radius - minor_radius).abs()
-                    <= 1e-12 * construction.radius.abs().max(minor_radius.abs()).max(1.0)
+                (construction.construction_radius - minor_radius).abs()
+                    <= 1e-12
+                        * construction
+                            .construction_radius
+                            .abs()
+                            .max(minor_radius.abs())
+                            .max(1.0)
             }
-            B5Surface::Sphere { radius, .. } => {
-                (construction.radius - radius).abs()
-                    <= 1e-12 * construction.radius.abs().max(radius.abs()).max(1.0)
+            B5Surface::Sphere {
+                construction_radius,
+                ..
+            } => {
+                (construction.construction_radius - construction_radius).abs()
+                    <= 1e-12
+                        * construction
+                            .construction_radius
+                            .abs()
+                            .max(construction_radius.abs())
+                            .max(1.0)
             }
             B5Surface::RollingBall { .. } => true,
             _ => false,
@@ -1407,7 +1429,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let stored_y = point(&record.payload, 49)?;
             let stored_axis = point(&record.payload, 73)?;
             let radius = scalar(&record.payload, 97)?;
-            let [u0, u1, v0, v1, _, _] = line_values::<6>(&record.payload, 105)?;
+            let [u0, u1, v0, v1, construction_radius, _] = line_values::<6>(&record.payload, 105)?;
             let vector_length = |value: [f64; 3]| {
                 value
                     .iter()
@@ -1421,6 +1443,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             (radius > 0.0
                 && u0 < u1
                 && v0 < v1
+                && construction_radius > 0.0
                 && [stored_x, stored_y, stored_axis].iter().all(|direction| {
                     (vector_length(*direction) - radius).abs() <= 1e-12 * radius.abs().max(1.0)
                 })
@@ -1431,6 +1454,8 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                     direction_y,
                     axis,
                     radius,
+                    angular_bounds: [[u0, u1], [v0, v1]],
+                    construction_radius,
                 })
         }
         0x2b => {
@@ -1772,16 +1797,16 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
         record.payload[position + 20],
         record.payload[position + 21],
     ];
-    let radius = scalar(&record.payload, position + 2)?;
+    let construction_radius = scalar(&record.payload, position + 2)?;
     let zero = scalar(&record.payload, position + 12)?;
-    (radius > 0.0 && zero == 0.0).then_some(())?;
+    (construction_radius > 0.0 && zero == 0.0).then_some(())?;
     Some(B5SupportedSurface {
         object_id: record.object_id,
         carrier_surface: references[0],
         support_surfaces: [references[1], references[2]],
         support_pcurves: [references[3], references[4]],
         controls,
-        radius,
+        construction_radius,
     })
 }
 
@@ -2924,7 +2949,7 @@ mod tests {
             (113, 1.0),
             (121, -1.0),
             (129, 1.0),
-            (137, 2.0),
+            (137, 3.0),
             (145, 0.0),
         ] {
             payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
@@ -2944,6 +2969,8 @@ mod tests {
                 direction_y: [0.0, 1.0, 0.0],
                 axis: [0.0, 0.0, 1.0],
                 radius: 2.0,
+                angular_bounds: [[0.0, 1.0], [-1.0, 1.0]],
+                construction_radius: 3.0,
             })
         );
         let mut left_handed = record;
@@ -3353,7 +3380,7 @@ mod tests {
                 support_surfaces: [3, 4],
                 support_pcurves: [5, 6],
                 controls: [0x09, 0x05, 0x03, 0x05, 0x01, 0x05],
-                radius: 2.5,
+                construction_radius: 2.5,
             })
         );
         let unsupported_class_3b = B5Record {
