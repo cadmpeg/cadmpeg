@@ -1939,6 +1939,7 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
     "offset_type",
     "parent_feats",
     "frst_cntr_crv_hdr_ptr",
+    "trv",
     "id",
     "type",
     "flip",
@@ -1965,7 +1966,7 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
     let scalar_field = radius_field || parameter_bound_field || name == "half_angle";
     let compact_integer_field = matches!(
         name,
-        "id" | "type" | "tan_cond" | "degree" | "frst_cntr_crv_hdr_ptr" | "data_type"
+        "id" | "type" | "tan_cond" | "degree" | "frst_cntr_crv_hdr_ptr" | "trv" | "data_type"
     );
     if scalar_field && body == [0x18] {
         return SurfaceNamedValue::ScalarSequence(vec![0.0]);
@@ -8694,6 +8695,8 @@ mod tests {
         let payload = b"srf_prim_ptr(fillet_srf)\0\
             \xe0\x01flip\0\xf1\x01\
             \xe0\x01offset_type\0\x00\xf1\xf7\x0e\
+            \xe0\x00frst_cntr_crv_hdr_ptr\0\x2f\
+            \xe0\x01trv\0\x01\
             \xe0\x01tan_spline\0";
         let records = named_prototype_records(payload);
 
@@ -8708,6 +8711,16 @@ mod tests {
         assert_eq!(
             records[0].field("tan_spline").map(|field| &field.value),
             Some(&SurfaceNamedValue::Empty)
+        );
+        assert_eq!(
+            records[0]
+                .field("frst_cntr_crv_hdr_ptr")
+                .map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactInt(47))
+        );
+        assert_eq!(
+            records[0].field("trv").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactInt(1))
         );
     }
 

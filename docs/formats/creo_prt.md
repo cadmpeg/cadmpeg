@@ -290,6 +290,8 @@ contiguous entity-reference range `start_id .. start_id + count`. `flip f1
 reference. Both fields retain their complete wrapper bytes. `dum_array`,
 `data_dbls`, and `data_type` are separate named fields. A `tan_spline` field
 with no bytes before the next named-record header has an empty body. A
+`frst_cntr_crv_hdr_ptr` field and its following `trv` field each store one
+compact integer; the `trv` header terminates the preceding pointer body. A
 count-prefixed compact-integer array is typed as such only when exactly the
 declared number of compact integers consumes the entire bounded field body;
 trailing bytes make the field opaque.

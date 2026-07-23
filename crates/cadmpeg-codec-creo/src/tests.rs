@@ -1574,6 +1574,8 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     payload.extend_from_slice(b"\xe0\x02params\0\xf8\x04\x00\x00\x01\x01");
     payload.extend_from_slice(b"\xe0\x01flip\0\xf1\x01");
     payload.extend_from_slice(b"\xe0\x02dum_array\0\xf8\x03\x01\x02\x03\x04");
+    payload.extend_from_slice(b"\xe0\x00frst_cntr_crv_hdr_ptr\0\x2f");
+    payload.extend_from_slice(b"\xe0\x01trv\0\x00");
     payload.extend_from_slice(b"\xe0\x01tan_spline\0");
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
@@ -1643,6 +1645,16 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
         prototype.field("tan_spline").map(|field| &field.value),
         Some(&crate::surface::SurfaceNamedValue::Empty)
     );
+    assert_eq!(
+        prototype
+            .field("frst_cntr_crv_hdr_ptr")
+            .map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(47))
+    );
+    assert_eq!(
+        prototype.field("trv").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(0))
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -1672,10 +1684,17 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     assert_eq!(native.fields["parameters"][7]["body"][0], 0xf1);
     assert_eq!(native.fields["parameters"][8]["name"], "dum_array");
     assert_eq!(native.fields["parameters"][8]["value_kind"], "opaque");
-    assert_eq!(native.fields["parameters"][9]["name"], "tan_spline");
-    assert_eq!(native.fields["parameters"][9]["value_kind"], "empty");
     assert_eq!(
-        native.fields["parameters"][9]["body"]
+        native.fields["parameters"][9]["name"],
+        "frst_cntr_crv_hdr_ptr"
+    );
+    assert_eq!(native.fields["parameters"][9]["compact_values"][0], 47);
+    assert_eq!(native.fields["parameters"][10]["name"], "trv");
+    assert_eq!(native.fields["parameters"][10]["compact_values"][0], 0);
+    assert_eq!(native.fields["parameters"][11]["name"], "tan_spline");
+    assert_eq!(native.fields["parameters"][11]["value_kind"], "empty");
+    assert_eq!(
+        native.fields["parameters"][11]["body"]
             .as_array()
             .map(Vec::len),
         Some(0)
