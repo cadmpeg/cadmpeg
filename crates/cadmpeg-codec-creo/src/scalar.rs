@@ -530,6 +530,9 @@ fn decode_local_system_slot_prefix(
         if let Some(frame) = decode_prefixed_orthogonal_plane_support(body, cache) {
             return Some(frame);
         }
+        if let Some(frame) = decode_trailing_rank_orthogonal_plane_support(body, cache) {
+            return Some(frame);
+        }
     }
     if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
         return Some((
@@ -640,32 +643,26 @@ fn decode_prefixed_orthogonal_plane_support(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], usize)> {
-    let support_slot = |offset: usize, slot: usize| {
-        if matches!(body.get(offset), Some(0x0f | 0x10 | 0x18 | 0xe6)) {
-            Some((0.0, offset + 1))
-        } else {
-            decode_plane_support_coordinate(body, offset, slot, cache)
-        }
-    };
     let mut cursor = 0;
     for slot in 0..3 {
-        let (value, next) = support_slot(cursor, slot)?;
+        let (value, next) = decode_zero_or_plane_support_coordinate(body, cursor, slot, cache)?;
         (value == 0.0).then_some(())?;
         cursor = next;
     }
-    let (first_x, next) = support_slot(cursor, 3)?;
+    let (first_x, next) = decode_zero_or_plane_support_coordinate(body, cursor, 3, cache)?;
     cursor = next;
-    let (first_y, next) = support_slot(cursor, 4)?;
+    let (first_y, next) = decode_zero_or_plane_support_coordinate(body, cursor, 4, cache)?;
     (first_y == 0.0).then_some(())?;
     cursor = next;
-    let (first_z, next) = support_slot(cursor, 5)?;
+    let (first_z, next) = decode_zero_or_plane_support_coordinate(body, cursor, 5, cache)?;
     cursor = next;
     (body.get(cursor) == Some(&0xe4)).then_some(())?;
     cursor += 1;
-    let (second_y, next) = support_slot(cursor, 7)?;
+    let (second_y, next) = decode_zero_or_plane_support_coordinate(body, cursor, 7, cache)?;
     (second_y == 0.0).then_some(())?;
     cursor = next;
-    let (stored_first_x_magnitude, next) = support_slot(cursor, 8)?;
+    let (stored_first_x_magnitude, next) =
+        decode_zero_or_plane_support_coordinate(body, cursor, 8, cache)?;
     cursor = next;
 
     [first_x, first_z, stored_first_x_magnitude]
@@ -684,6 +681,63 @@ fn decode_prefixed_orthogonal_plane_support(
         ],
         cursor,
     ))
+}
+
+fn decode_trailing_rank_orthogonal_plane_support(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<([f64; 12], usize)> {
+    let mut cursor = 0;
+    let (first_x, next) = decode_zero_or_plane_support_coordinate(body, cursor, 0, cache)?;
+    cursor = next;
+    let (first_y, next) = decode_zero_or_plane_support_coordinate(body, cursor, 1, cache)?;
+    (first_y == 0.0).then_some(())?;
+    cursor = next;
+    let (first_z, next) = decode_zero_or_plane_support_coordinate(body, cursor, 2, cache)?;
+    cursor = next;
+    (body.get(cursor) == Some(&0xe4)).then_some(())?;
+    cursor += 1;
+    let (second_y, next) = decode_zero_or_plane_support_coordinate(body, cursor, 4, cache)?;
+    (second_y == 0.0).then_some(())?;
+    cursor = next;
+    let (stored_first_x_magnitude, next) =
+        decode_zero_or_plane_support_coordinate(body, cursor, 5, cache)?;
+    cursor = next;
+    for slot in 6..9 {
+        let (value, next) = decode_zero_or_plane_support_coordinate(body, cursor, slot, cache)?;
+        (value == 0.0).then_some(())?;
+        cursor = next;
+    }
+
+    [first_x, first_z, stored_first_x_magnitude]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(())?;
+    let scale = first_x.abs().max(first_z.abs()).max(1.0);
+    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
+    ((stored_first_x_magnitude.abs() - first_x.abs()).abs() <= 1e-9 * scale).then_some(())?;
+
+    let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
+    Some((
+        [
+            first_x, 0.0, first_z, 0.0, 0.0, 0.0, first_z, 0.0, -first_x, origin[0], origin[1],
+            origin[2],
+        ],
+        cursor,
+    ))
+}
+
+fn decode_zero_or_plane_support_coordinate(
+    body: &[u8],
+    offset: usize,
+    slot: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if matches!(body.get(offset), Some(0x0f | 0x10 | 0x18 | 0xe6)) {
+        Some((0.0, offset + 1))
+    } else {
+        decode_plane_support_coordinate(body, offset, slot, cache)
+    }
 }
 
 fn decode_plane_support_origin(
@@ -1007,6 +1061,18 @@ mod tests {
     fn compact_axis_plane_support_decodes_rank_and_origin() {
         let body = [
             0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4, 0x18, 0x18, 0x18,
+        ];
+
+        assert_eq!(
+            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
+            Some([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0])
+        );
+    }
+
+    #[test]
+    fn trailing_rank_plane_support_constructs_orthogonal_directions() {
+        let body = [
+            0xe4, 0x18, 0x18, 0xe4, 0x18, 0xe4, 0x18, 0x0f, 0x18, 0x18, 0x18, 0x18,
         ];
 
         assert_eq!(

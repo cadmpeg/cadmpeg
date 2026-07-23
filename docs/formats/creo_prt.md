@@ -295,6 +295,9 @@ component. The resulting support directions are `(a, 0, b)` and
 The compact axis form begins `18 0f 18 e5 0f e4 18 e4`; that prefix defines
 support directions `(1, 0, 0)` and `(0, 0, -1)` with a zero middle rank. Its
 three following scalars are the origin coordinates.
+A trailing-rank orthogonal form stores `a, 0, b, e4, 0, m`, a zero-rank
+triple, and three origin coordinates. It has the same `a² + b² = 1`,
+`|m| = |a|`, copied-`b`, and negated-`a` semantics as the prefixed form.
 
 Two five-coordinate type-26 rows for one zero-`radius1` prototype encode the
 two hemispheres of one Z-axis sphere. Each row stores
