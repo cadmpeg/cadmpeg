@@ -9,7 +9,7 @@
 
 use crate::container::parasolid_offset;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::wire::compression::inflate_zlib_prefix;
+use cadmpeg_ir::parasolid::{has_prologue, locate_streams, Inflate};
 
 /// The constant 16-byte prefix of the wrapped Parasolid transmit-container
 /// magic. When it is present, the actual `PS\0\0` stream is a nested zlib member
@@ -29,92 +29,44 @@ pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// Extract every stream with its direct or wrapper offset in the outer payload.
+///
+/// The direct and wrapped scans are the shared
+/// [`cadmpeg_ir::parasolid::locate_streams`] sniff under [`Inflate::Bounded`],
+/// whose bounded prefix inflate matches this codec's `inflate_zlib_prefix`
+/// tolerance. Two admission rules stay codec-side around it: a `PS\0\0` in the
+/// first 64 bytes that the direct header framing rejects is still admitted whole
+/// (the [`parasolid_offset`] fallback), and the wrapped scan is honored only when
+/// the `SolidWorks` transmit magic is present and keeps only members whose
+/// description-framed [`stream_header`] parses — the sniff admits a wrapped
+/// member on the prologue alone.
 pub fn extract_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
-    let mut out = Vec::new();
-    let signatures: Vec<_> = payload
-        .windows(4)
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == b"PS\0\0").then_some(at))
-        .collect();
-    for (index, start) in signatures.iter().copied().enumerate() {
-        let end = signatures.get(index + 1).copied().unwrap_or(payload.len());
-        let candidate = payload[start..end].to_vec();
-        if stream_header(&candidate).is_some() {
-            out.push((start, candidate));
-        }
+    let located = locate_streams(payload, Inflate::Bounded);
+    // `locate_streams` returns direct streams whenever any frame, otherwise the
+    // wrapped scan. A direct stream leads with the prologue at its payload
+    // offset; a wrapped member's offset points at its zlib header. A leading
+    // prologue therefore means the whole result is the direct scan.
+    if located
+        .first()
+        .is_some_and(|stream| payload.get(stream.offset..).is_some_and(has_prologue))
+    {
+        return located
+            .into_iter()
+            .map(|stream| (stream.offset, stream.bytes))
+            .collect();
     }
-    if !out.is_empty() {
-        return out;
-    }
+    // No direct stream framed: `located` holds the wrapped scan. The codec
+    // fallbacks the sniff omits take precedence over it.
     if let Some(off) = parasolid_offset(payload) {
         return vec![(off, payload[off..].to_vec())];
     }
-    if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
-        return out;
-    }
-    // Try each zlib member; the first that inflates to a `PS\0\0`-leading stream
-    // is the embedded body. zlib headers are `78 01` / `78 9c` / `78 da`.
-    let mut i = 0usize;
-    while i + 2 <= payload.len() {
-        if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
-            if let Some(inner) = inflate_zlib_prefix(&payload[i..]) {
-                if inner.starts_with(&[b'P', b'S', 0x00, 0x00])
-                    && stream_header(&inner).is_some()
-                    && !out.iter().any(|(_, stream)| stream == &inner)
-                {
-                    out.push((i, inner));
-                }
-            }
-        }
-        i += 1;
-    }
-    out
-}
-
-/// Direct (uncompressed) Parasolid streams with their block-payload offsets.
-pub fn direct_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
-    let mut out = Vec::new();
-    let signatures: Vec<_> = payload
-        .windows(4)
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == b"PS\0\0").then_some(at))
-        .collect();
-    for (index, start) in signatures.iter().copied().enumerate() {
-        let end = signatures.get(index + 1).copied().unwrap_or(payload.len());
-        let candidate = payload[start..end].to_vec();
-        if stream_header(&candidate).is_some() {
-            out.push((start, candidate));
-        }
-    }
-    if !out.is_empty() {
-        return out;
-    }
-    if let Some(off) = parasolid_offset(payload) {
-        return vec![(off, payload[off..].to_vec())];
-    }
-    out
-}
-
-/// Offsets of candidate wrapped zlib members in a block payload.
-pub fn wrapped_member_offsets(payload: &[u8]) -> Vec<usize> {
     if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
         return Vec::new();
     }
-    let mut offsets = Vec::new();
-    let mut i = 0usize;
-    while i + 2 <= payload.len() {
-        if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
-            offsets.push(i);
-        }
-        i += 1;
-    }
-    offsets
-}
-
-/// Whether inflated bytes frame a valid Parasolid stream (`PS\0\0` plus a
-/// parsable header).
-pub fn is_parasolid_stream(bytes: &[u8]) -> bool {
-    bytes.starts_with(&[b'P', b'S', 0x00, 0x00]) && stream_header(bytes).is_some()
+    located
+        .into_iter()
+        .filter(|stream| stream_header(&stream.bytes).is_some())
+        .map(|stream| (stream.offset, stream.bytes))
+        .collect()
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
