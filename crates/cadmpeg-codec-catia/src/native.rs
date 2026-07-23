@@ -12,7 +12,8 @@ use crate::container;
 #[cfg(test)]
 use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 use crate::object_graph::{
-    self, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField, PayloadSubtype,
+    self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
+    PayloadSubtype,
 };
 use crate::value_block;
 
@@ -360,6 +361,9 @@ pub struct CatiaAliasRow {
     pub f2: u32,
     /// Second trailing fixed-width field.
     pub f3: u32,
+    /// Group-allocation header immediately preceding this alias core.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<AliasGroupMembership>,
 }
 
 /// One exact `7C0B` value block adjacent to its source-schema catalog.
@@ -1597,6 +1601,14 @@ fn validate_native_links(
                 alias.id
             )));
         }
+        if alias.group.is_some_and(|group| {
+            group.target_slot != (u32::from(alias.f1[2]) | ((alias.f2 & 0x00ff_ffff) << 8))
+        }) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "alias row `{}` has an invalid group target slot",
+                alias.id
+            )));
+        }
     }
     Ok(())
 }
@@ -2206,6 +2218,7 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
             design_object: None,
             f2: row.f2,
             f3: row.f3,
+            group: row.group,
         }
     }
 }

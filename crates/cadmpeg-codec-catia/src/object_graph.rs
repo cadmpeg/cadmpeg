@@ -196,6 +196,17 @@ pub enum AliasLead {
     Unclassified(u32),
 }
 
+/// Group-allocation header attached to an outer surface-alias row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AliasGroupMembership {
+    /// `ObjectModeler` node prototype.
+    pub prototype: u32,
+    /// Identity shared by the nodes in one alias group.
+    pub group_id: u32,
+    /// Four-byte allocation slot beginning in F1's third byte.
+    pub target_slot: u32,
+}
+
 /// Fixed 20-byte core of an outer `01 00 04 00` surface-alias row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceAlias {
@@ -219,6 +230,8 @@ pub struct SurfaceAlias {
     pub f2: u32,
     /// Second trailing fixed-width field.
     pub f3: u32,
+    /// Group-allocation header immediately preceding this alias core.
+    pub group: Option<AliasGroupMembership>,
 }
 
 /// Literal unresolved `7C D9` marker occurrence and bounded source context.
@@ -279,6 +292,19 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
                 AliasLead::Unclassified(lead_raw)
             };
             let f1 = [data[pos + 9], data[pos + 10], data[pos + 11]];
+            let group = pos
+                .checked_sub(24)
+                .filter(|&start| {
+                    data.get(start..start + 2) == Some(&[0x02, 0x00])
+                        && data.get(start + 10..start + 13) == Some(&[0x00, 0x05, 0x00])
+                        && data.get(start + 13..start + 17) == Some(&[0x01, 0x00, 0x00, 0x00])
+                        && data.get(start + 17..start + 20) == Some(&[0x30, 0x00, 0x00])
+                })
+                .map(|start| AliasGroupMembership {
+                    prototype: u32_le(data, start + 2).expect("bounded alias group prototype"),
+                    group_id: u32_le(data, start + 6).expect("bounded alias group identity"),
+                    target_slot: u32_le(data, pos + 11).expect("bounded alias target slot"),
+                });
             Some(SurfaceAlias {
                 pos,
                 lead,
@@ -290,6 +316,7 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
                 entity_record_ordinal: f1[2],
                 f2: u32_le(data, pos + 12)?,
                 f3: u32_le(data, pos + 16)?,
+                group,
             })
         })
         .collect()

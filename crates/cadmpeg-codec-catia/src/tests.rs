@@ -5240,6 +5240,73 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
 }
 
 #[test]
+fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
+    let mut bytes = vec![0x02, 0x00];
+    bytes.extend_from_slice(&0xafu32.to_le_bytes());
+    bytes.extend_from_slice(&0x148u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+    let mut alias = surface_alias_stream();
+    alias[15..19].copy_from_slice(&0x0000_017bu32.to_le_bytes());
+    bytes.extend(alias);
+
+    let [row] = crate::object_graph::surface_aliases(&bytes)
+        .try_into()
+        .expect("one grouped alias row");
+    let group = row.group.expect("exact group header");
+    assert_eq!(group.prototype, 0xaf);
+    assert_eq!(group.group_id, 0x148);
+    assert_eq!(group.target_slot, 0x17b);
+    assert_eq!(row.entity_record_ordinal, 0x7b);
+
+    bytes[10] = 1;
+    let [row] = crate::object_graph::surface_aliases(&bytes)
+        .try_into()
+        .expect("one ungrouped alias row");
+    assert!(row.group.is_none());
+}
+
+#[test]
+fn native_namespace_retains_and_validates_alias_group_membership() {
+    let mut bytes = vec![0x02, 0x00];
+    bytes.extend_from_slice(&0xafu32.to_le_bytes());
+    bytes.extend_from_slice(&0x148u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+    let mut alias = surface_alias_stream();
+    alias[15..19].copy_from_slice(&0x0000_017bu32.to_le_bytes());
+    bytes.extend(alias);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(
+        native.alias_rows[0]
+            .group
+            .expect("group membership")
+            .target_slot,
+        0x17b
+    );
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store grouped alias row");
+    let loaded = crate::native::CatiaNative::load(&namespace).expect("load grouped alias row");
+    assert_eq!(loaded, native);
+
+    let mut invalid = native;
+    invalid.alias_rows[0]
+        .group
+        .as_mut()
+        .expect("group membership")
+        .target_slot += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid grouped alias row");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
 fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
     let mut bytes = surface_alias_stream();
     bytes[8..12].copy_from_slice(&0xab00_0000u32.to_le_bytes());
@@ -5270,6 +5337,7 @@ fn native_namespace_retains_surface_alias_core() {
     assert_eq!(row.entity_record_ordinal, 7);
     assert!(row.design_object.is_none());
     assert_eq!((row.f2, row.f3), (0x1122_3344, 0x5566_7788));
+    assert!(row.group.is_none());
 
     let mut invalid = native;
     invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
