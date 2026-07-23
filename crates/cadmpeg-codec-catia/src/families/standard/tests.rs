@@ -3648,9 +3648,13 @@ fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
         vec![[3, 0]],
     ];
     let budget = MeshConstraintBudget::new(4_096);
-    let configurations =
-        mesh_face_endpoint_configurations(&[assignment.clone()], &candidates, &[None; 4], &budget)
-            .expect("bounded face configurations");
+    let configurations = mesh_face_endpoint_configurations(
+        std::slice::from_ref(&assignment),
+        &candidates,
+        &[None; 4],
+        &budget,
+    )
+    .expect("bounded face configurations");
 
     assert_eq!(
         configurations,

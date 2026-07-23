@@ -1624,7 +1624,7 @@ pub(crate) fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        mesh_quotient::parse_standard_mesh_incidence_candidates(
+        mesh_quotient::parse_standard_mesh_candidates(
             brep,
             &edge_faces,
             options,
@@ -1641,9 +1641,6 @@ pub(crate) fn attach_standard_topology(
                 )
             },
         )
-        .or_else(|| {
-            mesh_quotient::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options)
-        })
     }) {
         bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
