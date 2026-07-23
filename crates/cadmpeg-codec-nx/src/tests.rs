@@ -7403,6 +7403,31 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
 }
 
 #[test]
+fn damped_intersection_correction_reduces_a_rank_deficient_system() {
+    let matrix = [
+        [1.0, 0.0, -1.0, 0.0],
+        [0.0, 1.0, 0.0, -1.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 1.0, 0.0],
+    ];
+    let rhs = [2.0, -4.0, 0.0, 6.0];
+
+    let step = crate::decode::solve_damped_least_squares_4x4(matrix, rhs).unwrap();
+    let residual = std::array::from_fn::<_, 4, _>(|row| {
+        (0..4)
+            .map(|column| matrix[row][column] * step[column])
+            .sum::<f64>()
+            - rhs[row]
+    });
+
+    assert!(residual.iter().all(|value| value.abs() < 1.0e-8));
+    assert!(step.iter().all(|value| value.is_finite()));
+    for (actual, expected) in step.into_iter().zip([4.0, -2.0, 2.0, 2.0]) {
+        assert!((actual - expected).abs() < 1.0e-8);
+    }
+}
+
+#[test]
 fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
     use cadmpeg_ir::geometry::{ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};

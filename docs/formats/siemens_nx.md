@@ -669,6 +669,16 @@ The typed source record retains the support-surface, parameter-space B-curve, an
 
 A B_CURVE descriptor with `dimension = 2` stores `(u,v)` control points rather than model-space coordinates. Rational payloads store homogeneous `(u·w,v·w,w)` triples. The coordinates use the supporting surface's native parameter units. Transfer to canonical IR multiplies both plane parameters by 1000 and multiplies the axial parameter of cylinders and cones by 1000; angular parameters and NURBS knot-space parameters remain unchanged. The SP_CURVE tolerance is a model-space distance in meters and transfers to millimeters.
 
+Surface-intersection continuation uses the ordered `CHART_s` points to select
+and orient one branch. Each step independently inverts both support surfaces,
+lifts periodic parameters relative to the preceding step, and corrects the four
+support parameters against three surface-equality equations and one
+chart-tangent gauge equation. A full-rank correction uses pivoted Newton
+elimination. A rank-deficient tangential correction uses a diagonally damped
+minimum-norm least-squares step. Either path is accepted only when the two
+surface evaluations agree and the corrected point remains inside the serialized
+chart tolerance.
+
 ### 6.5 Rolling-ball blend surface (BLEND_SURF 56)
 
 A BLEND_SURF FACE is a procedural canal or envelope surface. Record layout:

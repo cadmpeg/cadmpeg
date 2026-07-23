@@ -4007,7 +4007,9 @@ fn correct_intersection_parameters(
         }
         let jacobian = intersection_parameter_jacobian(ir, surfaces, corrected, space)?;
         let matrix = [jacobian[0], jacobian[1], jacobian[2], tangent];
-        let step = solve_4x4(matrix, residual.map(|value| -value))?;
+        let rhs = residual.map(|value| -value);
+        let step =
+            solve_4x4(matrix, rhs).or_else(|| solve_damped_least_squares_4x4(matrix, rhs))?;
         for index in 0..4 {
             corrected[index] += step[index];
         }
@@ -4194,6 +4196,83 @@ fn solve_4x4(mut matrix: [[f64; 4]; 4], mut rhs: [f64; 4]) -> Option<[f64; 4]> {
         .iter()
         .all(|value| value.is_finite())
         .then_some(solution)
+}
+
+/// Return a finite correction for a consistent rank-deficient linearization.
+///
+/// Tangential surface intersections can lose one first-order direction even
+/// though the chart-selected nonlinear branch remains well defined. The
+/// column-scaled diagonal term selects a bounded minimum-norm correction
+/// without making the result depend on unlike support parameter units. The
+/// caller still requires the corrected nonlinear surfaces to agree and to
+/// remain inside the source chart tolerance, so this fallback cannot qualify a
+/// nearby branch.
+pub(crate) fn solve_damped_least_squares_4x4(
+    matrix: [[f64; 4]; 4],
+    rhs: [f64; 4],
+) -> Option<[f64; 4]> {
+    if !matrix.iter().flatten().all(|value| value.is_finite())
+        || !rhs.iter().all(|value| value.is_finite())
+    {
+        return None;
+    }
+    let normal: [[f64; 4]; 4] = std::array::from_fn(|row| {
+        std::array::from_fn(|column| {
+            (0..4)
+                .map(|index| matrix[index][row] * matrix[index][column])
+                .sum::<f64>()
+        })
+    });
+    let normal_rhs: [f64; 4] = std::array::from_fn(|column| {
+        (0..4)
+            .map(|index| matrix[index][column] * rhs[index])
+            .sum::<f64>()
+    });
+    let max_column_scale = (0..4)
+        .map(|index| normal[index][index].abs())
+        .fold(0.0_f64, f64::max)
+        .sqrt();
+    if !max_column_scale.is_finite() || max_column_scale == 0.0 {
+        return None;
+    }
+    let column_scales: [f64; 4] = std::array::from_fn(|index| {
+        normal[index][index]
+            .max(0.0)
+            .sqrt()
+            .max(max_column_scale * 1.0e-12)
+    });
+    let scaled_normal: [[f64; 4]; 4] = std::array::from_fn(|row| {
+        std::array::from_fn(|column| {
+            normal[row][column] / (column_scales[row] * column_scales[column])
+        })
+    });
+    let scaled_rhs: [f64; 4] =
+        std::array::from_fn(|column| normal_rhs[column] / column_scales[column]);
+    let initial_error = rhs.iter().map(|value| value * value).sum::<f64>();
+    for exponent in -12..=-3 {
+        let damping = 10_f64.powi(exponent);
+        let mut regularized = scaled_normal;
+        for (index, row) in regularized.iter_mut().enumerate() {
+            row[index] += damping;
+        }
+        let Some(scaled_step) = solve_4x4(regularized, scaled_rhs) else {
+            continue;
+        };
+        let step: [f64; 4] = std::array::from_fn(|index| scaled_step[index] / column_scales[index]);
+        let linear_error = (0..4)
+            .map(|row| {
+                let residual = (0..4)
+                    .map(|column| matrix[row][column] * step[column])
+                    .sum::<f64>()
+                    - rhs[row];
+                residual * residual
+            })
+            .sum::<f64>();
+        if linear_error.is_finite() && linear_error < initial_error {
+            return Some(step);
+        }
+    }
+    None
 }
 
 fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option<(f64, f64)> {
