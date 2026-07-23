@@ -206,14 +206,21 @@ an unresolved input slot remains absent without reordering the other slots.
 | ---------------------------- | ------------------------------------------------------------------------------ |
 | `/Root/UG_PART/UG_PART`      | canonical part payload: OM sections + Parasolid partition/deltas/plain streams |
 | `/Root/FastLoad/RMFastLoad`  | fast-load object-id table → active-body membership (NX OM per-class form)      |
+| `/Root/FastLoad/Structure`   | fast-load structure stream                                                      |
 | `/Root/FastLoad/JT`          | preview/JT mesh and metadata                                                   |
 | `/Root/UG_PART/DisplayJT`    | indexed embedded JT display-model documents                                   |
+| `/Root/UG_PART/LastSavedToggleInfoStream` | saved toggle-information stream                                  |
 | `/Root/images/preview`       | JPEG preview image                                                            |
 | `/Root/materialsTif/<name>`  | named TIFF material texture                                                    |
 | `/Root/*/ExternalReferences` | `EXTREFSTREAM`; child-part names, filesystem paths, occurrence handles         |
 | `/Root/part/attrs`           | `<UgAttributes>` UTF-8 XML key/value part metadata                             |
 | `/Root/qafmetadata`          | UTF-8 XML catalog for stored and logical asset paths                           |
 | `/Root/part/arrangements`    | (assemblies) UTF-8 XML arrangement config                                      |
+
+Any file entry outside these canonical paths and path families is a named
+opaque stream. Its directory identity and exact bounded payload remain one
+content unit; marker-shaped bytes inside it do not create an implicit known
+stream.
 
 `part/attrs` has an `UgAttributes` root. Each `Attribute` supplies `owner`,
 `pdmBased`, `title`/`utf8title`, `value`/`utf8value`, `version`, and an XML schema

@@ -144,7 +144,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         };
         entries.push(ContainerEntry {
             name: entry.name.clone(),
-            role: "stream".to_string(),
+            role: entry.content().label().to_string(),
             compression: "none".to_string(),
             compressed_size: compressed,
             uncompressed_size: uncompressed,

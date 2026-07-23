@@ -46,6 +46,39 @@ pub(crate) fn attach(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let annotation_stream = annotations.stream("nx:container");
+    for (ordinal, entry) in scan.container.entries.iter().enumerate() {
+        let content = entry.content();
+        if !content.retains_opaque_payload() {
+            continue;
+        }
+        let Some((offset, byte_len)) = entry.file_span else {
+            continue;
+        };
+        let (Ok(start), Ok(byte_len_usize)) = (usize::try_from(offset), usize::try_from(byte_len))
+        else {
+            continue;
+        };
+        let Some(end) = start.checked_add(byte_len_usize) else {
+            continue;
+        };
+        let Some(bytes) = scan.container.data.get(start..end) else {
+            continue;
+        };
+        let id = UnknownId(format!("nx:container-entry:opaque#{ordinal}"));
+        annotations
+            .note(&id, annotation_stream, offset)
+            .tag(content.label());
+        annotations.exactness(&id, Exactness::ByteExact);
+        unknowns.push(UnknownRecord {
+            id,
+            offset,
+            byte_len,
+            sha256: sha256_hex(bytes),
+            data: Some(bytes.to_vec()),
+            links: Vec::new(),
+        });
+    }
     let object_sections = scan.container.indexed_om_sections();
     if model.is_empty() && object_sections.is_empty() {
         return Ok(());
@@ -69,7 +102,6 @@ pub(crate) fn attach(
         compressed_elements: &model.display_jt.display_jt_compressed_elements,
     })
     .unwrap_or_default();
-    let annotation_stream = annotations.stream("nx:container");
     for (tessellation, source_offset) in display_jt_tessellations {
         annotations
             .note(&tessellation.id, annotation_stream, source_offset)

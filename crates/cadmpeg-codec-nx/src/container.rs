@@ -33,6 +33,82 @@ pub enum Region {
     Footer,
 }
 
+/// Stable semantic classification of one named SPLMSSTR entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntryContent {
+    Directory,
+    PartPayload,
+    ActiveBodyIndex,
+    FastLoadStructure,
+    FastLoadJt,
+    DisplayJt,
+    ExternalReferences,
+    SaveToggleInfo,
+    PreviewImage,
+    MaterialTexture,
+    Arrangements,
+    PartAttributes,
+    AssetCatalog,
+    NamedOpaqueStream,
+}
+
+impl EntryContent {
+    /// Stable inspection label for this content family.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Directory => "directory",
+            Self::PartPayload => "part-payload",
+            Self::ActiveBodyIndex => "active-body-index",
+            Self::FastLoadStructure => "fast-load-structure",
+            Self::FastLoadJt => "fast-load-jt",
+            Self::DisplayJt => "display-jt",
+            Self::ExternalReferences => "external-references",
+            Self::SaveToggleInfo => "save-toggle-info",
+            Self::PreviewImage => "preview-image",
+            Self::MaterialTexture => "material-texture",
+            Self::Arrangements => "arrangements",
+            Self::PartAttributes => "part-attributes",
+            Self::AssetCatalog => "asset-catalog",
+            Self::NamedOpaqueStream => "named-opaque-stream",
+        }
+    }
+
+    /// Whether the codec retains the complete payload as named opaque content.
+    pub fn retains_opaque_payload(self) -> bool {
+        matches!(
+            self,
+            Self::FastLoadStructure
+                | Self::FastLoadJt
+                | Self::SaveToggleInfo
+                | Self::NamedOpaqueStream
+        )
+    }
+}
+
+impl DirEntry {
+    /// Classify this entry by its canonical storage path.
+    pub(crate) fn content(&self) -> EntryContent {
+        if self.file_span.is_none() {
+            return EntryContent::Directory;
+        }
+        match self.name.as_str() {
+            "/Root/UG_PART/UG_PART" => EntryContent::PartPayload,
+            "/Root/FastLoad/RMFastLoad" => EntryContent::ActiveBodyIndex,
+            "/Root/FastLoad/Structure" => EntryContent::FastLoadStructure,
+            "/Root/FastLoad/JT" => EntryContent::FastLoadJt,
+            "/Root/UG_PART/DisplayJT" => EntryContent::DisplayJt,
+            "/Root/UG_PART/LastSavedToggleInfoStream" => EntryContent::SaveToggleInfo,
+            "/Root/images/preview" => EntryContent::PreviewImage,
+            "/Root/part/arrangements" => EntryContent::Arrangements,
+            "/Root/part/attrs" => EntryContent::PartAttributes,
+            "/Root/qafmetadata" => EntryContent::AssetCatalog,
+            name if name.ends_with("/ExternalReferences") => EntryContent::ExternalReferences,
+            name if name.starts_with("/Root/materialsTif/") => EntryContent::MaterialTexture,
+            _ => EntryContent::NamedOpaqueStream,
+        }
+    }
+}
+
 /// One 12-byte row in the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SegmentIndexRow {

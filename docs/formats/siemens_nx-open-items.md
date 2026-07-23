@@ -34,6 +34,9 @@ This document records unresolved NX `.prt` byte semantics.
 
 ## Assembly and material data
 
+- The field layouts of `/Root/FastLoad/Structure`,
+  `/Root/FastLoad/JT`, and `/Root/UG_PART/LastSavedToggleInfoStream` are
+  unspecified.
 - The semantic role of each nonzero `/Root/UG_PART/DisplayJT` outer-index row value is unspecified.
 - Assembly occurrence placement semantics are unspecified. `hostglobalvariables` stores expression values, including pattern angles and counts; metric radii and base frames lack defined locations.
 - The mapping from child-bound handle sets to distinct assembly occurrences is unspecified.

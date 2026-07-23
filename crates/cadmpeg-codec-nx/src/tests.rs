@@ -9158,6 +9158,99 @@ fn inspect_enumerates_streams_and_names_schema() {
 }
 
 #[test]
+fn inspect_classifies_named_container_streams() {
+    let file = prt_with_named_payloads(&[
+        ("/Root/FastLoad/RMFastLoad", vec![1]),
+        ("/Root/FastLoad/Structure", vec![2]),
+        ("/Root/FastLoad/JT", vec![3]),
+        ("/Root/UG_PART/DisplayJT", vec![4]),
+        ("/Root/UG_PART/ExternalReferences", vec![5]),
+        ("/Root/UG_PART/LastSavedToggleInfoStream", vec![6]),
+        ("/Root/images/preview", vec![7]),
+        ("/Root/materialsTif/Steel", vec![8]),
+        ("/Root/part/arrangements", vec![9]),
+        ("/Root/part/attrs", vec![10]),
+        ("/Root/qafmetadata", vec![11]),
+        ("/Root/vendor/private", vec![12]),
+    ]);
+    let summary = NxCodec
+        .inspect(&mut Cursor::new(file), &InspectOptions::default())
+        .unwrap();
+    let roles = summary
+        .entries
+        .iter()
+        .map(|entry| (entry.name.as_str(), entry.role.as_str()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(roles["/Root/FastLoad/RMFastLoad"], "active-body-index");
+    assert_eq!(roles["/Root/FastLoad/Structure"], "fast-load-structure");
+    assert_eq!(roles["/Root/FastLoad/JT"], "fast-load-jt");
+    assert_eq!(roles["/Root/UG_PART/DisplayJT"], "display-jt");
+    assert_eq!(
+        roles["/Root/UG_PART/ExternalReferences"],
+        "external-references"
+    );
+    assert_eq!(
+        roles["/Root/UG_PART/LastSavedToggleInfoStream"],
+        "save-toggle-info"
+    );
+    assert_eq!(roles["/Root/images/preview"], "preview-image");
+    assert_eq!(roles["/Root/materialsTif/Steel"], "material-texture");
+    assert_eq!(roles["/Root/part/arrangements"], "arrangements");
+    assert_eq!(roles["/Root/part/attrs"], "part-attributes");
+    assert_eq!(roles["/Root/qafmetadata"], "asset-catalog");
+    assert_eq!(roles["/Root/vendor/private"], "named-opaque-stream");
+}
+
+#[test]
+fn decode_retains_unsupported_named_stream_payloads() {
+    let structure = b"opaque fast-load structure".to_vec();
+    let fast_load_jt = b"opaque fast-load JT".to_vec();
+    let toggle = b"opaque save-toggle state".to_vec();
+    let vendor = b"opaque vendor stream".to_vec();
+    let file = prt_with_named_payloads(&[
+        ("/Root/FastLoad/Structure", structure.clone()),
+        ("/Root/FastLoad/JT", fast_load_jt.clone()),
+        ("/Root/UG_PART/LastSavedToggleInfoStream", toggle.clone()),
+        ("/Root/vendor/private", vendor.clone()),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let unknowns = result.ir.native_unknowns("nx").unwrap();
+    assert_eq!(unknowns.len(), 4);
+    assert_eq!(
+        result
+            .source_fidelity
+            .retained_records
+            .iter()
+            .map(|record| record.byte_len)
+            .collect::<Vec<_>>(),
+        vec![
+            structure.len() as u64,
+            fast_load_jt.len() as u64,
+            toggle.len() as u64,
+            vendor.len() as u64
+        ]
+    );
+    assert!(unknowns
+        .iter()
+        .all(|unknown| unknown.id.0.starts_with("nx:container-entry:opaque#")));
+    for name in [
+        "/Root/FastLoad/Structure",
+        "/Root/FastLoad/JT",
+        "/Root/UG_PART/LastSavedToggleInfoStream",
+        "/Root/vendor/private",
+    ] {
+        assert!(result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(name)));
+    }
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{

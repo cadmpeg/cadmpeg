@@ -127,6 +127,22 @@ fn decode_result(
 }
 
 fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
+    for entry in &scan.container.entries {
+        let content = entry.content();
+        if content.retains_opaque_payload() {
+            report.losses.push(LossNote {
+                code: LossCode::RecordNotTyped,
+                category: LossCategory::Other,
+                severity: Severity::Info,
+                message: format!(
+                    "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not typed.",
+                    entry.name,
+                    content.label()
+                ),
+                provenance: None,
+            });
+        }
+    }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
             report.losses.push(LossNote {
