@@ -8454,7 +8454,10 @@ fn section_dimension_constraints(
                 if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
                     return None;
                 }
-                if relation.relation_type == 5 && relation.sign == 1 {
+                if relation.relation_type == 5
+                    && relation.sign == 1
+                    && matches!(dimension.dimension_type, 3 | 4)
+                {
                     let vectors = relation.operand_vectors?;
                     let [Some(first_point), Some(0), Some(second_point), Some(0)] = vectors[0]
                     else {
@@ -8490,6 +8493,7 @@ fn section_dimension_constraints(
                 }
                 if relation.relation_type == 14
                     && relation.sign == 1
+                    && matches!(dimension.dimension_type, 3 | 4)
                     && relation.operand_vectors?[1] == [Some(0); 4]
                     && relation.operand_vectors?[2] == [Some(15), Some(0), Some(0), Some(0)]
                 {
@@ -8499,19 +8503,24 @@ fn section_dimension_constraints(
                     };
                     let matching = segments
                         .iter()
-                        .filter(|segment| {
-                            segment.kind == crate::feature::FeatureSegmentKind::Arc
-                                && segment.radius_ref == Some(radius_id)
-                        })
+                        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+                        .map(|segment| (segment.external_id, segment.radius_ref))
+                        .chain(
+                            definition
+                                .segments
+                                .iter()
+                                .flat_map(|table| &table.opaque_rows)
+                                .filter(|segment| segment.kind == 10)
+                                .map(|segment| (segment.external_id, segment.radius_ref)),
+                        )
+                        .filter(|(_, radius_ref)| *radius_ref == Some(radius_id))
                         .collect::<Vec<_>>();
-                    let [segment] = matching.as_slice() else {
+                    let [(external_id, _)] = matching.as_slice() else {
                         return None;
                     };
-                    known_entities
-                        .contains(&segment.external_id)
-                        .then_some(())?;
+                    known_entities.contains(external_id).then_some(())?;
                     return Some(circular_dimension_constraint(
-                        sketch_entity_id(sketch, segment.external_id),
+                        sketch_entity_id(sketch, *external_id),
                         parameter,
                         dimension.dimension_type,
                     ));
