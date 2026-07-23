@@ -31,6 +31,7 @@ mod drawings;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
+mod index;
 mod pmi;
 mod presentation;
 mod product;
@@ -43,6 +44,8 @@ mod subd;
 mod topology;
 
 pub use report::{Check, Finding, ValidationReport};
+
+use index::ModelIndex;
 
 use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
@@ -63,7 +66,7 @@ use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
     check_coedge_pairing, check_loops, check_references, check_shell_connectivity, check_units,
-    check_wire_topology, IdSets,
+    check_wire_topology,
 };
 
 /// A radius/length that is not a finite positive number is invalid geometry.
@@ -77,13 +80,14 @@ fn nonpositive(x: f64) -> bool {
 fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, HashSet<String>) {
     let mut findings = Vec::new();
 
-    let ids = IdSets::build(ir);
+    // One shared id index for the whole run: per-arena `id -> entity` maps, the
+    // native unknown-record presence set, and `all_ids`, the set of every entity
+    // id in the document that reference targets resolve against.
+    let index = ModelIndex::build(ir);
     check_version(ir, &mut findings);
-    // The identity walk enumerates every entity id in the product document;
-    // native links resolve against that set.
-    let all_ids = check_identity_and_order(ir, &mut findings);
+    check_identity_and_order(ir, &mut findings);
     check_units(ir, &mut findings);
-    check_references(ir, &ids, &mut findings);
+    check_references(ir, &index, &mut findings);
     check_step_products(ir, &mut findings);
     check_pmi(ir, &mut findings);
     check_loops(ir, &mut findings);
@@ -91,7 +95,7 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ir, &mut findings);
-    check_native_links(ir, &all_ids, &mut findings);
+    check_native_links(ir, &index, &mut findings);
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings);
     check_pcurve_surface_consistency(ir, &mut findings);
@@ -104,10 +108,11 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_sketches(ir, &mut findings);
     check_spreadsheets(ir, &mut findings);
     check_component_products(ir, &mut findings);
-    check_presentation(ir, &all_ids, &mut findings);
-    check_drawings(ir, &all_ids, &mut findings);
-    check_semantic_annotations(ir, &all_ids, &mut findings);
+    check_presentation(ir, &index.all_ids, &mut findings);
+    check_drawings(ir, &index, &mut findings);
+    check_semantic_annotations(ir, &index, &mut findings);
 
+    let ModelIndex { all_ids, .. } = index;
     (
         ValidationReport {
             entity_counts: entity_counts(ir),

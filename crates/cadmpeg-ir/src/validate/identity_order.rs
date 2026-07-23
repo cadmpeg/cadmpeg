@@ -105,11 +105,11 @@ macro_rules! define_model_identity_checks {
 }
 crate::document::arena_registry!(define_model_identity_checks);
 
-/// Run the identity and arena-order checks, returning the set of every entity
-/// id in the document (model arenas, unknowns, and native records). Downstream
-/// checks resolve annotation and link targets against this set instead of
-/// re-enumerating the id universe.
-pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) -> HashSet<String> {
+/// Run the identity and arena-order checks. Global uniqueness is detected while
+/// accumulating a local `seen` set; the id universe that downstream reference
+/// checks resolve against is [`super::ModelIndex::all_ids`], built from the same
+/// arenas.
+pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut seen = HashSet::new();
     check_model_identity_and_order(ir, &mut seen, findings);
     let native_ids = collect_native_ids(ir);
@@ -123,7 +123,6 @@ pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) 
     for (arena, ids) in by_arena {
         check_order(arena, ids, findings);
     }
-    seen
 }
 
 pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {

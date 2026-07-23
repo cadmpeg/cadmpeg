@@ -3,21 +3,21 @@
 
 use std::collections::HashSet;
 
-use super::{Check, Finding, Severity};
+use super::{Check, Finding, ModelIndex, Severity};
 use crate::document::CadIr;
 
-pub(super) fn check_drawings(ir: &CadIr, all_ids: &HashSet<String>, findings: &mut Vec<Finding>) {
+pub(super) fn check_drawings(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     let mut orders = HashSet::new();
     for drawing in &ir.model.drawings {
-        let refs_valid = all_ids.contains(&drawing.object)
-            && all_ids.contains(&drawing.native_ref)
+        let refs_valid = index.contains(&drawing.object)
+            && index.contains(&drawing.native_ref)
             && drawing
                 .template
                 .as_ref()
-                .is_none_or(|id| all_ids.contains(id))
-            && drawing.assets.iter().all(|id| all_ids.contains(id))
+                .is_none_or(|id| index.contains(id))
+            && drawing.assets.iter().all(|id| index.contains(id))
             && drawing.relationships.values().flatten().all(|target| {
-                target.target.as_ref().is_none_or(|id| all_ids.contains(id))
+                target.target.as_ref().is_none_or(|id| index.contains(id))
                     && (target.is_null
                         || target.target.is_some()
                         || (target.external_document.is_some() && target.external_object.is_some()))

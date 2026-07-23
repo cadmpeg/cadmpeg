@@ -158,11 +158,7 @@ fn field_path_resolves(mut value: &serde_json::Value, path: &str) -> bool {
     true
 }
 
-pub(super) fn check_native_links(
-    ir: &CadIr,
-    all_ids: &HashSet<String>,
-    findings: &mut Vec<Finding>,
-) {
+pub(super) fn check_native_links(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     let native_ids = collect_native_ids(ir)
         .into_iter()
         .map(|(_, id)| id)
@@ -311,7 +307,7 @@ pub(super) fn check_native_links(
     let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
     for record in &native_unknowns {
         for target in &record.links {
-            if !all_ids.contains(target) {
+            if !index.contains(target) {
                 findings.push(Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
@@ -328,7 +324,7 @@ pub(super) fn check_native_links(
                     continue;
                 };
                 for target in links.iter().filter_map(serde_json::Value::as_str) {
-                    if !all_ids.contains(target) {
+                    if !index.contains(target) {
                         findings.push(Finding {
                             check: Check::NativeLinks,
                             severity: Severity::Error,
