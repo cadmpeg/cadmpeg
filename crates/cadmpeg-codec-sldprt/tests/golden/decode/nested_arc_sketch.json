@@ -1,0 +1,876 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "sldprt:brep:body#0",
+          "kind": "solid",
+          "regions": [
+            "sldprt:brep:region#0"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "sldprt:brep:edge#40",
+          "id": "sldprt:brep:coedge#30",
+          "next": "sldprt:brep:coedge#31",
+          "owner_loop": "sldprt:brep:loop#20",
+          "previous": "sldprt:brep:coedge#32",
+          "radial_next": "sldprt:brep:coedge#30",
+          "sense": "forward"
+        },
+        {
+          "edge": "sldprt:brep:edge#41",
+          "id": "sldprt:brep:coedge#31",
+          "next": "sldprt:brep:coedge#32",
+          "owner_loop": "sldprt:brep:loop#20",
+          "previous": "sldprt:brep:coedge#30",
+          "radial_next": "sldprt:brep:coedge#31",
+          "sense": "forward"
+        },
+        {
+          "edge": "sldprt:brep:edge#42",
+          "id": "sldprt:brep:coedge#32",
+          "next": "sldprt:brep:coedge#30",
+          "owner_loop": "sldprt:brep:loop#20",
+          "previous": "sldprt:brep:coedge#31",
+          "radial_next": "sldprt:brep:coedge#32",
+          "sense": "forward"
+        }
+      ],
+      "components": [],
+      "configurations": [
+        {
+          "active": true,
+          "bodies": [
+            "sldprt:brep:body#0"
+          ],
+          "id": "sldprt:model:configuration#partition:0",
+          "name": "Config-0",
+          "ordinal": 0,
+          "source_index": 0
+        }
+      ],
+      "curves": [],
+      "drawings": [],
+      "edges": [
+        {
+          "end": "sldprt:brep:vertex#51",
+          "id": "sldprt:brep:edge#40",
+          "start": "sldprt:brep:vertex#50"
+        },
+        {
+          "end": "sldprt:brep:vertex#52",
+          "id": "sldprt:brep:edge#41",
+          "start": "sldprt:brep:vertex#51"
+        },
+        {
+          "end": "sldprt:brep:vertex#50",
+          "id": "sldprt:brep:edge#42",
+          "start": "sldprt:brep:vertex#52"
+        }
+      ],
+      "faces": [
+        {
+          "id": "sldprt:brep:face#10",
+          "loops": [
+            "sldprt:brep:loop#20"
+          ],
+          "sense": "forward",
+          "shell": "sldprt:brep:shell#0",
+          "surface": "sldprt:brep:surf#10"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary_role": "unspecified",
+          "coedges": [
+            "sldprt:brep:coedge#30",
+            "sldprt:brep:coedge#31",
+            "sldprt:brep:coedge#32"
+          ],
+          "face": "sldprt:brep:face#10",
+          "id": "sldprt:brep:loop#20"
+        }
+      ],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "sldprt:brep:point#60",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "sldprt:brep:point#61",
+          "position": {
+            "x": 1000.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "sldprt:brep:point#62",
+          "position": {
+            "x": 0.0,
+            "y": 1000.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_occurrences": [],
+      "products": [],
+      "regions": [
+        {
+          "body": "sldprt:brep:body#0",
+          "id": "sldprt:brep:region#0",
+          "shells": [
+            "sldprt:brep:shell#0"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [
+            "sldprt:brep:face#10"
+          ],
+          "id": "sldprt:brep:shell#0",
+          "region": "sldprt:brep:region#0"
+        }
+      ],
+      "sketch_constraints": [
+        {
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "entity": "sldprt:model:sketch-entity#247:0:0:0",
+                "kind": "start"
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#247:0:0:2",
+                "kind": "end"
+              }
+            ]
+          },
+          "id": "sldprt:model:sketch-constraint#247:0:0:0",
+          "sketch": "sldprt:model:sketch#247:0:0"
+        },
+        {
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "entity": "sldprt:model:sketch-entity#247:0:0:0",
+                "kind": "end"
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#247:0:0:1",
+                "kind": "start"
+              }
+            ]
+          },
+          "id": "sldprt:model:sketch-constraint#247:0:0:1",
+          "sketch": "sldprt:model:sketch#247:0:0"
+        },
+        {
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "entity": "sldprt:model:sketch-entity#247:0:0:1",
+                "kind": "end"
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#247:0:0:2",
+                "kind": "start"
+              }
+            ]
+          },
+          "id": "sldprt:model:sketch-constraint#247:0:0:2",
+          "sketch": "sldprt:model:sketch#247:0:0"
+        }
+      ],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "0:sldprt:brep:point#60",
+            "0:sldprt:brep:point#61"
+          ],
+          "geometry": {
+            "center": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "end_angle": 1.5707963267948966,
+            "kind": "arc",
+            "radius": 1000.0,
+            "start_angle": 0.0
+          },
+          "geometry_ref": "0:sldprt:brep:curve#70",
+          "id": "sldprt:model:sketch-entity#247:0:0:0",
+          "native_ref": "0:sldprt:brep:edge#40",
+          "sketch": "sldprt:model:sketch#247:0:0"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "0:sldprt:brep:point#61",
+            "0:sldprt:brep:point#62"
+          ],
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 0.0,
+              "v": 1000.0
+            }
+          },
+          "id": "sldprt:model:sketch-entity#247:0:0:1",
+          "native_ref": "0:sldprt:brep:edge#41",
+          "sketch": "sldprt:model:sketch#247:0:0"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "0:sldprt:brep:point#62",
+            "0:sldprt:brep:point#60"
+          ],
+          "geometry": {
+            "end": {
+              "u": 1000.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "sldprt:model:sketch-entity#247:0:0:2",
+          "native_ref": "0:sldprt:brep:edge#42",
+          "sketch": "sldprt:model:sketch#247:0:0"
+        }
+      ],
+      "sketches": [
+        {
+          "configuration": "0",
+          "id": "sldprt:model:sketch#247:0:0",
+          "name": "feature input arc sketch",
+          "native_ref": "sldprt:feature-input:resolved-features#247",
+          "placement": {
+            "kind": "resolved",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "profiles": [
+            [
+              {
+                "entity": "sldprt:model:sketch-entity#247:0:0:0",
+                "reversed": false
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#247:0:0:1",
+                "reversed": false
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#247:0:0:2",
+                "reversed": false
+              }
+            ]
+          ]
+        }
+      ],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "sldprt:brep:surf#10"
+        }
+      ],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "sldprt:brep:vertex#50",
+          "point": "sldprt:brep:point#60"
+        },
+        {
+          "id": "sldprt:brep:vertex#51",
+          "point": "sldprt:brep:point#61"
+        },
+        {
+          "id": "sldprt:brep:vertex#52",
+          "point": "sldprt:brep:point#62"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "sldprt": {
+        "arenas": {
+          "configurations": [],
+          "feature_histories": [],
+          "feature_input_body_selections": [],
+          "feature_input_classes": [
+            {
+              "id": "sldprt:feature-input:class#247:0",
+              "name": "sgPointHandle",
+              "offset": 0,
+              "ordinal": 0,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "role": "sketch_entity"
+            },
+            {
+              "id": "sldprt:feature-input:class#247:106",
+              "name": "sgPntPntDist",
+              "offset": 106,
+              "ordinal": 3,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "role": "sketch_constraint"
+            },
+            {
+              "id": "sldprt:feature-input:class#247:19",
+              "name": "sgLineHandle",
+              "offset": 19,
+              "ordinal": 1,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "role": "sketch_entity"
+            },
+            {
+              "id": "sldprt:feature-input:class#247:37",
+              "name": "sgArcHandle",
+              "offset": 37,
+              "ordinal": 2,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "role": "sketch_entity"
+            }
+          ],
+          "feature_input_edge_selections": [],
+          "feature_input_generated_surface_identities": [],
+          "feature_input_lanes": [
+            {
+              "body_selections": [],
+              "classes": [],
+              "configuration": "0",
+              "edge_selections": [],
+              "generated_surface_identities": [],
+              "id": "sldprt:feature-input:resolved-features#247",
+              "names": [],
+              "native_payload": "//8BAA0Ac2dQb2ludEhhbmRsZf//AQAMAHNnTGluZUhhbmRsZf//AQALAHNnQXJjSGFuZGxlBID//v8HUwBrAGUAdABjAGgAMQAEgP/+/w1CAG8AcwBzAC0ARQB4AHQAcgB1AGQAZQAxAP//AQAMAHNnUG50UG50RGlzdASA//7/AkQAMQAAAAAAAAAAQP////8AAAAA//7/AAAAmpmZmZmZmT8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAANaAAAD/////AAAAANaAAgD/////AAAAAP//HwAD//////////8AAIC/AAAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAABAAAA//8fAAP//////////wAAgL8CAAAAAAAEAAIAAQAAAAAAgL8AAAQAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAAAIAAAD//x8AA///////////AACAvwEAAAAAAAQAAgABAAAAAACAvwAABAAAAAAAAAAAAAAAAAAAAAAIQAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAAAAAAAAwAAAP//HwAD//////////8AAIC/AQAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAABBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAAEAAAAUFMAAAAYZmVhdHVyZSBpbnB1dCBhcmMgc2tldGNoAAASU0NIX1NXXzMzMTAzXzExMDAwADIAZAAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfAEYAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAOAAoAAAAAAADCvJKPmW4AAAAAAAAAFAAAAGQrAAAAAAAAAAAAAAAPABQAAAAAAAAAHgAKAAAAEQAeAAAAFAAAAB8AMgAAACgAAAAAKwARAB8AAAAUAAAAIAAzAAAAKQAAAAArABEAIAAAABQAAAAeADQAAAAqAAAAACsAEAAoAAAAAAAAwrySj5luAAAAAAAAAAAARgAAAAAAEAApAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEgAyAAAAAAAAAAAAAAAAADzCvJKPmW4AAAASADMAAAAAAAAAAAAAAAAAPcK8ko+ZbgAAABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAAAHQA8AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APQAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAdAD4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+              "references": [],
+              "relation_bindings": [],
+              "relation_instances": [],
+              "scalars": [],
+              "sketch_entities": [],
+              "surface_selections": []
+            }
+          ],
+          "feature_input_names": [
+            {
+              "id": "sldprt:feature-input:name#247:124",
+              "object_id": 4294967295,
+              "offset": 124,
+              "ordinal": 2,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "value": "D1"
+            },
+            {
+              "id": "sldprt:feature-input:name#247:54",
+              "object_id": 7536751,
+              "offset": 54,
+              "ordinal": 0,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "value": "Sketch1"
+            },
+            {
+              "id": "sldprt:feature-input:name#247:74",
+              "object_id": 1349807696,
+              "offset": 74,
+              "ordinal": 1,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "value": "Boss-Extrude1"
+            }
+          ],
+          "feature_input_references": [
+            {
+              "id": "sldprt:feature-input:reference#247:199",
+              "kind": "d6",
+              "object_index": 0,
+              "offset": 199,
+              "ordinal": 0,
+              "parent": "sldprt:feature-input:resolved-features#247"
+            },
+            {
+              "id": "sldprt:feature-input:reference#247:211",
+              "kind": "d6",
+              "object_index": 2,
+              "offset": 211,
+              "ordinal": 1,
+              "parent": "sldprt:feature-input:resolved-features#247"
+            }
+          ],
+          "feature_input_relation_bindings": [
+            {
+              "class_ref": "sldprt:feature-input:class#247:106",
+              "family": "point_point_distance",
+              "id": "sldprt:feature-input:relation-binding#247:106",
+              "offset": 106,
+              "ordinal": 0,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "scalar_ref": "sldprt:feature-input:scalar#247:156"
+            }
+          ],
+          "feature_input_relation_instances": [],
+          "feature_input_scalars": [
+            {
+              "entity_indices": [
+                0,
+                2
+              ],
+              "id": "sldprt:feature-input:scalar#247:156",
+              "name": "sldprt:feature-input:name#247:124",
+              "object_id": 1,
+              "offset": 156,
+              "operands": [
+                {
+                  "entity_index": 0,
+                  "kind": "d6",
+                  "offset": 199,
+                  "reference_ref": "sldprt:feature-input:reference#247:199"
+                },
+                {
+                  "entity_index": 2,
+                  "kind": "d6",
+                  "offset": 211,
+                  "reference_ref": "sldprt:feature-input:reference#247:211"
+                }
+              ],
+              "ordinal": 0,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "role": "driving",
+              "value": 0.025
+            }
+          ],
+          "feature_input_surface_selections": [],
+          "features": [],
+          "pmi_dimensions": [],
+          "sketch_input_entities": [
+            {
+              "id": "sldprt:feature-input:sketch-entity#247:223",
+              "kind": "point",
+              "local_id": 1,
+              "object_index": 0,
+              "offset": 223,
+              "ordinal": 0,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "state_value": 1.0
+            },
+            {
+              "id": "sldprt:feature-input:sketch-entity#247:315",
+              "kind": {
+                "relation": "angle"
+              },
+              "local_id": 2,
+              "object_index": 1,
+              "offset": 315,
+              "ordinal": 1,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "state_value": 2.0
+            },
+            {
+              "id": "sldprt:feature-input:sketch-entity#247:407",
+              "kind": {
+                "relation": "distance"
+              },
+              "local_id": 3,
+              "object_index": 2,
+              "offset": 407,
+              "ordinal": 2,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "state_value": 3.0
+            },
+            {
+              "id": "sldprt:feature-input:sketch-entity#247:499",
+              "kind": {
+                "relation": "distance"
+              },
+              "local_id": 4,
+              "object_index": 3,
+              "offset": 499,
+              "ordinal": 3,
+              "parent": "sldprt:feature-input:resolved-features#247",
+              "state_value": 4.0
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "sldprt:file:block#247"
+            },
+            {
+              "id": "sldprt:file:block#8"
+            }
+          ]
+        },
+        "version": 13
+      }
+    },
+    "source": {
+      "attributes": {
+        "active_parasolid_block": "Contents/Config-0-Partition",
+        "block_count": "2",
+        "bmp_thumbnail_count": "0",
+        "brep_semantic_sha256": "b015d28146110e43442bf84e96dbdffa912522d2e4e5902854454c46e23edd94",
+        "compound_stream_count": "0",
+        "outer_version": "0x00000004",
+        "parasolid_description": "partition body",
+        "parasolid_schema": "SCH_SW_33103_11000",
+        "png_preview_count": "0",
+        "semantic_sha256": "495fb6bd33e6ccb0e8f2a333edd6a15d3bc266711edb4ec288cd7df964892d02",
+        "sldprt_configuration_feature_states_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_configuration_parameter_values_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_sketch_sha256": "237c532d1974c77784adb388e4416886ac36798b2119d7bc9a9406dda543f0fb",
+        "sldprt_neutral_configuration_sha256": "3ade8676fb720077ea4da113c46a37bfdbe50630cef16fb32535a6d80d73d6a2",
+        "sldprt_neutral_feature_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_sketch_constraint_sha256": "6c86eac63de817e9820f8d6bca90688a2fb73a1eff5268cf38c0e68759580279",
+        "sldprt_neutral_sketch_sha256": "270848455a90b7acec8103ed85b6a75bbc8ede40ff8814e0afa05b87b4d8a24c"
+      },
+      "format": "sldprt"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "sldprt",
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "category": "topology",
+        "code": "topology_gauge_substituted",
+        "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "severity": "warning"
+      },
+      {
+        "category": "other",
+        "code": "feature_history_retained",
+        "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
+        "severity": "warning"
+      },
+      {
+        "category": "other",
+        "code": "feature_history_retained",
+        "message": "1 native sketch relation record(s) have no projected neutral constraint.",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "outer version word: 0x00000004; 2 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
+      "active Parasolid B-rep candidate: Contents/Config-0-Partition (544 bytes, schema SCH_SW_33103_11000)",
+      "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "sldprt:brep:body#0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:region#0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:shell#0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:surf#10": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.u_axis": "derived"
+          }
+        },
+        "sldprt:model:sketch#247:0:0": {
+          "entity": "derived"
+        },
+        "sldprt:model:sketch-constraint#247:0:0:0": {
+          "entity": "derived"
+        },
+        "sldprt:model:sketch-constraint#247:0:0:1": {
+          "entity": "derived"
+        },
+        "sldprt:model:sketch-constraint#247:0:0:2": {
+          "entity": "derived"
+        },
+        "sldprt:model:sketch-entity#247:0:0:0": {
+          "entity": "derived"
+        },
+        "sldprt:model:sketch-entity#247:0:0:1": {
+          "entity": "derived"
+        },
+        "sldprt:model:sketch-entity#247:0:0:2": {
+          "entity": "derived"
+        }
+      },
+      "provenance": {
+        "sldprt:brep:body#0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "synthetic_grouping"
+        },
+        "sldprt:brep:coedge#30": {
+          "offset": 146,
+          "stream": 0,
+          "tag": "00_11"
+        },
+        "sldprt:brep:coedge#31": {
+          "offset": 169,
+          "stream": 0,
+          "tag": "00_11"
+        },
+        "sldprt:brep:coedge#32": {
+          "offset": 192,
+          "stream": 0,
+          "tag": "00_11"
+        },
+        "sldprt:brep:edge#40": {
+          "offset": 215,
+          "stream": 0,
+          "tag": "00_10"
+        },
+        "sldprt:brep:edge#41": {
+          "offset": 245,
+          "stream": 0,
+          "tag": "00_10"
+        },
+        "sldprt:brep:edge#42": {
+          "offset": 275,
+          "stream": 0,
+          "tag": "00_10"
+        },
+        "sldprt:brep:face#10": {
+          "offset": 91,
+          "stream": 0,
+          "tag": "00_0e"
+        },
+        "sldprt:brep:loop#20": {
+          "offset": 130,
+          "stream": 0,
+          "tag": "00_0f"
+        },
+        "sldprt:brep:point#60": {
+          "offset": 383,
+          "stream": 0,
+          "tag": "00_1d"
+        },
+        "sldprt:brep:point#61": {
+          "offset": 423,
+          "stream": 0,
+          "tag": "00_1d"
+        },
+        "sldprt:brep:point#62": {
+          "offset": 463,
+          "stream": 0,
+          "tag": "00_1d"
+        },
+        "sldprt:brep:region#0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "synthetic_grouping"
+        },
+        "sldprt:brep:shell#0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "synthetic_grouping"
+        },
+        "sldprt:brep:surf#10": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "compact_surface"
+        },
+        "sldprt:brep:vertex#50": {
+          "offset": 305,
+          "stream": 0,
+          "tag": "00_12"
+        },
+        "sldprt:brep:vertex#51": {
+          "offset": 331,
+          "stream": 0,
+          "tag": "00_12"
+        },
+        "sldprt:brep:vertex#52": {
+          "offset": 357,
+          "stream": 0,
+          "tag": "00_12"
+        },
+        "sldprt:feature-input:resolved-features#247": {
+          "offset": 0,
+          "stream": 1,
+          "tag": "ResolvedFeatures"
+        },
+        "sldprt:feature-input:sketch-entity#247:223": {
+          "offset": 223,
+          "stream": 1,
+          "tag": "ff_ff_1f_00_03"
+        },
+        "sldprt:feature-input:sketch-entity#247:315": {
+          "offset": 315,
+          "stream": 1,
+          "tag": "ff_ff_1f_00_03"
+        },
+        "sldprt:feature-input:sketch-entity#247:407": {
+          "offset": 407,
+          "stream": 1,
+          "tag": "ff_ff_1f_00_03"
+        },
+        "sldprt:feature-input:sketch-entity#247:499": {
+          "offset": 499,
+          "stream": 1,
+          "tag": "ff_ff_1f_00_03"
+        },
+        "sldprt:file:block#247": {
+          "offset": 247,
+          "stream": 1,
+          "tag": "parasolid"
+        },
+        "sldprt:file:block#8": {
+          "offset": 8,
+          "stream": 0,
+          "tag": "parasolid"
+        },
+        "sldprt:file:source-image#0": {
+          "offset": 0,
+          "stream": 2,
+          "tag": "source_image"
+        },
+        "sldprt:model:sketch#247:0:0": {
+          "offset": 591,
+          "stream": 1,
+          "tag": "feature_input_profile"
+        },
+        "sldprt:model:sketch-constraint#247:0:0:0": {
+          "offset": 0,
+          "stream": 1,
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-constraint#247:0:0:1": {
+          "offset": 0,
+          "stream": 1,
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-constraint#247:0:0:2": {
+          "offset": 0,
+          "stream": 1,
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-entity#247:0:0:0": {
+          "offset": 0,
+          "stream": 1,
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:model:sketch-entity#247:0:0:1": {
+          "offset": 0,
+          "stream": 1,
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:model:sketch-entity#247:0:0:2": {
+          "offset": 0,
+          "stream": 1,
+          "tag": "feature_input_profile_edge"
+        }
+      },
+      "streams": [
+        "Contents/Config-0-Partition",
+        "Contents/Config-0-ResolvedFeatures",
+        "source"
+      ]
+    },
+    "retained_records": [
+      {
+        "byte_len": 544,
+        "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
+        "id": "sldprt:file:block#8",
+        "offset": 0,
+        "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
+        "stream": "Contents/Config-0-Partition"
+      },
+      {
+        "byte_len": 1244,
+        "data": "//8BAA0Ac2dQb2ludEhhbmRsZf//AQAMAHNnTGluZUhhbmRsZf//AQALAHNnQXJjSGFuZGxlBID//v8HUwBrAGUAdABjAGgAMQAEgP/+/w1CAG8AcwBzAC0ARQB4AHQAcgB1AGQAZQAxAP//AQAMAHNnUG50UG50RGlzdASA//7/AkQAMQAAAAAAAAAAQP////8AAAAA//7/AAAAmpmZmZmZmT8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAANaAAAD/////AAAAANaAAgD/////AAAAAP//HwAD//////////8AAIC/AAAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAABAAAA//8fAAP//////////wAAgL8CAAAAAAAEAAIAAQAAAAAAgL8AAAQAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAAAIAAAD//x8AA///////////AACAvwEAAAAAAAQAAgABAAAAAACAvwAABAAAAAAAAAAAAAAAAAAAAAAIQAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAAAAAAAAwAAAP//HwAD//////////8AAIC/AQAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAABBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAAEAAAAUFMAAAAYZmVhdHVyZSBpbnB1dCBhcmMgc2tldGNoAAASU0NIX1NXXzMzMTAzXzExMDAwADIAZAAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfAEYAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAOAAoAAAAAAADCvJKPmW4AAAAAAAAAFAAAAGQrAAAAAAAAAAAAAAAPABQAAAAAAAAAHgAKAAAAEQAeAAAAFAAAAB8AMgAAACgAAAAAKwARAB8AAAAUAAAAIAAzAAAAKQAAAAArABEAIAAAABQAAAAeADQAAAAqAAAAACsAEAAoAAAAAAAAwrySj5luAAAAAAAAAAAARgAAAAAAEAApAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEgAyAAAAAAAAAAAAAAAAADzCvJKPmW4AAAASADMAAAAAAAAAAAAAAAAAPcK8ko+ZbgAAABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAAAHQA8AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APQAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAdAD4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "id": "sldprt:file:block#247",
+        "offset": 0,
+        "sha256": "2dc73fcddc046dd6cd90101b608ebc4000d7e09d813eebc6c2283677fd2aae00",
+        "stream": "Contents/Config-0-ResolvedFeatures"
+      },
+      {
+        "byte_len": 690,
+        "data": "AQAAAAAAAAQUAAYACAAgAAAAALDRBLoAAAAgAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25gsIZmBg4CtILCrJLMnMz1NIyk+pZGAQCnb2iA8Ojzc2NjQwjjc0NDAwYDBiSGFAAdoMRAL7D6g0BuBj4IIwDu2Z1D8zDyoqwsDAkIJsCT9YCATkwBoEGeSgyuQZjBgYGDQgrhJkkIcKKzAYMzAwaMKEFaDCcgwmDAwMWhBhAYg2NLthQACiG6cs2BAcskJgRyGADVyVENhdCGCLJANyGgLYwWVkGWxwhB4qkGWwRebiDHNZBjtswujqARQABgAIAEUAAACcfc/pfwEAANwEAAAiAAAANPbmR1bmRzfyNPbmZpZ20gPSJVY39sZnVkZkVhZHVydWN7WQzUoCYRSGHyehqCyVFm3UWfZD4GhLf/qxaNFCcNFSRCeVYgrnE1p6B0E7u5Yg6CK6Dq/AL775xt8xlKB3M2fec97nnBkpQ0Rwm+WntiNuak7j0ZYyxDZu87bt2BNnC7d53qlrI9yTQ7le4QEbQZ0WFp4XueAJF5cTrnhB0KFLAxuLEbbsiLIjSm1XeAmjhIWvMymlVIUcqsd731MRCBGU8gy//u7BKPzdM8a1lCnW1Is2ep96PIzhI5UTnicP1MoFGnxO7w6wjVXYnC1jG4vYoVXYG0vZa39mR5eyVaRcAfbv7Zrodmyz7Tx3hVnr1E33wRb1FsQrlzfVyl01m7XS2aplpdNpMjRmkcesqOJg9hlQiut/Qo/9HTZ18fXx9tp3fHcPaEwv2/UspaQXiJH0x1JkgAN9XYyUb5tkgcORbfp2klPgSNtRHZvbjf/RUZ0OdLWiGvJLN+4dNVFuPBX37pooP9VRp01UGHcS5Bb+u3klyC+yA/MJCr8QZvQD",
+        "id": "sldprt:file:source-image#0",
+        "offset": 0,
+        "sha256": "07a337abb211fb5e347a27d04b0940ffd0288247c63f35a4d0a3f059f83fd9eb",
+        "stream": "sldprt"
+      }
+    ],
+    "version": "3"
+  }
+}

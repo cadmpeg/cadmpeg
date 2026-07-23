@@ -1,0 +1,61 @@
+{
+  "container_kind": "sldprt-blocks",
+  "entries": [
+    {
+      "attributes": {
+        "family": "png-preview",
+        "offset": "8",
+        "sha256": "cc1cdcbcf0bdb70801a2f0777e9f9c85571461df7f96d1d3f1476f420df37e38",
+        "type_id": "0x00000010"
+      },
+      "compressed_size": 10,
+      "compression": "deflate",
+      "name": "PreviewPNG",
+      "role": "block",
+      "uncompressed_size": 8
+    },
+    {
+      "attributes": {
+        "family": "parasolid",
+        "offset": "54",
+        "parasolid_description": "partition body",
+        "parasolid_schema": "SCH_SW_33103_11000",
+        "sha256": "cec7bd4b62b96e490c6ba53b11475dfd3dd4ee3c42eefe748ddf9f734cbdfd27",
+        "type_id": "0x00000020"
+      },
+      "compressed_size": 45,
+      "compression": "deflate",
+      "name": "Contents/Config-0-Partition",
+      "role": "block",
+      "uncompressed_size": 49
+    },
+    {
+      "attributes": {
+        "offset": "199",
+        "type_id": "0x00000030"
+      },
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "[Content_Types].xml",
+      "role": "directory-entry",
+      "uncompressed_size": 2
+    },
+    {
+      "attributes": {
+        "logical_len": "90",
+        "offset": "152"
+      },
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "Contents/DisplayLists",
+      "role": "cache-cell",
+      "uncompressed_size": 0
+    }
+  ],
+  "format": "sldprt",
+  "notes": [
+    "outer version word: 0x00000004; 2 CRC-validated block(s), 1 tail-directory entry/entries, 1 cache-cell(s), 0 compound stream(s)",
+    "active Parasolid B-rep candidate: Contents/Config-0-Partition (49 bytes, schema SCH_SW_33103_11000)",
+    "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+  ]
+}

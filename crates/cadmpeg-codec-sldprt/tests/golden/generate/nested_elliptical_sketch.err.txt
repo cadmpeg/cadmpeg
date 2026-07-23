@@ -1,0 +1,1 @@
+malformed container: source-less SLDPRT sketch sldprt:model:sketch#247:0:0 has no owning feature

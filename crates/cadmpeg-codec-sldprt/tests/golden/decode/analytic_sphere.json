@@ -1,0 +1,692 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "sldprt:brep:body#0",
+          "kind": "solid",
+          "regions": [
+            "sldprt:brep:region#0"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "sldprt:brep:edge#40",
+          "id": "sldprt:brep:coedge#30",
+          "next": "sldprt:brep:coedge#31",
+          "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [
+            {
+              "pcurve": "sldprt:brep:pcurve#sphere:30"
+            }
+          ],
+          "previous": "sldprt:brep:coedge#sphere-seam-face:0",
+          "radial_next": "sldprt:brep:coedge#30",
+          "sense": "forward"
+        },
+        {
+          "edge": "sldprt:brep:edge#41",
+          "id": "sldprt:brep:coedge#31",
+          "next": "sldprt:brep:coedge#32",
+          "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [
+            {
+              "pcurve": "sldprt:brep:pcurve#sphere:31"
+            }
+          ],
+          "previous": "sldprt:brep:coedge#30",
+          "radial_next": "sldprt:brep:coedge#31",
+          "sense": "forward"
+        },
+        {
+          "edge": "sldprt:brep:edge#42",
+          "id": "sldprt:brep:coedge#32",
+          "next": "sldprt:brep:coedge#sphere-seam-face:0",
+          "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [
+            {
+              "pcurve": "sldprt:brep:pcurve#sphere:32"
+            }
+          ],
+          "previous": "sldprt:brep:coedge#31",
+          "radial_next": "sldprt:brep:coedge#32",
+          "sense": "forward"
+        },
+        {
+          "edge": "sldprt:brep:edge#sphere-seam-face:0",
+          "id": "sldprt:brep:coedge#sphere-seam-face:0",
+          "next": "sldprt:brep:coedge#30",
+          "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ],
+              "pcurve": "sldprt:brep:pcurve#sphere-seam-face:0"
+            }
+          ],
+          "previous": "sldprt:brep:coedge#32",
+          "radial_next": "sldprt:brep:coedge#sphere-seam-face:0",
+          "sense": "forward"
+        }
+      ],
+      "components": [],
+      "configurations": [
+        {
+          "active": true,
+          "bodies": [
+            "sldprt:brep:body#0"
+          ],
+          "id": "sldprt:model:configuration#partition:0",
+          "name": "Config-0",
+          "ordinal": 0,
+          "source_index": 0
+        }
+      ],
+      "curves": [
+        {
+          "geometry": {
+            "axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "center": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "circle",
+            "radius": 1000.0,
+            "ref_direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "sldprt:brep:curve#70"
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "center": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "circle",
+            "radius": 1000.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "sldprt:brep:curve#71"
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "circle",
+            "radius": 1000.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "sldprt:brep:curve#72"
+        },
+        {
+          "geometry": {
+            "kind": "degenerate",
+            "point": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1000.0
+            }
+          },
+          "id": "sldprt:brep:curve#sphere-seam-face:0"
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "curve": "sldprt:brep:curve#70",
+          "end": "sldprt:brep:vertex#51",
+          "id": "sldprt:brep:edge#40",
+          "start": "sldprt:brep:vertex#50"
+        },
+        {
+          "curve": "sldprt:brep:curve#71",
+          "end": "sldprt:brep:vertex#52",
+          "id": "sldprt:brep:edge#41",
+          "start": "sldprt:brep:vertex#51"
+        },
+        {
+          "curve": "sldprt:brep:curve#72",
+          "end": "sldprt:brep:vertex#50",
+          "id": "sldprt:brep:edge#42",
+          "start": "sldprt:brep:vertex#52"
+        },
+        {
+          "curve": "sldprt:brep:curve#sphere-seam-face:0",
+          "end": "sldprt:brep:vertex#52",
+          "id": "sldprt:brep:edge#sphere-seam-face:0",
+          "start": "sldprt:brep:vertex#52"
+        }
+      ],
+      "faces": [
+        {
+          "id": "sldprt:brep:face#10",
+          "loops": [
+            "sldprt:brep:loop#20"
+          ],
+          "sense": "forward",
+          "shell": "sldprt:brep:shell#0",
+          "surface": "sldprt:brep:surf#10"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary_role": "unspecified",
+          "coedges": [
+            "sldprt:brep:coedge#30",
+            "sldprt:brep:coedge#31",
+            "sldprt:brep:coedge#32",
+            "sldprt:brep:coedge#sphere-seam-face:0"
+          ],
+          "face": "sldprt:brep:face#10",
+          "id": "sldprt:brep:loop#20"
+        }
+      ],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 1.5707963267948966
+            }
+          },
+          "id": "sldprt:brep:pcurve#sphere-seam-face:0",
+          "parameter_range": [
+            0.0,
+            6.283185307179586
+          ]
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": -1.5707963267948966,
+              "v": 0.0
+            }
+          },
+          "id": "sldprt:brep:pcurve#sphere:30"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "sldprt:brep:pcurve#sphere:31"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "sldprt:brep:pcurve#sphere:32"
+        }
+      ],
+      "pmi": [],
+      "points": [
+        {
+          "id": "sldprt:brep:point#60",
+          "position": {
+            "x": 1000.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "sldprt:brep:point#61",
+          "position": {
+            "x": 0.0,
+            "y": 1000.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "sldprt:brep:point#62",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1000.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_occurrences": [],
+      "products": [],
+      "regions": [
+        {
+          "body": "sldprt:brep:body#0",
+          "id": "sldprt:brep:region#0",
+          "shells": [
+            "sldprt:brep:shell#0"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [
+            "sldprt:brep:face#10"
+          ],
+          "id": "sldprt:brep:shell#0",
+          "region": "sldprt:brep:region#0"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "sphere",
+            "radius": 1000.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "sldprt:brep:surf#10"
+        }
+      ],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "sldprt:brep:vertex#50",
+          "point": "sldprt:brep:point#60"
+        },
+        {
+          "id": "sldprt:brep:vertex#51",
+          "point": "sldprt:brep:point#61"
+        },
+        {
+          "id": "sldprt:brep:vertex#52",
+          "point": "sldprt:brep:point#62"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "sldprt": {
+        "arenas": {
+          "configurations": [],
+          "feature_histories": [],
+          "feature_input_body_selections": [],
+          "feature_input_classes": [],
+          "feature_input_edge_selections": [],
+          "feature_input_generated_surface_identities": [],
+          "feature_input_lanes": [],
+          "feature_input_names": [],
+          "feature_input_references": [],
+          "feature_input_relation_bindings": [],
+          "feature_input_relation_instances": [],
+          "feature_input_scalars": [],
+          "feature_input_surface_selections": [],
+          "features": [],
+          "pmi_dimensions": [],
+          "sketch_input_entities": [],
+          "unknowns": [
+            {
+              "id": "sldprt:file:block#8"
+            }
+          ]
+        },
+        "version": 13
+      }
+    },
+    "source": {
+      "attributes": {
+        "active_parasolid_block": "Contents/Config-0-Partition",
+        "block_count": "1",
+        "bmp_thumbnail_count": "0",
+        "brep_semantic_sha256": "66247495a670265067e897eeeb8de67079dfebeccdcbecbb4929276d964d3064",
+        "compound_stream_count": "0",
+        "outer_version": "0x00000004",
+        "parasolid_description": "partition body",
+        "parasolid_schema": "SCH_SW_33103_11000",
+        "png_preview_count": "0",
+        "semantic_sha256": "7a31a720172e02c8f0977755273878c1800fda4a8fa4db7fda8279e6b21f0803",
+        "sldprt_configuration_feature_states_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_configuration_parameter_values_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_configuration_sha256": "3ade8676fb720077ea4da113c46a37bfdbe50630cef16fb32535a6d80d73d6a2",
+        "sldprt_neutral_feature_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_sketch_constraint_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_sketch_sha256": "1fa81a4fc056eef8aa90d709f6063b6b9a1237193ad427106beb0da4ccb03e21"
+      },
+      "format": "sldprt"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "sldprt",
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "category": "topology",
+        "code": "topology_gauge_substituted",
+        "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "severity": "warning"
+      },
+      {
+        "category": "other",
+        "code": "feature_history_retained",
+        "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "outer version word: 0x00000004; 1 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
+      "active Parasolid B-rep candidate: Contents/Config-0-Partition (849 bytes, schema SCH_SW_33103_11000)",
+      "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "sldprt:brep:body#0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:coedge#sphere-seam-face:0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:curve#sphere-seam-face:0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:edge#sphere-seam-face:0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:pcurve#sphere-seam-face:0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:pcurve#sphere:30": {
+          "entity": "derived"
+        },
+        "sldprt:brep:pcurve#sphere:31": {
+          "entity": "derived"
+        },
+        "sldprt:brep:pcurve#sphere:32": {
+          "entity": "derived"
+        },
+        "sldprt:brep:region#0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:shell#0": {
+          "entity": "derived"
+        },
+        "sldprt:brep:surf#10": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.axis": "derived",
+            "geometry.ref_direction": "derived"
+          }
+        }
+      },
+      "provenance": {
+        "sldprt:brep:body#0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "synthetic_grouping"
+        },
+        "sldprt:brep:coedge#30": {
+          "offset": 451,
+          "stream": 0,
+          "tag": "00_11"
+        },
+        "sldprt:brep:coedge#31": {
+          "offset": 474,
+          "stream": 0,
+          "tag": "00_11"
+        },
+        "sldprt:brep:coedge#32": {
+          "offset": 497,
+          "stream": 0,
+          "tag": "00_11"
+        },
+        "sldprt:brep:coedge#sphere-seam-face:0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "derived_sphere_seam"
+        },
+        "sldprt:brep:curve#70": {
+          "offset": 99,
+          "stream": 0,
+          "tag": "compact_curve"
+        },
+        "sldprt:brep:curve#71": {
+          "offset": 198,
+          "stream": 0,
+          "tag": "compact_curve"
+        },
+        "sldprt:brep:curve#72": {
+          "offset": 297,
+          "stream": 0,
+          "tag": "compact_curve"
+        },
+        "sldprt:brep:curve#sphere-seam-face:0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "derived_sphere_seam"
+        },
+        "sldprt:brep:edge#40": {
+          "offset": 520,
+          "stream": 0,
+          "tag": "00_10"
+        },
+        "sldprt:brep:edge#41": {
+          "offset": 550,
+          "stream": 0,
+          "tag": "00_10"
+        },
+        "sldprt:brep:edge#42": {
+          "offset": 580,
+          "stream": 0,
+          "tag": "00_10"
+        },
+        "sldprt:brep:edge#sphere-seam-face:0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "derived_sphere_seam"
+        },
+        "sldprt:brep:face#10": {
+          "offset": 396,
+          "stream": 0,
+          "tag": "00_0e"
+        },
+        "sldprt:brep:loop#20": {
+          "offset": 435,
+          "stream": 0,
+          "tag": "00_0f"
+        },
+        "sldprt:brep:pcurve#sphere-seam-face:0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "derived_sphere_seam"
+        },
+        "sldprt:brep:pcurve#sphere:30": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "derived_spherical_pcurve"
+        },
+        "sldprt:brep:pcurve#sphere:31": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "derived_spherical_pcurve"
+        },
+        "sldprt:brep:pcurve#sphere:32": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "derived_spherical_pcurve"
+        },
+        "sldprt:brep:point#60": {
+          "offset": 688,
+          "stream": 0,
+          "tag": "00_1d"
+        },
+        "sldprt:brep:point#61": {
+          "offset": 728,
+          "stream": 0,
+          "tag": "00_1d"
+        },
+        "sldprt:brep:point#62": {
+          "offset": 768,
+          "stream": 0,
+          "tag": "00_1d"
+        },
+        "sldprt:brep:region#0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "synthetic_grouping"
+        },
+        "sldprt:brep:shell#0": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "synthetic_grouping"
+        },
+        "sldprt:brep:surf#10": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "compact_surface"
+        },
+        "sldprt:brep:vertex#50": {
+          "offset": 610,
+          "stream": 0,
+          "tag": "00_12"
+        },
+        "sldprt:brep:vertex#51": {
+          "offset": 636,
+          "stream": 0,
+          "tag": "00_12"
+        },
+        "sldprt:brep:vertex#52": {
+          "offset": 662,
+          "stream": 0,
+          "tag": "00_12"
+        },
+        "sldprt:file:block#8": {
+          "offset": 8,
+          "stream": 0,
+          "tag": "parasolid"
+        },
+        "sldprt:file:source-image#0": {
+          "offset": 0,
+          "stream": 1,
+          "tag": "source_image"
+        }
+      },
+      "streams": [
+        "Contents/Config-0-Partition",
+        "source"
+      ]
+    },
+    "retained_records": [
+      {
+        "byte_len": 849,
+        "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAANQBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHwBGAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAHwBHAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAHwBIAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAADgAKAAAAAAAAwrySj5luAAAAAAAAABQAAABkKwAAAAAAAAAAAAAADwAUAAAAAAAAAB4ACgAAABEAHgAAABQAAAAfADIAAAAoAAAAACsAEQAfAAAAFAAAACAAMwAAACkAAAAAKwARACAAAAAUAAAAHgA0AAAAKgAAAAArABAAKAAAAAAAAMK8ko+ZbgAAAAAAAAAAAEYAAAAAABAAKQAAAAAAAMK8ko+ZbgAAAAAAAAAAAEcAAAAAABAAKgAAAAAAAMK8ko+ZbgAAAAAAAAAAAEgAAAAAABIAMgAAAAAAAAAAAAAAAAA8wrySj5luAAAAEgAzAAAAAAAAAAAAAAAAAD3CvJKPmW4AAAASADQAAAAAAAAAAAAAAAAAPsK8ko+ZbgAAAB0APAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdAD0AAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAHQA+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAA",
+        "id": "sldprt:file:block#8",
+        "offset": 0,
+        "sha256": "9fa793ffa885b63e4dbde8ee1deee2623713c6eedc896fd01406c5b46e7e43ca",
+        "stream": "Contents/Config-0-Partition"
+      },
+      {
+        "byte_len": 282,
+        "data": "AQAAAAAAAAQUAAYACAAgAAAAfwR5Jt0AAABRAwAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25qWRuw6CQBRET22hSGxhKX00INr5KEzU0oTCkmhobNQYG7/CxM5/sfKL/AQju4KC6yNOtczMnbm5TAKguJ5ttovtYrV05qtoB2YwGIfBNPR9z/VDz3NdlzYRT2igQf/yntfpCIZ/Vuj05Fsw+rLiY5TOJxj/WJGN+FhRpCAf59Nhf1wqtgJEj2WlmLrBjgfK2MomaAJVuV0ZoWgHH6jdaUfRNi2gLmlDjmW6Ub/OkNM5VV7dkCE5VR7MjJdK0UlcZrxXiu6DclstRS9RLDovb5eFRfcVnfNb9DQJT/4r",
+        "id": "sldprt:file:source-image#0",
+        "offset": 0,
+        "sha256": "c997ca2c1cba4f51f776368eabe2a429121be30e8997f5d95cd84b21721d3d2b",
+        "stream": "sldprt"
+      }
+    ],
+    "version": "3"
+  }
+}

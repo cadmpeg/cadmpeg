@@ -21059,3 +21059,574 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
         sorted_point_positions(&second)
     );
 }
+
+/// Golden-snapshot harness pinning the SLDPRT codec before the deep-module
+/// refactor. Each fixture is a full `.sldprt` image committed under
+/// `tests/golden/fixtures/`. From the committed bytes the harness freezes the
+/// decode surface (canonical IR + [`DecodeReport`] + [`SourceFidelity`] sidecar),
+/// the container inspection ([`ContainerSummary`]), and one artifact per writer
+/// branch (`replay/`, `semantic/`, `generate/`). The committed `.sldprt` is the
+/// pinned input, so the goldens do not depend on the byte-builders staying
+/// constant across the refactor.
+///
+/// Build-config sensitivity: the byte-builders and the semantic writer both
+/// `flate2`-DEFLATE their block payloads. An isolated `cargo test -p
+/// cadmpeg-codec-sldprt` build resolves `flate2` to `miniz_oxide`; a
+/// workspace-unified build resolves it to `zlib-rs` (pulled in transitively by
+/// `zip`), which sizes the same input differently. The committed goldens are the
+/// canonical **workspace** (`zlib-rs`) bytes, which is what the commit hook and
+/// CI compare against. The frozen fixtures make `decode/`, `inspect/`, and
+/// `replay/` pure functions of the committed bytes — those pass under either
+/// backend. Only `semantic/` and `generate/`, which re-DEFLATE at write time,
+/// are backend-specific and can diverge under an isolated `-p` run; regenerate
+/// them with the workspace feature set, never `-p`:
+///
+///   `cargo test --workspace --no-run`
+///   `UPDATE_GOLDEN=1 <sldprt test binary> golden`
+///
+/// [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
+/// [`SourceFidelity`]: cadmpeg_ir::SourceFidelity
+/// [`ContainerSummary`]: cadmpeg_ir::codec::ContainerSummary
+#[cfg(test)]
+mod golden {
+    use std::path::{Path, PathBuf};
+
+    use cadmpeg_ir::codec::{CodecError, DecodeResult};
+
+    use super::*;
+
+    /// Build the covering fixture set: `(golden name, full `.sldprt` bytes)`.
+    /// Each entry wraps a Parasolid body (or a whole synthetic container) exactly
+    /// as its originating white-box test does, so the bytes drive the real decode
+    /// path. The set spans container/directory/cache-cell inspection, analytic and
+    /// NURBS B-rep, derived pcurves, appearances, tessellation, feature history and
+    /// feature-input lanes, sketches, PMI, document metadata, deltas streams, and
+    /// multi-configuration partitions.
+    fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
+        vec![
+            // Container without a resolvable B-rep: exercises the block/cache-cell/
+            // directory scan and the metadata-only decode path.
+            ("container_metadata", synthetic_sldprt()),
+            // Analytic B-rep carriers.
+            ("analytic_planar", sldprt_with_body(&triangle_body())),
+            (
+                "analytic_cylinder",
+                sldprt_with_body(&closed_cylinder_body()),
+            ),
+            ("analytic_sphere", sldprt_with_body(&sphere_patch_body())),
+            // NURBS carriers: a NURBS surface, and a NURBS surface beside a NURBS
+            // edge curve.
+            ("nurbs_surface", sldprt_with_body(&nurbs_surface_body())),
+            (
+                "nurbs_curve_surface",
+                sldprt_with_body(&nurbs_curve_and_surface_body()),
+            ),
+            // Appearances: a body-scoped material block.
+            (
+                "body_material",
+                sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]),
+            ),
+            // Tessellation: a display-list block.
+            (
+                "body_display_list",
+                sldprt_with_body_and_display_list(&triangle_body()),
+            ),
+            // Feature history from a Keywords tree.
+            (
+                "body_history",
+                sldprt_with_body_and_history(&triangle_body()),
+            ),
+            // Resolved-feature lanes.
+            (
+                "resolved_features",
+                sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1, 1, 1]),
+            ),
+            // Nested feature-input sketch profiles across geometry kinds.
+            (
+                "nested_sketch_profile",
+                sldprt_with_nested_sketch_profile(&triangle_body()),
+            ),
+            (
+                "nested_circular_sketch",
+                sldprt_with_nested_circular_sketch(&triangle_body()),
+            ),
+            (
+                "nested_arc_sketch",
+                sldprt_with_nested_arc_sketch(&triangle_body()),
+            ),
+            (
+                "nested_elliptical_sketch",
+                sldprt_with_nested_elliptical_sketch(&triangle_body()),
+            ),
+            (
+                "nested_nurbs_sketches",
+                sldprt_with_nested_nurbs_sketches(&triangle_body()),
+            ),
+            // A zlib-wrapped feature-input sketch: the compressed feature-input path.
+            (
+                "compressed_nested_sketch",
+                sldprt_with_compressed_nested_sketch_profile(&triangle_body()),
+            ),
+            // Document metadata: bounding box, reference planes, configuration
+            // manager, and units.
+            (
+                "document_envelope",
+                sldprt_with_body_and_envelope(&triangle_body()),
+            ),
+            // Partition paired with an equal-schema deltas stream carrying a face
+            // colour binding.
+            ("partition_and_deltas", partition_and_deltas_doc()),
+            // Two configuration partitions in one container.
+            ("colliding_sites", sldprt_with_colliding_sites()),
+            // PMI semantic dimension database beside a sketch.
+            ("pmi_semantic_dimension", pmi_semantic_dimension_doc()),
+        ]
+    }
+
+    /// A triangle body carrying a NURBS surface on its bridged face. Mirrors the
+    /// `faces_decode_nurbs_surface` white-box construction.
+    fn nurbs_surface_body() -> Vec<u8> {
+        let mut body = triangle_body();
+        body.extend(nurbs_surface_carrier(180, 181, 10));
+        let bridge = body
+            .windows(2)
+            .position(|window| window == [0x00, 0x0e])
+            .expect("bridge marker");
+        body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+        body
+    }
+
+    /// A triangle body whose face carries a NURBS surface and whose edge carries a
+    /// NURBS curve. Mirrors the `semantic_writer_regenerates_modified_nurbs_carriers`
+    /// construction.
+    fn nurbs_curve_and_surface_body() -> Vec<u8> {
+        let mut body = triangle_body();
+        let bridge = body
+            .windows(2)
+            .position(|window| window == [0x00, 0x0e])
+            .expect("bridge marker");
+        body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+        let edge = body
+            .windows(2)
+            .position(|window| window == [0x00, 0x10])
+            .expect("edge marker");
+        body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
+        body.extend(nurbs_curve_carrier(170, 171));
+        body.extend(nurbs_surface_carrier(180, 181, 10));
+        body
+    }
+
+    /// A partition stream and an equal-schema deltas stream that both bind a face
+    /// colour, mirroring `decode_deduplicates_partition_and_deltas_face_bindings`.
+    fn partition_and_deltas_doc() -> Vec<u8> {
+        let mut partition = Vec::new();
+        partition.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+        partition.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+        partition.extend(owned_triangle(0, 700, 0.0));
+        let mut deltas = Vec::new();
+        deltas.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+        deltas.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+        sldprt_with_partition_and_deltas(&partition, &deltas)
+    }
+
+    /// A part with a PMI semantic-dimension database and the sketch its dimension
+    /// references, mirroring `decode_extracts_pmi_semantic_dimension`.
+    fn pmi_semantic_dimension_doc() -> Vec<u8> {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+        ));
+        source.extend(make_block(
+            0x49,
+            "Contents/PMISemanticDataDB",
+            &pmi_semantic_payload(),
+        ));
+        source
+    }
+
+    fn decode_result(bytes: &[u8]) -> Result<DecodeResult, CodecError> {
+        SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+    }
+
+    /// Canonical decode snapshot: the finalized IR, the decode report, and the
+    /// source-fidelity sidecar. The sidecar is required — the writer gate reads
+    /// `brep_semantic_sha256` and the retained source-image record from it. A
+    /// refused decode freezes its error string; that refusal is contract-relevant
+    /// behavior, so this never panics on codec output.
+    fn decode_snapshot(bytes: &[u8]) -> String {
+        let value = match decode_result(bytes) {
+            Ok(result) => serde_json::json!({
+                "ir": serde_json::to_value(&result.ir).expect("serialize ir"),
+                "report": serde_json::to_value(&result.report).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(&result.source_fidelity)
+                    .expect("serialize source_fidelity"),
+            }),
+            Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
+        };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize decode snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// Container inspection snapshot: the [`ContainerSummary`] through the sealed
+    /// inspect entry point, or the inspect error.
+    fn inspect_snapshot(bytes: &[u8]) -> String {
+        let value = match SldprtCodec
+            .inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
+        {
+            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+            Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+        };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// Replay branch: unchanged decoded IR with an intact sidecar. When the source
+    /// image is retained and the semantic hash still matches, the encoder replays
+    /// the source container byte for byte.
+    fn replay_outcome(decoded: &DecodeResult) -> Result<Vec<u8>, String> {
+        let mut out = Vec::new();
+        SldprtCodec
+            .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut out)
+            .map(|()| out)
+            .map_err(|err| err.to_string())
+    }
+
+    /// Semantic branch: an intact sidecar drives a record-based semantic write.
+    /// Removing the `semantic_sha256` attribute forces the writer past the verbatim
+    /// replay gate into `write_semantic_with_records` while keeping the retained
+    /// source-image record and `brep_semantic_sha256`, so the native partition is
+    /// re-emitted inside a regenerated container.
+    fn semantic_outcome(decoded: &DecodeResult) -> Result<Vec<u8>, String> {
+        let mut ir = decoded.ir.clone();
+        if let Some(source) = ir.source.as_mut() {
+            source.attributes.remove("semantic_sha256");
+        }
+        let mut out = Vec::new();
+        SldprtCodec
+            .write_preserved_with_source_fidelity(&ir, &decoded.source_fidelity, &mut out)
+            .map(|()| out)
+            .map_err(|err| err.to_string())
+    }
+
+    /// Generate branch: no sidecar. Dropping the source metadata takes the plain
+    /// [`Encoder::encode`] entry through the source-less write path, which
+    /// regenerates the container from the IR alone.
+    fn generate_outcome(decoded: &DecodeResult) -> Result<Vec<u8>, String> {
+        let mut ir = decoded.ir.clone();
+        ir.source = None;
+        let mut out = Vec::new();
+        SldprtCodec
+            .encode(&ir, &mut out)
+            .map(|_| out)
+            .map_err(|err| err.to_string())
+    }
+
+    fn golden_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+    }
+
+    fn update_requested() -> bool {
+        std::env::var_os("UPDATE_GOLDEN").is_some()
+    }
+
+    /// First differing line, 1-based, both sides truncated for readable failure.
+    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
+        let mut exp = expected.lines();
+        let mut act = actual.lines();
+        let mut line = 0usize;
+        loop {
+            line += 1;
+            match (exp.next(), act.next()) {
+                (Some(e), Some(a)) if e == a => {}
+                (e, a) => {
+                    let trunc = |s: Option<&str>| match s {
+                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
+                        Some(s) => s.to_string(),
+                        None => "<end of file>".to_string(),
+                    };
+                    return (line, trunc(e), trunc(a));
+                }
+            }
+        }
+    }
+
+    fn first_byte_diff(expected: &[u8], actual: &[u8]) -> String {
+        let offset = expected
+            .iter()
+            .zip(actual)
+            .position(|(e, a)| e != a)
+            .unwrap_or_else(|| expected.len().min(actual.len()));
+        let describe = |bytes: &[u8]| match bytes.get(offset) {
+            Some(byte) => format!("0x{byte:02x}"),
+            None => "<end of file>".to_string(),
+        };
+        format!(
+            "first byte difference at offset {offset}: golden {}, actual {} (lengths: {} and {})",
+            describe(expected),
+            describe(actual),
+            expected.len(),
+            actual.len(),
+        )
+    }
+
+    fn compare_text(update: bool, path: &Path, actual: &str, failures: &mut Vec<String>) {
+        if update {
+            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+                .expect("create golden dir");
+            std::fs::write(path, actual.as_bytes())
+                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+            return;
+        }
+        match std::fs::read_to_string(path) {
+            Ok(expected) if expected == actual => {}
+            Ok(expected) => {
+                let (line, exp, act) = first_line_diff(&expected, actual);
+                failures.push(format!(
+                    "{}: diverged at line {line}\n    golden: {exp}\n    actual: {act}",
+                    path.display()
+                ));
+            }
+            Err(e) => failures.push(format!(
+                "{}: cannot read golden ({e}); regenerate with a workspace UPDATE_GOLDEN run",
+                path.display()
+            )),
+        }
+    }
+
+    fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
+        if update {
+            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+                .expect("create golden dir");
+            std::fs::write(path, actual)
+                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+            return;
+        }
+        match std::fs::read(path) {
+            Ok(expected) if expected == actual => {}
+            Ok(expected) => failures.push(format!(
+                "{}: {}",
+                path.display(),
+                first_byte_diff(&expected, actual)
+            )),
+            Err(e) => failures.push(format!(
+                "{}: cannot read golden ({e}); regenerate with a workspace UPDATE_GOLDEN run",
+                path.display()
+            )),
+        }
+    }
+
+    fn remove_if_exists(path: &Path) {
+        if path.exists() {
+            std::fs::remove_file(path).unwrap_or_else(|e| panic!("remove {}: {e}", path.display()));
+        }
+    }
+
+    /// Freeze one writer branch: its `Ok` bytes as `<dir>/<name>.bin`, or its
+    /// refusal string as `<dir>/<name>.err.txt`, and delete the stale sibling on
+    /// update so only one artifact per branch persists.
+    fn compare_branch(
+        update: bool,
+        root: &Path,
+        dir: &str,
+        name: &str,
+        outcome: &Result<Vec<u8>, String>,
+        failures: &mut Vec<String>,
+    ) {
+        let bin_path = root.join(dir).join(format!("{name}.bin"));
+        let err_path = root.join(dir).join(format!("{name}.err.txt"));
+        match outcome {
+            Ok(bytes) => {
+                if update {
+                    remove_if_exists(&err_path);
+                }
+                compare_bytes(update, &bin_path, bytes, failures);
+            }
+            Err(message) => {
+                if update {
+                    remove_if_exists(&bin_path);
+                }
+                compare_text(update, &err_path, &format!("{message}\n"), failures);
+            }
+        }
+    }
+
+    /// Read the committed fixture bytes, or on update return the builder bytes
+    /// directly. Only [`golden_snapshots_are_byte_identical`] writes the
+    /// `fixtures/` file, so the writer-branch test reads it here without a
+    /// concurrent-write race under `UPDATE_GOLDEN`.
+    fn committed_input(
+        update: bool,
+        root: &Path,
+        name: &str,
+        bytes: &[u8],
+        failures: &mut Vec<String>,
+    ) -> Option<Vec<u8>> {
+        if update {
+            return Some(bytes.to_vec());
+        }
+        let path = root.join("fixtures").join(format!("{name}.sldprt"));
+        match std::fs::read(&path) {
+            Ok(value) => Some(value),
+            Err(e) => {
+                failures.push(format!(
+                    "fixture `{name}`: cannot read {} ({e}); regenerate with a workspace UPDATE_GOLDEN run",
+                    path.display()
+                ));
+                None
+            }
+        }
+    }
+
+    /// Read side: freeze each committed `.sldprt`, then pin its decode surface
+    /// (`decode/`) and container inspection (`inspect/`). Every artifact here is a
+    /// pure function of the committed bytes — the codec reads the frozen stream
+    /// and never re-DEFLATEs — so this test is backend-independent and passes
+    /// under both an isolated `-p` build and a workspace-unified one.
+    #[test]
+    fn golden_snapshots_are_byte_identical() {
+        let update = update_requested();
+        let root = golden_root();
+        let mut failures = Vec::new();
+        for (name, bytes) in fixtures() {
+            // The committed `.sldprt` is the frozen decode input. On update, rewrite
+            // it from the builder; then snapshot the exact committed bytes so the
+            // pin does not depend on the builder staying constant.
+            if update {
+                let fixture_path = root.join("fixtures").join(format!("{name}.sldprt"));
+                std::fs::create_dir_all(fixture_path.parent().expect("fixtures dir"))
+                    .expect("create fixtures dir");
+                std::fs::write(&fixture_path, &bytes)
+                    .unwrap_or_else(|e| panic!("write fixture {name}: {e}"));
+            }
+            let Some(input) = committed_input(update, &root, name, &bytes, &mut failures) else {
+                continue;
+            };
+
+            compare_text(
+                update,
+                &root.join("decode").join(format!("{name}.json")),
+                &decode_snapshot(&input),
+                &mut failures,
+            );
+            compare_text(
+                update,
+                &root.join("inspect").join(format!("{name}.json")),
+                &inspect_snapshot(&input),
+                &mut failures,
+            );
+        }
+        assert!(
+            failures.is_empty(),
+            "{} golden artifact(s) drifted; if the change is intended regenerate with a workspace `UPDATE_GOLDEN=1` run and review the diff:\n\n{}",
+            failures.len(),
+            failures.join("\n\n"),
+        );
+    }
+
+    /// Write side: pin one artifact per writer branch — `replay/`, `semantic/`,
+    /// `generate/` — as `<name>.bin` on success or `<name>.err.txt` on refusal.
+    ///
+    /// `replay/` copies the retained source image verbatim and is
+    /// backend-independent. `semantic/` and `generate/` run the semantic writer,
+    /// which re-DEFLATEs each block; their `.bin` bytes are therefore the
+    /// canonical workspace (`zlib-rs`) output and diverge under an isolated `-p`
+    /// (`miniz_oxide`) build — regenerate them with the workspace feature set, not
+    /// `-p`. The `.err.txt` refusals are decoded-IR properties and stay
+    /// backend-independent.
+    #[test]
+    fn writer_branch_goldens_are_byte_identical() {
+        let update = update_requested();
+        let root = golden_root();
+        let mut failures = Vec::new();
+        for (name, bytes) in fixtures() {
+            let Some(input) = committed_input(update, &root, name, &bytes, &mut failures) else {
+                continue;
+            };
+            // Absent an IR (a refused decode) no branch is drivable, so clear any
+            // stale artifacts on update and pin nothing.
+            match decode_result(&input) {
+                Ok(decoded) => {
+                    compare_branch(
+                        update,
+                        &root,
+                        "replay",
+                        name,
+                        &replay_outcome(&decoded),
+                        &mut failures,
+                    );
+                    compare_branch(
+                        update,
+                        &root,
+                        "semantic",
+                        name,
+                        &semantic_outcome(&decoded),
+                        &mut failures,
+                    );
+                    compare_branch(
+                        update,
+                        &root,
+                        "generate",
+                        name,
+                        &generate_outcome(&decoded),
+                        &mut failures,
+                    );
+                }
+                Err(_) if update => {
+                    for dir in ["replay", "semantic", "generate"] {
+                        remove_if_exists(&root.join(dir).join(format!("{name}.bin")));
+                        remove_if_exists(&root.join(dir).join(format!("{name}.err.txt")));
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} writer-branch golden(s) drifted; `semantic/` and `generate/` are workspace (`zlib-rs`) canonical and will diverge under an isolated `-p` build. If the change is intended regenerate with a workspace `UPDATE_GOLDEN=1` run and review the diff:\n\n{}",
+            failures.len(),
+            failures.join("\n\n"),
+        );
+    }
+
+    /// Guards against nondeterministic output (hash-map iteration order,
+    /// timestamps, addresses): every snapshot and every writer branch must be a
+    /// pure function of the committed input bytes.
+    #[test]
+    fn golden_output_is_deterministic() {
+        for (name, bytes) in fixtures() {
+            let decode_first = decode_snapshot(&bytes);
+            let decode_second = decode_snapshot(&bytes);
+            if decode_first != decode_second {
+                let (line, a, b) = first_line_diff(&decode_first, &decode_second);
+                panic!("fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+            let inspect_first = inspect_snapshot(&bytes);
+            let inspect_second = inspect_snapshot(&bytes);
+            if inspect_first != inspect_second {
+                let (line, a, b) = first_line_diff(&inspect_first, &inspect_second);
+                panic!("fixture `{name}`: nondeterministic inspect at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+            if let Ok(decoded) = decode_result(&bytes) {
+                assert_eq!(
+                    replay_outcome(&decoded),
+                    replay_outcome(&decoded),
+                    "fixture `{name}`: nondeterministic replay write"
+                );
+                assert_eq!(
+                    semantic_outcome(&decoded),
+                    semantic_outcome(&decoded),
+                    "fixture `{name}`: nondeterministic semantic write"
+                );
+                assert_eq!(
+                    generate_outcome(&decoded),
+                    generate_outcome(&decoded),
+                    "fixture `{name}`: nondeterministic generate write"
+                );
+            }
+        }
+    }
+}
