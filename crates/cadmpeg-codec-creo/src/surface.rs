@@ -1965,6 +1965,33 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
     if scalar_field && body == [0x18] {
         return SurfaceNamedValue::ScalarSequence(vec![0.0]);
     }
+    if name == "flip" {
+        if body.first() == Some(&0xf1) {
+            let (value, end) = compact_int(body, 1);
+            if end > 1 && end == body.len() {
+                return SurfaceNamedValue::CompactInt(value);
+            }
+        }
+        return SurfaceNamedValue::Opaque(body.to_vec());
+    }
+    if name == "offset_type" {
+        let (value, separator) = compact_int(body, 0);
+        if let Some(reference_start) = separator.checked_add(2) {
+            if separator > 0
+                && body
+                    .get(separator..)
+                    .is_some_and(|rest| rest.starts_with(&[0xf1, psb::token::ENTITY_REF]))
+            {
+                let Ok((reference, end)) = psb::reference_id(body, reference_start) else {
+                    return SurfaceNamedValue::Opaque(body.to_vec());
+                };
+                if reference != 0 && end == body.len() {
+                    return SurfaceNamedValue::CompactInt(value);
+                }
+            }
+        }
+        return SurfaceNamedValue::Opaque(body.to_vec());
+    }
     if body.first() == Some(&psb::token::ARRAY_OPEN) {
         let (count, mut cursor) = compact_int(body, 1);
         if cursor > 1 {
@@ -8655,6 +8682,41 @@ mod tests {
             records[0].field("par_v_1").map(|field| &field.value),
             Some(&SurfaceNamedValue::Opaque(vec![0x28, 1, 2, 3, 4, 5, 6, 7]))
         );
+    }
+
+    #[test]
+    fn spline_metadata_decodes_wrapped_compact_values() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x01flip\0\xf1\x01\
+            \xe0\x01offset_type\0\x00\xf1\xf7\x0e";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].field("flip").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactInt(1))
+        );
+        assert_eq!(
+            records[0].field("offset_type").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactInt(0))
+        );
+    }
+
+    #[test]
+    fn spline_metadata_rejects_malformed_compact_wrappers() {
+        for (name, body) in [
+            ("flip", &[0xf1][..]),
+            ("flip", &[0xf1, 0x01, 0x00]),
+            ("flip", &[0xf8, 0x01, 0x01]),
+            ("offset_type", &[0x00, 0xf1, 0xf7]),
+            ("offset_type", &[0x00, 0xf1, 0xf7, 0x00]),
+            ("offset_type", &[0x00, 0xf1, 0xf7, 0x0e, 0x00]),
+            ("offset_type", &[0xf8, 0x01, 0x00]),
+        ] {
+            assert_eq!(
+                named_surface_value(name, body, &scalar::ScalarCache::default()),
+                SurfaceNamedValue::Opaque(body.to_vec())
+            );
+        }
     }
 
     #[test]

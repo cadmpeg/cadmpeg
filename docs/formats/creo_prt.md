@@ -284,11 +284,14 @@ torus prototype belong to that curve, not to the analytic torus prototype.
 A nested `curve(b_spline)` record uses compact integers for `id`, `type`,
 `tan_cond`, and `degree`. Its `params` array and `c_pnts` reference array are
 independent fields. A `c_pnts` body `f8 <count> f7 <start_id> fb` denotes the
-contiguous entity-reference range `start_id .. start_id + count`. `flip`
-retains its typed-wrapper bytes. `dum_array`, `data_dbls`, and `data_type` are
-separate named fields. A count-prefixed compact-integer array is typed as such
-only when exactly the declared number of compact integers consumes the entire
-bounded field body; trailing bytes make the field opaque.
+contiguous entity-reference range `start_id .. start_id + count`. `flip f1
+<value_ci>` stores one compact integer. `offset_type <value_ci> f1 f7
+<class-id>` stores one compact integer followed by a nonzero canonical class
+reference. Both fields retain their complete wrapper bytes. `dum_array`,
+`data_dbls`, and `data_type` are separate named fields. A count-prefixed
+compact-integer array is typed as such only when exactly the declared number of
+compact integers consumes the entire bounded field body; trailing bytes make
+the field opaque.
 `parent_feats` may append the exact trailer
 `f7 <class-id> <entity-id> [e1 [f6 f6]]` after its declared compact-integer
 array. Both trailer identifiers use the canonical entity-reference grammar and

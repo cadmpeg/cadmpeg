@@ -1630,7 +1630,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     );
     assert_eq!(
         prototype.field("flip").map(|field| &field.value),
-        Some(&crate::surface::SurfaceNamedValue::Opaque(vec![0xf1, 0x01]))
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(1))
     );
     assert_eq!(
         prototype.field("dum_array").map(|field| &field.value),
@@ -1662,7 +1662,9 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     assert_eq!(native.fields["parameters"][6]["name"], "params");
     assert_eq!(native.fields["parameters"][6]["compact_values"][2], 1);
     assert_eq!(native.fields["parameters"][7]["name"], "flip");
-    assert_eq!(native.fields["parameters"][7]["opaque"][0], 0xf1);
+    assert_eq!(native.fields["parameters"][7]["value_kind"], "compact_int");
+    assert_eq!(native.fields["parameters"][7]["compact_values"][0], 1);
+    assert_eq!(native.fields["parameters"][7]["body"][0], 0xf1);
     assert_eq!(native.fields["parameters"][8]["name"], "dum_array");
     assert_eq!(native.fields["parameters"][8]["value_kind"], "opaque");
     assert_eq!(
