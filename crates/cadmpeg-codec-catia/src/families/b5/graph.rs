@@ -502,6 +502,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             let pcurve = match record.class {
                 0x18 => parse_line_pcurve(record),
                 0x19 => parse_circle_pcurve(record),
+                0x1a => parse_circular_conic_pcurve(record),
                 0x21 => parse_pcurve(record),
                 _ => None,
             }?;
@@ -2020,6 +2021,74 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     }
     let start_angle = phase + orientation * start / radius;
     let end_angle = phase + orientation * end / radius;
+    rational_arc_pcurve(
+        record,
+        surface,
+        center,
+        [1.0, 0.0],
+        [0.0, 1.0],
+        radius,
+        [start, end],
+        [start_angle, end_angle],
+    )
+}
+
+fn parse_circular_conic_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    if record.class != 0x1a || record.payload.first() != Some(&0x81) {
+        return None;
+    }
+    let mut position = 1;
+    let surface = wire::object_ref(&record.payload, &mut position, true)?;
+    if record.payload.len() != position.checked_add(74)? {
+        return None;
+    }
+    let center = line_values::<2>(&record.payload, position)?;
+    position += 16;
+    if record.payload.get(position..position + 2) != Some(&[0x05, 0x05]) {
+        return None;
+    }
+    let [diameter_u, diameter_v, conjugate_angle, start, end, orientation, period] =
+        line_values::<7>(&record.payload, position + 2)?;
+    let diameter = diameter_u.hypot(diameter_v);
+    if diameter <= f64::EPSILON
+        || start >= end
+        || !matches!(orientation, -1.0 | 1.0)
+        || (conjugate_angle - std::f64::consts::FRAC_PI_2).abs() > 1e-12
+        || (period - std::f64::consts::PI * diameter).abs() > 1e-12 * period.abs().max(1.0)
+    {
+        return None;
+    }
+    let reference_x = [diameter_u / diameter, diameter_v / diameter];
+    let reference_y = [-reference_x[1], reference_x[0]];
+    let angles = [
+        orientation * std::f64::consts::TAU * start / period,
+        orientation * std::f64::consts::TAU * end / period,
+    ];
+    rational_arc_pcurve(
+        record,
+        surface,
+        center,
+        reference_x,
+        reference_y,
+        diameter * 0.5,
+        [start, end],
+        angles,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rational_arc_pcurve(
+    record: &B5Record,
+    surface: u32,
+    center: [f64; 2],
+    reference_x: [f64; 2],
+    reference_y: [f64; 2],
+    radius: f64,
+    parameter_range: [f64; 2],
+    angle_range: [f64; 2],
+) -> Option<B5Pcurve> {
+    let [start, end] = parameter_range;
+    let [start_angle, end_angle] = angle_range;
     let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2).ceil();
     if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
         return None;
@@ -2042,18 +2111,24 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         }
         if span == 0 {
             control_points.push([
-                center[0] + radius * angle0.cos(),
-                center[1] + radius * angle0.sin(),
+                center[0]
+                    + radius * (reference_x[0] * angle0.cos() + reference_y[0] * angle0.sin()),
+                center[1]
+                    + radius * (reference_x[1] * angle0.cos() + reference_y[1] * angle0.sin()),
             ]);
             weights.push(1.0);
         }
         control_points.push([
-            center[0] + radius / middle_weight * middle.cos(),
-            center[1] + radius / middle_weight * middle.sin(),
+            center[0]
+                + radius / middle_weight
+                    * (reference_x[0] * middle.cos() + reference_y[0] * middle.sin()),
+            center[1]
+                + radius / middle_weight
+                    * (reference_x[1] * middle.cos() + reference_y[1] * middle.sin()),
         ]);
         control_points.push([
-            center[0] + radius * angle1.cos(),
-            center[1] + radius * angle1.sin(),
+            center[0] + radius * (reference_x[0] * angle1.cos() + reference_y[0] * angle1.sin()),
+            center[1] + radius * (reference_x[1] * angle1.cos() + reference_y[1] * angle1.sin()),
         ]);
         weights.extend([middle_weight, 1.0]);
         if span + 1 < span_count {
@@ -2076,6 +2151,9 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
 }
 
 fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
+    if parse_circular_conic_pcurve(record).is_some() {
+        return None;
+    }
     if !matches!(record.class, 0x1a | 0x1d) || record.payload.first() != Some(&0x81) {
         return None;
     }
@@ -2805,6 +2883,66 @@ mod tests {
         assert!((weights[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
         assert!((pcurve.control_points[0][0] - 2.0).abs() < 1e-12);
         assert!((pcurve.control_points[4][0] + 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn circular_conic_pcurve_uses_diameter_period_parameterization() {
+        let mut payload = vec![0x81, 0x18, 0x34, 0x12];
+        for value in [3.0_f64, 4.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x05, 0x05]);
+        for value in [
+            2.0_f64,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            0.0,
+            std::f64::consts::PI,
+            1.0,
+            2.0 * std::f64::consts::PI,
+        ] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x1a,
+            object_id: 0x1235,
+            payload,
+        };
+        let pcurve = parse_circular_conic_pcurve(&record).expect("circular conic pcurve");
+        assert_eq!(pcurve.surface, 0x1234);
+        assert_eq!(
+            pcurve.distinct_knots,
+            [0.0, std::f64::consts::FRAC_PI_2, std::f64::consts::PI]
+        );
+        assert_eq!(pcurve.multiplicities, [3, 2, 3]);
+        assert_eq!(pcurve.control_points.len(), 5);
+        assert_eq!(evaluate_pcurve(&pcurve, 0.0), Some([4.0, 4.0]));
+        let end = evaluate_pcurve(&pcurve, std::f64::consts::PI).expect("end point");
+        assert!((end[0] - 2.0).abs() < 1e-12);
+        assert!((end[1] - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn noncircular_class_1a_pcurve_remains_opaque() {
+        let mut payload = vec![0x81, 0x82];
+        for value in [0.0_f64, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x05, 0x05]);
+        for value in [2.0_f64, 0.0, 1.0, 0.0, 1.0, 1.0, 3.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x1a,
+            object_id: 7,
+            payload,
+        };
+        assert!(parse_circular_conic_pcurve(&record).is_none());
+        assert!(parse_opaque_pcurve(&record).is_some());
     }
 
     #[test]
