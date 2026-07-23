@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 91;
+pub const CATIA_NATIVE_VERSION: u32 = 92;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -549,6 +549,32 @@ pub struct CatiaDefinitionSchemaSelection {
     pub name: Option<String>,
 }
 
+/// One repeated-reference preamble selector resolved through its graph catalog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaRepeatedReferenceSchemaSelection {
+    /// Serialized order of the blob and schema ordinal.
+    pub order: CatiaRepeatedReferenceSchemaOrder,
+    /// Byte offset of the schema ordinal within the payload.
+    pub offset: u64,
+    /// Stored zero-based source-schema ordinal.
+    pub ordinal: u32,
+    /// Selected catalog entry when the ordinal is in range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    /// UTF-8 source-schema name stored by the selected entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+/// Field order used by a repeated-reference schema preamble.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaRepeatedReferenceSchemaOrder {
+    /// The binary descriptor precedes the schema ordinal.
+    BlobThenSchema,
+    /// The schema ordinal precedes the binary descriptor.
+    SchemaThenBlob,
+}
+
 /// One `7C05` entity-table record paired with a `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntityRecord {
@@ -662,6 +688,9 @@ pub struct CatiaObjectRecord {
     /// Counted reference suffix when the payload repeats its reference prefix exactly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
+    /// Repeated-reference preamble selector resolved through the graph catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeated_reference_schema_selection: Option<CatiaRepeatedReferenceSchemaSelection>,
     /// Structural payload classification.
     pub subtype: PayloadSubtype,
     /// Ordered same-graph payload-reference links.
@@ -991,6 +1020,34 @@ fn definition_schema_selections(
             }
         })
         .collect()
+}
+
+fn repeated_reference_schema_selection(
+    suffix: Option<&object_graph::RepeatedReferenceSuffix>,
+    catalog: Option<&CatiaCatalog>,
+) -> Option<CatiaRepeatedReferenceSchemaSelection> {
+    let (order, ordinal, offset) = match suffix?.schema_preamble.as_ref()? {
+        object_graph::ReferenceSchemaPreamble::BlobThenSchema { schema_ref, offset } => (
+            CatiaRepeatedReferenceSchemaOrder::BlobThenSchema,
+            *schema_ref,
+            *offset,
+        ),
+        object_graph::ReferenceSchemaPreamble::SchemaThenBlob { schema_ref, offset } => (
+            CatiaRepeatedReferenceSchemaOrder::SchemaThenBlob,
+            *schema_ref,
+            *offset,
+        ),
+    };
+    let catalog_entry = usize::try_from(ordinal)
+        .ok()
+        .and_then(|ordinal| catalog?.entries.get(ordinal));
+    Some(CatiaRepeatedReferenceSchemaSelection {
+        order,
+        offset: offset as u64,
+        ordinal,
+        entry: catalog_entry.map(|entry| entry.id.clone()),
+        name: catalog_entry.map(|entry| entry.value.clone()),
+    })
 }
 
 /// CATIA-native records retained outside the format-neutral model.
@@ -1952,6 +2009,11 @@ fn validate_native_links(
             });
             if record.class_entry.as_deref() != expected_class.map(|(entry, _)| entry)
                 || record.class_name.as_deref() != expected_class.map(|(_, value)| value)
+                || record.repeated_reference_schema_selection
+                    != repeated_reference_schema_selection(
+                        record.repeated_reference_suffix.as_ref(),
+                        catalog,
+                    )
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "object record `{}` has an invalid schema class",
@@ -2088,6 +2150,10 @@ impl CatiaNative {
                         .and_then(|ordinal| catalog?.entries.get(ordinal))
                         .map(|entry| entry.id.clone())
                 });
+                record.repeated_reference_schema_selection = repeated_reference_schema_selection(
+                    record.repeated_reference_suffix.as_ref(),
+                    catalog,
+                );
             }
             for entity in entity_records
                 .iter_mut()
@@ -2823,6 +2889,7 @@ fn native_object_graph(
                 storage_ref: record.storage_ref,
                 payload: record.payload,
                 repeated_reference_suffix: record.repeated_reference_suffix,
+                repeated_reference_schema_selection: None,
                 subtype: record.subtype,
                 references: Vec::new(),
             }

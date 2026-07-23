@@ -1694,6 +1694,29 @@ fn standard_catpart_with_value_block() -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_repeated_reference_schema_selection() -> Vec<u8> {
+    let mut payload = vec![0xac, 0xe5];
+    payload.extend_from_slice(&59_u32.to_le_bytes());
+    payload.extend_from_slice(&[0; 59]);
+    payload.extend_from_slice(&[
+        0x85, 0xae, 0x84, 0xb0, 0x82, 0x81, 0x81, 0x81, 0x82, 0x82, 0x81, 0x81, 0xd1, 0x80, 0xfe,
+    ]);
+    let mut stream =
+        object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x84], &payload)]);
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "TargetSchema",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_visualization_values_only() -> Vec<u8> {
     let mut stream = value_block_stream(&[0x32, 4, 0, 0, 0, 0x83]);
     stream.extend(catalog_stream(&[
@@ -5270,6 +5293,40 @@ fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
     malformed
         .store(&mut namespace)
         .expect("store malformed repeated-reference-suffix view");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn native_namespace_resolves_and_validates_repeated_reference_schema_selections() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_repeated_reference_schema_selection(),
+    );
+    let selection = native.object_graphs[0].records[0]
+        .repeated_reference_schema_selection
+        .as_ref()
+        .expect("reference schema selection");
+    assert_eq!(
+        selection.order,
+        crate::native::CatiaRepeatedReferenceSchemaOrder::BlobThenSchema
+    );
+    assert_eq!(selection.ordinal, 4);
+    assert_eq!(selection.offset, 67);
+    assert_eq!(selection.name.as_deref(), Some("TargetSchema"));
+    assert!(selection.entry.is_some());
+
+    let mut malformed = native;
+    malformed.object_graphs[0].records[0]
+        .repeated_reference_schema_selection
+        .as_mut()
+        .expect("reference schema selection")
+        .name = Some("WrongSchema".to_string());
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed reference-schema view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))

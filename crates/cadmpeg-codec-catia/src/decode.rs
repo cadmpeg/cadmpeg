@@ -73,6 +73,12 @@ fn finish_decode(
         .flat_map(|graph| &graph.records)
         .filter(|record| record.repeated_reference_suffix.is_some())
         .count();
+    let repeated_reference_schema_selection_count = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .filter(|record| record.repeated_reference_schema_selection.is_some())
+        .count();
     let design_field_count = native
         .design_objects
         .iter()
@@ -125,6 +131,10 @@ fn finish_decode(
         (
             "decoded_repeated_reference_suffix_count".to_string(),
             repeated_reference_suffix_count,
+        ),
+        (
+            "decoded_repeated_reference_schema_selection_count".to_string(),
+            repeated_reference_schema_selection_count,
         ),
         (
             "decoded_design_object_count".to_string(),
@@ -187,7 +197,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
             ),
             provenance: None,
