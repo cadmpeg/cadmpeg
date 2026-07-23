@@ -206,6 +206,22 @@ pub(crate) struct IncidenceComponentSearch<'a> {
     pub(crate) exhausted: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum IncidenceSolve<T> {
+    Solved(T),
+    Rejected,
+    Exhausted,
+}
+
+impl<T> IncidenceSolve<T> {
+    fn into_option(self) -> Option<T> {
+        match self {
+            Self::Solved(value) => Some(value),
+            Self::Rejected | Self::Exhausted => None,
+        }
+    }
+}
+
 pub(crate) fn compact_boundary_domain_viable(
     domain: &MeshFaceBoundaryDomain,
     assignment: &[Option<[usize; 2]>],
@@ -1182,6 +1198,7 @@ fn completed_incidence_faces_close(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn component_incidence_pair_solutions<F>(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
@@ -1195,135 +1212,176 @@ pub(crate) fn component_incidence_pair_solutions<F>(
 where
     F: Fn(&[[usize; 2]]) -> bool,
 {
-    const MAX_PAIR_SOLUTIONS: usize = 256;
-    if partial_solution_valid
-        .is_some_and(|constraint| constraint.active_edges.len() != choices.len())
-    {
-        return None;
-    }
-    let components = incidence_choice_components(choices, edge_faces, mesh_assignments);
-    let mut face_edges = vec![Vec::new(); face_count];
-    for (edge, faces) in edge_faces.iter().copied().enumerate() {
-        for (rank, face) in faces.into_iter().enumerate() {
-            if (rank == 0 || face != faces[0]) && !face_edges[face].contains(&edge) {
-                face_edges[face].push(edge);
+    component_incidence_pair_solution_outcome(
+        choices,
+        edge_faces,
+        face_count,
+        point_count,
+        mesh_assignments,
+        mesh_quotient,
+        partial_solution_valid,
+        solution_valid,
+    )
+    .into_option()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn component_incidence_pair_solution_outcome<F>(
+    choices: &[Vec<[usize; 2]>],
+    edge_faces: &[[usize; 2]],
+    face_count: usize,
+    point_count: usize,
+    mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
+    mesh_quotient: Option<&MeshQuotient>,
+    partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
+    solution_valid: &F,
+) -> IncidenceSolve<Vec<Vec<[usize; 2]>>>
+where
+    F: Fn(&[[usize; 2]]) -> bool,
+{
+    let mut exhausted = false;
+    let solution = (|| {
+        const MAX_PAIR_SOLUTIONS: usize = 256;
+        if partial_solution_valid
+            .is_some_and(|constraint| constraint.active_edges.len() != choices.len())
+        {
+            return None;
+        }
+        let components = incidence_choice_components(choices, edge_faces, mesh_assignments);
+        let mut face_edges = vec![Vec::new(); face_count];
+        for (edge, faces) in edge_faces.iter().copied().enumerate() {
+            for (rank, face) in faces.into_iter().enumerate() {
+                if (rank == 0 || face != faces[0]) && !face_edges[face].contains(&edge) {
+                    face_edges[face].push(edge);
+                }
             }
         }
-    }
-    let mut fixed = vec![None; choices.len()];
-    let mut degrees = vec![vec![0u8; point_count]; face_count];
-    for (edge, pairs) in choices.iter().enumerate() {
-        let [pair] = pairs.as_slice() else {
-            continue;
-        };
-        fixed[edge] = Some(*pair);
-        let faces = edge_faces[edge];
-        for (rank, face) in faces.into_iter().enumerate() {
-            if rank > 0 && face == faces[0] {
+        let mut fixed = vec![None; choices.len()];
+        let mut degrees = vec![vec![0u8; point_count]; face_count];
+        for (edge, pairs) in choices.iter().enumerate() {
+            let [pair] = pairs.as_slice() else {
                 continue;
-            }
-            for point in pair {
-                degrees[face][*point] = degrees[face][*point].checked_add(1)?;
-            }
-        }
-    }
-    if components.is_empty() {
-        let pairs = fixed.into_iter().collect::<Option<Vec<_>>>()?;
-        return (boundary_domains_close(mesh_assignments, &pairs) && solution_valid(&pairs))
-            .then_some(vec![pairs]);
-    }
-    let component_count = components.len();
-    let mut combined = vec![fixed.clone()];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    for (component_index, component) in components.into_iter().enumerate() {
-        let mut active = vec![false; choices.len()];
-        let mut constraints = HashSet::<(usize, usize)>::new();
-        let mut component_faces = HashSet::new();
-        for &edge in &component {
-            active[edge] = true;
+            };
+            fixed[edge] = Some(*pair);
             let faces = edge_faces[edge];
             for (rank, face) in faces.into_iter().enumerate() {
                 if rank > 0 && face == faces[0] {
                     continue;
                 }
-                component_faces.insert(face);
-                for point in choices[edge].iter().flatten() {
-                    constraints.insert((face, *point));
+                for point in pair {
+                    degrees[face][*point] = degrees[face][*point].checked_add(1)?;
                 }
             }
         }
-        let mut constraints = constraints.into_iter().collect::<Vec<_>>();
-        constraints.sort_unstable();
-        let filter = |solution: &[MeshEndpointPair]| {
-            combined.iter().any(|prefix| {
-                let mut assignment = prefix.clone();
-                for &(edge, pair) in solution {
-                    assignment[edge] = Some(pair);
+        if components.is_empty() {
+            let pairs = fixed.into_iter().collect::<Option<Vec<_>>>()?;
+            return (boundary_domains_close(mesh_assignments, &pairs) && solution_valid(&pairs))
+                .then_some(vec![pairs]);
+        }
+        let component_count = components.len();
+        let mut combined = vec![fixed.clone()];
+        let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        for (component_index, component) in components.into_iter().enumerate() {
+            let mut active = vec![false; choices.len()];
+            let mut constraints = HashSet::<(usize, usize)>::new();
+            let mut component_faces = HashSet::new();
+            for &edge in &component {
+                active[edge] = true;
+                let faces = edge_faces[edge];
+                for (rank, face) in faces.into_iter().enumerate() {
+                    if rank > 0 && face == faces[0] {
+                        continue;
+                    }
+                    component_faces.insert(face);
+                    for point in choices[edge].iter().flatten() {
+                        constraints.insert((face, *point));
+                    }
                 }
-                completed_incidence_faces_close(
-                    &component_faces,
-                    &assignment,
-                    &face_edges,
-                    mesh_assignments,
-                ) && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&assignment))
-                    && (component_index + 1 != component_count
-                        || assignment
-                            .into_iter()
-                            .collect::<Option<Vec<_>>>()
-                            .is_some_and(|pairs| {
-                                boundary_domains_close(mesh_assignments, &pairs)
-                                    && solution_valid(&pairs)
-                            }))
-            })
-        };
-        let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
-        let (exhausted, solutions) = {
-            let mut search = IncidenceComponentSearch {
-                choices,
-                edge_faces,
-                face_edges: &face_edges,
-                mesh_assignments,
-                mesh_quotient,
-                active,
-                edges: &component,
-                constraints,
-                assignment: fixed.clone(),
-                degrees: degrees.clone(),
-                solutions: Vec::new(),
-                solution_filter,
-                partial_solution_filter: partial_solution_valid,
-                dead_states: HashSet::new(),
-                budget: &budget,
-                states: 0,
-                exhausted: false,
-            };
-            search.search();
-            (search.exhausted, search.solutions)
-        };
-        if exhausted || solutions.is_empty() {
-            return None;
-        }
-        let result_count = combined.len().checked_mul(solutions.len())?;
-        if result_count > MAX_PAIR_SOLUTIONS {
-            return None;
-        }
-        combined = combined
-            .into_iter()
-            .flat_map(|assignment| {
-                solutions.iter().map(move |solution| {
-                    let mut assignment = assignment.clone();
+            }
+            let mut constraints = constraints.into_iter().collect::<Vec<_>>();
+            constraints.sort_unstable();
+            let filter = |solution: &[MeshEndpointPair]| {
+                combined.iter().any(|prefix| {
+                    let mut assignment = prefix.clone();
                     for &(edge, pair) in solution {
                         assignment[edge] = Some(pair);
                     }
-                    assignment
+                    completed_incidence_faces_close(
+                        &component_faces,
+                        &assignment,
+                        &face_edges,
+                        mesh_assignments,
+                    ) && partial_solution_valid
+                        .is_none_or(|constraint| (constraint.valid)(&assignment))
+                        && (component_index + 1 != component_count
+                            || assignment
+                                .into_iter()
+                                .collect::<Option<Vec<_>>>()
+                                .is_some_and(|pairs| {
+                                    boundary_domains_close(mesh_assignments, &pairs)
+                                        && solution_valid(&pairs)
+                                }))
                 })
-            })
-            .collect();
+            };
+            let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
+            let (search_exhausted, solutions) = {
+                let mut search = IncidenceComponentSearch {
+                    choices,
+                    edge_faces,
+                    face_edges: &face_edges,
+                    mesh_assignments,
+                    mesh_quotient,
+                    active,
+                    edges: &component,
+                    constraints,
+                    assignment: fixed.clone(),
+                    degrees: degrees.clone(),
+                    solutions: Vec::new(),
+                    solution_filter,
+                    partial_solution_filter: partial_solution_valid,
+                    dead_states: HashSet::new(),
+                    budget: &budget,
+                    states: 0,
+                    exhausted: false,
+                };
+                search.search();
+                (search.exhausted, search.solutions)
+            };
+            if search_exhausted {
+                exhausted = true;
+                return None;
+            }
+            if solutions.is_empty() {
+                return None;
+            }
+            let result_count = combined.len().checked_mul(solutions.len())?;
+            if result_count > MAX_PAIR_SOLUTIONS {
+                exhausted = true;
+                return None;
+            }
+            combined = combined
+                .into_iter()
+                .flat_map(|assignment| {
+                    solutions.iter().map(move |solution| {
+                        let mut assignment = assignment.clone();
+                        for &(edge, pair) in solution {
+                            assignment[edge] = Some(pair);
+                        }
+                        assignment
+                    })
+                })
+                .collect();
+        }
+        combined
+            .into_iter()
+            .map(|assignment| assignment.into_iter().collect::<Option<Vec<_>>>())
+            .collect()
+    })();
+    match solution {
+        Some(solution) => IncidenceSolve::Solved(solution),
+        None if exhausted => IncidenceSolve::Exhausted,
+        None => IncidenceSolve::Rejected,
     }
-    combined
-        .into_iter()
-        .map(|assignment| assignment.into_iter().collect::<Option<Vec<_>>>())
-        .collect()
 }
 
 pub(crate) fn reconstruct_incidence_candidates(
@@ -1398,15 +1456,49 @@ pub(crate) fn incidence_endpoint_pair_solutions<F>(
 where
     F: Fn(&[[usize; 2]]) -> bool,
 {
-    let mut choices = edge_candidates.to_vec();
-    for candidates in &mut choices {
-        for pair in candidates.iter_mut() {
-            pair.sort_unstable();
+    incidence_endpoint_pair_solution_outcome(
+        edge_rows,
+        vertex_points,
+        edge_faces,
+        edge_candidates,
+        face_count,
+        mesh_assignments,
+        mesh_quotient,
+        partial_solution_valid,
+        solution_valid,
+    )
+    .into_option()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn incidence_endpoint_pair_solution_outcome<F>(
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    edge_faces: &[[usize; 2]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    face_count: usize,
+    mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
+    mesh_quotient: Option<&MeshQuotient>,
+    partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
+    solution_valid: &F,
+) -> IncidenceSolve<Vec<Vec<[usize; 2]>>>
+where
+    F: Fn(&[[usize; 2]]) -> bool,
+{
+    let Some(choices) = (|| {
+        let mut choices = edge_candidates.to_vec();
+        for candidates in &mut choices {
+            for pair in candidates.iter_mut() {
+                pair.sort_unstable();
+            }
+            candidates.sort_unstable();
+            candidates.dedup();
         }
-        candidates.sort_unstable();
-        candidates.dedup();
-    }
-    prune_incidence_choices(&mut choices, edge_faces, face_count, vertex_points.len())?;
+        prune_incidence_choices(&mut choices, edge_faces, face_count, vertex_points.len())?;
+        Some(choices)
+    })() else {
+        return IncidenceSolve::Rejected;
+    };
     let complete_valid = |points: &[[usize; 2]]| {
         solution_valid(points)
             && reconstruct_incidence(
@@ -1418,7 +1510,7 @@ where
             )
             .is_some()
     };
-    let solutions = component_incidence_pair_solutions(
+    let solutions = component_incidence_pair_solution_outcome(
         &choices,
         edge_faces,
         face_count,
@@ -1427,6 +1519,12 @@ where
         mesh_quotient,
         partial_solution_valid,
         &complete_valid,
-    )?;
-    (!solutions.is_empty()).then_some(solutions)
+    );
+    match solutions {
+        IncidenceSolve::Solved(solutions) if !solutions.is_empty() => {
+            IncidenceSolve::Solved(solutions)
+        }
+        IncidenceSolve::Solved(_) | IncidenceSolve::Rejected => IncidenceSolve::Rejected,
+        IncidenceSolve::Exhausted => IncidenceSolve::Exhausted,
+    }
 }

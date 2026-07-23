@@ -1294,6 +1294,39 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
 }
 
 #[test]
+fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
+    use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
+
+    let choices = vec![(0..300).map(|point| [point, point]).collect::<Vec<_>>()];
+    assert_eq!(
+        component_incidence_pair_solution_outcome(
+            &choices,
+            &[[0, 0]],
+            1,
+            300,
+            None,
+            None,
+            None,
+            &|_| true,
+        ),
+        IncidenceSolve::Exhausted
+    );
+    assert_eq!(
+        component_incidence_pair_solution_outcome(
+            &[Vec::new()],
+            &[[0, 0]],
+            1,
+            1,
+            None,
+            None,
+            None,
+            &|_| true,
+        ),
+        IncidenceSolve::Rejected
+    );
+}
+
+#[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
     let use_ = |edge, start, end| MeshBoundaryEdgeCandidate {
         edge,

@@ -8,7 +8,8 @@ use crate::families::standard::topology::{
 };
 use crate::solve::incidence::{
     compact_boundary_domain_viable, deferred_boundary_cycle_matches,
-    incidence_endpoint_pair_solutions, labeled_assignment_endpoint_cycles_viable,
+    incidence_endpoint_pair_solution_outcome, labeled_assignment_endpoint_cycles_viable,
+    IncidenceSolve,
 };
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, domains_have_distinct_matching, MatchingEdgeConstraint,
@@ -26,6 +27,13 @@ use std::sync::Arc;
 pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 100_000;
 pub(crate) type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);
+
+pub(crate) enum MeshCandidateSolve {
+    Solved(StandardTopology, Vec<usize>),
+    Rejected,
+    Ambiguous,
+    Exhausted,
+}
 
 #[derive(Clone)]
 pub(crate) struct MeshQuotient {
@@ -5170,22 +5178,36 @@ fn resolve_standard_mesh_endpoint_candidates(
 /// whose assignment can affect that predicate, allowing constrained variables
 /// to be selected before unrelated incidence variables.
 #[must_use]
-pub fn parse_standard_mesh_candidates<F>(
+pub(crate) fn parse_standard_mesh_candidate_outcome<F>(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     partial_constraint_edges: &[bool],
     pair_solution_valid: F,
-) -> Option<(StandardTopology, Vec<usize>)>
+) -> MeshCandidateSolve
 where
     F: Fn(&[Option<[usize; 2]>]) -> bool,
 {
     const MAX_COMPLETED_PAIRS_PER_EDGE: usize = 65_536;
     const MAX_COMPLETED_PAIRS_TOTAL: usize = 1_000_000;
 
-    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let Some((face_count, edge_rows, vertex_points, mut mesh_domains, port_identities)) = (|| {
+        let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+        let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+        let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+        let mesh_domains =
+            standard_mesh_boundary_domains_impl(bytes, edge_faces, Some(edge_candidates), true)?;
+        let port_identities = standard_edge_port_identities(bytes)?;
+        Some((
+            face_count,
+            edge_rows,
+            vertex_points,
+            mesh_domains,
+            port_identities,
+        ))
+    })() else {
+        return MeshCandidateSolve::Rejected;
+    };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
         || edge_rows.len() != partial_constraint_edges.len()
@@ -5195,23 +5217,21 @@ where
             .flatten()
             .any(|point| *point >= vertex_points.len())
     {
-        return None;
+        return MeshCandidateSolve::Rejected;
     }
-    let mut mesh_domains =
-        standard_mesh_boundary_domains_impl(bytes, edge_faces, Some(edge_candidates), true)?;
     if mesh_domains.len() != face_count {
-        return None;
+        return MeshCandidateSolve::Rejected;
     }
     for domain in &mut mesh_domains {
         if let MeshFaceBoundaryDomain::Ordered(assignments) = domain {
             deduplicate_mesh_quotient_assignments(std::slice::from_mut(assignments));
         }
     }
-    let port_identities = standard_edge_port_identities(bytes)?;
     if port_identities.len() != edge_rows.len() {
-        return None;
+        return MeshCandidateSolve::Rejected;
     }
-    let incidence_solution = (|| {
+    let mut preparation_exhausted = false;
+    let Some((mesh_quotient, completed_edge_candidates)) = (|| {
         let mut mesh_quotient =
             initial_mesh_quotient(edge_candidates, vertex_points.len(), &port_identities)?;
         let completed_edge_candidates = if edge_candidates.iter().any(Vec::is_empty) {
@@ -5243,14 +5263,20 @@ where
             } else {
                 let closure_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
                 let mut closed = mesh_quotient.clone();
-                closed.close_coordinate_roots_for_incidence_with_budget(
-                    vertex_points.len(),
-                    edge_candidates,
-                    edge_faces,
-                    face_count,
-                    &mesh_domains,
-                    Some(&closure_budget),
-                )?;
+                if closed
+                    .close_coordinate_roots_for_incidence_with_budget(
+                        vertex_points.len(),
+                        edge_candidates,
+                        edge_faces,
+                        face_count,
+                        &mesh_domains,
+                        Some(&closure_budget),
+                    )
+                    .is_none()
+                {
+                    preparation_exhausted = closure_budget.exhausted.get();
+                    return None;
+                }
                 mesh_quotient = closed;
                 complete_mesh_endpoint_candidates_from_quotient(
                     edge_candidates,
@@ -5265,47 +5291,65 @@ where
         if !mesh_quotient.edge_domains_viable(&completed_edge_candidates) {
             return None;
         }
-        let pair_solutions = incidence_endpoint_pair_solutions(
-            &edge_rows,
-            &vertex_points,
-            edge_faces,
-            &completed_edge_candidates,
-            face_count,
-            Some(&mesh_domains),
-            Some(&mesh_quotient),
-            Some(MeshPartialEndpointConstraint {
-                active_edges: partial_constraint_edges,
-                valid: &pair_solution_valid,
-            }),
-            &|pairs| pair_solution_valid(&pairs.iter().copied().map(Some).collect::<Vec<_>>()),
-        )?;
-        let mut solution = None;
-        for pairs in pair_solutions {
-            let singleton = pairs.into_iter().map(|pair| vec![pair]).collect::<Vec<_>>();
-            let Some(mut mesh_assignments) =
-                standard_mesh_boundary_assignments(bytes, edge_faces, Some(&singleton))
-            else {
-                continue;
-            };
-            deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
-            let Some(candidate) = resolve_standard_mesh_endpoint_candidates(
-                &edge_rows,
-                &vertex_points,
-                &singleton,
-                mesh_assignments,
-                &port_identities,
-            ) else {
-                continue;
-            };
-            match &solution {
-                Some(stored) if !mesh_candidates_equivalent(stored, &candidate) => return None,
-                None => solution = Some(candidate),
-                Some(_) => {}
+        Some((mesh_quotient, completed_edge_candidates))
+    })() else {
+        return if preparation_exhausted {
+            MeshCandidateSolve::Exhausted
+        } else {
+            MeshCandidateSolve::Rejected
+        };
+    };
+    let pair_solutions = incidence_endpoint_pair_solution_outcome(
+        &edge_rows,
+        &vertex_points,
+        edge_faces,
+        &completed_edge_candidates,
+        face_count,
+        Some(&mesh_domains),
+        Some(&mesh_quotient),
+        Some(MeshPartialEndpointConstraint {
+            active_edges: partial_constraint_edges,
+            valid: &pair_solution_valid,
+        }),
+        &|pairs| pair_solution_valid(&pairs.iter().copied().map(Some).collect::<Vec<_>>()),
+    );
+    let incidence_solution = match pair_solutions {
+        IncidenceSolve::Solved(pair_solutions) => {
+            let mut solution = None;
+            for pairs in pair_solutions {
+                let singleton = pairs.into_iter().map(|pair| vec![pair]).collect::<Vec<_>>();
+                let Some(mut mesh_assignments) =
+                    standard_mesh_boundary_assignments(bytes, edge_faces, Some(&singleton))
+                else {
+                    continue;
+                };
+                deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
+                let Some(candidate) = resolve_standard_mesh_endpoint_candidates(
+                    &edge_rows,
+                    &vertex_points,
+                    &singleton,
+                    mesh_assignments,
+                    &port_identities,
+                ) else {
+                    continue;
+                };
+                match &solution {
+                    Some(stored) if !mesh_candidates_equivalent(stored, &candidate) => {
+                        return MeshCandidateSolve::Ambiguous;
+                    }
+                    None => solution = Some(candidate),
+                    Some(_) => {}
+                }
             }
+            solution
         }
-        solution
-    })();
-    incidence_solution.or_else(|| {
+        IncidenceSolve::Rejected => None,
+        IncidenceSolve::Exhausted => return MeshCandidateSolve::Exhausted,
+    };
+    if let Some((topology, assignment)) = incidence_solution {
+        return MeshCandidateSolve::Solved(topology, assignment);
+    }
+    let fallback = (|| {
         let assignments = mesh_domains
             .into_iter()
             .map(|domain| match domain {
@@ -5321,5 +5365,8 @@ where
             assignments,
             &port_identities,
         )
+    })();
+    fallback.map_or(MeshCandidateSolve::Rejected, |(topology, assignment)| {
+        MeshCandidateSolve::Solved(topology, assignment)
     })
 }

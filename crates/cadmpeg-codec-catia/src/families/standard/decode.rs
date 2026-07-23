@@ -631,6 +631,8 @@ enum StandardTopologyFailure {
     NativeEndpointPropagation,
     EmptyEndpointDomain,
     NoTopologySolution,
+    AmbiguousTopologySolution,
+    TopologySearchExhausted,
     InvalidTopologySolution,
     InadmissibleNeutralModel,
 }
@@ -653,6 +655,12 @@ impl StandardTopologyFailure {
             Self::NoTopologySolution => {
                 "trim, port, and endpoint constraints have no complete topology solution"
             }
+            Self::AmbiguousTopologySolution => {
+                "trim, port, and endpoint constraints admit distinct complete topology solutions"
+            }
+            Self::TopologySearchExhausted => {
+                "the bounded topology search exhausted its operation or solution budget"
+            }
             Self::InvalidTopologySolution => {
                 "the solved topology violates model cardinality or incidence invariants"
             }
@@ -661,6 +669,24 @@ impl StandardTopologyFailure {
             }
         }
     }
+}
+
+fn retry_rejected_mesh_solution(
+    preferred: mesh_quotient::MeshCandidateSolve,
+    fallback: impl FnOnce() -> mesh_quotient::MeshCandidateSolve,
+) -> mesh_quotient::MeshCandidateSolve {
+    match preferred {
+        mesh_quotient::MeshCandidateSolve::Rejected => fallback(),
+        outcome => outcome,
+    }
+}
+
+fn mesh_retry_work_is_bounded(candidates: &[Vec<[usize; 2]>]) -> bool {
+    candidates
+        .iter()
+        .try_fold(0usize, |total, choices| total.checked_add(choices.len()))
+        .and_then(|choices| choices.checked_mul(candidates.len()))
+        .is_some_and(|work| work <= mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS)
 }
 
 #[derive(Clone, PartialEq)]
@@ -1760,6 +1786,8 @@ fn attach_standard_topology(
                 .is_some_and(|options| options[edge].len() > 1)
         })
         .collect::<Vec<_>>();
+    let mut mesh_search_ambiguous = false;
+    let mut mesh_search_exhausted = false;
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
     } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
@@ -1773,7 +1801,7 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        mesh_quotient::parse_standard_mesh_candidates(
+        let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
             brep,
             &edge_faces,
             options,
@@ -1789,7 +1817,48 @@ fn attach_standard_topology(
                     pairs,
                 )
             },
-        )
+        );
+        let has_circle_preference = circle_constraint_edges
+            .iter()
+            .any(|constrained| *constrained);
+        let retry_is_bounded = mesh_retry_work_is_bounded(options);
+        let outcome = if has_circle_preference && retry_is_bounded {
+            // Distinct B-rep edges may legally occupy overlapping ranges of the same
+            // circular carrier. Treat range separation as a search preference, then
+            // accept the unconstrained result only when it is uniquely determined.
+            retry_rejected_mesh_solution(preferred, || {
+                let unconstrained = vec![false; circle_constraint_edges.len()];
+                mesh_quotient::parse_standard_mesh_candidate_outcome(
+                    brep,
+                    &edge_faces,
+                    options,
+                    &unconstrained,
+                    |_| true,
+                )
+            })
+        } else {
+            if has_circle_preference
+                && !retry_is_bounded
+                && matches!(&preferred, mesh_quotient::MeshCandidateSolve::Rejected)
+            {
+                mesh_search_exhausted = true;
+            }
+            preferred
+        };
+        match outcome {
+            mesh_quotient::MeshCandidateSolve::Solved(topology, assignment) => {
+                Some((topology, assignment))
+            }
+            mesh_quotient::MeshCandidateSolve::Rejected => None,
+            mesh_quotient::MeshCandidateSolve::Ambiguous => {
+                mesh_search_ambiguous = true;
+                None
+            }
+            mesh_quotient::MeshCandidateSolve::Exhausted => {
+                mesh_search_exhausted = true;
+                None
+            }
+        }
     }) {
         bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
@@ -1805,7 +1874,13 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
-        return Err(StandardTopologyFailure::NoTopologySolution);
+        return Err(if mesh_search_exhausted {
+            StandardTopologyFailure::TopologySearchExhausted
+        } else if mesh_search_ambiguous {
+            StandardTopologyFailure::AmbiguousTopologySolution
+        } else {
+            StandardTopologyFailure::NoTopologySolution
+        });
     };
     let Some(edge_vertices) = validate_standard_topology(
         ir,
@@ -3919,9 +3994,10 @@ mod route_tests {
         bind_ordered_standard_curve_branches, build_standard_edge_curve,
         circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
         combine_propagated_endpoint_pairs, include_native_endpoint_pairs,
-        intersection_line_direction, merge_native_endpoint_evidence, point_on_known_surface,
-        point_on_standard_face, resolve_standard_endpoint_pairs,
-        standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
+        intersection_line_direction, merge_native_endpoint_evidence, mesh_retry_work_is_bounded,
+        point_on_known_surface, point_on_standard_face, resolve_standard_endpoint_pairs,
+        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
+        standard_circle_param_range, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, unique_native_identity_points, StandardEdgeSupport,
@@ -3944,8 +4020,35 @@ mod route_tests {
     use cadmpeg_ir::units::Units;
 
     use cadmpeg_ir::AnnotationBuilder;
+    use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::collections::HashMap;
+
+    #[test]
+    fn mesh_retry_runs_only_after_exact_rejection() {
+        use crate::solve::mesh_quotient::MeshCandidateSolve;
+
+        let called = Cell::new(false);
+        let outcome = retry_rejected_mesh_solution(MeshCandidateSolve::Exhausted, || {
+            called.set(true);
+            MeshCandidateSolve::Rejected
+        });
+        assert!(matches!(outcome, MeshCandidateSolve::Exhausted));
+        assert!(!called.get());
+
+        let outcome = retry_rejected_mesh_solution(MeshCandidateSolve::Rejected, || {
+            called.set(true);
+            MeshCandidateSolve::Ambiguous
+        });
+        assert!(matches!(outcome, MeshCandidateSolve::Ambiguous));
+        assert!(called.get());
+
+        assert!(mesh_retry_work_is_bounded(&[vec![[0, 1]], vec![[1, 2]]]));
+        assert!(!mesh_retry_work_is_bounded(&vec![
+            vec![[0, 1]; 1_000];
+            1_000
+        ]));
+    }
 
     #[test]
     fn non_collinear_circle_endpoints_determine_the_carrier_plane() {
