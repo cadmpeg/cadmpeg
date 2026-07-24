@@ -35067,6 +35067,12 @@ fn typed_relation_definition(
             .map(|entity| SketchLocus::Entity(entity.id.clone()))
             .or_else(|| {
                 let marker = marker(index)?;
+                if let Some(entity) = sketch_entities.iter().find(|entity| {
+                    entity.native_ref.as_deref() == Some(marker)
+                        && matches!(entity.geometry, SketchGeometry::Point { .. })
+                }) {
+                    return Some(SketchLocus::Entity(entity.id.clone()));
+                }
                 if matches!(
                     relation.operands.get(index).map(|operand| operand.kind),
                     Some(FeatureInputOperandKind::Native(0x837b | 0xbc7c))
@@ -39805,6 +39811,25 @@ mod profile_join_tests {
             Some(&parameter),
             &definition,
             &entities
+        ));
+
+        let mut exact_entities = entities.clone();
+        exact_entities[0].native_ref = Some(first.id.clone());
+        exact_entities[1].native_ref = Some(second.id.clone());
+        assert!(matches!(
+            typed_relation_definition(
+                &relation,
+                Some(&parameter),
+                &sketch,
+                &exact_entities,
+                &markers,
+                &HashMap::new(),
+            ),
+            Some(SketchConstraintDefinition::DistanceLoci {
+                first: SketchLocus::Entity(first),
+                second: SketchLocus::Entity(second),
+                ..
+            }) if first == exact_entities[0].id && second == exact_entities[1].id
         ));
     }
 
