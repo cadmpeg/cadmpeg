@@ -30188,6 +30188,8 @@ pub(crate) fn project_relation_bindings(
                     })
                     .collect(),
             });
+            let active = relation_constraint_is_inactive(parameter, &definition, sketch_entities)
+                .then_some(false);
             constraints.push(SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
@@ -30197,7 +30199,7 @@ pub(crate) fn project_relation_bindings(
                 definition,
                 name: None,
                 driving: None,
-                active: None,
+                active,
                 virtual_space: None,
                 visible: None,
                 orientation: None,
@@ -30224,12 +30226,8 @@ pub(crate) fn project_relation_bindings(
             ) else {
                 continue;
             };
-            let active = marker_relation_has_incompatible_operand_family(
-                marker,
-                &definition,
-                sketch_entities,
-            )
-            .then_some(false);
+            let active =
+                marker_relation_is_inactive(marker, &definition, sketch_entities).then_some(false);
             constraints.push(SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
@@ -30477,34 +30475,13 @@ fn typed_marker_relation_definition_in_sketch(
                 }
             };
             if let [entity] = entities.as_slice() {
-                let projected_kind =
-                    if matches!(kind, Horizontal | Vertical) && !sketch_entities.is_empty() {
-                        let Some(SketchEntity {
-                            geometry: SketchGeometry::Line { start, end },
-                            ..
-                        }) = sketch_entities
-                            .iter()
-                            .find(|candidate| candidate.id == *entity)
-                        else {
-                            return Some(native());
-                        };
-                        let horizontal = same_dimension_length(start.v, end.v);
-                        let vertical = same_dimension_length(start.u, end.u);
-                        match (horizontal, vertical) {
-                            (true, false) => Horizontal,
-                            (false, true) => Vertical,
-                            _ => return Some(native()),
-                        }
-                    } else {
-                        kind
-                    };
                 if matches!(kind, Horizontal | Vertical)
                     && sketch_entities.is_empty()
                     && entity.0.contains("sketch-entity#relation-point:")
                 {
                     return Some(native());
                 }
-                match projected_kind {
+                match kind {
                     Horizontal => SketchConstraintDefinition::Horizontal {
                         entity: entity.clone(),
                     },
@@ -30534,28 +30511,7 @@ fn typed_marker_relation_definition_in_sketch(
                 let [first, second] = loci.as_slice() else {
                     return Some(native());
                 };
-                let mut horizontal = kind == Horizontal;
-                if !sketch_entities.is_empty() {
-                    let (Some(first_point), Some(second_point)) = (
-                        profile_locus_point(first, sketch_entities),
-                        profile_locus_point(second, sketch_entities),
-                    ) else {
-                        return Some(native());
-                    };
-                    let horizontal_aligned = same_dimension_length(first_point.v, second_point.v);
-                    let vertical_aligned = same_dimension_length(first_point.u, second_point.u);
-                    let native_aligned = if horizontal {
-                        horizontal_aligned
-                    } else {
-                        vertical_aligned
-                    };
-                    if !native_aligned && horizontal_aligned != vertical_aligned {
-                        horizontal = horizontal_aligned;
-                    } else if !native_aligned {
-                        return Some(native());
-                    }
-                }
-                if horizontal {
+                if kind == Horizontal {
                     SketchConstraintDefinition::HorizontalPoints {
                         first: first.clone(),
                         second: second.clone(),
@@ -30757,22 +30713,6 @@ fn typed_marker_relation_definition_in_sketch(
             let [first, second] = loci.as_slice() else {
                 return Some(native());
             };
-            if !sketch_entities.is_empty() {
-                let (Some(first_point), Some(second_point)) = (
-                    profile_locus_point(first, sketch_entities),
-                    profile_locus_point(second, sketch_entities),
-                ) else {
-                    return Some(native());
-                };
-                let aligned = if kind == HorizontalPoints {
-                    same_dimension_length(first_point.v, second_point.v)
-                } else {
-                    same_dimension_length(first_point.u, second_point.u)
-                };
-                if !aligned {
-                    return Some(native());
-                }
-            }
             match kind {
                 HorizontalPoints => SketchConstraintDefinition::HorizontalPoints {
                     first: first.clone(),
@@ -31385,7 +31325,45 @@ fn relation_link_identifies_owner(
         || relation.object_index == Some(u32::from(link.local_id))
 }
 
-fn marker_relation_has_incompatible_operand_family(
+fn typed_axis_relation_is_inactive(
+    definition: &SketchConstraintDefinition,
+    sketch_entities: &[SketchEntity],
+) -> Option<bool> {
+    let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id == *id);
+    match definition {
+        SketchConstraintDefinition::Horizontal { entity: id }
+        | SketchConstraintDefinition::Vertical { entity: id } => {
+            let SketchGeometry::Line { start, end } = &entity(id)?.geometry else {
+                return Some(true);
+            };
+            Some(
+                if matches!(definition, SketchConstraintDefinition::Horizontal { .. }) {
+                    !same_dimension_length(start.v, end.v)
+                } else {
+                    !same_dimension_length(start.u, end.u)
+                },
+            )
+        }
+        SketchConstraintDefinition::HorizontalPoints { first, second }
+        | SketchConstraintDefinition::VerticalPoints { first, second } => {
+            let first = profile_locus_point(first, sketch_entities)?;
+            let second = profile_locus_point(second, sketch_entities)?;
+            Some(
+                if matches!(
+                    definition,
+                    SketchConstraintDefinition::HorizontalPoints { .. }
+                ) {
+                    !same_dimension_length(first.v, second.v)
+                } else {
+                    !same_dimension_length(first.u, second.u)
+                },
+            )
+        }
+        _ => None,
+    }
+}
+
+fn marker_relation_is_inactive(
     marker: &SketchInputEntity,
     definition: &SketchConstraintDefinition,
     sketch_entities: &[SketchEntity],
@@ -31399,6 +31377,9 @@ fn marker_relation_has_incompatible_operand_family(
     let SketchInputKind::Relation(kind) = marker.kind else {
         return false;
     };
+    if let Some(inactive) = typed_axis_relation_is_inactive(definition, sketch_entities) {
+        return inactive;
+    }
     let SketchConstraintDefinition::Native {
         entities, operands, ..
     } = definition
@@ -34935,6 +34916,133 @@ fn linked_single_entities(
     Some(result)
 }
 
+fn relation_constraint_is_inactive(
+    parameter: Option<&cadmpeg_ir::features::DesignParameter>,
+    definition: &SketchConstraintDefinition,
+    sketch_entities: &[SketchEntity],
+) -> bool {
+    let Some(parameter) = parameter else {
+        return false;
+    };
+    let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id == *id);
+    match definition {
+        SketchConstraintDefinition::DistanceLoci { first, second, .. } => {
+            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+                parameter.value.as_ref()
+            else {
+                return true;
+            };
+            let measured = if let (Some(first), Some(second)) = (
+                profile_locus_point(first, sketch_entities),
+                profile_locus_point(second, sketch_entities),
+            ) {
+                Some((second.u - first.u).hypot(second.v - first.v))
+            } else {
+                let point_line = |point: &SketchLocus, line: &SketchLocus| {
+                    let point = profile_locus_point(point, sketch_entities)?;
+                    let SketchLocus::Entity(line) = line else {
+                        return None;
+                    };
+                    point_line_distance_value(point, entity(line)?)
+                };
+                point_line(first, second).or_else(|| point_line(second, first))
+            };
+            measured.is_some_and(|measured| !same_dimension_length(measured, expected.0))
+        }
+        SketchConstraintDefinition::HorizontalDistance { first, second, .. } => {
+            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+                parameter.value.as_ref()
+            else {
+                return true;
+            };
+            let (Some(first), Some(second)) = (
+                profile_locus_point(first, sketch_entities),
+                profile_locus_point(second, sketch_entities),
+            ) else {
+                return false;
+            };
+            !same_dimension_length((second.u - first.u).abs(), expected.0)
+        }
+        SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
+            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+                parameter.value.as_ref()
+            else {
+                return true;
+            };
+            let (Some(first), Some(second)) = (
+                profile_locus_point(first, sketch_entities),
+                profile_locus_point(second, sketch_entities),
+            ) else {
+                return false;
+            };
+            !same_dimension_length((second.v - first.v).abs(), expected.0)
+        }
+        SketchConstraintDefinition::Distance { entities, .. } => {
+            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+                parameter.value.as_ref()
+            else {
+                return true;
+            };
+            let [first, second] = entities.as_slice() else {
+                return true;
+            };
+            line_line_distance(
+                match entity(first) {
+                    Some(entity) => entity,
+                    None => return false,
+                },
+                match entity(second) {
+                    Some(entity) => entity,
+                    None => return false,
+                },
+            )
+            .is_some_and(|measured| !same_dimension_length(measured, expected.0))
+        }
+        SketchConstraintDefinition::Angle { first, second, .. } => {
+            let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) =
+                parameter.value.as_ref()
+            else {
+                return true;
+            };
+            line_line_angle(
+                match entity(first) {
+                    Some(entity) => entity,
+                    None => return false,
+                },
+                match entity(second) {
+                    Some(entity) => entity,
+                    None => return false,
+                },
+            )
+            .is_some_and(|measured| !same_dimension_angle(measured, expected.0))
+        }
+        SketchConstraintDefinition::Radius { entity: id, .. }
+        | SketchConstraintDefinition::Diameter { entity: id, .. } => {
+            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+                parameter.value.as_ref()
+            else {
+                return true;
+            };
+            let Some(entity) = entity(id) else {
+                return false;
+            };
+            let radius = match &entity.geometry {
+                SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
+                    radius.0
+                }
+                _ => return true,
+            };
+            let measured = if matches!(definition, SketchConstraintDefinition::Diameter { .. }) {
+                radius * 2.0
+            } else {
+                radius
+            };
+            !same_dimension_length(measured, expected.0)
+        }
+        _ => false,
+    }
+}
+
 fn typed_relation_definition(
     relation: &FeatureInputRelationInstance,
     parameter: Option<&cadmpeg_ir::features::DesignParameter>,
@@ -34974,6 +35082,8 @@ fn typed_relation_definition(
         PointPointDistance => {
             let first = point(0);
             let second = point(1);
+            let authoritative =
+                relation.display_scalar_ref.is_some() && first.is_some() && second.is_some();
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -35003,6 +35113,13 @@ fn typed_relation_definition(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
                     expected.0,
                 ) {
+                    if authoritative {
+                        return Some(SketchConstraintDefinition::DistanceLoci {
+                            first,
+                            second,
+                            parameter: parameter_id,
+                        });
+                    }
                     let horizontal =
                         same_dimension_length((second_point.u - first_point.u).abs(), expected.0);
                     let vertical =
@@ -35045,6 +35162,8 @@ fn typed_relation_definition(
             let horizontal = relation.family == PointPointHorizontalDistance;
             let first = point(0);
             let second = point(1);
+            let authoritative =
+                relation.display_scalar_ref.is_some() && first.is_some() && second.is_some();
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -35090,7 +35209,7 @@ fn typed_relation_definition(
                 } else {
                     (second_point.v - first_point.v).abs()
                 };
-                if !same_dimension_length(measured, expected.0) {
+                if !same_dimension_length(measured, expected.0) && !authoritative {
                     (first, second) = unique_repaired_profile_axis_distance_pair(
                         sketch,
                         &first,
@@ -35121,6 +35240,8 @@ fn typed_relation_definition(
             let line = marker(1).and_then(|marker| {
                 single_marker_line_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
             });
+            let authoritative =
+                relation.display_scalar_ref.is_some() && point.is_some() && line.is_some();
             let (mut point, mut line) = match (point, line) {
                 (Some(point), Some(line)) => (point, line),
                 (Some(point), None) => (
@@ -35142,6 +35263,7 @@ fn typed_relation_definition(
             let line_entity = sketch_entities.iter().find(|entity| entity.id == line)?;
             if !point_line_distance_value(point_position, line_entity)
                 .is_some_and(|measured| same_dimension_length(measured, expected.0))
+                && !authoritative
             {
                 (point, line) = unique_repaired_profile_point_line_pair(
                     sketch,
@@ -35170,6 +35292,8 @@ fn typed_relation_definition(
             };
             let first = curve(0);
             let second = curve(1);
+            let authoritative =
+                relation.display_scalar_ref.is_some() && first.is_some() && second.is_some();
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -35206,6 +35330,7 @@ fn typed_relation_definition(
             let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
             if !line_line_distance(first_line, second_line)
                 .is_some_and(|measured| same_dimension_length(measured, expected.0))
+                && !authoritative
             {
                 (first, second) = unique_repaired_profile_line_distance_pair(
                     sketch,
@@ -35233,6 +35358,8 @@ fn typed_relation_definition(
             };
             let first = curve(0);
             let second = curve(1);
+            let authoritative =
+                relation.display_scalar_ref.is_some() && first.is_some() && second.is_some();
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -35256,6 +35383,7 @@ fn typed_relation_definition(
             let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
             if !line_line_angle(first_line, second_line)
                 .is_some_and(|measured| same_dimension_angle(measured, expected.0))
+                && !authoritative
             {
                 (first, second) = unique_repaired_profile_line_angle_pair(
                     sketch,
@@ -35272,7 +35400,7 @@ fn typed_relation_definition(
             })
         }
         CircleDiameter => {
-            let entity = sketch_entities
+            let resolved_entity = sketch_entities
                 .iter()
                 .find(|entity| {
                     entity.sketch == *sketch
@@ -35281,23 +35409,22 @@ fn typed_relation_definition(
                 })
                 .map(|entity| entity.id.clone())
                 .or_else(|| {
-                    marker(0)
-                        .and_then(|marker| {
-                            if sketch_entities.is_empty() {
-                                single_marker_entity(marker, markers_by_id, loci_by_marker)
-                            } else {
-                                single_marker_curve_entity(
-                                    marker,
-                                    markers_by_id,
-                                    loci_by_marker,
-                                    sketch_entities,
-                                )
-                            }
-                        })
-                        .or_else(|| {
-                            unique_dimensioned_circle_entity(sketch, sketch_entities, parameter)
-                        })
-                })?;
+                    marker(0).and_then(|marker| {
+                        if sketch_entities.is_empty() {
+                            single_marker_entity(marker, markers_by_id, loci_by_marker)
+                        } else {
+                            single_marker_curve_entity(
+                                marker,
+                                markers_by_id,
+                                loci_by_marker,
+                                sketch_entities,
+                            )
+                        }
+                    })
+                });
+            let authoritative = relation.display_scalar_ref.is_some() && resolved_entity.is_some();
+            let entity = resolved_entity
+                .or_else(|| unique_dimensioned_circle_entity(sketch, sketch_entities, parameter))?;
             if !sketch_entities.is_empty() {
                 let cadmpeg_ir::features::ParameterValue::Length(expected) =
                     parameter.value.as_ref()?
@@ -35319,7 +35446,7 @@ fn typed_relation_definition(
                     Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => expected.0 * 0.5,
                     None => return None,
                 };
-                if !same_dimension_length(radius, expected_radius) {
+                if !same_dimension_length(radius, expected_radius) && !authoritative {
                     return None;
                 }
             }
@@ -37540,16 +37667,15 @@ mod profile_join_tests {
         dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
         implicit_circle_marker, inferred_point_coordinates_by_index,
         legacy_terminal_profile_indexed_endpoints, line_endpoint_markers, line_reference_direction,
-        marker_entities, marker_owns_constraint, marker_point_locus,
-        marker_relation_has_incompatible_operand_family, owned_relation_parameters,
-        profile_loci_by_marker, project_compact_edge_selections,
+        marker_entities, marker_owns_constraint, marker_point_locus, marker_relation_is_inactive,
+        owned_relation_parameters, profile_loci_by_marker, project_compact_edge_selections,
         project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
         project_relation_point_geometry, project_relation_solved_point_geometry,
-        relation_operand_loci, relation_operand_marker, relation_owner_markers,
-        relation_parameter_by_display_name, resolve_connected_marker_arcs, resolved_marker_locus,
-        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
-        sketch_frame_marker_transform, type_display_relation_parameters,
+        relation_constraint_is_inactive, relation_operand_loci, relation_operand_marker,
+        relation_owner_markers, relation_parameter_by_display_name, resolve_connected_marker_arcs,
+        resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
+        single_marker_line_entity, sketch_frame_marker_transform, type_display_relation_parameters,
         typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
         typed_relation_definition, unique_axis_aligned_linked_loci,
         unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
@@ -38722,7 +38848,7 @@ mod profile_join_tests {
             },
         }];
 
-        assert!(marker_relation_has_incompatible_operand_family(
+        assert!(marker_relation_is_inactive(
             &relation,
             &definition,
             &entities
@@ -38763,17 +38889,17 @@ mod profile_join_tests {
             },
         );
 
-        assert!(marker_relation_has_incompatible_operand_family(
+        assert!(marker_relation_is_inactive(
             &relation,
             &definition(vec![point.id.clone()]),
             std::slice::from_ref(&point),
         ));
-        assert!(!marker_relation_has_incompatible_operand_family(
+        assert!(!marker_relation_is_inactive(
             &relation,
             &definition(vec![line.id.clone()]),
             std::slice::from_ref(&line),
         ));
-        assert!(!marker_relation_has_incompatible_operand_family(
+        assert!(!marker_relation_is_inactive(
             &relation,
             &definition(vec![point.id.clone(), SketchEntityId("second".into())]),
             &[
@@ -38786,7 +38912,7 @@ mod profile_join_tests {
                 ),
             ],
         ));
-        assert!(marker_relation_has_incompatible_operand_family(
+        assert!(marker_relation_is_inactive(
             &relation,
             &SketchConstraintDefinition::Native {
                 native_kind: "sldprt:marker-relation:4".into(),
@@ -39015,29 +39141,43 @@ mod profile_join_tests {
                 end: Point2::new(0.0, 2.0),
             },
         };
+        let definition = typed_marker_relation_definition_in_sketch(
+            &relation,
+            &sketch,
+            std::slice::from_ref(&projected),
+            &markers,
+            &loci,
+        )
+        .expect("typed horizontal relation");
         assert!(matches!(
-            typed_marker_relation_definition_in_sketch(
-                &relation,
-                &sketch,
-                std::slice::from_ref(&projected),
-                &markers,
-                &loci,
-            ),
-            Some(SketchConstraintDefinition::Vertical { .. })
+            definition,
+            SketchConstraintDefinition::Horizontal { .. }
+        ));
+        assert!(marker_relation_is_inactive(
+            &relation,
+            &definition,
+            std::slice::from_ref(&projected)
         ));
         projected.geometry = SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 2.0),
         };
+        let definition = typed_marker_relation_definition_in_sketch(
+            &relation,
+            &sketch,
+            std::slice::from_ref(&projected),
+            &markers,
+            &loci,
+        )
+        .expect("typed horizontal relation");
         assert!(matches!(
-            typed_marker_relation_definition_in_sketch(
-                &relation,
-                &sketch,
-                &[projected],
-                &markers,
-                &loci,
-            ),
-            Some(SketchConstraintDefinition::Native { .. })
+            definition,
+            SketchConstraintDefinition::Horizontal { .. }
+        ));
+        assert!(marker_relation_is_inactive(
+            &relation,
+            &definition,
+            std::slice::from_ref(&projected)
         ));
     }
 
@@ -39422,7 +39562,7 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn axis_relation_requires_aligned_evaluated_geometry() {
+    fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
         let sketch = SketchId("sketch".into());
         let first_id = SketchEntityId("first".into());
         let second_id = SketchEntityId("second".into());
@@ -39471,11 +39611,18 @@ mod profile_join_tests {
             (second.id.clone(), vec![SketchLocus::End(second_id)]),
         ]);
 
+        let definition = typed_marker_relation_definition_in_sketch(
+            &relation, &sketch, &entities, &markers, &loci,
+        )
+        .expect("typed horizontal-points relation");
         assert!(matches!(
-            typed_marker_relation_definition_in_sketch(
-                &relation, &sketch, &entities, &markers, &loci,
-            ),
-            Some(SketchConstraintDefinition::Native { .. })
+            definition,
+            SketchConstraintDefinition::HorizontalPoints { .. }
+        ));
+        assert!(marker_relation_is_inactive(
+            &relation,
+            &definition,
+            &entities
         ));
 
         let mut swapped_relation = relation.clone();
@@ -39490,15 +39637,22 @@ mod profile_join_tests {
                 vec![SketchLocus::End(SketchEntityId("second".into()))],
             ),
         ]);
+        let definition = typed_marker_relation_definition_in_sketch(
+            &swapped_relation,
+            &sketch,
+            &entities,
+            &markers,
+            &swapped_loci,
+        )
+        .expect("typed legacy horizontal relation");
         assert!(matches!(
-            typed_marker_relation_definition_in_sketch(
-                &swapped_relation,
-                &sketch,
-                &entities,
-                &markers,
-                &swapped_loci,
-            ),
-            Some(SketchConstraintDefinition::VerticalPoints { .. })
+            definition,
+            SketchConstraintDefinition::HorizontalPoints { .. }
+        ));
+        assert!(marker_relation_is_inactive(
+            &swapped_relation,
+            &definition,
+            &entities
         ));
 
         let mut owner_relation = marker("owner-relation", None);
@@ -39542,15 +39696,22 @@ mod profile_join_tests {
                 vec![SketchLocus::Entity(second_point)],
             ),
         ]);
+        let definition = typed_marker_relation_definition_in_sketch(
+            &owner_relation,
+            &sketch,
+            &owner_entities,
+            &owner_markers,
+            &owner_loci,
+        )
+        .expect("typed owner horizontal relation");
         assert!(matches!(
-            typed_marker_relation_definition_in_sketch(
-                &owner_relation,
-                &sketch,
-                &owner_entities,
-                &owner_markers,
-                &owner_loci,
-            ),
-            Some(SketchConstraintDefinition::VerticalPoints { .. })
+            definition,
+            SketchConstraintDefinition::HorizontalPoints { .. }
+        ));
+        assert!(marker_relation_is_inactive(
+            &owner_relation,
+            &definition,
+            &owner_entities
         ));
     }
 
@@ -39642,6 +39803,29 @@ mod profile_join_tests {
             ),
             None
         );
+
+        let paired_relation = FeatureInputRelationInstance {
+            display_scalar_ref: Some("display".into()),
+            ..relation
+        };
+        let definition = typed_relation_definition(
+            &paired_relation,
+            Some(&parameter),
+            &sketch,
+            &entities,
+            &markers,
+            &loci,
+        )
+        .expect("paired relation operands are authoritative");
+        assert!(matches!(
+            definition,
+            SketchConstraintDefinition::DistanceLoci { .. }
+        ));
+        assert!(relation_constraint_is_inactive(
+            Some(&parameter),
+            &definition,
+            &entities
+        ));
     }
 
     #[test]
@@ -44312,7 +44496,7 @@ fn validate_generated_marker_constraint(
             } else {
                 (first_point.u - second_point.u).abs()
             };
-            if delta > SKETCH_POINT_TOLERANCE {
+            if constraint.active != Some(false) && delta > SKETCH_POINT_TOLERANCE {
                 return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
                     "source-less SLDPRT sketch constraint {} is not satisfied by its locus coordinates",
                     constraint.id.0
@@ -44461,7 +44645,9 @@ fn validate_generated_marker_constraint(
                 parameter.id.0
             )));
         }
-        validate_solved_dimension(ir, constraint, parameter)?;
+        if constraint.active != Some(false) {
+            validate_solved_dimension(ir, constraint, parameter)?;
+        }
         return Ok(());
     }
     if let Some((kind, first, second)) = binary_marker_relation(&constraint.definition) {
@@ -44544,7 +44730,7 @@ fn validate_generated_marker_constraint(
     } else {
         (end.v - start.v).abs()
     };
-    if delta > SKETCH_POINT_TOLERANCE {
+    if constraint.active != Some(false) && delta > SKETCH_POINT_TOLERANCE {
         return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
             "source-less SLDPRT sketch constraint {} is not satisfied by its line coordinates",
             constraint.id.0
@@ -45539,6 +45725,52 @@ mod source_less_lane_tests {
             [GeneratedMarkerRelation::Symmetric(left, _, owner)]
                 if *left == &point && *owner == &axis
         ));
+    }
+
+    #[test]
+    fn inactive_axis_relation_retains_structure_without_requiring_solved_geometry() {
+        let sketch = generated_sketch();
+        let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
+        add_sketch_owner(&mut ir, &sketch);
+        ir.model.sketch_entities = vec![
+            generated_entity(
+                "first",
+                SketchGeometry::Point {
+                    position: Point2::new(0.0, 0.0),
+                },
+            ),
+            generated_entity(
+                "second",
+                SketchGeometry::Point {
+                    position: Point2::new(1.0, 1.0),
+                },
+            ),
+        ];
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId("horizontal".into()),
+            sketch: sketch.id,
+            definition: SketchConstraintDefinition::HorizontalPoints {
+                first: SketchLocus::Entity(SketchEntityId("first".into())),
+                second: SketchLocus::Entity(SketchEntityId("second".into())),
+            },
+            name: None,
+            driving: None,
+            active: Some(false),
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        });
+
+        validate_source_less_constraints(&ir).expect("inactive relation remains representable");
+        ir.model.sketch_constraints[0].active = None;
+        assert!(validate_source_less_constraints(&ir)
+            .expect_err("active relation must be solved")
+            .to_string()
+            .contains("not satisfied"));
     }
 
     #[test]
