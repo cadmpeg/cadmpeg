@@ -10335,6 +10335,28 @@ fn compact_line_reference_directions(
             ))
         };
         let mut directions = Vec::new();
+        let tagged_token = |offset: usize| {
+            record.get(offset..offset + 2).is_some_and(|bytes| {
+                let token = u16::from_le_bytes([bytes[0], bytes[1]]);
+                token & 0x8000 != 0 && token != u16::MAX
+            })
+        };
+        let tagged_trailer = record.get(88..104) == Some(&[0; 16])
+            && ((record.get(104..124) == Some(&[0; 20])
+                && tagged_token(124)
+                && record.get(126..142) == Some(&[0; 16])
+                && record.get(142..144) == Some(&[0xff; 2]))
+                || (record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
+                    && record.get(112..122) == Some(&[0; 10])
+                    && tagged_token(122)
+                    && record.get(124..140) == Some(&[0; 16])
+                    && record.get(140..142) == Some(&[0xff; 2])));
+        if record.get(16..32) == Some(&[0; 16]) && tagged_trailer {
+            if let Some(direction) = direction_at(64) {
+                directions.push(direction);
+                return directions;
+            }
+        }
         if record.get(16..32) == Some(&[0; 16])
             && record.get(88..104) == Some(&[0; 16])
             && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
@@ -11835,7 +11857,12 @@ pub(crate) fn bind_pattern_inputs(
                 }
                 let mut unique_directions = Vec::new();
                 for direction in directions.into_iter().map(canonical_unit_direction) {
-                    if !unique_directions.contains(&direction) {
+                    if !unique_directions.iter().any(|candidate: &Vector3| {
+                        let dot = candidate.x * direction.x
+                            + candidate.y * direction.y
+                            + candidate.z * direction.z;
+                        (dot.abs() - 1.0).abs() <= 1.0e-12
+                    }) {
                         unique_directions.push(direction);
                     }
                 }
@@ -36173,6 +36200,51 @@ mod profile_join_tests {
                 &token_terminated_payload,
                 0,
                 token_terminated_payload.len(),
+                &[],
+            ),
+            None
+        );
+        let mut tagged_trailer_payload = vec![0; 144];
+        tagged_trailer_payload[..8]
+            .copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        tagged_trailer_payload[12..16].copy_from_slice(&9100u32.to_le_bytes());
+        for (index, value) in [0.07_f64, -0.046, 0.018, 0.012, 0.0, 0.0, 1.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = 32 + index * 8;
+            tagged_trailer_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        tagged_trailer_payload[124..126].copy_from_slice(&0x8933u16.to_le_bytes());
+        tagged_trailer_payload[142..144].copy_from_slice(&[0xff; 2]);
+        assert_eq!(
+            compact_line_reference_direction(
+                &tagged_trailer_payload,
+                0,
+                tagged_trailer_payload.len(),
+                &[],
+            ),
+            Some(Vector3::new(0.0, 0.0, 1.0))
+        );
+        tagged_trailer_payload[124..144].fill(0);
+        tagged_trailer_payload[104..112].copy_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+        tagged_trailer_payload[122..124].copy_from_slice(&0x81b3u16.to_le_bytes());
+        tagged_trailer_payload[140..142].copy_from_slice(&[0xff; 2]);
+        assert_eq!(
+            compact_line_reference_direction(
+                &tagged_trailer_payload,
+                0,
+                tagged_trailer_payload.len(),
+                &[],
+            ),
+            Some(Vector3::new(0.0, 0.0, 1.0))
+        );
+        tagged_trailer_payload[122..124].copy_from_slice(&0x01b3u16.to_le_bytes());
+        assert_eq!(
+            compact_line_reference_direction(
+                &tagged_trailer_payload,
+                0,
+                tagged_trailer_payload.len(),
                 &[],
             ),
             None
