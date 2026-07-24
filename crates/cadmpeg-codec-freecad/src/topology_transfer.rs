@@ -13,13 +13,13 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
     ShapePayloadRecord, TextCurve2d, TextEdgeRepresentation, TextLocation, TextOrientation,

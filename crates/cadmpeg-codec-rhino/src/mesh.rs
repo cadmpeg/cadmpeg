@@ -125,7 +125,7 @@ pub(crate) struct MeshDecodeOptions {
     /// Source writer version used by version-gated fields.
     pub(crate) writer_version: Option<i64>,
     /// Source-object association assigned to the tessellation.
-    pub(crate) association: Option<cadmpeg_ir::SourceObjectAssociation>,
+    pub(crate) association: Option<cadmpeg_ir::provenance::SourceObjectAssociation>,
     /// Deterministic tessellation ID.
     pub(crate) id: String,
     /// Native-unit to millimeter scale.

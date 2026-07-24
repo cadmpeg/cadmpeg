@@ -28,7 +28,7 @@ use crate::topology::Color;
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate;
 use crate::validate::Check;
-use crate::{CadIr, LossProvenance};
+use crate::CadIr;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 
@@ -2192,7 +2192,7 @@ fn orphan_carrier_is_flagged() {
 #[test]
 fn annotation_keys_streams_and_field_paths_are_checked() {
     let ir = unit_cube();
-    let mut source_fidelity = crate::SourceFidelity::default();
+    let mut source_fidelity = crate::source_fidelity::SourceFidelity::default();
     source_fidelity.annotations.provenance.insert(
         "missing".into(),
         Provenance {
@@ -2473,7 +2473,7 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
         category: LossCategory::Geometry,
         severity: Severity::Warning,
         message: "geometry was retained as metadata".into(),
-        provenance: Some(LossProvenance {
+        provenance: Some(crate::provenance::Provenance {
             format: "rhino".into(),
             stream: String::new(),
             offset: 42,

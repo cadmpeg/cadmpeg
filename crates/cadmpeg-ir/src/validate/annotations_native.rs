@@ -62,7 +62,7 @@ fn annotated_entity_json(ir: &CadIr, wanted: &HashSet<&str>) -> HashMap<String, 
 
 pub(super) fn check_annotations(
     ir: &CadIr,
-    annotations: &crate::Annotations,
+    annotations: &crate::annotations::Annotations,
     all_ids: &HashSet<String>,
     findings: &mut Vec<Finding>,
 ) {

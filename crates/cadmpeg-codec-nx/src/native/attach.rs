@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -24,6 +25,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{AttributeId, BodyId, LoopId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::semantic_annotations::{
     SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
 };
@@ -31,7 +33,6 @@ use cadmpeg_ir::topology::{BodyKind, Coedge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::decode::Scan;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
@@ -4257,8 +4258,8 @@ mod tests {
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::provenance::Exactness;
     use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
 
     use crate::container;
     use crate::parasolid::{self, StreamKind};
@@ -4478,7 +4479,7 @@ mod tests {
             values: [20.0, 21.0, 22.0],
         };
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
         super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
         let parameter_owners = ir
             .model
@@ -5302,9 +5303,9 @@ mod tests {
         };
         use cadmpeg_ir::math::{Point3, Vector3};
         use cadmpeg_ir::native::Native;
+        use cadmpeg_ir::provenance::SourceObjectAssociation;
         use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
         use cadmpeg_ir::units::{Tolerances, Units};
-        use cadmpeg_ir::SourceObjectAssociation;
 
         let operations = ["hole-a".to_string(), "hole-b".to_string()];
         let templates = operations
@@ -6374,9 +6375,9 @@ mod tests {
 
     #[test]
     fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
+        use cadmpeg_ir::annotations::AnnotationBuilder;
         use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
         use cadmpeg_ir::ids::{FaceId, LoopId, ShellId};
-        use cadmpeg_ir::AnnotationBuilder;
 
         use crate::native::parasolid::{
             ParasolidAttributeDefinition, ParasolidEntity51NumericKind,

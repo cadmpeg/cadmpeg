@@ -4,12 +4,13 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, EdgeId, FaceId, LoopId, PcurveId, RegionId, ShellId, SurfaceId,
 };
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Face, Loop, Region, Sense, Shell};
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
 use super::{annotate, OrientedLoop, OwnershipPlan, TransferPlan};

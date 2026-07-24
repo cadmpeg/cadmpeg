@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry,
@@ -12,12 +13,11 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::cgm_source;
@@ -3350,7 +3350,7 @@ mod route_tests {
     use cadmpeg_ir::topology::{Point, Vertex};
     use cadmpeg_ir::units::Units;
 
-    use cadmpeg_ir::AnnotationBuilder;
+    use cadmpeg_ir::annotations::AnnotationBuilder;
     use std::collections::BTreeMap;
     use std::collections::HashMap;
 

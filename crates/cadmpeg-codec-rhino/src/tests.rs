@@ -3310,7 +3310,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             .exactness
             .get(&subd.id.to_string())
             .map(|note| note.entity),
-        Some(cadmpeg_ir::Exactness::Derived)
+        Some(cadmpeg_ir::provenance::Exactness::Derived)
     );
     assert_eq!(
         result

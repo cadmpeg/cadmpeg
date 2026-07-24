@@ -11,6 +11,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::provenance::Provenance;
+use cadmpeg_ir::provenance::{Exactness, SourceObjectAssociation};
 use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
@@ -20,8 +22,6 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::LossProvenance;
-use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chunks::ArchiveVersion;
@@ -176,7 +176,7 @@ pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan<'a>,
     expand: crate::mesh::MeshExpand<'a>,
     ir: CadIr,
-    annotations: cadmpeg_ir::Annotations,
+    annotations: cadmpeg_ir::annotations::Annotations,
     unknowns: Vec<UnknownRecord>,
     statuses: Vec<GeometryStatus>,
     outcomes: BTreeMap<String, ClassOutcome>,
@@ -216,7 +216,7 @@ impl<'a> DecodeContext<'a> {
             scan,
             expand,
             ir: build_ir(scan),
-            annotations: cadmpeg_ir::Annotations::default(),
+            annotations: cadmpeg_ir::annotations::Annotations::default(),
             unknowns: Vec::with_capacity(scan.objects.len()),
             statuses: Vec::with_capacity(scan.objects.len()),
             outcomes: BTreeMap::new(),
@@ -328,7 +328,7 @@ impl<'a> DecodeContext<'a> {
 
     fn validate_candidate(
         &mut self,
-        apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations),
+        apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::annotations::Annotations),
     ) -> Result<(), String> {
         let mut candidate = self.lightweight_candidate();
         let mut annotations = self.annotations.clone();
@@ -352,12 +352,12 @@ impl<'a> DecodeContext<'a> {
     fn commit_valid_candidate(
         &mut self,
         mut candidate: CadIr,
-        annotations: cadmpeg_ir::Annotations,
+        annotations: cadmpeg_ir::annotations::Annotations,
     ) -> Result<(), String> {
         candidate.model.finalize();
-        let source_fidelity = cadmpeg_ir::SourceFidelity {
+        let source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity {
             annotations: annotations.clone(),
-            ..cadmpeg_ir::SourceFidelity::default()
+            ..cadmpeg_ir::source_fidelity::SourceFidelity::default()
         };
         let validation =
             cadmpeg_ir::validate_with_source_fidelity(&candidate, &source_fidelity, Vec::new());
@@ -1873,7 +1873,7 @@ impl<'a> DecodeContext<'a> {
                     self.scan.definitions.diagnostics.len(),
                     first.message
                 ),
-                LossProvenance {
+                Provenance {
                     format: "rhino".to_string(),
                     stream: String::new(),
                     offset: first.source_range.start as u64,
@@ -1919,7 +1919,7 @@ impl<'a> DecodeContext<'a> {
             RETAINED_DOCUMENT_CAP,
             RETAINED_RECORD_CAP
         )];
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity {
             annotations: self.annotations,
             ..Default::default()
         };
@@ -2811,7 +2811,7 @@ fn validation_findings(report: &cadmpeg_ir::validate::ValidationReport) -> Strin
         .join("; ")
 }
 
-fn annotate_derived(annotations: &mut cadmpeg_ir::Annotations, id: &str) {
+fn annotate_derived(annotations: &mut cadmpeg_ir::annotations::Annotations, id: &str) {
     annotations.exactness.insert(
         id.to_string(),
         ExactnessNote {
@@ -2823,7 +2823,7 @@ fn annotate_derived(annotations: &mut cadmpeg_ir::Annotations, id: &str) {
 
 fn stage_extrusion_caps(
     ir: &mut CadIr,
-    annotations: &mut cadmpeg_ir::Annotations,
+    annotations: &mut cadmpeg_ir::annotations::Annotations,
     key: &str,
     association: &SourceObjectAssociation,
     extrusion: &crate::extrusion::DecodedExtrusion,
@@ -3078,7 +3078,7 @@ struct BrepStageContext<'a> {
 }
 
 impl StagedBrep {
-    fn apply(self, ir: &mut CadIr, annotations: &mut cadmpeg_ir::Annotations) {
+    fn apply(self, ir: &mut CadIr, annotations: &mut cadmpeg_ir::annotations::Annotations) {
         ir.model.bodies.extend(self.bodies);
         ir.model.regions.extend(self.regions);
         ir.model.shells.extend(self.shells);
@@ -4266,7 +4266,7 @@ fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Vec<String> {
 
 fn commit_curve_tree(
     ir: &mut CadIr,
-    annotations: &mut cadmpeg_ir::Annotations,
+    annotations: &mut cadmpeg_ir::annotations::Annotations,
     curve: crate::curves::DecodedCurve,
     key: &str,
     association: &SourceObjectAssociation,
@@ -4577,8 +4577,8 @@ fn body(
     }
 }
 
-fn loss_provenance(class: &str, outcome: &ClassOutcome) -> LossProvenance {
-    LossProvenance {
+fn loss_provenance(class: &str, outcome: &ClassOutcome) -> Provenance {
+    Provenance {
         format: "rhino".to_string(),
         stream: String::new(),
         offset: outcome.first_offset,
@@ -5178,7 +5178,10 @@ mod tests {
             ..StagedBrep::default()
         };
         let links = staged.links.clone();
-        staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
+        staged.apply(
+            &mut candidate,
+            &mut cadmpeg_ir::annotations::Annotations::default(),
+        );
         append_record_links(&mut candidate, &unknown, &links);
         assert_eq!(
             candidate
@@ -5206,7 +5209,10 @@ mod tests {
             curves: vec![curve],
             ..StagedBrep::default()
         }
-        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
+        .apply(
+            &mut candidate,
+            &mut cadmpeg_ir::annotations::Annotations::default(),
+        );
         assert!(!cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok());
         assert_eq!(live.model.curves.len(), 1);
     }
@@ -5279,7 +5285,10 @@ mod tests {
                 }],
             )
             .expect("required invariant");
-        staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
+        staged.apply(
+            &mut candidate,
+            &mut cadmpeg_ir::annotations::Annotations::default(),
+        );
         append_record_links(&mut candidate, &unknown, &links);
         let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
         assert!(report.is_ok(), "{report:?}");
@@ -5595,7 +5604,7 @@ mod tests {
             let mut links = Vec::new();
             assert!(stage_extrusion_caps(
                 &mut ir,
-                &mut cadmpeg_ir::Annotations::default(),
+                &mut cadmpeg_ir::annotations::Annotations::default(),
                 "caps",
                 &association,
                 &extrusion,
@@ -5622,7 +5631,7 @@ mod tests {
         let mut links = Vec::new();
         assert!(!stage_extrusion_caps(
             &mut candidate,
-            &mut cadmpeg_ir::Annotations::default(),
+            &mut cadmpeg_ir::annotations::Annotations::default(),
             "failure",
             &test_association(),
             &cap_extrusion([true, true]),

@@ -6,11 +6,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::ids::SubdId;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
 };
-use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::container::ContainerScan;
 

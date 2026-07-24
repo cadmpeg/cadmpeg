@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::provenance::Exactness;
 
 use crate::container::ContainerScan;
 use crate::records::PmiDimension;

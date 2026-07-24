@@ -3,11 +3,11 @@
 
 use std::collections::HashMap;
 
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::Annotations;
 
 pub fn patch_partition(
     ir: &CadIr,

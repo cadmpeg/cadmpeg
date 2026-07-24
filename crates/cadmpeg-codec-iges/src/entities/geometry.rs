@@ -8,9 +8,10 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
-use cadmpeg_ir::{CadIr, SourceObjectAssociation};
+use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;

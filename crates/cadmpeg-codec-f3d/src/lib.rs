@@ -177,7 +177,7 @@ impl Encoder for F3dCodec {
     fn encode_with_source_fidelity(
         &self,
         ir: &CadIr,
-        source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+        source_fidelity: Option<&cadmpeg_ir::source_fidelity::SourceFidelity>,
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
         let baseline = ir

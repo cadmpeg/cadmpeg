@@ -662,7 +662,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     losses.extend(scan.definitions.diagnostics.iter().map(|diagnostic| {
         RhinoLossCode::InstanceDefinitionsRetained.note_with_provenance(
             diagnostic.message.clone(),
-            cadmpeg_ir::LossProvenance {
+            cadmpeg_ir::provenance::Provenance {
                 format: "rhino".to_string(),
                 stream: String::new(),
                 offset: diagnostic.source_range.start as u64,

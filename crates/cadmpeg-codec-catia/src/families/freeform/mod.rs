@@ -4,6 +4,7 @@
 #[cfg(test)]
 mod tests;
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, PcurveGeometry,
@@ -12,10 +13,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::Exactness;
 use std::collections::HashMap;
 
 use crate::assemble::cgm_source;

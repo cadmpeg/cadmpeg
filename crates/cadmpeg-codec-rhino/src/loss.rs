@@ -12,8 +12,8 @@
 //! Each leaves only the per-instance message — and, where the degraded record
 //! carries a source span, its provenance — to the caller.
 
+use cadmpeg_ir::provenance::Provenance;
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
-use cadmpeg_ir::LossProvenance;
 
 /// A named Rhino transfer loss.
 ///
@@ -106,12 +106,12 @@ impl RhinoLossCode {
     pub(crate) fn note_with_provenance(
         self,
         message: impl Into<String>,
-        provenance: LossProvenance,
+        provenance: Provenance,
     ) -> LossNote {
         self.note_inner(message.into(), Some(provenance))
     }
 
-    fn note_inner(self, message: String, provenance: Option<LossProvenance>) -> LossNote {
+    fn note_inner(self, message: String, provenance: Option<Provenance>) -> LossNote {
         LossNote {
             code: self.shared_code(),
             category: self.category(),
@@ -145,7 +145,7 @@ mod tests {
     /// a call site cannot mislabel a loss it names; only provenance differs.
     #[test]
     fn note_builders_take_code_category_and_severity_from_the_variant() {
-        let provenance = cadmpeg_ir::LossProvenance {
+        let provenance = cadmpeg_ir::provenance::Provenance {
             format: "rhino".to_string(),
             stream: String::new(),
             offset: 7,

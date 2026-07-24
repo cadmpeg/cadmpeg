@@ -10,8 +10,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::codec::{CadirEncoder, CodecEntry, DecodeOptions, Encoder};
 use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport};
+use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::validate::ValidationReport;
-use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, SourceFidelity};
+use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr};
 
 use crate::envelope::{envelope, print_json, write_output, ReportSink};
 use crate::format::{ForcedInput, Format};

@@ -20,8 +20,9 @@
 
 use serde::Serialize;
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
+use cadmpeg_ir::provenance::Exactness;
 
 use super::model::NativeModel;
 #[allow(clippy::wildcard_imports)]

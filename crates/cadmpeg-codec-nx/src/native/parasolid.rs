@@ -1199,8 +1199,8 @@ mod tests {
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::provenance::Exactness;
     use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
 
     use crate::container;
     use crate::parasolid::{self, StreamKind};

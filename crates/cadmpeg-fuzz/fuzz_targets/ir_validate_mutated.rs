@@ -25,7 +25,7 @@ fuzz_target!(|data: &[u8]| {
         Ok(ir) => ir,
         Err(_) => return,
     };
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::default();
 
     match strategy % 15 {
         0 => {

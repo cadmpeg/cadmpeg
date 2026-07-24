@@ -12,6 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -36,6 +37,7 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::provenance::{Exactness, SourceObjectAssociation};
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -43,7 +45,6 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::{self, Container};
 use crate::geometry;
@@ -112,12 +113,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
-    annotations: cadmpeg_ir::Annotations,
+    annotations: cadmpeg_ir::annotations::Annotations,
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity {
         annotations,
-        ..cadmpeg_ir::SourceFidelity::default()
+        ..cadmpeg_ir::source_fidelity::SourceFidelity::default()
     };
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
@@ -249,7 +250,7 @@ fn try_decode_geometry(
 ) -> Option<(
     CadIr,
     DecodeReport,
-    cadmpeg_ir::Annotations,
+    cadmpeg_ir::annotations::Annotations,
     Vec<UnknownRecord>,
 )> {
     let mut ir = CadIr::empty(Units::default());
@@ -985,7 +986,7 @@ fn unmatched_delta_tombstone_count(scan: &Scan) -> usize {
 fn retain_live_annotations(
     ir: &CadIr,
     unknowns: &[UnknownRecord],
-    annotations: &mut cadmpeg_ir::Annotations,
+    annotations: &mut cadmpeg_ir::annotations::Annotations,
 ) {
     let mut ids = BTreeSet::new();
     macro_rules! add_ids {
@@ -7189,7 +7190,14 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
 
 fn build_metadata_ir(
     scan: &Scan,
-) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        cadmpeg_ir::annotations::Annotations,
+        Vec<UnknownRecord>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();

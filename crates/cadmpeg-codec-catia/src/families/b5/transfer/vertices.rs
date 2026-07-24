@@ -4,12 +4,13 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::PcurveGeometry;
 use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::topology::{Point, Vertex};
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
 use super::edges::{b5_support_endpoints, b5_vertex_point};

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! E5-stream decode route: analytic carriers, plane fitting, and topology transfer.
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -12,13 +13,12 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::{

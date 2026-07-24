@@ -27,7 +27,7 @@ trait EncodePreserving {
     fn encode_preserving(
         &self,
         ir: &cadmpeg_ir::document::CadIr,
-        source_fidelity: &cadmpeg_ir::SourceFidelity,
+        source_fidelity: &cadmpeg_ir::source_fidelity::SourceFidelity,
         writer: &mut dyn Write,
     ) -> Result<(), cadmpeg_ir::codec::CodecError>;
 }
@@ -36,7 +36,7 @@ impl EncodePreserving for F3dCodec {
     fn encode_preserving(
         &self,
         ir: &cadmpeg_ir::document::CadIr,
-        source_fidelity: &cadmpeg_ir::SourceFidelity,
+        source_fidelity: &cadmpeg_ir::source_fidelity::SourceFidelity,
         writer: &mut dyn Write,
     ) -> Result<(), cadmpeg_ir::codec::CodecError> {
         self.encode_with_source_fidelity(ir, Some(source_fidelity), writer)
@@ -5111,7 +5111,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
 fn source_fidelity_gate_truth_table() {
     fn run(
         ir: &cadmpeg_ir::document::CadIr,
-        sidecar: Option<&cadmpeg_ir::SourceFidelity>,
+        sidecar: Option<&cadmpeg_ir::source_fidelity::SourceFidelity>,
     ) -> (Vec<u8>, cadmpeg_ir::report::ExportReport) {
         let mut out = Vec::new();
         let report = F3dCodec
@@ -5703,8 +5703,8 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
 #[test]
 fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::provenance::SourceObjectAssociation;
     use cadmpeg_ir::tessellation::Tessellation;
-    use cadmpeg_ir::SourceObjectAssociation;
 
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec

@@ -5,6 +5,7 @@
 //! loss accounting, neutral-model admissibility, source metadata, generic
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
@@ -12,14 +13,13 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::provenance::Exactness;
+use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::Exactness;
-use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, HashSet};
 
 use crate::container::{self, ContainerScan};
@@ -463,7 +463,11 @@ pub(crate) fn build_geometry_report(
 
 pub(crate) fn build_metadata_ir(
     scan: &ContainerScan,
-) -> (CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>) {
+) -> (
+    CadIr,
+    cadmpeg_ir::annotations::Annotations,
+    Vec<UnknownRecord>,
+) {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();

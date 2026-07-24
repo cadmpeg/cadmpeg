@@ -15,8 +15,8 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::report::LossCategory;
-use cadmpeg_ir::Exactness;
 
 use crate::container;
 use crate::parasolid::{self, StreamKind};
@@ -6756,7 +6756,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             },
             cache_fit_tolerance: None,
         });
-    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let source_stream = annotations.stream("nx:test");
 
     crate::decode::attach_completed_intersection_pcurves(

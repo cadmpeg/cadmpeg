@@ -91,13 +91,15 @@ mod writer_transform;
 #[cfg(feature = "fuzzing")]
 pub mod fuzzing;
 
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::source_fidelity::write_plan::{plan_write, WritePlan};
+use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
+use cadmpeg_ir::Finding;
 use std::io::Write;
 
 /// Identifier of the retained whole-file `.sldprt` source image in a

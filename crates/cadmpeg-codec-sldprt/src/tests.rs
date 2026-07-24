@@ -8608,7 +8608,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
     });
-    decoded.source_fidelity.annotations = cadmpeg_ir::Annotations::default();
+    decoded.source_fidelity.annotations = cadmpeg_ir::annotations::Annotations::default();
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -8636,7 +8636,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.source_fidelity.annotations = cadmpeg_ir::Annotations::default();
+    decoded.source_fidelity.annotations = cadmpeg_ir::annotations::Annotations::default();
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_input_lanes[0].sketch_entities[0].kind =
             crate::records::SketchInputKind::Native(9);
@@ -21189,7 +21189,7 @@ fn write_plan_gate_truth_table() {
 ///   `UPDATE_GOLDEN=1 <sldprt test binary> golden`
 ///
 /// [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
-/// [`SourceFidelity`]: cadmpeg_ir::SourceFidelity
+/// [`SourceFidelity`]: cadmpeg_ir::source_fidelity::SourceFidelity
 /// [`ContainerSummary`]: cadmpeg_ir::codec::ContainerSummary
 #[cfg(test)]
 mod golden {

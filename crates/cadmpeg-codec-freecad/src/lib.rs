@@ -43,13 +43,14 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
+use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::source_fidelity::write_plan::verify_retained_bytes;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
+use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
 
 use crate::loss::FcstdLossCode;
 
@@ -1186,7 +1187,7 @@ impl Codec for FcstdCodec {
             attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
         }
         let mut ir = CadIr::empty(Units::default());
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::default();
         let mut geometry_transferred = false;
         ir.source = Some(SourceMeta {
             format: "fcstd".into(),

@@ -118,7 +118,7 @@ pub fn plan_write<'a>(
 /// Returns `true` only when `data` is exactly `byte_len` bytes long and its
 /// lowercase-hexadecimal SHA-256 (via [`crate::wire::hash::sha256_hex`]) equals
 /// `sha256_hex`. This is the per-record integrity predicate that
-/// [`SourceFidelity::validate`](crate::SourceFidelity::validate) applies across
+/// [`SourceFidelity::validate`](crate::source_fidelity::SourceFidelity::validate) applies across
 /// every retained record; it is factored out here so a writing codec can gate a
 /// single source image without walking the whole sidecar.
 pub fn verify_retained_bytes(data: &[u8], byte_len: u64, sha256_hex: &str) -> bool {

@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition,
@@ -16,8 +17,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::topology::BodyKind;
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::graph::{loop_chain_senses, B5Graph, B5Surface};
 
@@ -732,6 +733,7 @@ mod tests {
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
     use super::{transfer, CurvePlan, SurfacePlan};
+    use cadmpeg_ir::annotations::AnnotationBuilder;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
@@ -741,7 +743,6 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::BodyKind;
     use cadmpeg_ir::units::Units;
-    use cadmpeg_ir::AnnotationBuilder;
     use std::collections::{BTreeMap, HashMap, HashSet};
 
     #[test]

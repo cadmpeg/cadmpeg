@@ -22,6 +22,7 @@ use cadmpeg_ir::ids::{
     VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
@@ -32,7 +33,6 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::wire::cursor::bounded_len;
-use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{Check, Finding, Severity};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};

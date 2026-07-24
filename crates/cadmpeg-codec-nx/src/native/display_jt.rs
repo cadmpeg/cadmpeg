@@ -4,8 +4,8 @@
 use std::io::Read as _;
 
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
-use cadmpeg_ir::SourceObjectAssociation;
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -3769,8 +3769,8 @@ mod tests {
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::provenance::Exactness;
     use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
 
     use crate::container;
     use crate::parasolid::{self, StreamKind};

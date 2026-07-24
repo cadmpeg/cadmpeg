@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::provenance::Exactness;
 
 use crate::container::{self, role, Layout};
 use crate::surface::TorusRadius2Encoding;
@@ -146,7 +146,7 @@ fn jpeg_payload() -> Vec<u8> {
 }
 
 fn assert_annotation(
-    annotations: &cadmpeg_ir::Annotations,
+    annotations: &cadmpeg_ir::annotations::Annotations,
     id: &str,
     stream: &str,
     offset: u64,

@@ -5,13 +5,13 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
 use crate::native::SldprtNative;
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::Annotations;
 
 use crate::container::MARKER;
 
@@ -506,7 +506,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             && annotations
                 .exactness
                 .get(&edge.id.0)
-                .is_none_or(|note| note.entity != cadmpeg_ir::Exactness::Derived)
+                .is_none_or(|note| note.entity != cadmpeg_ir::provenance::Exactness::Derived)
     }) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),

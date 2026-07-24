@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
@@ -11,8 +12,8 @@ use cadmpeg_ir::geometry::{
     ProceduralCurve, ProceduralCurveDefinition, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::topology::Edge;
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
 use super::{annotate, distance, B5Support, CurvePlan, SurfacePlan, TransferPlan};

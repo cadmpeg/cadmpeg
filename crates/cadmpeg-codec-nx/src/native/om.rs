@@ -2965,8 +2965,8 @@ mod tests {
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::provenance::Exactness;
     use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
 
     use crate::container;
     use crate::parasolid::{self, StreamKind};
@@ -3167,7 +3167,7 @@ mod tests {
             expression(90, "p9", 9, None, "p2_radius * 2 + p2_radius", None),
         ];
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
             &expressions,
@@ -3206,7 +3206,7 @@ mod tests {
             expression(90, "p9", "p2 * 2"),
         ];
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
             &expressions,
@@ -3243,7 +3243,7 @@ mod tests {
             expression("b-p2", "table-b", "p2", "7", 20),
         ];
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
 
         crate::native::attach::attach_expression_parameters(
             &mut ir,
@@ -3336,7 +3336,7 @@ mod tests {
             expression("p3", "p3", "p2 + 1", 20),
         ];
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
             &expressions,
@@ -3390,7 +3390,7 @@ mod tests {
             expression("p4", "p4", "7", 30),
         ];
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
 
         crate::native::attach::attach_expression_parameters(
             &mut ir,
@@ -3468,7 +3468,7 @@ mod tests {
             source_offset: 20,
         };
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
             &[expression],
@@ -3517,7 +3517,7 @@ mod tests {
             parameter_use("earlier", "nx:feature-history:operation-label#9-8", 30),
         ];
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
             &[expression],
@@ -3561,7 +3561,7 @@ mod tests {
             source_offsets: vec![30],
         };
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
             &[expression],

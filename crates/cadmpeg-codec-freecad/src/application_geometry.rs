@@ -5,10 +5,10 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::wire::cursor::bounded_len;
-use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::native::{EntryRecord, PropertyRecord};
 

@@ -4,13 +4,14 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
     Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
+use cadmpeg_ir::provenance::Exactness;
 
 use super::super::graph::{B5Graph, B5Profile, B5Surface};
 use super::super::vecmath::{add, cross, scale};

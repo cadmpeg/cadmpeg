@@ -28,9 +28,9 @@ use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::wire::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
 
 use crate::loss::SldprtLossCode;
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::Exactness;
 
 use crate::container::configuration_index;
 
@@ -126,9 +126,9 @@ fn decode_result(
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity {
         annotations,
-        ..cadmpeg_ir::SourceFidelity::default()
+        ..cadmpeg_ir::source_fidelity::SourceFidelity::default()
     };
     let source_image = unknowns
         .iter()

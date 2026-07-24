@@ -5,9 +5,10 @@
 //! Families that also drive a full decode pipeline own a `decode` module whose
 //! entry point is registered in [`ROUTES`].
 
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{Annotations, CadIr};
+use cadmpeg_ir::CadIr;
 
 use crate::container::ContainerScan;
 use crate::variant::Variant;

@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::annotations::{Annotations, ExactnessNote, Provenance};
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::provenance::Exactness;
 
 pub(crate) fn note(
     annotations: &mut Annotations,

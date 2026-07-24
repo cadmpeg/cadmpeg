@@ -23,9 +23,9 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::topology::{Body, Edge, Face};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -3686,7 +3686,7 @@ mod history_reference_tests {
             &mut ir,
             &[history],
             &[lane],
-            &cadmpeg_ir::Annotations::default(),
+            &cadmpeg_ir::annotations::Annotations::default(),
         );
 
         assert_eq!(ir.model.sketches.len(), 1);
@@ -7618,7 +7618,7 @@ pub(crate) fn project_configuration_sketch_states(
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
-    annotations: &cadmpeg_ir::Annotations,
+    annotations: &cadmpeg_ir::annotations::Annotations,
 ) {
     let modeller_generation = ir
         .source
@@ -8539,7 +8539,7 @@ fn validate_compact_surface_selection_edits(
 pub fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-    annotations: &cadmpeg_ir::Annotations,
+    annotations: &cadmpeg_ir::annotations::Annotations,
 ) -> Result<(), CodecError> {
     let feature_state_hash = configuration_feature_state_hash(&ir.model.configurations);
     let baseline_feature_states = ir.source.as_ref().and_then(|source| {
@@ -8617,7 +8617,7 @@ pub fn prepare_configurations_for_write(
 fn sync_configuration_design_state(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-    annotations: &cadmpeg_ir::Annotations,
+    annotations: &cadmpeg_ir::annotations::Annotations,
 ) -> Result<(), CodecError> {
     let feature_names = ir
         .model

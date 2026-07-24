@@ -18,6 +18,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -25,7 +26,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossCode;
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::AnnotationBuilder;
 
 use super::{
     append_freeform_surface_pools, freeform_surface_carriers, try_decode_freeform_surfaces,

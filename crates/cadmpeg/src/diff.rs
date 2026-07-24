@@ -5,7 +5,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::SourceFidelity;
+use cadmpeg_ir::source_fidelity::SourceFidelity;
 
 use crate::commands::semantic_silent;
 use crate::envelope::{envelope, print_json, ReportSink};

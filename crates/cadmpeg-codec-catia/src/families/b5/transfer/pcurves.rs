@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::geometry::{
@@ -11,7 +12,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::{AnnotationBuilder, Exactness};
+use cadmpeg_ir::provenance::Exactness;
 
 use super::super::graph::{evaluate_pcurve, B5Graph, B5Pcurve, B5Surface};
 use super::super::vecmath::{add, cross, scale};

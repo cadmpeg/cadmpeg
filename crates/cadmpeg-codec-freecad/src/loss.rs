@@ -11,8 +11,8 @@
 //! [`LossNote`] in this crate. It stamps the fixed `fcstd`/`Document.xml`
 //! provenance shape shared by every site and leaves only the per-instance
 //! message and the retained record's native reference to the caller.
+use cadmpeg_ir::provenance::Provenance;
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
-use cadmpeg_ir::LossProvenance;
 
 /// A stable, machine-readable identifier for one `.FCStd` transfer loss.
 ///
@@ -95,7 +95,7 @@ impl FcstdLossCode {
             category: self.category(),
             severity: self.severity(),
             message: message.into(),
-            provenance: Some(LossProvenance {
+            provenance: Some(Provenance {
                 format: "fcstd".into(),
                 stream: "Document.xml".into(),
                 offset: 0,

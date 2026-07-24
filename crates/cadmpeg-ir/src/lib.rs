@@ -57,7 +57,7 @@ pub mod pmi;
 pub mod presentation;
 pub mod product;
 pub mod products;
-mod provenance;
+pub mod provenance;
 pub mod report;
 pub mod semantic_annotations;
 pub mod sketches;
@@ -71,16 +71,10 @@ pub mod units;
 pub mod validate;
 pub mod wire;
 
-pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
 pub use document::{CadIr, IR_VERSION};
-/// Source location attached to a [`LossNote`].
-pub use provenance::Provenance as LossProvenance;
-pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
     DecodeReport, ExportReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
 };
-pub use source_fidelity::write_plan::{plan_write, verify_retained_bytes, WritePlan};
-pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
 pub use validate::{validate, validate_with_source_fidelity, Check, Finding, ValidationReport};
 
 pub mod unknown;

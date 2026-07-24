@@ -13,6 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -35,6 +36,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::product::{OccurrenceParent, Product, ProductOccurrence};
+use cadmpeg_ir::provenance::{Exactness, SourceObjectAssociation};
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchCoordinateAxis,
@@ -50,8 +52,6 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use serde::Serialize;
 
 use crate::container::{self, role, ContainerScan};
@@ -22697,9 +22697,9 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         build_ir(&scan)?
     };
     let report = build_report(&scan, &ir, coverage, ctx.container_only());
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity {
         annotations,
-        ..cadmpeg_ir::SourceFidelity::default()
+        ..cadmpeg_ir::source_fidelity::SourceFidelity::default()
     };
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
@@ -22765,7 +22765,7 @@ fn preserve_passthrough_sections(
 /// decode-coverage counts.
 type BuiltIr = (
     CadIr,
-    cadmpeg_ir::Annotations,
+    cadmpeg_ir::annotations::Annotations,
     Vec<UnknownRecord>,
     BTreeMap<String, usize>,
 );

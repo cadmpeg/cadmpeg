@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Zero-entity decode route: analytic surface carriers and reconstructed B-rep.
 
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, ProceduralCurve,
@@ -11,13 +12,12 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::assemble::{

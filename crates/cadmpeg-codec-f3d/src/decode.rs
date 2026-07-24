@@ -1609,13 +1609,13 @@ fn apply_assembly_classification(
 fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
-    annotations: cadmpeg_ir::Annotations,
+    annotations: cadmpeg_ir::annotations::Annotations,
     unknowns: &[UnknownRecord],
     source_image: &UnknownRecord,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity {
         annotations,
-        ..cadmpeg_ir::SourceFidelity::default()
+        ..cadmpeg_ir::source_fidelity::SourceFidelity::default()
     };
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
     source_fidelity.retain_unknown_records("f3d", std::slice::from_ref(source_image));
@@ -1681,7 +1681,7 @@ fn populate_annotations(
     native: &F3dNative,
     brep: Option<(&str, &[brep::AnnotationRecord])>,
     unknowns: &[UnknownRecord],
-) -> cadmpeg_ir::Annotations {
+) -> cadmpeg_ir::annotations::Annotations {
     let mut annotations = AnnotationBuilder::new();
     if let Some((stream_name, records)) = brep {
         let stream = annotations.stream(crate::ids::native_scope(stream_name));

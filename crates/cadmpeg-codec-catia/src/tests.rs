@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceGeom
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use cadmpeg_ir::Annotations;
+use cadmpeg_ir::annotations::Annotations;
 
 use crate::variant::Variant;
 

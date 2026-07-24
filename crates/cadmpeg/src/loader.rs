@@ -7,7 +7,8 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use cadmpeg_ir::codec::{CodecEntry, Confidence, DecodeOptions};
-use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
+use cadmpeg_ir::source_fidelity::SourceFidelity;
+use cadmpeg_ir::{CadIr, DecodeReport};
 
 use crate::format::ForcedInput;
 use crate::registry::Registry;
