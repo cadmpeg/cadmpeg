@@ -44,6 +44,7 @@ use cadmpeg_ir::sketches::{
     SketchNativeOperand,
 };
 use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
     Vertex,
@@ -6819,6 +6820,22 @@ fn transfer_resolved_revolution_breps(
         }
         let region_id = RegionId(format!("{prefix}:region"));
         let shell_id = ShellId(format!("{prefix}:shell"));
+        let mut builder = TopologyBuilder::new();
+        builder
+            .body(
+                body_id.clone(),
+                BodySpec {
+                    kind: BodyKind::Solid,
+                    ..BodySpec::default()
+                },
+            )
+            .expect("revolution body id is unique per feature");
+        builder
+            .region(region_id.clone(), &body_id)
+            .expect("revolution region id is unique under its body");
+        builder
+            .shell(shell_id.clone(), &region_id)
+            .expect("revolution shell id is unique under its region");
         let count = profile.len();
         let mut edges = vec![None; count];
         for (index, ((_, _, point, _), curve_geometry)) in
@@ -6871,7 +6888,11 @@ fn transfer_resolved_revolution_breps(
             });
             edges[index] = Some(edge_id);
         }
-        let mut faces = Vec::new();
+        // Each boundary coedge shares its vertex circle edge with exactly one
+        // coedge on the adjacent face; the builder's `radial_ring` links that pair
+        // once both are staged, replacing the hand-written `radial_next` string.
+        let mut emitted_coedges: BTreeSet<CoedgeId> = BTreeSet::new();
+        let mut radial_pairs: Vec<[CoedgeId; 2]> = Vec::new();
         for (index, (((_, _, start, end), surface_geometry), face_sense)) in profile
             .iter()
             .zip(surface_geometries)
@@ -6886,7 +6907,19 @@ fn transfer_resolved_revolution_breps(
                 geometry: surface_geometry.clone(),
                 source_object: None,
             });
-            let mut loops = Vec::new();
+            builder
+                .face(
+                    face_id.clone(),
+                    &shell_id,
+                    FaceSpec {
+                        surface: surface_id,
+                        sense: face_sense,
+                        name: None,
+                        color: None,
+                        tolerance: None,
+                    },
+                )
+                .expect("revolution face id is unique under its shell");
             for (boundary, vertex_index, section_point, sense) in [
                 ("start", index, *start, Sense::Reversed),
                 ("end", next, *end, Sense::Forward),
@@ -6912,66 +6945,41 @@ fn transfer_resolved_revolution_breps(
                     transform.offset,
                     pcurve_geometry,
                 );
-                ir.model.loops.push(IrLoop {
-                    id: loop_id.clone(),
-                    face: face_id.clone(),
-                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                    coedges: vec![coedge_id.clone()],
-                    vertex_uses: Vec::new(),
-                });
-                ir.model.coedges.push(Coedge {
-                    id: coedge_id.clone(),
-                    owner_loop: loop_id.clone(),
-                    edge: edge_id,
-                    next: coedge_id.clone(),
-                    previous: coedge_id,
-                    radial_next: CoedgeId(format!(
-                        "{prefix}:coedge:{radial_index}:{radial_boundary}"
-                    )),
-                    sense,
-                    pcurves: vec![PcurveUse {
-                        pcurve,
-                        isoparametric: None,
-                        parameter_range: None,
-                    }],
-                    use_curve: None,
-                    use_curve_parameter_range: None,
-                });
-                loops.push(loop_id);
+                builder
+                    .ring(
+                        loop_id,
+                        &face_id,
+                        cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                        vec![CoedgeSpec {
+                            id: coedge_id.clone(),
+                            edge: edge_id,
+                            sense,
+                            pcurves: vec![PcurveUse {
+                                pcurve,
+                                isoparametric: None,
+                                parameter_range: None,
+                            }],
+                            use_curve: None,
+                            use_curve_parameter_range: None,
+                        }],
+                        Vec::new(),
+                    )
+                    .expect("revolution boundary ring registers under its face");
+                emitted_coedges.insert(coedge_id.clone());
+                radial_pairs.push([
+                    coedge_id,
+                    CoedgeId(format!("{prefix}:coedge:{radial_index}:{radial_boundary}")),
+                ]);
             }
-            ir.model.faces.push(Face {
-                id: face_id.clone(),
-                shell: shell_id.clone(),
-                surface: surface_id,
-                sense: face_sense,
-                loops,
-                name: None,
-                color: None,
-                tolerance: None,
-            });
-            faces.push(face_id);
         }
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
-        ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id],
-        });
-        ir.model.bodies.push(Body {
-            id: body_id,
-            kind: BodyKind::Solid,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        for [id, partner] in &radial_pairs {
+            if emitted_coedges.contains(partner) {
+                builder.radial_ring(&[id.clone(), partner.clone()]);
+            }
+        }
+        builder
+            .finish(&mut ir.model)
+            .expect("revolution topology appends without id or owner conflicts");
         transferred += 1;
     }
     transferred
