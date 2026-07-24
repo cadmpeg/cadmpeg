@@ -7034,12 +7034,29 @@ fn transfer_resolved_circular_extrusion_breps(
         }
         let region_id = RegionId(format!("{prefix}:region"));
         let shell_id = ShellId(format!("{prefix}:shell"));
+        let mut builder = TopologyBuilder::new();
+        builder
+            .body(
+                body_id.clone(),
+                BodySpec {
+                    kind: BodyKind::Solid,
+                    ..BodySpec::default()
+                },
+            )
+            .expect("circular extrusion body id is unique per feature");
+        builder
+            .region(region_id.clone(), &body_id)
+            .expect("circular extrusion region id is unique under its body");
+        builder
+            .shell(shell_id.clone(), &region_id)
+            .expect("circular extrusion shell id is unique under its region");
         let center = section_point_in_model(transform, section_center);
         let seam =
             std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis[axis]);
         let sides = [("bottom", span.lower), ("top", span.upper)];
-        let mut face_ids = Vec::new();
-        let mut cap_coedges = Vec::new();
+        // A cap coedge and its side coedge share the seam edge; record the pair so
+        // the builder's `radial_ring` links both `radial_next` arcs at finish.
+        let mut radial_pairs: Vec<[CoedgeId; 2]> = Vec::new();
         let mut side_coedges = Vec::new();
         for (side_index, (side, offset)) in sides.into_iter().enumerate() {
             let cap_surface = SurfaceId(format!("{prefix}:surface:{side}"));
@@ -7130,54 +7147,49 @@ fn transfer_resolved_circular_extrusion_breps(
                 param_range: Some([0.0, std::f64::consts::TAU]),
                 tolerance: None,
             });
-            ir.model.loops.push(IrLoop {
-                id: cap_loop.clone(),
-                face: cap_face.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-                coedges: vec![cap_coedge.clone()],
-                vertex_uses: Vec::new(),
-            });
-            ir.model.coedges.push(Coedge {
-                id: cap_coedge.clone(),
-                owner_loop: cap_loop.clone(),
-                edge: edge_id.clone(),
-                next: cap_coedge.clone(),
-                previous: cap_coedge.clone(),
-                radial_next: side_coedge.clone(),
-                sense: if side_index == 0 {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
-                },
-                pcurves: vec![PcurveUse {
-                    pcurve: cap_pcurve,
-                    isoparametric: None,
-                    parameter_range: None,
-                }],
-                use_curve: None,
-                use_curve_parameter_range: None,
-            });
-            ir.model.faces.push(Face {
-                id: cap_face.clone(),
-                shell: shell_id.clone(),
-                surface: cap_surface,
-                sense: if side_index == 0 {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
-                },
-                loops: vec![cap_loop],
-                name: None,
-                color: None,
-                tolerance: None,
-            });
-            face_ids.push(cap_face);
-            cap_coedges.push(cap_coedge);
+            let cap_sense = if side_index == 0 {
+                Sense::Reversed
+            } else {
+                Sense::Forward
+            };
+            builder
+                .face(
+                    cap_face.clone(),
+                    &shell_id,
+                    FaceSpec {
+                        surface: cap_surface,
+                        sense: cap_sense,
+                        name: None,
+                        color: None,
+                        tolerance: None,
+                    },
+                )
+                .expect("circular extrusion cap face id is unique under its shell");
+            builder
+                .ring(
+                    cap_loop,
+                    &cap_face,
+                    cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+                    vec![CoedgeSpec {
+                        id: cap_coedge.clone(),
+                        edge: edge_id.clone(),
+                        sense: cap_sense,
+                        pcurves: vec![PcurveUse {
+                            pcurve: cap_pcurve,
+                            isoparametric: None,
+                            parameter_range: None,
+                        }],
+                        use_curve: None,
+                        use_curve_parameter_range: None,
+                    }],
+                    Vec::new(),
+                )
+                .expect("circular extrusion cap ring registers under its face");
+            radial_pairs.push([cap_coedge, side_coedge.clone()]);
             side_coedges.push((side_coedge, edge_id, side_pcurve));
         }
         let side_surface = SurfaceId(format!("{prefix}:surface:side"));
         let side_face = FaceId(format!("{prefix}:face:side"));
-        let mut side_loops = Vec::new();
         ir.model.surfaces.push(Surface {
             id: side_surface.clone(),
             geometry: SurfaceGeometry::Cylinder {
@@ -7196,71 +7208,54 @@ fn transfer_resolved_circular_extrusion_breps(
             },
             source_object: None,
         });
+        builder
+            .face(
+                side_face.clone(),
+                &shell_id,
+                FaceSpec {
+                    surface: side_surface,
+                    sense: Sense::Forward,
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                },
+            )
+            .expect("circular extrusion side face id is unique under its shell");
         for (side_index, ((side, _), (coedge, edge, pcurve))) in
             sides.into_iter().zip(side_coedges).enumerate()
         {
             let loop_id = LoopId(format!("{prefix}:loop:side:{side}"));
-            ir.model.loops.push(IrLoop {
-                id: loop_id.clone(),
-                face: side_face.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                coedges: vec![coedge.clone()],
-                vertex_uses: Vec::new(),
-            });
-            ir.model.coedges.push(Coedge {
-                id: coedge.clone(),
-                owner_loop: loop_id.clone(),
-                edge,
-                next: coedge.clone(),
-                previous: coedge.clone(),
-                radial_next: cap_coedges[side_index].clone(),
-                sense: if side_index == 0 {
-                    Sense::Forward
-                } else {
-                    Sense::Reversed
-                },
-                pcurves: vec![PcurveUse {
-                    pcurve,
-                    isoparametric: None,
-                    parameter_range: None,
-                }],
-                use_curve: None,
-                use_curve_parameter_range: None,
-            });
-            side_loops.push(loop_id);
+            builder
+                .ring(
+                    loop_id,
+                    &side_face,
+                    cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                    vec![CoedgeSpec {
+                        id: coedge,
+                        edge,
+                        sense: if side_index == 0 {
+                            Sense::Forward
+                        } else {
+                            Sense::Reversed
+                        },
+                        pcurves: vec![PcurveUse {
+                            pcurve,
+                            isoparametric: None,
+                            parameter_range: None,
+                        }],
+                        use_curve: None,
+                        use_curve_parameter_range: None,
+                    }],
+                    Vec::new(),
+                )
+                .expect("circular extrusion side ring registers under its face");
         }
-        ir.model.faces.push(Face {
-            id: side_face.clone(),
-            shell: shell_id.clone(),
-            surface: side_surface,
-            sense: Sense::Forward,
-            loops: side_loops,
-            name: None,
-            color: None,
-            tolerance: None,
-        });
-        face_ids.push(side_face);
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: face_ids,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
-        ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id],
-        });
-        ir.model.bodies.push(Body {
-            id: body_id,
-            kind: BodyKind::Solid,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        for [id, partner] in &radial_pairs {
+            builder.radial_ring(&[id.clone(), partner.clone()]);
+        }
+        builder
+            .finish(&mut ir.model)
+            .expect("circular extrusion topology appends without id or owner conflicts");
         transferred += 1;
     }
     transferred
