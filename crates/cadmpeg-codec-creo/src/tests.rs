@@ -2990,7 +2990,7 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
         feature
             .dependencies
             .iter()
-            .map(cadmpeg_ir::FeatureId::as_str)
+            .map(cadmpeg_ir::features::FeatureId::as_str)
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
@@ -3031,7 +3031,7 @@ fn decode_resolves_feature_dependencies_independently_of_storage_order() {
         feature
             .dependencies
             .iter()
-            .map(cadmpeg_ir::FeatureId::as_str)
+            .map(cadmpeg_ir::features::FeatureId::as_str)
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );

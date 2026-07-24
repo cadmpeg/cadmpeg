@@ -2814,7 +2814,7 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
         vec![[0.0, 0.0], [1.0, 1.0]]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA pcurves");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA pcurves"),
@@ -2823,7 +2823,7 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
 
     let mut invalid = native;
     invalid.consolidated_pcurves[0].degree = 4;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA pcurve for load validation");
@@ -2867,7 +2867,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         ["catia:consolidated:edge-node#0"]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA edge run");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA edge run"),
@@ -2876,7 +2876,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 
     let mut invalid = native;
     invalid.consolidated_edge_runs[0].pcurves[1] = "missing".to_string();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA edge run for load validation");
@@ -2888,7 +2888,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         .as_mut()
         .expect("edge definition")
         .class = 0x26;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA edge definition");
@@ -2896,7 +2896,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 
     let mut invalid = crate::native::CatiaNative::decode(&bytes);
     invalid.consolidated_edge_nodes[0].uses = None;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store orphaned CATIA edge definition");
@@ -2906,7 +2906,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     invalid.consolidated_vertex_identities[0]
         .incident_edge_nodes
         .clear();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA vertex incidence for load validation");
@@ -2959,7 +2959,7 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
         ["catia:consolidated:edge-node#0"]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store standalone consolidated edge node");
@@ -3016,7 +3016,7 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
             .map(|loci| [loci[0], loci[loci.len() - 1]])
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store resolved CATIA edge run");
@@ -4015,7 +4015,7 @@ fn native_design_objects_follow_first_field_order() {
         ]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store source-ordered design objects");
@@ -4474,7 +4474,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
         "Sketch",
     ]));
     let native = crate::native::CatiaNative::decode(&bytes);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA native namespace");
@@ -4488,7 +4488,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
             .clear();
         assert!(matches!(
             crate::native::CatiaNative::load(&malformed),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
         ));
     }
 
@@ -4498,7 +4498,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
         arena.push(arena.first().expect("owner record").clone());
         assert!(matches!(
             crate::native::CatiaNative::load(&malformed),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
         ));
     }
 
@@ -4510,7 +4510,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
         .clear();
     assert!(matches!(
         crate::native::CatiaNative::load(&stale_design_objects),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -4518,49 +4518,49 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
 fn native_load_rejects_dangling_cross_arena_links() {
     let mut value_native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     value_native.value_blocks[0].catalog = "catia:missing-catalog".to_string();
-    let mut value_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut value_namespace = cadmpeg_ir::native::NativeNamespace::default();
     value_native
         .store(&mut value_namespace)
         .expect("store malformed value link");
     assert!(matches!(
         crate::native::CatiaNative::load(&value_namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut omitted_value_graph =
         crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     omitted_value_graph.value_blocks[0].object_graph = None;
-    let mut omitted_value_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut omitted_value_namespace = cadmpeg_ir::native::NativeNamespace::default();
     omitted_value_graph
         .store(&mut omitted_value_namespace)
         .expect("store omitted value-block graph link");
     assert!(matches!(
         crate::native::CatiaNative::load(&omitted_value_namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut external_native =
         crate::native::CatiaNative::decode(&external_reference_segment("Support.CATPart"));
     external_native.external_references[0].segment = "catia:missing-segment".to_string();
-    let mut external_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut external_namespace = cadmpeg_ir::native::NativeNamespace::default();
     external_native
         .store(&mut external_namespace)
         .expect("store malformed external-reference link");
     assert!(matches!(
         crate::native::CatiaNative::load(&external_namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut alias_native = crate::native::CatiaNative::decode(&surface_alias_stream());
     alias_native.alias_rows[0].object_graph = Some("catia:missing-graph".to_string());
     alias_native.alias_rows[0].object_record = Some("catia:missing-record".to_string());
-    let mut alias_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut alias_namespace = cadmpeg_ir::native::NativeNamespace::default();
     alias_native
         .store(&mut alias_namespace)
         .expect("store malformed alias link");
     assert!(matches!(
         crate::native::CatiaNative::load(&alias_namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 
     let graph =
@@ -4573,13 +4573,13 @@ fn native_load_rejects_dangling_cross_arena_links() {
     assert!(omitted_alias_links.alias_rows[0].object_graph.is_some());
     omitted_alias_links.alias_rows[0].object_graph = None;
     omitted_alias_links.alias_rows[0].object_record = None;
-    let mut omitted_alias_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut omitted_alias_namespace = cadmpeg_ir::native::NativeNamespace::default();
     omitted_alias_links
         .store(&mut omitted_alias_namespace)
         .expect("store omitted alias links");
     assert!(matches!(
         crate::native::CatiaNative::load(&omitted_alias_namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -4597,59 +4597,59 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 
     let mut invalid_count = native.clone();
     invalid_count.catalogs[0].declared_count += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid_count
         .store(&mut namespace)
         .expect("store invalid catalog count");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut invalid_entry_ordinal = native.clone();
     invalid_entry_ordinal.catalogs[0].entries[0].ordinal = 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid_entry_ordinal
         .store(&mut namespace)
         .expect("store invalid catalog ordinal");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut invalid_record_ordinal = native.clone();
     invalid_record_ordinal.object_graphs[0].records[0].ordinal = 9;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid_record_ordinal
         .store(&mut namespace)
         .expect("store invalid record ordinal");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut invalid_design_link = native.clone();
     invalid_design_link.object_graphs[0].records[0].design_object = None;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid_design_link
         .store(&mut namespace)
         .expect("store invalid design-object link");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut invalid_references = native;
     invalid_references.object_graphs[0].records[0]
         .references
         .clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid_references
         .store(&mut namespace)
         .expect("store invalid payload-reference links");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -4657,13 +4657,13 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 fn native_load_rejects_noncanonical_value_block_views() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed value-block view");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
         ));
     };
 
@@ -4695,13 +4695,13 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
     assert!(native.object_graphs[0].records[0].class_name.is_some());
     assert!(native.object_graphs[0].records[0].class_entry.is_some());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed graph-catalog view");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
         ));
     };
 
@@ -4726,13 +4726,13 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
 fn native_load_rejects_invalid_source_identities_and_extents() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed source identity");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
         ));
     };
 
@@ -4763,7 +4763,7 @@ fn native_store_paths_write_the_current_schema_version() {
         version: 1,
         ..crate::native::CatiaNative::default()
     };
-    let mut borrowed_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut borrowed_namespace = cadmpeg_ir::native::NativeNamespace::default();
     borrowed
         .store(&mut borrowed_namespace)
         .expect("store borrowed CATIA namespace");
@@ -4776,7 +4776,7 @@ fn native_store_paths_write_the_current_schema_version() {
         version: 1,
         ..crate::native::CatiaNative::default()
     };
-    let mut owned_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut owned_namespace = cadmpeg_ir::native::NativeNamespace::default();
     owned
         .store_owned(&mut owned_namespace)
         .expect("store owned CATIA namespace");
@@ -4792,7 +4792,7 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
         )));
     }
     let native = crate::native::CatiaNative::decode(&bytes);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store indexed FINJPL segments");
@@ -4824,13 +4824,13 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
     );
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed FINJPL view");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
         ));
     };
     let mut invalid_length = native.clone();
@@ -4865,7 +4865,7 @@ fn native_load_derives_complete_source_ordered_preview_views() {
     }
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.preview_images.len(), 12);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store indexed preview views");
@@ -4882,13 +4882,13 @@ fn native_load_derives_complete_source_ordered_preview_views() {
     );
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed preview view");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
         ));
     };
     let mut missing = native.clone();
@@ -5076,13 +5076,13 @@ fn native_namespace_retains_surface_alias_core() {
 
     let mut invalid = native;
     invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store unresolved alias with a design-object link");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -5111,13 +5111,13 @@ fn native_alias_f1_resolves_primary_object_record() {
 
     let mut invalid = native;
     invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid alias design-object link");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
     ));
 }
 

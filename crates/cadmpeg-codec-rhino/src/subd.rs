@@ -6,10 +6,10 @@ use std::fmt;
 use std::ops::Range;
 
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::subd::SubdScheme;
 use cadmpeg_ir::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdSurface, SubdVertex, SubdVertexTag,
 };
-use cadmpeg_ir::SubdScheme;
 
 use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,

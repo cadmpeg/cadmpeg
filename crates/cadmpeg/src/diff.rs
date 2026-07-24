@@ -37,7 +37,7 @@ pub fn diff(
 ) -> Result<()> {
     let left = loader::load_ir(registry, a.path, options, a.forced)?;
     let right = loader::load_ir(registry, b.path, options, b.forced)?;
-    let result = cadmpeg_ir::diff(&left.ir, &right.ir);
+    let result = cadmpeg_ir::diff::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(
         left.source_fidelity.as_ref(),
         right.source_fidelity.as_ref(),

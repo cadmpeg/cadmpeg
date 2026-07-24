@@ -230,7 +230,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     let original = decoded.ir.native.namespace("f3d").unwrap();
     let typed = crate::native::F3dNative::load(original).unwrap();
-    let mut round_trip = cadmpeg_ir::NativeNamespace::default();
+    let mut round_trip = cadmpeg_ir::native::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
     assert_eq!(round_trip.version, crate::native::F3D_NATIVE_VERSION);
@@ -268,7 +268,7 @@ fn diff_reports_design_material_assignment_changes() {
         .unwrap()[0]
         .fields
         .insert("entity_suffix".into(), serde_json::json!(123456));
-    let report = cadmpeg_ir::diff(&decoded.ir, &edited);
+    let report = cadmpeg_ir::diff::diff(&decoded.ir, &edited);
     let arena = report
         .per_arena
         .iter()
@@ -5490,9 +5490,9 @@ fn generated_source_less_f3d_rejects_subds() {
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.model.subds.push(cadmpeg_ir::SubdSurface {
+    source_less.model.subds.push(cadmpeg_ir::subd::SubdSurface {
         id: cadmpeg_ir::ids::SubdId("test:f3d:subd#0".into()),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),

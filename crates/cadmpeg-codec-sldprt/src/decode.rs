@@ -2476,7 +2476,7 @@ fn assign_configuration_bodies(
             continue;
         };
         if let Some(bodies) = partition_map.remove(&source_index) {
-            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
+            configuration.bodies = cadmpeg_ir::features::ConfigurationBodies::Resolved(bodies);
             *is_assigned = true;
         }
     }
@@ -2508,7 +2508,7 @@ fn assign_configuration_bodies(
                 let position = matches[0];
                 let configuration = &mut ir.model.configurations[position];
                 configuration.source_index = Some(active_index);
-                configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
+                configuration.bodies = cadmpeg_ir::features::ConfigurationBodies::Resolved(bodies);
                 assigned[position] = true;
             }
         }
@@ -2520,7 +2520,7 @@ fn assign_configuration_bodies(
         let source_index = configuration.ordinal;
         if let Some(bodies) = partition_map.remove(&source_index) {
             configuration.source_index = Some(source_index);
-            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
+            configuration.bodies = cadmpeg_ir::features::ConfigurationBodies::Resolved(bodies);
             *is_assigned = true;
         }
     }
@@ -2545,7 +2545,7 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}"),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(bodies),
+                bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(bodies),
                 parameter_values: std::collections::BTreeMap::new(),
                 suppressed_features: Vec::new(),
                 parameter_overrides: BTreeMap::new(),
@@ -2555,7 +2555,7 @@ fn assign_configuration_bodies(
     }
     for configuration in &mut ir.model.configurations {
         if configuration.bodies.is_unresolved() {
-            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new());
+            configuration.bodies = cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new());
         }
     }
 }
@@ -2624,7 +2624,7 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
         units: ir.units.clone(),
         tolerances: ir.tolerances,
         model: ir.model.clone(),
-        native: cadmpeg_ir::Native::default(),
+        native: cadmpeg_ir::native::Native::default(),
     };
     normalized.model.bodies.iter_mut().for_each(|body| {
         body.name = None;
@@ -2889,7 +2889,7 @@ mod design_loss_tests {
                 name: format!("Configuration {ordinal}"),
                 material: None,
                 properties: BTreeMap::new(),
-                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+                bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new()),
                 parameter_values: BTreeMap::new(),
                 suppressed_features: Vec::new(),
                 parameter_overrides: BTreeMap::new(),
@@ -2978,7 +2978,7 @@ mod design_loss_tests {
             name: "Configuration".into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
@@ -3463,7 +3463,7 @@ mod design_loss_tests {
             name: id.into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
@@ -3510,7 +3510,7 @@ mod design_loss_tests {
                 name: id.into(),
                 material: None,
                 properties: BTreeMap::new(),
-                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+                bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new()),
                 parameter_values: BTreeMap::new(),
                 suppressed_features: Vec::new(),
                 parameter_overrides: BTreeMap::new(),
@@ -3550,7 +3550,7 @@ mod design_loss_tests {
                 name: name.into(),
                 material: None,
                 properties: BTreeMap::new(),
-                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+                bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new()),
                 parameter_values: BTreeMap::new(),
                 suppressed_features: Vec::new(),
                 parameter_overrides: BTreeMap::new(),
@@ -3593,7 +3593,7 @@ mod design_loss_tests {
             name: "Default".into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
@@ -3640,12 +3640,14 @@ mod design_loss_tests {
             configuration(
                 "duplicate",
                 0,
-                cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone(), body]),
+                cadmpeg_ir::features::ConfigurationBodies::Resolved(vec![body.clone(), body]),
             ),
             configuration(
                 "missing",
                 1,
-                cadmpeg_ir::ConfigurationBodies::Resolved(vec![BodyId("missing-body".into())]),
+                cadmpeg_ir::features::ConfigurationBodies::Resolved(vec![BodyId(
+                    "missing-body".into(),
+                )]),
             ),
         ];
         let mut report = DecodeReport {

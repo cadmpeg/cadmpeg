@@ -341,7 +341,8 @@ pub(super) fn check_native_links(ir: &CadIr, index: &ModelIndex<'_>, findings: &
 #[cfg(test)]
 mod tests {
     use super::annotated_entity_json;
-    use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
+    use crate::examples::unit_cube;
+    use crate::native::{NativeNamespace, NativeRecord};
     use serde_json::{Map, Value};
     use std::collections::HashSet;
 

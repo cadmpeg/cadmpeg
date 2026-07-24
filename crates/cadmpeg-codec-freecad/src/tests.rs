@@ -1,12 +1,12 @@
 use std::io::{Cursor, Write};
 
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
     InnerWireTaper, Length, PathRef, RevolveExtent, ShellJoin, ShellMode, SweepOrientation,
     SweepTransformation, SweepTransition, Termination,
 };
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind as Kind;
-use cadmpeg_ir::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use zip::write::SimpleFileOptions;
 
 use crate::FcstdCodec;
@@ -3111,11 +3111,11 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     assert_eq!(
         sheet.column_widths,
         [
-            cadmpeg_ir::SpreadsheetDimension {
+            cadmpeg_ir::spreadsheets::SpreadsheetDimension {
                 name: "A".into(),
                 pixels: 120,
             },
-            cadmpeg_ir::SpreadsheetDimension {
+            cadmpeg_ir::spreadsheets::SpreadsheetDimension {
                 name: "B".into(),
                 pixels: 80,
             },
@@ -3123,26 +3123,26 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     );
     assert_eq!(
         sheet.row_heights,
-        [cadmpeg_ir::SpreadsheetDimension {
+        [cadmpeg_ir::spreadsheets::SpreadsheetDimension {
             name: "2".into(),
             pixels: 45,
         }]
     );
     assert_eq!(
         sheet.merged_ranges,
-        [cadmpeg_ir::SpreadsheetRange {
+        [cadmpeg_ir::spreadsheets::SpreadsheetRange {
             start: "A1".into(),
             end: "B1".into(),
         }]
     );
     assert_valid_document(&result.ir);
     let mut corrupted = result.ir.clone();
-    corrupted.model.spreadsheets[0]
-        .merged_ranges
-        .push(cadmpeg_ir::SpreadsheetRange {
+    corrupted.model.spreadsheets[0].merged_ranges.push(
+        cadmpeg_ir::spreadsheets::SpreadsheetRange {
             start: "A1".into(),
             end: "A2".into(),
-        });
+        },
+    );
     assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
@@ -3266,7 +3266,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(result.ir.model.occurrences[0].claim_child, Some(true));
     assert_eq!(
         result.ir.model.occurrences[0].copy_on_change,
-        Some(cadmpeg_ir::CopyOnChangePolicy::Owned)
+        Some(cadmpeg_ir::products::CopyOnChangePolicy::Owned)
     );
     assert!(result.ir.model.occurrences[0]
         .copy_on_change_source
@@ -3280,7 +3280,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     );
     assert!(matches!(
         &result.ir.model.occurrences[0].prototype,
-        cadmpeg_ir::ComponentReference::Local { component }
+        cadmpeg_ir::products::ComponentReference::Local { component }
             if component.0.contains("Prototype")
     ));
     let prototype = result
@@ -3299,8 +3299,8 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
     let mut corrupted = result.ir.clone();
-    corrupted.model.occurrences[0].prototype = cadmpeg_ir::ComponentReference::Local {
-        component: cadmpeg_ir::ComponentId("fcstd:model:component#missing".into()),
+    corrupted.model.occurrences[0].prototype = cadmpeg_ir::products::ComponentReference::Local {
+        component: cadmpeg_ir::products::ComponentId("fcstd:model:component#missing".into()),
     };
     assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
@@ -3370,7 +3370,7 @@ fn recovers_assembly_joint_operands_frames_and_state() {
     );
     assert_eq!(result.ir.model.assembly_joints.len(), 1);
     let joint = &result.ir.model.assembly_joints[0];
-    assert_eq!(joint.kind, cadmpeg_ir::JointKind::Revolute);
+    assert_eq!(joint.kind, cadmpeg_ir::products::JointKind::Revolute);
     assert_eq!(joint.operands.len(), 2);
     assert!(joint
         .operands
@@ -3473,7 +3473,7 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
                 .is_some_and(|id| id.ends_with("Inner"))
         })
         .expect("inner link occurrence");
-    inner.prototype = cadmpeg_ir::ComponentReference::Local {
+    inner.prototype = cadmpeg_ir::products::ComponentReference::Local {
         component: inner_component,
     };
     assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
@@ -3512,7 +3512,9 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
                 .is_some_and(|id| id.ends_with("ByPath"))
         })
         .expect("path occurrence");
-    let cadmpeg_ir::ComponentReference::External { document, object } = &by_path.prototype else {
+    let cadmpeg_ir::products::ComponentReference::External { document, object } =
+        &by_path.prototype
+    else {
         panic!("path prototype is external");
     };
     assert_eq!(document.path.as_deref(), Some("parts/widget.FCStd"));
@@ -3520,7 +3522,7 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
     assert_eq!(object.as_deref(), Some("Body"));
     assert_eq!(
         document.resolution,
-        cadmpeg_ir::ExternalResolution::Unresolved
+        cadmpeg_ir::products::ExternalResolution::Unresolved
     );
 
     let by_document = result
@@ -3535,7 +3537,8 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
                 .is_some_and(|id| id.ends_with("ByDocument"))
         })
         .expect("document occurrence");
-    let cadmpeg_ir::ComponentReference::External { document, object } = &by_document.prototype
+    let cadmpeg_ir::products::ComponentReference::External { document, object } =
+        &by_document.prototype
     else {
         panic!("document prototype is external");
     };
@@ -3544,12 +3547,12 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
     assert_eq!(object.as_deref(), Some("Gear"));
     assert_eq!(
         document.resolution,
-        cadmpeg_ir::ExternalResolution::Unresolved
+        cadmpeg_ir::products::ExternalResolution::Unresolved
     );
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
     let mut corrupted = result.ir.clone();
-    let cadmpeg_ir::ComponentReference::External { document, .. } =
+    let cadmpeg_ir::products::ComponentReference::External { document, .. } =
         &mut corrupted.model.occurrences[0].prototype
     else {
         panic!("external prototype");
@@ -3584,7 +3587,7 @@ fn transfers_grounded_assembly_state_with_resolved_component() {
         .expect("grounded assembly object");
     assert_eq!(result.ir.model.assembly_joints.len(), 1);
     let joint = &result.ir.model.assembly_joints[0];
-    assert_eq!(joint.kind, cadmpeg_ir::JointKind::Grounded);
+    assert_eq!(joint.kind, cadmpeg_ir::products::JointKind::Grounded);
     assert_eq!(joint.operands.len(), 1);
     assert!(joint.operands[0].component.is_some());
     assert_eq!(joint.frames.len(), 1);

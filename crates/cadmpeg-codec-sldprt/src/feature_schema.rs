@@ -4,7 +4,7 @@
 //! A feature type's native enum tokens (for example the filled-surface
 //! continuity order, or the trim-surface keep region) were historically spelled
 //! out twice: once in the read path that maps native records to typed
-//! [`cadmpeg_ir::FeatureDefinition`] values, and once in the write path that
+//! [`cadmpeg_ir::features::FeatureDefinition`] values, and once in the write path that
 //! rebuilds native records from them. The two `match` blocks had to stay in
 //! lockstep by hand; drift between them is a silent round-trip bug.
 //!

@@ -49,7 +49,7 @@ impl Builder<'_> {
         let fallback_aspect = self
             .emitter
             .emit(SHAPE_ASPECT, &format!("'PMI target','',{pds},.T."));
-        let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
+        let target_ref = |annotation: &cadmpeg_ir::pmi::PmiAnnotation| {
             annotation.targets.iter().find_map(|target| {
                 if let PmiTarget::ShapeAspect { source_id } = target {
                     aspects.get(source_id).copied()
@@ -58,7 +58,7 @@ impl Builder<'_> {
                 }
             })
         };
-        let targets_exact = |annotation: &cadmpeg_ir::PmiAnnotation| {
+        let targets_exact = |annotation: &cadmpeg_ir::pmi::PmiAnnotation| {
             annotation
                 .targets
                 .iter()
@@ -347,9 +347,9 @@ impl Builder<'_> {
         for modifier in source {
             if let Some((kind, value)) = modifier.split_once(':') {
                 let value = value.parse::<f64>().ok()?;
-                let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
+                let measure = self.emit_pmi_measure(cadmpeg_ir::pmi::PmiValue {
                     value,
-                    quantity: cadmpeg_ir::PmiQuantity::Length,
+                    quantity: cadmpeg_ir::pmi::PmiQuantity::Length,
                 });
                 modifiers.push(
                     self.emitter
@@ -366,7 +366,7 @@ impl Builder<'_> {
         Some(modifiers.join(","))
     }
 
-    fn emit_pmi_measure(&mut self, value: cadmpeg_ir::PmiValue) -> Ref {
+    fn emit_pmi_measure(&mut self, value: cadmpeg_ir::pmi::PmiValue) -> Ref {
         use cadmpeg_ir::pmi::PmiQuantity;
         let (entity, typed, unit) = match value.quantity {
             PmiQuantity::Length => (
@@ -387,7 +387,7 @@ impl Builder<'_> {
 
     fn emit_pmi_measure_representation_item(
         &mut self,
-        value: cadmpeg_ir::PmiValue,
+        value: cadmpeg_ir::pmi::PmiValue,
         name: &str,
     ) -> Ref {
         use cadmpeg_ir::pmi::PmiQuantity;

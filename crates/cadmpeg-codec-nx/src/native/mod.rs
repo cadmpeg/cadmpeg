@@ -49,6 +49,6 @@ pub(crate) fn attach_annotations(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
     attach::attach(ir, model, scan, annotations, unknowns)
 }

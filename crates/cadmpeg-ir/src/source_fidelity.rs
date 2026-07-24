@@ -145,7 +145,7 @@ impl SourceFidelity {
         }));
         let product_records = records
             .iter()
-            .map(crate::NativeUnknownRecord::from)
+            .map(crate::unknown::NativeUnknownRecord::from)
             .collect::<Vec<_>>();
         ir.set_native_unknowns(format, &product_records)
     }

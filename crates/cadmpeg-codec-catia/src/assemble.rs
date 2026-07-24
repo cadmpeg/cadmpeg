@@ -55,7 +55,7 @@ pub(crate) fn neutral_model_is_admissible(ir: &CadIr, pending_unknowns: &[Unknow
     let mut candidate = ir.clone();
     let native_unknowns = pending_unknowns
         .iter()
-        .map(cadmpeg_ir::NativeUnknownRecord::from)
+        .map(cadmpeg_ir::unknown::NativeUnknownRecord::from)
         .collect::<Vec<_>>();
     if candidate
         .set_native_unknowns("catia", &native_unknowns)

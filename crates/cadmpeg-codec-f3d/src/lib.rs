@@ -15,7 +15,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +28,7 @@
 //! # }
 //! ```
 //!
-//! [`CodecEntry::inspect`](cadmpeg_ir::CodecEntry::inspect) classifies the ZIP entries and reads ASM B-rep headers
+//! [`CodecEntry::inspect`](cadmpeg_ir::codec::CodecEntry::inspect) classifies the ZIP entries and reads ASM B-rep headers
 //! without building geometry. `DecodeOptions::container_only` provides the
 //! corresponding metadata-only `CadIr`.
 //!
@@ -36,7 +36,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions, Encoder};
+//! use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions, Encoder};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {

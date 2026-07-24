@@ -4,9 +4,10 @@
 use crate::loss::IgesLossCode;
 use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::{CadIr, SourceFidelity, SourceMeta};
+use cadmpeg_ir::{CadIr, SourceFidelity};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn source_meta(global: &global::Global) -> SourceMeta {

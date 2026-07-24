@@ -700,7 +700,7 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
     })
 }
 
-fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bool {
+fn rewritable_generated_namespace(namespace: &cadmpeg_ir::native::NativeNamespace) -> bool {
     const REGENERATED: &[&str] = &[
         "byte_spans",
         "document_settings",
@@ -794,7 +794,7 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
     })
 }
 
-fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
+fn default_native_layer(record: &cadmpeg_ir::native::NativeRecord) -> bool {
     json_i64(record, "archive_index") == Some(0)
         && json_i64(record, "linetype_index") == Some(-1)
         && json_i64(record, "material_index") == Some(-1)
@@ -804,7 +804,7 @@ fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_array_empty(record, "rendering_materials")
 }
 
-fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
+fn default_native_presentation(record: &cadmpeg_ir::native::NativeRecord) -> bool {
     json_i64(record, "layer_index") == Some(0)
         && json_i64(record, "material_index") == Some(-1)
         && json_i64(record, "linetype_index") == Some(-1)
@@ -819,19 +819,19 @@ fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_array_empty(record, "clipping_plane_uuids")
 }
 
-fn json_i64(record: &cadmpeg_ir::NativeRecord, name: &str) -> Option<i64> {
+fn json_i64(record: &cadmpeg_ir::native::NativeRecord, name: &str) -> Option<i64> {
     record.fields.get(name)?.as_i64()
 }
 
-fn json_str<'a>(record: &'a cadmpeg_ir::NativeRecord, name: &str) -> Option<&'a str> {
+fn json_str<'a>(record: &'a cadmpeg_ir::native::NativeRecord, name: &str) -> Option<&'a str> {
     record.fields.get(name)?.as_str()
 }
 
-fn json_bool(record: &cadmpeg_ir::NativeRecord, name: &str) -> Option<bool> {
+fn json_bool(record: &cadmpeg_ir::native::NativeRecord, name: &str) -> Option<bool> {
     record.fields.get(name)?.as_bool()
 }
 
-fn json_array_empty(record: &cadmpeg_ir::NativeRecord, name: &str) -> bool {
+fn json_array_empty(record: &cadmpeg_ir::native::NativeRecord, name: &str) -> bool {
     record
         .fields
         .get(name)
@@ -4056,7 +4056,7 @@ mod tests {
             .arenas
             .entry("materials".into())
             .or_default()
-            .push(cadmpeg_ir::NativeRecord {
+            .push(cadmpeg_ir::native::NativeRecord {
                 id: "rhino:presentation:material#unsupported".into(),
                 fields: serde_json::Map::new(),
             });

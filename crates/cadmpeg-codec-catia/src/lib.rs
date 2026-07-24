@@ -16,7 +16,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_catia::CatiaCodec;
-//! use cadmpeg_ir::{CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 //!
 //! # fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.CATPart")?;

@@ -40,7 +40,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     let original = decoded.ir.native.namespace("sldprt").unwrap();
     let typed = crate::native::SldprtNative::load(original).unwrap();
-    let mut round_trip = cadmpeg_ir::NativeNamespace::default();
+    let mut round_trip = cadmpeg_ir::native::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(
         typed,
@@ -82,7 +82,7 @@ fn native_version_one_migrates_the_body_selection_arena() {
         .feature_input_lanes
         .iter()
         .all(|lane| lane.body_selections.is_empty()));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
+    let mut current = cadmpeg_ir::native::NativeNamespace::default();
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current.arenas.contains_key("feature_input_body_selections"));
@@ -116,7 +116,7 @@ fn native_version_two_migrates_the_edge_selection_arena() {
         .feature_input_lanes
         .iter()
         .all(|lane| lane.edge_selections.is_empty()));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
+    let mut current = cadmpeg_ir::native::NativeNamespace::default();
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current.arenas.contains_key("feature_input_edge_selections"));
@@ -138,7 +138,7 @@ fn native_version_three_migrates_the_surface_selection_arena() {
         .feature_input_lanes
         .iter()
         .all(|lane| lane.surface_selections.is_empty()));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
+    let mut current = cadmpeg_ir::native::NativeNamespace::default();
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current
@@ -170,7 +170,7 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
             }) == entity.object_index
         })
     }));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
+    let mut current = cadmpeg_ir::native::NativeNamespace::default();
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
 
@@ -4600,7 +4600,9 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![ir.model.bodies[0].id.clone()]),
+        bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(vec![ir.model.bodies[0]
+            .id
+            .clone()]),
         parameter_values: BTreeMap::new(),
         suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
@@ -4615,7 +4617,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Empty".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+        bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
         suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
@@ -4792,7 +4794,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .unwrap()
         .ir;
     ir.source = None;
-    ir.native = cadmpeg_ir::Native::default();
+    ir.native = cadmpeg_ir::native::Native::default();
     ir.model.bodies.iter_mut().for_each(|body| body.name = None);
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     let body_ids = ir
@@ -4842,7 +4844,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             name: format!("Config {index}"),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone()]),
+            bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(vec![body.clone()]),
             parameter_values: BTreeMap::new(),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
@@ -5723,7 +5725,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_ir::CodecError::Malformed(message)) => {
+        Err(cadmpeg_ir::codec::CodecError::Malformed(message)) => {
             assert!(
                 message.contains("strict mode rejects geometry_not_transferred"),
                 "unexpected message: {message}"
@@ -6061,9 +6063,9 @@ fn semantic_writer_rejects_subds() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.subds.push(cadmpeg_ir::SubdSurface {
+    decoded.ir.model.subds.push(cadmpeg_ir::subd::SubdSurface {
         id: cadmpeg_ir::ids::SubdId("test:sldprt:subd#0".into()),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
@@ -17671,7 +17673,7 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
         .expect("sketch marker")
         .feature_ref = Some("sldprt:history:feature#missing".into());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -17697,7 +17699,7 @@ fn native_store_rejects_edited_history_feature_class() {
     let mut native = sldprt_native(&decoded.ir);
     native.feature_histories[0].features[0].input_class = Some("moRefPlane_c".into());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -17723,7 +17725,7 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
     }];
     entity.link_selector = Some(0);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error.to_string().contains("missing local-link target"));
 }
@@ -17774,7 +17776,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
         }
     }
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native.store(&mut namespace).unwrap();
     let stored = crate::native::SldprtNative::load(&namespace).unwrap();
     assert_eq!(
@@ -18266,7 +18268,7 @@ fn native_store_rejects_relation_scalar_owner_disagreement() {
         .is_some());
     native.feature_input_lanes[0].relation_bindings[0].feature_ref = None;
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -18290,7 +18292,7 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
         .scalar_refs
         .push(duplicate);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
@@ -18343,7 +18345,7 @@ fn native_store_rejects_relation_instance_operand_disagreement() {
     let mut native = sldprt_native(&decoded.ir);
     native.feature_input_lanes[0].relation_instances[0].operands[0].entity_index += 1;
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
@@ -18372,7 +18374,7 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
     native.feature_input_lanes[0].scalars[0].operands[1].entity_ref = Some(wrong_target.clone());
     native.feature_input_lanes[0].relation_instances[0].operands[1].entity_ref = Some(wrong_target);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error.to_string().contains("inconsistent sketch marker"));
 }
@@ -18399,7 +18401,7 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     assert!(lane.scalars[0].operands[0].entity_ref.is_some());
     lane.sketch_entities[1].local_id = lane.sketch_entities[0].local_id;
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     native.store(&mut namespace).unwrap();
 }
 
@@ -18582,7 +18584,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     native.feature_input_lanes[0].body_selections[0]
         .body_state_ids
         .push(287);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("body selection")
@@ -18592,7 +18594,7 @@ fn decode_and_validate_compact_delete_body_selection() {
 
     native.feature_input_lanes[0].body_selections[0].mode =
         Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("body selection")
@@ -18602,7 +18604,7 @@ fn decode_and_validate_compact_delete_body_selection() {
         Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected);
 
     native.feature_input_lanes[0].body_selections[0].local_body_ids[0] = 288;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("body selection")

@@ -72,55 +72,15 @@ pub mod validate;
 pub mod wire;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
-pub use codec::{
-    CadirEncoder, Codec, CodecEntry, CodecError, Confidence, ContainerEntry, ContainerSummary,
-    DecodeOptions, DecodeResult, Encoder, ReadSeek,
-};
-pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
-pub use document::{CadIr, SourceMeta, IR_VERSION};
-pub use features::{
-    BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
-    CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies, ConfigurationId,
-    CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration, DesignParameter,
-    FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,
-    PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
-};
-pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
-pub use pmi::{
-    DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
-    PmiQuantity, PmiTarget, PmiValue,
-};
-pub use presentation::{
-    CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
-};
-pub use presentation::{PresentationItem, PresentationLayer};
-pub use product::{OccurrenceParent, Product, ProductOccurrence};
-pub use products::{
-    AssemblyJoint, Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
-    ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,
-    Occurrence, OccurrenceId,
-};
+pub use document::{CadIr, IR_VERSION};
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
     DecodeReport, ExportReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
 };
-pub use sketches::{
-    Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-    SketchCoordinateAxis, SketchDistanceMeasurement, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SketchNativeOperand, SketchPlacement, SpatialSketch,
-    SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchGeometry,
-    SpatialSketchId, SpatialSketchProfile,
-};
 pub use source_fidelity::write_plan::{plan_write, verify_retained_bytes, WritePlan};
 pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
-pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
-pub use subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
-    SubdVertexTag,
-};
-pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::{validate, validate_with_source_fidelity, Check, Finding, ValidationReport};
 
 pub mod unknown;

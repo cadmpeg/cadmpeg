@@ -62,14 +62,14 @@ pub(crate) fn patch_payload(
     ir: &cadmpeg_ir::CadIr,
     block_id: &str,
     payload: &mut [u8],
-) -> Result<(), cadmpeg_ir::CodecError> {
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
     use cadmpeg_ir::features::{ParameterValue, PmiDimensionSubtype};
 
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(());
     };
     let native = crate::native::SldprtNative::load(namespace).map_err(|error| {
-        cadmpeg_ir::CodecError::Malformed(format!("invalid SLDPRT native PMI: {error}"))
+        cadmpeg_ir::codec::CodecError::Malformed(format!("invalid SLDPRT native PMI: {error}"))
     })?;
     for record in native
         .pmi_dimensions
@@ -83,7 +83,7 @@ pub(crate) fn patch_payload(
             continue;
         };
         if parameters.next().is_some() {
-            return Err(cadmpeg_ir::CodecError::Malformed(format!(
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
                 "multiple parameters reference PMI record {}",
                 record.id
             )));
@@ -97,7 +97,7 @@ pub(crate) fn patch_payload(
             other => PmiDimensionSubtype::Native(other.to_string()),
         };
         if semantic.subtype != subtype {
-            return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                 "SLDPRT PMI record {} changes dimension subtype",
                 record.id
             )));
@@ -111,7 +111,7 @@ pub(crate) fn patch_payload(
                 Some(ParameterValue::Length(length)),
             ) => length.0 / 1000.0,
             _ => {
-                return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} has a value incompatible with its dimension subtype",
                     record.id
                 )));
@@ -127,7 +127,7 @@ pub(crate) fn patch_payload(
             .ok()
             .filter(|value| *value < 128)
             .ok_or_else(|| {
-                cadmpeg_ir::CodecError::NotImplemented(format!(
+                cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} requires fixint precision",
                     record.id
                 ))
@@ -151,13 +151,13 @@ pub(crate) fn patch_payload(
                 semantic.display_text.as_deref(),
                 record.display_text.as_deref(),
             ) else {
-                return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} changes optional display text",
                     record.id
                 )));
             };
             if text.len() != previous.len() {
-                return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} changes display-text width",
                     record.id
                 )));
@@ -173,19 +173,21 @@ fn patch_bytes(
     offset: u64,
     bytes: &[u8],
     record: &str,
-) -> Result<(), cadmpeg_ir::CodecError> {
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
     let start = usize::try_from(offset).map_err(|_| {
-        cadmpeg_ir::CodecError::Malformed(format!(
+        cadmpeg_ir::codec::CodecError::Malformed(format!(
             "SLDPRT PMI record {record} exceeds address space"
         ))
     })?;
     let end = start.checked_add(bytes.len()).ok_or_else(|| {
-        cadmpeg_ir::CodecError::Malformed(format!("SLDPRT PMI record {record} offset overflows"))
+        cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "SLDPRT PMI record {record} offset overflows"
+        ))
     })?;
     payload
         .get_mut(start..end)
         .ok_or_else(|| {
-            cadmpeg_ir::CodecError::Malformed(format!(
+            cadmpeg_ir::codec::CodecError::Malformed(format!(
                 "SLDPRT PMI record {record} lies outside its block"
             ))
         })?

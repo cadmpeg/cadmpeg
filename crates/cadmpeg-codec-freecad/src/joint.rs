@@ -332,7 +332,10 @@ mod tests {
             "grounded",
         ] {
             assert!(
-                !matches!(joint_kind(family), cadmpeg_ir::JointKind::Native(_)),
+                !matches!(
+                    joint_kind(family),
+                    cadmpeg_ir::products::JointKind::Native(_)
+                ),
                 "{family} must not fall through to a native joint family"
             );
         }

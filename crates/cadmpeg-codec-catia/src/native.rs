@@ -1046,7 +1046,7 @@ fn native_consolidated_support_binding(
 #[cfg(test)]
 fn validate_consolidated_pcurves(
     pcurves: &[CatiaConsolidatedPcurve],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
     for (index, pcurve) in pcurves.iter().enumerate() {
         let expected_id = format!("catia:consolidated:pcurve#{index}");
         let count = pcurve.knots.len();
@@ -1069,10 +1069,12 @@ fn validate_consolidated_pcurves(
             || !matches!(pcurve.tail.as_slice(), [0x07] | [0x07, 0x00])
             || index > 0 && pcurves[index - 1].byte_offset >= pcurve.byte_offset
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated pcurve `{}` is structurally invalid",
-                pcurve.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "consolidated pcurve `{}` is structurally invalid",
+                    pcurve.id
+                ),
+            ));
         }
     }
     Ok(())
@@ -1084,7 +1086,7 @@ fn validate_consolidated_edge_runs(
     pcurves: &[CatiaConsolidatedPcurve],
     nodes: &[CatiaConsolidatedEdgeNode],
     vertex_identities: &[CatiaConsolidatedVertexIdentity],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
     let pcurves = pcurves
         .iter()
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
@@ -1176,10 +1178,12 @@ fn validate_consolidated_edge_runs(
             || !class25_descriptor_valid
             || index > 0 && nodes[index - 1].byte_offset >= node.byte_offset
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated edge node `{}` is structurally invalid",
-                node.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "consolidated edge node `{}` is structurally invalid",
+                    node.id
+                ),
+            ));
         }
     }
     for (index, run) in runs.iter().enumerate() {
@@ -1193,16 +1197,20 @@ fn validate_consolidated_edge_runs(
             .each_ref()
             .map(|id| pcurves.get(id.as_str()).map(|pcurve| pcurve.range));
         let Some(node) = nodes_by_id.get(run.node.as_str()) else {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated edge run `{}` references missing node `{}`",
-                run.id, run.node
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "consolidated edge run `{}` references missing node `{}`",
+                    run.id, run.node
+                ),
+            ));
         };
         if !run_nodes.insert(run.node.as_str()) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated edge node `{}` belongs to multiple runs",
-                run.node
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "consolidated edge node `{}` belongs to multiple runs",
+                    run.node
+                ),
+            ));
         }
         let loci_valid = run.shared_loci.as_ref().map_or_else(
             || run.endpoint_loci.is_none(),
@@ -1240,16 +1248,15 @@ fn validate_consolidated_edge_runs(
             || !loci_valid
             || index > 0 && runs[index - 1].byte_offset >= run.byte_offset
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated edge run `{}` is structurally invalid",
-                run.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("consolidated edge run `{}` is structurally invalid", run.id),
+            ));
         }
     }
     let mut expected_nodes = nodes.to_vec();
     let expected_identities = consolidated_vertex_identities(&mut expected_nodes);
     if expected_nodes != nodes || expected_identities != vertex_identities {
-        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+        return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
             "consolidated vertex identities disagree with edge incidence".to_string(),
         ));
     }
@@ -1350,21 +1357,19 @@ fn validate_native_links(
     graphs: &[CatiaObjectGraph],
     segments: &[CatiaFinjplSegment],
     value_blocks: &[CatiaValueBlock],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
     for catalog in catalogs {
         let count_width = if catalog.declared_count <= 0x50 { 1 } else { 2 };
         let Some(mut expected_offset) = catalog.byte_offset.checked_add(6 + count_width) else {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "catalog `{}` has an overflowing extent",
-                catalog.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("catalog `{}` has an overflowing extent", catalog.id),
+            ));
         };
         let catalog_end = catalog.byte_offset.checked_add(catalog.byte_len);
         if catalog.id != format!("catia:outer:catalog#{:010}", catalog.byte_offset) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "catalog `{}` has an invalid source identity",
-                catalog.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("catalog `{}` has an invalid source identity", catalog.id),
+            ));
         }
         for (index, entry) in catalog.entries.iter().enumerate() {
             let next_offset = catalog
@@ -1380,18 +1385,16 @@ fn validate_native_links(
                     matches!(encoded.checked_sub(value), Some(1 | 5))
                 })
             {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "catalog entry `{}` has an invalid source extent",
-                    entry.id
-                )));
+                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                    format!("catalog entry `{}` has an invalid source extent", entry.id),
+                ));
             }
             expected_offset = next_offset.expect("validated catalog end");
         }
         if Some(expected_offset) != catalog_end {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "catalog `{}` entries do not cover its frame",
-                catalog.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("catalog `{}` entries do not cover its frame", catalog.id),
+            ));
         }
     }
     for (index, segment) in segments.iter().enumerate() {
@@ -1406,38 +1409,43 @@ fn validate_native_links(
                     && finjpl_family(parsed.kind) == segment.family
                     && parsed.name == segment.name)
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "FINJPL segment `{}` has an invalid retained view",
-                segment.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "FINJPL segment `{}` has an invalid retained view",
+                    segment.id
+                ),
+            ));
         }
     }
     if segments
         .windows(2)
         .any(|pair| pair[0].byte_offset.checked_add(pair[0].byte_len) != Some(pair[1].byte_offset))
     {
-        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+        return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
             "CATIA FINJPL segment extents are not contiguous".to_string(),
         ));
     }
     for block in value_blocks {
         if block.id != format!("catia:outer:value-block#{:010}", block.byte_offset) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "value block `{}` has an invalid source identity",
-                block.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("value block `{}` has an invalid source identity", block.id),
+            ));
         }
         let Some(catalog) = catalogs.iter().find(|catalog| catalog.id == block.catalog) else {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "value block `{}` references missing catalog `{}`",
-                block.id, block.catalog
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "value block `{}` references missing catalog `{}`",
+                    block.id, block.catalog
+                ),
+            ));
         };
         if block.byte_offset.checked_add(block.byte_len) != Some(catalog.byte_offset) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "value block `{}` is not adjacent to catalog `{}`",
-                block.id, block.catalog
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "value block `{}` is not adjacent to catalog `{}`",
+                    block.id, block.catalog
+                ),
+            ));
         }
         let payload_len = u64::try_from(block.payload.len()).ok();
         if block.declared_len.checked_add(1) != Some(block.byte_len)
@@ -1445,10 +1453,9 @@ fn validate_native_links(
             || value_block::tokenize(&block.payload) != block.fields
             || value_schema_selections(&block.fields, catalog) != block.schema_selections
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "value block `{}` has an invalid derived view",
-                block.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("value block `{}` has an invalid derived view", block.id),
+            ));
         }
         let mut adjacent_graphs = graphs.iter().filter(|graph| {
             graph.byte_offset.checked_add(graph.byte_len) == Some(block.byte_offset)
@@ -1457,42 +1464,40 @@ fn validate_native_links(
         if adjacent_graphs.next().is_some()
             || block.object_graph.as_deref() != adjacent_graph.map(|graph| graph.id.as_str())
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "value block `{}` has an invalid adjacent graph link",
-                block.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "value block `{}` has an invalid adjacent graph link",
+                    block.id
+                ),
+            ));
         }
     }
     for graph in graphs {
         let Some(graph_end) = graph.byte_offset.checked_add(graph.byte_len) else {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "object graph `{}` has an overflowing extent",
-                graph.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("object graph `{}` has an overflowing extent", graph.id),
+            ));
         };
         let mut expected_record_offset = graph.byte_offset.checked_add(6);
         if graph.id != format!("catia:outer:object-graph#{:010}", graph.byte_offset) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "object graph `{}` has an invalid source identity",
-                graph.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("object graph `{}` has an invalid source identity", graph.id),
+            ));
         }
         for record in &graph.records {
             if Some(record.byte_offset) != expected_record_offset
                 || record.id != format!("catia:outer:object-record#{:010}", record.byte_offset)
             {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "object record `{}` has an invalid source extent",
-                    record.id
-                )));
+                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                    format!("object record `{}` has an invalid source extent", record.id),
+                ));
             }
             expected_record_offset = record.byte_offset.checked_add(record.byte_len);
         }
         if expected_record_offset != Some(graph_end) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "object graph `{}` records do not cover its frame",
-                graph.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("object graph `{}` records do not cover its frame", graph.id),
+            ));
         }
         let mut candidates = catalogs
             .iter()
@@ -1510,10 +1515,12 @@ fn validate_native_links(
             || graph.catalog_byte_offset != catalog.map(|catalog| catalog.byte_offset)
             || graph.catalog.as_deref() != catalog.map(|catalog| catalog.id.as_str())
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "object graph `{}` has an invalid schema-catalog link",
-                graph.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "object graph `{}` has an invalid schema-catalog link",
+                    graph.id
+                ),
+            ));
         }
         for record in &graph.records {
             let expected_class = catalog.and_then(|catalog| {
@@ -1527,10 +1534,9 @@ fn validate_native_links(
             if record.class_entry.as_deref() != expected_class.map(|(entry, _)| entry)
                 || record.class_name.as_deref() != expected_class.map(|(_, value)| value)
             {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "object record `{}` has an invalid schema class",
-                    record.id
-                )));
+                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                    format!("object record `{}` has an invalid schema class", record.id),
+                ));
             }
         }
     }
@@ -1548,10 +1554,9 @@ fn validate_native_links(
     };
     for alias in aliases {
         if alias.id != format!("catia:outer:alias-row#{:010}", alias.byte_offset) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "alias row `{}` has an invalid source identity",
-                alias.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!("alias row `{}` has an invalid source identity", alias.id),
+            ));
         }
         let expected = usize::from(alias.entity_record_ordinal)
             .checked_sub(1)
@@ -1577,10 +1582,12 @@ fn validate_native_links(
             },
         );
         if !valid {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "alias row `{}` has invalid graph, record, or design-object links",
-                alias.id
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "alias row `{}` has invalid graph, record, or design-object links",
+                    alias.id
+                ),
+            ));
         }
     }
     Ok(())
@@ -1729,8 +1736,8 @@ impl CatiaNative {
     /// Load the typed CATIA namespace from generic native arenas.
     #[cfg(test)]
     pub fn load(
-        namespace: &cadmpeg_ir::NativeNamespace,
-    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        namespace: &cadmpeg_ir::native::NativeNamespace,
+    ) -> Result<Self, cadmpeg_ir::native::NativeConvertError> {
         let mut catalogs: Vec<CatiaCatalog> = namespace.arena_as("catalogs")?;
         let entries: Vec<CatiaCatalogEntry> = namespace.arena_as("catalog_entries")?;
         let catalog_ids = catalogs
@@ -1738,7 +1745,7 @@ impl CatiaNative {
             .map(|catalog| catalog.id.as_str())
             .collect::<HashSet<_>>();
         if catalog_ids.len() != catalogs.len() {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
                 "duplicate CATIA catalog identity".to_string(),
             ));
         }
@@ -1746,10 +1753,12 @@ impl CatiaNative {
             .iter()
             .find(|entry| !catalog_ids.contains(entry.parent.as_str()))
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "catalog entry `{}` references missing catalog `{}`",
-                entry.id, entry.parent
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "catalog entry `{}` references missing catalog `{}`",
+                    entry.id, entry.parent
+                ),
+            ));
         }
         for catalog in &mut catalogs {
             catalog.entries = entries
@@ -1768,10 +1777,9 @@ impl CatiaNative {
                     .enumerate()
                     .any(|(ordinal, entry)| usize::try_from(entry.ordinal).ok() != Some(ordinal))
             {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "catalog `{}` has an invalid entry sequence",
-                    catalog.id
-                )));
+                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                    format!("catalog `{}` has an invalid entry sequence", catalog.id),
+                ));
             }
         }
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
@@ -1781,7 +1789,7 @@ impl CatiaNative {
             .map(|graph| graph.id.as_str())
             .collect::<HashSet<_>>();
         if graph_ids.len() != graphs.len() {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
                 "duplicate CATIA object-graph identity".to_string(),
             ));
         }
@@ -1789,10 +1797,12 @@ impl CatiaNative {
             .iter()
             .find(|record| !graph_ids.contains(record.parent.as_str()))
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "object record `{}` references missing graph `{}`",
-                record.id, record.parent
-            )));
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                format!(
+                    "object record `{}` references missing graph `{}`",
+                    record.id, record.parent
+                ),
+            ));
         }
         for graph in &mut graphs {
             graph.records = records
@@ -1824,10 +1834,9 @@ impl CatiaNative {
                             &record_design_objects,
                         )
                 {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "object graph `{}` has an invalid record sequence",
-                        graph.id
-                    )));
+                    return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                        format!("object graph `{}` has an invalid record sequence", graph.id),
+                    ));
                 }
             }
         }
@@ -1845,7 +1854,7 @@ impl CatiaNative {
                     .iter()
                     .any(|object| stored_by_id.get(object.id.as_str()).copied() != Some(object))
             {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
                     "stored CATIA design objects disagree with their object graph".to_string(),
                 ));
             }
@@ -1866,7 +1875,7 @@ impl CatiaNative {
         external_references.sort_by_key(|reference| reference.byte_offset);
         let expected_external_references = external_reference_views(&finjpl_segments);
         if external_references != expected_external_references {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
                 "stored CATIA external references disagree with their project-flags segments"
                     .to_string(),
             ));
@@ -1881,7 +1890,7 @@ impl CatiaNative {
         preview_images.sort_by_key(|preview| preview.byte_offset);
         let expected_preview_images = preview_views(&finjpl_segments);
         if preview_images != expected_preview_images {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
                 "stored CATIA previews disagree with their summary segments".to_string(),
             ));
         }
@@ -1933,8 +1942,8 @@ impl CatiaNative {
     #[cfg(test)]
     pub fn store(
         &self,
-        namespace: &mut cadmpeg_ir::NativeNamespace,
-    ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        namespace: &mut cadmpeg_ir::native::NativeNamespace,
+    ) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
         namespace.version = CATIA_NATIVE_VERSION;
         let catalogs = self
             .catalogs
@@ -1993,8 +2002,8 @@ impl CatiaNative {
     /// converting them into generic native records.
     pub fn store_owned(
         self,
-        namespace: &mut cadmpeg_ir::NativeNamespace,
-    ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        namespace: &mut cadmpeg_ir::native::NativeNamespace,
+    ) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
         let Self {
             version: _,
             alias_rows,

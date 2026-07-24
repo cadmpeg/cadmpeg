@@ -186,7 +186,7 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_err();
         assert!(
-            matches!(error, cadmpeg_ir::CodecError::NotImplemented(message) if message == reason)
+            matches!(error, cadmpeg_ir::codec::CodecError::NotImplemented(message) if message == reason)
         );
     }
     assert_eq!(
@@ -280,7 +280,7 @@ fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
         .native
         .namespace("step")
         .unwrap()
-        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .arena_as::<cadmpeg_ir::unknown::UnknownRecord>("unknowns")
         .unwrap();
     assert_eq!(unknowns.len(), 2);
     assert_eq!(unknowns[0].id.0, "step:data:example_record#1");
@@ -890,7 +890,7 @@ fn decode_builds_a_valid_connected_sheet_brep() {
     );
     assert!(matches!(
         result.ir.model.presentation_layers[0].items.as_slice(),
-        [cadmpeg_ir::PresentationItem::Face { .. }]
+        [cadmpeg_ir::presentation::PresentationItem::Face { .. }]
     ));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1530,7 +1530,7 @@ fn decode_transfers_ap242_semantic_pmi() {
         tolerance.definition,
         PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::Flatness,
-            magnitude: cadmpeg_ir::PmiValue {
+            magnitude: cadmpeg_ir::pmi::PmiValue {
                 value: 0.05,
                 quantity: PmiQuantity::Length,
             },
@@ -1540,7 +1540,7 @@ fn decode_transfers_ap242_semantic_pmi() {
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
-    result.ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
+    result.ir.model.pmi.push(cadmpeg_ir::pmi::PmiAnnotation {
         id: cadmpeg_ir::ids::PmiId("test:pmi:presentation".into()),
         name: Some("width note".into()),
         targets: Vec::new(),
@@ -1578,12 +1578,12 @@ fn decode_transfers_ap242_semantic_pmi() {
     assert!(roundtrip.ir.model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
-            nominal: Some(cadmpeg_ir::PmiValue {
+            nominal: Some(cadmpeg_ir::pmi::PmiValue {
                 value: 12.0,
                 quantity: PmiQuantity::Length,
             }),
-            lower_deviation: Some(cadmpeg_ir::PmiValue { value: -0.1, .. }),
-            upper_deviation: Some(cadmpeg_ir::PmiValue { value: 0.2, .. }),
+            lower_deviation: Some(cadmpeg_ir::pmi::PmiValue { value: -0.1, .. }),
+            upper_deviation: Some(cadmpeg_ir::pmi::PmiValue { value: 0.2, .. }),
             ..
         }
     )));
@@ -1774,7 +1774,7 @@ fn unresolved_lower_tolerance_does_not_shift_upper_deviation() {
         annotation.definition,
         PmiDefinition::Dimension {
             lower_deviation: None,
-            upper_deviation: Some(cadmpeg_ir::PmiValue { value, .. }),
+            upper_deviation: Some(cadmpeg_ir::pmi::PmiValue { value, .. }),
             ..
         } if (value - 0.2).abs() < 1.0e-12
     )));
@@ -1800,7 +1800,7 @@ fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
     assert!(result.ir.model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
-            nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
+            nominal: Some(cadmpeg_ir::pmi::PmiValue { value, .. }),
             ..
         } if (value - 127.0).abs() < 1.0e-12
     )));
@@ -2223,9 +2223,9 @@ fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     unsupported.id = PmiId("test:pmi:tolerance#other".into());
     unsupported.definition = PmiDefinition::GeometricTolerance {
         tolerance: GeometricToleranceKind::Other("vendor_tolerance".into()),
-        magnitude: cadmpeg_ir::PmiValue {
+        magnitude: cadmpeg_ir::pmi::PmiValue {
             value: 0.1,
-            quantity: cadmpeg_ir::PmiQuantity::Length,
+            quantity: cadmpeg_ir::pmi::PmiQuantity::Length,
         },
         datum_system: None,
     };
@@ -2894,9 +2894,9 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         instance_path: Vec::new(),
     };
     let mut ir = unit_cube();
-    ir.model.subds.push(cadmpeg_ir::SubdSurface {
+    ir.model.subds.push(cadmpeg_ir::subd::SubdSurface {
         id: cadmpeg_ir::ids::SubdId("test:step:subd#0".into()),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
@@ -3096,7 +3096,7 @@ fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord {
+        vec![cadmpeg_ir::native::NativeRecord {
             id: "asm-history-0".into(),
             fields: Default::default(),
         }],
@@ -3115,7 +3115,7 @@ fn strict_writer_rejects_before_emitting_bytes() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord {
+        vec![cadmpeg_ir::native::NativeRecord {
             id: "asm-history-0".into(),
             fields: Default::default(),
         }],

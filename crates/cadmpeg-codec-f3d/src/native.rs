@@ -159,7 +159,7 @@ macro_rules! f3d_arenas {
 macro_rules! sort_f3d_arenas {
     ($($field:ident: $ty:ty;)*) => {
         impl F3dNative {
-            pub fn load(namespace: &cadmpeg_ir::NativeNamespace) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+            pub fn load(namespace: &cadmpeg_ir::native::NativeNamespace) -> Result<Self, cadmpeg_ir::native::NativeConvertError> {
                 let mut native = Self {
                     version: namespace.version,
                     $($field: namespace.arena_as(stringify!($field))?,)*
@@ -177,7 +177,7 @@ macro_rules! sort_f3d_arenas {
                 Ok(native)
             }
 
-            pub fn store(&self, namespace: &mut cadmpeg_ir::NativeNamespace) -> Result<(), cadmpeg_ir::NativeConvertError> {
+            pub fn store(&self, namespace: &mut cadmpeg_ir::native::NativeNamespace) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
                 namespace.version = F3D_NATIVE_VERSION;
                 $(namespace.set_arena(stringify!($field), &self.$field)?;)*
                 let histories = self.asm_histories.iter().cloned().map(|mut history| { history.states.clear(); history }).collect::<Vec<_>>();

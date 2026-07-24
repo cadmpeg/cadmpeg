@@ -4,6 +4,7 @@
 //! and each validation check actually fires when its invariant is broken.
 
 use crate::annotations::{ExactnessNote, Provenance};
+use crate::diff::diff;
 use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::features::ExtrudeDirection;
@@ -27,7 +28,7 @@ use crate::topology::Color;
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate;
 use crate::validate::Check;
-use crate::{diff, CadIr, LossProvenance};
+use crate::{CadIr, LossProvenance};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 

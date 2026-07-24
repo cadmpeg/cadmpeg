@@ -15,9 +15,9 @@
 //! use std::io::Cursor;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::{CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 //!
-//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_ir::CodecError> {
+//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_ir::codec::CodecError> {
 //! let decoded = SldprtCodec.decode(
 //!     &mut Cursor::new(bytes),
 //!     &DecodeOptions::default(),
@@ -61,9 +61,9 @@
 //! metadata and feature records, base colors, and sequential triangle-strip
 //! tessellation. It bakes right-handed rigid body transforms into geometry.
 //!
-//! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
-//! [`CodecError::NotImplemented`]: cadmpeg_ir::CodecError::NotImplemented
-//! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
+//! [`Codec::inspect`]: cadmpeg_ir::codec::Codec::inspect
+//! [`CodecError::NotImplemented`]: cadmpeg_ir::codec::CodecError::NotImplemented
+//! [`DecodeOptions::container_only`]: cadmpeg_ir::codec::DecodeOptions::container_only
 
 mod annotations;
 mod appearance;

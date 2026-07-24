@@ -45,7 +45,7 @@ pub(crate) fn attach(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
     let object_sections = scan.container.indexed_om_sections();
     if model.is_empty() && object_sections.is_empty() {
         return Ok(());
