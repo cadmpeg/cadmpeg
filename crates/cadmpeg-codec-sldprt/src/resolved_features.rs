@@ -1287,28 +1287,47 @@ fn current_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool 
 }
 
 fn extended_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
-    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        && marker_native_code(payload, offset) == Some(1)
-        && marker_is_geometry_locus(payload, offset)
-        && marker_profile_curve_role(payload, offset) == Some(1)
-        && payload.get(offset + 29..offset + 31) == Some(&[0; 2])
-        && matches!(
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(1)
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || !matches!(
             payload.get(offset + 31..offset + 39),
             Some([0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04 | 0x05, 0x00])
         )
-        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
-        && payload.get(offset + 56..offset + 58) == Some(&[0x1e, 0x00])
-        && finite_coordinate_pair(payload, offset.saturating_add(58)).is_some()
-        && matches!(
-            payload.get(offset + 74..offset + 78),
-            Some(value) if value == 0u32.to_le_bytes() || value == 1u32.to_le_bytes()
-        )
-        && payload.get(offset + 78..offset + 84) == Some(&[0; 6])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
+        || finite_coordinate_pair(payload, offset.saturating_add(58)).is_none()
+    {
+        return false;
+    }
+    let compact = matches!(
+        payload.get(offset + 74..offset + 78),
+        Some(value) if value == 0u32.to_le_bytes() || value == 1u32.to_le_bytes()
+    ) && payload.get(offset + 78..offset + 84) == Some(&[0; 6])
         && payload.get(offset + 84..offset + 88) == Some(&[0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 88..offset + 130) == Some(&[0; 42])
         && payload.get(offset + 130..offset + 134) == Some(&[0xff; 4])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(134))
+        && sketch_marker_prefix_at(payload, offset.saturating_add(134));
+    let identities = [
+        payload.get(offset + 124..offset + 128),
+        payload.get(offset + 128..offset + 132),
+    ];
+    let identity = matches!(
+        identities,
+        [Some(first), Some(second)]
+            if first == second && first != [0; 4] && first != [0xff; 4]
+    );
+    let identity_bearing = payload.get(offset + 74..offset + 78) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 78..offset + 84) == Some(&[0; 6])
+        && payload.get(offset + 84..offset + 88) == Some(&[0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 88..offset + 124) == Some(&[0; 36])
+        && identity
+        && payload.get(offset + 132..offset + 138) == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(138));
+    compact || identity_bearing
 }
 
 type LinkedProfilePoint = ([f64; 2], [(u16, u16); 2]);
@@ -6137,6 +6156,22 @@ mod marker_tests {
         payload[74..78].fill(0);
         assert!(extended_geometry_locus_profile_vertex(&payload, 0));
         payload[74..78].copy_from_slice(&2u32.to_le_bytes());
+        assert!(!extended_geometry_locus_profile_vertex(&payload, 0));
+
+        payload.resize(138 + LEGACY_EXTENDED_SKETCH_MARKER.len(), 0);
+        payload[74..138].fill(0);
+        payload[74..78].copy_from_slice(&1u32.to_le_bytes());
+        payload[84..88].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+        payload[124..128].copy_from_slice(&2u32.to_le_bytes());
+        payload[128..132].copy_from_slice(&2u32.to_le_bytes());
+        payload[132..138].copy_from_slice(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
+        payload[138..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert!(extended_geometry_locus_profile_vertex(&payload, 0));
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[128..132].copy_from_slice(&3u32.to_le_bytes());
         assert!(!extended_geometry_locus_profile_vertex(&payload, 0));
     }
 
