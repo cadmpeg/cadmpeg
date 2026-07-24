@@ -21246,7 +21246,10 @@ fn write_plan_gate_export_report() {
     );
     assert!(has_note(&report, "patched into the container"));
     assert!(!degraded(&report));
-    assert_ne!(out, regenerated, "a patch retains structure a regenerate drops");
+    assert_ne!(
+        out, regenerated,
+        "a patch retains structure a regenerate drops"
+    );
 
     // record ✓  integrity ✓  baseline absent  → Generate (degraded).
     let mut no_baseline = decoded.ir.clone();
