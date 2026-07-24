@@ -15,9 +15,8 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::tessellation::Tessellation;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
-};
+use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
+use cadmpeg_ir::topology::{BodyKind, Coedge, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::wire::hash::sha256_hex;
 
@@ -340,8 +339,26 @@ impl<'a> Builder<'a> {
             _ => BodyKind::General,
         };
         let tessellation_start = ir.model.tessellations.len();
+        // Stage this body's whole hierarchy in a private builder. A body that turns
+        // out to own no region is dropped by discarding the builder unfinished,
+        // preserving the source's "empty body is not emitted" tolerance without any
+        // arena retraction.
+        let mut topology = TopologyBuilder::new();
+        topology
+            .body(
+                body_id.clone(),
+                BodySpec {
+                    kind,
+                    transform: (!is_identity(root.transform)).then_some(root.transform),
+                    name: None,
+                    color: None,
+                    visible: None,
+                },
+            )
+            .expect("first registration in a fresh builder cannot collide");
         let mut regions = Vec::new();
         self.append_shape_regions(
+            &mut topology,
             ir,
             &body_id,
             root.shape,
@@ -354,21 +371,16 @@ impl<'a> Builder<'a> {
             ir.model.tessellations.truncate(tessellation_start);
             return Ok(());
         }
-        ir.model.bodies.push(Body {
-            id: body_id.clone(),
-            kind,
-            regions,
-            transform: (!is_identity(root.transform)).then_some(root.transform),
-            name: None,
-            color: None,
-            visible: None,
-        });
+        topology
+            .finish(&mut ir.model)
+            .expect("staged body topology appends without id or owner conflicts");
         Ok(())
     }
 
     #[allow(clippy::too_many_arguments)] // Depth is explicit to bound hostile topology nesting.
     fn append_shape_regions(
         &mut self,
+        topology: &mut TopologyBuilder,
         ir: &mut CadIr,
         body: &BodyId,
         shape_index: usize,
@@ -389,6 +401,7 @@ impl<'a> Builder<'a> {
         ) {
             for child in &shape.children {
                 self.append_shape_regions(
+                    topology,
                     ir,
                     body,
                     child.shape,
@@ -400,47 +413,50 @@ impl<'a> Builder<'a> {
             }
             return Ok(());
         }
+        // Every non-solid shape yields exactly one shell; a solid yields one per
+        // shell child. The builder needs the region registered before its shells,
+        // so decide emptiness up front rather than retracting a childless region —
+        // matching the source's "region with no shell is not emitted" tolerance.
+        let has_shell = shape.kind != TextShapeKind::Solid
+            || shape
+                .children
+                .iter()
+                .any(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell);
+        if !has_shell {
+            return Ok(());
+        }
         let key = self.topology_label(shape_index, transform);
         let region_id = RegionId(crate::native::model_id("region", &self.payload.id, &key));
-        let mut shells = Vec::new();
+        topology
+            .region(region_id.clone(), body)
+            .expect("region registers under the body staged by `append_body`");
         if shape.kind == TextShapeKind::Solid {
             for child in shape
                 .children
                 .iter()
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell)
             {
-                shells.push(self.append_shell(ir, &region_id, child, transform, reversed)?);
+                self.append_shell(topology, ir, &region_id, child, transform, reversed)?;
             }
         } else {
-            shells.push(self.append_shell_shape(
-                ir,
-                &region_id,
-                shape_index,
-                transform,
-                reversed,
-            )?);
+            self.append_shell_shape(topology, ir, &region_id, shape_index, transform, reversed)?;
         }
-        if !shells.is_empty() {
-            ir.model.regions.push(Region {
-                id: region_id.clone(),
-                body: body.clone(),
-                shells,
-            });
-            output.push(region_id);
-        }
+        output.push(region_id);
         Ok(())
     }
 
     fn append_shell(
         &mut self,
+        topology: &mut TopologyBuilder,
         ir: &mut CadIr,
         region: &RegionId,
         shell_use: &TextShapeUse,
         parent: Transform,
         reversed: bool,
-    ) -> Result<ShellId, CodecError> {
+    ) -> Result<(), CodecError> {
         let transform = multiply(parent, self.tables.location(shell_use.location));
         self.append_shell_shape(
+            topology,
             ir,
             region,
             shell_use.shape,
@@ -451,26 +467,24 @@ impl<'a> Builder<'a> {
 
     fn append_shell_shape(
         &mut self,
+        topology: &mut TopologyBuilder,
         ir: &mut CadIr,
         region: &RegionId,
         shape_index: usize,
         transform: Transform,
         reversed: bool,
-    ) -> Result<ShellId, CodecError> {
+    ) -> Result<(), CodecError> {
         let shape = self.shape(shape_index)?.clone();
         let key = self.topology_label(shape_index, transform);
         let shell_id = ShellId(crate::native::model_id("shell", &self.payload.id, &key));
-        let mut faces = Vec::new();
-        let mut wire_edges = Vec::new();
+        topology
+            .shell(shell_id.clone(), region)
+            .expect("shell registers under the region staged by `append_shape_regions`");
         match shape.kind {
             TextShapeKind::Shell => {
                 for child in &shape.children {
                     if self.shape(child.shape)?.kind == TextShapeKind::Face {
-                        if let Some(face) =
-                            self.append_face(ir, &shell_id, child, transform, reversed)?
-                        {
-                            faces.push(face);
-                        }
+                        self.append_face(topology, ir, &shell_id, child, transform, reversed)?;
                     }
                 }
             }
@@ -480,16 +494,15 @@ impl<'a> Builder<'a> {
                     orientation: TextOrientation::Forward,
                     location: 0,
                 };
-                if let Some(face) =
-                    self.append_face(ir, &shell_id, &shape_use, transform, reversed)?
-                {
-                    faces.push(face);
-                }
+                self.append_face(topology, ir, &shell_id, &shape_use, transform, reversed)?;
             }
             TextShapeKind::Wire => {
                 for child in &shape.children {
                     if self.shape(child.shape)?.kind == TextShapeKind::Edge {
-                        wire_edges.push(self.ensure_edge(ir, child, transform)?);
+                        let edge = self.ensure_edge(ir, child, transform)?;
+                        topology
+                            .wire_edge(&shell_id, edge)
+                            .expect("wire edge registers under the staged shell");
                     }
                 }
             }
@@ -503,7 +516,10 @@ impl<'a> Builder<'a> {
                     },
                     location: 0,
                 };
-                wire_edges.push(self.ensure_edge(ir, &edge_use, transform)?);
+                let edge = self.ensure_edge(ir, &edge_use, transform)?;
+                topology
+                    .wire_edge(&shell_id, edge)
+                    .expect("wire edge registers under the staged shell");
             }
             TextShapeKind::Vertex => {
                 let vertex_use = TextShapeUse {
@@ -512,35 +528,24 @@ impl<'a> Builder<'a> {
                     location: 0,
                 };
                 let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
-                ir.model.shells.push(Shell {
-                    id: shell_id.clone(),
-                    region: region.clone(),
-                    faces,
-                    wire_edges,
-                    free_vertices: vec![vertex],
-                });
-                return Ok(shell_id);
+                topology
+                    .free_vertex(&shell_id, vertex)
+                    .expect("free vertex registers under the staged shell");
             }
             _ => {}
         }
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region.clone(),
-            faces,
-            wire_edges,
-            free_vertices: Vec::new(),
-        });
-        Ok(shell_id)
+        Ok(())
     }
 
     fn append_face(
         &mut self,
+        topology: &mut TopologyBuilder,
         ir: &mut CadIr,
         shell: &ShellId,
         face_use: &TextShapeUse,
         parent: Transform,
         reversed: bool,
-    ) -> Result<Option<FaceId>, CodecError> {
+    ) -> Result<(), CodecError> {
         let face_transform = multiply(parent, self.tables.location(face_use.location));
         let face_reversed = reversed ^ is_reversed(face_use.orientation);
         let shape = self.shape(face_use.shape)?.clone();
@@ -552,7 +557,7 @@ impl<'a> Builder<'a> {
             ..
         } = shape.geometry
         else {
-            return Ok(None);
+            return Ok(());
         };
         let surface_transform = multiply(face_transform, self.tables.location(location));
         let face_key = self.topology_label(face_use.shape, face_transform);
@@ -599,7 +604,7 @@ impl<'a> Builder<'a> {
             }
             id
         } else {
-            return Ok(None);
+            return Ok(());
         };
         if let Some((index, triangulation, vertices, triangles)) = located_triangulation {
             self.emitted_triangulations.insert(index);
@@ -631,7 +636,22 @@ impl<'a> Builder<'a> {
                 channels: Vec::new(),
             });
         }
-        let mut loops = Vec::new();
+        // The surface resolved, so this face is emitted. Register it before its
+        // rings so the builder aggregates `face.loops` from the `ring` calls and
+        // `shell.faces` from this registration.
+        topology
+            .face(
+                face_id.clone(),
+                shell,
+                FaceSpec {
+                    surface: surface_id,
+                    sense: sense(face_reversed),
+                    name: None,
+                    color: None,
+                    tolerance: positive_tolerance(tolerance),
+                },
+            )
+            .expect("face registers under the shell staged by `append_shell_shape`");
         for (loop_index, wire_use) in shape
             .children
             .iter()
@@ -658,31 +678,20 @@ impl<'a> Builder<'a> {
                 &self.payload.id,
                 format!("{}:{}", face_key, loop_index + 1),
             ));
-            let coedge_ids = (0..edge_uses.len())
-                .map(|index| {
-                    CoedgeId(crate::native::model_id(
-                        "coedge",
-                        &self.payload.id,
-                        format!("{}:{}:{}", face_key, loop_index + 1, index + 1),
-                    ))
-                })
-                .collect::<Vec<_>>();
+            let mut coedges = Vec::with_capacity(edge_uses.len());
             for (index, edge_use) in edge_uses.iter().enumerate() {
                 let edge_transform =
                     multiply(wire_transform, self.tables.location(edge_use.location));
                 let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
                 let pcurve = self.face_pcurve(edge_use, edge_transform, surface, surface_transform);
-                let id = coedge_ids[index].clone();
-                ir.model.coedges.push(Coedge {
-                    id: id.clone(),
-                    owner_loop: loop_id.clone(),
+                coedges.push(CoedgeSpec {
+                    id: CoedgeId(crate::native::model_id(
+                        "coedge",
+                        &self.payload.id,
+                        format!("{}:{}:{}", face_key, loop_index + 1, index + 1),
+                    )),
                     edge,
-                    next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
-                    radial_next: id,
                     sense: sense(is_reversed(edge_use.orientation) ^ wire_reversed),
-                    use_curve: None,
-                    use_curve_parameter_range: None,
                     pcurves: pcurve
                         .into_iter()
                         .map(
@@ -693,28 +702,24 @@ impl<'a> Builder<'a> {
                             },
                         )
                         .collect(),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
-            ir.model.loops.push(Loop {
-                id: loop_id.clone(),
-                face: face_id.clone(),
-                coedges: coedge_ids,
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                vertex_uses: Vec::new(),
-            });
-            loops.push(loop_id);
+            // `ring` derives each coedge's next/previous from this slice order and
+            // defaults radial_next to self, reproducing the former modulo wiring;
+            // `close_radial_rings` still resolves the shared-edge radials afterward.
+            topology
+                .ring(
+                    loop_id,
+                    &face_id,
+                    cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                    coedges,
+                    Vec::new(),
+                )
+                .expect("loop ring registers under the staged face");
         }
-        ir.model.faces.push(Face {
-            id: face_id.clone(),
-            shell: shell.clone(),
-            surface: surface_id,
-            sense: sense(face_reversed),
-            loops,
-            name: None,
-            color: None,
-            tolerance: positive_tolerance(tolerance),
-        });
-        Ok(Some(face_id))
+        Ok(())
     }
 
     fn ensure_edge(
