@@ -5609,6 +5609,24 @@ mod marker_tests {
         let ambiguous = [&entities[0], &entities[1], &entities[2], &duplicate];
         assert!(extended_compact_endpoint_markers(&payload, &entities[0], &ambiguous).is_empty());
 
+        payload.resize(96 + LEGACY_EXTENDED_SKETCH_MARKER.len(), 0);
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..96].fill(0);
+        payload[82..84].copy_from_slice(&2u16.to_le_bytes());
+        payload[88..92].copy_from_slice(&2u32.to_le_bytes());
+        payload[92..96].copy_from_slice(&1u32.to_le_bytes());
+        payload[96..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert_eq!(
+            extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["explicit", "implicit-zero"]
+        );
+        payload[82..84].fill(0);
+        assert!(extended_compact_endpoint_markers(&payload, &entities[0], &markers).is_empty());
+
         payload.resize(102, 0);
         payload[56..58].copy_from_slice(&14u16.to_le_bytes());
         payload[58..60].copy_from_slice(&16u16.to_le_bytes());
@@ -31573,6 +31591,7 @@ fn extended_compact_endpoint_markers<'a>(
             compact_indexed_curve_record_end(payload, offset),
             Some(
                 CompactIndexedCurveRecordEnd::Marker84
+                    | CompactIndexedCurveRecordEnd::Marker96
                     | CompactIndexedCurveRecordEnd::Marker104
                     | CompactIndexedCurveRecordEnd::Terminal102
                     | CompactIndexedCurveRecordEnd::Terminal116
@@ -33408,9 +33427,12 @@ fn compact_indexed_curve_record_end(
     {
         return None;
     }
-    let compact_96 = payload.get(offset + 72..offset + 80) == Some(&[0; 8])
-        && payload.get(offset + 80..offset + 82) == Some(&[0; 2])
+    let compact_96 = payload.get(offset + 72..offset + 82) == Some(&[0; 10])
+        && payload
+            .get(offset + 82..offset + 84)
+            .is_some_and(|state| !matches!(state, [0, 0] | [0xff, 0xff]))
         && payload.get(offset + 84..offset + 88) == Some(&[0; 4])
+        && payload.get(offset + 92..offset + 96) == Some(&1u32.to_le_bytes())
         && sketch_marker_prefix_at(payload, offset.saturating_add(96));
     let selector = payload
         .get(offset + 72..offset + 76)
