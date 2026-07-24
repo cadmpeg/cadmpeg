@@ -1265,6 +1265,17 @@ fn emit_e5_bodies(
 /// `shell.faces` in that order and each coedge's `radial_next` is deferred to a
 /// `radial_ring` per edge accumulated in the same order the former inline fixup
 /// walked, keeping both byte-identical.
+///
+/// The `shell.faces` equivalence is exact only where a body's stored face order
+/// (`body.faces`, which `e5_ownership_plan` walks to build each component's face
+/// list) matches this `topology.faces` registration order — true for every
+/// covered fixture. The pre-refactor route aggregated `shell.faces` from the
+/// ownership-plan component order; on a multi-body part whose `body.faces` order
+/// differs from `topology.faces` order the two diverge, reordering
+/// `shell.faces` within the affected shell. That is a latent divergence no
+/// current fixture exercises. The per-edge `radial_ring` is unaffected: each
+/// ring is wired independently from its own occurrence list, so cross-edge
+/// aggregation order does not reach the output.
 fn emit_e5_faces_loops_coedges(
     builder: &mut TopologyBuilder,
     annotations: &mut AnnotationBuilder,
