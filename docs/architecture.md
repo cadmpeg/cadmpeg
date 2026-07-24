@@ -44,7 +44,7 @@ The [format support profiles](format-support.md) record read, write, and round-t
 | Crate                  | Responsibility                                                                                                                                                                                                   |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`              | CLI orchestration for `inspect`, `decode`, `validate`, `export`, `diff`, and `convert`; built-in codec registration; CADIR, STEP, and SLDPRT output dispatch.                                                    |
-| `cadmpeg-ir`           | Version 4 IR model, canonical JSON, free-carrier source associations, source-fidelity sidecars, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types. |
+| `cadmpeg-ir`           | Version 4 IR model, canonical JSON, free-carrier source associations, source-fidelity sidecars and their replay/patch/generate write-plan gate, sparse provenance and exactness, native namespaces, structural diff, validation over a shared model index, codec and encoder traits, and report types. Also hosts the byte platform the format codecs share: the poisoned wire cursor with checked endian readers, bounded decompression, the ZIP container walker, Parasolid stream location, and the topology builder. |
 | `cadmpeg-codec-f3d`    | `.f3d` ZIP inspection; ASM/SAB B-rep, analytic and cached NURBS geometry, pcurves, transforms, attributes, appearances, Design/ACT records, history decode, retained-source replay, and selected native edits.   |
 | `cadmpeg-codec-sldprt` | SLDPRT block, directory, and cache-cell inspection; Parasolid analytic/NURBS B-rep, pcurves, appearances, feature lanes, history, and tessellation decode; retained-source and semantic SLDPRT writing.          |
 | `cadmpeg-codec-catia`  | CATIA V5 `V5_CFV2` layout inspection; standard, zero-entity, E5, and object-stream carrier decode; conditional standard-nested topology reconstruction.                                                          |
@@ -61,8 +61,9 @@ Each input codec implements `Codec`:
 - `detect(&[u8]) -> Confidence` identifies a format from a byte prefix.
 - `inspect(&mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>` enumerates container structure.
 - `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, CodecError>` produces `CadIr` and `DecodeReport`.
+- `validate_native(&CadIr) -> Vec<Finding>` reports findings for this codec's retained native-namespace data. The default is a no-op; the CLI calls it on every registered codec unconditionally, and a codec returns an empty list when the document carries no namespace it owns.
 
-The CLI detects a codec unless `--input-format` selects one. Output codecs that implement native encoding use the separate `Encoder` trait. The Rust trait definitions are authoritative for exact signatures.
+The CLI detects a codec unless `--input-format` selects one. Output codecs that implement native encoding use the separate `Encoder` trait; the CLI selects one encoder per invocation from the requested output format, without mutating any registry. The Rust trait definitions are authoritative for exact signatures.
 
 ## Build shape
 
