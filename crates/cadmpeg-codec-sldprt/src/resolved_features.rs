@@ -4903,6 +4903,37 @@ mod marker_tests {
     }
 
     #[test]
+    fn legacy_state_five_identity_curve_uses_coordinate_roster_indices() {
+        let mut payload = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&6u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&9u16.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[76..80].copy_from_slice(&11u32.to_le_bytes());
+        payload[80..84].copy_from_slice(&25u32.to_le_bytes());
+        payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(
+            legacy_state_five_curve_endpoint_indices(&payload, 0),
+            Some([7, 10])
+        );
+        assert_eq!(
+            super::coordinate_roster_endpoint_offset(&payload, 0),
+            Some(56)
+        );
+
+        payload[80..84].copy_from_slice(&11u32.to_le_bytes());
+        assert_eq!(legacy_state_five_curve_endpoint_indices(&payload, 0), None);
+        payload[80..84].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(legacy_state_five_curve_endpoint_indices(&payload, 0), None);
+    }
+
+    #[test]
     fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         let mut payload = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
@@ -28777,7 +28808,31 @@ fn legacy_state_five_curve_endpoint_offset(payload: &[u8], offset: usize) -> Opt
     {
         return None;
     }
-    if payload.get(offset + 60..offset + 64) == Some(&0u32.to_le_bytes())
+    let identity_trailer = payload.get(offset + 60..offset + 64) == Some(&[0; 4])
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 76) == Some(&[0; 4])
+        && matches!(
+            (
+                payload
+                    .get(offset + 76..offset + 80)
+                    .and_then(|bytes| bytes.try_into().ok())
+                    .map(u32::from_le_bytes),
+                payload
+                    .get(offset + 80..offset + 84)
+                    .and_then(|bytes| bytes.try_into().ok())
+                    .map(u32::from_le_bytes),
+            ),
+            (Some(first), Some(second))
+                if first != 0
+                    && first != u32::MAX
+                    && second != 0
+                    && second != u32::MAX
+                    && first != second
+        )
+        && sketch_marker_prefix_at(payload, offset.saturating_add(84));
+    if identity_trailer {
+        Some(56)
+    } else if payload.get(offset + 60..offset + 64) == Some(&0u32.to_le_bytes())
         && payload.get(offset + 70..offset + 72) == Some(&0u16.to_le_bytes())
         && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
         && sketch_marker_prefix_at(payload, offset.checked_add(92)?)
