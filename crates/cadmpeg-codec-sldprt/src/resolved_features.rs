@@ -10339,6 +10339,13 @@ mod marker_tests {
             &37u32.to_le_bytes()
         );
 
+        payload[..4].copy_from_slice(&5u32.to_le_bytes());
+        assert_eq!(
+            mirror_pattern_component_path_at(&payload, marker)
+                .expect("two root slots")
+                .len(),
+            3
+        );
         payload[4] = 1;
         assert!(mirror_pattern_component_path_at(&payload, marker).is_none());
     }
@@ -13424,19 +13431,23 @@ pub(crate) fn bind_pattern_inputs(
                             == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
                     })
                     .filter_map(|offset| mirror_pattern_component_path_at(object, offset))
-                    .flat_map(IntoIterator::into_iter)
-                    .filter_map(|component| {
-                        let source =
-                            u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
-                        let mut matches = history_features.iter().filter(|candidate| {
-                            candidate
-                                .source_id
-                                .as_deref()
-                                .and_then(|value| value.parse::<u32>().ok())
-                                == Some(source)
-                        });
-                        let feature = matches.next()?;
-                        matches.next().is_none().then(|| feature.id.clone())
+                    .filter_map(|components| {
+                        for component in components.iter().rev() {
+                            let source =
+                                u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
+                            let mut matches = history_features.iter().filter(|candidate| {
+                                candidate
+                                    .source_id
+                                    .as_deref()
+                                    .and_then(|value| value.parse::<u32>().ok())
+                                    == Some(source)
+                            });
+                            let Some(feature) = matches.next() else {
+                                continue;
+                            };
+                            return matches.next().is_none().then(|| feature.id.clone());
+                        }
+                        None
                     })
                     .filter_map(|native| model_by_native.get(native.as_str()).copied())
                     .filter(|seed_index| *seed_index != model_index)
@@ -18496,9 +18507,13 @@ fn mirror_pattern_component_path_at(
     ))
     .ok()
     .filter(|count| (2..=65).contains(count))?;
-    let (components, _) =
-        compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1)?;
-    Some(components)
+    compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1)
+        .or_else(|| {
+            (cell_count > 2)
+                .then(|| compact_heterogeneous_component_path(payload, marker + 18, cell_count - 2))
+                .flatten()
+        })
+        .map(|(components, _)| components)
 }
 
 fn mirror_surface_component_path_at(
