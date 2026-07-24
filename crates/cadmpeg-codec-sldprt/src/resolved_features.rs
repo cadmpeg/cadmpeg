@@ -1049,6 +1049,29 @@ fn extended_line_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f6
         && payload.get(offset + 118..offset + 124) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 124..offset + 166) == Some(&[0; 42])
         && sketch_marker_prefix_at(payload, offset.saturating_add(170));
+    let compact_declaration_tag = match handle_state {
+        2 => [0x01, 0x00],
+        3 => [0x03, 0x00],
+        _ => unreachable!(),
+    };
+    let compact_declaration = code == 2
+        && payload.get(offset + 78..offset + 84) == Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
+        && payload.get(offset + 84..offset + 96) == Some(b"sgLineHandle")
+        && payload.get(offset + 96..offset + 98) == Some(&compact_declaration_tag)
+        && payload.get(offset + 98..offset + 102) == Some(&[0xff; 4])
+        && payload
+            .get(offset + 102..offset + 104)
+            .is_some_and(|selector| selector != [0; 2] && selector != [0xff; 2])
+        && payload
+            .get(offset + 104..offset + 106)
+            .is_some_and(|identifier| identifier != [0; 2] && identifier != [0xff; 2])
+        && payload.get(offset + 106..offset + 110) == Some(&[0xff; 4])
+        && payload.get(offset + 110..offset + 116) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 116..offset + 158) == Some(&[0; 42])
+        && payload
+            .get(offset + 158..offset + 162)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(162));
     let cells = [78, 90].map(|relative| {
         let cell = payload.get(offset + relative..offset + relative + 12)?;
         Some((
@@ -1071,7 +1094,7 @@ fn extended_line_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f6
             .get(offset + 150..offset + 154)
             .is_some_and(|identity| identity != [0; 4])
         && sketch_marker_prefix_at(payload, offset.saturating_add(154));
-    (declaration || linked)
+    (declaration || compact_declaration || linked)
         .then(|| finite_coordinate_pair(payload, offset + 58))
         .flatten()
 }
@@ -5902,6 +5925,42 @@ mod marker_tests {
         );
         declaration[96..98].fill(0);
         assert_eq!(extended_line_handle_coordinates(&declaration, 0), None);
+
+        let mut compact_declaration = common(162);
+        compact_declaration[78..84].copy_from_slice(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00]);
+        compact_declaration[84..96].copy_from_slice(b"sgLineHandle");
+        compact_declaration[96..98].copy_from_slice(&1u16.to_le_bytes());
+        compact_declaration[98..102].fill(0xff);
+        compact_declaration[102..104].copy_from_slice(&0x8156u16.to_le_bytes());
+        compact_declaration[104..106].copy_from_slice(&2u16.to_le_bytes());
+        compact_declaration[106..110].fill(0xff);
+        compact_declaration[110..116].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        compact_declaration[158..162].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            extended_line_handle_coordinates(&compact_declaration, 0),
+            Some([0.435, 0.0075])
+        );
+        assert_eq!(
+            sketch_input_entities(&compact_declaration, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        compact_declaration[74..78].copy_from_slice(&[0x00, 0x00, 0x03, 0x00]);
+        compact_declaration[96..98].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(
+            extended_line_handle_coordinates(&compact_declaration, 0),
+            Some([0.435, 0.0075])
+        );
+        compact_declaration[102..104].fill(0);
+        assert_eq!(
+            extended_line_handle_coordinates(&compact_declaration, 0),
+            None
+        );
+        compact_declaration[102..104].copy_from_slice(&0x8156u16.to_le_bytes());
+        compact_declaration[104..106].fill(0);
+        assert_eq!(
+            extended_line_handle_coordinates(&compact_declaration, 0),
+            None
+        );
 
         let mut linked = common(154);
         for (relative, id) in [(78, 1u16), (90, 2u16)] {
