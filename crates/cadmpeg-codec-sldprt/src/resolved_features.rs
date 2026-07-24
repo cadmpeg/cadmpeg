@@ -6056,6 +6056,33 @@ mod marker_tests {
             super::wide_coordinate_roster_full_circle(&payload, &extended_circle, &markers),
             Some(([2.0, 3.0], 5.0))
         );
+        let mut terminal = payload[..102].to_vec();
+        terminal.resize(153, 0);
+        terminal[134..136].copy_from_slice(&[0x04, 0x00]);
+        terminal[136..140].copy_from_slice(CLASS_MARKER);
+        terminal[140..142].copy_from_slice(&11u16.to_le_bytes());
+        terminal[142..153].copy_from_slice(b"sgCircleDim");
+        terminal[64..68].copy_from_slice(&[0x03, 0x00, 0x03, 0x00]);
+        let mut terminal_entities = entities.clone();
+        terminal_entities[0].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        let terminal_markers = terminal_entities.iter().collect::<Vec<_>>();
+        assert_eq!(
+            super::wide_coordinate_roster_full_circle(
+                &terminal,
+                &extended_circle,
+                &terminal_markers,
+            ),
+            Some(([2.0, 3.0], 5.0))
+        );
+        terminal[133] = 1;
+        assert_eq!(
+            super::wide_coordinate_roster_full_circle(
+                &terminal,
+                &extended_circle,
+                &terminal_markers,
+            ),
+            None
+        );
         payload[66..68].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(
             super::wide_coordinate_roster_full_circle(&payload, &entities[3], &markers),
@@ -32495,6 +32522,13 @@ fn wide_coordinate_roster_full_circle(
         return None;
     }
     let radial_index = usize::try_from(first.checked_sub(1)?).ok()?;
+    let terminal = prefix == LEGACY_EXTENDED_SKETCH_MARKER
+        && extended_terminal_wide_repeated_circle_record(payload, offset);
+    let radial_index = if terminal {
+        radial_index.checked_sub(1)?
+    } else {
+        radial_index
+    };
     let center_index = radial_index.checked_sub(1)?;
     let mut coordinates = markers
         .iter()
@@ -32502,13 +32536,14 @@ fn wide_coordinate_roster_full_circle(
         .filter(|marker| {
             marker.feature_ref == circle.feature_ref
                 && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind,
-                    SketchInputKind::Point
-                        | SketchInputKind::ConstrainedPoint
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                )
+                && (terminal
+                    || matches!(
+                        marker.kind,
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                    ))
         })
         .collect::<Vec<_>>();
     coordinates.sort_unstable_by_key(|marker| marker.offset);
@@ -32532,7 +32567,7 @@ fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
             .and_then(|bytes| bytes.try_into().ok())
             .map(u32::from_le_bytes)
     });
-    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+    let common = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
@@ -32555,10 +32590,18 @@ fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
             == Some(&[
                 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
                 0xff, 0xff,
-            ])
-        && payload.get(offset + 102..offset + 104) == Some(&[0; 2])
+            ]);
+    let referenced = payload.get(offset + 102..offset + 104) == Some(&[0; 2])
         && matches!(identities, [Some(first), Some(second)] if first != 0 && first != u32::MAX && second != 0 && second != u32::MAX && first != second)
-        && sketch_marker_prefix_at(payload, offset.saturating_add(112))
+        && sketch_marker_prefix_at(payload, offset.saturating_add(112));
+    let terminal = extended_terminal_wide_repeated_circle_record(payload, offset);
+    common && (referenced || terminal)
+}
+
+fn extended_terminal_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset + 102..offset + 134) == Some(&[0; 32])
+        && payload.get(offset + 134..offset + 136) == Some(&[0x04, 0x00])
+        && class_declaration_at(payload, offset.saturating_add(136))
 }
 
 fn coordinate_ellipse_axes(
