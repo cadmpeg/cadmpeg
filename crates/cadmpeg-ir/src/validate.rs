@@ -101,7 +101,7 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_pcurve_surface_consistency(ir, &index, &mut findings);
     check_procedural_support_consistency(ir, &mut findings);
     check_bounds(ir, &mut findings);
-    check_tessellations(ir, &mut findings);
+    check_tessellations(ir, &index, &mut findings);
     check_subds(ir, &mut findings);
     check_procedural_surfaces(ir, &mut findings);
     check_source_associations(ir, &mut findings);

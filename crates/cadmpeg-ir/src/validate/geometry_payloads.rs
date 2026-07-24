@@ -4,14 +4,13 @@
 
 use super::*;
 
-pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_tessellations(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
-        if mesh.body.as_ref().is_some_and(|body| {
-            !ir.model
-                .bodies
-                .iter()
-                .any(|candidate| candidate.id == *body)
-        }) {
+        if mesh
+            .body
+            .as_ref()
+            .is_some_and(|body| !index.bodies.contains_key(&body.0))
+        {
             findings.push(Finding {
                 check: Check::Tessellation,
                 severity: Severity::Error,
@@ -22,7 +21,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
         if mesh
             .faces
             .iter()
-            .any(|face| !ir.model.faces.iter().any(|candidate| candidate.id == *face))
+            .any(|face| !index.faces.contains_key(&face.0))
         {
             findings.push(Finding {
                 check: Check::Tessellation,
