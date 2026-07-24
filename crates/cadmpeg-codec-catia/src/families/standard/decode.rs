@@ -14,9 +14,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::provenance::Exactness;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
-};
+use cadmpeg_ir::topology::builder::{BodySpec, FaceSpec, TopologyBuilder};
+use cadmpeg_ir::topology::{BodyKind, Coedge, Edge, Loop, Point, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -838,7 +837,11 @@ pub(crate) fn attach_standard_faces(
     let body_id = BodyId("catia:standard:body#0".to_string());
     let region_id = RegionId("catia:standard:region#0-0".to_string());
     let shell_id = ShellId("catia:standard:shell#0-0".to_string());
-    let mut face_ids = Vec::with_capacity(face_count);
+    let mut builder = TopologyBuilder::new();
+    // Annotate and stage faces first to preserve the source note order, then
+    // register them under the shell once the hierarchy above exists; the builder
+    // aggregates `shell.faces` in this registration (binding) order.
+    let mut faces = Vec::with_capacity(face_count);
     for (face_index, (surface, forward, offset)) in bindings.iter().enumerate() {
         let face_id = FaceId(format!("catia:standard:face#{face_index}"));
         annotate(
@@ -852,21 +855,20 @@ pub(crate) fn attach_standard_faces(
         for field in ["shell", "surface", "sense"] {
             annotations.derived(&face_id, field);
         }
-        face_ids.push(face_id.clone());
-        ir.model.faces.push(Face {
-            id: face_id,
-            shell: shell_id.clone(),
-            surface: surface.clone(),
-            sense: if *forward {
-                Sense::Forward
-            } else {
-                Sense::Reversed
+        faces.push((
+            face_id,
+            FaceSpec {
+                surface: surface.clone(),
+                sense: if *forward {
+                    Sense::Forward
+                } else {
+                    Sense::Reversed
+                },
+                name: None,
+                color: None,
+                tolerance: None,
             },
-            loops: Vec::new(),
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+        ));
     }
     annotate(
         annotations,
@@ -879,15 +881,15 @@ pub(crate) fn attach_standard_faces(
     annotations
         .derived(&body_id, "kind")
         .derived(&body_id, "regions");
-    ir.model.bodies.push(Body {
-        id: body_id.clone(),
-        kind: BodyKind::Sheet,
-        regions: vec![region_id.clone()],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    builder
+        .body(
+            body_id.clone(),
+            BodySpec {
+                kind: BodyKind::Sheet,
+                ..BodySpec::default()
+            },
+        )
+        .expect("standard body id is unique");
     annotate(
         annotations,
         &region_id,
@@ -899,11 +901,9 @@ pub(crate) fn attach_standard_faces(
     annotations
         .derived(&region_id, "body")
         .derived(&region_id, "shells");
-    ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
-    });
+    builder
+        .region(region_id.clone(), &body_id)
+        .expect("standard region id is unique under its body");
     annotate(
         annotations,
         &shell_id,
@@ -915,13 +915,17 @@ pub(crate) fn attach_standard_faces(
     annotations
         .derived(&shell_id, "region")
         .derived(&shell_id, "faces");
-    ir.model.shells.push(Shell {
-        id: shell_id,
-        region: region_id,
-        faces: face_ids,
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    builder
+        .shell(shell_id.clone(), &region_id)
+        .expect("standard shell id is unique under its region");
+    for (face_id, spec) in faces {
+        builder
+            .face(face_id, &shell_id, spec)
+            .expect("standard face id is unique under its shell");
+    }
+    builder
+        .finish(&mut ir.model)
+        .expect("standard topology hierarchy appends without id or owner conflicts");
 }
 
 pub(crate) fn partition_standard_face_components(
