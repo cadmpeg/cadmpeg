@@ -5889,6 +5889,12 @@ fn detects_marker_but_not_arbitrary_zip() {
         "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
     ));
     assert_eq!(FcstdCodec.detect(&public[..512]), Confidence::High);
+    // ZIP magic and a `Document.xml` byte run, but no well-formed first-entry
+    // marker header: the substring search alone lands Medium.
+    assert_eq!(
+        FcstdCodec.detect(b"PK\x03\x04 Document.xml here"),
+        Confidence::Medium
+    );
     assert_eq!(FcstdCodec.detect(b"PK\x03\x04 unrelated"), Confidence::Low);
     assert_eq!(FcstdCodec.detect(b"not zip"), Confidence::No);
 }

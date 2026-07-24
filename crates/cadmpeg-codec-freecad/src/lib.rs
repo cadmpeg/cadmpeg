@@ -1115,7 +1115,7 @@ impl Codec for FcstdCodec {
         }
         if container::has_document_markers(prefix) {
             Confidence::High
-        } else if contains(prefix, b"Document.xml") {
+        } else if memchr::memmem::find(prefix, b"Document.xml").is_some() {
             Confidence::Medium
         } else {
             Confidence::Low
@@ -2088,12 +2088,6 @@ fn push_logical_span(
             owner,
         });
     }
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
 }
 
 #[cfg(test)]
