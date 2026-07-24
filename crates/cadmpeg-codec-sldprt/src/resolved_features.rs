@@ -3662,6 +3662,31 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_extrusion_to_face_accepts_a_declared_width_two_child() {
+        let mut payload = vec![0; 240];
+        payload[..2].copy_from_slice(&[0x09, 0x81]);
+        payload[4] = 1;
+        payload[18] = 4;
+        payload[30..33].copy_from_slice(&[1, 1, 0]);
+        let declaration = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
+        payload[33..33 + declaration.len()].copy_from_slice(declaration);
+        let body = 33 + declaration.len();
+        payload[body..body + 14]
+            .copy_from_slice(&[0x7e, 0x81, 0x1f, 0x82, 2, 0, 0x22, 2, 0x4a, 2, 0, 0, 4, 0]);
+        let marker = 160;
+        payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload[marker + 18..marker + 22].copy_from_slice(&[0x32, 0x80, 0, 0]);
+        payload[marker + 22..marker + 34].fill(1);
+        payload[marker + 34..marker + 38].copy_from_slice(&7u32.to_le_bytes());
+
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(marker));
+        payload[33] = 0;
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    }
+
+    #[test]
     fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
         let mut payload = vec![0; 300];
         payload[..2].copy_from_slice(&[0x34, 0x80]);
@@ -24744,21 +24769,22 @@ fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> 
     }
     let declaration = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
     let child = offset + 33;
-    let body_offset = if payload.get(child..child + declaration.len()) == Some(declaration) {
+    let declared = payload.get(child..child + declaration.len()) == Some(declaration);
+    let body_offset = if declared {
         child + declaration.len()
     } else if compact_single_face_child_body_at(payload, child + 2) {
         child + 2
     } else {
         return None;
     };
-    if !compact_single_face_child_body_at(payload, body_offset) {
+    if !declared && !compact_single_face_child_body_at(payload, body_offset) {
         return None;
     }
     if legacy_single_face_reference_path_at(payload, body_offset).is_some() {
         return Some(body_offset);
     }
     (body_offset..body_offset.saturating_add(160))
-        .find(|marker| compact_single_face_reference_at(payload, *marker))
+        .find(|marker| compact_termination_reference_at(payload, *marker))
 }
 
 fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
@@ -24805,10 +24831,6 @@ fn compact_extrusion_end_spec_header(payload: &[u8], offset: usize, code: u32) -
             .is_some_and(|flag| flag <= 1)
         && payload.get(offset + 16..offset + 18) == Some(&[0, 0])
         && payload.get(offset + 18..offset + 22) == Some(code.to_le_bytes().as_slice())
-}
-
-fn compact_single_face_reference_at(payload: &[u8], marker: usize) -> bool {
-    compact_single_face_reference_path_at(payload, marker).is_some()
 }
 
 fn compact_single_face_reference_path_at(
