@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_ir::topology::Body;
 
 fn synchronize_skamp_count(definition: &mut crate::feature::FeatureDefinition) {
     let relations = definition.relations.as_mut().expect("relations");

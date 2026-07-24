@@ -45,10 +45,7 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
-    Vertex,
-};
+use cadmpeg_ir::topology::{BodyKind, Edge, PcurveUse, Point, Sense, Vertex};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -18931,6 +18928,11 @@ fn transfer_native_brep(
         components.push(component);
     }
 
+    let mut builder = TopologyBuilder::new();
+    // Each half-edge's twin is its sole radial partner across the shared edge;
+    // record the pair when the twin is also emitted and link it with
+    // `radial_ring` at finish, matching the former per-coedge `radial_next`.
+    let mut radial_pairs: Vec<[CoedgeId; 2]> = Vec::new();
     for (component_index, faces) in components.iter().enumerate() {
         let body_id = BodyId(format!("creo:visibgeom:body#{}", component_index + 1));
         let region_id = RegionId(format!("creo:visibgeom:region#{}", component_index + 1));
@@ -18956,34 +18958,25 @@ fn transfer_native_brep(
                 .collect::<BTreeSet<_>>();
             adjacent.len() == 2 && adjacent.iter().all(|face| faces.contains(face))
         });
-        ir.model.bodies.push(Body {
-            id: body_id.clone(),
-            kind: if closed {
-                BodyKind::Solid
-            } else {
-                BodyKind::Sheet
-            },
-            regions: vec![region_id.clone()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
-        ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-        });
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id,
-            faces: faces
-                .iter()
-                .map(|face| FaceId(format!("creo:visibgeom:face#{face}")))
-                .collect(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        builder
+            .body(
+                body_id.clone(),
+                BodySpec {
+                    kind: if closed {
+                        BodyKind::Solid
+                    } else {
+                        BodyKind::Sheet
+                    },
+                    ..BodySpec::default()
+                },
+            )
+            .expect("native component body id is unique per component");
+        builder
+            .region(region_id.clone(), &body_id)
+            .expect("native component region id is unique under its body");
+        builder
+            .shell(shell_id.clone(), &region_id)
+            .expect("native component shell id is unique under its region");
         for face_id in faces {
             let native_loops = &eligible_faces[face_id];
             let face = FaceId(format!("creo:visibgeom:face#{face_id}"));
@@ -19047,16 +19040,19 @@ fn transfer_native_brep(
                     Exactness::Derived,
                 );
             }
-            ir.model.faces.push(Face {
-                id: face.clone(),
-                shell: shell_id.clone(),
-                surface,
-                sense: face_sense,
-                loops: loop_ids.clone(),
-                name: None,
-                color: None,
-                tolerance: None,
-            });
+            builder
+                .face(
+                    face.clone(),
+                    &shell_id,
+                    FaceSpec {
+                        surface,
+                        sense: face_sense,
+                        name: None,
+                        color: None,
+                        tolerance: None,
+                    },
+                )
+                .expect("native face id is unique under its shell");
             for (boundary_index, (native_loop, loop_id)) in
                 native_loops.iter().zip(loop_ids).enumerate()
             {
@@ -19070,31 +19066,27 @@ fn transfer_native_brep(
                         ))
                     })
                     .collect::<Vec<_>>();
-                ir.model.loops.push(IrLoop {
-                    id: loop_id.clone(),
-                    face: face.clone(),
-                    boundary_role: if boundary_index == 0 {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                    } else {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                    },
-                    coedges: coedge_ids.clone(),
-                    vertex_uses: Vec::new(),
-                });
+                let boundary_role = if boundary_index == 0 {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                } else {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                };
+                let mut coedge_specs = Vec::with_capacity(native_loop.half_edges.len());
                 for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
                     let id = coedge_ids[index].clone();
                     let twin = HalfEdgeId {
                         curve_id: half_edge.curve_id,
                         side: 1 - half_edge.side,
                     };
-                    let radial_next = if emitted_half_edges.contains(&twin) {
-                        CoedgeId(format!(
-                            "creo:visibgeom:coedge#{}:{}",
-                            twin.curve_id, twin.side
-                        ))
-                    } else {
-                        id.clone()
-                    };
+                    if emitted_half_edges.contains(&twin) {
+                        radial_pairs.push([
+                            id.clone(),
+                            CoedgeId(format!(
+                                "creo:visibgeom:coedge#{}:{}",
+                                twin.curve_id, twin.side
+                            )),
+                        ]);
+                    }
                     annotate(
                         annotations,
                         &id,
@@ -19207,14 +19199,9 @@ fn transfer_native_brep(
                         })
                         .into_iter()
                         .collect();
-                    ir.model.coedges.push(Coedge {
+                    coedge_specs.push(CoedgeSpec {
                         id,
-                        owner_loop: loop_id.clone(),
                         edge: EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id)),
-                        next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
-                        previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()]
-                            .clone(),
-                        radial_next,
                         sense: if half_edge.side == 0 {
                             Sense::Forward
                         } else {
@@ -19225,9 +19212,18 @@ fn transfer_native_brep(
                         use_curve_parameter_range: None,
                     });
                 }
+                builder
+                    .ring(loop_id, &face, boundary_role, coedge_specs, Vec::new())
+                    .expect("native loop ring registers under its face");
             }
         }
     }
+    for [id, partner] in &radial_pairs {
+        builder.radial_ring(&[id.clone(), partner.clone()]);
+    }
+    builder
+        .finish(&mut ir.model)
+        .expect("native topology appends without id or owner conflicts");
     (solved_point_count, emitted_curves.len())
 }
 
