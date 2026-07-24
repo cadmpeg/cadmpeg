@@ -1688,8 +1688,8 @@ mod marker_tests {
         unique_locus, unique_marker_candidate, wide_direct_line_endpoint_markers,
         wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
         CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
-        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
-        SKETCH_MARKER,
+        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, MINIMAL_REFERENCE_PLANE_FRAME_LEN,
+        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -2256,6 +2256,59 @@ mod marker_tests {
         assert_eq!(reference.0, Point3::new(0.0, 0.0, 0.0));
         assert_eq!(offset.1, reference.1);
         assert_eq!(offset.2, reference.2);
+    }
+
+    #[test]
+    fn offset_plane_frame_pair_accepts_ordered_mixed_frame_layouts() {
+        let mut result = [0; MINIMAL_REFERENCE_PLANE_FRAME_LEN];
+        for (offset, value) in [
+            (0, 0.0_f64),
+            (8, 0.0),
+            (16, 0.210),
+            (24, 0.0),
+            (32, 0.0),
+            (40, 1.0),
+            (57, -0.0),
+            (65, -0.210),
+            (73, 1.0),
+        ] {
+            result[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        result[56] = 0x80;
+        let mut reference = [0; 82];
+        for (offset, value) in [
+            (0, 0.0_f64),
+            (8, 0.0),
+            (16, 0.235),
+            (24, 0.0),
+            (32, 0.0),
+            (40, 1.0),
+            (48, 0.0),
+            (56, 0.0),
+            (65, 0.0),
+            (73, 1.0),
+        ] {
+            reference[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        let mut payload = result.to_vec();
+        payload.extend([0xff; 19]);
+        payload.extend(reference);
+
+        assert_eq!(
+            offset_reference_plane_frame_pair(&payload, 25.0),
+            Some((
+                (
+                    Point3::new(0.0, 0.0, 210.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ),
+                (
+                    Point3::new(0.0, 0.0, 235.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ),
+            ))
+        );
     }
 
     #[test]
@@ -21566,7 +21619,9 @@ fn offset_plane_reference_source(
 }
 
 const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;
+const MATRIX_REFERENCE_PLANE_FRAME_LEN: usize = 121;
 const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
+const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
 
 fn explicit_reference_plane_frame(
     payload: &[u8],
@@ -21671,22 +21726,72 @@ fn offset_reference_plane_frame_pair(
     payload: &[u8],
     distance: f64,
 ) -> Option<(ReferencePlaneFrame, ReferencePlaneFrame)> {
-    let mut frames = payload
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let valid_pair = |result: ReferencePlaneFrame, reference: ReferencePlaneFrame| {
+        (distance.is_finite()
+            && offset_plane_reference_frame_matches(reference, result, distance)
+            && (dot(result.1, reference.1) - 1.0).abs() <= 1.0e-9)
+            .then_some((result, reference))
+    };
+    let fixed = payload
         .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
         .filter_map(fixed_reference_plane_frame)
         .collect::<Vec<_>>();
-    if frames.is_empty() {
-        frames = matrix_reference_plane_frames(payload);
+    if let [result, reference] = fixed.as_slice() {
+        return valid_pair(*result, *reference);
     }
-    let [offset, reference] = frames.as_slice() else {
+    let matrix = matrix_reference_plane_frames(payload);
+    if let [result, reference] = matrix.as_slice() {
+        return valid_pair(*result, *reference);
+    }
+    let mut frames = Vec::new();
+    for offset in 0..payload.len() {
+        let candidates = [
+            payload
+                .get(offset..offset + FIXED_REFERENCE_PLANE_FRAME_LEN)
+                .and_then(fixed_reference_plane_frame),
+            payload
+                .get(offset..offset + MATRIX_REFERENCE_PLANE_FRAME_LEN)
+                .and_then(matrix_reference_plane_frame),
+            payload
+                .get(offset..offset + MINIMAL_REFERENCE_PLANE_FRAME_LEN)
+                .and_then(minimal_reference_plane_frame),
+            payload
+                .get(offset..offset + COMPACT_REFERENCE_PLANE_FRAME_LEN)
+                .and_then(compact_reference_plane_frame),
+        ];
+        for frame in candidates.into_iter().flatten() {
+            if !frames.contains(&(offset, frame)) {
+                frames.push((offset, frame));
+            }
+        }
+    }
+    let mut pairs = frames
+        .iter()
+        .enumerate()
+        .flat_map(|(result_index, (result_offset, result))| {
+            frames
+                .iter()
+                .skip(result_index + 1)
+                .filter_map(move |(reference_offset, reference)| {
+                    (result_offset < reference_offset)
+                        .then(|| valid_pair(*result, *reference))
+                        .flatten()
+                })
+        })
+        .collect::<Vec<_>>();
+    pairs.sort_by_key(|(result, reference)| {
+        [
+            reference_plane_frame_key(result),
+            reference_plane_frame_key(reference),
+        ]
+    });
+    pairs.dedup();
+    let [pair] = pairs.as_slice() else {
         return None;
     };
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    (distance.is_finite()
-        && offset_plane_reference_frame_matches(*reference, *offset, distance)
-        && (dot(offset.1, reference.1) - 1.0).abs() <= 1.0e-9)
-        .then_some((*offset, *reference))
+    Some(*pair)
 }
 
 fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
@@ -21857,7 +21962,6 @@ fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vect
 }
 
 fn matrix_reference_plane_frames(payload: &[u8]) -> Vec<ReferencePlaneFrame> {
-    const RECORD_LEN: usize = 121;
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
         let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
@@ -21875,7 +21979,7 @@ fn matrix_reference_plane_frames(payload: &[u8]) -> Vec<ReferencePlaneFrame> {
         )
     };
     let frames = payload
-        .windows(RECORD_LEN)
+        .windows(MATRIX_REFERENCE_PLANE_FRAME_LEN)
         .filter_map(|bytes| {
             if bytes[48] != 1 {
                 return None;
@@ -21958,7 +22062,6 @@ fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vec
 }
 
 fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
-    const RECORD_LEN: usize = 82;
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
         let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
@@ -21974,7 +22077,7 @@ fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vec
         )
     };
     let mut frames = payload
-        .windows(RECORD_LEN)
+        .windows(COMPACT_REFERENCE_PLANE_FRAME_LEN)
         .filter(|bytes| bytes[64] == 0 && bytes[81] == 0)
         .flat_map(|bytes| {
             let Some(origin) = (|| {
