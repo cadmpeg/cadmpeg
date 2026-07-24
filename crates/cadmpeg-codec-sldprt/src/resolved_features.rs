@@ -1527,9 +1527,9 @@ mod marker_tests {
         explicit_reference_axis_frame, explicit_reference_plane_frame,
         extended_compact_endpoint_markers, extended_compact_linked_line_handle_coordinates,
         extended_geometry_locus_profile_vertex, extended_line_handle_coordinates,
-        extended_radial_circle_index, extended_wide_construction_line_roster_indices,
-        fixed_reference_plane_frame, generated_surface_identities,
-        indexed_arc_uses_coordinate_center, indexed_profile_vertex,
+        extended_radial_circle_index, extended_terminal_repeated_radial_circle_index,
+        extended_wide_construction_line_roster_indices, fixed_reference_plane_frame,
+        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
         indexed_rectangle_from_line_cycle, inline_surface_reference_at,
         legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
         legacy_coordinate_circle_radius, legacy_coordinate_roster_selected_axis_endpoint_indices,
@@ -1557,13 +1557,13 @@ mod marker_tests {
         schema_31_wide_undetailed_line, sketch_block_identity_normalization_origin,
         sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
         spatial_vertex_coordinates, structured_offset_plane_sources, surface_reference_matches_at,
-        surface_selection_producer_features, tangent_bounded_curve, unique_arc_center_marker,
-        unique_cylindrical_face, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, wide_direct_line_endpoint_markers,
-        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
-        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
-        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
-        SKETCH_MARKER,
+        surface_selection_producer_features, tangent_bounded_curve,
+        terminal_repeated_radial_circle_pairs, unique_arc_center_marker, unique_cylindrical_face,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        wide_direct_line_endpoint_markers, wide_indexed_curve_endpoint_indices, Angle, BooleanOp,
+        CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
+        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -7252,6 +7252,87 @@ mod marker_tests {
         let mut terminal = marker(false);
         terminal.truncate(102);
         assert_eq!(compact_legacy_radial_circle_index(&terminal, 0), Some(9));
+    }
+
+    #[test]
+    fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
+        let marker = |ordinal: u32, object_index: u32, coordinates_m: [f64; 2]| SketchInputEntity {
+            id: format!("marker-{ordinal}"),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal,
+            offset: u64::from(ordinal) * 100,
+            object_index: Some(object_index),
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: Some(1.0),
+            coordinates_m: Some(coordinates_m),
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let markers = [
+            marker(0, 2, [0.0, 0.0]),
+            marker(1, 1, [0.021, 0.0]),
+            marker(2, 7, [-0.012, 0.012]),
+            marker(3, 6, [-0.0095, 0.012]),
+            marker(4, 9, [-0.012, -0.012]),
+            marker(5, 8, [-0.0095, -0.012]),
+            marker(6, 11, [0.012, -0.012]),
+            marker(7, 10, [0.0145, -0.012]),
+            marker(8, 13, [0.012, 0.012]),
+            marker(9, 12, [0.0145, 0.012]),
+        ];
+        let roster = markers.iter().collect::<Vec<_>>();
+
+        let pairs = terminal_repeated_radial_circle_pairs(roster.len(), &roster, 0.0025)
+            .expect("terminal one-based address and repeated radius");
+        assert_eq!(pairs.len(), 4);
+        assert_eq!(
+            pairs
+                .iter()
+                .map(|(center, radial)| (center.object_index, radial.object_index))
+                .collect::<Vec<_>>(),
+            vec![
+                (Some(7), Some(6)),
+                (Some(9), Some(8)),
+                (Some(11), Some(10)),
+                (Some(13), Some(12)),
+            ]
+        );
+        assert!(terminal_repeated_radial_circle_pairs(roster.len() - 1, &roster, 0.0025).is_none());
+        assert!(terminal_repeated_radial_circle_pairs(roster.len(), &roster, 0.003).is_none());
+    }
+
+    #[test]
+    fn extended_terminal_radial_record_carries_a_one_based_roster_address() {
+        let mut payload = vec![0; 112];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&12u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&12u16.to_le_bytes());
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&(-1i32).to_le_bytes());
+        payload[76..78].copy_from_slice(&11u16.to_le_bytes());
+        for at in (78..94).step_by(4) {
+            payload[at..at + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+
+        assert_eq!(
+            extended_terminal_repeated_radial_circle_index(&payload, 0),
+            Some(12)
+        );
+        payload[58..60].copy_from_slice(&13u16.to_le_bytes());
+        assert_eq!(
+            extended_terminal_repeated_radial_circle_index(&payload, 0),
+            None
+        );
     }
 
     #[test]
@@ -27998,10 +28079,11 @@ fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) -> Option<u
     (first == second).then_some(usize::from(first))
 }
 
-fn compact_legacy_radial_circle_records(payload: &[u8]) -> Vec<(usize, usize, bool)> {
+fn radial_circle_records(payload: &[u8]) -> Vec<(usize, usize, bool)> {
     (0..payload.len().saturating_sub(LEGACY_SKETCH_MARKER.len() - 1))
         .filter_map(|offset| {
-            let radial = compact_legacy_radial_circle_index(payload, offset)?;
+            let radial = compact_legacy_radial_circle_index(payload, offset)
+                .or_else(|| extended_terminal_repeated_radial_circle_index(payload, offset))?;
             Some((
                 offset,
                 radial,
@@ -28009,6 +28091,74 @@ fn compact_legacy_radial_circle_records(payload: &[u8]) -> Vec<(usize, usize, bo
             ))
         })
         .collect()
+}
+
+fn extended_terminal_repeated_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 31)
+            != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 58) != payload.get(offset + 58..offset + 60)
+        || payload.get(offset + 56..offset + 58) == Some(&[0; 2])
+        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 72..offset + 76) != Some(&(-1i32).to_le_bytes())
+        || payload.get(offset + 78..offset + 94)
+            != Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        || payload.get(offset + 94..offset + 104) != Some(&[0; 10])
+        || sketch_marker_prefix_at(payload, offset.checked_add(104)?)
+    {
+        return None;
+    }
+    Some(usize::from(u16::from_le_bytes(
+        payload.get(offset + 56..offset + 58)?.try_into().ok()?,
+    )))
+}
+
+fn terminal_repeated_radial_circle_pairs<'a>(
+    radial_index: usize,
+    roster: &[&'a SketchInputEntity],
+    radius: f64,
+) -> Option<Vec<(&'a SketchInputEntity, &'a SketchInputEntity)>> {
+    if radial_index != roster.len() || radius <= 0.0 || !radius.is_finite() {
+        return None;
+    }
+    let terminal = *roster.last()?;
+    let mut pairs = roster
+        .windows(2)
+        .filter_map(|window| {
+            let [center, radial] = window else {
+                unreachable!("two-wide roster window");
+            };
+            let center_index = center.object_index?;
+            let radial_index = radial.object_index?;
+            if center_index != radial_index.checked_add(1)? {
+                return None;
+            }
+            let [cu, cv] = center.coordinates_m?;
+            let [ru, rv] = radial.coordinates_m?;
+            same_dimension_length((ru - cu).hypot(rv - cv), radius).then_some((*center, *radial))
+        })
+        .collect::<Vec<_>>();
+    if pairs.len() < 2 || pairs.last().map(|(_, radial)| radial.id.as_str()) != Some(&terminal.id) {
+        return None;
+    }
+    let mut used = HashSet::new();
+    if pairs
+        .iter()
+        .any(|(center, radial)| !used.insert(&center.id) || !used.insert(&radial.id))
+    {
+        return None;
+    }
+    pairs.sort_unstable_by_key(|(center, _)| center.offset);
+    Some(pairs)
 }
 
 fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
@@ -28049,7 +28199,7 @@ pub(crate) fn project_marker_dimensioned_circles(
     const QUANTUM: f64 = 1.0e-8;
 
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
-    for feature in features {
+    'feature: for feature in features {
         let (
             Some(native_ref),
             FeatureDefinition::Sketch {
@@ -28250,7 +28400,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .collect::<Vec<_>>();
                 let start = range.iter().min().copied().unwrap_or(0);
                 let end = range.iter().max().copied().unwrap_or(0);
-                compact_legacy_radial_circle_records(&lane.native_payload)
+                radial_circle_records(&lane.native_payload)
                     .into_iter()
                     .filter(move |(offset, ..)| *offset >= start && *offset <= end)
                     .map(move |record| (*lane, record))
@@ -28258,6 +28408,99 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .into_iter()
             })
             .collect::<Vec<_>>();
+        let repeated_radial_sets = radial_records
+            .iter()
+            .flat_map(|(lane, (offset, radial_index, construction))| {
+                if *construction {
+                    return Vec::new();
+                }
+                let mut roster = lane
+                    .sketch_entities
+                    .iter()
+                    .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
+                    .filter(|marker| marker.coordinates_m.is_some())
+                    .collect::<Vec<_>>();
+                roster.sort_unstable_by_key(|marker| marker.offset);
+                diameters
+                    .iter()
+                    .filter_map(|(parameter, radius)| {
+                        let pairs = terminal_repeated_radial_circle_pairs(
+                            *radial_index,
+                            &roster,
+                            *radius / NATIVE_TO_IR,
+                        )?;
+                        Some((*lane, *offset, *parameter, *radius, pairs))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        if let [(lane, offset, parameter, radius, pairs)] = repeated_radial_sets.as_slice() {
+            let transformed = pairs
+                .iter()
+                .filter_map(|(center, _)| {
+                    let [cu, cv] = center.coordinates_m?;
+                    let native =
+                        quantize(Point2::new(cu * NATIVE_TO_IR, cv * NATIVE_TO_IR), QUANTUM);
+                    let centers = transforms
+                        .get(native_ref)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|transform| transform.apply(native))
+                        .collect::<HashSet<_>>();
+                    let centers = centers.into_iter().collect::<Vec<_>>();
+                    let [(u, v)] = centers.as_slice() else {
+                        return None;
+                    };
+                    Some(Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM))
+                })
+                .collect::<Vec<_>>();
+            if transformed.len() == pairs.len() {
+                let lane_key = lane
+                    .id
+                    .rsplit_once('#')
+                    .map_or(lane.id.as_str(), |(_, key)| key);
+                let carrier_ref = format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}");
+                let removed = entities
+                    .iter()
+                    .filter(|entity| {
+                        entity.sketch == *sketch_id
+                            && entity.native_ref.as_deref() == Some(carrier_ref.as_str())
+                    })
+                    .map(|entity| entity.id.clone())
+                    .collect::<HashSet<_>>();
+                entities.retain(|entity| !removed.contains(&entity.id));
+                let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
+                else {
+                    continue;
+                };
+                for profile in &mut sketch.profiles {
+                    profile.retain(|usage| !removed.contains(&usage.entity));
+                }
+                sketch.profiles.retain(|profile| !profile.is_empty());
+                for (index, center) in transformed.into_iter().enumerate() {
+                    let entity_id = SketchEntityId(format!(
+                        "sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"
+                    ));
+                    entities.push(SketchEntity {
+                        id: entity_id.clone(),
+                        sketch: sketch_id.clone(),
+                        construction: false,
+                        native_ref: (index == pairs.len() - 1).then(|| carrier_ref.clone()),
+                        geometry_ref: parameter.native_ref.clone(),
+                        endpoint_refs: Vec::new(),
+                        geometry: SketchGeometry::Circle {
+                            center,
+                            radius: Length(*radius),
+                        },
+                    });
+                    sketch.profiles.push(vec![SketchEntityUse {
+                        entity: entity_id,
+                        reversed: false,
+                    }]);
+                }
+                continue 'feature;
+            }
+        }
         if !radial_records.is_empty() {
             let mut resolved = Vec::with_capacity(radial_records.len());
             for (lane, (offset, radial_index, construction)) in radial_records {
@@ -34850,6 +35093,28 @@ fn marker_transform_candidates_by_feature(
             {
                 continue;
             }
+            let mut directly_bound = HashMap::<(i64, i64), HashSet<(i64, i64)>>::new();
+            for marker in &markers {
+                let Some([u, v]) = marker.coordinates_m else {
+                    continue;
+                };
+                let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                for entity in sketch_entities.iter().filter(|entity| {
+                    entity.sketch == **sketch
+                        && entity.native_ref.as_deref() == Some(marker.id.as_str())
+                }) {
+                    let anchors = match entity.geometry {
+                        SketchGeometry::Point { position } => vec![position],
+                        _ => marker_geometry_anchors(marker.kind, &entity.geometry),
+                    };
+                    for anchor in anchors {
+                        directly_bound
+                            .entry(native)
+                            .or_default()
+                            .insert(quantize(anchor, QUANTUM));
+                    }
+                }
+            }
             let compatible = |primary_only: bool| {
                 let mut points = HashMap::<(i64, i64), HashSet<(i64, i64)>>::new();
                 for marker in &markers {
@@ -34900,9 +35165,12 @@ fn marker_transform_candidates_by_feature(
                 }
                 points
             };
+            let direct = compatible_marker_transform_candidates(&directly_bound);
             let primary = compatible_marker_transform_candidates(&compatible(true));
             let fallback = compatible_marker_transform_candidates(&compatible(false));
-            let candidates = if primary.len() == 1 || fallback.is_empty() {
+            let candidates = if direct.len() == 1 {
+                direct
+            } else if primary.len() == 1 || fallback.is_empty() {
                 primary
             } else {
                 fallback
