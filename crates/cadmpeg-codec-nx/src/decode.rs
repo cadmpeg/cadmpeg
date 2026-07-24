@@ -39,10 +39,8 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::provenance::{Exactness, SourceObjectAssociation};
 use cadmpeg_ir::report::{DecodeReport, LossNote};
-use cadmpeg_ir::topology::builder::{BodySpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Loop, Point, Region, Sense, Shell, Vertex,
-};
+use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
+use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
@@ -4803,60 +4801,6 @@ fn emit_topology(
         faces.insert(node.xmt, id);
     }
 
-    builder
-        .finish(&mut ir.model)
-        .expect("topology hierarchy appends without id or owner conflicts");
-
-    let mut loops = BTreeMap::new();
-    for &loop_xmt in valid_loop_rings.keys() {
-        let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
-            graph
-                .get(17, *fin_xmt)
-                .and_then(Node::fin_fields)
-                .is_some_and(|fields| edges.contains_key(&fields.edge))
-        });
-        if !ring_resolves {
-            continue;
-        }
-        let Some(node) = graph.get(15, loop_xmt) else {
-            continue;
-        };
-        let Some(fields) = node.loop_fields() else {
-            continue;
-        };
-        let Some(face) = faces.get(&fields.face).cloned() else {
-            continue;
-        };
-        let id = LoopId(format!("{prefix}:loop#{}", node.xmt));
-        annotate_node(annotations, &id, source_stream, node, "LOOP");
-        ir.model.loops.push(Loop {
-            id: id.clone(),
-            face: face.clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
-        });
-        if let Some(parent) = ir
-            .model
-            .faces
-            .iter_mut()
-            .find(|candidate| candidate.id == face)
-        {
-            parent.loops.push(id.clone());
-        }
-        loops.insert(node.xmt, id);
-    }
-
-    let fin_ids: BTreeMap<u32, CoedgeId> = valid_fin_xmts
-        .iter()
-        .filter(|xmt| {
-            graph
-                .get(17, **xmt)
-                .and_then(Node::fin_fields)
-                .is_some_and(|fields| loops.contains_key(&fields.loop_xmt))
-        })
-        .map(|xmt| (*xmt, CoedgeId(format!("{prefix}:fin#{xmt}"))))
-        .collect();
     let intersection_pcurves: BTreeMap<_, _> = ir
         .model
         .procedural_curves
@@ -4879,124 +4823,158 @@ fn emit_topology(
         })
         .flatten()
         .collect();
-    for &fin_xmt in fin_ids.keys() {
-        let Some(node) = graph.get(17, fin_xmt) else {
-            continue;
-        };
-        let Some(fields) = node.fin_fields() else {
-            continue;
-        };
-        let Some(loop_id) = loops.get(&fields.loop_xmt).cloned() else {
-            continue;
-        };
-        let Some(edge) = edges.get(&fields.edge).cloned() else {
-            continue;
-        };
-        let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
-        annotate_node(annotations, &id, source_stream, node, "FIN");
-        let next = fin_ids
-            .get(&fields.forward)
-            .cloned()
-            .expect("validated FIN ring resolves forward link");
-        let previous = fin_ids
-            .get(&fields.backward)
-            .cloned()
-            .expect("validated FIN ring resolves backward link");
-        let partner = fin_ids.get(&fields.other).cloned();
-        let radial_next = partner.clone().unwrap_or_else(|| id.clone());
-        let support = graph
-            .get(15, fields.loop_xmt)
-            .and_then(Node::loop_fields)
-            .and_then(|loop_| graph.get(14, loop_.face))
-            .and_then(Node::face_fields)
-            .and_then(|face| surfaces.get(&face.surface))
-            .cloned();
-        let mut pcurve = pcurves.get(&fields.curve_xmt).cloned().filter(|id| {
-            let Some((carrier, support)) = ir
-                .model
-                .pcurves
-                .iter()
-                .find(|carrier| &carrier.id == id)
-                .zip(support.as_ref())
-            else {
-                return false;
-            };
-            pcurve_matches_edge_range(
-                ir,
-                &edge,
-                support,
-                &carrier.geometry,
-                carrier.parameter_range,
-                carrier.fit_tolerance,
-            )
+    // Emit each loop together with its coedges so the ring's forward-link order
+    // (`fin_ring`) drives the builder's next/previous wiring. `ring_resolves`
+    // guarantees every FIN in the ring decodes and resolves its edge, so the
+    // per-FIN lookups below are infallible.
+    let mut registered_coedges: BTreeMap<u32, CoedgeId> = BTreeMap::new();
+    for (&loop_xmt, ring) in &valid_loop_rings {
+        let ring_resolves = ring.iter().all(|fin_xmt| {
+            graph
+                .get(17, *fin_xmt)
+                .and_then(Node::fin_fields)
+                .is_some_and(|fields| edges.contains_key(&fields.edge))
         });
-        if pcurve.is_none() {
-            let carrier = ir
-                .model
-                .edges
-                .iter()
-                .find(|candidate| candidate.id == edge)
-                .and_then(|edge| edge.curve.clone());
-            if let Some((_support, geometry, parameter_range, fit_tolerance)) = carrier
-                .zip(support)
-                .and_then(|key| {
-                    intersection_pcurves
-                        .get(&key)
-                        .cloned()
-                        .map(|value| (key.1, value.0, value.1, value.2))
-                })
-                .filter(|(support, geometry, _, fit_tolerance)| {
-                    pcurve_matches_edge(ir, &edge, support, geometry, *fit_tolerance)
-                })
-            {
-                let pcurve_id = PcurveId(format!("{prefix}:intersection-pcurve#{fin_xmt}"));
-                annotations
-                    .note(&pcurve_id, source_stream, node.pos as u64)
-                    .tag("INTERSECTION_PCURVE");
-                annotations.derived(&pcurve_id, "geometry");
-                annotations.derived(&pcurve_id, "parameter_range");
-                if fit_tolerance.is_some() {
-                    annotations.derived(&pcurve_id, "fit_tolerance");
+        if !ring_resolves {
+            continue;
+        }
+        let Some(loop_node) = graph.get(15, loop_xmt) else {
+            continue;
+        };
+        let Some(loop_fields) = loop_node.loop_fields() else {
+            continue;
+        };
+        let Some(face) = faces.get(&loop_fields.face).cloned() else {
+            continue;
+        };
+        let loop_id = LoopId(format!("{prefix}:loop#{loop_xmt}"));
+        annotate_node(annotations, &loop_id, source_stream, loop_node, "LOOP");
+
+        let mut coedges = Vec::with_capacity(ring.len());
+        for &fin_xmt in ring {
+            let node = graph
+                .get(17, fin_xmt)
+                .expect("ring_resolves guarantees the FIN node decodes");
+            let fields = node
+                .fin_fields()
+                .expect("ring_resolves guarantees FIN fields decode");
+            let edge = edges
+                .get(&fields.edge)
+                .cloned()
+                .expect("ring_resolves guarantees the FIN edge was emitted");
+            let id = CoedgeId(format!("{prefix}:fin#{fin_xmt}"));
+            annotate_node(annotations, &id, source_stream, node, "FIN");
+            let support = graph
+                .get(15, fields.loop_xmt)
+                .and_then(Node::loop_fields)
+                .and_then(|loop_| graph.get(14, loop_.face))
+                .and_then(Node::face_fields)
+                .and_then(|face| surfaces.get(&face.surface))
+                .cloned();
+            let mut pcurve = pcurves.get(&fields.curve_xmt).cloned().filter(|id| {
+                let Some((carrier, support)) = ir
+                    .model
+                    .pcurves
+                    .iter()
+                    .find(|carrier| &carrier.id == id)
+                    .zip(support.as_ref())
+                else {
+                    return false;
+                };
+                pcurve_matches_edge_range(
+                    ir,
+                    &edge,
+                    support,
+                    &carrier.geometry,
+                    carrier.parameter_range,
+                    carrier.fit_tolerance,
+                )
+            });
+            if pcurve.is_none() {
+                let carrier = ir
+                    .model
+                    .edges
+                    .iter()
+                    .find(|candidate| candidate.id == edge)
+                    .and_then(|edge| edge.curve.clone());
+                if let Some((_support, geometry, parameter_range, fit_tolerance)) = carrier
+                    .zip(support)
+                    .and_then(|key| {
+                        intersection_pcurves
+                            .get(&key)
+                            .cloned()
+                            .map(|value| (key.1, value.0, value.1, value.2))
+                    })
+                    .filter(|(support, geometry, _, fit_tolerance)| {
+                        pcurve_matches_edge(ir, &edge, support, geometry, *fit_tolerance)
+                    })
+                {
+                    let pcurve_id = PcurveId(format!("{prefix}:intersection-pcurve#{fin_xmt}"));
+                    annotations
+                        .note(&pcurve_id, source_stream, node.pos as u64)
+                        .tag("INTERSECTION_PCURVE");
+                    annotations.derived(&pcurve_id, "geometry");
+                    annotations.derived(&pcurve_id, "parameter_range");
+                    if fit_tolerance.is_some() {
+                        annotations.derived(&pcurve_id, "fit_tolerance");
+                    }
+                    ir.model.pcurves.push(Pcurve {
+                        id: pcurve_id.clone(),
+                        geometry,
+                        wrapper_reversed: None,
+                        native_tail_flags: None,
+                        parameter_range: Some(parameter_range),
+                        fit_tolerance,
+                    });
+                    pcurve = Some(pcurve_id);
                 }
-                ir.model.pcurves.push(Pcurve {
-                    id: pcurve_id.clone(),
-                    geometry,
-                    wrapper_reversed: None,
-                    native_tail_flags: None,
-                    parameter_range: Some(parameter_range),
-                    fit_tolerance,
-                });
-                pcurve = Some(pcurve_id);
+            }
+            registered_coedges.insert(fin_xmt, id.clone());
+            coedges.push(CoedgeSpec {
+                id,
+                edge,
+                sense: sense(Some(fields.sense)),
+                pcurves: pcurve
+                    .into_iter()
+                    .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                        pcurve,
+                        isoparametric: None,
+                        parameter_range: None,
+                    })
+                    .collect(),
+                use_curve: None,
+                use_curve_parameter_range: None,
+            });
+        }
+        builder
+            .ring(
+                loop_id,
+                &face,
+                cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                coedges,
+                Vec::new(),
+            )
+            .expect("loop ring registers under a registered face");
+    }
+
+    // A FIN's explicit `other` is its sole radial partner. Link each pair once,
+    // driven by the lower xmt, so the builder wires both `radial_next` arcs; a
+    // FIN with no registered partner keeps the builder's laminar self-default.
+    for (&fin_xmt, id) in &registered_coedges {
+        let other = graph
+            .get(17, fin_xmt)
+            .and_then(Node::fin_fields)
+            .map_or(1, |fields| fields.other);
+        if other > 1 && fin_xmt < other {
+            if let Some(partner) = registered_coedges.get(&other) {
+                builder.radial_ring(&[id.clone(), partner.clone()]);
             }
         }
-        ir.model.coedges.push(Coedge {
-            id: id.clone(),
-            owner_loop: loop_id.clone(),
-            edge,
-            next,
-            previous,
-            radial_next,
-            sense: sense(Some(fields.sense)),
-            pcurves: pcurve
-                .into_iter()
-                .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
-                    pcurve,
-                    isoparametric: None,
-                    parameter_range: None,
-                })
-                .collect(),
-            use_curve: None,
-            use_curve_parameter_range: None,
-        });
-        if let Some(parent) = ir
-            .model
-            .loops
-            .iter_mut()
-            .find(|candidate| candidate.id == loop_id)
-        {
-            parent.coedges.push(id);
-        }
     }
+
+    builder
+        .finish(&mut ir.model)
+        .expect("topology appends without id or owner conflicts");
 
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
     complete_intersection_supports_from_edge_incidence(ir);
