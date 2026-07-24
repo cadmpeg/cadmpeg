@@ -1521,14 +1521,15 @@ mod marker_tests {
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
         cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
         current_coordinate_linked_line_endpoints, current_geometry_locus_profile_vertex,
-        current_indexed_arc_reverses_center_sweep, current_reverse_incidence_endpoint_offsets,
-        current_wide_arc_direct_markers, direct_indexed_curve_endpoint_indices,
-        enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, extended_compact_endpoint_markers,
-        extended_compact_linked_line_handle_coordinates, extended_geometry_locus_profile_vertex,
-        extended_line_handle_coordinates, extended_radial_circle_index,
-        extended_wide_construction_line_roster_indices, fixed_reference_plane_frame,
-        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
+        current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
+        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
+        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
+        explicit_reference_axis_frame, explicit_reference_plane_frame,
+        extended_compact_endpoint_markers, extended_compact_linked_line_handle_coordinates,
+        extended_geometry_locus_profile_vertex, extended_line_handle_coordinates,
+        extended_radial_circle_index, extended_wide_construction_line_roster_indices,
+        fixed_reference_plane_frame, generated_surface_identities,
+        indexed_arc_uses_coordinate_center, indexed_profile_vertex,
         indexed_rectangle_from_line_cycle, inline_surface_reference_at,
         legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
         legacy_coordinate_circle_radius, legacy_coordinate_roster_selected_axis_endpoint_indices,
@@ -1551,11 +1552,11 @@ mod marker_tests {
         profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
         profile_roster_principal_axis_endpoints, reconcile_reference_plane_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
-        roster_curve_endpoint_markers, schema_31_wide_undetailed_line,
-        sketch_block_identity_normalization_origin, sketch_block_record_origin,
-        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        structured_offset_plane_sources, surface_reference_matches_at,
+        resolve_two_center_semicircle_profile, revolution_line_reference_inputs,
+        revolution_operation, revolution_temporary_axis, roster_curve_endpoint_markers,
+        schema_31_wide_undetailed_line, sketch_block_identity_normalization_origin,
+        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, structured_offset_plane_sources, surface_reference_matches_at,
         surface_selection_producer_features, tangent_bounded_curve, unique_arc_center_marker,
         unique_cylindrical_face, unique_dimensioned_rectangle_markers, unique_locus,
         unique_marker_candidate, wide_direct_line_endpoint_markers,
@@ -1573,7 +1574,9 @@ mod marker_tests {
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometry, SketchId, SketchLocus};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    };
     use cadmpeg_ir::topology::{Face, Sense};
     use std::collections::{BTreeMap, HashSet};
 
@@ -7544,6 +7547,113 @@ mod marker_tests {
             ),
             Some(center)
         );
+    }
+
+    #[test]
+    fn linked_semicircle_records_close_a_two_center_profile() {
+        let mut payload = vec![0; 224];
+        for (offset, addresses) in [(0, [1u16, 2]), (112, [3, 5])] {
+            payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+            payload[offset + 5..offset + 13].fill(0xff);
+            payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
+            payload[offset + 23..offset + 31]
+                .copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
+            payload[offset + 31..offset + 39]
+                .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+            payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[offset + 64..offset + 66].copy_from_slice(&addresses[0].to_le_bytes());
+            payload[offset + 66..offset + 68].copy_from_slice(&addresses[1].to_le_bytes());
+            payload[offset + 68..offset + 72].copy_from_slice(&1u32.to_le_bytes());
+            payload[offset + 72..offset + 80].copy_from_slice(&(-1.0f64).to_le_bytes());
+            payload[offset + 80..offset + 84].copy_from_slice(&1u32.to_le_bytes());
+            payload[offset + 86..offset + 102].copy_from_slice(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ]);
+        }
+        assert!(current_linked_semicircle_record(&payload, 0));
+        assert!(current_linked_semicircle_record(&payload, 112));
+        let marker = |id: &str, offset, center: &str| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("sketch".into()),
+            ordinal: 0,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind: SketchInputKind::LineOrCircle,
+            state_value: Some(1.0),
+            coordinates_m: None,
+            links: vec![SketchInputLink {
+                entity_ref: center.into(),
+                local_id: 1,
+            }],
+            link_selector: Some(1),
+        };
+        let records = [
+            marker("curve-a", 0, "center-a"),
+            marker("curve-b", 112, "center-b"),
+        ];
+        let markers = records.iter().collect::<Vec<_>>();
+        let sketch = SketchId("sketch".into());
+        let point = |id: &str, position| SketchEntity {
+            id: SketchEntityId(format!("entity-{id}")),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: Some(id.into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point { position },
+        };
+        let curve = |id: &str| SketchEntity {
+            id: SketchEntityId(format!("entity-{id}")),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: Some(id.into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Native {
+                native_kind: "sldprt:marker-geometry:1".into(),
+            },
+        };
+        let mut entities = vec![
+            point("center-a", Point2::new(0.0, 0.0)),
+            point("a-plus", Point2::new(0.0, 2.0)),
+            point("a-minus", Point2::new(0.0, -2.0)),
+            point("center-b", Point2::new(3.0, 0.0)),
+            point("b-plus", Point2::new(3.0, 2.0)),
+            point("b-minus", Point2::new(3.0, -2.0)),
+            curve("curve-a"),
+            curve("curve-b"),
+        ];
+
+        resolve_two_center_semicircle_profile(&payload, &markers, &mut entities, 1.0e-9);
+
+        assert_eq!(
+            entities
+                .iter()
+                .filter(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
+                .count(),
+            2
+        );
+        assert_eq!(
+            entities
+                .iter()
+                .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+                .count(),
+            2
+        );
+        assert!(entities
+            .iter()
+            .filter_map(|entity| match entity.geometry {
+                SketchGeometry::Arc {
+                    radius: Length(radius),
+                    ..
+                } => Some(radius),
+                _ => None,
+            })
+            .all(|radius| (radius - 2.0).abs() < 1.0e-9));
     }
 
     #[test]
@@ -22908,6 +23018,12 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                 }
             }
+            resolve_two_center_semicircle_profile(
+                &lane.native_payload,
+                &object_markers,
+                &mut projected,
+                QUANTUM,
+            );
             resolve_slot_marker_arcs(
                 &lane.native_payload,
                 &object_markers,
@@ -22930,6 +23046,269 @@ pub(crate) fn project_marker_backed_sketches(
                 sketch: Some(sketch_id),
             };
         }
+    }
+}
+
+fn current_linked_semicircle_record(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && payload.get(offset + 64..offset + 66) != payload.get(offset + 66..offset + 68)
+        && payload.get(offset + 68..offset + 72) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 80..offset + 84) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 86..offset + 102)
+            == Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        && payload.get(offset + 102..offset + 104) == Some(&[0; 2])
+}
+
+fn resolve_two_center_semicircle_profile(
+    payload: &[u8],
+    markers: &[&SketchInputEntity],
+    entities: &mut Vec<SketchEntity>,
+    tolerance: f64,
+) {
+    let records = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            usize::try_from(marker.offset)
+                .ok()
+                .is_some_and(|offset| current_linked_semicircle_record(payload, offset))
+        })
+        .collect::<Vec<_>>();
+    let [first_record, second_record] = records.as_slice() else {
+        return;
+    };
+    let record_refs = [first_record.id.as_str(), second_record.id.as_str()];
+    let curve_entities = entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                entity.geometry,
+                SketchGeometry::Line { .. }
+                    | SketchGeometry::Arc { .. }
+                    | SketchGeometry::Circle { .. }
+                    | SketchGeometry::Ellipse { .. }
+                    | SketchGeometry::Nurbs { .. }
+                    | SketchGeometry::Native { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    if curve_entities.len() != 2
+        || curve_entities.iter().any(|entity| {
+            !entity
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| record_refs.contains(&id))
+        })
+    {
+        return;
+    }
+    let points = entities
+        .iter()
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some((entity.native_ref.clone()?, position)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if points.len() != 6 {
+        return;
+    }
+    let centers = points
+        .iter()
+        .enumerate()
+        .filter_map(|(center_index, (center_ref, center))| {
+            let pairs = points
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != center_index)
+                .flat_map(|(first_index, first)| {
+                    points
+                        .iter()
+                        .enumerate()
+                        .skip(first_index + 1)
+                        .filter(move |(second_index, _)| *second_index != center_index)
+                        .filter_map(move |(_, second)| {
+                            let midpoint = Point2::new(
+                                (first.1.u + second.1.u) * 0.5,
+                                (first.1.v + second.1.v) * 0.5,
+                            );
+                            let first_radius = (first.1.u - center.u).hypot(first.1.v - center.v);
+                            let second_radius =
+                                (second.1.u - center.u).hypot(second.1.v - center.v);
+                            (same_dimension_length(midpoint.u, center.u)
+                                && same_dimension_length(midpoint.v, center.v)
+                                && first_radius > tolerance
+                                && same_dimension_length(first_radius, second_radius))
+                            .then_some((
+                                [first.0.clone(), second.0.clone()],
+                                [first.1, second.1],
+                                first_radius,
+                            ))
+                        })
+                })
+                .collect::<Vec<_>>();
+            let [(endpoint_refs, endpoints, radius)] = pairs.as_slice() else {
+                return None;
+            };
+            let linked_records = records
+                .iter()
+                .copied()
+                .filter(|record| {
+                    record
+                        .links
+                        .iter()
+                        .any(|link| link.entity_ref == **center_ref)
+                })
+                .collect::<Vec<_>>();
+            let [record] = linked_records.as_slice() else {
+                return None;
+            };
+            Some((
+                record.id.clone(),
+                (*center_ref).clone(),
+                *center,
+                endpoint_refs.clone(),
+                *endpoints,
+                *radius,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let [first, second] = centers.as_slice() else {
+        return;
+    };
+    if first.0 == second.0 || !same_dimension_length(first.5, second.5) {
+        return;
+    }
+    let center_delta = Point2::new(second.2.u - first.2.u, second.2.v - first.2.v);
+    let center_distance = center_delta.u.hypot(center_delta.v);
+    if center_distance <= tolerance {
+        return;
+    }
+    let direction = Point2::new(
+        center_delta.u / center_distance,
+        center_delta.v / center_distance,
+    );
+    let perpendicular = Point2::new(-direction.v, direction.u);
+    let first_radial = Point2::new(first.4[0].u - first.2.u, first.4[0].v - first.2.v);
+    let second_radial = Point2::new(second.4[0].u - second.2.u, second.4[0].v - second.2.v);
+    if (first_radial.u * direction.u + first_radial.v * direction.v).abs() > tolerance
+        || (second_radial.u * direction.u + second_radial.v * direction.v).abs() > tolerance
+    {
+        return;
+    }
+    let order_endpoints = |center: Point2, refs: &[String; 2], endpoints: [Point2; 2]| {
+        let signed = endpoints.map(|point| {
+            (
+                (point.u - center.u) * perpendicular.u + (point.v - center.v) * perpendicular.v,
+                point,
+            )
+        });
+        if signed[0].0 > signed[1].0 {
+            (
+                [refs[0].clone(), refs[1].clone()],
+                [signed[0].1, signed[1].1],
+            )
+        } else {
+            (
+                [refs[1].clone(), refs[0].clone()],
+                [signed[1].1, signed[0].1],
+            )
+        }
+    };
+    let (first_refs, first_endpoints) = order_endpoints(first.2, &first.3, first.4);
+    let (second_refs, second_endpoints) = order_endpoints(second.2, &second.3, second.4);
+    let set_arc = |entity: &mut SketchEntity,
+                   center: Point2,
+                   radius: f64,
+                   refs: &[String; 2],
+                   endpoints: [Point2; 2],
+                   reverse: bool| {
+        let (start_ref, end_ref, start, end) = if reverse {
+            (&refs[1], &refs[0], endpoints[1], endpoints[0])
+        } else {
+            (&refs[0], &refs[1], endpoints[0], endpoints[1])
+        };
+        entity.construction = false;
+        entity.endpoint_refs = vec![start_ref.clone(), end_ref.clone()];
+        entity.geometry = SketchGeometry::Arc {
+            center,
+            radius: Length(radius),
+            start_angle: Angle((start.v - center.v).atan2(start.u - center.u)),
+            end_angle: Angle((end.v - center.v).atan2(end.u - center.u)),
+        };
+    };
+    let Some(first_entity) = entities
+        .iter_mut()
+        .find(|entity| entity.native_ref.as_deref() == Some(first.0.as_str()))
+    else {
+        return;
+    };
+    set_arc(
+        first_entity,
+        first.2,
+        first.5,
+        &first_refs,
+        first_endpoints,
+        false,
+    );
+    let sketch = first_entity.sketch.clone();
+    let Some(second_entity) = entities
+        .iter_mut()
+        .find(|entity| entity.native_ref.as_deref() == Some(second.0.as_str()))
+    else {
+        return;
+    };
+    set_arc(
+        second_entity,
+        second.2,
+        second.5,
+        &second_refs,
+        second_endpoints,
+        true,
+    );
+    let sketch_key = sketch
+        .0
+        .rsplit_once('#')
+        .map_or(sketch.0.as_str(), |(_, key)| key);
+    for (index, (start_ref, end_ref, start, end)) in [
+        (
+            &first_refs[0],
+            &second_refs[0],
+            first_endpoints[0],
+            second_endpoints[0],
+        ),
+        (
+            &first_refs[1],
+            &second_refs[1],
+            first_endpoints[1],
+            second_endpoints[1],
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        entities.push(SketchEntity {
+            id: SketchEntityId(format!(
+                "sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"
+            )),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: vec![start_ref.clone(), end_ref.clone()],
+            geometry: SketchGeometry::Line { start, end },
+        });
     }
 }
 
