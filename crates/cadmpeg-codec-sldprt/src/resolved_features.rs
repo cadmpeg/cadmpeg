@@ -1678,9 +1678,10 @@ mod marker_tests {
         reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
         resolve_scalar_operand_markers, resolve_two_center_semicircle_profile,
         revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
-        roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
-        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, structured_offset_plane_sources, surface_reference_matches_at,
+        roster_curve_endpoint_markers, select_reference_plane_frame_source,
+        sketch_block_identity_normalization_origin, sketch_block_record_origin,
+        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        structured_offset_plane_sources, surface_reference_matches_at,
         surface_selection_producer_features, tangent_bounded_curve,
         terminal_extended_profile_point_coordinates, terminal_repeated_radial_circle_pairs,
         unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
@@ -3294,6 +3295,48 @@ mod marker_tests {
         malformed[10..14].copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(
             offset_plane_reference_source(&malformed, &known, None),
+            None
+        );
+    }
+
+    #[test]
+    fn frame_only_offset_plane_reference_prefers_a_unique_principal() {
+        assert_eq!(
+            select_reference_plane_frame_source(
+                [
+                    ("derived", 20, false),
+                    ("principal", 80, true),
+                    ("older", 10, false),
+                ]
+                .into_iter(),
+            ),
+            Some("principal".into())
+        );
+        assert_eq!(
+            select_reference_plane_frame_source(
+                [("first", 80, true), ("second", 90, true)].into_iter(),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn frame_only_offset_plane_reference_uses_the_latest_matching_feature() {
+        assert_eq!(
+            select_reference_plane_frame_source(
+                [
+                    ("older", 10, false),
+                    ("latest", 20, false),
+                    ("latest", 20, false),
+                ]
+                .into_iter(),
+            ),
+            Some("latest".into())
+        );
+        assert_eq!(
+            select_reference_plane_frame_source(
+                [("first", 20, false), ("second", 20, false)].into_iter(),
+            ),
             None
         );
     }
@@ -20508,17 +20551,30 @@ pub(crate) fn enrich_history_reference_planes(
     for (index, frames) in reference_frame_candidates {
         let mut sources = Vec::new();
         for reference in frames {
-            for (source, candidate_index, candidate) in &frames_by_reference {
-                if candidate_index.0 == index.0
-                    && (candidate_index.1 < index.1
-                        || principal_plane(
-                            &histories[candidate_index.0].features[candidate_index.1],
-                        )
-                        .is_some())
-                    && offset_plane_reference_frame_matches(*candidate, reference, 0.0)
-                {
-                    sources.push(source.clone());
-                }
+            let matching = frames_by_reference
+                .iter()
+                .filter(|(_, candidate_index, candidate)| {
+                    candidate_index.0 == index.0
+                        && (candidate_index.1 < index.1
+                            || principal_plane(
+                                &histories[candidate_index.0].features[candidate_index.1],
+                            )
+                            .is_some())
+                        && offset_plane_reference_frame_matches(*candidate, reference, 0.0)
+                })
+                .collect::<Vec<_>>();
+            let selected = select_reference_plane_frame_source(matching.iter().map(
+                |(source, candidate_index, _)| {
+                    (
+                        source.as_str(),
+                        candidate_index.1,
+                        principal_plane(&histories[candidate_index.0].features[candidate_index.1])
+                            .is_some(),
+                    )
+                },
+            ));
+            if let Some(source) = selected {
+                sources.push(source);
             }
         }
         sources.sort_unstable();
@@ -20542,21 +20598,24 @@ pub(crate) fn enrich_history_reference_planes(
         else {
             continue;
         };
-        let mut sources = frames_by_reference
+        let matching = frames_by_reference
             .iter()
             .filter(|(_, candidate_index, candidate)| {
-                *candidate_index != index
+                candidate_index.0 == index.0
                     && offset_plane_reference_frame_matches(*candidate, frame, distance)
             })
-            .map(|(source, _, _)| source.clone())
             .collect::<Vec<_>>();
-        sources.sort_unstable();
-        sources.dedup();
-        if let [source] = sources.as_slice() {
-            reference_candidates
-                .entry(index)
-                .or_default()
-                .push(source.clone());
+        if let Some(source) = select_reference_plane_frame_source(matching.iter().map(
+            |(source, candidate_index, _)| {
+                (
+                    source.as_str(),
+                    candidate_index.1,
+                    principal_plane(&histories[candidate_index.0].features[candidate_index.1])
+                        .is_some(),
+                )
+            },
+        )) {
+            reference_candidates.entry(index).or_default().push(source);
         }
     }
     for ((history_index, feature_index), mut sources) in reference_candidates {
@@ -20616,6 +20675,36 @@ pub(crate) fn enrich_history_reference_planes(
             format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
         );
     }
+}
+
+fn select_reference_plane_frame_source<'a>(
+    candidates: impl Iterator<Item = (&'a str, usize, bool)>,
+) -> Option<String> {
+    let candidates = candidates.collect::<Vec<_>>();
+    let mut principals = candidates
+        .iter()
+        .filter(|(_, _, principal)| *principal)
+        .map(|(source, _, _)| *source)
+        .collect::<Vec<_>>();
+    principals.sort_unstable();
+    principals.dedup();
+    match principals.as_slice() {
+        [source] => return Some((*source).to_string()),
+        [] => {}
+        _ => return None,
+    }
+    let latest_index = candidates.iter().map(|(_, index, _)| index).max()?;
+    let mut latest = candidates
+        .iter()
+        .filter(|(_, index, _)| index == latest_index)
+        .map(|(source, _, _)| *source)
+        .collect::<Vec<_>>();
+    latest.sort_unstable();
+    latest.dedup();
+    let [source] = latest.as_slice() else {
+        return None;
+    };
+    Some((*source).to_string())
 }
 
 fn offset_plane_reference_frame_matches(
