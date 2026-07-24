@@ -20647,6 +20647,9 @@ pub(crate) fn enrich_history_reference_planes(
         )
     }));
     for (index, frames) in reference_frame_candidates {
+        if reference_candidates.contains_key(&index) {
+            continue;
+        }
         let mut sources = Vec::new();
         for reference in frames {
             let matching = frames_by_reference
