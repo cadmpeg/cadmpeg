@@ -5402,6 +5402,81 @@ mod marker_tests {
     }
 
     #[test]
+    fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
+        let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..60].copy_from_slice(&[0x03, 0x00, 0x03, 0x00]);
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+        payload[78..94].copy_from_slice(&[
+            0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+            0xff, 0xff,
+        ]);
+        payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        let entity = |id: &str, offset, object_index, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset,
+            object_index,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let entities = [
+            entity(
+                "center",
+                1,
+                Some(2),
+                SketchInputKind::Point,
+                Some([0.0, 0.0]),
+            ),
+            entity(
+                "direct",
+                2,
+                Some(3),
+                SketchInputKind::Point,
+                Some([3.0, 0.0]),
+            ),
+            entity(
+                "roster",
+                3,
+                Some(4),
+                SketchInputKind::Point,
+                Some([3.0, 0.0]),
+            ),
+            entity("circle", 0, Some(1), SketchInputKind::LineOrCircle, None),
+        ];
+        let markers = entities.iter().collect::<Vec<_>>();
+
+        assert_eq!(
+            super::extended_profile_full_circle(&payload, &entities[3], &markers),
+            Some(([0.0, 0.0], 3.0))
+        );
+
+        let mut conflicting = entities.clone();
+        conflicting[1].coordinates_m = Some([4.0, 0.0]);
+        let markers = conflicting.iter().collect::<Vec<_>>();
+        assert_eq!(
+            super::extended_profile_full_circle(&payload, &conflicting[3], &markers),
+            None
+        );
+    }
+
+    #[test]
     fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         let mut payload = vec![0; 112 + LEGACY_SKETCH_MARKER.len()];
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -20117,11 +20192,18 @@ pub(crate) fn project_marker_backed_sketches(
                             SketchGeometry::Point { position: point }
                         }
                         SketchInputKind::LineOrCircle => {
-                            if let Some((center, radius)) = wide_coordinate_roster_full_circle(
+                            if let Some((center, radius)) = extended_profile_full_circle(
                                 &lane.native_payload,
                                 marker,
                                 &object_markers,
-                            ) {
+                            )
+                            .or_else(|| {
+                                wide_coordinate_roster_full_circle(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                )
+                            }) {
                                 let point = transform.apply(quantize(
                                     Point2::new(center[0] * NATIVE_TO_IR, center[1] * NATIVE_TO_IR),
                                     QUANTUM,
@@ -28548,6 +28630,91 @@ fn coordinate_roster_full_circle(
     let radial = points.get(radial_index)?.coordinates_m?;
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
+}
+
+fn extended_profile_full_circle(
+    payload: &[u8],
+    circle: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Option<([f64; 2], f64)> {
+    let offset = usize::try_from(circle.offset).ok()?;
+    if circle.kind != SketchInputKind::LineOrCircle
+        || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+            != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(1)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 72..offset + 76) != Some(&1i32.to_le_bytes())
+        || payload.get(offset + 78..offset + 94)
+            != Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        || payload.get(offset + 94..offset + 96) != Some(&[0; 2])
+        || !matches!(
+            compact_indexed_curve_record_end(payload, offset),
+            Some(
+                CompactIndexedCurveRecordEnd::Marker104 | CompactIndexedCurveRecordEnd::Terminal102
+            )
+        )
+    {
+        return None;
+    }
+    let radial_index = u16::from_le_bytes(payload.get(offset + 56..offset + 58)?.try_into().ok()?);
+    if radial_index == 0
+        || payload.get(offset + 58..offset + 60) != Some(&radial_index.to_le_bytes())
+    {
+        return None;
+    }
+    let mut points = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == circle.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    points.sort_unstable_by_key(|marker| marker.offset);
+    let center = points.first()?.coordinates_m?;
+    let mut radials = points
+        .iter()
+        .copied()
+        .filter(|marker| marker.object_index == Some(u32::from(radial_index)))
+        .chain(
+            usize::from(radial_index)
+                .checked_sub(1)
+                .and_then(|index| points.get(index))
+                .copied(),
+        )
+        .filter_map(|marker| marker.coordinates_m)
+        .filter(|radial| {
+            let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+            radius.is_finite() && radius > 0.0
+        })
+        .collect::<Vec<_>>();
+    radials.sort_by(|left, right| {
+        left[0]
+            .total_cmp(&right[0])
+            .then_with(|| left[1].total_cmp(&right[1]))
+    });
+    radials.dedup_by(|left, right| {
+        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
+    });
+    let [radial] = radials.as_slice() else {
+        return None;
+    };
+    let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+    Some((center, radius))
 }
 
 fn wide_coordinate_roster_full_circle(
