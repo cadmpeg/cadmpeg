@@ -11779,6 +11779,81 @@ fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3
     ))
 }
 
+fn declared_line_reference_directions(
+    payload: &[u8],
+    class_offset: u64,
+    object_end: usize,
+) -> Vec<Vector3> {
+    const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+
+    let Ok(class_offset) = usize::try_from(class_offset) else {
+        return Vec::new();
+    };
+    let end = object_end.min(payload.len());
+    let mut directions = line_reference_direction(&payload[..end], class_offset as u64)
+        .into_iter()
+        .collect::<Vec<_>>();
+    let Some(final_handle) = end
+        .checked_sub(88)
+        .filter(|final_handle| *final_handle >= class_offset)
+    else {
+        return directions;
+    };
+    for handle in class_offset..=final_handle {
+        if payload.get(handle..handle + HANDLES.len()) != Some(HANDLES.as_slice()) {
+            continue;
+        }
+        let scalar = |relative: usize| {
+            let offset = handle.checked_add(relative)?;
+            let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+            value.is_finite().then_some(value)
+        };
+        let direction_at = |relative: usize| {
+            let direction = Vector3::new(
+                scalar(relative)?,
+                scalar(relative + 8)?,
+                scalar(relative + 16)?,
+            );
+            let norm =
+                (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
+                    .sqrt();
+            ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
+                direction.x / norm,
+                direction.y / norm,
+                direction.z / norm,
+            ))
+        };
+        let addressed = payload.get(handle + 8..handle + 12) == Some(&[0; 4])
+            && payload
+                .get(handle + 12..handle + 16)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                .is_some_and(|address| address != 0);
+        let compact_long_form = (payload.get(handle + 88..handle + 104) == Some(&[0; 16])
+            && payload.get(handle + 104..handle + 112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
+            && payload.get(handle + 112..handle + 136) == Some(&[0; 24]))
+            || (payload.get(handle + 104..handle + 112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
+                && payload.get(handle + 112..handle + 124) == Some(&[0; 12]));
+        let candidate = if addressed
+            && !compact_long_form
+            && payload.get(handle + 16..handle + 32) == Some(&[0; 16])
+            && (32..88)
+                .step_by(8)
+                .all(|relative| scalar(relative).is_some())
+        {
+            direction_at(64)
+        } else {
+            None
+        };
+        if let Some(candidate) = candidate {
+            if !directions.contains(&candidate) {
+                directions.push(candidate);
+            }
+        }
+    }
+    directions
+}
+
 fn canonical_unit_direction(direction: Vector3) -> Vector3 {
     let component = |value: f64| if value.abs() <= 1.0e-12 { 0.0 } else { value };
     Vector3::new(
@@ -13351,8 +13426,8 @@ pub(crate) fn bind_pattern_inputs(
                     .collect::<Vec<_>>();
                 let mut directions = declarations
                     .iter()
-                    .filter_map(|class| {
-                        line_reference_direction(&lane.native_payload, class.offset)
+                    .flat_map(|class| {
+                        declared_line_reference_directions(&lane.native_payload, class.offset, end)
                     })
                     .collect::<Vec<_>>();
                 if let Ok(start) = usize::try_from(starts[start_index].0) {
@@ -37731,11 +37806,12 @@ mod profile_join_tests {
         binary_relation_matches_evaluated_geometry, bind_circle_dimension_centers,
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
         bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
-        dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
-        implicit_circle_marker, inferred_point_coordinates_by_index,
-        legacy_terminal_profile_indexed_endpoints, line_endpoint_markers, line_reference_direction,
-        marker_entities, marker_owns_constraint, marker_point_locus, marker_relation_is_inactive,
-        owned_relation_parameters, profile_loci_by_marker, project_compact_edge_selections,
+        declared_line_reference_directions, dimensioned_circle_surface_transforms,
+        dimensioned_circle_transform, fitted_marker_circle, implicit_circle_marker,
+        inferred_point_coordinates_by_index, legacy_terminal_profile_indexed_endpoints,
+        line_endpoint_markers, line_reference_direction, marker_entities, marker_owns_constraint,
+        marker_point_locus, marker_relation_is_inactive, owned_relation_parameters,
+        profile_loci_by_marker, project_compact_edge_selections,
         project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
         project_relation_point_geometry, project_relation_solved_point_geometry,
@@ -40977,6 +41053,50 @@ mod profile_join_tests {
         assert_eq!(
             line_reference_direction(&three_word_payload, line_ref_offset as u64),
             Some(Vector3::new(0.0, 0.6, 0.8))
+        );
+        let mut declared_variants = vec![0; 280];
+        let addressed_handles = 32;
+        declared_variants[addressed_handles..addressed_handles + 8]
+            .copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        declared_variants[addressed_handles + 12..addressed_handles + 16]
+            .copy_from_slice(&9000u32.to_le_bytes());
+        for (index, value) in [0.1f64, 0.2, 0.3, 0.4, 0.0, 0.0, -1.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = addressed_handles + 32 + index * 8;
+            declared_variants[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        assert_eq!(
+            declared_line_reference_directions(&declared_variants, 0, declared_variants.len()),
+            vec![Vector3::new(0.0, 0.0, -1.0)]
+        );
+        let mut compact_longer_form = vec![0; 126];
+        compact_longer_form[..8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        compact_longer_form[12..16].copy_from_slice(&9000u32.to_le_bytes());
+        for (index, value) in [0.1f64, 0.2, 0.3, 0.4, 0.0, 0.0, 1.0, 0.0, 0.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = 32 + index * 8;
+            compact_longer_form[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        compact_longer_form[104..112].copy_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+        compact_longer_form[124..126].copy_from_slice(&0x8001u16.to_le_bytes());
+        assert!(declared_line_reference_directions(
+            &compact_longer_form,
+            0,
+            compact_longer_form.len()
+        )
+        .is_empty());
+        assert_eq!(
+            compact_line_reference_direction(
+                &compact_longer_form,
+                0,
+                compact_longer_form.len(),
+                &[]
+            ),
+            Some(Vector3::new(1.0, 0.0, 0.0))
         );
         let mut compact_payload = vec![0; 400];
         let handles = 64;
