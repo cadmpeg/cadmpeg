@@ -406,8 +406,176 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                 })
         })
         .collect::<Vec<_>>();
+    bind_offset_plane_references(&mut features);
     bind_native_profile_features(&mut features, histories);
     features
+}
+
+fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
+    fn history_key(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
+        feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| native.rsplit_once(':').map(|(history, _)| history))
+    }
+
+    const FRAME_TOLERANCE: f64 = 1.0e-8;
+
+    let stored_frame = |feature: &cadmpeg_ir::features::Feature| {
+        let origin = parse_point3_mm(feature.source_properties.get("Origin")?)?;
+        let normal = parse_vector3(feature.source_properties.get("Normal")?)?;
+        let u_axis = parse_vector3(feature.source_properties.get("UAxis")?)?;
+        valid_plane_frame(normal, u_axis).then_some((origin, normal, u_axis))
+    };
+    let principal_frame = |plane| match plane {
+        cadmpeg_ir::features::PrincipalPlane::Front => (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        ),
+        cadmpeg_ir::features::PrincipalPlane::Top => (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        cadmpeg_ir::features::PrincipalPlane::Right => (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        ),
+    };
+    let same_scalar = |left: f64, right: f64| {
+        (left - right).abs() <= FRAME_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+    };
+    let mut frames = features
+        .iter()
+        .filter_map(|feature| {
+            let frame = match feature.definition {
+                FeatureDefinition::DatumPrincipalPlane { plane } => principal_frame(plane),
+                FeatureDefinition::DatumPlane {
+                    origin,
+                    normal,
+                    u_axis,
+                } => (origin, normal, u_axis),
+                _ => return None,
+            };
+            Some((feature.id.clone(), frame))
+        })
+        .collect::<HashMap<_, _>>();
+
+    loop {
+        let mut changed = false;
+        for feature in features.iter() {
+            let FeatureDefinition::DatumOffsetPlane {
+                reference: Some(reference),
+                distance,
+            } = &feature.definition
+            else {
+                continue;
+            };
+            if frames.contains_key(&feature.id) {
+                continue;
+            }
+            let Some(&(origin, normal, u_axis)) = frames.get(reference) else {
+                continue;
+            };
+            let normal_length = normal.norm();
+            frames.insert(
+                feature.id.clone(),
+                (
+                    Point3::new(
+                        origin.x + normal.x * distance.0 / normal_length,
+                        origin.y + normal.y * distance.0 / normal_length,
+                        origin.z + normal.z * distance.0 / normal_length,
+                    ),
+                    normal,
+                    u_axis,
+                ),
+            );
+            changed = true;
+        }
+
+        let bindings = features
+            .iter()
+            .enumerate()
+            .filter_map(|(index, feature)| {
+                let FeatureDefinition::DatumOffsetPlane {
+                    reference: None,
+                    distance,
+                } = &feature.definition
+                else {
+                    return None;
+                };
+                let (origin, normal, _) = stored_frame(feature)?;
+                if same_scalar(distance.0, 0.0) {
+                    return None;
+                }
+                let history = history_key(feature)?;
+                let mut candidates = features
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.ordinal < feature.ordinal
+                            || matches!(
+                                candidate.definition,
+                                FeatureDefinition::DatumPrincipalPlane { .. }
+                            )
+                    })
+                    .filter(|candidate| history_key(candidate) == Some(history))
+                    .filter_map(|candidate| {
+                        let &(candidate_origin, candidate_normal, _) = frames.get(&candidate.id)?;
+                        let candidate_normal_length = candidate_normal.norm();
+                        let result_normal_length = normal.norm();
+                        let normal_dot = (normal.x * candidate_normal.x
+                            + normal.y * candidate_normal.y
+                            + normal.z * candidate_normal.z)
+                            / (result_normal_length * candidate_normal_length);
+                        if !same_scalar(normal_dot.abs(), 1.0) {
+                            return None;
+                        }
+                        let displacement = Vector3::new(
+                            origin.x - candidate_origin.x,
+                            origin.y - candidate_origin.y,
+                            origin.z - candidate_origin.z,
+                        );
+                        let signed_distance = (displacement.x * candidate_normal.x
+                            + displacement.y * candidate_normal.y
+                            + displacement.z * candidate_normal.z)
+                            / candidate_normal_length;
+                        let tangent = Vector3::new(
+                            displacement.x
+                                - candidate_normal.x * signed_distance / candidate_normal_length,
+                            displacement.y
+                                - candidate_normal.y * signed_distance / candidate_normal_length,
+                            displacement.z
+                                - candidate_normal.z * signed_distance / candidate_normal_length,
+                        );
+                        (same_scalar(tangent.norm(), 0.0)
+                            && same_scalar(signed_distance.abs(), distance.0.abs()))
+                        .then_some((
+                            candidate.id.clone(),
+                            distance.0.abs().copysign(signed_distance),
+                        ))
+                    });
+                let candidate = candidates.next()?;
+                candidates.next().is_none().then_some((index, candidate))
+            })
+            .collect::<Vec<_>>();
+        for (index, (reference, distance)) in bindings {
+            let FeatureDefinition::DatumOffsetPlane {
+                reference: slot,
+                distance: stored_distance,
+            } = &mut features[index].definition
+            else {
+                continue;
+            };
+            *slot = Some(reference);
+            *stored_distance = Length(distance);
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
 }
 
 fn bind_native_profile_features(
@@ -2063,6 +2231,110 @@ mod history_reference_tests {
                 reference: Some(reference),
                 distance: Length(6.0),
             } if reference == &projected[0].id
+        ));
+    }
+
+    #[test]
+    fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
+        let mut reference = feature("sldprt:history:feature#0:0", None, 0);
+        reference.input_class = Some("moRefPlane_c".into());
+        reference
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        reference.properties.insert("Normal".into(), "1,0,0".into());
+        reference.properties.insert("UAxis".into(), "0,0,-1".into());
+        let mut offset = feature("sldprt:history:feature#0:1", None, 1);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6mm".into());
+        offset
+            .properties
+            .insert("Origin".into(), "6mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "1,0,0".into());
+        offset.properties.insert("UAxis".into(), "0,0,1".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![reference, offset],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[1].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(bound),
+                distance: Length(6.0),
+            } if bound == &projected[0].id
+        ));
+    }
+
+    #[test]
+    fn coincident_plane_frame_does_not_infer_an_offset_reference() {
+        let mut reference = feature("sldprt:history:feature#0:0", None, 0);
+        reference.input_class = Some("moRefPlane_c".into());
+        reference
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        reference.properties.insert("Normal".into(), "1,0,0".into());
+        reference.properties.insert("UAxis".into(), "0,0,-1".into());
+        let mut offset = feature("sldprt:history:feature#0:1", None, 1);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "0mm".into());
+        offset
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "1,0,0".into());
+        offset.properties.insert("UAxis".into(), "0,0,-1".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![reference, offset],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[1].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: None,
+                distance: Length(0.0),
+            }
+        ));
+    }
+
+    #[test]
+    fn offset_plane_frame_can_resolve_a_later_builtin_principal_plane() {
+        let mut offset = feature("sldprt:history:feature#0:0", None, 0);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6mm".into());
+        offset
+            .properties
+            .insert("Origin".into(), "6mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "1,0,0".into());
+        offset.properties.insert("UAxis".into(), "0,0,1".into());
+        let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
+        principal.name = "Right".into();
+        principal.input_class = Some("moRefPlane_c".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset, principal],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[0].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(bound),
+                distance: Length(6.0),
+            } if bound == &projected[1].id
         ));
     }
 
