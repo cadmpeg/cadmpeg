@@ -31399,9 +31399,33 @@ fn marker_relation_has_incompatible_operand_family(
     let SketchInputKind::Relation(kind) = marker.kind else {
         return false;
     };
-    let SketchConstraintDefinition::Native { entities, .. } = definition else {
+    let SketchConstraintDefinition::Native {
+        entities, operands, ..
+    } = definition
+    else {
         return false;
     };
+    let repeated_single_operand = operands.len() >= 2
+        && operands[0].native_ref.is_some()
+        && operands
+            .iter()
+            .all(|operand| operand.native_ref == operands[0].native_ref);
+    if repeated_single_operand
+        && matches!(
+            kind,
+            Horizontal
+                | Vertical
+                | Parallel
+                | Perpendicular
+                | Tangent
+                | Equal
+                | Collinear
+                | Concentric
+                | Coradial
+        )
+    {
+        return true;
+    }
     if entities.is_empty() || sketch_entities.is_empty() {
         return false;
     }
@@ -38761,6 +38785,32 @@ mod profile_join_tests {
                     },
                 ),
             ],
+        ));
+        assert!(marker_relation_has_incompatible_operand_family(
+            &relation,
+            &SketchConstraintDefinition::Native {
+                native_kind: "sldprt:marker-relation:4".into(),
+                native_state: None,
+                entities: Vec::new(),
+                parameter: None,
+                operands: vec![
+                    SketchNativeOperand {
+                        native_kind: "sldprt:marker-local-id".into(),
+                        native_field: None,
+                        native_role: None,
+                        object_index: 3,
+                        native_ref: Some("same-marker".into()),
+                    },
+                    SketchNativeOperand {
+                        native_kind: "sldprt:marker-local-id".into(),
+                        native_field: None,
+                        native_role: None,
+                        object_index: 3,
+                        native_ref: Some("same-marker".into()),
+                    },
+                ],
+            },
+            &[],
         ));
     }
 
