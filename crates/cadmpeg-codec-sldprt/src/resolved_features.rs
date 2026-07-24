@@ -5385,6 +5385,19 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             ["explicit", "implicit-zero"]
         );
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[27..29].copy_from_slice(&2u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        assert_eq!(
+            extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["explicit", "implicit-zero"]
+        );
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
         let duplicate = entity(
             "duplicate-zero",
             None,
@@ -30164,9 +30177,19 @@ fn extended_compact_endpoint_markers<'a>(
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || !matches!(marker_native_code(payload, offset), Some(1 | 2))
-        || marker_profile_curve_role(payload, offset) != Some(1)
-        || payload.get(offset + 31..offset + 39)
-            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || !matches!(
+            (
+                marker_profile_curve_role(payload, offset),
+                payload.get(offset + 31..offset + 39)
+            ),
+            (
+                Some(1),
+                Some([0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+            ) | (
+                Some(2),
+                Some([0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+            )
+        )
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || !(matches!(
             compact_indexed_curve_record_end(payload, offset),
