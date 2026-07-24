@@ -5489,15 +5489,28 @@ mod marker_tests {
         let markers = entities.iter().collect::<Vec<_>>();
 
         assert_eq!(
-            super::extended_profile_full_circle(&payload, &entities[3], &markers),
+            super::compact_profile_full_circle(&payload, &entities[3], &markers),
             Some(([0.0, 0.0], 3.0))
         );
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[104..].copy_from_slice(SKETCH_MARKER);
+        let mut current_circle = entities[3].clone();
+        current_circle.kind = SketchInputKind::Arc;
+        assert_eq!(
+            super::compact_profile_full_circle(&payload, &current_circle, &markers),
+            Some(([0.0, 0.0], 3.0))
+        );
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
         let mut conflicting = entities.clone();
         conflicting[1].coordinates_m = Some([4.0, 0.0]);
         let markers = conflicting.iter().collect::<Vec<_>>();
         assert_eq!(
-            super::extended_profile_full_circle(&payload, &conflicting[3], &markers),
+            super::compact_profile_full_circle(&payload, &conflicting[3], &markers),
             None
         );
     }
@@ -20302,7 +20315,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 &object_markers,
                             )
                             .or_else(|| {
-                                extended_profile_full_circle(
+                                compact_profile_full_circle(
                                     &lane.native_payload,
                                     marker,
                                     &object_markers,
@@ -20381,11 +20394,18 @@ pub(crate) fn project_marker_backed_sketches(
                                 &markers_by_id,
                                 &object_markers,
                             );
-                            if let Some((center, radius)) = coordinate_roster_full_circle(
+                            if let Some((center, radius)) = compact_profile_full_circle(
                                 &lane.native_payload,
                                 marker,
                                 &object_markers,
-                            ) {
+                            )
+                            .or_else(|| {
+                                coordinate_roster_full_circle(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                )
+                            }) {
                                 let point = transform.apply(quantize(
                                     Point2::new(center[0] * NATIVE_TO_IR, center[1] * NATIVE_TO_IR),
                                     QUANTUM,
@@ -28762,16 +28782,19 @@ fn coordinate_roster_full_circle(
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
 
-fn extended_profile_full_circle(
+fn compact_profile_full_circle(
     payload: &[u8],
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
     let offset = usize::try_from(circle.offset).ok()?;
-    if circle.kind != SketchInputKind::LineOrCircle
-        || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-            != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(1)
+    let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
+    let kind = marker_native_code(payload, offset)?;
+    let supported_kind = prefix == LEGACY_EXTENDED_SKETCH_MARKER
+        && kind == 1
+        && circle.kind == SketchInputKind::LineOrCircle
+        || prefix == SKETCH_MARKER && kind == 2 && circle.kind == SketchInputKind::Arc;
+    if !supported_kind
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
