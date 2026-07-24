@@ -75,6 +75,6 @@ pub(crate) const ROUTES: &[Route] = &[
                 Variant::FloatPackedInnerNoFbb | Variant::FbbOnly | Variant::InnerNoDirectory
             )
         },
-        decode: freeform::try_decode_freeform_surfaces,
+        decode: freeform::decode::try_decode_freeform_surfaces,
     },
 ];

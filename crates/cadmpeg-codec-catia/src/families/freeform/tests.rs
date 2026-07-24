@@ -27,9 +27,8 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossCode;
 use cadmpeg_ir::units::Units;
 
-use super::{
-    append_freeform_surface_pools, freeform_surface_carriers, try_decode_freeform_surfaces,
-};
+use super::decode::{append_freeform_surface_pools, try_decode_freeform_surfaces};
+use super::records::freeform_surface_carriers;
 use crate::container::scan_bytes;
 use crate::tests::{
     a5_freeform_curve_stream, a5_guide_curve_stream, a5_native_edge_run_stream, a5_surface_stream,

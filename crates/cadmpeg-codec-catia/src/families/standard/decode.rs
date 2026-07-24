@@ -27,7 +27,7 @@ use crate::assemble::{
     unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
-use crate::families::freeform::append_freeform_surface_pools;
+use crate::families::freeform::decode::append_freeform_surface_pools;
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
 use crate::solve::{mesh_quotient, missing_edge};
