@@ -57,7 +57,7 @@ pub mod curve;
 pub mod datum;
 pub mod decode;
 pub mod feature;
-pub mod loss;
+pub(crate) mod loss;
 pub mod placement;
 pub mod primdata;
 pub mod psb;

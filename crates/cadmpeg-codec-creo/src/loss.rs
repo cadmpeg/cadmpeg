@@ -2,15 +2,17 @@
 //! Stable loss vocabulary for `.prt` decoding.
 //!
 //! Every carrier summary, gap, and drop the decoder reports carries a stable
-//! machine-readable code from [`CreoLossCode`]. Codes are the gating surface:
-//! harness oracles and downstream tooling key on them, never on the
-//! human-readable message text, so a reworded message is not a contract change
-//! and a new loss path without a code does not compile.
+//! machine-readable code from [`CreoLossCode`], so a reworded message is not a
+//! contract change and a new loss path without a variant does not compile.
 //!
 //! [`CreoLossCode::note`] is the single construction path for a decode-time
 //! [`LossNote`] in this crate: it fixes the loss category and severity from the
 //! code so the two cannot drift apart across sites, and it leaves only the
 //! per-instance message to the caller.
+//!
+//! The vocabulary is crate-private: [`CreoLossCode`] never appears in serialized
+//! output — the [`LossNote`] carries the shared [`LossCode`] the variant maps
+//! to — and no production caller outside this crate reads it.
 
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 
@@ -21,7 +23,7 @@ use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 /// name may be refactored freely.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CreoLossCode {
+pub(crate) enum CreoLossCode {
     /// Container-only decode skipped entity transfer.
     ContainerOnlyDecode,
     /// Structural census of the decoded PSB container namespace.
@@ -78,17 +80,12 @@ pub enum CreoLossCode {
     ProhibitedCurveExpressionRecordsRetained,
     /// Prohibited datum-curve constructs across curve-equation records unvalued.
     ProhibitedCurveExpressionKindsRetained,
-    /// Datum plane in-plane u-axis derived from the normal by convention.
-    DatumUAxisInferred,
-    /// `VisibGeom` plane local system is an incomplete frame; not a placed carrier.
-    IncompletePlaneFrame,
-    /// `FeatDefs` sketch record preserved natively with no placed feature.
-    UnplacedSketchRecord,
 }
 
 impl CreoLossCode {
     /// Every code, in declaration order. Used by tests to assert stability.
-    pub const ALL: &'static [CreoLossCode] = &[
+    #[cfg(test)]
+    pub(crate) const ALL: &'static [CreoLossCode] = &[
         Self::ContainerOnlyDecode,
         Self::NamespaceCensusSummary,
         Self::GeneralBrepIncomplete,
@@ -117,14 +114,12 @@ impl CreoLossCode {
         Self::AmbiguousCurveRows,
         Self::ProhibitedCurveExpressionRecordsRetained,
         Self::ProhibitedCurveExpressionKindsRetained,
-        Self::DatumUAxisInferred,
-        Self::IncompletePlaneFrame,
-        Self::UnplacedSketchRecord,
     ];
 
     /// The stable string identifier. This is the gating contract.
+    #[cfg(test)]
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::ContainerOnlyDecode => "container.only-decode",
             Self::NamespaceCensusSummary => "carrier.namespace-census",
@@ -164,30 +159,26 @@ impl CreoLossCode {
             Self::ProhibitedCurveExpressionKindsRetained => {
                 "feature.prohibited-curve-expression-kinds"
             }
-            Self::DatumUAxisInferred => "datum.u-axis-inferred",
-            Self::IncompletePlaneFrame => "geometry.incomplete-plane-frame",
-            Self::UnplacedSketchRecord => "sketch.unplaced-record",
         }
     }
 
     /// The subsystem category this loss belongs to.
     #[must_use]
-    pub const fn category(self) -> LossCategory {
+    pub(crate) const fn category(self) -> LossCategory {
         match self {
             Self::TopologicalEdgeCarriersTransferred | Self::TopologyPartiallyTransferred => {
                 LossCategory::Topology
             }
             Self::FeatureOperationsRetained
             | Self::ProhibitedCurveExpressionRecordsRetained
-            | Self::ProhibitedCurveExpressionKindsRetained
-            | Self::UnplacedSketchRecord => LossCategory::Attribute,
+            | Self::ProhibitedCurveExpressionKindsRetained => LossCategory::Attribute,
             _ => LossCategory::Geometry,
         }
     }
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    pub(crate) const fn severity(self) -> Severity {
         match self {
             Self::GeneralBrepIncomplete
             | Self::PerInstanceGeometryGated
@@ -227,14 +218,11 @@ impl CreoLossCode {
             | Self::VisibleSurfaceRowsUntransferred
             | Self::VisibleCurveRowsUntransferred
             | Self::AmbiguousSurfaceRows
-            | Self::AmbiguousCurveRows
-            | Self::IncompletePlaneFrame => LossCode::GeometryNotTransferred,
+            | Self::AmbiguousCurveRows => LossCode::GeometryNotTransferred,
             Self::TopologyPartiallyTransferred => LossCode::TopologyNotTransferred,
             Self::FeatureOperationsRetained
             | Self::ProhibitedCurveExpressionRecordsRetained
             | Self::ProhibitedCurveExpressionKindsRetained => LossCode::FeatureHistoryRetained,
-            Self::DatumUAxisInferred => LossCode::CarrierAxisInferred,
-            Self::UnplacedSketchRecord => LossCode::PassthroughRecordOmitted,
         }
     }
 
@@ -245,7 +233,7 @@ impl CreoLossCode {
     /// decoder attributes losses through the message and record identity, not a
     /// source span.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote {
             code: self.shared_code(),
             category: self.category(),
@@ -297,9 +285,6 @@ mod tests {
                 "geometry.ambiguous-curve-rows",
                 "feature.prohibited-curve-expression-records",
                 "feature.prohibited-curve-expression-kinds",
-                "datum.u-axis-inferred",
-                "geometry.incomplete-plane-frame",
-                "sketch.unplaced-record",
             ]
         );
     }
