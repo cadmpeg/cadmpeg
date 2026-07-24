@@ -10,7 +10,8 @@ use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, Verte
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::report::LossNote;
-use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
+use cadmpeg_ir::topology::builder::{BodySpec, TopologyBuilder};
+use cadmpeg_ir::topology::{BodyKind, Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -848,27 +849,36 @@ pub(crate) fn project_geometry(
         let body = BodyId("iges:model:body#free-geometry".into());
         let region = RegionId("iges:model:region#free-geometry".into());
         let shell = ShellId("iges:model:shell#free-geometry".into());
-        ir.model.bodies.push(Body {
-            id: body.clone(),
-            kind: BodyKind::Wire,
-            regions: vec![region.clone()],
-            transform: None,
-            name: Some("IGES free geometry".into()),
-            color: None,
-            visible: None,
-        });
-        ir.model.regions.push(Region {
-            id: region.clone(),
-            body,
-            shells: vec![shell.clone()],
-        });
-        ir.model.shells.push(Shell {
-            id: shell,
-            region,
-            faces: Vec::new(),
-            wire_edges,
-            free_vertices,
-        });
+        let mut builder = TopologyBuilder::new();
+        builder
+            .body(
+                body.clone(),
+                BodySpec {
+                    kind: BodyKind::Wire,
+                    name: Some("IGES free geometry".into()),
+                    ..BodySpec::default()
+                },
+            )
+            .expect("free-geometry body id is unique");
+        builder
+            .region(region.clone(), &body)
+            .expect("free-geometry region id is unique under a registered body");
+        builder
+            .shell(shell.clone(), &region)
+            .expect("free-geometry shell id is unique under a registered region");
+        for edge in wire_edges {
+            builder
+                .wire_edge(&shell, edge)
+                .expect("free-geometry shell owns its wire edges");
+        }
+        for vertex in free_vertices {
+            builder
+                .free_vertex(&shell, vertex)
+                .expect("free-geometry shell owns its free vertices");
+        }
+        builder
+            .finish(&mut ir.model)
+            .expect("free-geometry topology appends without id or owner conflicts");
     }
     let trimming = super::trimming::project(ir, directory, parameters, global);
     handled.extend(trimming.handled);
