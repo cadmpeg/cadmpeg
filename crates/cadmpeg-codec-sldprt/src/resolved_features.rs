@@ -5598,6 +5598,43 @@ mod marker_tests {
             extended_tagged_indexed_curve_endpoint_indices(&payload, 0),
             None
         );
+
+        payload[76..78].copy_from_slice(&24u16.to_le_bytes());
+        payload.resize(370, 0);
+        payload[94..150].fill(0);
+        payload[150..152].copy_from_slice(&[0x08, 0x80]);
+        payload[152..162].fill(0);
+        payload[162..166].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
+        for (relative, count) in [(166, 65u32), (170, 57), (174, 33), (178, 13)] {
+            payload[relative..relative + 4].copy_from_slice(&count.to_le_bytes());
+        }
+        for relative in (182..230).step_by(4) {
+            payload[relative..relative + 4].copy_from_slice(&1u32.to_le_bytes());
+        }
+        payload[230..258].copy_from_slice(&[
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0xff, 0xff, 0x00, 0x00,
+            0x80, 0xbf, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
+        ]);
+        payload[258..282].fill(0);
+        payload[282..286].copy_from_slice(&49u32.to_le_bytes());
+        payload[286..338].fill(0);
+        payload[338..342].copy_from_slice(&3u32.to_le_bytes());
+        payload[342..346].copy_from_slice(&1u32.to_le_bytes());
+        payload[346..353].fill(0);
+        payload[353..357].copy_from_slice(&0x0001_86a5u32.to_le_bytes());
+        payload[357..359].copy_from_slice(&5u16.to_le_bytes());
+        payload[359..363].copy_from_slice(CLASS_MARKER);
+        payload[363..365].copy_from_slice(&5u16.to_le_bytes());
+        payload[365..370].copy_from_slice(b"class");
+        assert_eq!(
+            extended_tagged_indexed_curve_endpoint_indices(&payload, 0),
+            Some([31, 24])
+        );
+        payload[338..342].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            extended_tagged_indexed_curve_endpoint_indices(&payload, 0),
+            None
+        );
     }
 
     #[test]
@@ -31520,8 +31557,7 @@ fn extended_tagged_indexed_curve_endpoint_indices(
                 0xff, 0xff,
             ])
         || payload.get(offset + 94..offset + 96) != Some(&[0; 2])
-        || compact_indexed_curve_record_end(payload, offset)
-            != Some(CompactIndexedCurveRecordEnd::Marker104)
+        || !extended_tagged_indexed_curve_record_ends(payload, offset)
     {
         return None;
     }
@@ -31536,6 +31572,52 @@ fn extended_tagged_indexed_curve_endpoint_indices(
     };
     let endpoints = [endpoint(58)?, endpoint(76)?];
     (endpoints[0] != endpoints[1]).then_some(endpoints)
+}
+
+fn extended_tagged_indexed_curve_record_ends(payload: &[u8], offset: usize) -> bool {
+    if compact_indexed_curve_record_end(payload, offset)
+        == Some(CompactIndexedCurveRecordEnd::Marker104)
+    {
+        return true;
+    }
+    let u32_at = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)?
+            .try_into()
+            .ok()
+            .map(u32::from_le_bytes)
+    };
+    let counts = [166, 170, 174, 178].map(u32_at);
+    payload.get(offset + 94..offset + 150) == Some(&[0; 56])
+        && payload.get(offset + 150..offset + 152) == Some(&[0x08, 0x80])
+        && payload.get(offset + 152..offset + 162) == Some(&[0; 10])
+        && payload.get(offset + 162..offset + 166) == Some(&[0x01, 0x00, 0x01, 0x00])
+        && matches!(
+            counts,
+            [Some(first), Some(second), Some(third), Some(fourth)]
+                if first > second && second > third && third > fourth && fourth != 0
+        )
+        && payload.get(offset + 182..offset + 230)
+            == Some(&[
+                1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0,
+                1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0,
+            ])
+        && payload.get(offset + 230..offset + 258)
+            == Some(&[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0xff, 0xff, 0x00, 0x00,
+                0x80, 0xbf, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
+            ])
+        && payload.get(offset + 258..offset + 282) == Some(&[0; 24])
+        && u32_at(282).is_some_and(|identity| identity != 0 && identity != u32::MAX)
+        && payload.get(offset + 286..offset + 338) == Some(&[0; 52])
+        && u32_at(338) == Some(3)
+        && u32_at(342) == Some(1)
+        && payload.get(offset + 346..offset + 353) == Some(&[0; 7])
+        && payload
+            .get(offset + 353..offset + 357)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && payload.get(offset + 357..offset + 359) == Some(&5u16.to_le_bytes())
+        && class_declaration_at(payload, offset.saturating_add(359))
 }
 
 fn roster_curve_endpoint_markers<'a>(
