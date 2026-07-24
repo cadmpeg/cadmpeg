@@ -1719,7 +1719,7 @@ fn detect_high_on_marker_after_header() {
 }
 
 #[test]
-fn detect_high_on_solidworks_compound_document_directory() {
+fn compound_detection_distinguishes_solidworks_and_generic_signals() {
     let mut file = vec![0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
     file.resize(512, 0);
     for byte in b"ISolidWorksInformation" {
@@ -1730,7 +1730,7 @@ fn detect_high_on_solidworks_compound_document_directory() {
     let generic_compound_document = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
     assert_eq!(
         SldprtCodec.detect(&generic_compound_document),
-        Confidence::No
+        Confidence::Low
     );
 }
 

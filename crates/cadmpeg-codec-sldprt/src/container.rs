@@ -284,6 +284,11 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
+/// Test whether a prefix has the generic Compound File Binary signature.
+pub fn looks_like_compound_file(prefix: &[u8]) -> bool {
+    prefix.starts_with(&COMPOUND_FILE_MAGIC)
+}
+
 fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
     let mut encoded = Vec::with_capacity(text.len() * 2);
     for byte in text {
@@ -795,7 +800,15 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
 
 #[cfg(test)]
 mod tests {
-    use super::parasolid_modeler_generation;
+    use super::{looks_like_compound_file, looks_like_sldprt, parasolid_modeler_generation};
+
+    #[test]
+    fn generic_compound_prefix_is_a_weak_container_signal() {
+        let prefix = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0];
+
+        assert!(looks_like_compound_file(&prefix));
+        assert!(!looks_like_sldprt(&prefix));
+    }
 
     #[test]
     fn parasolid_schema_starts_with_the_modeller_generation() {
