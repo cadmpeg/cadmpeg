@@ -10068,19 +10068,6 @@ mod golden {
         );
     }
 
-    /// Directory holding the per-fixture container-inspection snapshots. Kept
-    /// apart from the combined decode+inspect goldens under `tests/golden/` so the
-    /// planned container-scan signature migration can be reviewed as an isolated
-    /// diff against the pinned [`ContainerSummary`] output, without the decode IR
-    /// as noise.
-    fn inspect_golden_dir() -> PathBuf {
-        golden_dir().join("inspect")
-    }
-
-    fn inspect_golden_path(name: &str) -> PathBuf {
-        inspect_golden_dir().join(format!("{name}.json"))
-    }
-
     /// Serialize one fixture's [`ContainerSummary`] as stable pretty JSON through
     /// the sealed [`CodecEntry::inspect`] entry point — the same container-scan
     /// path the CLI's `inspect` command drives with a default [`InspectOptions`].
@@ -10095,60 +10082,6 @@ mod golden {
         let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
         text.push('\n');
         text
-    }
-
-    /// Container-inspection counterpart to [`golden_snapshots_are_byte_identical`]:
-    /// freezes each fixture's [`ContainerSummary`] under `tests/golden/inspect/`
-    /// before the container-scan signature migration lands.
-    ///
-    /// Shares the combined goldens' build-config sensitivity described on the
-    /// module: a container directory entry backed by a `flate2`-compressed stream
-    /// reports that stream's compressed byte length, which the workspace `zlib-rs`
-    /// backend and an isolated-crate `miniz_oxide` build size differently. So
-    /// regenerate with the workspace feature set
-    /// (`UPDATE_GOLDEN=1 cargo test-fast inspect_golden`), NOT `-p cadmpeg-codec-nx`;
-    /// the byte-length fields otherwise diverge from the values the commit hook and
-    /// CI compare against. The `parasolid#N` entries pin only inflated lengths and
-    /// are backend-independent.
-    #[test]
-    fn inspect_golden_snapshots_are_byte_identical() {
-        let update = update_requested();
-        if update {
-            std::fs::create_dir_all(inspect_golden_dir()).expect("create inspect golden dir");
-        }
-        let mut failures: Vec<String> = Vec::new();
-        for (name, bytes) in fixtures() {
-            let actual = inspect_snapshot(&bytes);
-            let path = inspect_golden_path(name);
-            if update {
-                std::fs::write(&path, actual.as_bytes())
-                    .unwrap_or_else(|e| panic!("write inspect golden {name}: {e}"));
-                continue;
-            }
-            let expected = match std::fs::read_to_string(&path) {
-                Ok(text) => text,
-                Err(e) => {
-                    failures.push(format!(
-                        "fixture `{name}`: cannot read inspect golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test-fast inspect_golden`",
-                        path.display()
-                    ));
-                    continue;
-                }
-            };
-            if expected != actual {
-                let (line, exp_line, act_line) = first_line_diff(&expected, &actual);
-                failures.push(format!(
-                    "fixture `{name}`: inspect output diverged from golden at line {line}\n    golden: {exp_line}\n    actual: {act_line}\n    {}",
-                    first_byte_diff(&expected, &actual)
-                ));
-            }
-        }
-        assert!(
-            failures.is_empty(),
-            "{} inspect snapshot(s) drifted; if the change is intended run `UPDATE_GOLDEN=1 cargo test-fast inspect_golden` and review the diff:\n\n{}",
-            failures.len(),
-            failures.join("\n\n")
-        );
     }
 
     /// Container inspection must be a pure function of the input bytes: inspecting
