@@ -1459,7 +1459,8 @@ mod marker_tests {
         inline_surface_reference_at, legacy_compact_diameter_arc_center,
         legacy_compact_direct_endpoint_markers, legacy_coordinate_circle_radius,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
-        legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
+        legacy_coordinate_roster_undetailed_line,
+        legacy_direct_compact_selected_axis_endpoint_indices, legacy_extended_profile_curve_kind,
         legacy_extended_rectangle_from_line_cycle, legacy_feature_input_section,
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
         legacy_reference_axis_triads, legacy_single_face_reference_path_at,
@@ -6443,6 +6444,47 @@ mod marker_tests {
             Some([8, 9])
         );
         assert!(marker_is_selected_construction_line(&payload, 0));
+    }
+
+    #[test]
+    fn compact_legacy_direct_selected_axis_uses_point_object_ids() {
+        let mut payload = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&2u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&3u16.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[74] = 1;
+        payload[80..84].copy_from_slice(&2u32.to_le_bytes());
+        payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(
+            legacy_direct_compact_selected_axis_endpoint_indices(&payload, 0),
+            Some([2, 3])
+        );
+        payload[72..76].fill(0);
+        payload[76..80].copy_from_slice(&1u32.to_le_bytes());
+        payload[80..84].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            legacy_direct_compact_selected_axis_endpoint_indices(&payload, 0),
+            Some([2, 3])
+        );
+        payload[80..84].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            legacy_direct_compact_selected_axis_endpoint_indices(&payload, 0),
+            None
+        );
+        payload[80..84].copy_from_slice(&1u32.to_le_bytes());
+        payload[58..60].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            legacy_direct_compact_selected_axis_endpoint_indices(&payload, 0),
+            None
+        );
     }
 
     #[test]
@@ -20612,6 +20654,11 @@ pub(crate) fn project_marker_backed_sketches(
                                         offset,
                                     )
                                     .is_some()
+                                        || legacy_direct_compact_selected_axis_endpoint_indices(
+                                            &lane.native_payload,
+                                            offset,
+                                        )
+                                        .is_some()
                                     {
                                         return Some(SketchGeometry::Line { start, end });
                                     }
@@ -27830,6 +27877,7 @@ type CurveEndpointDecoder = fn(&[u8], usize) -> Option<[u32; 2]>;
 
 const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     linked_profile_curve_endpoint_indices,
+    legacy_direct_compact_selected_axis_endpoint_indices,
     wide_indexed_curve_endpoint_indices,
     compact_indexed_curve_endpoint_indices,
     direct_indexed_curve_endpoint_indices,
@@ -29903,6 +29951,7 @@ fn marker_profile_curve_role(payload: &[u8], offset: usize) -> Option<u16> {
 
 fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
     if alternate_current_selected_axis_endpoint_indices(payload, offset).is_some()
+        || legacy_direct_compact_selected_axis_endpoint_indices(payload, offset).is_some()
         || legacy_coordinate_roster_selected_axis_endpoint_indices(payload, offset).is_some()
         || legacy_profile_roster_selected_axis_endpoint_indices(payload, offset).is_some()
         || standard_legacy_compact_selected_axis_endpoint_indices(payload, offset).is_some()
@@ -29922,6 +29971,50 @@ fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
     } else {
         false
     }
+}
+
+fn legacy_direct_compact_selected_axis_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(2)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&[0; 4])
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || !sketch_marker_prefix_at(payload, offset.checked_add(84)?)
+    {
+        return None;
+    }
+    match (
+        payload.get(offset + 72..offset + 76),
+        payload.get(offset + 76..offset + 80),
+        payload.get(offset + 80..offset + 84),
+    ) {
+        (Some([0x00, 0x00, 0x01, 0x00]), Some([0x00, 0x00, 0x00, 0x00]), Some(identity))
+            if identity != [0; 4] && identity != [0xff; 4] => {}
+        (Some([0x00, 0x00, 0x00, 0x00]), Some(first), Some(second))
+            if first == second && first != [0; 4] && first != [0xff; 4] => {}
+        _ => return None,
+    }
+    let endpoint = |relative| {
+        let id = u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        );
+        (!matches!(id, 0 | u16::MAX)).then_some(u32::from(id))
+    };
+    let endpoints = [endpoint(56)?, endpoint(58)?];
+    (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
 fn legacy_code_five_or_six_selected_axis_endpoint_indices(
