@@ -123,7 +123,7 @@ fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
                 && (values[7] * values[7] + values[8] * values[8] - 1.0).abs() <= 1.0e-9
         }
         tag::SPHERE => values[3] > 0.0,
-        tag::TORUS => values[6] > 0.0 && values[7] > 0.0,
+        tag::TORUS => values[6].abs() > f64::EPSILON && values[7] > 0.0,
         _ => false,
     }
 }
@@ -137,6 +137,8 @@ pub(crate) struct Carrier {
     pub end: usize,
     pub geometry: CarrierGeometry,
     pub frame: Option<(Point3, Vector3, Vector3)>,
+    /// Whether neutral radius normalization reverses the surface parameter frame.
+    pub orientation_reversed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -273,6 +275,7 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
         end,
         geometry,
         frame,
+        orientation_reversed: tt == tag::TORUS && vals[6].is_sign_negative(),
     })
 }
 
@@ -360,7 +363,7 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<CarrierGeometry> {
                 center: scale_point(&v[0..3]),
                 axis: unit(&v[3..6]),
                 ref_direction: unit(&v[8..11]),
-                major_radius: v[6] * LEN_TO_MM,
+                major_radius: v[6].abs() * LEN_TO_MM,
                 minor_radius: v[7] * LEN_TO_MM,
             }));
         }
@@ -554,6 +557,7 @@ mod tests {
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
         assert!((major_radius - 2.2).abs() < 1e-12);
         assert!((minor_radius - 0.2).abs() < 1e-12);
+        assert!(!carrier.orientation_reversed);
     }
 
     #[test]
@@ -604,6 +608,29 @@ mod tests {
         };
         assert!((major_radius - 2.2).abs() < 1e-12);
         assert!((minor_radius - 4.4).abs() < 1e-12);
+    }
+
+    #[test]
+    fn normalizes_negative_torus_major_radius_and_marks_orientation_reversal() {
+        let bytes = compact_carrier(
+            tag::TORUS,
+            8,
+            &[
+                0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, -0.0022, 0.0044, -1.0, 0.0, 0.0,
+            ],
+        );
+        let carrier = parse_carrier(&bytes, 0).expect("signed-major torus");
+        let CarrierGeometry::Surface(SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        }) = carrier.geometry
+        else {
+            panic!("expected torus");
+        };
+        assert!((major_radius - 2.2).abs() < 1e-12);
+        assert!((minor_radius - 4.4).abs() < 1e-12);
+        assert!(carrier.orientation_reversed);
     }
 
     #[test]

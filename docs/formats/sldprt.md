@@ -777,7 +777,7 @@ Stream-scope support-geometry carriers encoding untrimmed surface/curve placemen
 | `00 35` | sphere   |        10 | center xyz, radius, axis xyz, refdir xyz                                 |
 | `00 36` | torus    |        11 | center xyz, axis xyz, major r, minor r, refdir xyz                       |
 
-The line direction is unit length. Every axis, normal, and reference direction is unit length; each axis or normal is orthogonal to its paired reference direction. The cone fields satisfy `sin² + cos² = 1`. Both torus radii are positive; the minor radius can equal or exceed the major radius (a spindle torus).
+The line direction is unit length. Every axis, normal, and reference direction is unit length; each axis or normal is orthogonal to its paired reference direction. The cone fields satisfy `sin² + cos² = 1`. A torus major radius is nonzero and its minor radius is positive. A negative major radius reverses the native surface parameter frame; neutral geometry uses its absolute magnitude and reverses the face sense. The minor radius can equal or exceed the major-radius magnitude (a spindle torus).
 
 Compact records omit trim intervals, loop membership, edge orientation, and vertex points. Typed topology records contain those relations.
 

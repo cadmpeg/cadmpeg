@@ -184,6 +184,7 @@ pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<Carrier> {
             end: marker_at + 1 + PAYLOAD_LEN,
             geometry: CarrierGeometry::Curve(geometry.clone()),
             frame: source.frame,
+            orientation_reversed: false,
         });
     }
     out
@@ -225,6 +226,7 @@ mod tests {
                 direction: Vector3::new(0.0, 1.0, 0.0),
             }),
             frame: None,
+            orientation_reversed: false,
         });
         carriers
     }

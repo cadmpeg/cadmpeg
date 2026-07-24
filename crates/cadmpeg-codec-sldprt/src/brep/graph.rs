@@ -450,6 +450,14 @@ fn sense_of(marker: u8) -> Sense {
     }
 }
 
+fn surface_sense(marker: u8, orientation_reversed: bool) -> Sense {
+    match (sense_of(marker), orientation_reversed) {
+        (Sense::Forward, true) => Sense::Reversed,
+        (Sense::Reversed, true) => Sense::Forward,
+        (sense, false) => sense,
+    }
+}
+
 /// Decode one parsed Parasolid stream into B-rep arenas.
 ///
 /// `stream` names the provenance stream recorded in [`Brep::annotations`].
@@ -914,8 +922,10 @@ fn decode_graph(
         }
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges.get(&f.bridge_attr).map_or(0, |r| r.offset);
+        let mut surface_orientation_reversed = false;
         match carriers.surface(f.surface_attr).map(|c| (c, &c.geometry)) {
             Some((c, CarrierGeometry::Surface(geo))) => {
+                surface_orientation_reversed = c.orientation_reversed;
                 annotations
                     .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
                     .tag("compact_surface");
@@ -1059,7 +1069,7 @@ fn decode_graph(
                     .unwrap_or(0)
             )),
             surface: SurfaceId(id_surf(f.bridge_attr)),
-            sense: sense_of(f.marker),
+            sense: surface_sense(f.marker, surface_orientation_reversed),
             loops,
             name: None,
             color: t
@@ -3234,6 +3244,16 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn normalized_surface_parameter_reversal_toggles_face_sense() {
+        use cadmpeg_ir::topology::Sense;
+
+        assert_eq!(super::surface_sense(0x2b, false), Sense::Forward);
+        assert_eq!(super::surface_sense(0x2d, false), Sense::Reversed);
+        assert_eq!(super::surface_sense(0x2b, true), Sense::Reversed);
+        assert_eq!(super::surface_sense(0x2d, true), Sense::Forward);
+    }
+
     #[test]
     fn shared_edge_coedge_parity_orients_connected_faces() {
         use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
