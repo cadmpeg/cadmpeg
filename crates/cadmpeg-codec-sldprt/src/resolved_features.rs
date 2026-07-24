@@ -34834,6 +34834,7 @@ fn relation_operand_loci(
     let loci = relation
         .links
         .iter()
+        .filter(|link| !relation_link_identifies_owner(relation, link))
         .map(|link| link.entity_ref.as_str())
         .chain(owners.iter().map(|owner| owner.id.as_str()))
         .map(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker))
@@ -37475,20 +37476,21 @@ mod profile_join_tests {
         project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
         project_relation_point_geometry, project_relation_solved_point_geometry,
-        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
-        resolve_connected_marker_arcs, resolved_marker_locus, select_marker_transforms_by_frame,
-        single_marker_curve_entity, single_marker_line_entity, sketch_frame_marker_transform,
-        type_display_relation_parameters, typed_marker_relation_definition,
-        typed_marker_relation_definition_in_sketch, typed_relation_definition,
-        unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
-        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_axis_distance_locus,
-        unique_profile_axis_distance_pair, unique_profile_distance_loci_pair,
-        unique_profile_distance_locus, unique_profile_line_angle_entity,
-        unique_profile_line_angle_pair, unique_profile_line_distance_entity,
-        unique_profile_line_distance_pair, unique_profile_line_point_locus,
-        unique_profile_point_line_entity, unique_profile_point_line_pair,
-        unique_repaired_profile_line_angle_pair, unique_repaired_profile_line_distance_pair,
-        unique_repaired_profile_point_line_pair, MarkerTransform, LEGACY_SKETCH_MARKER,
+        relation_operand_loci, relation_operand_marker, relation_owner_markers,
+        relation_parameter_by_display_name, resolve_connected_marker_arcs, resolved_marker_locus,
+        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
+        sketch_frame_marker_transform, type_display_relation_parameters,
+        typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
+        typed_relation_definition, unique_axis_aligned_linked_loci,
+        unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
+        unique_profile_axis_distance_locus, unique_profile_axis_distance_pair,
+        unique_profile_distance_loci_pair, unique_profile_distance_locus,
+        unique_profile_line_angle_entity, unique_profile_line_angle_pair,
+        unique_profile_line_distance_entity, unique_profile_line_distance_pair,
+        unique_profile_line_point_locus, unique_profile_point_line_entity,
+        unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
+        unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
+        MarkerTransform, LEGACY_SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -38475,6 +38477,56 @@ mod profile_join_tests {
         assert_eq!(
             typed_marker_relation_definition(&relation, &markers, &HashMap::new()),
             None
+        );
+    }
+
+    #[test]
+    fn self_identifying_forward_link_is_not_a_relation_locus() {
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+        relation.object_index = Some(1);
+        relation.links = vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: "center".into(),
+        }];
+        let mut center = marker("center", Some([0.0, 1.0]));
+        center.kind = SketchInputKind::Arc;
+        let mut first = marker("first", Some([-1.0, 0.0]));
+        first.offset = 1;
+        first.links = vec![SketchInputLink {
+            local_id: 3,
+            entity_ref: relation.id.clone(),
+        }];
+        let mut second = marker("second", Some([1.0, 0.0]));
+        second.offset = 2;
+        second.links = first.links.clone();
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (center.id.as_str(), &center),
+            (first.id.as_str(), &first),
+            (second.id.as_str(), &second),
+        ]);
+        let loci = HashMap::from([
+            (
+                center.id.clone(),
+                vec![SketchLocus::Center(SketchEntityId("arc".into()))],
+            ),
+            (
+                first.id.clone(),
+                vec![SketchLocus::Entity(SketchEntityId("first-point".into()))],
+            ),
+            (
+                second.id.clone(),
+                vec![SketchLocus::Entity(SketchEntityId("second-point".into()))],
+            ),
+        ]);
+
+        assert_eq!(
+            relation_operand_loci(&relation, &markers, &loci),
+            Some(vec![
+                SketchLocus::Entity(SketchEntityId("first-point".into())),
+                SketchLocus::Entity(SketchEntityId("second-point".into())),
+            ])
         );
     }
 
