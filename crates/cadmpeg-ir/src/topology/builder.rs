@@ -40,6 +40,21 @@
 //!   semantic — the first loop registered against a face is conventionally its
 //!   outer boundary.
 //! - Fixed-layer append order at [`finish`](TopologyBuilder::finish).
+//!
+//! # Adoption hazards
+//!
+//! - **[`ring`](TopologyBuilder::ring) couples `Loop::coedges` order to the
+//!   `next`/`previous` wiring.** The links follow the slice order the coedges
+//!   arrive in, so a format that stores explicit forward/backward links apart
+//!   from its coedge listing must pre-walk that chain into traversal order before
+//!   calling `ring` — nx's `fin_ring` walks the FIN forward links for exactly
+//!   this reason. Coedges passed in storage order wire a ring that does not
+//!   close.
+//! - **Registration rejects duplicate ids that a raw arena push kept silently.**
+//!   The second registration of any id fails with [`BuildError::DuplicateId`],
+//!   where a legacy codec pushing straight into the arena would have retained
+//!   both. A duplicate-tolerant source must propagate that [`BuildError`] —
+//!   dedupe upstream or fail the decode — rather than `unwrap` it.
 
 use std::collections::{HashMap, HashSet};
 
