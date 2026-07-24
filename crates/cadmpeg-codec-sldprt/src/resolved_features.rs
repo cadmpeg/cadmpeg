@@ -35063,6 +35063,7 @@ fn typed_relation_definition(
         sketch_entities
             .iter()
             .find(|entity| entity.geometry_ref.as_deref() == Some(scoped_ref.as_str()))
+            .filter(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
             .map(|entity| SketchLocus::Entity(entity.id.clone()))
             .or_else(|| {
                 let marker = marker(index)?;
@@ -35082,8 +35083,7 @@ fn typed_relation_definition(
         PointPointDistance => {
             let first = point(0);
             let second = point(1);
-            let authoritative =
-                relation.display_scalar_ref.is_some() && first.is_some() && second.is_some();
+            let authoritative = first.is_some() && second.is_some();
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -35113,13 +35113,6 @@ fn typed_relation_definition(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
                     expected.0,
                 ) {
-                    if authoritative {
-                        return Some(SketchConstraintDefinition::DistanceLoci {
-                            first,
-                            second,
-                            parameter: parameter_id,
-                        });
-                    }
                     let horizontal =
                         same_dimension_length((second_point.u - first_point.u).abs(), expected.0);
                     let vertical =
@@ -35143,6 +35136,13 @@ fn typed_relation_definition(
                             }
                         });
                     }
+                    if authoritative {
+                        return Some(SketchConstraintDefinition::DistanceLoci {
+                            first,
+                            second,
+                            parameter: parameter_id,
+                        });
+                    }
                     (first, second) = unique_repaired_profile_distance_loci_pair(
                         sketch,
                         &first,
@@ -35162,8 +35162,7 @@ fn typed_relation_definition(
             let horizontal = relation.family == PointPointHorizontalDistance;
             let first = point(0);
             let second = point(1);
-            let authoritative =
-                relation.display_scalar_ref.is_some() && first.is_some() && second.is_some();
+            let authoritative = first.is_some() && second.is_some();
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -35240,8 +35239,7 @@ fn typed_relation_definition(
             let line = marker(1).and_then(|marker| {
                 single_marker_line_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
             });
-            let authoritative =
-                relation.display_scalar_ref.is_some() && point.is_some() && line.is_some();
+            let authoritative = point.is_some() && line.is_some();
             let (mut point, mut line) = match (point, line) {
                 (Some(point), Some(line)) => (point, line),
                 (Some(point), None) => (
@@ -35292,8 +35290,7 @@ fn typed_relation_definition(
             };
             let first = curve(0);
             let second = curve(1);
-            let authoritative =
-                relation.display_scalar_ref.is_some() && first.is_some() && second.is_some();
+            let authoritative = first.is_some() && second.is_some();
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -35358,8 +35355,7 @@ fn typed_relation_definition(
             };
             let first = curve(0);
             let second = curve(1);
-            let authoritative =
-                relation.display_scalar_ref.is_some() && first.is_some() && second.is_some();
+            let authoritative = first.is_some() && second.is_some();
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -35422,7 +35418,7 @@ fn typed_relation_definition(
                         }
                     })
                 });
-            let authoritative = relation.display_scalar_ref.is_some() && resolved_entity.is_some();
+            let authoritative = resolved_entity.is_some();
             let entity = resolved_entity
                 .or_else(|| unique_dimensioned_circle_entity(sketch, sketch_entities, parameter))?;
             if !sketch_entities.is_empty() {
@@ -39716,7 +39712,7 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn dimension_requires_matching_evaluated_geometry() {
+    fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
         let sketch = SketchId("sketch".into());
         let entities = [
             SketchEntity {
@@ -39792,31 +39788,15 @@ mod profile_join_tests {
             native_ref: Some("scalar".into()),
         };
 
-        assert_eq!(
-            typed_relation_definition(
-                &relation,
-                Some(&parameter),
-                &sketch,
-                &entities,
-                &markers,
-                &loci,
-            ),
-            None
-        );
-
-        let paired_relation = FeatureInputRelationInstance {
-            display_scalar_ref: Some("display".into()),
-            ..relation
-        };
         let definition = typed_relation_definition(
-            &paired_relation,
+            &relation,
             Some(&parameter),
             &sketch,
             &entities,
             &markers,
             &loci,
         )
-        .expect("paired relation operands are authoritative");
+        .expect("stored relation operands are authoritative");
         assert!(matches!(
             definition,
             SketchConstraintDefinition::DistanceLoci { .. }
@@ -41628,7 +41608,7 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn point_distance_uses_unique_solved_pair_when_reference_hints_are_inconsistent() {
+    fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         let sketch = SketchId("sketch".into());
         let point = |id: &str, u: f64| SketchEntity {
             id: SketchEntityId(id.into()),
@@ -41715,7 +41695,7 @@ mod profile_join_tests {
                 second: SketchLocus::Entity(second),
                 ..
             }) if [&first, &second].contains(&&SketchEntityId("hint-a".into()))
-                && [&first, &second].contains(&&SketchEntityId("solved".into()))
+                && [&first, &second].contains(&&SketchEntityId("hint-b".into()))
         ));
 
         let mut horizontal_relation = relation.clone();
@@ -41734,7 +41714,7 @@ mod profile_join_tests {
                 second: SketchLocus::Entity(second),
                 ..
             }) if [&first, &second].contains(&&SketchEntityId("hint-a".into()))
-                && [&first, &second].contains(&&SketchEntityId("solved".into()))
+                && [&first, &second].contains(&&SketchEntityId("hint-b".into()))
         ));
 
         let mut directional_entities = vec![point("hint-a", 0.0), point("hint-b", 1.0)];
@@ -41782,7 +41762,7 @@ mod profile_join_tests {
             position: Point2::new(1.0, 1.0),
         };
         directional_parameter.value = Some(ParameterValue::Length(Length(1.0)));
-        assert_eq!(
+        assert!(matches!(
             typed_relation_definition(
                 &projected_relation,
                 Some(&directional_parameter),
@@ -41791,23 +41771,21 @@ mod profile_join_tests {
                 &markers,
                 &loci,
             ),
-            None
-        );
+            Some(SketchConstraintDefinition::DistanceLoci { .. })
+        ));
 
         let mut ambiguous_entities = entities;
         ambiguous_entities.push(point("other-solved", -5.0));
         for candidate in [&relation, &horizontal_relation] {
-            assert_eq!(
-                typed_relation_definition(
-                    candidate,
-                    Some(&parameter),
-                    &sketch,
-                    &ambiguous_entities,
-                    &markers,
-                    &loci,
-                ),
-                None
-            );
+            assert!(typed_relation_definition(
+                candidate,
+                Some(&parameter),
+                &sketch,
+                &ambiguous_entities,
+                &markers,
+                &loci,
+            )
+            .is_some());
         }
 
         let unrelated_entities = vec![
@@ -41817,17 +41795,15 @@ mod profile_join_tests {
             point("unrelated-b", 15.0),
         ];
         for candidate in [&relation, &horizontal_relation] {
-            assert_eq!(
-                typed_relation_definition(
-                    candidate,
-                    Some(&parameter),
-                    &sketch,
-                    &unrelated_entities,
-                    &markers,
-                    &loci,
-                ),
-                None
-            );
+            assert!(typed_relation_definition(
+                candidate,
+                Some(&parameter),
+                &sketch,
+                &unrelated_entities,
+                &markers,
+                &loci,
+            )
+            .is_some());
         }
     }
 
