@@ -1341,7 +1341,10 @@ fn emit_e5_faces_loops_coedges(
                 for field in ["owner_loop", "edge", "next", "previous", "sense", "pcurves"] {
                     annotations.derived(&id, field);
                 }
-                coedges_by_edge.entry(edge_ref).or_default().push(id.clone());
+                coedges_by_edge
+                    .entry(edge_ref)
+                    .or_default()
+                    .push(id.clone());
                 coedges.push(CoedgeSpec {
                     id,
                     edge: edge_ids[&edge_ref].clone(),
