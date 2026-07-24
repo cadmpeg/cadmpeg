@@ -7759,7 +7759,13 @@ fn transfer_resolved_extrusion_breps(
                 });
             }
             builder
-                .ring(bottom_loop, &bottom_face, cap_role, bottom_specs, Vec::new())
+                .ring(
+                    bottom_loop,
+                    &bottom_face,
+                    cap_role,
+                    bottom_specs,
+                    Vec::new(),
+                )
                 .expect("extrusion bottom cap ring registers under its face");
             builder
                 .ring(top_loop, &top_face, cap_role, top_specs, Vec::new())
