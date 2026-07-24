@@ -1527,7 +1527,6 @@ fn build_geometry_ir(
         &mut sketch_entities,
         &histories,
         &lanes,
-        crate::container::active_parasolid_modeler_generation(scan),
     );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
     crate::resolved_features::project_dissected_sketches(
@@ -2265,7 +2264,6 @@ fn build_metadata_ir(
         &mut ir.model.sketch_entities,
         &histories,
         &lanes,
-        crate::container::active_parasolid_modeler_generation(scan),
     );
     crate::history::bind_unique_sketch_feature(
         &mut ir.model.features,

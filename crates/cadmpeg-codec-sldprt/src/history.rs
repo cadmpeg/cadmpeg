@@ -7874,11 +7874,6 @@ pub(crate) fn project_configuration_sketch_states(
     lanes: &[crate::records::FeatureInputLane],
     annotations: &cadmpeg_ir::Annotations,
 ) {
-    let modeller_generation = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("parasolid_schema"))
-        .and_then(|schema| crate::container::parasolid_modeler_generation(schema));
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
@@ -7953,7 +7948,6 @@ pub(crate) fn project_configuration_sketch_states(
             &mut ir.model.sketch_entities,
             histories,
             scoped_lanes,
-            modeller_generation,
         );
         bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories);
         crate::resolved_features::project_dissected_sketches(

@@ -671,23 +671,6 @@ fn active_parasolid_summary(
         .max_by_key(|(_, size, _)| *size)
 }
 
-/// Modeller generation carried by the active Parasolid stream schema.
-pub(crate) fn active_parasolid_modeler_generation(scan: &ContainerScan) -> Option<u32> {
-    let (_, _, header) = active_parasolid_summary(scan)?;
-    parasolid_modeler_generation(&header.schema)
-}
-
-pub(crate) fn parasolid_modeler_generation(schema: &str) -> Option<u32> {
-    let body = schema.strip_prefix("SCH_")?;
-    body.strip_prefix("SW_")
-        .unwrap_or(body)
-        .split('_')
-        .next()?
-        .get(..2)?
-        .parse()
-        .ok()
-}
-
 /// Test whether either outer envelope carries a framed Parasolid body stream.
 pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
     active_parasolid_summary(scan).is_some()
@@ -800,7 +783,7 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
 
 #[cfg(test)]
 mod tests {
-    use super::{looks_like_compound_file, looks_like_sldprt, parasolid_modeler_generation};
+    use super::{looks_like_compound_file, looks_like_sldprt};
 
     #[test]
     fn generic_compound_prefix_is_a_weak_container_signal() {
@@ -808,18 +791,5 @@ mod tests {
 
         assert!(looks_like_compound_file(&prefix));
         assert!(!looks_like_sldprt(&prefix));
-    }
-
-    #[test]
-    fn parasolid_schema_starts_with_the_modeller_generation() {
-        assert_eq!(
-            parasolid_modeler_generation("SCH_3000310_30000_13006"),
-            Some(30)
-        );
-        assert_eq!(
-            parasolid_modeler_generation("SCH_3101284_31100_13006"),
-            Some(31)
-        );
-        assert_eq!(parasolid_modeler_generation("SCH_SW_33103_11000"), Some(33));
     }
 }

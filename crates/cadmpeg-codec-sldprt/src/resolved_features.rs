@@ -1637,12 +1637,12 @@ mod marker_tests {
         cosmetic_thread_diameter_child_tail, current_coordinate_linked_line_endpoints,
         current_geometry_locus_profile_vertex, current_indexed_arc_reverses_center_sweep,
         current_linked_semicircle_record, current_reverse_incidence_endpoint_offsets,
-        current_wide_arc_direct_markers, direct_indexed_curve_endpoint_indices,
-        enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, extended_compact_endpoint_markers,
-        extended_compact_linked_profile_point_coordinates, extended_geometry_locus_profile_vertex,
-        extended_profile_point_coordinates, extended_radial_circle_index,
-        extended_tagged_indexed_curve_endpoint_indices,
+        current_wide_arc_direct_markers, current_wide_undetailed_line,
+        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
+        explicit_reference_axis_frame, explicit_reference_plane_frame,
+        extended_compact_endpoint_markers, extended_compact_linked_profile_point_coordinates,
+        extended_geometry_locus_profile_vertex, extended_profile_point_coordinates,
+        extended_radial_circle_index, extended_tagged_indexed_curve_endpoint_indices,
         extended_terminal_repeated_radial_circle_index,
         extended_wide_construction_line_roster_indices, fixed_reference_plane_frame,
         generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
@@ -1670,9 +1670,9 @@ mod marker_tests {
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         resolve_two_center_semicircle_profile, revolution_line_reference_inputs,
         revolution_operation, revolution_temporary_axis, roster_curve_endpoint_markers,
-        schema_31_wide_undetailed_line, sketch_block_identity_normalization_origin,
-        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, structured_offset_plane_sources, surface_reference_matches_at,
+        sketch_block_identity_normalization_origin, sketch_block_record_origin,
+        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        structured_offset_plane_sources, surface_reference_matches_at,
         surface_selection_producer_features, tangent_bounded_curve,
         terminal_extended_profile_point_coordinates, terminal_repeated_radial_circle_pairs,
         unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
@@ -8642,14 +8642,13 @@ mod marker_tests {
         current[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
         current[92..].copy_from_slice(SKETCH_MARKER);
         assert!(indexed_arc_uses_coordinate_center(&current, 0));
-        assert!(!schema_31_wide_undetailed_line(&current, 0, Some(30)));
-        assert!(schema_31_wide_undetailed_line(&current, 0, Some(31)));
+        assert!(current_wide_undetailed_line(&current, 0));
         let mut extended = current.clone();
         extended[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-        assert!(schema_31_wide_undetailed_line(&extended, 0, Some(31)));
+        assert!(current_wide_undetailed_line(&extended, 0));
         extended[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
-        assert!(!schema_31_wide_undetailed_line(&extended, 0, Some(31)));
+        assert!(!current_wide_undetailed_line(&extended, 0));
         let mut detailed = current.clone();
         detailed.resize(172, 0);
         detailed[97..105].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]);
@@ -8659,7 +8658,7 @@ mod marker_tests {
         detailed[123..131].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
         detailed[140..148].copy_from_slice(&1.0f64.to_le_bytes());
         detailed[156..164].copy_from_slice(&(-1.0f64).to_le_bytes());
-        assert!(!schema_31_wide_undetailed_line(&detailed, 0, Some(31)));
+        assert!(!current_wide_undetailed_line(&detailed, 0));
         assert!(!current_indexed_arc_reverses_center_sweep(&current, 0));
         current[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
         assert!(current_indexed_arc_reverses_center_sweep(&current, 0));
@@ -22952,7 +22951,6 @@ pub(crate) fn project_marker_backed_sketches(
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    modeller_generation: Option<u32>,
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
@@ -23315,13 +23313,6 @@ pub(crate) fn project_marker_backed_sketches(
                                     {
                                         return Some(SketchGeometry::Line { start, end });
                                     }
-                                    if schema_31_wide_undetailed_line(
-                                        &lane.native_payload,
-                                        offset,
-                                        modeller_generation,
-                                    ) {
-                                        return Some(SketchGeometry::Line { start, end });
-                                    }
                                     if let Some([u, v]) = legacy_compact_diameter_arc_center(
                                         &lane.native_payload,
                                         marker,
@@ -23424,10 +23415,11 @@ pub(crate) fn project_marker_backed_sketches(
                                             QUANTUM,
                                         );
                                     }
-                                    legacy_coordinate_roster_undetailed_line(
-                                        &lane.native_payload,
-                                        offset,
-                                    )
+                                    (current_wide_undetailed_line(&lane.native_payload, offset)
+                                        || legacy_coordinate_roster_undetailed_line(
+                                            &lane.native_payload,
+                                            offset,
+                                        ))
                                     .then_some(SketchGeometry::Line { start, end })
                                 })()
                                 .unwrap_or_else(|| {
@@ -31251,17 +31243,11 @@ fn legacy_inline_arc_endpoint_markers<'a>(
     (endpoints[0].id != endpoints[1].id).then_some(endpoints)
 }
 
-fn schema_31_wide_undetailed_line(
-    payload: &[u8],
-    offset: usize,
-    modeller_generation: Option<u32>,
-) -> bool {
-    matches!(modeller_generation, Some(31..))
-        && matches!(
-            payload.get(offset..offset + SKETCH_MARKER.len()),
-            Some(marker) if marker == SKETCH_MARKER || marker == LEGACY_EXTENDED_SKETCH_MARKER
-        )
-        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+fn current_wide_undetailed_line(payload: &[u8], offset: usize) -> bool {
+    matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(marker) if marker == SKETCH_MARKER || marker == LEGACY_EXTENDED_SKETCH_MARKER
+    ) && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92))
         && compact_bounded_curve_tangent(payload, offset).is_none()
@@ -37272,7 +37258,6 @@ mod profile_join_tests {
             &mut entities,
             &histories,
             &lanes,
-            None,
         );
 
         assert_eq!(sketches.len(), 1);
@@ -37325,7 +37310,6 @@ mod profile_join_tests {
             &mut entities,
             &histories,
             &lanes,
-            None,
         );
         assert_eq!(sketches.len(), 1);
         assert_eq!(entities.len(), 12);
@@ -37358,7 +37342,6 @@ mod profile_join_tests {
             &mut replacement_entities,
             &histories,
             &lanes,
-            None,
         );
         assert_eq!(replacement_sketches.len(), 1);
         assert_eq!(replacement_sketches[0].id, expected_sketch);
