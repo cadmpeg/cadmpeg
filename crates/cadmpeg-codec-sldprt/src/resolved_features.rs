@@ -3931,6 +3931,117 @@ mod marker_tests {
         );
         lane.native_payload[trailer + 38..trailer + 40].fill(0);
         assert_eq!(feature_inline_operation_fields(&lane, &name), None);
+
+        lane.native_payload[trailer + 4] = 0xca;
+        lane.native_payload[trailer + 16..trailer + 40].fill(0);
+        lane.native_payload[trailer + 18..trailer + 20].copy_from_slice(&[1, 0]);
+        lane.native_payload[trailer + 20..trailer + 24].copy_from_slice(&360u32.to_le_bytes());
+        lane.native_payload[trailer + 34..trailer + 36].copy_from_slice(&435u16.to_le_bytes());
+        assert_eq!(
+            feature_inline_operation_fields(&lane, &name),
+            Some((0xca, 0))
+        );
+        assert_eq!(feature_inline_operation(&lane, &name), None);
+    }
+
+    #[test]
+    fn declared_ice_object_uses_a_unanimous_repeated_class_form() {
+        use super::class_scoped_extrusion_operation;
+
+        let native_feature = |id: &str, source: &str| Feature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some(source.into()),
+            parent_source_id: None,
+            ordinal: source.parse().expect("required invariant"),
+            name: id.into(),
+            kind: "Extrusion".into(),
+            input_class: Some("moICE_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+        let features = [
+            native_feature("first", "67"),
+            native_feature("second", "79"),
+            native_feature("third", "90"),
+        ];
+        let names = [
+            FeatureInputName {
+                id: "first-name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 33,
+                value: "F".into(),
+                object_id: Some(67),
+            },
+            FeatureInputName {
+                id: "second-name".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 100,
+                value: "S".into(),
+                object_id: Some(79),
+            },
+            FeatureInputName {
+                id: "third-name".into(),
+                parent: "lane".into(),
+                ordinal: 2,
+                offset: 150,
+                value: "T".into(),
+                object_id: Some(90),
+            },
+        ];
+        let mut payload = vec![0; 200];
+        let trailer = 33 + 6 + 2;
+        payload[trailer + 4] = 0xca;
+        payload[trailer + 5] = 1;
+        payload[trailer + 8..trailer + 12].copy_from_slice(&67u32.to_le_bytes());
+        payload[trailer + 16..trailer + 19].copy_from_slice(&[0xff, 0xfe, 0xff]);
+        for name_offset in [100_usize, 150] {
+            let code_offset = name_offset - 14;
+            payload[code_offset..code_offset + 4].copy_from_slice(&11u32.to_le_bytes());
+            payload[name_offset - 2..name_offset].copy_from_slice(&0x8000u16.to_le_bytes());
+        }
+        let mut lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: vec![FeatureInputClass {
+                id: "ice".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 20,
+                name: "moICE_c".into(),
+                role: FeatureInputClassRole::Feature,
+            }],
+            names: names.to_vec(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let feature_refs = features.iter().collect::<Vec<_>>();
+
+        assert_eq!(
+            class_scoped_extrusion_operation(&features[0], &feature_refs, &lane, &names[0],),
+            Some(BooleanOp::Cut)
+        );
+        lane.native_payload[136..140].copy_from_slice(&6u32.to_le_bytes());
+        assert_eq!(
+            class_scoped_extrusion_operation(&features[0], &feature_refs, &lane, &names[0],),
+            None
+        );
     }
 
     #[test]
@@ -21346,11 +21457,16 @@ fn feature_inline_operation_fields(
             .native_payload
             .get(trailer + 16..trailer + 40)
             .is_some_and(|suffix| {
-                suffix[..6] == [0; 6]
+                (suffix[..6] == [0; 6]
                     && suffix[6..8] == [1, 0]
                     && suffix[8..10] != [0, 0]
                     && suffix[10..22] == [0; 12]
-                    && suffix[22..24] != [0, 0]
+                    && suffix[22..24] != [0, 0])
+                    || (suffix[..4] == [0, 0, 1, 0]
+                        && suffix[4..8] != [0; 4]
+                        && suffix[8..18] == [0; 10]
+                        && suffix[18..20] != [0, 0]
+                        && suffix[20..24] == [0; 4])
             });
     if bytes[..4] != [0; 4]
         || bytes[5] != 1
@@ -21375,6 +21491,43 @@ fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) ->
     }
 }
 
+fn class_scoped_extrusion_operation(
+    feature: &crate::records::Feature,
+    features: &[&crate::records::Feature],
+    lane: &FeatureInputLane,
+    name: &FeatureInputName,
+) -> Option<BooleanOp> {
+    if feature.input_class.as_deref() != Some("moICE_c")
+        || feature_inline_operation_fields(lane, name) != Some((0xca, 0))
+        || !lane.classes.iter().any(|class| {
+            class.name == "moICE_c" && class.offset + 6 + class.name.len() as u64 == name.offset
+        })
+    {
+        return None;
+    }
+    let siblings = features
+        .iter()
+        .copied()
+        .filter(|candidate| {
+            candidate.id != feature.id && candidate.input_class == feature.input_class
+        })
+        .collect::<Vec<_>>();
+    if siblings.len() < 2 {
+        return None;
+    }
+    let mut operations = siblings.iter().map(|sibling| {
+        let sibling_name = feature_object_name(sibling, lane)?;
+        extrusion_operation(
+            sibling.input_class.as_deref(),
+            feature_operation_code(lane, sibling_name, sibling.input_class.as_deref())?,
+        )
+    });
+    let operation = operations.next()??;
+    operations
+        .all(|candidate| candidate == Some(operation))
+        .then_some(operation)
+}
+
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -21384,7 +21537,10 @@ pub(crate) fn bind_extrusion_operations(
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<Vec<_>>();
+    let history_by_id = history_features
+        .iter()
+        .map(|feature| (feature.id.as_str(), *feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
         let FeatureDefinition::Extrude { op, .. } = &mut feature.definition else {
@@ -21396,13 +21552,18 @@ pub(crate) fn bind_extrusion_operations(
         let Some(history) = feature
             .native_ref
             .as_deref()
-            .and_then(|native| history_features.get(native).copied())
+            .and_then(|native| history_by_id.get(native).copied())
         else {
             continue;
         };
         let mut operations = lanes.iter().filter_map(|lane| {
             let name = feature_object_name(history, lane)?;
             if let Some(operation) = feature_inline_operation(lane, name) {
+                return Some(operation);
+            }
+            if let Some(operation) =
+                class_scoped_extrusion_operation(history, &history_features, lane, name)
+            {
                 return Some(operation);
             }
             extrusion_operation(
