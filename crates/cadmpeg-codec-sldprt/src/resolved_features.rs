@@ -6197,6 +6197,21 @@ mod marker_tests {
             super::legacy_profile_roster_selected_axis_endpoint_indices(&payload, 0),
             None
         );
+
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[80..84].fill(0);
+        payload[84..88].fill(0);
+        payload[88..92].copy_from_slice(&29u32.to_le_bytes());
+        assert_eq!(
+            super::legacy_profile_roster_selected_axis_endpoint_indices(&payload, 0),
+            Some([8, 9])
+        );
+        assert!(marker_is_selected_construction_line(&payload, 0));
+        payload[88..92].fill(0);
+        assert_eq!(
+            super::legacy_profile_roster_selected_axis_endpoint_indices(&payload, 0),
+            None
+        );
     }
 
     #[test]
@@ -29160,27 +29175,36 @@ fn legacy_coordinate_roster_selected_axis_endpoint_indices(
         return None;
     }
     one_based_u16_endpoint_pair(payload, offset, 64)
+        .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
 fn legacy_profile_roster_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
-    let state_trailer = matches!(
+    let kind_two_state_trailer = matches!(
         payload.get(offset + 80..offset + 84),
         Some([0x00, 0x00, 0x01 | 0x02, 0x00])
     ) && payload.get(offset + 84..offset + 88) == Some(&[0; 4]);
-    let identity_trailer = payload.get(offset + 80..offset + 84) == Some(&[0; 4])
+    let kind_two_identity_trailer = payload.get(offset + 80..offset + 84) == Some(&[0; 4])
         && payload
             .get(offset + 84..offset + 88)
             .zip(payload.get(offset + 88..offset + 92))
             .is_some_and(|(first, second)| {
                 first == second && first != [0; 4] && first != u32::MAX.to_le_bytes()
             });
+    let kind_one_identity_trailer = matches!(
+        payload.get(offset + 80..offset + 84),
+        Some([0x00, 0x00, 0x00 | 0x02, 0x00])
+    ) && payload.get(offset + 84..offset + 88) == Some(&[0; 4])
+        && payload
+            .get(offset + 88..offset + 92)
+            .is_some_and(|identity| identity != [0; 4] && identity != u32::MAX.to_le_bytes());
+    let kind = marker_native_code(payload, offset);
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || marker_native_code(payload, offset) != Some(2)
+        || !matches!(kind, Some(1 | 2))
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(2)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
@@ -29190,12 +29214,14 @@ fn legacy_profile_roster_selected_axis_endpoint_indices(
         || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
         || payload.get(offset + 68..offset + 72) != Some(&[0; 4])
         || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
-        || !(state_trailer || identity_trailer)
+        || !(kind == Some(2) && (kind_two_state_trailer || kind_two_identity_trailer)
+            || kind == Some(1) && kind_one_identity_trailer)
         || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
     {
         return None;
     }
     one_based_u16_endpoint_pair(payload, offset, 64)
+        .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
 fn compact_legacy_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
