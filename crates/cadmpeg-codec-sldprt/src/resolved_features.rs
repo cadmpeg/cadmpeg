@@ -517,6 +517,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 SketchInputKind::Point
             } else if current_geometry_locus_profile_line(payload, offset, code)
                 || current_compact_104_profile_line(payload, offset)
+                || current_direct_92_profile_line_endpoint_indices(payload, offset).is_some()
                 || coordinates_m.is_none()
                     && (marker_is_selected_construction_line(payload, offset)
                         || compact_curve_endpoint_indices(payload, offset).is_some())
@@ -1639,13 +1640,14 @@ mod marker_tests {
         cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
         cosmetic_thread_diameter_child_tail, current_compact_104_indexed_line_endpoint_indices,
         current_compact_104_profile_line, current_coordinate_linked_line_endpoints,
-        current_geometry_locus_profile_vertex, current_indexed_arc_reverses_center_sweep,
-        current_linked_semicircle_record, current_reverse_incidence_endpoint_offsets,
-        current_wide_arc_direct_markers, current_wide_undetailed_line,
-        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame,
-        extended_compact_endpoint_markers, extended_compact_linked_profile_point_coordinates,
-        extended_geometry_locus_profile_vertex, extended_profile_point_coordinates,
+        current_direct_92_profile_line_endpoint_indices, current_geometry_locus_profile_vertex,
+        current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
+        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
+        current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, extended_compact_endpoint_markers,
+        extended_compact_linked_profile_point_coordinates, extended_geometry_locus_profile_vertex,
+        extended_profile_point_coordinates,
         extended_profile_roster_construction_line_endpoint_indices, extended_radial_circle_index,
         extended_tagged_indexed_curve_endpoint_indices,
         extended_terminal_repeated_radial_circle_index,
@@ -7347,6 +7349,36 @@ mod marker_tests {
 
         payload[100..104].copy_from_slice(&3u32.to_le_bytes());
         assert!(!current_compact_104_profile_line(&payload, 0));
+    }
+
+    #[test]
+    fn current_direct_92_profile_line_uses_point_object_ids() {
+        let mut payload = vec![0; 92 + SKETCH_MARKER.len()];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&6u16.to_le_bytes());
+        payload[66..68].copy_from_slice(&9u16.to_le_bytes());
+        payload[68..72].copy_from_slice(&1u32.to_le_bytes());
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[84..88].copy_from_slice(&1u32.to_le_bytes());
+        payload[88..92].copy_from_slice(&6u32.to_le_bytes());
+        payload[92..].copy_from_slice(SKETCH_MARKER);
+
+        assert_eq!(
+            current_direct_92_profile_line_endpoint_indices(&payload, 0),
+            Some([6, 9])
+        );
+
+        payload[88..92].fill(0);
+        assert_eq!(
+            current_direct_92_profile_line_endpoint_indices(&payload, 0),
+            None
+        );
     }
 
     #[test]
@@ -31643,6 +31675,7 @@ const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     linked_profile_curve_endpoint_indices,
     legacy_direct_compact_selected_axis_endpoint_indices,
     extended_tagged_indexed_curve_endpoint_indices,
+    current_direct_92_profile_line_endpoint_indices,
     wide_indexed_curve_endpoint_indices,
     compact_indexed_curve_endpoint_indices,
     direct_indexed_curve_endpoint_indices,
@@ -33562,6 +33595,45 @@ fn current_compact_104_profile_line(payload: &[u8], offset: usize) -> bool {
         && offset
             .checked_add(104)
             .is_some_and(|next| sketch_marker_prefix_at(payload, next))
+}
+
+fn current_direct_92_profile_line_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
+        || payload.get(offset + 68..offset + 72) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 80..offset + 84) != Some(&[0; 4])
+        || payload.get(offset + 84..offset + 88) != Some(&1u32.to_le_bytes())
+        || payload
+            .get(offset + 88..offset + 92)
+            .is_none_or(|identity| identity == [0; 4] || identity == [0xff; 4])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
+    {
+        return None;
+    }
+    let endpoint = |relative| {
+        let id = u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        );
+        (id != 0 && id != u16::MAX).then_some(u32::from(id))
+    };
+    let endpoints = [endpoint(64)?, endpoint(66)?];
+    (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
 fn legacy_referenced_wide_arc_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
