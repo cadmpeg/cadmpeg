@@ -318,7 +318,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .configurations
         .iter()
         .filter(|configuration| {
-            !feature_ids.is_empty()
+            !configuration_source_needs_update(ir, configuration)
+                && !feature_ids.is_empty()
                 && (configuration.feature_states.len() != feature_ids.len()
                     || configuration
                         .feature_states
@@ -331,7 +332,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .configurations
         .iter()
         .filter(|configuration| {
-            !parameter_ids.is_empty()
+            !configuration_source_needs_update(ir, configuration)
+                && !parameter_ids.is_empty()
                 && (configuration.parameter_values.len() != parameter_ids.len()
                     || configuration
                         .parameter_values
@@ -1079,6 +1081,26 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 "{unresolved_body_modes} body delete/keep feature(s) retain selected native body identities without a decoded retention mode."
             )));
     }
+}
+
+fn configuration_source_needs_update(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+) -> bool {
+    let slot = configuration
+        .properties
+        .get("id")
+        .and_then(|value| value.parse::<u32>().ok())
+        .or(configuration.source_index)
+        .unwrap_or(configuration.ordinal);
+    ir.source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get(&format!("sw_configuration_{slot}_needs_update"))
+        })
+        .is_some_and(|value| value.eq_ignore_ascii_case("yes"))
 }
 
 fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative) -> usize {
@@ -2042,6 +2064,30 @@ fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<S
             }
             if let Some(value) = model.attribute("swConfigurationName") {
                 attributes.insert("sw_configuration_name".into(), value.into());
+            }
+        }
+        for configuration in root
+            .descendants()
+            .filter(|node| node.has_tag_name("swConfiguration"))
+        {
+            let Some(slot) = configuration.attribute("swID") else {
+                continue;
+            };
+            if !slot.bytes().all(|byte| byte.is_ascii_digit()) {
+                continue;
+            }
+            for (source, target) in [
+                ("swConfigurationNeedsUpdate", "needs_update"),
+                ("swMostRecentConfiguration", "most_recent"),
+                ("swConfigurationFlags", "flags"),
+                ("swConfigurationAlternateName", "alternate_name"),
+            ] {
+                if let Some(value) = configuration.attribute(source) {
+                    attributes.insert(
+                        format!("sw_configuration_{slot}_{target}"),
+                        value.to_string(),
+                    );
+                }
             }
         }
         break;
@@ -3123,6 +3169,17 @@ mod design_loss_tests {
             loss.message
                 == "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot."
         }));
+
+        ir.source = Some(cadmpeg_ir::document::SourceMeta {
+            format: "sldprt".into(),
+            attributes: BTreeMap::from([("sw_configuration_0_needs_update".into(), "YES".into())]),
+        });
+        report.losses.clear();
+        append_design_losses(&ir, &mut report);
+        assert!(!report
+            .losses
+            .iter()
+            .any(|loss| { loss.message.contains("complete evaluated feature snapshot") }));
     }
 
     #[test]

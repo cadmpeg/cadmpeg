@@ -1775,7 +1775,7 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
     bmp[20..24].copy_from_slice(&1u32.to_le_bytes());
     bmp[24..28].copy_from_slice(&12_345u32.to_le_bytes());
 
-    let xml = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000" swCreationTime="1700000000" swPath="C:\part.SLDPRT"><swModel id="1" swName="Part" swConfigurationName="Default"/></swSolidWorks>"#;
+    let xml = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000" swCreationTime="1700000000" swPath="C:\part.SLDPRT"><swModel id="1" swName="Part" swConfigurationName="Default"/><swConfigurationList><swConfiguration swID="0" swName="Default" swMostRecentConfiguration="NO" swConfigurationNeedsUpdate="YES" swConfigurationFlags="384" swConfigurationAlternateName="Default derived"/></swConfigurationList></swSolidWorks>"#;
     let mut source = outer_header();
     source.extend(make_block(0x10, "PreviewPNG", &png));
     source.extend(make_block(0x11, "PreviewBMP", &bmp));
@@ -1807,6 +1807,13 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
     assert_eq!(attributes["sw_path"], r"C:\part.SLDPRT");
     assert_eq!(attributes["sw_name"], "Part");
     assert_eq!(attributes["sw_configuration_name"], "Default");
+    assert_eq!(attributes["sw_configuration_0_needs_update"], "YES");
+    assert_eq!(attributes["sw_configuration_0_most_recent"], "NO");
+    assert_eq!(attributes["sw_configuration_0_flags"], "384");
+    assert_eq!(
+        attributes["sw_configuration_0_alternate_name"],
+        "Default derived"
+    );
 }
 
 #[test]
