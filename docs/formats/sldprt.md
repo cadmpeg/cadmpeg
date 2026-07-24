@@ -256,6 +256,8 @@ An `sgSlot_c` declaration may immediately precede a current- or extended-prefix 
 
 A detailed curve record is immediately followed by a curve-detail marker of the same generation: at curve +84 for the compact record, curve +92 for the 92-byte wide indexed record, and curve +112 for the 112-byte wide indexed record. The detail stores `ff ff ff ff 04 00 ff ff` at detail +5, repeats the curve's four-byte locus at detail +23, stores role u16 `2` at detail +27, `00 00 80 bf 00 00 0c 00` at detail +31, f64 `1` at detail +48, and a unit 2D start tangent as f64 values at detail +64 and +72. A tangent parallel to the endpoint chord defines a line. Otherwise the tangent and endpoints determine one circle: its center lies on the endpoint normal to the tangent and is equidistant from both endpoints. The bounded arc is the minor sweep between those endpoints.
 
+A profile-locus marker with role u16 `2` and body `00 00 80 bf 00 00 0c 00` is an auxiliary curve record rather than an independent sketch entity. It may supply detail, selection, or display state to another curve. It defines independent neutral geometry only when its complete record matches a construction-axis or construction-circle layout.
+
 Keywords feature attributes that contain object identifiers use the feature's `id` namespace. `DissectableChildren` is a separator-delimited ordered list of child object identifiers. A single sketch child of an extrusion is that extrusion's profile dependency.
 
 Keywords records bound to `moAlignGroup_c`, `moAttribute_c`, and `moConfigCommentsFolder_c` are metadata objects, not regeneration features. A classless source `-1` record whose name prefixes an `moAttribute_c` instance name is that attribute family's definition object.

@@ -1607,8 +1607,8 @@ mod marker_tests {
     use super::{
         alternate_current_indexed_curve_endpoint_indices,
         alternate_current_selected_axis_endpoint_indices, angled_reference_plane_frame,
-        append_spatial_vertex, arc_angle_relation_kind, bind_resolved_curve_vertices,
-        bounded_profile_axis_endpoints, classed_offset_plane_sources,
+        append_spatial_vertex, arc_angle_relation_kind, auxiliary_profile_record,
+        bind_resolved_curve_vertices, bounded_profile_axis_endpoints, classed_offset_plane_sources,
         common_generated_surface_axis, compact_body_component_path_at, compact_body_path_at,
         compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
         compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
@@ -5028,6 +5028,32 @@ mod marker_tests {
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].coordinates_m, None);
         assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+    }
+
+    #[test]
+    fn unrecognized_role_two_profile_record_is_auxiliary() {
+        let mut payload = vec![0; 112 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&2u16.to_le_bytes());
+        payload[66..68].copy_from_slice(&3u16.to_le_bytes());
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[112..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert!(auxiliary_profile_record(&payload, 0));
+
+        payload[56..58].copy_from_slice(&2u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&3u16.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..80].copy_from_slice(&[0x00, 0x00, 0x02, 0x00, 0, 0, 0, 0]);
+        payload[84..84 + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert!(marker_is_selected_construction_line(&payload, 0));
+        assert!(!auxiliary_profile_record(&payload, 0));
     }
 
     #[test]
@@ -23005,6 +23031,7 @@ pub(crate) fn project_marker_backed_sketches(
                             | SketchInputKind::Arc
                     ) && usize::try_from(marker.offset).ok().is_none_or(|offset| {
                         !legacy_unlocated_geometry_handle(&lane.native_payload, offset)
+                            && !auxiliary_profile_record(&lane.native_payload, offset)
                     })
                 })
                 .collect::<Vec<_>>();
@@ -33902,6 +33929,22 @@ fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
     } else {
         false
     }
+}
+
+fn auxiliary_profile_record(payload: &[u8], offset: usize) -> bool {
+    matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix)
+            if prefix == SKETCH_MARKER
+                || prefix == LEGACY_SKETCH_MARKER
+                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    ) && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(2)
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && !marker_is_selected_construction_line(payload, offset)
+        && compact_legacy_radial_circle_index(payload, offset).is_none()
 }
 
 fn legacy_direct_compact_selected_axis_endpoint_indices(
