@@ -4,8 +4,9 @@
 
 use super::*;
 use crate::features::{
-    ChamferSpec, ExtrudeStart, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length,
-    PatternKind, PatternSeed, PatternStageCombination, PrimitiveSolid, RadiusSpec,
+    ChamferSpec, DatumPlaneReference, ExtrudeStart, FaceMotion, FeatureSourceContent, FlexMode,
+    HoleKind, Length, PatternKind, PatternSeed, PatternStageCombination, PrimitiveSolid,
+    RadiusSpec,
 };
 use crate::math::Point3;
 
@@ -3648,18 +3649,54 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 distance,
             } => {
                 if let Some(reference) = reference {
-                    match features.get(reference.0.as_str()) {
-                        None => ref_error(findings, &feature.id.0, "reference plane", &reference.0),
-                        Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "reference plane `{}` does not precede its offset plane",
-                                reference.0
-                            ),
-                            entity: Some(feature.id.0.clone()),
-                        }),
-                        Some(_) => {}
+                    match reference {
+                        DatumPlaneReference::Feature(reference) => {
+                            match features.get(reference.0.as_str()) {
+                                None => {
+                                    ref_error(
+                                        findings,
+                                        &feature.id.0,
+                                        "reference plane",
+                                        &reference.0,
+                                    );
+                                }
+                                Some(ordinal) if *ordinal >= feature.ordinal => {
+                                    findings.push(Finding {
+                                        check: Check::ReferentialIntegrity,
+                                        severity: Severity::Error,
+                                        message: format!(
+                                            "reference plane `{}` does not precede its offset plane",
+                                            reference.0
+                                        ),
+                                        entity: Some(feature.id.0.clone()),
+                                    });
+                                }
+                                Some(_) => {}
+                            }
+                        }
+                        DatumPlaneReference::Face {
+                            face,
+                            origin,
+                            normal,
+                            u_axis,
+                        } => {
+                            face_selections.push(face);
+                            if !origin.x.is_finite()
+                                || !origin.y.is_finite()
+                                || !origin.z.is_finite()
+                                || !valid_feature_direction(*normal)
+                                || !valid_feature_direction(*u_axis)
+                                || (normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z)
+                                    .abs()
+                                    > 1.0e-9 * normal.norm() * u_axis.norm()
+                            {
+                                feature_geometry_error(
+                                    findings,
+                                    feature,
+                                    "datum-plane face support frame is invalid",
+                                );
+                            }
+                        }
                     }
                 }
                 if !distance.0.is_finite() {

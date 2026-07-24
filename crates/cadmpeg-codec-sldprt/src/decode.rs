@@ -847,7 +847,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::SketchBlockInstance { block, placement } => {
                 block.is_none() || placement.is_none()
             }
-            FeatureDefinition::DatumOffsetPlane { reference, .. } => reference.is_none(),
+            FeatureDefinition::DatumOffsetPlane { reference, .. } => reference
+                .as_ref()
+                .is_none_or(|reference| match reference {
+                    cadmpeg_ir::features::DatumPlaneReference::Feature(_) => false,
+                    cadmpeg_ir::features::DatumPlaneReference::Face { face, .. } => {
+                        incomplete_face_selection(face)
+                    }
+                }),
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,
@@ -1616,6 +1623,7 @@ fn build_geometry_ir(
         &histories,
         &ir.model.bodies,
         &ir.model.faces,
+        &ir.model.surfaces,
         &ir.model.edges,
         &ir.model.curves,
     );

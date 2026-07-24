@@ -9740,7 +9740,9 @@ mod marker_tests {
                 "offset",
                 "offset-native",
                 FeatureDefinition::DatumOffsetPlane {
-                    reference: Some(FeatureId("plane".into())),
+                    reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
+                        FeatureId("plane".into()),
+                    )),
                     distance: Length(3.0),
                 },
             ),
@@ -20639,6 +20641,18 @@ pub(crate) fn enrich_history_reference_planes(
             Some((*index, *frame))
         })
         .collect::<HashMap<_, _>>();
+    let unique_reference_frames = reference_frame_candidates
+        .iter()
+        .filter_map(|(index, frames)| {
+            let mut frames = frames.clone();
+            frames.sort_by_key(reference_plane_frame_key);
+            frames.dedup();
+            let [frame] = frames.as_slice() else {
+                return None;
+            };
+            Some((*index, *frame))
+        })
+        .collect::<HashMap<_, _>>();
     let mut frames_by_reference = histories
         .iter()
         .enumerate()
@@ -20674,12 +20688,12 @@ pub(crate) fn enrich_history_reference_planes(
             *frame,
         )
     }));
-    for (index, frames) in reference_frame_candidates {
+    for (&index, frames) in &reference_frame_candidates {
         if reference_candidates.contains_key(&index) {
             continue;
         }
         let mut sources = Vec::new();
-        for reference in frames {
+        for &reference in frames {
             let matching = frames_by_reference
                 .iter()
                 .filter(|(_, candidate_index, candidate)| {
@@ -20790,6 +20804,25 @@ pub(crate) fn enrich_history_reference_planes(
         histories[history_index].features[feature_index]
             .properties
             .insert("Reference".into(), source.clone());
+    }
+    for ((history_index, feature_index), (origin, normal, u_axis)) in unique_reference_frames {
+        let feature = &mut histories[history_index].features[feature_index];
+        if feature.properties.contains_key("Reference") || feature.properties.contains_key("Plane")
+        {
+            continue;
+        }
+        feature.properties.insert(
+            "ReferenceFaceOrigin".into(),
+            format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+        );
+        feature.properties.insert(
+            "ReferenceFaceNormal".into(),
+            format!("{},{},{}", normal.x, normal.y, normal.z),
+        );
+        feature.properties.insert(
+            "ReferenceFaceUAxis".into(),
+            format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
+        );
     }
     for ((history_index, feature_index), mut frames) in candidates {
         frames.sort_by_key(reference_plane_frame_key);
@@ -25767,7 +25800,7 @@ fn sketch_plane_frames(
             .filter(|feature| !frames_by_feature.contains_key(&feature.id))
             .filter_map(|feature| {
                 let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
-                    reference: Some(reference),
+                    reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(reference)),
                     distance,
                 } = &feature.definition
                 else {

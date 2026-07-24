@@ -12,15 +12,15 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
     ConfigurationBodies, ConfigurationId, CosmeticThreadExtent, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DimensionDisplay,
-    EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection, FeatureDefinition,
-    FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind,
-    Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, PatternSeed,
-    ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent,
-    RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace,
-    SweepMode, Termination, VariableRadius, VertexSelection, WrapMode,
+    CurveProjectionDirectionState, DatumPlaneReference, DesignConfiguration, DesignParameter,
+    DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection,
+    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode,
+    HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind,
+    PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction,
+    RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors,
+    SketchSpace, SweepMode, Termination, VariableRadius, VertexSelection, WrapMode,
 };
-use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Edge, Face};
@@ -467,7 +467,7 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
         let mut changed = false;
         for feature in features.iter() {
             let FeatureDefinition::DatumOffsetPlane {
-                reference: Some(reference),
+                reference: Some(DatumPlaneReference::Feature(reference)),
                 distance,
             } = &feature.definition
             else {
@@ -568,7 +568,7 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
             else {
                 continue;
             };
-            *slot = Some(reference);
+            *slot = Some(DatumPlaneReference::Feature(reference));
             *stored_distance = Length(distance);
             changed = true;
         }
@@ -2228,7 +2228,7 @@ mod history_reference_tests {
         assert!(matches!(
             &projected[1].definition,
             FeatureDefinition::DatumOffsetPlane {
-                reference: Some(reference),
+                reference: Some(DatumPlaneReference::Feature(reference)),
                 distance: Length(6.0),
             } if reference == &projected[0].id
         ));
@@ -2264,7 +2264,7 @@ mod history_reference_tests {
         assert!(matches!(
             &projected[1].definition,
             FeatureDefinition::DatumOffsetPlane {
-                reference: Some(bound),
+                reference: Some(DatumPlaneReference::Feature(bound)),
                 distance: Length(6.0),
             } if bound == &projected[0].id
         ));
@@ -2307,6 +2307,51 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn planar_face_reference_requires_one_coincident_face() {
+        let surface = Surface {
+            id: cadmpeg_ir::ids::SurfaceId("surface".into()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 12.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let face = Face {
+            id: cadmpeg_ir::ids::FaceId("face".into()),
+            shell: cadmpeg_ir::ids::ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: cadmpeg_ir::topology::Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let surfaces = HashMap::from([(&surface.id, &surface)]);
+        let mut selection = FaceSelection::Unresolved;
+        resolve_planar_face_selection(
+            &mut selection,
+            Point3::new(5.0, -3.0, 12.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            std::slice::from_ref(&face),
+            &surfaces,
+        );
+        assert_eq!(selection, FaceSelection::Faces(vec![face.id.clone()]));
+
+        let mut duplicate = face.clone();
+        duplicate.id = cadmpeg_ir::ids::FaceId("duplicate".into());
+        let mut ambiguous = FaceSelection::Unresolved;
+        resolve_planar_face_selection(
+            &mut ambiguous,
+            Point3::new(0.0, 0.0, 12.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            &[face, duplicate],
+            &surfaces,
+        );
+        assert_eq!(ambiguous, FaceSelection::Unresolved);
+    }
+
+    #[test]
     fn offset_plane_frame_can_resolve_a_later_builtin_principal_plane() {
         let mut offset = feature("sldprt:history:feature#0:0", None, 0);
         offset.input_class = Some("moRefPlane_c".into());
@@ -2332,7 +2377,7 @@ mod history_reference_tests {
         assert!(matches!(
             &projected[0].definition,
             FeatureDefinition::DatumOffsetPlane {
-                reference: Some(bound),
+                reference: Some(DatumPlaneReference::Feature(bound)),
                 distance: Length(6.0),
             } if bound == &projected[1].id
         ));
@@ -4550,6 +4595,7 @@ pub fn bind_topology_selections(
     histories: &[FeatureHistory],
     bodies: &[Body],
     faces: &[Face],
+    surfaces: &[Surface],
     edges: &[Edge],
     curves: &[Curve],
 ) {
@@ -4573,6 +4619,10 @@ pub fn bind_topology_selections(
             .iter()
             .map(|curve| (curve.id.0.as_str(), None, curve.id.clone())),
     );
+    let surfaces_by_id = surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<HashMap<_, _>>();
     for feature in features {
         if let Some(scope) = feature
             .native_ref
@@ -4590,6 +4640,18 @@ pub fn bind_topology_selections(
             }
         }
         match &mut feature.definition {
+            FeatureDefinition::DatumOffsetPlane {
+                reference:
+                    Some(DatumPlaneReference::Face {
+                        face: reference,
+                        origin,
+                        normal,
+                        ..
+                    }),
+                ..
+            } => {
+                resolve_planar_face_selection(reference, *origin, *normal, faces, &surfaces_by_id);
+            }
             FeatureDefinition::Extrude {
                 profile, extent, ..
             } => {
@@ -4747,6 +4809,57 @@ pub fn bind_topology_selections(
             }
             _ => {}
         }
+    }
+}
+
+fn resolve_planar_face_selection(
+    selection: &mut FaceSelection,
+    origin: Point3,
+    normal: Vector3,
+    faces: &[Face],
+    surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, &Surface>,
+) {
+    if !matches!(selection, FaceSelection::Unresolved) {
+        return;
+    }
+    let normal_length = normal.norm();
+    if !normal_length.is_finite() || normal_length <= f64::EPSILON {
+        return;
+    }
+    let mut matching = faces.iter().filter_map(|face| {
+        let SurfaceGeometry::Plane {
+            origin: candidate_origin,
+            normal: candidate_normal,
+            ..
+        } = &surfaces.get(&face.surface)?.geometry
+        else {
+            return None;
+        };
+        let candidate_length = candidate_normal.norm();
+        if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
+            return None;
+        }
+        let alignment = (normal.x * candidate_normal.x
+            + normal.y * candidate_normal.y
+            + normal.z * candidate_normal.z)
+            / (normal_length * candidate_length);
+        let displacement = Vector3::new(
+            origin.x - candidate_origin.x,
+            origin.y - candidate_origin.y,
+            origin.z - candidate_origin.z,
+        );
+        let separation = (displacement.x * candidate_normal.x
+            + displacement.y * candidate_normal.y
+            + displacement.z * candidate_normal.z)
+            / candidate_length;
+        ((alignment.abs() - 1.0).abs() <= 1.0e-9 && separation.abs() <= 1.0e-8)
+            .then_some(face.id.clone())
+    });
+    let Some(face) = matching.next() else {
+        return;
+    };
+    if matching.next().is_none() {
+        *selection = FaceSelection::Faces(vec![face]);
     }
 }
 
@@ -5672,7 +5785,16 @@ fn project_offset_plane(
         .properties
         .get("Reference")
         .or_else(|| feature.properties.get("Plane"))
-        .and_then(|source| by_source.get(source.as_str()).cloned());
+        .and_then(|source| by_source.get(source.as_str()).cloned())
+        .map(DatumPlaneReference::Feature)
+        .or_else(|| {
+            Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: parse_point3_mm(feature.properties.get("ReferenceFaceOrigin")?)?,
+                normal: parse_vector3(feature.properties.get("ReferenceFaceNormal")?)?,
+                u_axis: parse_vector3(feature.properties.get("ReferenceFaceUAxis")?)?,
+            })
+        });
     Some(FeatureDefinition::DatumOffsetPlane {
         reference,
         distance: Length(parse_dimension_length_mm(feature.parameters.get("D1")?)?),
@@ -10598,7 +10720,7 @@ pub fn sync_neutral_features(
                 }
                 let mut properties = feature.source_properties.clone();
                 match reference {
-                    Some(reference) => {
+                    Some(DatumPlaneReference::Feature(reference)) => {
                         let source = parent_sources.get(reference).ok_or_else(|| {
                             CodecError::Malformed(format!(
                                 "SLDPRT feature {} references a missing datum plane",
@@ -10613,6 +10735,15 @@ pub fn sync_neutral_features(
                             "Reference"
                         };
                         properties.insert(key.into(), source.clone());
+                    }
+                    Some(DatumPlaneReference::Face { .. }) => {
+                        let Some(record) = existing.as_deref() else {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} cannot create a face-supported datum plane",
+                                feature.id
+                            )));
+                        };
+                        properties = record.properties.clone();
                     }
                     None if existing.is_some() => {}
                     None => {

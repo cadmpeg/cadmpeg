@@ -1118,7 +1118,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let datum = FeatureId("test:feature#datum-source".into());
     ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(datum.clone()),
+        reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
+            datum.clone(),
+        )),
         distance: Length(5.0),
     };
     losses.clear();

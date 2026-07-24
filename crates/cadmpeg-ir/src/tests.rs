@@ -1465,6 +1465,37 @@ fn json_round_trips_and_is_deterministic() {
 }
 
 #[test]
+fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
+    let feature =
+        crate::features::DatumPlaneReference::Feature(crate::features::FeatureId("feature".into()));
+    assert_eq!(
+        serde_json::to_value(&feature).unwrap(),
+        serde_json::json!("feature")
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::features::DatumPlaneReference>(serde_json::json!(
+            "feature"
+        ))
+        .unwrap(),
+        feature
+    );
+
+    let face = crate::features::DatumPlaneReference::Face {
+        face: crate::features::FaceSelection::Faces(vec![crate::ids::FaceId("face".into())]),
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    assert_eq!(
+        serde_json::from_value::<crate::features::DatumPlaneReference>(
+            serde_json::to_value(&face).unwrap()
+        )
+        .unwrap(),
+        face
+    );
+}
+
+#[test]
 fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
     // Byte-backed writers compare parsed documents against fresh decodes with
     // exact f64 equality, so JSON parsing must be correctly rounded. The
