@@ -2725,6 +2725,32 @@ mod marker_tests {
             ),
             None
         );
+        three_corners[0].coordinates_m = Some([0.013, -0.025]);
+        three_corners[1].coordinates_m = Some([0.0, -0.03]);
+        three_corners[2].coordinates_m = Some([0.01, 0.0]);
+        three_corners[3].coordinates_m = Some([0.0, 0.0]);
+        for (index, edge) in [[2u16, 4u16], [2, 3], [3, 1], [4, 1]]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = CURVE_START + index * 84;
+            payload[offset + 56..offset + 58].copy_from_slice(&edge[0].to_le_bytes());
+            payload[offset + 58..offset + 60].copy_from_slice(&edge[1].to_le_bytes());
+        }
+        payload[CURVE_START + 3 * 84 + 72..CURVE_START + 4 * 84].fill(0);
+        payload.truncate(CURVE_START + 4 * 84);
+        assert_eq!(
+            legacy_extended_rectangle_from_line_cycle(
+                &payload,
+                &three_corners.iter().collect::<Vec<_>>(),
+            ),
+            Some([
+                Point2::new(0.0, -0.03),
+                Point2::new(0.01, -0.03),
+                Point2::new(0.01, 0.0),
+                Point2::new(0.0, 0.0),
+            ])
+        );
     }
 
     #[test]
@@ -22682,6 +22708,41 @@ pub(crate) fn project_marker_backed_sketches(
                 else {
                     continue;
                 };
+                let point_matches_corner = |point: Point2, corner: Point2| {
+                    same_dimension_length(point.u, corner.u)
+                        && same_dimension_length(point.v, corner.v)
+                };
+                let misplaced_points = projected
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, entity)| {
+                        let SketchGeometry::Point { position } = entity.geometry else {
+                            return None;
+                        };
+                        corners
+                            .iter()
+                            .all(|corner| !point_matches_corner(position, *corner))
+                            .then_some(index)
+                    })
+                    .collect::<Vec<_>>();
+                let missing_corners = corners
+                    .iter()
+                    .copied()
+                    .filter(|corner| {
+                        projected.iter().all(|entity| {
+                            !matches!(
+                                entity.geometry,
+                                SketchGeometry::Point { position }
+                                    if point_matches_corner(position, *corner)
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if let ([point], [corner]) =
+                    (misplaced_points.as_slice(), missing_corners.as_slice())
+                {
+                    projected[*point].geometry = SketchGeometry::Point { position: *corner };
+                }
                 for entity in &mut projected {
                     let SketchGeometry::Native { .. } = entity.geometry else {
                         continue;
@@ -23795,7 +23856,6 @@ fn legacy_extended_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Op
         || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
         || payload.get(offset + 72..offset + 74) != Some(&[0; 2])
-        || payload.get(offset.checked_add(84)?..offset.checked_add(86)?) != Some(&[0xff, 0xff])
     {
         return None;
     }
@@ -23810,7 +23870,10 @@ fn legacy_extended_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Op
     let endpoints = [endpoint(56)?, endpoint(58)?];
     let terminal_state =
         u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?);
-    (matches!(terminal_state, 0 | 2) && endpoints[0] != endpoints[1]).then_some(endpoints)
+    let continued = sketch_marker_prefix_at(payload, offset.saturating_add(84));
+    let terminal = payload.get(offset + 72..offset + 84) == Some(&[0; 12]);
+    (matches!(terminal_state, 0 | 2) && endpoints[0] != endpoints[1] && (continued || terminal))
+        .then_some(endpoints)
 }
 
 fn legacy_extended_rectangle_diagonal_endpoint(
