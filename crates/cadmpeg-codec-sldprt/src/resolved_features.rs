@@ -10348,6 +10348,34 @@ mod marker_tests {
         );
         payload[4] = 1;
         assert!(mirror_pattern_component_path_at(&payload, marker).is_none());
+
+        for (count, separator) in [
+            (3u32, &[][..]),
+            (4, &[1, 0, 0, 0, 0, 0, 0, 0][..]),
+            (5, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0][..]),
+        ] {
+            let mut mixed = vec![0; marker];
+            mixed[..4].copy_from_slice(&count.to_le_bytes());
+            mixed.extend(COMPACT_EDGE_VECTOR_MARKER);
+            mixed.extend([0, 0]);
+            mixed.extend(0x803e_u16.to_le_bytes());
+            mixed.extend([0, 0]);
+            mixed.extend([0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
+            mixed.extend(2u32.to_le_bytes());
+            mixed.extend(separator);
+            mixed.extend([0x34, 0x80, 0x37, 0, 50, 0, 0, 0, 0xf9, 0x83, 0xd9, 0x4a]);
+            mixed.extend(1u32.to_le_bytes());
+            mixed.extend(0x8263_u16.to_le_bytes());
+            mixed.extend([0, 0]);
+            mixed.extend([0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
+            mixed.extend(3u32.to_le_bytes());
+            assert_eq!(
+                mirror_pattern_component_path_at(&mixed, marker)
+                    .expect("mixed mirror path")
+                    .len(),
+                3
+            );
+        }
     }
 
     #[test]
@@ -18507,31 +18535,38 @@ fn mirror_pattern_component_path_at(
     ))
     .ok()
     .filter(|count| (2..=65).contains(count))?;
-    compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1)
-        .or_else(|| {
-            (cell_count > 2)
-                .then(|| compact_heterogeneous_component_path(payload, marker + 18, cell_count - 2))
-                .flatten()
-        })
-        .map(|(components, _)| components)
+    let mut candidates = [
+        compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1)
+            .map(|(components, _)| components),
+        (cell_count > 2)
+            .then(|| compact_heterogeneous_component_path(payload, marker + 18, cell_count - 2))
+            .flatten()
+            .map(|(components, _)| components),
+        compact_mixed_component_path(payload, marker + 18, cell_count, true),
+        compact_mixed_component_path(payload, marker + 18, cell_count - 1, true),
+        (cell_count > 2)
+            .then(|| compact_mixed_component_path(payload, marker + 18, cell_count - 2, true))
+            .flatten(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    candidates.sort_unstable_by_key(Vec::len);
+    let longest = candidates.pop()?;
+    (!candidates
+        .iter()
+        .rev()
+        .take_while(|candidate| candidate.len() == longest.len())
+        .any(|candidate| candidate != &longest))
+    .then_some(longest)
 }
 
-fn mirror_surface_component_path_at(
+fn compact_mixed_component_path(
     payload: &[u8],
-    marker: usize,
+    mut cursor: usize,
+    count: usize,
+    root_separators: bool,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    let header = marker.checked_sub(12)?;
-    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker - 8..marker - 4)? != [0, 2, 0, 0]
-        || payload.get(marker + 16..marker + 18)? != [0, 0]
-    {
-        return None;
-    }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(header..header + 4)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| (1..=64).contains(count))?;
     let signature_at = |offset: usize| -> Option<[u8; 12]> {
         let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
         let type_family = u16::from_le_bytes(signature[0..2].try_into().ok()?);
@@ -18581,7 +18616,6 @@ fn mirror_surface_component_path_at(
         })
     };
 
-    let mut cursor = marker + 18;
     let mut components = Vec::with_capacity(count);
     for index in 0..count {
         let (component, len) = node_at(cursor)?;
@@ -18590,13 +18624,20 @@ fn mirror_surface_component_path_at(
         if index + 1 == count {
             continue;
         }
-        let gaps = [0usize, 4, 8, 12]
+        let gaps = [0usize, 4, 8, 10, 12]
             .into_iter()
             .filter(|gap| {
                 payload.get(cursor..cursor + gap).is_some_and(|bytes| {
-                    bytes
-                        .chunks_exact(4)
-                        .all(|word| word == [0; 4] || word == [0xff; 4])
+                    let word_fill = gap % 4 == 0
+                        && bytes
+                            .chunks_exact(4)
+                            .all(|word| word == [0; 4] || word == [0xff; 4]);
+                    let root_separator = root_separators
+                        && matches!(
+                            bytes,
+                            [1, 0, 0, 0, 0, 0, 0, 0] | [1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                        );
+                    word_fill || root_separator
                 }) && node_at(cursor + gap).is_some()
             })
             .collect::<Vec<_>>();
@@ -18606,6 +18647,25 @@ fn mirror_surface_component_path_at(
         cursor += gap;
     }
     Some(components)
+}
+
+fn mirror_surface_component_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    let header = marker.checked_sub(12)?;
+    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(marker - 8..marker - 4)? != [0, 2, 0, 0]
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    let count = usize::try_from(u32::from_le_bytes(
+        payload.get(header..header + 4)?.try_into().ok()?,
+    ))
+    .ok()
+    .filter(|count| (1..=64).contains(count))?;
+    compact_mixed_component_path(payload, marker + 18, count, false)
 }
 
 fn mirror_surface_type_prefix(lane: &FeatureInputLane) -> Option<[u8; 4]> {
