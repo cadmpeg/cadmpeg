@@ -30425,8 +30425,36 @@ fn typed_marker_relation_definition_in_sketch(
     };
     Some(match kind {
         Horizontal | Vertical | Fixed => {
-            let direct_entities =
+            let inferred_entities =
                 marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
+            let mut exact_entities = marker
+                .links
+                .iter()
+                .filter_map(|link| {
+                    markers_by_id
+                        .get(link.entity_ref.as_str())
+                        .filter(|linked| {
+                            matches!(
+                                linked.kind,
+                                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                            )
+                        })
+                        .and_then(|_| {
+                            let mut matching = sketch_entities.iter().filter(|entity| {
+                                entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
+                            });
+                            let entity = matching.next()?;
+                            matching.next().is_none().then_some(entity.id.clone())
+                        })
+                })
+                .collect::<Vec<_>>();
+            exact_entities.sort();
+            exact_entities.dedup();
+            let direct_entities = if exact_entities.len() == 1 {
+                exact_entities
+            } else {
+                inferred_entities
+            };
             let relation_owners = relation_owner_markers(marker, markers_by_id);
             let point_owner_pair = matches!(relation_owners.as_slice(), [first, second]
                 if matches!(first.kind, SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
@@ -38527,6 +38555,60 @@ mod profile_join_tests {
                 SketchLocus::Entity(SketchEntityId("first-point".into())),
                 SketchLocus::Entity(SketchEntityId("second-point".into())),
             ])
+        );
+    }
+
+    #[test]
+    fn exact_curve_identity_precedes_incident_locus_expansion() {
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+        relation.links = vec![SketchInputLink {
+            local_id: 3,
+            entity_ref: "curve-marker".into(),
+        }];
+        let mut curve = marker("curve-marker", Some([1.0, 1.0]));
+        curve.kind = SketchInputKind::LineOrCircle;
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (curve.id.as_str(), &curve),
+        ]);
+        let exact = SketchEntityId("exact".into());
+        let incident = SketchEntityId("incident".into());
+        let loci = HashMap::from([(
+            curve.id.clone(),
+            vec![
+                SketchLocus::Start(exact.clone()),
+                SketchLocus::End(incident.clone()),
+            ],
+        )]);
+        let entity = |id: SketchEntityId, native_ref: Option<&str>, start, end| SketchEntity {
+            id,
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: native_ref.map(str::to_string),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let entities = vec![
+            entity(
+                exact.clone(),
+                Some(curve.id.as_str()),
+                Point2::new(1.0, 0.0),
+                Point2::new(1.0, 2.0),
+            ),
+            entity(incident, None, Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)),
+        ];
+
+        assert_eq!(
+            typed_marker_relation_definition_in_sketch(
+                &relation,
+                &SketchId("sketch".into()),
+                &entities,
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Vertical { entity: exact })
         );
     }
 
