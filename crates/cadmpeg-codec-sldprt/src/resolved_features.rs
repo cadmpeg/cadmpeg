@@ -2962,7 +2962,7 @@ mod marker_tests {
             bytes
         };
         let known = HashSet::from([3, 225]);
-        let principal = record(3, [0x79, 0x2a, 0xe1, 0x3b], 2);
+        let principal = record(3, [0x43, 0xf6, 0x8a, 0x4d], 3);
         assert_eq!(
             offset_plane_reference_source(&principal, &known, None),
             Some(3)
@@ -2987,6 +2987,17 @@ mod marker_tests {
         assert_eq!(
             offset_plane_reference_source(&ambiguous, &known, None),
             Some(225)
+        );
+        let mut malformed = record(3, [0; 4], 2);
+        assert_eq!(
+            offset_plane_reference_source(&malformed, &known, None),
+            None
+        );
+        malformed[4..8].copy_from_slice(&[1, 2, 3, 4]);
+        malformed[10..14].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            offset_plane_reference_source(&malformed, &known, None),
+            None
         );
     }
 
@@ -18528,15 +18539,15 @@ fn offset_plane_reference_source(
         .filter_map(|bytes| {
             let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
             let signature = bytes.get(4..8)?;
-            let typed_prefix = if signature == PRINCIPAL_SIGNATURE {
-                bytes.get(8..10) == Some(&[0, 0])
-                    && matches!(
-                        u32::from_le_bytes(bytes.get(10..14)?.try_into().ok()?),
-                        1 | 2
-                    )
-            } else {
-                signature == FEATURE_SIGNATURE && bytes.get(8..14) == Some(&[0; 6])
-            };
+            let selector = u32::from_le_bytes(bytes.get(10..14)?.try_into().ok()?);
+            let typed_prefix = bytes.get(8..10) == Some(&[0, 0])
+                && if signature == PRINCIPAL_SIGNATURE {
+                    matches!(selector, 1 | 2)
+                } else if signature == FEATURE_SIGNATURE {
+                    selector == 0
+                } else {
+                    signature != [0; 4] && matches!(selector, 2 | 3)
+                };
             (known_sources.contains(&source)
                 && Some(source) != self_source
                 && typed_prefix
