@@ -502,6 +502,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                     && (compact_legacy_profile_vertex(payload, offset)
                         || indexed_profile_vertex(payload, offset)
                         || current_geometry_locus_profile_vertex(payload, offset)
+                        || terminal_wide_geometry_locus_profile_vertex(payload, offset)
                         || extended_geometry_locus_profile_vertex(payload, offset)
                         || linked_profile_vertex(payload, offset))
             {
@@ -1285,6 +1286,28 @@ fn current_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool 
         && payload.get(offset + 136..offset + 142) == Some(&[0; 6])
         && payload.get(offset + 142..offset + 146) == Some(&[0xff; 4])
         && sketch_marker_prefix_at(payload, offset.saturating_add(146))
+}
+
+fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix)
+            if prefix == SKETCH_MARKER
+                || prefix == LEGACY_SKETCH_MARKER
+                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    ) && matches!(marker_native_code(payload, offset), Some(1 | 2))
+        && marker_is_geometry_locus(payload, offset)
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&[0; 2])
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && payload.get(offset + 64..offset + 66) == Some(&[0x1e, 0x00])
+        && finite_coordinate_pair(payload, offset.saturating_add(66)).is_some()
+        && payload.get(offset + 92..offset + 96) == Some(&[0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 96..offset + 138) == Some(&[0; 42])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(142))
 }
 
 fn extended_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
@@ -4738,6 +4761,42 @@ mod marker_tests {
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].coordinates_m, Some([1.25, -2.5]));
         assert_eq!(entities[0].local_id, Some(41));
+    }
+
+    #[test]
+    fn terminal_wide_geometry_locus_coordinate_record_is_a_point() {
+        for (prefix, code) in [
+            (SKETCH_MARKER, 2u32),
+            (LEGACY_SKETCH_MARKER, 1),
+            (LEGACY_EXTENDED_SKETCH_MARKER, 2),
+        ] {
+            let mut payload = vec![0; 142 + prefix.len()];
+            payload[..prefix.len()].copy_from_slice(prefix);
+            payload[5..13].fill(0xff);
+            payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[17..21].copy_from_slice(&code.to_le_bytes());
+            payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+            payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+            payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+            payload[66..74].copy_from_slice(&0.025f64.to_le_bytes());
+            payload[74..82].copy_from_slice(&(-0.004f64).to_le_bytes());
+            payload[92..96].copy_from_slice(&(-2i32).to_le_bytes());
+            payload[138..142].copy_from_slice(&7u32.to_le_bytes());
+            payload[142..].copy_from_slice(prefix);
+
+            let entities = sketch_input_entities(&payload, "lane");
+            let [entity] = entities.as_slice() else {
+                panic!("expected one marker entity");
+            };
+            assert_eq!(entity.kind, SketchInputKind::Point);
+            assert_eq!(entity.coordinates_m, Some([0.025, -0.004]));
+
+            payload[137] = 1;
+            assert!(!super::terminal_wide_geometry_locus_profile_vertex(
+                &payload, 0
+            ));
+        }
     }
 
     #[test]
