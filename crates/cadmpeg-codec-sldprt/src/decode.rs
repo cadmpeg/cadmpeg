@@ -1650,7 +1650,7 @@ fn build_geometry_ir(
         &annotations,
     );
     mark_active_configuration(&mut ir);
-    crate::resolved_features::project_opaque_cosmetic_thread_faces(
+    crate::resolved_features::project_unbound_cosmetic_thread_faces(
         &mut ir.model.features,
         &histories,
         &native.feature_input_lanes,
@@ -2319,7 +2319,7 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     );
-    crate::resolved_features::project_opaque_cosmetic_thread_faces(
+    crate::resolved_features::project_unbound_cosmetic_thread_faces(
         &mut ir.model.features,
         &histories,
         &lanes,

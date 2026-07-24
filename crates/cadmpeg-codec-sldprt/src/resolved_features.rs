@@ -8574,6 +8574,24 @@ mod marker_tests {
             Some(9)
         );
 
+        let compact_legacy_marker = body_offset + 46;
+        let mut compact_legacy = vec![0; compact_legacy_marker - 12];
+        compact_legacy[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
+        compact_legacy[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
+        compact_legacy[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            selection_vector_tail(&mut compact_legacy, &[10]),
+            compact_legacy_marker
+        );
+        let (actual_marker, components) =
+            cosmetic_thread_cylinder_reference_at(&compact_legacy, body_offset)
+                .expect("required invariant");
+        assert_eq!(actual_marker, compact_legacy_marker);
+        assert_eq!(
+            components.last().expect("required invariant").local_id,
+            Some(10)
+        );
+
         let legacy_marker = body_offset + 102;
         let mut legacy = vec![0; legacy_marker - 12];
         legacy[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
@@ -8879,7 +8897,7 @@ mod marker_tests {
             [Some(2), Some(0), Some(1)]
         );
 
-        payload[slot] = 2;
+        payload[slot..slot + 2].fill(0xff);
         assert_eq!(
             compact_sketch_surface_component_path_at(&payload, marker),
             None
@@ -8899,7 +8917,8 @@ mod marker_tests {
             if index == 1 {
                 payload.extend(3u32.to_le_bytes());
             } else if index == 2 {
-                payload.extend([0; 6]);
+                payload.extend(12u16.to_le_bytes());
+                payload.extend([0; 4]);
             }
             payload.extend((0x8032 + index as u16).to_le_bytes());
             payload.extend([0; 2]);
@@ -8923,6 +8942,22 @@ mod marker_tests {
         );
 
         payload[trailer + 28..trailer + 32].fill(0);
+        assert_eq!(
+            compact_sketch_surface_component_path_at(&payload, marker),
+            None
+        );
+
+        payload[trailer + 28..trailer + 32].copy_from_slice(&175u32.to_le_bytes());
+        payload.truncate(trailer);
+        payload.extend(14u32.to_le_bytes());
+        payload.extend([0; 8]);
+        payload.extend(1u32.to_le_bytes());
+        payload.extend(0u32.to_le_bytes());
+        payload.extend(135u32.to_le_bytes());
+        payload.extend([0; 12]);
+        assert!(compact_sketch_surface_component_path_at(&payload, marker).is_some());
+
+        payload[trailer..trailer + 4].fill(0);
         assert_eq!(
             compact_sketch_surface_component_path_at(&payload, marker),
             None
@@ -15681,9 +15716,9 @@ fn cosmetic_thread_cylinder_reference_at(
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
     let marker = cosmetic_thread_cylinder_reference_marker_layout_at(payload, body_offset)?;
-    compact_termination_reference_path_at(payload, marker)
+    compact_sketch_surface_component_path_at(payload, marker)
+        .or_else(|| compact_termination_reference_path_at(payload, marker))
         .or_else(|| compact_edge_component_path_at(payload, marker))
-        .or_else(|| compact_sketch_surface_component_path_at(payload, marker))
         .map(|components| (marker, components))
 }
 
@@ -15713,7 +15748,7 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
     {
         return None;
     }
-    [66, 70, 94, 102, 106].into_iter().find_map(|relative| {
+    [46, 66, 70, 94, 102, 106].into_iter().find_map(|relative| {
         let marker = body_offset.checked_add(relative)?;
         let count = u32::from_le_bytes(
             payload
@@ -15762,13 +15797,22 @@ fn compact_sketch_surface_component_path_at(
     match kind {
         [0, 3, 0, 0] => Some(components),
         [0, 2, 0, 0] if selector != 0 => {
-            let trailer = payload.get(end..end + 44)?;
-            (trailer[..20] == [0; 20]
-                && trailer[20..24] == 1u32.to_le_bytes()
-                && trailer[24..28] == [0; 4]
-                && trailer[28..32] != [0; 4]
-                && trailer[32..] == [0; 12])
-                .then_some(components)
+            let extended = payload.get(end..end + 44).is_some_and(|trailer| {
+                trailer[..20] == [0; 20]
+                    && trailer[20..24] == 1u32.to_le_bytes()
+                    && trailer[24..28] == [0; 4]
+                    && trailer[28..32] != [0; 4]
+                    && trailer[32..] == [0; 12]
+            });
+            let compact = payload.get(end..end + 36).is_some_and(|trailer| {
+                trailer[..4] != [0; 4]
+                    && trailer[4..12] == [0; 8]
+                    && trailer[12..16] == 1u32.to_le_bytes()
+                    && trailer[16..20] == [0; 4]
+                    && trailer[20..24] != [0; 4]
+                    && trailer[24..] == [0; 12]
+            });
+            (extended || compact).then_some(components)
         }
         _ => None,
     }
@@ -16471,10 +16515,9 @@ fn compact_heterogeneous_component_path(
                             && bytes[0..2] != [0xff, 0xff]
                             && bytes[2..4] == [0, 0])
                 }),
-                6 => matches!(
-                    payload.get(cursor..cursor + 6),
-                    Some([0 | 1, 0, 0, 0, 0, 0])
-                ),
+                6 => payload.get(cursor..cursor + 6).is_some_and(|bytes| {
+                    u16::from_le_bytes([bytes[0], bytes[1]]) != u16::MAX && bytes[2..] == [0; 4]
+                }),
                 8 => matches!(
                     payload.get(cursor..cursor + 8),
                     Some(
@@ -23511,9 +23554,9 @@ pub(crate) fn project_compact_surface_selections(
     }
 }
 
-/// Resolve an attached thread face when its persistent cylinder reference is
-/// structurally present but does not carry a typed component path.
-pub(crate) fn project_opaque_cosmetic_thread_faces(
+/// Resolve an attached thread face when its persistent cylinder reference
+/// cannot bind directly to a generated face.
+pub(crate) fn project_unbound_cosmetic_thread_faces(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -23549,7 +23592,17 @@ pub(crate) fn project_opaque_cosmetic_thread_faces(
         }
         let mut references = lanes
             .iter()
-            .filter_map(|lane| {
+            .flat_map(|lane| {
+                let lane_key = lane
+                    .id
+                    .rsplit_once('#')
+                    .map_or(lane.id.as_str(), |(_, key)| key);
+                lane.surface_selections
+                    .iter()
+                    .filter(move |selection| selection.feature_ref == native_feature.id)
+                    .map(move |selection| format!("{lane_key}:{}", selection.offset))
+            })
+            .chain(lanes.iter().filter_map(|lane| {
                 let mut range = cosmetic_thread_diameter_child_tail(native_feature, lane)?;
                 let marker = range.find_map(|body| {
                     cosmetic_thread_cylinder_reference_marker_at(&lane.native_payload, body)
@@ -23559,7 +23612,7 @@ pub(crate) fn project_opaque_cosmetic_thread_faces(
                     .rsplit_once('#')
                     .map_or(lane.id.as_str(), |(_, key)| key);
                 Some(format!("{lane_key}:{marker}"))
-            })
+            }))
             .collect::<Vec<_>>();
         references.sort();
         references.dedup();
