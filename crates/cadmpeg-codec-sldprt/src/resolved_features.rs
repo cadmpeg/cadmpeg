@@ -1660,12 +1660,13 @@ mod marker_tests {
         legacy_direct_compact_selected_axis_endpoint_indices, legacy_extended_profile_curve_kind,
         legacy_extended_rectangle_diagonal_endpoint, legacy_feature_input_section,
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
-        legacy_reference_axis_triads, legacy_referenced_wide_arc_endpoint_indices,
-        legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
-        legacy_terminal_indexed_profile_line, legacy_terminal_profile_endpoint_offset,
-        legacy_undetailed_profile_line, legacy_unlocated_geometry_handle, linked_profile_point,
-        marker_coordinates, marker_is_geometry_locus, marker_is_selected_construction_line,
-        marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
+        legacy_long_profile_line_endpoint_indices, legacy_reference_axis_triads,
+        legacy_referenced_wide_arc_endpoint_indices, legacy_single_face_reference_path_at,
+        legacy_state_five_curve_endpoint_indices, legacy_terminal_indexed_profile_line,
+        legacy_terminal_profile_endpoint_offset, legacy_undetailed_profile_line,
+        legacy_unlocated_geometry_handle, linked_profile_point, marker_coordinates,
+        marker_is_geometry_locus, marker_is_selected_construction_line, marker_local_id,
+        marker_local_links, marker_object_index, marker_spatial_coordinates,
         matrix_reference_plane_frame, minimal_reference_plane_frame,
         mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
         native_scalar_matches_discrete_parameter, normalize_indexed_curve_entities, object_names,
@@ -7405,6 +7406,33 @@ mod marker_tests {
 
         payload[142..144].fill(0);
         assert!(!extended_terminal_profile_line(&payload, 0));
+    }
+
+    #[test]
+    fn legacy_long_profile_line_uses_point_object_ids() {
+        let mut payload = vec![0; 124];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[19..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..33].copy_from_slice(&4u16.to_le_bytes());
+        payload[42..44].copy_from_slice(&6u16.to_le_bytes());
+        payload[44..46].copy_from_slice(&8u16.to_le_bytes());
+        payload[46..50].copy_from_slice(&1u32.to_le_bytes());
+        payload[50..58].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[58..62].copy_from_slice(&1u32.to_le_bytes());
+        payload[62..64].copy_from_slice(&7u16.to_le_bytes());
+        for relative in [64, 68, 72, 76] {
+            payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[120..124].copy_from_slice(&16u32.to_le_bytes());
+
+        assert_eq!(
+            legacy_long_profile_line_endpoint_indices(&payload, 0),
+            Some([6, 8])
+        );
+
+        payload[120..124].fill(0);
+        assert_eq!(legacy_long_profile_line_endpoint_indices(&payload, 0), None);
     }
 
     #[test]
@@ -31698,6 +31726,7 @@ fn legacy_terminal_indexed_profile_line(
 type CurveEndpointDecoder = fn(&[u8], usize) -> Option<[u32; 2]>;
 
 const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
+    legacy_long_profile_line_endpoint_indices,
     linked_profile_curve_endpoint_indices,
     legacy_direct_compact_selected_axis_endpoint_indices,
     extended_tagged_indexed_curve_endpoint_indices,
@@ -31765,6 +31794,42 @@ fn linked_profile_curve_endpoint_indices(payload: &[u8], offset: usize) -> Optio
         Some(u32::from(u16::from_le_bytes(cell[2..4].try_into().ok()?)))
     };
     let endpoints = [endpoint(78)?, endpoint(86)?];
+    (endpoints[0] != endpoints[1]).then_some(endpoints)
+}
+
+fn legacy_long_profile_line_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || marker_native_code(payload, offset) != Some(0)
+        || payload.get(offset + 19..offset + 23) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 25..offset + 27) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 27..offset + 33) != Some(&[0, 0, 0, 0, 4, 0])
+        || payload.get(offset + 33..offset + 42) != Some(&[0; 9])
+        || payload.get(offset + 46..offset + 50) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 58..offset + 62) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 62..offset + 64) != Some(&7u16.to_le_bytes())
+        || payload.get(offset + 64..offset + 80)
+            != Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        || payload.get(offset + 80..offset + 120) != Some(&[0; 40])
+        || payload.get(offset + 120..offset + 124) != Some(&16u32.to_le_bytes())
+    {
+        return None;
+    }
+    let endpoint = |relative| {
+        let id = u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        );
+        (id != 0 && id != u16::MAX).then_some(u32::from(id))
+    };
+    let endpoints = [endpoint(42)?, endpoint(44)?];
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
