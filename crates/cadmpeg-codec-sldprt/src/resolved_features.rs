@@ -31391,7 +31391,8 @@ fn marker_relation_has_incompatible_operand_family(
 ) -> bool {
     use crate::records::SketchRelationKind::{
         ArcAngle180, ArcAngle270, ArcAngle90, Collinear, Concentric, Coradial, EllipseAngle180,
-        EllipseAngle270, EllipseAngle90, Equal, Parallel, Perpendicular, Tangent,
+        EllipseAngle270, EllipseAngle90, Equal, Horizontal, Parallel, Perpendicular, Tangent,
+        Vertical,
     };
 
     let SketchInputKind::Relation(kind) = marker.kind else {
@@ -31424,6 +31425,22 @@ fn marker_relation_has_incompatible_operand_family(
                 geometry: SketchGeometry::Ellipse { .. },
                 ..
             }]
+        ),
+        Horizontal | Vertical => !matches!(
+            resolved.as_slice(),
+            [SketchEntity {
+                geometry: SketchGeometry::Line { .. },
+                ..
+            }] | [
+                SketchEntity {
+                    geometry: SketchGeometry::Point { .. },
+                    ..
+                },
+                SketchEntity {
+                    geometry: SketchGeometry::Point { .. },
+                    ..
+                }
+            ]
         ),
         Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric | Coradial => {
             resolved.len() != 2
@@ -38641,6 +38658,65 @@ mod profile_join_tests {
             &relation,
             &definition,
             &entities
+        ));
+    }
+
+    #[test]
+    fn horizontal_relation_requires_one_line_or_two_points() {
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        let entity = |id: &str, geometry| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let definition = |entities| SketchConstraintDefinition::Native {
+            native_kind: "sldprt:marker-relation:4".into(),
+            native_state: None,
+            entities,
+            parameter: None,
+            operands: Vec::new(),
+        };
+        let point = entity(
+            "point",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        );
+        let line = entity(
+            "line",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+        );
+
+        assert!(marker_relation_has_incompatible_operand_family(
+            &relation,
+            &definition(vec![point.id.clone()]),
+            std::slice::from_ref(&point),
+        ));
+        assert!(!marker_relation_has_incompatible_operand_family(
+            &relation,
+            &definition(vec![line.id.clone()]),
+            std::slice::from_ref(&line),
+        ));
+        assert!(!marker_relation_has_incompatible_operand_family(
+            &relation,
+            &definition(vec![point.id.clone(), SketchEntityId("second".into())]),
+            &[
+                point,
+                entity(
+                    "second",
+                    SketchGeometry::Point {
+                        position: Point2::new(1.0, 0.0),
+                    },
+                ),
+            ],
         ));
     }
 
