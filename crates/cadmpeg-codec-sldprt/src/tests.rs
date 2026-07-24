@@ -21164,6 +21164,127 @@ fn write_plan_gate_truth_table() {
     assert_eq!(write(&real_baseline, Integrity::Absent), generate);
 }
 
+/// The write-plan seam's `ExportReport`: the note each branch emits, and the
+/// `degraded` marker separating a fallback `Generate` — a retained source image
+/// was present but unusable — from a clean one with no retained image at all.
+///
+/// The sibling [`write_plan_gate_truth_table`] pins the produced bytes through
+/// `write_preserved_with_source_fidelity`, whose signature discards the report;
+/// this pins the report the encoder seam builds around the same gate. It also
+/// reaches the three `Generate` cells that entry cannot express: an absent
+/// baseline, a retained record whose bytes were dropped, and no sidecar at all.
+#[test]
+fn write_plan_gate_export_report() {
+    fn run(
+        ir: &cadmpeg_ir::CadIr,
+        sidecar: Option<&cadmpeg_ir::source_fidelity::SourceFidelity>,
+    ) -> (Vec<u8>, cadmpeg_ir::report::ExportReport) {
+        let mut out = Vec::new();
+        let report = SldprtCodec
+            .encode_with_source_fidelity(ir, sidecar, &mut out)
+            .expect("the write-plan gate never refuses");
+        (out, report)
+    }
+
+    fn degraded(report: &cadmpeg_ir::report::ExportReport) -> bool {
+        report
+            .notes
+            .iter()
+            .any(|note| note.contains("unusable for replay or patch"))
+    }
+
+    fn has_note(report: &cadmpeg_ir::report::ExportReport, text: &str) -> bool {
+        report.notes.iter().any(|note| note.contains(text))
+    }
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let real_baseline = decoded
+        .ir
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .get("semantic_sha256")
+        .cloned()
+        .expect("decode records a semantic baseline");
+    let bogus_baseline = "0".repeat(64);
+
+    // No sidecar → a clean, source-less Generate; its bytes are the reference
+    // every degraded Generate cell below must reproduce.
+    let (regenerated, report) = run(&decoded.ir, None);
+    assert!(has_note(&report, "regenerated from IR"));
+    assert!(!degraded(&report), "no sidecar is a clean generate");
+
+    // A clone of the decoded IR carrying `baseline` as its recorded hash.
+    let with_baseline = |baseline: &str| {
+        let mut ir = decoded.ir.clone();
+        ir.source
+            .as_mut()
+            .unwrap()
+            .attributes
+            .insert("semantic_sha256".into(), baseline.to_string());
+        ir
+    };
+
+    // record ✓  integrity ✓  baseline = current  → Replay (not degraded).
+    let (_, report) = run(
+        &with_baseline(&real_baseline),
+        Some(&decoded.source_fidelity),
+    );
+    assert!(has_note(&report, "replayed verbatim"));
+    assert!(!degraded(&report));
+
+    // record ✓  integrity ✓  baseline ≠ current  → Patch (not degraded).
+    let (out, report) = run(
+        &with_baseline(&bogus_baseline),
+        Some(&decoded.source_fidelity),
+    );
+    assert!(has_note(&report, "patched into the container"));
+    assert!(!degraded(&report));
+    assert_ne!(out, regenerated, "a patch retains structure a regenerate drops");
+
+    // record ✓  integrity ✓  baseline absent  → Generate (degraded).
+    let mut no_baseline = decoded.ir.clone();
+    no_baseline
+        .source
+        .as_mut()
+        .unwrap()
+        .attributes
+        .remove("semantic_sha256");
+    let (out, report) = run(&no_baseline, Some(&decoded.source_fidelity));
+    assert_eq!(out, regenerated, "absent baseline regenerates from the IR");
+    assert!(degraded(&report));
+
+    // record ✓  bytes dropped (data = None)  → Generate (degraded).
+    let mut no_data = decoded.source_fidelity.clone();
+    no_data
+        .retained_records
+        .iter_mut()
+        .find(|record| record.id == crate::SOURCE_IMAGE_ID)
+        .expect("source image present")
+        .data = None;
+    let (out, report) = run(&with_baseline(&real_baseline), Some(&no_data));
+    assert_eq!(
+        out, regenerated,
+        "a record without bytes regenerates from the IR"
+    );
+    assert!(degraded(&report));
+
+    // record ✗ (image removed)  → Generate (clean, not degraded).
+    let mut no_record = decoded.source_fidelity.clone();
+    no_record
+        .retained_records
+        .retain(|record| record.id != crate::SOURCE_IMAGE_ID);
+    let (out, report) = run(&with_baseline(&real_baseline), Some(&no_record));
+    assert_eq!(out, regenerated, "an absent record regenerates from the IR");
+    assert!(!degraded(&report));
+}
+
 /// Golden-snapshot harness pinning the SLDPRT codec before the deep-module
 /// refactor. Each fixture is a full `.sldprt` image committed under
 /// `tests/golden/fixtures/`. From the committed bytes the harness freezes the
