@@ -11966,6 +11966,41 @@ fn linear_pattern_display_directions(
         .collect()
 }
 
+fn typed_linear_pattern_dimensions(
+    feature: &crate::records::Feature,
+    lane: &FeatureInputLane,
+    object_start: usize,
+    object_end: usize,
+) -> Option<(Length, u32)> {
+    let parameter = |class_name: &str| {
+        let mut classes = lane.classes.iter().filter(|class| {
+            class.name == class_name
+                && usize::try_from(class.offset)
+                    .is_ok_and(|offset| (object_start..object_end).contains(&offset))
+        });
+        let class = classes.next().filter(|_| classes.next().is_none())?;
+        let class_offset = usize::try_from(class.offset).ok()?;
+        let name_end = class_offset.checked_add(128)?.min(object_end);
+        let mut names = lane.names.iter().filter(|name| {
+            name.object_id == Some(u32::MAX)
+                && usize::try_from(name.offset)
+                    .is_ok_and(|offset| (class_offset..name_end).contains(&offset))
+                && feature.parameters.contains_key(name.value.as_str())
+        });
+        let name = names.next().filter(|_| names.next().is_none())?;
+        feature.parameters.get(name.value.as_str())
+    };
+    let count = parameter("moNumberDim_c")?
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|count| *count > 0)?;
+    let spacing = crate::history::parse_positive_dimension_length_mm(parameter(
+        "ParallelPlaneDistanceDim_c",
+    )?)?;
+    Some((Length(spacing), count))
+}
+
 #[cfg(test)]
 fn compact_line_reference_direction(
     payload: &[u8],
@@ -12033,6 +12068,13 @@ fn compact_line_reference_directions(
             })
         };
         if address == 0 {
+            let unshifted_termination = record.get(88..104) == Some(&[0; 16])
+                && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
+                && record.get(112..136) == Some(&[0; 24]);
+            if record.get(16..32) == Some(&[0; 16]) && unshifted_termination {
+                directions.extend(direction_at(64));
+                return directions;
+            }
             let terminated =
                 record.get(80..84) == Some(&[0; 4]) && (tagged_token(84) || record.len() == 84);
             if record.get(16..24) == Some(&[0; 8]) && terminated {
@@ -13469,7 +13511,7 @@ pub(crate) fn bind_pattern_inputs(
     let model_by_native = model_features
         .iter()
         .enumerate()
-        .filter_map(|(index, feature)| Some((feature.native_ref.as_deref()?, index)))
+        .filter_map(|(index, feature)| Some((feature.native_ref.clone()?, index)))
         .collect::<HashMap<_, _>>();
     let mut curve_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut curve_path_assignments =
@@ -13478,6 +13520,17 @@ pub(crate) fn bind_pattern_inputs(
     let mut linear_direction_assignments = Vec::<(usize, Vector3)>::new();
     let mut mirror_plane_assignments = Vec::<(usize, Point3, Vector3)>::new();
     let mut mirror_seed_assignments = Vec::<(usize, Vec<cadmpeg_ir::features::FeatureId>)>::new();
+    let derived_cosmetic_thread_seed = |feature: &crate::records::Feature| {
+        history_features
+            .iter()
+            .filter(|candidate| {
+                candidate.parent == feature.parent
+                    && candidate.ordinal < feature.ordinal
+                    && candidate.input_class.as_deref() == Some("moCosmeticThread_c")
+            })
+            .max_by_key(|candidate| candidate.ordinal)
+            .map(|native| native.id.clone())
+    };
 
     for lane in lanes {
         let mut starts = history_features
@@ -13486,6 +13539,17 @@ pub(crate) fn bind_pattern_inputs(
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|(offset, _)| *offset);
         for (start_index, (_, feature)) in starts.iter().enumerate() {
+            let has_derived_cosmetic_thread_output =
+                starts.get(start_index + 1).is_some_and(|(_, candidate)| {
+                    candidate.input_class.as_deref() == Some("moDerivedCosmeticThread_c")
+                });
+            let pattern_object_end = || {
+                let next = start_index + 1 + usize::from(has_derived_cosmetic_thread_output);
+                starts
+                    .get(next)
+                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                    .unwrap_or(lane.native_payload.len())
+            };
             if feature.input_class.as_deref() == Some("moMirrorPattern_c") {
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
@@ -13500,10 +13564,7 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 }
                 let start = usize::try_from(starts[start_index].0).ok();
-                let end = starts
-                    .get(start_index + 1)
-                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
-                    .unwrap_or(lane.native_payload.len());
+                let end = pattern_object_end();
                 let Some(start) = start.filter(|start| *start < end) else {
                     continue;
                 };
@@ -13548,15 +13609,51 @@ pub(crate) fn bind_pattern_inputs(
                     }
                 }
                 if seeds.is_empty() {
-                    continue;
+                    if has_derived_cosmetic_thread_output {
+                        if let Some(seed_index) = derived_cosmetic_thread_seed(feature)
+                            .and_then(|native| model_by_native.get(native.as_str()).copied())
+                        {
+                            mirror_seed_assignments
+                                .push((model_index, vec![model_features[seed_index].id.clone()]));
+                        }
+                    }
+                } else {
+                    mirror_seed_assignments.push((model_index, seeds));
                 }
-                mirror_seed_assignments.push((model_index, seeds));
                 continue;
             }
             if feature.input_class.as_deref() == Some("moLPattern_c") {
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
+                let object_start = usize::try_from(starts[start_index].0).ok();
+                let end = pattern_object_end();
+                if matches!(
+                    model_features[model_index].definition,
+                    FeatureDefinition::Pattern {
+                        pattern: PatternKind::Unresolved {
+                            form: Some(cadmpeg_ir::features::PatternForm::Linear)
+                        },
+                        ..
+                    }
+                ) {
+                    if let Some((spacing, count)) =
+                        object_start.filter(|start| *start < end).and_then(|start| {
+                            typed_linear_pattern_dimensions(feature, lane, start, end)
+                        })
+                    {
+                        if let FeatureDefinition::Pattern { pattern, .. } =
+                            &mut model_features[model_index].definition
+                        {
+                            *pattern = PatternKind::Linear {
+                                direction: None,
+                                spacing,
+                                count,
+                                second: None,
+                            };
+                        }
+                    }
+                }
                 let (needs_seed, needs_direction) = match &model_features[model_index].definition {
                     FeatureDefinition::Pattern {
                         seeds,
@@ -13568,7 +13665,14 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 }
                 if needs_seed {
-                    if let Some((_, seed)) = start_index
+                    if has_derived_cosmetic_thread_output {
+                        if let Some(seed_index) = derived_cosmetic_thread_seed(feature)
+                            .and_then(|native| model_by_native.get(native.as_str()).copied())
+                        {
+                            linear_seed_assignments
+                                .push((model_index, model_features[seed_index].id.clone()));
+                        }
+                    } else if let Some((_, seed)) = start_index
                         .checked_sub(1)
                         .and_then(|index| starts.get(index))
                     {
@@ -13581,11 +13685,6 @@ pub(crate) fn bind_pattern_inputs(
                 if !needs_direction {
                     continue;
                 }
-                let end = starts
-                    .get(start_index + 1)
-                    .map_or(lane.native_payload.len(), |(offset, _)| {
-                        usize::try_from(*offset).unwrap_or(lane.native_payload.len())
-                    });
                 let declarations = lane
                     .classes
                     .iter()
@@ -13601,7 +13700,7 @@ pub(crate) fn bind_pattern_inputs(
                         declared_line_reference_directions(&lane.native_payload, class.offset, end)
                     })
                     .collect::<Vec<_>>();
-                if let Ok(start) = usize::try_from(starts[start_index].0) {
+                if let Some(start) = object_start {
                     let excluded_handles = declarations
                         .iter()
                         .filter_map(|class| usize::try_from(class.offset).ok())
@@ -22712,7 +22811,7 @@ mod idless_history_binding_tests {
                 id: "repeated-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 300,
+                offset: 400,
                 object_id: Some(2),
                 value: "repeated hole".into(),
             },
@@ -41766,9 +41865,105 @@ mod profile_join_tests {
                 && x == -1.0 && y == 0.0 && z == 0.0
         ));
 
+        let mut derived_history = linear_history.clone();
+        derived_history.features[0].input_class = Some("moCosmeticThread_c".into());
+        derived_history.features[0].ordinal = 1;
+        let mut decoy = native_feature("decoy-native", "6", "Decoy");
+        decoy.input_class = Some("moProfileFeature_c".into());
+        decoy.ordinal = 2;
+        derived_history.features[1].ordinal = 3;
+        derived_history.features[2].input_class = Some("moDerivedCosmeticThread_c".into());
+        derived_history.features[2].ordinal = 4;
+        derived_history.features[3].ordinal = 5;
+        derived_history.features.insert(1, decoy);
+        let mut derived_lane = lane.clone();
+        derived_lane.names = vec![
+            name(50, 5, "SeedFeature"),
+            name(90, 6, "Decoy"),
+            name(100, 10, "Pattern1"),
+            name(150, 20, "PathSketch"),
+            name(600, 30, "NextFeature"),
+        ];
+        features[0].dependencies.clear();
+        features[0].definition = FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Linear {
+                direction: None,
+                spacing: Length(5.0),
+                count: 3,
+                second: None,
+            },
+        };
+        bind_pattern_inputs(
+            &mut features,
+            std::slice::from_ref(&derived_history),
+            std::slice::from_ref(&derived_lane),
+        );
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Pattern {
+                ref seeds,
+                pattern: PatternKind::Linear {
+                    direction: Some(Vector3 { x, y, z }),
+                    ..
+                },
+            } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+                && x == -1.0 && y == 0.0 && z == 0.0
+        ));
+        derived_history.features[2].parameters =
+            BTreeMap::from([("z".into(), "3".into()), ("e".into(), "19".into())]);
+        derived_lane.classes.extend([
+            FeatureInputClass {
+                id: "count-dimension".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 200,
+                name: "moNumberDim_c".into(),
+                role: FeatureInputClassRole::Dimension,
+            },
+            FeatureInputClass {
+                id: "spacing-dimension".into(),
+                parent: "lane".into(),
+                ordinal: 2,
+                offset: 300,
+                name: "ParallelPlaneDistanceDim_c".into(),
+                role: FeatureInputClassRole::Dimension,
+            },
+        ]);
+        derived_lane
+            .names
+            .extend([name(220, u32::MAX, "z"), name(420, u32::MAX, "e")]);
+        features[0].dependencies.clear();
+        features[0].definition = FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved {
+                form: Some(cadmpeg_ir::features::PatternForm::Linear),
+            },
+        };
+        bind_pattern_inputs(
+            &mut features,
+            std::slice::from_ref(&derived_history),
+            std::slice::from_ref(&derived_lane),
+        );
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Pattern {
+                ref seeds,
+                pattern: PatternKind::Linear {
+                    direction: Some(Vector3 { x, y, z }),
+                    spacing: Length(19.0),
+                    count: 3,
+                    ..
+                },
+            } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+                && x == -1.0 && y == 0.0 && z == 0.0
+        ));
+
         let mut mirror_history = history.clone();
         mirror_history.features[1].input_class = Some("moMirrorPattern_c".into());
+        mirror_history.features[2].input_class = Some("moDerivedCosmeticThread_c".into());
         let mut mirror_lane = lane.clone();
+        mirror_lane.names[2].offset = 150;
         mirror_lane.native_payload.resize(700, 0);
         mirror_lane.native_payload.fill(0);
         mirror_lane.classes.clear();
@@ -41951,6 +42146,24 @@ mod profile_join_tests {
         assert_eq!(
             compact_line_reference_direction(&addressless, 0, addressless.len(), &[]),
             Some(Vector3::new(0.0, 0.0, -1.0))
+        );
+
+        let mut addressless_unshifted = vec![0; 136];
+        addressless_unshifted[..8].copy_from_slice(&HANDLES);
+        write_scalars(
+            &mut addressless_unshifted,
+            32,
+            &[0.065, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        );
+        addressless_unshifted[104..112].copy_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+        assert_eq!(
+            compact_line_reference_direction(
+                &addressless_unshifted,
+                0,
+                addressless_unshifted.len(),
+                &[],
+            ),
+            Some(Vector3::new(1.0, 0.0, 0.0))
         );
     }
 
