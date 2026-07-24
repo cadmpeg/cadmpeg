@@ -11863,6 +11863,74 @@ fn canonical_unit_direction(direction: Vector3) -> Vector3 {
     )
 }
 
+fn linear_pattern_display_directions(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+    names: &[FeatureInputName],
+    expected_spacing_m: [Option<f64>; 2],
+) -> Vec<Vector3> {
+    const VALUE_OFFSET: usize = 32;
+    const DIRECTION_OFFSET: usize = 161;
+    const LENGTH_TOLERANCE_M: f64 = 1.0e-8;
+
+    let end = object_end.min(payload.len());
+    ["D3", "D4"]
+        .into_iter()
+        .zip(expected_spacing_m)
+        .filter_map(|(dimension_name, expected)| {
+            let expected = expected?;
+            let mut records = names.iter().filter(|name| {
+                name.object_id == Some(u32::MAX)
+                    && name.value == dimension_name
+                    && usize::try_from(name.offset)
+                        .is_ok_and(|offset| (object_start..end).contains(&offset))
+            });
+            let name = records.next()?;
+            if records.next().is_some() {
+                return None;
+            }
+            let offset = usize::try_from(name.offset).ok()?;
+            let value_offset = offset.checked_add(VALUE_OFFSET)?;
+            let direction_offset = offset.checked_add(DIRECTION_OFFSET)?;
+            if direction_offset.checked_add(24)? > end {
+                return None;
+            }
+            let stored_spacing = f64::from_le_bytes(
+                payload
+                    .get(value_offset..value_offset + 8)?
+                    .try_into()
+                    .ok()?,
+            );
+            if !stored_spacing.is_finite()
+                || stored_spacing <= 0.0
+                || (stored_spacing - expected).abs() > LENGTH_TOLERANCE_M
+            {
+                return None;
+            }
+            let scalar = |relative: usize| {
+                let scalar_offset = direction_offset.checked_add(relative)?;
+                let value = f64::from_le_bytes(
+                    payload
+                        .get(scalar_offset..scalar_offset + 8)?
+                        .try_into()
+                        .ok()?,
+                );
+                value.is_finite().then_some(value)
+            };
+            let direction = Vector3::new(scalar(0)?, scalar(8)?, scalar(16)?);
+            let norm =
+                (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
+                    .sqrt();
+            ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
+                direction.x / norm,
+                direction.y / norm,
+                direction.z / norm,
+            ))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 fn compact_line_reference_direction(
     payload: &[u8],
@@ -13442,6 +13510,29 @@ pub(crate) fn bind_pattern_inputs(
                         end,
                         &excluded_handles,
                     ));
+                    if directions.is_empty() {
+                        let first_spacing_m = feature
+                            .parameters
+                            .get("D3")
+                            .and_then(|value| {
+                                crate::history::parse_positive_dimension_length_mm(value)
+                            })
+                            .map(|value| value / 1000.0);
+                        let second_spacing_m = feature
+                            .parameters
+                            .get("D4")
+                            .and_then(|value| {
+                                crate::history::parse_positive_dimension_length_mm(value)
+                            })
+                            .map(|value| value / 1000.0);
+                        directions.extend(linear_pattern_display_directions(
+                            &lane.native_payload,
+                            start,
+                            end,
+                            &lane.names,
+                            [first_spacing_m, second_spacing_m],
+                        ));
+                    }
                 }
                 let mut unique_directions = Vec::new();
                 for direction in directions.into_iter().map(canonical_unit_direction) {
@@ -37809,9 +37900,9 @@ mod profile_join_tests {
         declared_line_reference_directions, dimensioned_circle_surface_transforms,
         dimensioned_circle_transform, fitted_marker_circle, implicit_circle_marker,
         inferred_point_coordinates_by_index, legacy_terminal_profile_indexed_endpoints,
-        line_endpoint_markers, line_reference_direction, marker_entities, marker_owns_constraint,
-        marker_point_locus, marker_relation_is_inactive, owned_relation_parameters,
-        profile_loci_by_marker, project_compact_edge_selections,
+        line_endpoint_markers, line_reference_direction, linear_pattern_display_directions,
+        marker_entities, marker_owns_constraint, marker_point_locus, marker_relation_is_inactive,
+        owned_relation_parameters, profile_loci_by_marker, project_compact_edge_selections,
         project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
         project_relation_point_geometry, project_relation_solved_point_geometry,
@@ -41070,6 +41161,65 @@ mod profile_join_tests {
         assert_eq!(
             declared_line_reference_directions(&declared_variants, 0, declared_variants.len()),
             vec![Vector3::new(0.0, 0.0, -1.0)]
+        );
+        let mut display_payload = vec![0; 512];
+        let display_names = [
+            FeatureInputName {
+                id: "display-d3".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 100,
+                object_id: Some(u32::MAX),
+                value: "D3".into(),
+            },
+            FeatureInputName {
+                id: "display-d4".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 300,
+                object_id: Some(u32::MAX),
+                value: "D4".into(),
+            },
+        ];
+        for (offset, spacing, direction) in [
+            (100usize, 0.027f64, [0.6f64, 0.8, 0.0]),
+            (300usize, 0.039f64, [0.0f64, 0.0, 1.0]),
+        ] {
+            display_payload[offset + 32..offset + 40].copy_from_slice(&spacing.to_le_bytes());
+            for (index, value) in direction.into_iter().enumerate() {
+                let scalar = offset + 161 + index * 8;
+                display_payload[scalar..scalar + 8].copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        assert_eq!(
+            linear_pattern_display_directions(
+                &display_payload,
+                50,
+                display_payload.len(),
+                &display_names,
+                [Some(0.027), Some(0.039)],
+            ),
+            vec![Vector3::new(0.6, 0.8, 0.0), Vector3::new(0.0, 0.0, 1.0)]
+        );
+        assert_eq!(
+            linear_pattern_display_directions(
+                &display_payload,
+                50,
+                display_payload.len(),
+                &display_names,
+                [Some(0.028), Some(0.039)],
+            ),
+            vec![Vector3::new(0.0, 0.0, 1.0)]
+        );
+        assert_eq!(
+            linear_pattern_display_directions(
+                &display_payload,
+                50,
+                484,
+                &display_names,
+                [Some(0.027), Some(0.039)],
+            ),
+            vec![Vector3::new(0.6, 0.8, 0.0)]
         );
         let mut compact_longer_form = vec![0; 126];
         compact_longer_form[..8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
