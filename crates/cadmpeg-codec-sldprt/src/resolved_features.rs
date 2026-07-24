@@ -13381,7 +13381,7 @@ pub(crate) fn bind_pattern_inputs(
     let mut linear_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut linear_direction_assignments = Vec::<(usize, Vector3)>::new();
     let mut mirror_plane_assignments = Vec::<(usize, Point3, Vector3)>::new();
-    let mut mirror_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
+    let mut mirror_seed_assignments = Vec::<(usize, Vec<cadmpeg_ir::features::FeatureId>)>::new();
 
     for lane in lanes {
         let mut starts = history_features
@@ -13416,7 +13416,7 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 };
                 mirror_plane_assignments.push((model_index, origin, normal));
-                let mut terminals = (0..object
+                let seed_candidates = (0..object
                     .len()
                     .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
                     .filter(|offset| {
@@ -13424,8 +13424,8 @@ pub(crate) fn bind_pattern_inputs(
                             == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
                     })
                     .filter_map(|offset| mirror_pattern_component_path_at(object, offset))
-                    .filter_map(|components| {
-                        let component = components.last()?;
+                    .flat_map(IntoIterator::into_iter)
+                    .filter_map(|component| {
                         let source =
                             u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
                         let mut matches = history_features.iter().filter(|candidate| {
@@ -13438,16 +13438,19 @@ pub(crate) fn bind_pattern_inputs(
                         let feature = matches.next()?;
                         matches.next().is_none().then(|| feature.id.clone())
                     })
-                    .collect::<Vec<_>>();
-                terminals.sort();
-                terminals.dedup();
-                let [terminal] = terminals.as_slice() else {
+                    .filter_map(|native| model_by_native.get(native.as_str()).copied())
+                    .filter(|seed_index| *seed_index != model_index)
+                    .map(|seed_index| model_features[seed_index].id.clone());
+                let mut seeds = Vec::new();
+                for seed in seed_candidates {
+                    if !seeds.contains(&seed) {
+                        seeds.push(seed);
+                    }
+                }
+                if seeds.is_empty() {
                     continue;
-                };
-                let Some(&seed_index) = model_by_native.get(terminal.as_str()) else {
-                    continue;
-                };
-                mirror_seed_assignments.push((model_index, model_features[seed_index].id.clone()));
+                }
+                mirror_seed_assignments.push((model_index, seeds));
                 continue;
             }
             if feature.input_class.as_deref() == Some("moLPattern_c") {
@@ -13715,23 +13718,28 @@ pub(crate) fn bind_pattern_inputs(
             };
         }
     }
-    let mut mirror_seeds_by_pattern = HashMap::<usize, Vec<_>>::new();
-    for (index, seed) in mirror_seed_assignments {
-        let candidates = mirror_seeds_by_pattern.entry(index).or_default();
-        if !candidates.contains(&seed) {
-            candidates.push(seed);
+    let mut mirror_seed_sets_by_pattern = HashMap::<usize, Vec<_>>::new();
+    for (index, seeds) in mirror_seed_assignments {
+        let candidates = mirror_seed_sets_by_pattern.entry(index).or_default();
+        if !candidates.contains(&seeds) {
+            candidates.push(seeds);
         }
     }
-    for (index, candidates) in mirror_seeds_by_pattern {
-        let [seed] = candidates.as_slice() else {
+    for (index, candidates) in mirror_seed_sets_by_pattern {
+        let [seeds] = candidates.as_slice() else {
             continue;
         };
-        if !model_features[index].dependencies.contains(seed) {
-            model_features[index].dependencies.push(seed.clone());
+        for seed in seeds {
+            if !model_features[index].dependencies.contains(seed) {
+                model_features[index].dependencies.push(seed.clone());
+            }
         }
-        if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
-            if seeds.is_empty() {
-                seeds.push(PatternSeed::Feature(seed.clone()));
+        if let FeatureDefinition::Pattern {
+            seeds: seed_slots, ..
+        } = &mut model_features[index].definition
+        {
+            if seed_slots.is_empty() {
+                seed_slots.extend(seeds.iter().cloned().map(PatternSeed::Feature));
             }
         }
     }
@@ -37920,7 +37928,7 @@ mod profile_join_tests {
         unique_profile_line_point_locus, unique_profile_point_line_entity,
         unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
         unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
-        MarkerTransform, LEGACY_SKETCH_MARKER,
+        MarkerTransform, COMPACT_EDGE_VECTOR_MARKER, LEGACY_SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -41635,6 +41643,23 @@ mod profile_join_tests {
                 .copy_from_slice(&value.to_le_bytes());
         }
         mirror_lane.native_payload[frame + 48] = 1;
+        let seed_path = 300;
+        mirror_lane.native_payload[seed_path - 12..seed_path - 8]
+            .copy_from_slice(&3u32.to_le_bytes());
+        mirror_lane.native_payload[seed_path..seed_path + COMPACT_EDGE_VECTOR_MARKER.len()]
+            .copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        for (index, source) in [5u32, 40].into_iter().enumerate() {
+            let entry = seed_path + 18 + index * 20;
+            mirror_lane.native_payload[entry..entry + 2]
+                .copy_from_slice(&(0x8001 + index as u16).to_le_bytes());
+            mirror_lane.native_payload[entry + 4..entry + 8].copy_from_slice(&[1, 0, 1, 0]);
+            mirror_lane.native_payload[entry + 8..entry + 12]
+                .copy_from_slice(&source.to_le_bytes());
+            mirror_lane.native_payload[entry + 12..entry + 16]
+                .copy_from_slice(&9000u32.to_le_bytes());
+            mirror_lane.native_payload[entry + 16..entry + 20]
+                .copy_from_slice(&(index as u32 + 1).to_le_bytes());
+        }
         features[0].dependencies.clear();
         features[0].definition = FeatureDefinition::Pattern {
             seeds: Vec::new(),
@@ -41647,7 +41672,7 @@ mod profile_join_tests {
             &[mirror_history],
             std::slice::from_ref(&mirror_lane),
         );
-        assert!(features[0].dependencies.is_empty());
+        assert_eq!(features[0].dependencies, [features[2].id.clone()]);
         assert!(matches!(
             features[0].definition,
             FeatureDefinition::Pattern {
@@ -41656,7 +41681,7 @@ mod profile_join_tests {
                     plane_origin: Point3 { x, y, z },
                     plane_normal: Vector3 { x: nx, y: ny, z: nz },
                 },
-            } if seeds.is_empty()
+            } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
                 && x == 12.0 && y == -25.0 && z == 0.0
                 && nx == 0.0 && ny == 1.0 && nz == 0.0
         ));
