@@ -2,16 +2,18 @@
 //! Stable loss vocabulary for `.sldprt` decoding.
 //!
 //! Every fallback, approximation, and drop the decoder reports carries a
-//! stable machine-readable code from [`SldprtLossCode`]. Codes are the gating
-//! surface: harness oracles and downstream tooling key on them, never on the
-//! human-readable message text, so a reworded message is not a contract change
-//! and a new drop path without a code does not compile.
+//! stable machine-readable code from [`SldprtLossCode`], so a reworded message
+//! is not a contract change and a new drop path without a variant does not
+//! compile.
 //!
 //! [`SldprtLossCode::note`] is the single practical construction path for a
 //! decode-time [`LossNote`] in this crate: it fixes the loss category and
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
+//! The vocabulary is crate-private: [`SldprtLossCode`] never appears in
+//! serialized output — the [`LossNote`] carries the shared [`LossCode`] the
+//! variant maps to — and no production caller outside this crate reads it.
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.

@@ -2,10 +2,8 @@
 //! Stable loss vocabulary for `.f3d` decoding.
 //!
 //! Every fallback, approximation, and drop the decoder reports carries a stable
-//! machine-readable code from [`F3dLossCode`]. Codes are the gating surface:
-//! harness oracles and downstream tooling key on them, never on the
-//! human-readable message text, so a reworded message is not a contract change
-//! and a new drop path without a code does not compile.
+//! machine-readable code from [`F3dLossCode`], so a reworded message is not a
+//! contract change and a new drop path without a variant does not compile.
 //!
 //! [`F3dLossCode::note`] is the single construction path for a decode-time
 //! [`LossNote`] in this crate: it fixes the shared loss code, the category, and
@@ -17,6 +15,10 @@
 //! `ReferenceGraphNotClosed`, `GeometryNotTransferred`, `MetadataNotTransferred`,
 //! and `AssemblyComponentsExternal` each back more than one variant so the fixed
 //! category/severity stays faithful to the site it replaced.
+//!
+//! The vocabulary is crate-private: [`F3dLossCode`] never appears in serialized
+//! output — the [`LossNote`] carries the shared [`LossCode`] the variant maps
+//! to — and no production caller outside this crate reads it.
 
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 

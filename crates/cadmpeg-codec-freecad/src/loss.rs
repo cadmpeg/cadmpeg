@@ -11,6 +11,10 @@
 //! [`LossNote`] in this crate. It stamps the fixed `fcstd`/`Document.xml`
 //! provenance shape shared by every site and leaves only the per-instance
 //! message and the retained record's native reference to the caller.
+//!
+//! The vocabulary is crate-private: [`FcstdLossCode`] never appears in
+//! serialized output — the [`LossNote`] carries the shared [`LossCode`] the
+//! variant maps to — and no production caller outside this crate reads it.
 use cadmpeg_ir::provenance::Provenance;
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 
