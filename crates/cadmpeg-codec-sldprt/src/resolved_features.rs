@@ -7236,6 +7236,24 @@ mod marker_tests {
             super::extended_compact_indexed_curve_endpoint_indices(&extended(valid_compact_104), 0,),
             None
         );
+
+        let mut terminal_120 = vec![0; 140];
+        terminal_120[..80].copy_from_slice(&marker(84)[..80]);
+        terminal_120[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        terminal_120[120..122].copy_from_slice(&[0x08, 0x00]);
+        terminal_120[122..126].copy_from_slice(CLASS_MARKER);
+        terminal_120[126..128].copy_from_slice(&12u16.to_le_bytes());
+        terminal_120[128..].copy_from_slice(b"sgPntPntDist");
+        assert_eq!(
+            super::extended_compact_indexed_curve_endpoint_indices(&terminal_120, 0),
+            Some([5, 9])
+        );
+        terminal_120[119] = 1;
+        assert_eq!(
+            super::extended_compact_indexed_curve_endpoint_indices(&terminal_120, 0),
+            None
+        );
     }
 
     #[test]
@@ -31326,6 +31344,7 @@ fn extended_compact_endpoint_markers<'a>(
                     | CompactIndexedCurveRecordEnd::Marker104
                     | CompactIndexedCurveRecordEnd::Terminal102
                     | CompactIndexedCurveRecordEnd::Terminal116
+                    | CompactIndexedCurveRecordEnd::Terminal120
             )
         ) || payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
             && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
@@ -32993,7 +33012,11 @@ fn extended_compact_indexed_curve_endpoint_indices(
 ) -> Option<[u32; 2]> {
     if !matches!(
         compact_indexed_curve_record_end(payload, offset),
-        Some(CompactIndexedCurveRecordEnd::Marker84 | CompactIndexedCurveRecordEnd::Marker96)
+        Some(
+            CompactIndexedCurveRecordEnd::Marker84
+                | CompactIndexedCurveRecordEnd::Marker96
+                | CompactIndexedCurveRecordEnd::Terminal120
+        )
     ) {
         return None;
     }
@@ -33034,6 +33057,7 @@ enum CompactIndexedCurveRecordEnd {
     Marker104,
     Terminal102,
     Terminal116,
+    Terminal120,
 }
 
 fn compact_indexed_curve_record_end(
@@ -33049,6 +33073,14 @@ fn compact_indexed_curve_record_end(
         && !sketch_marker_prefix_at(payload, offset.saturating_add(116));
     if terminal_116 {
         return Some(CompactIndexedCurveRecordEnd::Terminal116);
+    }
+    let terminal_120 = payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 120) == Some(&[0; 48])
+        && payload.get(offset + 120..offset + 122) == Some(&[0x08, 0x00])
+        && class_declaration_at(payload, offset.saturating_add(122));
+    if terminal_120 {
+        return Some(CompactIndexedCurveRecordEnd::Terminal120);
     }
     if payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
@@ -33166,15 +33198,6 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
 }
 
 fn legacy_terminal_wide_indexed_curve(payload: &[u8], offset: usize) -> bool {
-    let class = offset.saturating_add(138);
-    let Some(length) = payload
-        .get(class + 4..class + 6)
-        .and_then(|bytes| bytes.try_into().ok())
-        .map(u16::from_le_bytes)
-        .map(usize::from)
-    else {
-        return false;
-    };
     payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(1)
         && payload.get(offset + 80..offset + 84) == Some(&1i32.to_le_bytes())
@@ -33186,10 +33209,22 @@ fn legacy_terminal_wide_indexed_curve(payload: &[u8], offset: usize) -> bool {
             ])
         && payload.get(offset + 102..offset + 136) == Some(&[0; 34])
         && payload.get(offset + 136..offset + 138) == Some(&[0x05, 0x00])
-        && payload.get(class..class + CLASS_MARKER.len()) == Some(CLASS_MARKER)
+        && class_declaration_at(payload, offset.saturating_add(138))
+}
+
+fn class_declaration_at(payload: &[u8], offset: usize) -> bool {
+    let Some(length) = payload
+        .get(offset + 4..offset + 6)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_le_bytes)
+        .map(usize::from)
+    else {
+        return false;
+    };
+    payload.get(offset..offset + CLASS_MARKER.len()) == Some(CLASS_MARKER)
         && (1..=128).contains(&length)
         && payload
-            .get(class + 6..class + 6 + length)
+            .get(offset + 6..offset + 6 + length)
             .is_some_and(|name| {
                 name.iter()
                     .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
