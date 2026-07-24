@@ -7445,21 +7445,35 @@ mod marker_tests {
             None
         );
 
-        let mut terminal_120 = vec![0; 140];
-        terminal_120[..80].copy_from_slice(&marker(84)[..80]);
-        terminal_120[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+        let mut continuation_120 = vec![0; 140];
+        continuation_120[..80].copy_from_slice(&marker(84)[..80]);
+        continuation_120[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-        terminal_120[120..122].copy_from_slice(&[0x08, 0x00]);
-        terminal_120[122..126].copy_from_slice(CLASS_MARKER);
-        terminal_120[126..128].copy_from_slice(&12u16.to_le_bytes());
-        terminal_120[128..].copy_from_slice(b"sgPntPntDist");
+        continuation_120[120..122].copy_from_slice(&32u16.to_le_bytes());
+        continuation_120[122..126].copy_from_slice(CLASS_MARKER);
+        continuation_120[126..128].copy_from_slice(&12u16.to_le_bytes());
+        continuation_120[128..].copy_from_slice(b"sgPntPntDist");
         assert_eq!(
-            super::extended_compact_indexed_curve_endpoint_indices(&terminal_120, 0),
+            super::extended_compact_indexed_curve_endpoint_indices(&continuation_120, 0),
             Some([5, 9])
         );
-        terminal_120[119] = 1;
+        continuation_120[122..140].copy_from_slice(&[
+            0xf7, 0x81, 0x00, 0x00, 0x00, 0x00, 0xe6, 0x81, 0x1c, 0x81, 0xff, 0xfe, 0xff, 0x02,
+            0x44, 0x00, 0x31, 0x00,
+        ]);
         assert_eq!(
-            super::extended_compact_indexed_curve_endpoint_indices(&terminal_120, 0),
+            super::extended_compact_indexed_curve_endpoint_indices(&continuation_120, 0),
+            Some([5, 9])
+        );
+        continuation_120[130..132].copy_from_slice(&[0xe6, 0x81]);
+        assert_eq!(
+            super::extended_compact_indexed_curve_endpoint_indices(&continuation_120, 0),
+            None
+        );
+        continuation_120[130..132].copy_from_slice(&[0x1c, 0x81]);
+        continuation_120[119] = 1;
+        assert_eq!(
+            super::extended_compact_indexed_curve_endpoint_indices(&continuation_120, 0),
             None
         );
     }
@@ -31562,7 +31576,7 @@ fn extended_compact_endpoint_markers<'a>(
                     | CompactIndexedCurveRecordEnd::Marker104
                     | CompactIndexedCurveRecordEnd::Terminal102
                     | CompactIndexedCurveRecordEnd::Terminal116
-                    | CompactIndexedCurveRecordEnd::Terminal120
+                    | CompactIndexedCurveRecordEnd::Continuation120
             )
         ) || payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
             && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
@@ -33305,7 +33319,7 @@ fn extended_compact_indexed_curve_endpoint_indices(
         Some(
             CompactIndexedCurveRecordEnd::Marker84
                 | CompactIndexedCurveRecordEnd::Marker96
-                | CompactIndexedCurveRecordEnd::Terminal120
+                | CompactIndexedCurveRecordEnd::Continuation120
         )
     ) {
         return None;
@@ -33347,7 +33361,7 @@ enum CompactIndexedCurveRecordEnd {
     Marker104,
     Terminal102,
     Terminal116,
-    Terminal120,
+    Continuation120,
 }
 
 fn compact_indexed_curve_record_end(
@@ -33364,13 +33378,30 @@ fn compact_indexed_curve_record_end(
     if terminal_116 {
         return Some(CompactIndexedCurveRecordEnd::Terminal116);
     }
-    let terminal_120 = payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+    let continuation_kind = payload
+        .get(offset + 120..offset + 122)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_le_bytes);
+    let relation_continuation = payload
+        .get(offset + 122..offset + 124)
+        .is_some_and(|selector| !matches!(selector, [0, 0] | [0xff, 0xff]))
+        && payload.get(offset + 124..offset + 128) == Some(&[0; 4])
+        && payload
+            .get(offset + 128..offset + 132)
+            .is_some_and(|selectors| {
+                !matches!(&selectors[..2], [0, 0] | [0xff, 0xff])
+                    && !matches!(&selectors[2..], [0, 0] | [0xff, 0xff])
+                    && selectors[..2] != selectors[2..]
+            })
+        && payload.get(offset + 132..offset + 140)
+            == Some(&[0xff, 0xfe, 0xff, 0x02, 0x44, 0x00, 0x31, 0x00]);
+    let continuation_120 = payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
         && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 72..offset + 120) == Some(&[0; 48])
-        && payload.get(offset + 120..offset + 122) == Some(&[0x08, 0x00])
-        && class_declaration_at(payload, offset.saturating_add(122));
-    if terminal_120 {
-        return Some(CompactIndexedCurveRecordEnd::Terminal120);
+        && continuation_kind.is_some_and(|kind| kind != 0 && kind != u16::MAX)
+        && (class_declaration_at(payload, offset.saturating_add(122)) || relation_continuation);
+    if continuation_120 {
+        return Some(CompactIndexedCurveRecordEnd::Continuation120);
     }
     if payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
