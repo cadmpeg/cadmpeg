@@ -1430,7 +1430,7 @@ mod marker_tests {
         current_wide_arc_direct_markers, current_wide_undetailed_line,
         direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
         explicit_reference_axis_frame, explicit_reference_plane_frame,
-        extended_compact_linked_line_handle_coordinates, extended_compact_object_endpoint_markers,
+        extended_compact_endpoint_markers, extended_compact_linked_line_handle_coordinates,
         extended_line_handle_coordinates, fixed_reference_plane_frame,
         generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
         inline_surface_reference_at, legacy_compact_diameter_arc_center,
@@ -4917,7 +4917,7 @@ mod marker_tests {
         let markers = entities.iter().collect::<Vec<_>>();
 
         assert_eq!(
-            extended_compact_object_endpoint_markers(&payload, &entities[0], &markers)
+            extended_compact_endpoint_markers(&payload, &entities[0], &markers)
                 .iter()
                 .map(|marker| marker.id.as_str())
                 .collect::<Vec<_>>(),
@@ -4930,9 +4930,7 @@ mod marker_tests {
             SketchInputKind::Point,
         );
         let ambiguous = [&entities[0], &entities[1], &entities[2], &duplicate];
-        assert!(
-            extended_compact_object_endpoint_markers(&payload, &entities[0], &ambiguous).is_empty()
-        );
+        assert!(extended_compact_endpoint_markers(&payload, &entities[0], &ambiguous).is_empty());
 
         payload.resize(102, 0);
         payload[56..58].copy_from_slice(&14u16.to_le_bytes());
@@ -4941,7 +4939,21 @@ mod marker_tests {
         payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
         payload[72..102].fill(0);
         assert_eq!(
-            extended_compact_object_endpoint_markers(&payload, &entities[0], &markers)
+            extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["explicit-fourteen", "explicit"]
+        );
+
+        let mut roster_indexed = entities.clone();
+        roster_indexed[1].object_index = None;
+        roster_indexed[1].ordinal = 16;
+        roster_indexed[3].object_index = None;
+        roster_indexed[3].ordinal = 14;
+        let markers = roster_indexed.iter().collect::<Vec<_>>();
+        assert_eq!(
+            extended_compact_endpoint_markers(&payload, &roster_indexed[0], &markers)
                 .iter()
                 .map(|marker| marker.id.as_str())
                 .collect::<Vec<_>>(),
@@ -27141,14 +27153,14 @@ fn roster_curve_endpoint_markers<'a>(
             }
         }
         if indexed.len() != 2 {
-            let direct = extended_compact_object_endpoint_markers(payload, curve, markers);
+            let direct = extended_compact_endpoint_markers(payload, curve, markers);
             if direct.len() == 2 {
                 return direct;
             }
         }
         return indexed;
     }
-    let direct = extended_compact_object_endpoint_markers(payload, curve, markers);
+    let direct = extended_compact_endpoint_markers(payload, curve, markers);
     if direct.len() == 2 {
         return direct;
     }
@@ -27216,7 +27228,7 @@ fn roster_curve_endpoint_markers<'a>(
         .collect()
 }
 
-fn extended_compact_object_endpoint_markers<'a>(
+fn extended_compact_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -27259,7 +27271,7 @@ fn extended_compact_object_endpoint_markers<'a>(
     if first == second {
         return Vec::new();
     }
-    let endpoint = |id| {
+    let endpoint_by_object = |id| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
                 && marker.coordinates_m.is_some()
@@ -27276,9 +27288,30 @@ fn extended_compact_object_endpoint_markers<'a>(
         let candidate = candidates.next()?;
         candidates.next().is_none().then_some(candidate)
     };
-    match (endpoint(first), endpoint(second)) {
+    match (endpoint_by_object(first), endpoint_by_object(second)) {
         (Some(first), Some(second)) if first.id != second.id => vec![first, second],
-        _ => Vec::new(),
+        _ => {
+            let endpoint_by_roster_index = |id| {
+                let mut candidates = markers.iter().copied().filter(|marker| {
+                    marker.feature_ref == curve.feature_ref
+                        && marker.ordinal == id
+                        && marker.coordinates_m.is_some()
+                        && matches!(
+                            marker.kind,
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        )
+                });
+                let candidate = candidates.next()?;
+                candidates.next().is_none().then_some(candidate)
+            };
+            match (
+                endpoint_by_roster_index(first),
+                endpoint_by_roster_index(second),
+            ) {
+                (Some(first), Some(second)) if first.id != second.id => vec![first, second],
+                _ => Vec::new(),
+            }
+        }
     }
 }
 
