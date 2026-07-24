@@ -1451,7 +1451,7 @@ fn linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePo
     if !matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
-    ) || marker_native_code(payload, offset) != Some(0)
+    ) || !matches!(marker_native_code(payload, offset), Some(0 | 2))
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
@@ -5224,6 +5224,18 @@ mod marker_tests {
             assert_eq!(point.kind, SketchInputKind::Point);
             assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
         }
+        payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
+        payload[offset + 92..offset + 94].copy_from_slice(&4u16.to_le_bytes());
+        assert_eq!(
+            linked_profile_point(&payload, offset),
+            Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 4)]))
+        );
+        assert_eq!(
+            super::sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[offset + 17..offset + 21].fill(0);
+        payload[offset + 92..offset + 94].copy_from_slice(&3u16.to_le_bytes());
 
         let mut extended = vec![0; offset + 158 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
         extended[..offset + 108].copy_from_slice(&payload[..offset + 108]);
