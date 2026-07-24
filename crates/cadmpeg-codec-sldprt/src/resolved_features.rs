@@ -1457,7 +1457,8 @@ mod marker_tests {
         revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
         roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
         sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, tangent_bounded_curve, unique_arc_center_marker,
+        spatial_vertex_coordinates, surface_reference_matches_at,
+        surface_selection_producer_features, tangent_bounded_curve, unique_arc_center_marker,
         unique_cylindrical_face, unique_dimensioned_rectangle_markers, unique_locus,
         unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle, BooleanOp,
         CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
@@ -8214,6 +8215,7 @@ mod marker_tests {
         assert_eq!(path[1].instance, None);
         assert_eq!(path[1].local_id, Some(4));
         assert_eq!(&path[1].type_signature[4..8], &56u32.to_le_bytes());
+        assert!(surface_reference_matches_at(&payload, marker, &path));
     }
 
     #[test]
@@ -8353,6 +8355,14 @@ mod marker_tests {
                 &[feature("producer", "42"), feature("other", "43")]
             ),
             Some("other".into())
+        );
+        assert_eq!(
+            surface_selection_producer_features(
+                &mixed,
+                Some("explicit"),
+                &[feature("producer", "42"), feature("other", "43")]
+            ),
+            ["producer", "other", "explicit"]
         );
         mixed.push(FeatureInputComponentPathEntry {
             instance: Some(0x8040),
@@ -14758,28 +14768,17 @@ fn compact_surface_selections(
             continue;
         }
         for (offset, components) in candidates {
-            let explicit_terminal =
-                compact_single_face_reference_record_at(&lane.native_payload, offset)
-                    .and_then(|(_, source)| source)
-                    .and_then(|source| {
-                        let mut matches = history_features.iter().filter(|candidate| {
-                            candidate
-                                .source_id
-                                .as_deref()
-                                .and_then(|value| value.parse::<u32>().ok())
-                                == Some(source)
-                        });
-                        let feature = matches.next()?;
-                        matches.next().is_none().then(|| feature.id.clone())
-                    });
-            let terminal_feature_ref = explicit_terminal
-                .or_else(|| component_path_terminal_feature(&components, &history_features));
-            let mut producer_feature_refs = component_path_features(&components, &history_features);
-            if let Some(terminal) = &terminal_feature_ref {
-                if !producer_feature_refs.contains(terminal) {
-                    producer_feature_refs.push(terminal.clone());
-                }
-            }
+            let terminal_feature_ref = surface_selection_terminal_feature_at(
+                &lane.native_payload,
+                offset,
+                &components,
+                &history_features,
+            );
+            let producer_feature_refs = surface_selection_producer_features(
+                &components,
+                terminal_feature_ref.as_deref(),
+                &history_features,
+            );
             result.push(FeatureInputSurfaceSelection {
                 id: format!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
                 parent: lane.id.clone(),
@@ -14997,6 +14996,23 @@ pub(crate) fn compact_surface_reference_at(
         .or_else(|| compact_termination_reference_path_at(payload, marker))
         .or_else(|| compact_sketch_surface_component_path_at(payload, marker))
         .or_else(|| inline_surface_reference_at(payload, marker))
+}
+
+pub(crate) fn surface_reference_matches_at(
+    payload: &[u8],
+    marker: usize,
+    expected: &[FeatureInputComponentPathEntry],
+) -> bool {
+    [
+        compact_surface_selection_at(payload, marker),
+        mirror_surface_component_path_at(payload, marker),
+        compact_termination_reference_path_at(payload, marker),
+        compact_sketch_surface_component_path_at(payload, marker),
+        inline_surface_reference_at(payload, marker),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|components| components == expected)
 }
 
 fn repeated_edge_selections(
@@ -15528,6 +15544,28 @@ pub(crate) fn compact_edge_producer_features_at(
         }
     }
     producers
+}
+
+pub(crate) fn surface_selection_terminal_feature_at(
+    payload: &[u8],
+    marker: usize,
+    components: &[FeatureInputComponentPathEntry],
+    features: &[crate::records::Feature],
+) -> Option<String> {
+    compact_single_face_reference_record_at(payload, marker)
+        .and_then(|(_, source)| source)
+        .and_then(|source| {
+            let mut matches = features.iter().filter(|candidate| {
+                candidate
+                    .source_id
+                    .as_deref()
+                    .and_then(|value| value.parse::<u32>().ok())
+                    == Some(source)
+            });
+            let feature = matches.next()?;
+            matches.next().is_none().then(|| feature.id.clone())
+        })
+        .or_else(|| component_path_terminal_feature(components, features))
 }
 
 fn compact_homogeneous_edge_ids(
@@ -24161,6 +24199,20 @@ pub(crate) fn component_path_features(
         }
     }
     result
+}
+
+pub(crate) fn surface_selection_producer_features(
+    components: &[FeatureInputComponentPathEntry],
+    terminal_feature_ref: Option<&str>,
+    features: &[crate::records::Feature],
+) -> Vec<String> {
+    let mut producers = component_path_features(components, features);
+    if let Some(terminal) = terminal_feature_ref {
+        if !producers.iter().any(|producer| producer == terminal) {
+            producers.push(terminal.to_string());
+        }
+    }
+    producers
 }
 
 pub(crate) fn component_path_terminal_feature(

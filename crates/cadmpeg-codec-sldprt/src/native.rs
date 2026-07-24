@@ -644,33 +644,43 @@ impl SldprtNative {
                             })
                             .unwrap_or_default();
                     }
-                    record.producer_feature_refs =
-                        crate::resolved_features::component_path_features(
-                            &record.components,
-                            &features,
-                        );
                     record.terminal_feature_ref =
-                        crate::resolved_features::component_path_terminal_feature(
+                        usize::try_from(record.offset).ok().and_then(|offset| {
+                            crate::resolved_features::surface_selection_terminal_feature_at(
+                                &lane.native_payload,
+                                offset,
+                                &record.components,
+                                &features,
+                            )
+                        });
+                    record.producer_feature_refs =
+                        crate::resolved_features::surface_selection_producer_features(
                             &record.components,
+                            record.terminal_feature_ref.as_deref(),
                             &features,
                         );
                 }
             }
             if let Some(record) = lane.surface_selections.iter().find(|record| {
-                usize::try_from(record.offset).ok().and_then(|offset| {
-                    crate::resolved_features::compact_surface_reference_at(
+                !usize::try_from(record.offset).ok().is_some_and(|offset| {
+                    crate::resolved_features::surface_reference_matches_at(
                         &lane.native_payload,
                         offset,
+                        &record.components,
                     )
-                }) != Some(record.components.clone())
-                    || crate::resolved_features::component_path_features(
-                        &record.components,
-                        &features,
-                    ) != record.producer_feature_refs
-                    || crate::resolved_features::component_path_terminal_feature(
-                        &record.components,
-                        &features,
-                    ) != record.terminal_feature_ref
+                }) || crate::resolved_features::surface_selection_producer_features(
+                    &record.components,
+                    record.terminal_feature_ref.as_deref(),
+                    &features,
+                ) != record.producer_feature_refs
+                    || usize::try_from(record.offset).ok().and_then(|offset| {
+                        crate::resolved_features::surface_selection_terminal_feature_at(
+                            &lane.native_payload,
+                            offset,
+                            &record.components,
+                            &features,
+                        )
+                    }) != record.terminal_feature_ref
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input surface selection {} disagrees with its payload",
@@ -855,20 +865,26 @@ impl SldprtNative {
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.components.is_empty()
-                    || crate::resolved_features::component_path_features(
+                    || crate::resolved_features::surface_selection_producer_features(
                         &record.components,
+                        record.terminal_feature_ref.as_deref(),
                         &features,
                     ) != record.producer_feature_refs
-                    || crate::resolved_features::component_path_terminal_feature(
-                        &record.components,
-                        &features,
-                    ) != record.terminal_feature_ref
                     || usize::try_from(record.offset).ok().and_then(|offset| {
-                        crate::resolved_features::compact_surface_reference_at(
+                        crate::resolved_features::surface_selection_terminal_feature_at(
                             &lane.native_payload,
                             offset,
+                            &record.components,
+                            &features,
                         )
-                    }) != Some(record.components.clone())
+                    }) != record.terminal_feature_ref
+                    || !usize::try_from(record.offset).ok().is_some_and(|offset| {
+                        crate::resolved_features::surface_reference_matches_at(
+                            &lane.native_payload,
+                            offset,
+                            &record.components,
+                        )
+                    })
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input surface selection {} has inconsistent ownership",
