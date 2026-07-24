@@ -639,7 +639,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
             .copied(),
         Some(1)
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -2878,7 +2878,7 @@ fn decode_types_round_with_labeled_edge_selection() {
             .map(String::as_str),
         Some("44,45")
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -2994,7 +2994,7 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -3035,7 +3035,7 @@ fn decode_resolves_feature_dependencies_independently_of_storage_order() {
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -3658,7 +3658,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .len(),
         4
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -4337,7 +4337,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),
         ]
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -4427,7 +4427,7 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(dimensions[2]["unresolved_value_token"][1], 4);
     assert_eq!(dimensions[2]["unresolved_value_token"][2], 254);
     assert_eq!(dimensions[2]["unresolved_value_token"][3], 242);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -4491,7 +4491,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
                 cadmpeg_ir::features::Length(1.0),
             ))
     }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -5040,7 +5040,7 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
             )
             .collect::<Vec<_>>()
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -5121,7 +5121,7 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
             cadmpeg_ir::features::Angle(1.0 + 1.0f64.to_radians())
         ))
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -5154,16 +5154,16 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
     );
     assert_eq!(coverage["prohibited_active_curve_expression_kind_count"], 1);
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Attribute
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.category == cadmpeg_ir::report::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 active curve-equation record(s) containing prohibited datum-curve constructs \
                  were not evaluated",
             )
     }));
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Attribute
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.category == cadmpeg_ir::report::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 prohibited datum-curve construct(s) across active curve-equation records were \
                  not evaluated",
@@ -5184,7 +5184,7 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
     assert_eq!(parameters[4].expression, "rtos(123.456,2)");
     assert_eq!(parameters[5].expression, "rel_model_type()");
     assert_eq!(parameters[5].value, None);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -5361,7 +5361,7 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
     assert_eq!(r.properties["cyclic_dependencies"], "a");
     assert!(a.dependencies.is_empty());
     assert_eq!(a.properties["cyclic_dependencies"], "r");
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -5417,7 +5417,7 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
             .len(),
         4
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -6774,7 +6774,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         ]
     );
     assert_eq!(native, "creo:allfeatur:edgs_affected#4:10,11");
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -6879,7 +6879,7 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
             .ordinal,
         0
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

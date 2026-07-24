@@ -6032,7 +6032,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     assert!(!cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new())
         .findings
         .iter()
-        .any(|finding| finding.check == cadmpeg_ir::Check::Annotations));
+        .any(|finding| finding.check == cadmpeg_ir::validate::Check::Annotations));
     round_trip.ir.model.curves[0].geometry = CurveGeometry::Line {
         origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -6085,7 +6085,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     assert!(!cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new())
         .findings
         .iter()
-        .any(|finding| finding.check == cadmpeg_ir::Check::Annotations));
+        .any(|finding| finding.check == cadmpeg_ir::validate::Check::Annotations));
 }
 
 #[test]
@@ -8751,7 +8751,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert!(crate::validate::validate_native(&inconsistent)
         .iter()
         .any(|finding| {
-            finding.check == cadmpeg_ir::Check::NativeLinks
+            finding.check == cadmpeg_ir::validate::Check::NativeLinks
                 && finding.message.contains("typed operands disagree")
         }));
 
@@ -9219,7 +9219,7 @@ fn validation_rejects_wrong_sketch_constraint_kind_with_equal_cardinality() {
 
     let findings = crate::validate::validate_native(&ir);
     assert!(findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::ReferentialIntegrity
+        finding.check == cadmpeg_ir::validate::Check::ReferentialIntegrity
             && finding.entity.as_deref() == Some(relation_id.as_str())
     }));
 }
@@ -9250,12 +9250,12 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
 
     let findings = crate::validate::validate_native(&ir);
     assert!(findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::validate::Check::NativeLinks
             && finding.entity.as_deref() == Some(point_id.as_str())
             && finding.message.contains("persistent identity")
     }));
     assert!(findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::validate::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding.message.contains("persistent identity")
     }));
@@ -9288,7 +9288,7 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
 
     assert!(
         !crate::validate::validate_native(&ir).iter().any(|finding| {
-            finding.check == cadmpeg_ir::Check::NativeLinks
+            finding.check == cadmpeg_ir::validate::Check::NativeLinks
                 && (finding.entity.as_deref() == Some(point_id.as_str())
                     || finding.entity.as_deref() == Some(curve_id.as_str()))
                 && finding.message.contains("persistent identity")
@@ -9311,7 +9311,7 @@ fn validation_rejects_aliased_sketch_geometry_records() {
     };
 
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::validate::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding
                 .message
@@ -9341,7 +9341,7 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
     };
 
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::validate::Check::NativeLinks
             && finding.entity.as_deref() == Some(duplicate_id.as_str())
             && finding.message.contains("entity suffix is duplicated")
     }));
@@ -9380,7 +9380,7 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
 
     f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 7;
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::validate::Check::NativeLinks
             && finding.entity.as_deref() == Some("generated:design-parameter#0")
             && finding.message.contains("family discriminator")
     }));
@@ -9392,7 +9392,7 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         native.design_parameters[0].owner_record_index = Some(1234);
     }
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::validate::Check::NativeLinks
             && finding.entity.as_deref() == Some("generated:design-parameter#0")
     }));
 }
@@ -9514,7 +9514,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
             .design_construction_operand_groups
             .push(group.clone());
     }
-    let profile_message = |finding: &cadmpeg_ir::Finding| {
+    let profile_message = |finding: &cadmpeg_ir::validate::Finding| {
         finding.message == "Fusion Design Extrude profile conflicts with its profile operand group"
     };
     let findings = crate::validate::validate_native(&ir);
@@ -16286,7 +16286,7 @@ fn generated_variable_blend_rejects_cross_branch_radius_payloads() {
         parameters: [0.25, 0.75],
     });
 
-    assert!(cadmpeg_ir::validate(&decoded, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&decoded, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "variable blend construction payload is invalid"));

@@ -1040,7 +1040,7 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model.finalize();
-        if !cadmpeg_ir::validate(&candidate, Vec::new()).is_ok() {
+        if !cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok() {
             losses.push(entity_loss(
                 entry,
                 "shell candidate failed neutral validation",

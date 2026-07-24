@@ -74,10 +74,10 @@ fn product_occurrence_tree_validates_references_and_cycles() {
         name: None,
     });
     ir.finalize();
-    assert!(crate::validate(&ir, Vec::new()).is_ok());
+    assert!(crate::validate::validate(&ir, Vec::new()).is_ok());
 
     ir.model.product_occurrences[1].transform.rows[0][0] = f64::INFINITY;
-    assert!(crate::validate(&ir, Vec::new())
+    assert!(crate::validate::validate(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| {
@@ -89,7 +89,7 @@ fn product_occurrence_tree_validates_references_and_cycles() {
     ir.model.product_occurrences[1].parent = OccurrenceParent::Occurrence {
         occurrence: OccurrenceId("test:product:occurrence#child".into()),
     };
-    let report = crate::validate(&ir, Vec::new());
+    let report = crate::validate::validate(&ir, Vec::new());
     assert!(report
         .findings
         .iter()
@@ -2211,7 +2211,8 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
             )]),
         },
     );
-    let findings = crate::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
+    let findings =
+        crate::validate::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::Annotations && finding.severity == crate::report::Severity::Error
     }));

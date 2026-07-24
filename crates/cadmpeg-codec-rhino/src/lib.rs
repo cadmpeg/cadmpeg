@@ -124,7 +124,7 @@ impl Encoder for RhinoEncoder {
 
     fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
         writer::write(ir, self.version.value(), output)?;
-        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
         let total_entities = validation.entity_counts.values().sum();
         let vertex_quantization = self.version == RhinoArchiveVersion::V5
             && ir

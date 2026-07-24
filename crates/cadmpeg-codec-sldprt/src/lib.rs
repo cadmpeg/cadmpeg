@@ -99,7 +99,7 @@ use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::source_fidelity::write_plan::{plan_write, WritePlan};
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::Finding;
+use cadmpeg_ir::validate::Finding;
 use std::io::Write;
 
 /// Identifier of the retained whole-file `.sldprt` source image in a
@@ -199,7 +199,7 @@ fn encode_container(
     writer: &mut dyn Write,
 ) -> Result<ExportReport, CodecError> {
     let outcome = write_container(ir, sidecar, writer)?;
-    let validation = cadmpeg_ir::validate(ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
     let total_entities = validation.entity_counts.values().sum();
     let mut notes = vec![
         match outcome {

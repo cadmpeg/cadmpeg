@@ -241,10 +241,10 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
 }
 
 fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
-    let errors = cadmpeg_ir::validate(ir, Vec::new())
+    let errors = cadmpeg_ir::validate::validate(ir, Vec::new())
         .findings
         .into_iter()
-        .filter(|finding| finding.severity >= cadmpeg_ir::Severity::Error)
+        .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
         .collect::<Vec<_>>();
     assert!(errors.is_empty(), "{errors:#?}");
 }
@@ -347,7 +347,7 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
                 .report
                 .losses
                 .iter()
-                .all(|loss| loss.severity < cadmpeg_ir::Severity::Blocking),
+                .all(|loss| loss.severity < cadmpeg_ir::report::Severity::Blocking),
             "{name}: {:#?}",
             first.report.losses
         );
@@ -998,11 +998,11 @@ fn transfers_part_and_partdesign_analytic_primitives() {
         }
     ));
     assert!(result.report.losses.is_empty());
-    let findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate::validate(&result.ir, Vec::new()).findings;
     assert!(
         findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
+            .all(|finding| finding.check != cadmpeg_ir::validate::Check::GeometricConsistency),
         "{findings:#?}"
     );
 }
@@ -1989,11 +1989,11 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
             && record.semantic_kind == "pattern"
             && record.neutral
     }));
-    let baseline_findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
+    let baseline_findings = cadmpeg_ir::validate::validate(&result.ir, Vec::new()).findings;
     assert!(
         baseline_findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::Check::Identity),
+            .all(|finding| finding.check != cadmpeg_ir::validate::Check::Identity),
         "{baseline_findings:?}"
     );
     let mut corrupted = result.ir.clone();
@@ -2095,7 +2095,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
     derived.definition = cadmpeg_ir::features::FeatureDefinition::DerivedGeometry {
         source: cadmpeg_ir::features::FeatureId("fcstd:design:feature#Missing".into()),
     };
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("source feature")));
@@ -2176,7 +2176,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
     *active_child = Some(cadmpeg_ir::features::FeatureId(
         "fcstd:design:feature#Outside".into(),
     ));
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("active tree child")));
@@ -2953,11 +2953,11 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
     ));
     assert_eq!(hole.dependencies.len(), 1);
     assert!(result.report.losses.is_empty());
-    let findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate::validate(&result.ir, Vec::new()).findings;
     assert!(
         findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
+            .all(|finding| finding.check != cadmpeg_ir::validate::Check::GeometricConsistency),
         "{findings:#?}"
     );
 }
@@ -3037,7 +3037,7 @@ fn reports_attributable_native_design_blockers() {
     assert_eq!(result.report.losses.len(), 1);
     assert_eq!(
         result.report.losses[0].severity,
-        cadmpeg_ir::Severity::Blocking
+        cadmpeg_ir::report::Severity::Blocking
     );
     assert_eq!(
         result.report.losses[0]
@@ -3143,7 +3143,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
             end: "A2".into(),
         },
     );
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("merged ranges overlap")));
@@ -3302,13 +3302,13 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     corrupted.model.occurrences[0].prototype = cadmpeg_ir::products::ComponentReference::Local {
         component: cadmpeg_ir::products::ComponentId("fcstd:model:component#missing".into()),
     };
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
     let mut corrupted = result.ir.clone();
     corrupted.model.occurrences[0].resolved_transform[0][3] += 1.0;
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding
@@ -3395,13 +3395,13 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         .expect("limits");
     limits.minimum = Some(2.0);
     limits.maximum = Some(1.0);
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid assembly joint")));
     let mut corrupted = result.ir.clone();
     corrupted.model.assembly_joints[0].operands[0].component = None;
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid assembly joint operands")));
@@ -3476,7 +3476,7 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
     inner.prototype = cadmpeg_ir::products::ComponentReference::Local {
         component: inner_component,
     };
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("prototype cycle")));
@@ -3559,7 +3559,7 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
     };
     document.path = Some("also-a-path.FCStd".into());
     document.document_id = Some("also-an-id".into());
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
@@ -3807,7 +3807,7 @@ fn retains_ordered_document_level_gui_state() {
         .as_mut()
         .expect("camera state")
         .orientation = Some([0.0; 4]);
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "invalid document presentation state"));
@@ -3954,7 +3954,7 @@ fn recovers_techdraw_page_template_and_view_graph() {
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("neutral view")
         .scale = Some(0.0);
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "invalid drawing reference, order, or numeric state"));
@@ -4083,7 +4083,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
 
     let mut corrupted = result.ir.clone();
     corrupted.model.semantic_annotations[0].value = Some(f64::INFINITY);
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message
@@ -4657,7 +4657,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     ));
     let native_findings = crate::validate_native(&result.ir);
     assert!(native_findings.is_empty(), "{native_findings:#?}");
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     let design_findings = validation
         .findings
         .iter()
@@ -5097,7 +5097,7 @@ Co 1001000 +2 0 *
 
     let mut corrupted = result.ir.clone();
     corrupted.model.view_presentations[0].line_width = Some(f64::NAN);
-    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "invalid view presentation reference, order, or size"));
@@ -5107,12 +5107,12 @@ Co 1001000 +2 0 *
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
-    let report = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(
         report
             .findings
             .iter()
-            .all(|finding| finding.severity < cadmpeg_ir::Severity::Error),
+            .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error),
         "{:#?}",
         report.findings
     );
@@ -5172,11 +5172,11 @@ So 1001000 +2 0 *
     ));
     assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 1.0]));
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(
         validation.findings.iter().all(|finding| {
-            finding.severity < cadmpeg_ir::Severity::Error
-                || finding.check == cadmpeg_ir::Check::Identity
+            finding.severity < cadmpeg_ir::report::Severity::Error
+                || finding.check == cadmpeg_ir::validate::Check::Identity
         }),
         "{:#?}",
         validation.findings
@@ -5356,11 +5356,11 @@ Co 1001000 +2 0 *
     assert_eq!(second.radial_next, first.id);
     assert_ne!(first.pcurves, second.pcurves);
     assert!(!first.pcurves.is_empty() && !second.pcurves.is_empty());
-    let errors = cadmpeg_ir::validate(&result.ir, Vec::new())
+    let errors = cadmpeg_ir::validate::validate(&result.ir, Vec::new())
         .findings
         .into_iter()
-        .filter(|finding| finding.severity == cadmpeg_ir::Severity::Error)
-        .filter(|finding| finding.check != cadmpeg_ir::Check::Identity)
+        .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
+        .filter(|finding| finding.check != cadmpeg_ir::validate::Check::Identity)
         .collect::<Vec<_>>();
     assert!(errors.is_empty(), "{errors:#?}");
 }
@@ -5540,13 +5540,11 @@ Co 1001000 +2 1 +2 3 *
             cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).expect("required invariant");
         assert_eq!((start.x - end.x).abs(), 2.0);
     }
-    let report = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(
-        report
-            .findings
-            .iter()
-            .all(|finding| finding.severity < cadmpeg_ir::Severity::Error
-                || finding.check == cadmpeg_ir::Check::Identity),
+        report.findings.iter().all(|finding| finding.severity
+            < cadmpeg_ir::report::Severity::Error
+            || finding.check == cadmpeg_ir::validate::Check::Identity),
         "{:#?}",
         report.findings
     );

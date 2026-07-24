@@ -11,7 +11,8 @@
 
 use crate::{design, history, ids, native, records};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::{Check, Finding, Severity};
+use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::validate::{Check, Finding};
 
 /// Resolve the native design stream that owns a record `id`, defaulting to the
 /// primary design stream when the id carries no stream qualifier.

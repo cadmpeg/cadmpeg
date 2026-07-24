@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn directed_subd_sum_fixture_round_trips_validates_and_matches_schema_shape() {
         let ir = directed_subd_sum();
-        let report = crate::validate(&ir, Vec::new());
+        let report = crate::validate::validate(&ir, Vec::new());
         assert!(report.is_ok(), "{:?}", report.findings);
         let json = ir.to_canonical_json().expect("serialize fixture");
         assert_eq!(CadIr::from_json(&json).expect("parse fixture"), ir);

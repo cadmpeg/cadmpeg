@@ -359,8 +359,11 @@ impl<'a> DecodeContext<'a> {
             annotations: annotations.clone(),
             ..cadmpeg_ir::source_fidelity::SourceFidelity::default()
         };
-        let validation =
-            cadmpeg_ir::validate_with_source_fidelity(&candidate, &source_fidelity, Vec::new());
+        let validation = cadmpeg_ir::validate::validate_with_source_fidelity(
+            &candidate,
+            &source_fidelity,
+            Vec::new(),
+        );
         if validation.is_ok() {
             let added = ArenaLengths::capture(&candidate)
                 .added_since(ArenaLengths::capture(&self.ir))
@@ -5620,7 +5623,10 @@ mod tests {
                 assert_eq!(ir.model.faces[0].sense, Sense::Reversed);
                 assert_eq!(ir.model.faces[1].sense, Sense::Forward);
             }
-            assert_eq!(cadmpeg_ir::validate(&ir, Vec::new()).error_count(), 0);
+            assert_eq!(
+                cadmpeg_ir::validate::validate(&ir, Vec::new()).error_count(),
+                0
+            );
         }
     }
 

@@ -6,7 +6,7 @@ use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::decode::InspectOptions;
-use cadmpeg_ir::LossCode;
+use cadmpeg_ir::report::LossCode;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
@@ -4753,7 +4753,7 @@ fn decode_preserves_unresolved_active_configuration() {
         loss.message
             == "active configuration identity is unresolved; 0 of 2 configuration records are active."
     }));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -5818,7 +5818,7 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -6404,7 +6404,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
             ..
         } if center == cadmpeg_ir::math::Point2::new(1000.0, 2000.0)
     ));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -6450,7 +6450,7 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
             && radial_sin.u.abs() < 1e-9
             && (radial_sin.v - 1000.0).abs() < 1e-9
     ));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -6486,7 +6486,7 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
     assert!(origin.u.abs() < 1e-12);
     assert!((origin.v - 1000.0).abs() < 1e-9);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -6522,7 +6522,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
     assert!(origin.u.abs() < 1e-12);
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -7628,7 +7628,7 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -7665,7 +7665,7 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -7690,7 +7690,7 @@ fn partition_point_refs_do_not_select_deltas_framing() {
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -9292,7 +9292,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
             .ordinal
     };
     assert!(ordinal("Later") < ordinal("Forward"));
-    assert!(!cadmpeg_ir::validate(&decoded.ir, Vec::new())
+    assert!(!cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("parameter dependency")));
@@ -13687,7 +13687,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
         loss.message
             == "1 typed feature(s) retain native or unresolved required operation operands."
     }));
-    let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
 
     let FeatureDefinition::HelixNativeAxis {
@@ -17644,7 +17644,7 @@ fn decode_projects_owned_native_sketch_relation() {
             && operands[1].object_index == 2
             && operands[1].native_ref.is_none()
     ));
-    let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
     SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -19124,7 +19124,7 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
     assert!(sketch.native_ref.as_deref().is_some_and(|native_ref| {
         native_ref.starts_with("sldprt:feature-input:resolved-features#")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 
@@ -19360,7 +19360,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
             ..
         } if value == &sketch_id
     )));
-    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
     let mut written = Vec::new();
     SldprtCodec
@@ -19568,7 +19568,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .expect("bound sweep");
     assert_ne!(sweep.0, sweep.1);
     assert!(bound.contains(sweep.0) && bound.contains(sweep.1));
-    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 

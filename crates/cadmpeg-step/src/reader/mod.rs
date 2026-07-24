@@ -99,7 +99,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(geometry.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
+            code: cadmpeg_ir::report::LossCode::DecodeDiagnostic,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message,
@@ -108,7 +108,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(topology.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
+            code: cadmpeg_ir::report::LossCode::DecodeDiagnostic,
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message,
@@ -117,7 +117,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(presentation.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
+            code: cadmpeg_ir::report::LossCode::DecodeDiagnostic,
             category: LossCategory::Material,
             severity: Severity::Warning,
             message,
@@ -126,7 +126,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(product.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
+            code: cadmpeg_ir::report::LossCode::DecodeDiagnostic,
             category: LossCategory::Metadata,
             severity: Severity::Warning,
             message,
@@ -135,7 +135,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(tessellation.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
+            code: cadmpeg_ir::report::LossCode::DecodeDiagnostic,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message,
@@ -144,7 +144,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(pmi.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
+            code: cadmpeg_ir::report::LossCode::DecodeDiagnostic,
             category: LossCategory::Metadata,
             severity: Severity::Warning,
             message,
@@ -153,7 +153,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(validation.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
+            code: cadmpeg_ir::report::LossCode::DecodeDiagnostic,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message,
@@ -264,7 +264,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(counts.into_iter().map(|(name, count)| LossNote {
-            code: cadmpeg_ir::LossCode::RecordNotTyped,
+            code: cadmpeg_ir::report::LossCode::RecordNotTyped,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),

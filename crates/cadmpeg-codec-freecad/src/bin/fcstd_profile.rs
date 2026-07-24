@@ -12,8 +12,9 @@ use cadmpeg_codec_freecad::{
     FcstdWriteOptions,
 };
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
+use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::{CadIr, Severity};
+use cadmpeg_ir::CadIr;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -149,7 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let second = FcstdCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
         let canonical = first.ir.to_canonical_json()?;
         let deterministic = canonical == second.ir.to_canonical_json()?;
-        let neutral = cadmpeg_ir::validate(&first.ir, Vec::new());
+        let neutral = cadmpeg_ir::validate::validate(&first.ir, Vec::new());
         let native = validate_native(&first.ir);
         let namespace = first
             .ir

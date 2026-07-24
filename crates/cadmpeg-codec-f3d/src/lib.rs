@@ -98,7 +98,7 @@ use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::source_fidelity::write_plan::{plan_write, WritePlan};
-use cadmpeg_ir::Finding;
+use cadmpeg_ir::validate::Finding;
 use std::io::Write;
 
 /// The ZIP local-file-header magic.
@@ -160,7 +160,7 @@ impl Encoder for F3dCodec {
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
         writer::generate::write_new(ir, writer)?;
-        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
         let total_entities = validation.entity_counts.values().sum();
         Ok(ExportReport {
             format: "f3d".into(),
@@ -221,7 +221,7 @@ impl Encoder for F3dCodec {
         };
         notes.push("entity counts are derived from the IR".to_string());
 
-        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
         let total_entities = validation.entity_counts.values().sum();
         Ok(ExportReport {
             format: "f3d".into(),

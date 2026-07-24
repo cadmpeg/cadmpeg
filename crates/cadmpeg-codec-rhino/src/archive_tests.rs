@@ -96,7 +96,7 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         .links
         .contains(&result.ir.model.curves[0].id.to_string()));
     assert!(result.report.geometry_transferred);
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
             .losses
             .iter()
             .any(|loss| loss.severity != Severity::Info));
-        assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+        assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
     }
 }
 
@@ -221,7 +221,7 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
             .expect("required invariant")[0]
             .links
             .is_empty());
-        assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+        assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
     }
 }
 
@@ -350,7 +350,7 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .expect("required invariant")
         .iter()
         .all(|record| !record.links.is_empty()));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -398,7 +398,9 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
                 mesh.vertices[2],
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0)
             );
-            assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+            assert!(
+                cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok()
+            );
         }
     }
 }
@@ -483,7 +485,7 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
             .expect("required invariant")[0]
             .links
             .is_empty());
-        assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+        assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
     }
 
     let payload = super::extrusion::tests::archive_payload(2, [true, true], true, false);
@@ -492,7 +494,7 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
     assert_eq!(result.ir.model.faces.len(), 2);
     assert_eq!(result.ir.model.loops.len(), 4);
     assert_eq!(result.ir.model.pcurves.len(), 4);
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -526,7 +528,7 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
         1
     );
     assert_eq!(result.ir.model.points.len(), 1);
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -602,7 +604,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .losses
         .iter()
         .any(|loss| loss.message == "decoded 1/1 Rhino object records"));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -624,7 +626,7 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
         model.coedges[3].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
-    assert!(cadmpeg_ir::validate(&valid.ir, valid.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&valid.ir, valid.report.losses.clone()).is_ok());
 
     let malformed = decode(&archive(&[object_record(
         0x10,
@@ -639,7 +641,7 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
             && loss.message.contains("Brep topology fallback")
             && loss.message.contains("loop ring is discontinuous")
     }));
-    assert!(cadmpeg_ir::validate(&malformed.ir, malformed.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&malformed.ir, malformed.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -677,7 +679,7 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
         "{:?}",
         result.report
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -733,7 +735,7 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             .losses
             .iter()
             .any(|loss| loss.severity >= Severity::Warning));
-        assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+        assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
     }
 }
 
@@ -755,7 +757,7 @@ fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
             && loss.message.contains("Brep anonymous CRC mismatch")
             && loss.provenance.is_none()
     }));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]

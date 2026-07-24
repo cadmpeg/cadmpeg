@@ -190,7 +190,7 @@ mod tests {
     use super::*;
     use crate::document::CadIr;
     use crate::units::Units;
-    use crate::validate;
+    use crate::validate::validate;
     use crate::validate::Check;
 
     #[test]

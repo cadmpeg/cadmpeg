@@ -3,8 +3,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, CodecError, Confidence, DecodeOptions};
 use cadmpeg_ir::decode::InspectOptions;
+use cadmpeg_ir::report::LossCode;
 use cadmpeg_ir::report::Severity;
-use cadmpeg_ir::LossCode;
 use cadmpeg_ir::IR_VERSION;
 
 use super::chunks::{
@@ -2336,7 +2336,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
                 .len(),
             1
         );
-        let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+        let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
         assert_eq!(validation.error_count(), 0);
     });
 }
@@ -2699,7 +2699,7 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
         .losses
         .iter()
         .any(|loss| loss.message == "decoded 3/3 Rhino object records"));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -2799,7 +2799,7 @@ fn nested_instance_composes_parent_child_and_records_outer_to_inner_path() {
         Uuid::from_wire(world_reference_id),
         Uuid::from_wire(nested_reference_id)
     )));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -2885,7 +2885,7 @@ fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments() {
             .len(),
         4
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -2935,7 +2935,7 @@ fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadata() {
     assert_eq!(subd.vertices[2].point.x, 7.0);
     assert_eq!(subd.edges[0].sharpness, [0.25, 0.25]);
     assert_eq!(subd.edges[0].sector_coefficients, [0.125, 0.875]);
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -3010,7 +3010,7 @@ fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
         nurbs.weights.as_ref().expect("required invariant")[1],
         std::f64::consts::FRAC_1_SQRT_2
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -3047,7 +3047,7 @@ fn transformed_procedural_instance_keeps_solved_carriers_without_dangling_refere
         .losses
         .iter()
         .any(|loss| loss.message.contains("exact solved carrier retained")));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -3272,7 +3272,7 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
             .starts_with("f9cfb638-b9d4-4340-87e3-c56e7865d96a:")
             && loss.message.contains("decode warnings")
     }));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -3326,7 +3326,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
         .losses
         .iter()
         .any(|loss| loss.message == "decoded 1/1 Rhino object records"));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]
@@ -3368,7 +3368,7 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
         .losses
         .iter()
         .any(|loss| loss.message == "decoded 1/2 Rhino object records"));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
 #[test]

@@ -11,7 +11,7 @@ use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_ir::codec::{Codec, Confidence};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::Finding;
+use cadmpeg_ir::validate::Finding;
 use cadmpeg_step::StepCodec;
 
 /// Native codecs available to the CLI.

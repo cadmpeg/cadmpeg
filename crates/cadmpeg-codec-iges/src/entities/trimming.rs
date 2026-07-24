@@ -737,7 +737,7 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model.finalize();
-        let validation = cadmpeg_ir::validate(&candidate, Vec::new());
+        let validation = cadmpeg_ir::validate::validate(&candidate, Vec::new());
         if !validation.is_ok() {
             losses.push(entity_loss(
                 entry,

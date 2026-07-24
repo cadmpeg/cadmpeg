@@ -6,20 +6,25 @@
 //! `body → region → shell → face → loop → coedge → edge → vertex`; topology
 //! references geometry carriers instead of nesting them. The document also
 //! carries neutral construction features, tessellation, appearance, source
-//! attributes, source-native namespaces, and uninterpreted [`UnknownRecord`]s.
+//! attributes, source-native namespaces, and uninterpreted
+//! [`UnknownRecord`](unknown::UnknownRecord)s.
 //!
 //! Start a hand-built document with [`CadIr::empty`], populate its arenas,
 //! call [`CadIr::finalize`] to establish canonical identity order, then call
-//! [`validate()`] to check structural and numeric invariants. Use
-//! [`CadIr::to_canonical_json`] and [`CadIr::from_json`] for the versioned JSON
-//! form, and [`diff()`] for identity-based structural comparison.
+//! [`validate()`](validate::validate) to check structural and numeric
+//! invariants. Use [`CadIr::to_canonical_json`] and [`CadIr::from_json`] for the
+//! versioned JSON form, and [`diff()`](diff::diff) for identity-based structural
+//! comparison.
 //!
-//! Format crates implement [`Codec`]. Detection selects a codec from a byte
-//! prefix, inspection enumerates a container, and decoding returns a
-//! [`DecodeResult`]. Operation failures use [`CodecError`]. A successful decode
-//! reports partial transfer through [`DecodeReport`] and [`LossNote`].
+//! Format crates implement [`Codec`](codec::Codec). Detection selects a codec
+//! from a byte prefix, inspection enumerates a container, and decoding returns a
+//! [`DecodeResult`](codec::DecodeResult). Operation failures use
+//! [`CodecError`](codec::CodecError). A successful decode reports partial
+//! transfer through [`DecodeReport`](report::DecodeReport) and
+//! [`LossNote`](report::LossNote).
 //!
-//! [`Annotations`] records source locations and fidelity by globally unique
+//! [`Annotations`](annotations::Annotations) records source locations and
+//! fidelity by globally unique
 //! entity ID. An omitted exactness entry means byte-exact; explicit entries
 //! distinguish derived, inferred, and unknown values. Native namespaces and
 //! unknown records retain source-specific data outside the neutral model.
@@ -72,10 +77,6 @@ pub mod validate;
 pub mod wire;
 
 pub use document::{CadIr, IR_VERSION};
-pub use report::{
-    DecodeReport, ExportReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
-};
-pub use validate::{validate, validate_with_source_fidelity, Check, Finding, ValidationReport};
 
 pub mod unknown;
 

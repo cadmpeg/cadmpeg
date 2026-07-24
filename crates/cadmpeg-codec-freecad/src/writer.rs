@@ -100,7 +100,7 @@ pub(crate) fn write(
     }
     output.write_all(archive_bytes.get_ref())?;
 
-    let validation = cadmpeg_ir::validate(ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
     let total_entities = validation.entity_counts.values().sum();
     Ok(ExportReport {
         format: "fcstd".into(),

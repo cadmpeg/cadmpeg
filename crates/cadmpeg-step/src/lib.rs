@@ -25,7 +25,7 @@
 //! # Ok::<(), cadmpeg_step::StepError>(())
 //! ```
 //!
-//! Review [`cadmpeg_ir::ExportReport::losses`] before retaining report-mode
+//! Review [`cadmpeg_ir::report::ExportReport::losses`] before retaining report-mode
 //! output. [`StepUnsupportedPolicy::Reject`] rejects all such losses before any
 //! output byte is written. Opaque records, source attributes, unsupported
 //! procedural definitions, and target-schema incompatibilities are reported or

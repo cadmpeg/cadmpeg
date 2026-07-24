@@ -133,5 +133,5 @@ fuzz_target!(|data: &[u8]| {
         _ => {}
     }
 
-    let _ = cadmpeg_ir::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new());
+    let _ = cadmpeg_ir::validate::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new());
 });

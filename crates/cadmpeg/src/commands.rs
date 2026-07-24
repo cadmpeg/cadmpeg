@@ -11,8 +11,8 @@ use cadmpeg_ir::codec::{CadirEncoder, CodecEntry, DecodeOptions, Encoder};
 use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::source_fidelity::SourceFidelity;
-use cadmpeg_ir::validate::ValidationReport;
-use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr};
+use cadmpeg_ir::validate::{validate, validate_with_source_fidelity, ValidationReport};
+use cadmpeg_ir::CadIr;
 
 use crate::envelope::{envelope, print_json, write_output, ReportSink};
 use crate::format::{ForcedInput, Format};
@@ -23,7 +23,7 @@ fn validate_ir(
     registry: &Registry,
     ir: &CadIr,
     source_fidelity: Option<&SourceFidelity>,
-    losses: Vec<cadmpeg_ir::LossNote>,
+    losses: Vec<cadmpeg_ir::report::LossNote>,
 ) -> ValidationReport {
     let mut report = match source_fidelity {
         Some(source_fidelity) => validate_with_source_fidelity(ir, source_fidelity, losses),
@@ -349,7 +349,7 @@ pub fn run_export(
     )
 }
 
-fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
+fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::report::LossNote> {
     report
         .map(|report| report.losses.clone())
         .unwrap_or_default()

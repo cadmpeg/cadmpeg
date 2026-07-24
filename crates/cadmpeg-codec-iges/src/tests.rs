@@ -286,7 +286,7 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
             "{name}: {:#?}",
             result.report.losses
         );
-        let validation = cadmpeg_ir::validate_with_source_fidelity(
+        let validation = cadmpeg_ir::validate::validate_with_source_fidelity(
             &result.ir,
             &result.source_fidelity,
             Vec::new(),
@@ -515,7 +515,7 @@ fn decode_retains_a_typed_dimensionless_direction() {
         native.arenas["directions"][0].fields["physically_dependent"],
         true
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -797,7 +797,7 @@ fn decode_concatenates_ordered_composite_curve_children() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -827,7 +827,7 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
         std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -889,7 +889,7 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
     );
     assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 2.0]));
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -921,7 +921,7 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
     assert!(!witness.report.geometry_transferred);
     assert!(witness.ir.model.curves.is_empty());
     assert!(witness.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&witness.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&witness.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -986,7 +986,7 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
             (geometry, _) => panic!("unexpected form {form} geometry {geometry:?}"),
         }
         assert!(result.report.losses.is_empty(), "form {form}");
-        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
         assert!(
             validation.is_ok(),
             "form {form}: {:#?}",
@@ -1132,7 +1132,7 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1167,7 +1167,7 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
     );
     assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 2.0]));
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1317,7 +1317,7 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1465,7 +1465,7 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     assert!((point.y - expected).abs() < 1.0e-12);
     assert!((point.z - 1.0).abs() < 1.0e-12);
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1522,7 +1522,7 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
         Some(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1570,7 +1570,7 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4391,7 +4391,7 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4416,7 +4416,7 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4440,7 +4440,7 @@ fn decode_rejects_disagreeing_curve_on_surface_carriers() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("carriers disagree beyond the minimum resolution")));
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4467,7 +4467,7 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4526,7 +4526,7 @@ fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4565,7 +4565,7 @@ fn decode_preserves_ordered_loop_pcurve_collection_and_isoparametric_flags() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4587,7 +4587,7 @@ fn decode_rejects_disagreeing_explicit_loop_pcurves() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("loop edge-use pcurves disagree with the edge vertices")));
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4610,7 +4610,7 @@ fn decode_rejects_explicit_edges_that_miss_their_vertices() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("edge curve endpoints disagree with the vertex-list points")));
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4648,7 +4648,7 @@ fn decode_builds_a_vertex_only_pole_loop() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4738,7 +4738,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6609,7 +6609,7 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6739,7 +6739,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6808,7 +6808,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6851,7 +6851,7 @@ fn decode_preserves_a_three_use_non_manifold_radial_ring() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6895,7 +6895,7 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6958,7 +6958,7 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7014,7 +7014,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7054,7 +7054,7 @@ fn decode_builds_a_model_curve_only_trimmed_sheet() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7109,7 +7109,7 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                 "{:#?}",
                 result.report.losses
             );
-            let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+            let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
             assert!(validation.is_ok(), "{:#?}", validation.findings);
         }
     }
@@ -7144,7 +7144,7 @@ fn decode_solves_signed_analytic_offset_surfaces() {
         };
         assert_eq!(distance, expected_z);
         assert!(result.report.losses.is_empty());
-        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -7178,7 +7178,7 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7209,7 +7209,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7260,7 +7260,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
     );
     assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 1.0]));
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7301,7 +7301,7 @@ fn decode_projects_a_counterclockwise_circular_arc() {
         .iter()
         .any(|point| point.position == cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)));
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7335,7 +7335,7 @@ fn decode_solves_a_uniform_planar_curve_offset() {
     assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
     assert_eq!(result.ir.model.procedural_curves.len(), 1);
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7386,7 +7386,7 @@ fn decode_solves_a_parameter_linear_line_offset() {
         assert_eq!(*distances, [1.0, 3.0]);
         assert_eq!(*control_range, [0.0, 10.0]);
         assert!(result.report.losses.is_empty());
-        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -7442,7 +7442,7 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
         "{:#?}",
         result.report.losses
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7474,7 +7474,7 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
         "D1"
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7499,7 +7499,7 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
         assert!(result.report.losses.is_empty());
         let native = result.ir.native.namespace("iges").unwrap();
         assert_eq!(native.arenas["entities"][0].fields["form"], form);
-        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -7572,7 +7572,7 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
         2
     );
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7637,7 +7637,7 @@ fn decode_preserves_native_entities_and_graph() {
     assert!(!result.report.losses.iter().any(|loss| {
         loss.message == "IGES entity type 116 form 0 retained without neutral projection"
     }));
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

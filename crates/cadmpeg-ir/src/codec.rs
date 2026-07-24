@@ -352,7 +352,7 @@ impl Encoder for CadirEncoder {
             .map_err(|error| CodecError::Malformed(error.to_string()))?;
         json.push('\n');
         writer.write_all(json.as_bytes())?;
-        let validation = crate::validate(ir, Vec::new());
+        let validation = crate::validate::validate(ir, Vec::new());
         let total_entities = validation.entity_counts.values().sum();
         Ok(ExportReport {
             format: "cadir".into(),

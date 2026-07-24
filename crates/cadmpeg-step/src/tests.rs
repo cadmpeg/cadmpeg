@@ -798,7 +798,7 @@ fn decode_and_write_singular_vertex_loops() {
         .loops
         .iter()
         .all(|loop_| loop_.coedges.is_empty() && loop_.vertex_uses.len() == 1));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let mut encoded = Vec::new();
     write_step(&result.ir, &mut encoded, &StepWriteOptions::default()).expect("write vertex loops");
@@ -892,7 +892,7 @@ fn decode_builds_a_valid_connected_sheet_brep() {
         result.ir.model.presentation_layers[0].items.as_slice(),
         [cadmpeg_ir::presentation::PresentationItem::Face { .. }]
     ));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -983,7 +983,7 @@ fn decode_builds_a_valid_ap203_sheet_brep() {
             } if support.as_str() == "step:data:surface#28"
                 && boundaries.as_slice() == [cadmpeg_ir::ids::CurveId("step:data:curve#34".into())]
         )));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -1052,7 +1052,7 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
         result.ir.model.faces[0].surface.as_str(),
         "step:data:surface#11"
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1072,7 +1072,7 @@ fn reader_recovers_a_valid_solid_from_writer_output() {
     assert_eq!(result.ir.model.faces.len(), 6);
     assert_eq!(result.ir.model.edges.len(), 12);
     assert_eq!(result.ir.model.vertices.len(), 8);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1307,7 +1307,7 @@ fn writer_round_trips_edge_based_wire_bodies() {
     );
     assert_eq!(decoded.ir.model.edges.len(), 1);
     assert_eq!(decoded.ir.model.shells[0].wire_edges.len(), 1);
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses);
+    let validation = cadmpeg_ir::validate::validate(&decoded.ir, decoded.report.losses);
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1357,7 +1357,7 @@ fn decode_builds_product_occurrences_with_relative_placement() {
     assert_eq!(child.transform.rows[0][3], 25.0);
     assert_eq!(child.transform.rows[1][3], 0.0);
     assert_eq!(child.transform.rows[2][3], 0.0);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let options = StepWriteOptions {
@@ -1398,7 +1398,7 @@ fn decode_builds_occurrence_placement_from_mapped_item() {
         .unwrap();
     assert_eq!(child.transform.rows[0][3], 40.0);
     assert_eq!(child.transform.rows[1][3], 5.0);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1455,7 +1455,7 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert!(!result.report.losses.iter().any(|loss| loss
         .message
         .contains("does not match transferred tessellation")));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1537,7 +1537,7 @@ fn decode_transfers_ap242_semantic_pmi() {
             datum_system: None,
         }
     ));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
     result.ir.model.pmi.push(cadmpeg_ir::pmi::PmiAnnotation {
@@ -1612,7 +1612,7 @@ fn decode_transfers_ap242_presentation_pmi() {
     assert_eq!(transform.rows[0][3], 10.0);
     assert_eq!(transform.rows[1][3], 20.0);
     assert_eq!(transform.rows[2][3], 30.0);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let options = StepWriteOptions {
@@ -2322,7 +2322,7 @@ fn common_datum_compartment_round_trips_as_one_precedence() {
             modifiers: vec!["least_material_requirement".into()],
         },
     ];
-    let validation = cadmpeg_ir::validate(&ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate(&ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -2439,7 +2439,7 @@ fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
         PmiDefinition::DatumSystem { references }
             if references.len() == 1 && references[0].common_group.is_none()
     )));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -2919,21 +2919,21 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("1 subdivision surface(s) were omitted")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("1 tessellation(s) require an AP242 target")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Metadata
+        loss.category == cadmpeg_ir::report::LossCategory::Metadata
             && loss
                 .message
                 .contains("2 source-object association(s) were not represented")
@@ -2993,7 +2993,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     let report = write_step(&polygonal, &mut Vec::new(), &StepWriteOptions::default())
         .expect("polygonal face is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.category == cadmpeg_ir::report::LossCategory::Geometry
             && loss.message.contains("unknown or STEP-unsupported surface")
     }));
 
@@ -3016,7 +3016,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     )
     .expect("transformed unknown curve is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.category == cadmpeg_ir::report::LossCategory::Geometry
             && loss.message.contains("STEP-unsupported transform")
     }));
 }
@@ -3035,7 +3035,7 @@ fn signed_analytic_radius_normalization_is_reported() {
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.category == cadmpeg_ir::report::LossCategory::Geometry
             && loss.message.contains("normalized to positive STEP radii")
     }));
 }
@@ -3056,7 +3056,7 @@ fn elliptical_cone_reduction_is_reported() {
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.category == cadmpeg_ir::report::LossCategory::Geometry
             && loss.message.contains("elliptical cone surface(s)")
     }));
 }

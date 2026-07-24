@@ -45,12 +45,13 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::report::Severity as FindingSeverity;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::source_fidelity::write_plan::verify_retained_bytes;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::validate::{Check, Finding};
 use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
 
 use crate::loss::FcstdLossCode;
 
