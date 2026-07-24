@@ -25816,6 +25816,12 @@ pub(crate) fn project_relation_bindings(
             ) else {
                 continue;
             };
+            let active = marker_relation_has_incompatible_operand_family(
+                marker,
+                &definition,
+                sketch_entities,
+            )
+            .then_some(false);
             constraints.push(SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
@@ -25825,7 +25831,7 @@ pub(crate) fn project_relation_bindings(
                 definition,
                 name: None,
                 driving: None,
-                active: None,
+                active,
                 virtual_space: None,
                 visible: None,
                 orientation: None,
@@ -26926,8 +26932,74 @@ pub(crate) fn marker_owns_constraint(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
 ) -> bool {
     marker.kind.owns_constraint()
-        && (marker.links.iter().any(|link| link.entity_ref != marker.id)
+        && (marker
+            .links
+            .iter()
+            .any(|link| !relation_link_identifies_owner(marker, link))
             || !relation_owner_markers(marker, markers_by_id).is_empty())
+}
+
+fn relation_link_identifies_owner(
+    relation: &SketchInputEntity,
+    link: &crate::records::SketchInputLink,
+) -> bool {
+    link.entity_ref == relation.id
+        || relation.local_id == Some(u32::from(link.local_id))
+        || relation.object_index == Some(u32::from(link.local_id))
+}
+
+fn marker_relation_has_incompatible_operand_family(
+    marker: &SketchInputEntity,
+    definition: &SketchConstraintDefinition,
+    sketch_entities: &[SketchEntity],
+) -> bool {
+    use crate::records::SketchRelationKind::{
+        ArcAngle180, ArcAngle270, ArcAngle90, Collinear, Concentric, Coradial, EllipseAngle180,
+        EllipseAngle270, EllipseAngle90, Equal, Parallel, Perpendicular, Tangent,
+    };
+
+    let SketchInputKind::Relation(kind) = marker.kind else {
+        return false;
+    };
+    let SketchConstraintDefinition::Native { entities, .. } = definition else {
+        return false;
+    };
+    if entities.is_empty() || sketch_entities.is_empty() {
+        return false;
+    }
+    let resolved = entities
+        .iter()
+        .filter_map(|id| sketch_entities.iter().find(|entity| entity.id == *id))
+        .collect::<Vec<_>>();
+    if resolved.len() != entities.len() {
+        return false;
+    }
+    match kind {
+        ArcAngle90 | ArcAngle180 | ArcAngle270 => !matches!(
+            resolved.as_slice(),
+            [SketchEntity {
+                geometry: SketchGeometry::Arc { .. },
+                ..
+            }]
+        ),
+        EllipseAngle90 | EllipseAngle180 | EllipseAngle270 => !matches!(
+            resolved.as_slice(),
+            [SketchEntity {
+                geometry: SketchGeometry::Ellipse { .. },
+                ..
+            }]
+        ),
+        Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric | Coradial => {
+            resolved.len() != 2
+                || resolved.iter().any(|entity| {
+                    matches!(
+                        entity.geometry,
+                        SketchGeometry::Point { .. } | SketchGeometry::Native { .. }
+                    )
+                })
+        }
+        _ => false,
+    }
 }
 
 fn relation_owner_curve_entities(
@@ -31928,7 +32000,8 @@ mod profile_join_tests {
         dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
         implicit_circle_marker, inferred_point_coordinates_by_index,
         legacy_terminal_profile_indexed_endpoints, line_endpoint_markers, line_reference_direction,
-        marker_entities, marker_owns_constraint, marker_point_locus, owned_relation_parameters,
+        marker_entities, marker_owns_constraint, marker_point_locus,
+        marker_relation_has_incompatible_operand_family, owned_relation_parameters,
         profile_loci_by_marker, project_compact_edge_selections,
         project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
@@ -32910,6 +32983,65 @@ mod profile_join_tests {
             typed_marker_relation_definition(&relation, &markers, &HashMap::new()),
             None
         );
+
+        let mut collision = marker("collision", Some([1.0, 0.0]));
+        collision.local_id = Some(7);
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Tangent);
+        relation.local_id = Some(7);
+        relation.object_index = Some(8);
+        relation.links = vec![
+            SketchInputLink {
+                local_id: 7,
+                entity_ref: collision.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 8,
+                entity_ref: collision.id.clone(),
+            },
+        ];
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (collision.id.as_str(), &collision),
+        ]);
+
+        assert!(!marker_owns_constraint(&relation, &markers));
+        assert_eq!(
+            typed_marker_relation_definition(&relation, &markers, &HashMap::new()),
+            None
+        );
+    }
+
+    #[test]
+    fn resolved_wrong_family_relation_is_inactive() {
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::EllipseAngle180);
+        let entity_id = SketchEntityId("line".into());
+        let definition = SketchConstraintDefinition::Native {
+            native_kind: "sldprt:marker-relation:34".into(),
+            native_state: None,
+            entities: vec![entity_id.clone()],
+            parameter: None,
+            operands: Vec::new(),
+        };
+        let entities = vec![SketchEntity {
+            id: entity_id,
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+        }];
+
+        assert!(marker_relation_has_incompatible_operand_family(
+            &relation,
+            &definition,
+            &entities
+        ));
     }
 
     #[test]

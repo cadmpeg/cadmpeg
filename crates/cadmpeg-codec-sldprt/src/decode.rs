@@ -686,7 +686,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             matches!(
                 constraint.definition,
                 SketchConstraintDefinition::Native { .. }
-            )
+            ) && constraint.active != Some(false)
         })
         .count();
     if native_constraints > 0 {
