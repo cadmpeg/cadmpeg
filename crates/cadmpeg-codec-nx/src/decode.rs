@@ -40,7 +40,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::provenance::{Exactness, SourceObjectAssociation};
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Sense, Shell, Vertex};
+use cadmpeg_ir::topology::{BodyKind, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
@@ -1425,41 +1425,38 @@ fn finalize_point_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) 
         annotations.exactness(id, Exactness::Inferred);
     }
 
-    let mut free_vertices = Vec::with_capacity(ir.model.points.len());
+    let mut builder = TopologyBuilder::new();
+    builder
+        .body(
+            body_id.clone(),
+            BodySpec {
+                kind: BodyKind::General,
+                ..BodySpec::default()
+            },
+        )
+        .expect("derived point-body id is unique");
+    builder
+        .region(region_id.clone(), &body_id)
+        .expect("derived point-region id is unique");
+    builder
+        .shell(shell_id.clone(), &region_id)
+        .expect("derived point-shell id is unique");
     for (index, point) in ir.model.points.iter().enumerate() {
         let vertex_id = VertexId(format!("nx:derived:point-vertex#{index}"));
         annotations
             .note(&vertex_id, stream, 0)
             .tag("derived_point_topology");
         annotations.exactness(&vertex_id, Exactness::Inferred);
-        ir.model.vertices.push(Vertex {
-            id: vertex_id.clone(),
-            point: point.id.clone(),
-            tolerance: None,
-        });
-        free_vertices.push(vertex_id);
+        builder
+            .vertex(vertex_id.clone(), point.id.clone(), None)
+            .expect("derived point-vertex id is unique");
+        builder
+            .free_vertex(&shell_id, vertex_id)
+            .expect("derived shell owns its free vertices");
     }
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices,
-    });
-    ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-    });
-    ir.model.bodies.push(Body {
-        id: body_id,
-        kind: BodyKind::General,
-        regions: vec![region_id],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    builder
+        .finish(&mut ir.model)
+        .expect("derived point topology appends without conflicts");
 }
 
 fn classify_body_kinds(ir: &mut CadIr) {
