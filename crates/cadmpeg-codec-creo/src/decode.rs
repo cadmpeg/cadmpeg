@@ -7443,6 +7443,22 @@ fn transfer_resolved_extrusion_breps(
         }
         let region_id = RegionId(format!("{prefix}:region"));
         let shell_id = ShellId(format!("{prefix}:shell"));
+        let mut builder = TopologyBuilder::new();
+        builder
+            .body(
+                body_id.clone(),
+                BodySpec {
+                    kind: BodyKind::Solid,
+                    ..BodySpec::default()
+                },
+            )
+            .expect("extrusion body id is unique per feature");
+        builder
+            .region(region_id.clone(), &body_id)
+            .expect("extrusion region id is unique under its body");
+        builder
+            .shell(shell_id.clone(), &region_id)
+            .expect("extrusion shell id is unique under its region");
         let bottom_surface = SurfaceId(format!("{prefix}:surface:bottom"));
         let top_surface = SurfaceId(format!("{prefix}:surface:top"));
         for (id, offset) in [(&bottom_surface, span.lower), (&top_surface, span.upper)] {
@@ -7479,9 +7495,44 @@ fn transfer_resolved_extrusion_breps(
 
         let bottom_face = FaceId(format!("{prefix}:face:bottom"));
         let top_face = FaceId(format!("{prefix}:face:top"));
-        let mut shell_faces = vec![bottom_face.clone(), top_face.clone()];
-        let mut bottom_loops = Vec::new();
-        let mut top_loops = Vec::new();
+        builder
+            .face(
+                bottom_face.clone(),
+                &shell_id,
+                FaceSpec {
+                    surface: bottom_surface,
+                    sense: if forward_caps {
+                        Sense::Reversed
+                    } else {
+                        Sense::Forward
+                    },
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                },
+            )
+            .expect("extrusion bottom cap face id is unique under its shell");
+        builder
+            .face(
+                top_face.clone(),
+                &shell_id,
+                FaceSpec {
+                    surface: top_surface,
+                    sense: if forward_caps {
+                        Sense::Forward
+                    } else {
+                        Sense::Reversed
+                    },
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                },
+            )
+            .expect("extrusion top cap face id is unique under its shell");
+        // Every coedge's radial partner is its single twin across a shared edge;
+        // record each pair and link it with `radial_ring` once both are staged.
+        let mut emitted_coedges: BTreeSet<CoedgeId> = BTreeSet::new();
+        let mut radial_pairs: Vec<[CoedgeId; 2]> = Vec::new();
         for (profile_index, profile) in profiles.iter().enumerate() {
             let count = profile.len();
             let mut bottom_vertices = Vec::new();
@@ -7629,8 +7680,6 @@ fn transfer_resolved_extrusion_breps(
 
             let bottom_loop = LoopId(format!("{prefix}:loop:{profile_index}:bottom"));
             let top_loop = LoopId(format!("{prefix}:loop:{profile_index}:top"));
-            bottom_loops.push(bottom_loop.clone());
-            top_loops.push(top_loop.clone());
             let bottom_coedges = (0..count)
                 .rev()
                 .map(|index| {
@@ -7642,31 +7691,15 @@ fn transfer_resolved_extrusion_breps(
             let top_coedges = (0..count)
                 .map(|index| CoedgeId(format!("{prefix}:coedge:{profile_index}:{index}:top-cap")))
                 .collect::<Vec<_>>();
-            ir.model.loops.push(IrLoop {
-                id: bottom_loop.clone(),
-                face: bottom_face.clone(),
-                boundary_role: if profile_index == 0 {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                } else {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                },
-                coedges: bottom_coedges.clone(),
-                vertex_uses: Vec::new(),
-            });
-            ir.model.loops.push(IrLoop {
-                id: top_loop.clone(),
-                face: top_face.clone(),
-                boundary_role: if profile_index == 0 {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                } else {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                },
-                coedges: top_coedges.clone(),
-                vertex_uses: Vec::new(),
-            });
+            let cap_role = if profile_index == 0 {
+                cadmpeg_ir::topology::LoopBoundaryRole::Outer
+            } else {
+                cadmpeg_ir::topology::LoopBoundaryRole::Inner
+            };
+            let mut bottom_specs = Vec::with_capacity(count);
+            let mut top_specs = Vec::with_capacity(count);
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
-                let id = bottom_coedges[ring_index].clone();
                 let (geometry, reversed, start, end) = &profile[edge_index];
                 let bottom_pcurve = add_extrusion_pcurve(
                     ir,
@@ -7677,15 +7710,17 @@ fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     extrusion_cap_pcurve(geometry, *reversed, *start, *end),
                 );
-                ir.model.coedges.push(Coedge {
-                    id,
-                    owner_loop: bottom_loop.clone(),
-                    edge: bottom_edges[edge_index].clone(),
-                    next: bottom_coedges[(ring_index + 1) % count].clone(),
-                    previous: bottom_coedges[(ring_index + count - 1) % count].clone(),
-                    radial_next: CoedgeId(format!(
+                let id = bottom_coedges[ring_index].clone();
+                emitted_coedges.insert(id.clone());
+                radial_pairs.push([
+                    id.clone(),
+                    CoedgeId(format!(
                         "{prefix}:coedge:{profile_index}:{edge_index}:side-bottom"
                     )),
+                ]);
+                bottom_specs.push(CoedgeSpec {
+                    id,
+                    edge: bottom_edges[edge_index].clone(),
                     sense: Sense::Reversed,
                     pcurves: vec![PcurveUse {
                         pcurve: bottom_pcurve,
@@ -7695,7 +7730,6 @@ fn transfer_resolved_extrusion_breps(
                     use_curve: None,
                     use_curve_parameter_range: None,
                 });
-                let id = top_coedges[ring_index].clone();
                 let (geometry, reversed, start, end) = &profile[ring_index];
                 let top_pcurve = add_extrusion_pcurve(
                     ir,
@@ -7706,15 +7740,17 @@ fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     extrusion_cap_pcurve(geometry, *reversed, *start, *end),
                 );
-                ir.model.coedges.push(Coedge {
-                    id,
-                    owner_loop: top_loop.clone(),
-                    edge: top_edges[ring_index].clone(),
-                    next: top_coedges[(ring_index + 1) % count].clone(),
-                    previous: top_coedges[(ring_index + count - 1) % count].clone(),
-                    radial_next: CoedgeId(format!(
+                let id = top_coedges[ring_index].clone();
+                emitted_coedges.insert(id.clone());
+                radial_pairs.push([
+                    id.clone(),
+                    CoedgeId(format!(
                         "{prefix}:coedge:{profile_index}:{ring_index}:side-top"
                     )),
+                ]);
+                top_specs.push(CoedgeSpec {
+                    id,
+                    edge: top_edges[ring_index].clone(),
                     sense: Sense::Forward,
                     pcurves: vec![PcurveUse {
                         pcurve: top_pcurve,
@@ -7725,6 +7761,12 @@ fn transfer_resolved_extrusion_breps(
                     use_curve_parameter_range: None,
                 });
             }
+            builder
+                .ring(bottom_loop, &bottom_face, cap_role, bottom_specs, Vec::new())
+                .expect("extrusion bottom cap ring registers under its face");
+            builder
+                .ring(top_loop, &top_face, cap_role, top_specs, Vec::new())
+                .expect("extrusion top cap ring registers under its face");
 
             let forward_sides = extrusion_profile_signed_area(profile)
                 .expect("validated extrusion profile has nonzero area")
@@ -7767,13 +7809,23 @@ fn transfer_resolved_extrusion_breps(
                         "{prefix}:coedge:{profile_index}:{index}:side-vertical-in"
                     )),
                 ];
-                ir.model.loops.push(IrLoop {
-                    id: loop_id.clone(),
-                    face: face_id.clone(),
-                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-                    coedges: coedges.to_vec(),
-                    vertex_uses: Vec::new(),
-                });
+                builder
+                    .face(
+                        face_id.clone(),
+                        &shell_id,
+                        FaceSpec {
+                            surface: surface_id,
+                            sense: if forward_sides {
+                                Sense::Forward
+                            } else {
+                                Sense::Reversed
+                            },
+                            name: None,
+                            color: None,
+                            tolerance: None,
+                        },
+                    )
+                    .expect("extrusion side face id is unique under its shell");
                 let edge_uses = [
                     (bottom_edges[index].clone(), Sense::Forward),
                     (vertical_edges[next].clone(), Sense::Forward),
@@ -7782,6 +7834,7 @@ fn transfer_resolved_extrusion_breps(
                 ];
                 let side_uvs =
                     extrusion_side_uvs(geometry, profile[index].1, *start, profile[index].3, span);
+                let mut side_specs = Vec::with_capacity(4);
                 for use_index in 0..4 {
                     let radial_next = match use_index {
                         0 => bottom_coedges[count - 1 - index].clone(),
@@ -7803,13 +7856,12 @@ fn transfer_resolved_extrusion_breps(
                         transform.offset,
                         line_pcurve(side_uvs[use_index][0], side_uvs[use_index][1]),
                     );
-                    ir.model.coedges.push(Coedge {
-                        id: coedges[use_index].clone(),
-                        owner_loop: loop_id.clone(),
+                    let id = coedges[use_index].clone();
+                    emitted_coedges.insert(id.clone());
+                    radial_pairs.push([id.clone(), radial_next]);
+                    side_specs.push(CoedgeSpec {
+                        id,
                         edge: edge_uses[use_index].0.clone(),
-                        next: coedges[(use_index + 1) % 4].clone(),
-                        previous: coedges[(use_index + 3) % 4].clone(),
-                        radial_next,
                         sense: edge_uses[use_index].1,
                         pcurves: vec![PcurveUse {
                             pcurve,
@@ -7820,72 +7872,25 @@ fn transfer_resolved_extrusion_breps(
                         use_curve_parameter_range: None,
                     });
                 }
-                ir.model.faces.push(Face {
-                    id: face_id.clone(),
-                    shell: shell_id.clone(),
-                    surface: surface_id,
-                    sense: if forward_sides {
-                        Sense::Forward
-                    } else {
-                        Sense::Reversed
-                    },
-                    loops: vec![loop_id],
-                    name: None,
-                    color: None,
-                    tolerance: None,
-                });
-                shell_faces.push(face_id);
+                builder
+                    .ring(
+                        loop_id,
+                        &face_id,
+                        cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+                        side_specs,
+                        Vec::new(),
+                    )
+                    .expect("extrusion side ring registers under its face");
             }
         }
-        ir.model.faces.push(Face {
-            id: bottom_face,
-            shell: shell_id.clone(),
-            surface: bottom_surface,
-            sense: if forward_caps {
-                Sense::Reversed
-            } else {
-                Sense::Forward
-            },
-            loops: bottom_loops,
-            name: None,
-            color: None,
-            tolerance: None,
-        });
-        ir.model.faces.push(Face {
-            id: top_face,
-            shell: shell_id.clone(),
-            surface: top_surface,
-            sense: if forward_caps {
-                Sense::Forward
-            } else {
-                Sense::Reversed
-            },
-            loops: top_loops,
-            name: None,
-            color: None,
-            tolerance: None,
-        });
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: shell_faces,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
-        ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id],
-        });
-        ir.model.bodies.push(Body {
-            id: body_id,
-            kind: BodyKind::Solid,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        for [id, partner] in &radial_pairs {
+            if emitted_coedges.contains(partner) {
+                builder.radial_ring(&[id.clone(), partner.clone()]);
+            }
+        }
+        builder
+            .finish(&mut ir.model)
+            .expect("extrusion topology appends without id or owner conflicts");
         transferred += 1;
     }
     transferred
