@@ -987,14 +987,33 @@ fn legacy_line_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64;
         || payload.get(offset + 74..offset + 78) != Some(&handle_variant)
         || payload.get(offset + 78..offset + 84) != Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
         || payload.get(offset + 84..offset + 96) != Some(b"sgLineHandle")
-        || payload.get(offset + 96..offset + 106)
-            != Some(&[0x03, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
-        || payload.get(offset + 110..offset + 114) != Some(&[0xff; 4])
-        || payload.get(offset + 114..offset + 118) != Some(&[0; 4])
-        || payload.get(offset + 118..offset + 124) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
-        || payload.get(offset + 124..offset + 166) != Some(&[0; 42])
-        || !sketch_marker_prefix_at(payload, offset.checked_add(170)?)
     {
+        return None;
+    }
+    let line_handle = payload.get(offset + 96..offset + 106)
+        == Some(&[0x03, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
+        && payload.get(offset + 110..offset + 114) == Some(&[0xff; 4])
+        && payload.get(offset + 114..offset + 118) == Some(&[0; 4])
+        && payload.get(offset + 118..offset + 124) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 124..offset + 166) == Some(&[0; 42])
+        && sketch_marker_prefix_at(payload, offset.checked_add(170)?);
+    let line_arc_handle = marker_native_code(payload, offset) == Some(1)
+        && payload.get(offset + 96..offset + 108)
+            == Some(&[
+                0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x0b, 0x00,
+            ])
+        && payload.get(offset + 108..offset + 119) == Some(b"sgArcHandle")
+        && payload
+            .get(offset + 119..offset + 121)
+            .is_some_and(|id| id != [0; 2] && id != [0xff; 2])
+        && payload.get(offset + 121..offset + 125) == Some(&[0xff; 4])
+        && payload.get(offset + 125..offset + 131) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 131..offset + 173) == Some(&[0; 42])
+        && payload
+            .get(offset + 173..offset + 177)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.checked_add(177)?);
+    if !line_handle && !line_arc_handle {
         return None;
     }
     finite_coordinate_pair(payload, offset + 58)
@@ -5859,6 +5878,28 @@ mod marker_tests {
             SketchInputKind::Point
         );
 
+        payload.resize(177 + LEGACY_SKETCH_MARKER.len(), 0);
+        payload[96..177].fill(0);
+        payload[96..108].copy_from_slice(&[
+            0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x0b, 0x00,
+        ]);
+        payload[108..119].copy_from_slice(b"sgArcHandle");
+        payload[119..121].copy_from_slice(&3u16.to_le_bytes());
+        payload[121..125].fill(0xff);
+        payload[125..131].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        payload[173..177].copy_from_slice(&2u32.to_le_bytes());
+        payload[177..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(
+            legacy_line_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[119..121].fill(0);
+        assert_eq!(legacy_line_handle_coordinates(&payload, 0), None);
+        payload[119..121].copy_from_slice(&3u16.to_le_bytes());
         payload[84] = b'x';
         assert_eq!(legacy_line_handle_coordinates(&payload, 0), None);
     }
