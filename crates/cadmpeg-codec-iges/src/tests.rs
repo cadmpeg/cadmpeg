@@ -7794,10 +7794,8 @@ mod golden {
     /// path. Fixtures are grouped by the `entities/` module they principally
     /// exercise; the module comments are the coverage ledger.
     fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
-        let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
-
         // entities/geometry.rs: point, direction, line, transform, NURBS curve.
-        f.push(("point", point_file()));
+        let mut f: Vec<(&'static str, Vec<u8>)> = vec![("point", point_file())];
         f.push(("direction", direction_file()));
         f.push(("line", line_file(0)));
         f.push(("weighted_line", weighted_line_file()));
