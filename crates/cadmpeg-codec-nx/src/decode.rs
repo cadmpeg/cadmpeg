@@ -39,8 +39,9 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::provenance::{Exactness, SourceObjectAssociation};
 use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::topology::builder::{BodySpec, FaceSpec, TopologyBuilder};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -4517,6 +4518,7 @@ fn emit_topology(
         .iter()
         .filter_map(|shell| shell.shell_fields().map(|fields| fields.body))
         .collect();
+    let mut builder = TopologyBuilder::new();
     let mut bodies = BTreeMap::new();
     for body_xmt in body_xmts {
         let id = BodyId(format!("{prefix}:body#{body_xmt}"));
@@ -4533,15 +4535,15 @@ fn emit_topology(
             annotations.exactness(&id, Exactness::Unknown);
         }
         bodies.insert(body_xmt, id.clone());
-        ir.model.bodies.push(Body {
-            id,
-            kind: cadmpeg_ir::topology::BodyKind::Solid,
-            regions: Vec::new(),
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        builder
+            .body(
+                id,
+                BodySpec {
+                    kind: BodyKind::Solid,
+                    ..BodySpec::default()
+                },
+            )
+            .expect("body id is unique per source ordinal");
     }
 
     let mut regions: BTreeMap<u32, (RegionId, BodyId)> = BTreeMap::new();
@@ -4569,39 +4571,17 @@ fn emit_topology(
                 annotations.exactness(&region, Exactness::Unknown);
             }
             annotations.derived(&region, "body");
-            ir.model.regions.push(Region {
-                id: region.clone(),
-                body: body.clone(),
-                shells: Vec::new(),
-            });
-            if let Some(parent) = ir
-                .model
-                .bodies
-                .iter_mut()
-                .find(|candidate| candidate.id == body)
-            {
-                parent.regions.push(region.clone());
-            }
+            builder
+                .region(region.clone(), &body)
+                .expect("region id is unique under a registered body");
             regions.insert(fields.region, (region.clone(), body.clone()));
             region
         };
         let shell_id = ShellId(format!("{prefix}:shell#{}", node.xmt));
         annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
-        if let Some(parent) = ir
-            .model
-            .regions
-            .iter_mut()
-            .find(|candidate| candidate.id == region_id)
-        {
-            parent.shells.push(shell_id.clone());
-        }
+        builder
+            .shell(shell_id.clone(), &region_id)
+            .expect("shell id is unique under a registered region");
         shells.insert(node.xmt, shell_id);
     }
 
@@ -4807,26 +4787,25 @@ fn emit_topology(
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations.derived(&id, "tolerance");
         }
-        ir.model.faces.push(Face {
-            id: id.clone(),
-            shell: shell.clone(),
-            surface,
-            sense: sense(Some(fields.sense)),
-            loops: Vec::new(),
-            name: None,
-            color: None,
-            tolerance: decoded_tolerance(fields.tolerance),
-        });
-        if let Some(parent) = ir
-            .model
-            .shells
-            .iter_mut()
-            .find(|candidate| candidate.id == shell)
-        {
-            parent.faces.push(id.clone());
-        }
+        builder
+            .face(
+                id.clone(),
+                &shell,
+                FaceSpec {
+                    surface,
+                    sense: sense(Some(fields.sense)),
+                    name: None,
+                    color: None,
+                    tolerance: decoded_tolerance(fields.tolerance),
+                },
+            )
+            .expect("face id is unique under a registered shell");
         faces.insert(node.xmt, id);
     }
+
+    builder
+        .finish(&mut ir.model)
+        .expect("topology hierarchy appends without id or owner conflicts");
 
     let mut loops = BTreeMap::new();
     for &loop_xmt in valid_loop_rings.keys() {
