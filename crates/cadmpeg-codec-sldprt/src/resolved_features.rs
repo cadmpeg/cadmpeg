@@ -30376,6 +30376,7 @@ fn typed_marker_relation_definition_in_sketch(
         let mut entities = marker
             .links
             .iter()
+            .filter(|link| !relation_link_identifies_owner(marker, link))
             .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
             .collect::<Vec<_>>();
         entities.sort_by(|left, right| left.0.cmp(&right.0));
@@ -38573,6 +38574,49 @@ mod profile_join_tests {
                 SketchLocus::Entity(SketchEntityId("second-point".into())),
             ])
         );
+    }
+
+    #[test]
+    fn native_fallback_entities_exclude_self_identity_collisions() {
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        relation.local_id = Some(3);
+        relation.links = vec![
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: "collision".into(),
+            },
+            SketchInputLink {
+                local_id: 4,
+                entity_ref: "operand".into(),
+            },
+        ];
+        let collision = marker("collision", Some([0.0, 0.0]));
+        let operand = marker("operand", Some([1.0, 0.0]));
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (collision.id.as_str(), &collision),
+            (operand.id.as_str(), &operand),
+        ]);
+        let loci = HashMap::from([
+            (
+                collision.id.clone(),
+                vec![SketchLocus::Entity(SketchEntityId("collision".into()))],
+            ),
+            (
+                operand.id.clone(),
+                vec![SketchLocus::Entity(SketchEntityId("operand".into()))],
+            ),
+        ]);
+
+        let Some(SketchConstraintDefinition::Native {
+            entities, operands, ..
+        }) = typed_marker_relation_definition(&relation, &markers, &loci)
+        else {
+            panic!("native fallback");
+        };
+        assert_eq!(entities, [SketchEntityId("operand".into())]);
+        assert_eq!(operands.len(), 2);
     }
 
     #[test]
