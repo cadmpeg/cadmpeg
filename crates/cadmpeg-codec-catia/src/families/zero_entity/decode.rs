@@ -14,9 +14,8 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::report::DecodeReport;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
-};
+use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
+use cadmpeg_ir::topology::{BodyKind, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, HashMap};
 
@@ -206,17 +205,29 @@ pub(crate) fn transfer_zero_entity_topology(
     emit_zero_entity_vertices(ir, annotations, points);
     emit_zero_entity_surfaces(ir, annotations, topology);
     emit_zero_entity_pcurves(ir, annotations, topology, &pcurve_ranges);
-    emit_zero_entity_bodies(ir, annotations, component_count, &face_components);
+    // Bodies, faces, and loops stage into one builder; the interleaved direct
+    // edge emit keeps the source annotation order (bodies, edges, faces, loops).
+    let mut builder = TopologyBuilder::new();
+    emit_zero_entity_bodies(&mut builder, annotations, component_count);
     emit_zero_entity_edges(ir, annotations, topology, &edges, &edge_vertices);
-    emit_zero_entity_faces(ir, annotations, topology, &face_senses, &face_components);
+    emit_zero_entity_faces(
+        &mut builder,
+        annotations,
+        topology,
+        &face_senses,
+        &face_components,
+    );
     emit_zero_entity_loops_coedges(
-        ir,
+        &mut builder,
         annotations,
         topology,
         &edges,
         &occurrence_edges,
         &loop_owner,
     );
+    builder
+        .finish(&mut ir.model)
+        .expect("zero-entity topology hierarchy appends without id or owner conflicts");
     true
 }
 
@@ -503,12 +514,15 @@ fn emit_zero_entity_pcurves(
     }
 }
 
-/// Emits the body/region/shell IR layer.
+/// Registers the body/region/shell layer into `builder`.
+///
+/// `shell.faces` is left to the builder's aggregation from the later
+/// `emit_zero_entity_faces` registrations, which run in ascending face index
+/// under the same `face_components` owner map, reproducing the former filter.
 fn emit_zero_entity_bodies(
-    ir: &mut CadIr,
+    builder: &mut TopologyBuilder,
     annotations: &mut AnnotationBuilder,
     component_count: usize,
-    face_components: &[usize],
 ) {
     for component in 0..component_count {
         let body_id = BodyId(format!("catia:zero-entity:body#{component}"));
@@ -531,38 +545,27 @@ fn emit_zero_entity_bodies(
         annotations
             .derived(&body_id, "kind")
             .derived(&body_id, "regions");
-        ir.model.bodies.push(Body {
-            id: body_id.clone(),
-            kind: BodyKind::Solid,
-            regions: vec![region_id.clone()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        builder
+            .body(
+                body_id.clone(),
+                BodySpec {
+                    kind: BodyKind::Solid,
+                    ..BodySpec::default()
+                },
+            )
+            .expect("zero-entity body id is unique per component");
         annotations
             .derived(&region_id, "body")
             .derived(&region_id, "shells");
-        ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-        });
+        builder
+            .region(region_id.clone(), &body_id)
+            .expect("zero-entity region id is unique under its body");
         annotations
             .derived(&shell_id, "region")
             .derived(&shell_id, "faces");
-        ir.model.shells.push(Shell {
-            id: shell_id,
-            region: region_id,
-            faces: face_components
-                .iter()
-                .enumerate()
-                .filter(|(_, owner)| **owner == component)
-                .map(|(face, _)| FaceId(format!("catia:zero-entity:face#{face}")))
-                .collect(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        builder
+            .shell(shell_id, &region_id)
+            .expect("zero-entity shell id is unique under its region");
     }
 }
 
@@ -724,9 +727,12 @@ fn emit_zero_entity_edges(
     }
 }
 
-/// Emits the face IR layer.
+/// Registers the face layer into `builder`.
+///
+/// `face.loops` is left to the builder's aggregation from the later
+/// `emit_zero_entity_loops_coedges` ring registrations rather than pre-listed.
 fn emit_zero_entity_faces(
-    ir: &mut CadIr,
+    builder: &mut TopologyBuilder,
     annotations: &mut AnnotationBuilder,
     topology: &crate::families::zero_entity::graph::ZeroEntityTopology,
     face_senses: &[Sense],
@@ -747,29 +753,34 @@ fn emit_zero_entity_faces(
         for field in ["shell", "surface", "sense", "loops"] {
             annotations.derived(&id, field);
         }
-        ir.model.faces.push(Face {
-            id,
-            shell: ShellId(format!(
-                "catia:zero-entity:shell#{}",
-                face_components[face_index]
-            )),
-            surface: SurfaceId(format!("catia:zero-entity:surf#{carrier}")),
-            sense,
-            loops: face
-                .loop_indices
-                .iter()
-                .map(|index| LoopId(format!("catia:zero-entity:loop#{index}")))
-                .collect(),
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+        let shell_id = ShellId(format!(
+            "catia:zero-entity:shell#{}",
+            face_components[face_index]
+        ));
+        builder
+            .face(
+                id,
+                &shell_id,
+                FaceSpec {
+                    surface: SurfaceId(format!("catia:zero-entity:surf#{carrier}")),
+                    sense,
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                },
+            )
+            .expect("zero-entity face registers under its component shell");
     }
 }
 
-/// Emits the loop and coedge IR layer.
+/// Registers the loop and coedge layer into `builder`.
+///
+/// Loop rings register in ascending loop index, so the builder aggregates each
+/// `face.loops` in that order and each coedge's `radial_next` is deferred to one
+/// `radial_ring` per edge: every edge's shared coedges form a manifold cycle,
+/// reproducing the former explicit `edge.occurrences[1 - side]` pairing.
 fn emit_zero_entity_loops_coedges(
-    ir: &mut CadIr,
+    builder: &mut TopologyBuilder,
     annotations: &mut AnnotationBuilder,
     topology: &crate::families::zero_entity::graph::ZeroEntityTopology,
     edges: &[crate::families::zero_entity::graph::ZeroResolvedEdge],
@@ -777,6 +788,7 @@ fn emit_zero_entity_loops_coedges(
     loop_owner: &[usize],
 ) {
     const TOLERANCE: f64 = 2e-3;
+    let mut coedges_by_edge = HashMap::<usize, Vec<CoedgeId>>::new();
     for (loop_index, loop_) in topology.loops.iter().enumerate() {
         let id = LoopId(format!("catia:zero-entity:loop#{loop_index}"));
         let coedges: Vec<CoedgeId> = (0..loop_.member_ids.len())
@@ -791,13 +803,7 @@ fn emit_zero_entity_loops_coedges(
             Exactness::ByteExact,
         );
         annotations.derived(&id, "face").derived(&id, "coedges");
-        ir.model.loops.push(Loop {
-            id: id.clone(),
-            face: FaceId(format!("catia:zero-entity:face#{}", loop_owner[loop_index])),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: coedges.clone(),
-            vertex_uses: Vec::new(),
-        });
+        let mut coedge_specs = Vec::with_capacity(coedges.len());
         for member in 0..coedges.len() {
             let (edge_index, side) = occurrence_edges[&(loop_index, member)];
             let edge = &edges[edge_index];
@@ -809,7 +815,6 @@ fn emit_zero_entity_loops_coedges(
                     edge.endpoints[1][2],
                 ))
                 <= TOLERANCE;
-            let radial = edge.occurrences[1 - side];
             annotate(
                 annotations,
                 &coedges[member],
@@ -838,16 +843,13 @@ fn emit_zero_entity_loops_coedges(
             if pcurve.is_some() {
                 annotations.derived(&coedges[member], "pcurves");
             }
-            ir.model.coedges.push(Coedge {
+            coedges_by_edge
+                .entry(edge_index)
+                .or_default()
+                .push(coedges[member].clone());
+            coedge_specs.push(CoedgeSpec {
                 id: coedges[member].clone(),
-                owner_loop: id.clone(),
                 edge: EdgeId(format!("catia:zero-entity:edge#{edge_index}")),
-                next: coedges[(member + 1) % coedges.len()].clone(),
-                previous: coedges[(member + coedges.len() - 1) % coedges.len()].clone(),
-                radial_next: CoedgeId(format!(
-                    "catia:zero-entity:coedge#{}:{}",
-                    radial.loop_index, radial.member_index
-                )),
                 sense: if reversed {
                     Sense::Reversed
                 } else {
@@ -865,6 +867,20 @@ fn emit_zero_entity_loops_coedges(
                 use_curve_parameter_range: None,
             });
         }
+        builder
+            .ring(
+                id,
+                &FaceId(format!("catia:zero-entity:face#{}", loop_owner[loop_index])),
+                cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                coedge_specs,
+                Vec::new(),
+            )
+            .expect("zero-entity loop ring registers under its face");
+    }
+    // Each edge's shared coedges become one radial ring, replacing the former
+    // explicit `radial_next` swap; on the manifold goldens this is a 2-cycle.
+    for occurrences in coedges_by_edge.values() {
+        builder.radial_ring(occurrences);
     }
 }
 
