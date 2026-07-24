@@ -2692,7 +2692,6 @@ mod marker_tests {
                 Point2::new(-0.025, 0.011),
             ])
         );
-
         let mut adjacent = markers.clone();
         adjacent[1].coordinates_m = None;
         adjacent[2].coordinates_m = Some([0.025, 0.011]);
@@ -23903,37 +23902,84 @@ fn indexed_rectangle_from_line_cycle(
             ]
         }
         [_, _, _] => {
-            let missing = *vertices
-                .iter()
-                .find(|vertex| known.iter().all(|(known, _)| known != *vertex))?;
-            let neighbors = edges
-                .iter()
-                .filter(|edge| edge.contains(&missing))
-                .map(|edge| edge[usize::from(edge[0] == missing)])
-                .collect::<Vec<_>>();
-            let [first_neighbor, second_neighbor] = neighbors.as_slice() else {
-                return None;
-            };
-            let opposite = *vertices.iter().find(|vertex| {
-                **vertex != missing && **vertex != *first_neighbor && **vertex != *second_neighbor
-            })?;
-            let coordinates = |vertex| {
+            let axis_aligned = (|| {
+                let mut u = Vec::<f64>::new();
+                let mut v = Vec::<f64>::new();
+                for (_, [point_u, point_v]) in &known {
+                    if u.iter()
+                        .all(|candidate| !same_dimension_length(*candidate, *point_u))
+                    {
+                        u.push(*point_u);
+                    }
+                    if v.iter()
+                        .all(|candidate| !same_dimension_length(*candidate, *point_v))
+                    {
+                        v.push(*point_v);
+                    }
+                }
+                u.sort_by(f64::total_cmp);
+                v.sort_by(f64::total_cmp);
+                let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
+                    return None;
+                };
+                let products = [
+                    Point2::new(*u0, *v0),
+                    Point2::new(*u1, *v0),
+                    Point2::new(*u1, *v1),
+                    Point2::new(*u0, *v1),
+                ];
+                let mut occupied = [false; 4];
+                for (_, [point_u, point_v]) in &known {
+                    let mut matches = products.iter().enumerate().filter(|(_, product)| {
+                        same_dimension_length(product.u, *point_u)
+                            && same_dimension_length(product.v, *point_v)
+                    });
+                    let (index, _) = matches.next()?;
+                    if matches.next().is_some() || occupied[index] {
+                        return None;
+                    }
+                    occupied[index] = true;
+                }
+                (occupied.iter().filter(|occupied| **occupied).count() == 3)
+                    .then_some(products.to_vec())
+            })();
+            if let Some(corners) = axis_aligned {
+                corners
+            } else {
+                let missing = *vertices
+                    .iter()
+                    .find(|vertex| known.iter().all(|(known, _)| known != *vertex))?;
+                let neighbors = edges
+                    .iter()
+                    .filter(|edge| edge.contains(&missing))
+                    .map(|edge| edge[usize::from(edge[0] == missing)])
+                    .collect::<Vec<_>>();
+                let [first_neighbor, second_neighbor] = neighbors.as_slice() else {
+                    return None;
+                };
+                let opposite = *vertices.iter().find(|vertex| {
+                    **vertex != missing
+                        && **vertex != *first_neighbor
+                        && **vertex != *second_neighbor
+                })?;
+                let coordinates = |vertex| {
+                    known
+                        .iter()
+                        .find_map(|(known, coordinates)| (*known == vertex).then_some(*coordinates))
+                };
+                let [first_u, first_v] = coordinates(*first_neighbor)?;
+                let [second_u, second_v] = coordinates(*second_neighbor)?;
+                let [opposite_u, opposite_v] = coordinates(opposite)?;
+                let inferred = [
+                    first_u + second_u - opposite_u,
+                    first_v + second_v - opposite_v,
+                ];
                 known
                     .iter()
-                    .find_map(|(known, coordinates)| (*known == vertex).then_some(*coordinates))
-            };
-            let [first_u, first_v] = coordinates(*first_neighbor)?;
-            let [second_u, second_v] = coordinates(*second_neighbor)?;
-            let [opposite_u, opposite_v] = coordinates(opposite)?;
-            let inferred = [
-                first_u + second_u - opposite_u,
-                first_v + second_v - opposite_v,
-            ];
-            known
-                .iter()
-                .map(|(_, [u, v])| Point2::new(*u, *v))
-                .chain(std::iter::once(Point2::new(inferred[0], inferred[1])))
-                .collect()
+                    .map(|(_, [u, v])| Point2::new(*u, *v))
+                    .chain(std::iter::once(Point2::new(inferred[0], inferred[1])))
+                    .collect()
+            }
         }
         [_, _, _, _] => known
             .iter()
