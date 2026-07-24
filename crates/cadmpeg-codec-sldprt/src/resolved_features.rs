@@ -1517,17 +1517,18 @@ mod marker_tests {
         consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_centered_line_endpoints,
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
-        coordinate_roster_curve_endpoint_markers, coordinate_roster_full_circle,
-        cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
-        cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
-        current_coordinate_linked_line_endpoints, current_geometry_locus_profile_vertex,
-        current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
-        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
-        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame,
-        extended_compact_endpoint_markers, extended_compact_linked_line_handle_coordinates,
-        extended_geometry_locus_profile_vertex, extended_line_handle_coordinates,
-        extended_radial_circle_index, extended_terminal_repeated_radial_circle_index,
+        coordinate_roster_curve_endpoint_markers, coordinate_roster_endpoint_offset,
+        coordinate_roster_full_circle, cosmetic_thread_component_face_reference_at,
+        cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
+        cosmetic_thread_diameter_child_tail, current_coordinate_linked_line_endpoints,
+        current_geometry_locus_profile_vertex, current_indexed_arc_reverses_center_sweep,
+        current_linked_semicircle_record, current_reverse_incidence_endpoint_offsets,
+        current_wide_arc_direct_markers, direct_indexed_curve_endpoint_indices,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, extended_compact_endpoint_markers,
+        extended_compact_linked_line_handle_coordinates, extended_geometry_locus_profile_vertex,
+        extended_line_handle_coordinates, extended_radial_circle_index,
+        extended_terminal_repeated_radial_circle_index,
         extended_wide_construction_line_roster_indices, fixed_reference_plane_frame,
         generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
         indexed_rectangle_from_line_cycle, inline_surface_reference_at,
@@ -7600,6 +7601,33 @@ mod marker_tests {
         current_112[17..21].copy_from_slice(&2u32.to_le_bytes());
         current_112[84..86].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(wide_indexed_curve_endpoint_indices(&current_112, 0), None);
+
+        let mut legacy_terminal = vec![0; 156];
+        legacy_terminal[..80].copy_from_slice(&payload[..80]);
+        legacy_terminal[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        legacy_terminal[17..21].copy_from_slice(&1u32.to_le_bytes());
+        legacy_terminal[80..84].copy_from_slice(&1i32.to_le_bytes());
+        legacy_terminal[84..86].copy_from_slice(&12u16.to_le_bytes());
+        for offset in (86..102).step_by(4) {
+            legacy_terminal[offset..offset + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        legacy_terminal[136..138].copy_from_slice(&[0x05, 0x00]);
+        legacy_terminal[138..142].copy_from_slice(CLASS_MARKER);
+        legacy_terminal[142..144].copy_from_slice(&12u16.to_le_bytes());
+        legacy_terminal[144..].copy_from_slice(b"sgPntPntDist");
+        assert_eq!(
+            wide_indexed_curve_endpoint_indices(&legacy_terminal, 0),
+            Some([7, 11])
+        );
+        assert_eq!(
+            coordinate_roster_endpoint_offset(&legacy_terminal, 0),
+            Some(64)
+        );
+        legacy_terminal[135] = 1;
+        assert_eq!(
+            wide_indexed_curve_endpoint_indices(&legacy_terminal, 0),
+            None
+        );
     }
 
     #[test]
@@ -33122,7 +33150,8 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
             .and_then(|bytes| bytes.try_into().ok())
             .map(u32::from_le_bytes)
     });
-    (prefix == LEGACY_SKETCH_MARKER || current_extended_wide_curve_body(payload, offset))
+    let referenced = (prefix == LEGACY_SKETCH_MARKER
+        || current_extended_wide_curve_body(payload, offset))
         && matches!(selector, Some(-1 | 1))
         && state.is_some_and(|state| state != 0)
         && payload.get(offset + 86..offset + 102)
@@ -33132,7 +33161,39 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
             ])
         && payload.get(offset + 102..offset + 104) == Some(&[0; 2])
         && matches!(identities, [Some(first), Some(second)] if first != u32::MAX && second != u32::MAX && first != second)
-        && sketch_marker_prefix_at(payload, offset.saturating_add(112))
+        && sketch_marker_prefix_at(payload, offset.saturating_add(112));
+    referenced || legacy_terminal_wide_indexed_curve(payload, offset)
+}
+
+fn legacy_terminal_wide_indexed_curve(payload: &[u8], offset: usize) -> bool {
+    let class = offset.saturating_add(138);
+    let Some(length) = payload
+        .get(class + 4..class + 6)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_le_bytes)
+        .map(usize::from)
+    else {
+        return false;
+    };
+    payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(1)
+        && payload.get(offset + 80..offset + 84) == Some(&1i32.to_le_bytes())
+        && payload.get(offset + 84..offset + 86) == Some(&12u16.to_le_bytes())
+        && payload.get(offset + 86..offset + 102)
+            == Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        && payload.get(offset + 102..offset + 136) == Some(&[0; 34])
+        && payload.get(offset + 136..offset + 138) == Some(&[0x05, 0x00])
+        && payload.get(class..class + CLASS_MARKER.len()) == Some(CLASS_MARKER)
+        && (1..=128).contains(&length)
+        && payload
+            .get(class + 6..class + 6 + length)
+            .is_some_and(|name| {
+                name.iter()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            })
 }
 
 fn marker_profile_curve_role(payload: &[u8], offset: usize) -> Option<u16> {
