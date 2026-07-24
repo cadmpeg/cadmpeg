@@ -15,8 +15,8 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::tessellation::Tessellation;
-use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{BodyKind, Coedge, Edge, Point, Sense, Vertex};
+use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, EdgeSpec, FaceSpec, TopologyBuilder};
+use cadmpeg_ir::topology::{BodyKind, Coedge, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::wire::hash::sha256_hex;
 
@@ -499,7 +499,7 @@ impl<'a> Builder<'a> {
             TextShapeKind::Wire => {
                 for child in &shape.children {
                     if self.shape(child.shape)?.kind == TextShapeKind::Edge {
-                        let edge = self.ensure_edge(ir, child, transform)?;
+                        let edge = self.ensure_edge(topology, ir, child, transform)?;
                         topology
                             .wire_edge(&shell_id, edge)
                             .expect("wire edge registers under the staged shell");
@@ -516,7 +516,7 @@ impl<'a> Builder<'a> {
                     },
                     location: 0,
                 };
-                let edge = self.ensure_edge(ir, &edge_use, transform)?;
+                let edge = self.ensure_edge(topology, ir, &edge_use, transform)?;
                 topology
                     .wire_edge(&shell_id, edge)
                     .expect("wire edge registers under the staged shell");
@@ -527,7 +527,7 @@ impl<'a> Builder<'a> {
                     orientation: TextOrientation::Forward,
                     location: 0,
                 };
-                let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
+                let vertex = self.ensure_vertex(topology, &vertex_use, transform)?;
                 topology
                     .free_vertex(&shell_id, vertex)
                     .expect("free vertex registers under the staged shell");
@@ -682,7 +682,7 @@ impl<'a> Builder<'a> {
             for (index, edge_use) in edge_uses.iter().enumerate() {
                 let edge_transform =
                     multiply(wire_transform, self.tables.location(edge_use.location));
-                let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
+                let edge = self.ensure_edge(topology, ir, edge_use, wire_transform)?;
                 let pcurve = self.face_pcurve(edge_use, edge_transform, surface, surface_transform);
                 coedges.push(CoedgeSpec {
                     id: CoedgeId(crate::native::model_id(
@@ -724,6 +724,7 @@ impl<'a> Builder<'a> {
 
     fn ensure_edge(
         &mut self,
+        topology: &mut TopologyBuilder,
         ir: &mut CadIr,
         edge_use: &TextShapeUse,
         parent: Transform,
@@ -761,8 +762,8 @@ impl<'a> Builder<'a> {
             )));
         };
         let end_use = endpoint_use(TextOrientation::Reversed).unwrap_or_else(|| start_use.clone());
-        let start = self.ensure_vertex(ir, &start_use, transform)?;
-        let end = self.ensure_vertex(ir, &end_use, transform)?;
+        let start = self.ensure_vertex(topology, &start_use, transform)?;
+        let end = self.ensure_vertex(topology, &end_use, transform)?;
         let id = EdgeId(crate::native::model_id(
             "edge",
             &self.payload.id,
@@ -794,14 +795,18 @@ impl<'a> Builder<'a> {
                         .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
                 })
             });
-        ir.model.edges.push(Edge {
-            id: id.clone(),
-            curve,
-            start,
-            end,
-            param_range,
-            tolerance: positive_tolerance(tolerance),
-        });
+        topology
+            .edge(
+                id.clone(),
+                EdgeSpec {
+                    curve,
+                    start,
+                    end,
+                    param_range,
+                    tolerance: positive_tolerance(tolerance),
+                },
+            )
+            .expect("edge id is minted once per occurrence, so registration cannot collide");
         self.edges.insert(key, id.clone());
         Ok(id)
     }
@@ -908,7 +913,7 @@ impl<'a> Builder<'a> {
 
     fn ensure_vertex(
         &mut self,
-        ir: &mut CadIr,
+        topology: &mut TopologyBuilder,
         vertex_use: &TextShapeUse,
         parent: Transform,
     ) -> Result<VertexId, CodecError> {
@@ -930,24 +935,25 @@ impl<'a> Builder<'a> {
         let label = self.topology_label(vertex_use.shape, transform);
         let point_id = PointId(crate::native::model_id("point", &self.payload.id, &label));
         let vertex_id = VertexId(crate::native::model_id("vertex", &self.payload.id, &label));
-        ir.model.points.push(Point {
-            id: point_id.clone(),
-            position: transform_point(transform, point),
-            source_object: Some(SourceObjectAssociation {
-                format: "fcstd".into(),
-                object_id: self.source_object.clone(),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
-        ir.model.vertices.push(Vertex {
-            id: vertex_id.clone(),
-            point: point_id,
-            tolerance: positive_tolerance(tolerance * similarity(transform)?.scale),
-        });
+        topology
+            .point(
+                point_id.clone(),
+                transform_point(transform, point),
+                Some(SourceObjectAssociation {
+                    format: "fcstd".into(),
+                    object_id: self.source_object.clone(),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            )
+            .expect("point id is minted once per occurrence, so registration cannot collide");
+        let vertex_tolerance = positive_tolerance(tolerance * similarity(transform)?.scale);
+        topology
+            .vertex(vertex_id.clone(), point_id, vertex_tolerance)
+            .expect("vertex id is minted once per occurrence, so registration cannot collide");
         self.vertices.insert(key, vertex_id.clone());
         Ok(vertex_id)
     }
