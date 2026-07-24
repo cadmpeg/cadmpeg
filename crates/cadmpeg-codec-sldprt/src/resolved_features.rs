@@ -5484,6 +5484,20 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             ["explicit-fourteen", "explicit"]
         );
+
+        payload.resize(116, 0);
+        payload[56..58].copy_from_slice(&1u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&2u16.to_le_bytes());
+        payload[60..64].fill(0);
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..116].fill(0);
+        assert_eq!(
+            extended_compact_endpoint_markers(&payload, &roster_indexed[0], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["explicit", "implicit-zero"]
+        );
     }
 
     #[test]
@@ -30363,6 +30377,7 @@ fn extended_compact_endpoint_markers<'a>(
                 CompactIndexedCurveRecordEnd::Marker84
                     | CompactIndexedCurveRecordEnd::Marker104
                     | CompactIndexedCurveRecordEnd::Terminal102
+                    | CompactIndexedCurveRecordEnd::Terminal116
             )
         ) || payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
             && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
@@ -30404,6 +30419,32 @@ fn extended_compact_endpoint_markers<'a>(
     match (endpoint_by_object(first), endpoint_by_object(second)) {
         (Some(first), Some(second)) if first.id != second.id => vec![first, second],
         _ => {
+            if compact_indexed_curve_record_end(payload, offset)
+                == Some(CompactIndexedCurveRecordEnd::Terminal116)
+            {
+                let mut owned = markers
+                    .iter()
+                    .copied()
+                    .filter(|marker| {
+                        marker.feature_ref == curve.feature_ref
+                            && marker.coordinates_m.is_some()
+                            && matches!(
+                                marker.kind,
+                                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                            )
+                    })
+                    .collect::<Vec<_>>();
+                owned.sort_unstable_by_key(|marker| marker.offset);
+                let endpoint = |id: u32| {
+                    let index = usize::try_from(id.checked_sub(1)?).ok()?;
+                    owned.get(index).copied()
+                };
+                if let (Some(first), Some(second)) = (endpoint(first), endpoint(second)) {
+                    if first.id != second.id {
+                        return vec![first, second];
+                    }
+                }
+            }
             let endpoint_by_roster_index = |id| {
                 let mut candidates = markers.iter().copied().filter(|marker| {
                     marker.feature_ref == curve.feature_ref
@@ -32044,6 +32085,7 @@ enum CompactIndexedCurveRecordEnd {
     Marker96,
     Marker104,
     Terminal102,
+    Terminal116,
 }
 
 fn compact_indexed_curve_record_end(
@@ -32052,6 +32094,13 @@ fn compact_indexed_curve_record_end(
 ) -> Option<CompactIndexedCurveRecordEnd> {
     if sketch_marker_prefix_at(payload, offset.saturating_add(84)) {
         return Some(CompactIndexedCurveRecordEnd::Marker84);
+    }
+    let terminal_116 = payload.get(offset + 60..offset + 64) == Some(&[0; 4])
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 116) == Some(&[0; 44])
+        && !sketch_marker_prefix_at(payload, offset.saturating_add(116));
+    if terminal_116 {
+        return Some(CompactIndexedCurveRecordEnd::Terminal116);
     }
     if payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
