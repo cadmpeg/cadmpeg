@@ -12041,7 +12041,12 @@ fn compact_line_reference_directions(
                     && record.get(112..122) == Some(&[0; 10])
                     && tagged_token(122)
                     && record.get(124..140) == Some(&[0; 16])
-                    && record.get(140..142) == Some(&[0xff; 2])));
+                    && record.get(140..142) == Some(&[0xff; 2]))
+                || (record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
+                    && record.get(112..124) == Some(&[0; 12])
+                    && tagged_token(124)
+                    && record.get(126..142) == Some(&[0; 16])
+                    && record.get(142..144) == Some(&[0xff; 2])));
         if record.get(16..32) == Some(&[0; 16]) && tagged_trailer {
             if let Some(direction) = direction_at(64) {
                 directions.push(direction);
@@ -41436,6 +41441,18 @@ mod profile_join_tests {
                 &[],
             ),
             None
+        );
+        tagged_trailer_payload[122..144].fill(0);
+        tagged_trailer_payload[124..126].copy_from_slice(&0x8204u16.to_le_bytes());
+        tagged_trailer_payload[142..144].copy_from_slice(&[0xff; 2]);
+        assert_eq!(
+            compact_line_reference_direction(
+                &tagged_trailer_payload,
+                0,
+                tagged_trailer_payload.len(),
+                &[],
+            ),
+            Some(Vector3::new(0.0, 0.0, 1.0))
         );
         let short_handles = 200;
         compact_payload[short_handles..short_handles + 8]
