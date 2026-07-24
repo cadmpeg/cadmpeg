@@ -339,7 +339,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
         .iter()
         .flat_map(|history| {
             let source_bindings = unique_source_bindings(history);
-            let by_source = source_bindings
+            let mut by_source = source_bindings
                 .iter()
                 .filter_map(|(source, binding)| {
                     binding
@@ -347,6 +347,12 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                         .map(|(_, neutral)| (*source, neutral.clone()))
                 })
                 .collect::<HashMap<_, _>>();
+            by_source.extend(
+                history
+                    .features
+                    .iter()
+                    .map(|feature| (feature.id.as_str(), neutral_feature_id(&feature.id))),
+            );
             let by_native = history
                 .features
                 .iter()
@@ -2028,6 +2034,36 @@ mod history_reference_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         }
+    }
+
+    #[test]
+    fn source_less_offset_plane_resolves_a_native_feature_reference() {
+        let mut principal = feature("principal-native", None, 0);
+        principal.name = "Right".into();
+        principal.input_class = Some("moRefPlane_c".into());
+        let mut offset = feature("offset-native", None, 1);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6".into());
+        offset
+            .properties
+            .insert("Reference".into(), principal.id.clone());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![principal, offset],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[1].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(reference),
+                distance: Length(6.0),
+            } if reference == &projected[0].id
+        ));
     }
 
     #[test]

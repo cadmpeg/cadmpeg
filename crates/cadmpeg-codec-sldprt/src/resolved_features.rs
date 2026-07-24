@@ -17551,7 +17551,7 @@ pub(crate) fn enrich_history_reference_planes(
     lanes: &[FeatureInputLane],
 ) {
     let mut candidates = BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
-    let mut reference_candidates = BTreeMap::<(usize, usize), Vec<u32>>::new();
+    let mut reference_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let mut reference_frame_candidates =
         BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
     let known_sources = histories
@@ -17603,7 +17603,7 @@ pub(crate) fn enrich_history_reference_planes(
                 reference_candidates
                     .entry((history_index, feature_index))
                     .or_default()
-                    .push(source);
+                    .push(source.to_string());
             }
             let offset_frames = feature
                 .parameters
@@ -17669,7 +17669,7 @@ pub(crate) fn enrich_history_reference_planes(
             Some((*index, *frame))
         })
         .collect::<HashMap<_, _>>();
-    let mut frames_by_source = histories
+    let mut frames_by_reference = histories
         .iter()
         .enumerate()
         .flat_map(|(history_index, history)| {
@@ -17678,26 +17678,33 @@ pub(crate) fn enrich_history_reference_planes(
                 .iter()
                 .enumerate()
                 .filter_map(move |(feature_index, feature)| {
+                    let reference = feature
+                        .source_id
+                        .clone()
+                        .unwrap_or_else(|| feature.id.clone());
                     Some((
-                        feature.source_id.as_deref()?.parse::<u32>().ok()?,
+                        reference,
                         (history_index, feature_index),
                         principal_sketch_frame(principal_plane(feature)?),
                     ))
                 })
         })
         .collect::<Vec<_>>();
-    frames_by_source.extend(unique_frames.iter().filter_map(|(index, frame)| {
+    frames_by_reference.extend(unique_frames.iter().map(|(index, frame)| {
         let feature = &histories[index.0].features[index.1];
-        Some((
-            feature.source_id.as_deref()?.parse::<u32>().ok()?,
+        (
+            feature
+                .source_id
+                .clone()
+                .unwrap_or_else(|| feature.id.clone()),
             *index,
             *frame,
-        ))
+        )
     }));
     for (index, frames) in reference_frame_candidates {
         let mut sources = Vec::new();
         for reference in frames {
-            for (source, candidate_index, candidate) in &frames_by_source {
+            for (source, candidate_index, candidate) in &frames_by_reference {
                 if candidate_index.0 == index.0
                     && (candidate_index.1 < index.1
                         || principal_plane(
@@ -17706,14 +17713,17 @@ pub(crate) fn enrich_history_reference_planes(
                         .is_some())
                     && offset_plane_reference_frame_matches(*candidate, reference, 0.0)
                 {
-                    sources.push(*source);
+                    sources.push(source.clone());
                 }
             }
         }
         sources.sort_unstable();
         sources.dedup();
         if let [source] = sources.as_slice() {
-            reference_candidates.entry(index).or_default().push(*source);
+            reference_candidates
+                .entry(index)
+                .or_default()
+                .push(source.clone());
         }
     }
     for (&index, &frame) in &unique_frames {
@@ -17728,18 +17738,21 @@ pub(crate) fn enrich_history_reference_planes(
         else {
             continue;
         };
-        let mut sources = frames_by_source
+        let mut sources = frames_by_reference
             .iter()
             .filter(|(_, candidate_index, candidate)| {
                 *candidate_index != index
                     && offset_plane_reference_frame_matches(*candidate, frame, distance)
             })
-            .map(|(source, _, _)| *source)
+            .map(|(source, _, _)| source.clone())
             .collect::<Vec<_>>();
         sources.sort_unstable();
         sources.dedup();
         if let [source] = sources.as_slice() {
-            reference_candidates.entry(index).or_default().push(*source);
+            reference_candidates
+                .entry(index)
+                .or_default()
+                .push(source.clone());
         }
     }
     for ((history_index, feature_index), mut sources) in reference_candidates {
@@ -17750,7 +17763,7 @@ pub(crate) fn enrich_history_reference_planes(
         };
         histories[history_index].features[feature_index]
             .properties
-            .insert("Reference".into(), source.to_string());
+            .insert("Reference".into(), source.clone());
     }
     for ((history_index, feature_index), mut frames) in candidates {
         frames.sort_by_key(reference_plane_frame_key);
