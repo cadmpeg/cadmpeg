@@ -4778,6 +4778,41 @@ mod marker_tests {
     }
 
     #[test]
+    fn linked_profile_curve_uses_its_two_typed_endpoint_cells() {
+        let offset = 4;
+        let mut payload = vec![0; offset + 146 + SKETCH_MARKER.len()];
+        payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
+        payload[offset + 23..offset + 29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[offset + 31..offset + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[offset + 56..offset + 58].copy_from_slice(&[0x1e, 0x00]);
+        payload[offset + 58..offset + 66].copy_from_slice(&1.25f64.to_le_bytes());
+        payload[offset + 66..offset + 74].copy_from_slice(&(-2.5f64).to_le_bytes());
+        payload[offset + 76..offset + 78].copy_from_slice(&3u16.to_le_bytes());
+        for (relative, endpoint) in [(78, 2u16), (86, 3u16)] {
+            payload[offset + relative..offset + relative + 2]
+                .copy_from_slice(&0x8137u16.to_le_bytes());
+            payload[offset + relative + 2..offset + relative + 4]
+                .copy_from_slice(&endpoint.to_le_bytes());
+            payload[offset + relative + 4..offset + relative + 8].fill(0xff);
+        }
+        payload[offset + 94..offset + 100].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        payload[offset + 142..offset + 146].copy_from_slice(&5u32.to_le_bytes());
+        for prefix in [SKETCH_MARKER, LEGACY_EXTENDED_SKETCH_MARKER] {
+            payload[offset..offset + prefix.len()].copy_from_slice(prefix);
+            payload[offset + 146..offset + 146 + prefix.len()].copy_from_slice(prefix);
+            assert_eq!(
+                super::linked_profile_curve_endpoint_indices(&payload, offset),
+                Some([2, 3])
+            );
+        }
+    }
+
+    #[test]
     fn compact_indexed_curve_stores_endpoints_in_both_generations() {
         let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
         payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -27409,6 +27444,7 @@ fn legacy_terminal_indexed_profile_line(
 type CurveEndpointDecoder = fn(&[u8], usize) -> Option<[u32; 2]>;
 
 const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
+    linked_profile_curve_endpoint_indices,
     wide_indexed_curve_endpoint_indices,
     compact_indexed_curve_endpoint_indices,
     direct_indexed_curve_endpoint_indices,
@@ -27432,6 +27468,44 @@ fn resolved_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32
     CURVE_ENDPOINT_INDEX_DECODERS
         .iter()
         .find_map(|decode| decode(payload, offset))
+}
+
+fn linked_profile_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if !matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    ) || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
+        || finite_coordinate_pair(payload, offset + 58).is_none()
+        || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
+        || payload.get(offset + 76..offset + 78) != Some(&3u16.to_le_bytes())
+        || payload.get(offset + 94..offset + 100) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        || payload.get(offset + 100..offset + 142) != Some(&[0; 42])
+        || payload
+            .get(offset + 142..offset + 146)
+            .is_none_or(|identity| identity == [0; 4] || identity == [0xff; 4])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(146)?)
+    {
+        return None;
+    }
+    let endpoint = |relative| {
+        let cell = payload.get(offset + relative..offset + relative + 8)?;
+        let kind = operand_kind(cell[..2].try_into().ok()?)?;
+        if !operand_accepts_marker(kind, SketchInputKind::Point) || cell[4..8] != [0xff; 4] {
+            return None;
+        }
+        Some(u32::from(u16::from_le_bytes(cell[2..4].try_into().ok()?)))
+    };
+    let endpoints = [endpoint(78)?, endpoint(86)?];
+    (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
 fn roster_curve_endpoint_markers<'a>(
