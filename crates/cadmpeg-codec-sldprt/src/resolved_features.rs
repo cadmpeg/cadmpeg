@@ -2798,6 +2798,39 @@ mod marker_tests {
                 Point2::new(0.0, 0.0),
             ])
         );
+        let mut three_sides = wide[..CURVE_START + 3 * 92 + SKETCH_MARKER.len()].to_vec();
+        for (index, edge) in [[1u16, 2u16], [2, 4], [4, 3]].into_iter().enumerate() {
+            let offset = CURVE_START + index * 92;
+            three_sides[offset + 64..offset + 66].copy_from_slice(&edge[0].to_le_bytes());
+            three_sides[offset + 66..offset + 68].copy_from_slice(&edge[1].to_le_bytes());
+        }
+        three_sides[CURVE_START + 92 + 23..CURVE_START + 92 + 27]
+            .copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        three_sides[CURVE_START + 2 * 92 + 17..CURVE_START + 2 * 92 + 21]
+            .copy_from_slice(&2u32.to_le_bytes());
+        let mut three_side_markers = wide_markers[..8].to_vec();
+        three_side_markers[4].coordinates_m = Some([1.0e-17, 0.0]);
+        three_side_markers[7].kind = SketchInputKind::Arc;
+        assert_eq!(
+            indexed_rectangle_from_line_cycle(
+                &three_sides,
+                &three_side_markers.iter().collect::<Vec<_>>(),
+            ),
+            Some([
+                Point2::new(0.0, -0.03),
+                Point2::new(0.01, -0.03),
+                Point2::new(0.01, 0.0),
+                Point2::new(0.0, 0.0),
+            ])
+        );
+        three_sides[CURVE_START + 92 + 64..CURVE_START + 92 + 68].copy_from_slice(&[1, 0, 4, 0]);
+        assert_eq!(
+            indexed_rectangle_from_line_cycle(
+                &three_sides,
+                &three_side_markers.iter().collect::<Vec<_>>(),
+            ),
+            None
+        );
         wide[CURVE_START + 3 * 92 + 17..CURVE_START + 3 * 92 + 21]
             .copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(
@@ -24296,6 +24329,40 @@ fn ordered_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {
         .then_some(corners)
 }
 
+fn ordered_tolerant_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {
+    let [_, _, _, _] = points else {
+        return None;
+    };
+    let mut u = points.iter().map(|point| point.u).collect::<Vec<_>>();
+    u.sort_by(f64::total_cmp);
+    u.dedup_by(|left, right| same_dimension_length(*left, *right));
+    let mut v = points.iter().map(|point| point.v).collect::<Vec<_>>();
+    v.sort_by(f64::total_cmp);
+    v.dedup_by(|left, right| same_dimension_length(*left, *right));
+    let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
+        return None;
+    };
+    let corners = [
+        Point2::new(*u0, *v0),
+        Point2::new(*u1, *v0),
+        Point2::new(*u1, *v1),
+        Point2::new(*u0, *v1),
+    ];
+    corners
+        .iter()
+        .all(|corner| {
+            points
+                .iter()
+                .filter(|point| {
+                    same_dimension_length(point.u, corner.u)
+                        && same_dimension_length(point.v, corner.v)
+                })
+                .count()
+                == 1
+        })
+        .then_some(corners)
+}
+
 fn indexed_rectangle_from_line_cycle(
     payload: &[u8],
     markers: &[&SketchInputEntity],
@@ -24307,7 +24374,8 @@ fn indexed_rectangle_from_line_cycle(
         .filter_map(|marker| {
             let offset = usize::try_from(marker.offset).ok()?;
             if let Some(endpoints) = legacy_extended_rectangle_line_endpoints(payload, offset) {
-                return (marker.kind == SketchInputKind::LineOrCircle).then_some((endpoints, None));
+                return (marker.kind == SketchInputKind::LineOrCircle)
+                    .then_some((endpoints, None, false));
             }
             let endpoints = current_wide_rectangle_line_endpoints(payload, offset)?;
             if endpoints.iter().any(|endpoint| {
@@ -24328,33 +24396,45 @@ fn indexed_rectangle_from_line_cycle(
                 marker.kind,
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
-            .then_some((endpoints, marker_native_code(payload, offset)))
+            .then_some((
+                endpoints,
+                marker_native_code(payload, offset),
+                payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00]),
+            ))
         })
         .collect::<Vec<_>>();
     let current_codes = records
         .iter()
-        .filter_map(|(_, current_code)| *current_code)
+        .filter_map(|(_, current_code, _)| *current_code)
         .collect::<Vec<_>>();
     if !(current_codes.is_empty()
         || current_codes.len() == 4
             && current_codes.iter().filter(|code| **code == 1).count() == 3
+            && current_codes.iter().filter(|code| **code == 2).count() == 1
+        || current_codes.len() == 3
+            && current_codes.iter().filter(|code| **code == 1).count() == 2
             && current_codes.iter().filter(|code| **code == 2).count() == 1)
     {
         return None;
     }
-    let mut edges = records
+    let edges = records
+        .into_iter()
+        .map(|(endpoints, _, alternate_locus)| (endpoints, alternate_locus))
+        .collect::<Vec<_>>();
+    if !matches!(edges.len(), 3 | 4) || edges.len() == 3 && current_codes.len() != 3 {
+        return None;
+    }
+    if edges.len() == 4 && edges.iter().any(|(_, alternate_locus)| *alternate_locus) {
+        return None;
+    }
+    let mut edges = edges
         .into_iter()
         .map(|(endpoints, _)| endpoints)
         .collect::<Vec<_>>();
-    if edges.len() != 4 {
-        return None;
-    }
+    let edge_count = edges.len();
     edges.sort_unstable();
     edges.dedup();
-    let [_, _, _, _] = edges.as_slice() else {
-        return None;
-    };
-    if edges.iter().any(|edge| edge[0] == edge[1]) {
+    if edges.len() != edge_count || edges.iter().any(|edge| edge[0] == edge[1]) {
         return None;
     }
     let mut vertices = edges.iter().flatten().copied().collect::<Vec<_>>();
@@ -24363,10 +24443,12 @@ fn indexed_rectangle_from_line_cycle(
     let [_, _, _, _] = vertices.as_slice() else {
         return None;
     };
-    if vertices
+    let mut degrees = vertices
         .iter()
-        .any(|vertex| edges.iter().filter(|edge| edge.contains(vertex)).count() != 2)
-    {
+        .map(|vertex| edges.iter().filter(|edge| edge.contains(vertex)).count())
+        .collect::<Vec<_>>();
+    degrees.sort_unstable();
+    if !matches!(degrees.as_slice(), [2, 2, 2, 2] | [1, 1, 2, 2]) {
         return None;
     }
     let mut known = vertices
@@ -24381,6 +24463,9 @@ fn indexed_rectangle_from_line_cycle(
         })
         .collect::<Vec<_>>();
     known.sort_unstable_by_key(|(vertex, _)| *vertex);
+    if edges.len() == 3 && known.len() != 4 {
+        return None;
+    }
     let corners = match known.as_slice() {
         [(first_vertex, [first_u, first_v]), (second_vertex, [second_u, second_v])] => {
             if edges
@@ -24484,11 +24569,27 @@ fn indexed_rectangle_from_line_cycle(
             .collect(),
         _ => return None,
     };
-    corners
+    let corners = corners
         .iter()
         .all(|corner| corner.u.is_finite() && corner.v.is_finite())
-        .then(|| ordered_rectangle_corners(&corners))
-        .flatten()
+        .then(|| {
+            if edges.len() == 3 {
+                ordered_tolerant_rectangle_corners(&corners)
+            } else {
+                ordered_rectangle_corners(&corners)
+            }
+        })
+        .flatten()?;
+    let coordinates = known.iter().copied().collect::<HashMap<_, _>>();
+    (edges.len() == 4
+        || edges.iter().all(|[first, second]| {
+            let (Some(first), Some(second)) = (coordinates.get(first), coordinates.get(second))
+            else {
+                return false;
+            };
+            same_dimension_length(first[0], second[0]) ^ same_dimension_length(first[1], second[1])
+        }))
+    .then_some(corners)
 }
 
 fn legacy_extended_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
@@ -24529,7 +24630,10 @@ fn legacy_extended_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Op
 fn current_wide_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || !matches!(marker_native_code(payload, offset), Some(1 | 2))
-        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || !matches!(
+            payload.get(offset + 23..offset + 27),
+            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+        )
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
         || payload.get(offset + 31..offset + 39)
