@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn counted_floors_impossible_counts() {
-        // Port of the legacy `src/cursor.rs` counted parity cases.
+        // Byte-floored element counts: exact fit, one-over, u32::MAX, and zero size.
         let payload = [0u8; 40];
 
         let mut cursor = Cursor::new(&payload);

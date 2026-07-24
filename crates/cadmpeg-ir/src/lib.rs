@@ -39,7 +39,6 @@ pub mod attributes;
 pub mod bytes;
 pub mod codec;
 pub mod container;
-pub mod cursor;
 pub mod decode;
 
 pub mod diff;
