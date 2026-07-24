@@ -8574,6 +8574,21 @@ mod marker_tests {
             Some(9)
         );
 
+        let legacy_marker = body_offset + 102;
+        let mut legacy = vec![0; legacy_marker - 12];
+        legacy[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
+        legacy[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
+        legacy[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(selection_vector_tail(&mut legacy, &[11]), legacy_marker);
+        let (actual_marker, components) =
+            cosmetic_thread_cylinder_reference_at(&legacy, body_offset)
+                .expect("required invariant");
+        assert_eq!(actual_marker, legacy_marker);
+        assert_eq!(
+            components.last().expect("required invariant").local_id,
+            Some(11)
+        );
+
         assert_eq!(
             cosmetic_thread_cylinder_reference_at(&payload, body_offset + 1),
             None
@@ -8865,6 +8880,49 @@ mod marker_tests {
         );
 
         payload[slot] = 2;
+        assert_eq!(
+            compact_sketch_surface_component_path_at(&payload, marker),
+            None
+        );
+    }
+
+    #[test]
+    fn legacy_sketch_surface_component_path_requires_its_ownership_trailer() {
+        let marker = 12;
+        let mut payload = Vec::new();
+        payload.extend(5u32.to_le_bytes());
+        payload.extend([0, 2, 0, 0]);
+        payload.extend(7u32.to_le_bytes());
+        payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0; 2]);
+        for (index, local_id) in [2u32, 1, 0].into_iter().enumerate() {
+            if index == 1 {
+                payload.extend(3u32.to_le_bytes());
+            } else if index == 2 {
+                payload.extend([0; 6]);
+            }
+            payload.extend((0x8032 + index as u16).to_le_bytes());
+            payload.extend([0; 2]);
+            payload.extend([index as u8 + 1; 12]);
+            payload.extend(local_id.to_le_bytes());
+        }
+        let trailer = payload.len();
+        payload.extend([0; 20]);
+        payload.extend(1u32.to_le_bytes());
+        payload.extend(0u32.to_le_bytes());
+        payload.extend(175u32.to_le_bytes());
+        payload.extend([0; 12]);
+
+        assert_eq!(
+            compact_sketch_surface_component_path_at(&payload, marker)
+                .expect("required invariant")
+                .iter()
+                .map(|component| component.local_id)
+                .collect::<Vec<_>>(),
+            [Some(2), Some(1), Some(0)]
+        );
+
+        payload[trailer + 28..trailer + 32].fill(0);
         assert_eq!(
             compact_sketch_surface_component_path_at(&payload, marker),
             None
@@ -15655,7 +15713,7 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
     {
         return None;
     }
-    [66, 70, 94, 106].into_iter().find_map(|relative| {
+    [66, 70, 94, 102, 106].into_iter().find_map(|relative| {
         let marker = body_offset.checked_add(relative)?;
         let count = u32::from_le_bytes(
             payload
@@ -15693,13 +15751,27 @@ fn compact_sketch_surface_component_path_at(
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     if payload.get(marker.checked_sub(12)?..marker - 8)? != 5u32.to_le_bytes()
-        || payload.get(marker - 8..marker - 4)? != [0, 3, 0, 0]
         || payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
     }
-    compact_heterogeneous_component_path(payload, marker + 18, 3).map(|(components, _)| components)
+    let kind = payload.get(marker - 8..marker - 4)?;
+    let selector = u32::from_le_bytes(payload.get(marker - 4..marker)?.try_into().ok()?);
+    let (components, end) = compact_heterogeneous_component_path(payload, marker + 18, 3)?;
+    match kind {
+        [0, 3, 0, 0] => Some(components),
+        [0, 2, 0, 0] if selector != 0 => {
+            let trailer = payload.get(end..end + 44)?;
+            (trailer[..20] == [0; 20]
+                && trailer[20..24] == 1u32.to_le_bytes()
+                && trailer[24..28] == [0; 4]
+                && trailer[28..32] != [0; 4]
+                && trailer[32..] == [0; 12])
+                .then_some(components)
+        }
+        _ => None,
+    }
 }
 
 fn compact_surface_selection_at(
