@@ -2,7 +2,7 @@
 //! `SolidWorks` Keywords XML feature history.
 
 use crate::classification::{
-    classify, native_object_class, principal_plane, FeatureClass, NativeClassKind,
+    classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
@@ -2842,11 +2842,41 @@ mod history_reference_tests {
     #[test]
     fn principal_plane_requires_the_reference_plane_native_class() {
         let mut plane = feature("plane", Some("2"), 0);
-        assert_eq!(principal_plane(&plane), None);
+        assert_eq!(crate::classification::principal_plane(&plane), None);
         plane.input_class = Some("moRefPlane_c".into());
         assert_eq!(
-            principal_plane(&plane),
+            crate::classification::principal_plane(&plane),
             Some(cadmpeg_ir::features::PrincipalPlane::Front)
+        );
+    }
+
+    #[test]
+    fn shifted_reserved_triplet_classifies_principal_planes_in_order() {
+        let mut scene = feature("scene", Some("2"), 0);
+        let mut front = feature("front", Some("3"), 1);
+        let mut top = feature("top", Some("4"), 2);
+        let mut right = feature("right", Some("5"), 3);
+        for plane in [&mut front, &mut top, &mut right] {
+            plane.input_class = Some("moRefPlane_c".into());
+        }
+        scene.input_class = Some("moSceneFolder_c".into());
+        let features = [scene, front.clone(), top.clone(), right.clone()];
+        let by_source = features
+            .iter()
+            .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(
+            principal_plane_in_history(&front, &by_source, &features),
+            Some(cadmpeg_ir::features::PrincipalPlane::Front)
+        );
+        assert_eq!(
+            principal_plane_in_history(&top, &by_source, &features),
+            Some(cadmpeg_ir::features::PrincipalPlane::Top)
+        );
+        assert_eq!(
+            principal_plane_in_history(&right, &by_source, &features),
+            Some(cadmpeg_ir::features::PrincipalPlane::Right)
         );
     }
 
@@ -5408,7 +5438,7 @@ fn principal_plane_in_history(
 ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
     use cadmpeg_ir::features::PrincipalPlane;
 
-    if let Some(plane) = principal_plane(feature) {
+    if let Some(plane) = principal_plane_with_siblings(feature, history_features) {
         return Some(plane);
     }
     let legacy_shape = |record: &Feature| {

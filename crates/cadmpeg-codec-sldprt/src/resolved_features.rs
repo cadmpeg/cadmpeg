@@ -2,7 +2,7 @@
 //! Typed views over `SolidWorks` `ResolvedFeatures` sketch records.
 
 use crate::classification::{
-    classify, native_object_class, principal_plane, FeatureClass, NativeClassKind,
+    classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::records::{
     FeatureInputBodySelection, FeatureInputClass, FeatureInputClassRole,
@@ -20466,7 +20466,8 @@ pub(crate) fn enrich_history_reference_planes(
             let feature = &histories[history_index].features[feature_index];
             if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
                 != NativeClassKind::ReferencePlane
-                || principal_plane(feature).is_some()
+                || principal_plane_with_siblings(feature, &histories[history_index].features)
+                    .is_some()
                 || feature.properties.contains_key("Origin")
                 || feature.properties.contains_key("Normal")
                 || feature.properties.contains_key("UAxis")
@@ -20573,7 +20574,10 @@ pub(crate) fn enrich_history_reference_planes(
                     Some((
                         reference,
                         (history_index, feature_index),
-                        principal_sketch_frame(principal_plane(feature)?),
+                        principal_sketch_frame(principal_plane_with_siblings(
+                            feature,
+                            &history.features,
+                        )?),
                     ))
                 })
         })
@@ -20597,8 +20601,9 @@ pub(crate) fn enrich_history_reference_planes(
                 .filter(|(_, candidate_index, candidate)| {
                     candidate_index.0 == index.0
                         && (candidate_index.1 < index.1
-                            || principal_plane(
+                            || principal_plane_with_siblings(
                                 &histories[candidate_index.0].features[candidate_index.1],
+                                &histories[candidate_index.0].features,
                             )
                             .is_some())
                         && offset_plane_reference_frame_matches(*candidate, reference, 0.0)
@@ -20609,8 +20614,11 @@ pub(crate) fn enrich_history_reference_planes(
                     (
                         source.as_str(),
                         candidate_index.1,
-                        principal_plane(&histories[candidate_index.0].features[candidate_index.1])
-                            .is_some(),
+                        principal_plane_with_siblings(
+                            &histories[candidate_index.0].features[candidate_index.1],
+                            &histories[candidate_index.0].features,
+                        )
+                        .is_some(),
                     )
                 },
             ));
@@ -20651,8 +20659,11 @@ pub(crate) fn enrich_history_reference_planes(
                 (
                     source.as_str(),
                     candidate_index.1,
-                    principal_plane(&histories[candidate_index.0].features[candidate_index.1])
-                        .is_some(),
+                    principal_plane_with_siblings(
+                        &histories[candidate_index.0].features[candidate_index.1],
+                        &histories[candidate_index.0].features,
+                    )
+                    .is_some(),
                 )
             },
         )) {
