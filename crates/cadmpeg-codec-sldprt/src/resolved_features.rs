@@ -490,21 +490,21 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 extended_compact_linked_profile_point_coordinates(payload, offset);
             let terminal_profile_point =
                 terminal_extended_profile_point_coordinates(payload, offset);
-            let current_compact_profile_point =
-                current_compact_geometry_locus_profile_point_coordinates(payload, offset);
+            let compact_geometry_locus_point =
+                compact_geometry_locus_point_coordinates(payload, offset);
             let coordinates_m = linked_point
                 .map(|(coordinates, _)| coordinates)
                 .or(extended_profile_point)
                 .or(compact_profile_point)
                 .or(terminal_profile_point)
-                .or(current_compact_profile_point)
+                .or(compact_geometry_locus_point)
                 .or_else(|| marker_coordinates(payload, offset));
             let kind = if marker_spatial_coordinates(payload, offset).is_some()
                 || legacy_line_handle_coordinates(payload, offset).is_some()
                 || extended_profile_point.is_some()
                 || compact_profile_point.is_some()
                 || terminal_profile_point.is_some()
-                || current_compact_profile_point.is_some()
+                || compact_geometry_locus_point.is_some()
                 || linked_point.is_some()
                 || coordinates_m.is_some()
                     && (compact_legacy_profile_vertex(payload, offset)
@@ -1347,12 +1347,11 @@ fn current_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool 
         && sketch_marker_prefix_at(payload, offset.saturating_add(146))
 }
 
-fn current_compact_geometry_locus_profile_point_coordinates(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[f64; 2]> {
-    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
-        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+fn compact_geometry_locus_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    if !matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_SKETCH_MARKER
+    ) || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
         || marker_native_code(payload, offset) != Some(1)
         || !marker_is_geometry_locus(payload, offset)
@@ -1616,10 +1615,10 @@ mod marker_tests {
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
         compact_extrusion_to_face_at, compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
-        compact_indexed_curve_endpoint_indices, compact_legacy_curve_endpoint_indices,
-        compact_legacy_profile_vertex, compact_legacy_radial_circle_index,
-        compact_legacy_selected_axis_endpoint_indices, compact_line_chain_addresses,
-        compact_line_region_addresses, compact_offset_plane_source,
+        compact_geometry_locus_point_coordinates, compact_indexed_curve_endpoint_indices,
+        compact_legacy_curve_endpoint_indices, compact_legacy_profile_vertex,
+        compact_legacy_radial_circle_index, compact_legacy_selected_axis_endpoint_indices,
+        compact_line_chain_addresses, compact_line_region_addresses, compact_offset_plane_source,
         compact_profile_reference_plane_source, compact_reference_plane_frame,
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_single_face_reference_record_at, compact_sketch_surface_component_path_at,
@@ -1632,16 +1631,15 @@ mod marker_tests {
         coordinate_roster_curve_endpoint_markers, coordinate_roster_endpoint_offset,
         coordinate_roster_full_circle, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
-        cosmetic_thread_diameter_child_tail,
-        current_compact_geometry_locus_profile_point_coordinates,
-        current_coordinate_linked_line_endpoints, current_geometry_locus_profile_vertex,
-        current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
-        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
-        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame,
-        extended_compact_endpoint_markers, extended_compact_linked_profile_point_coordinates,
-        extended_geometry_locus_profile_vertex, extended_profile_point_coordinates,
-        extended_radial_circle_index, extended_terminal_repeated_radial_circle_index,
+        cosmetic_thread_diameter_child_tail, current_coordinate_linked_line_endpoints,
+        current_geometry_locus_profile_vertex, current_indexed_arc_reverses_center_sweep,
+        current_linked_semicircle_record, current_reverse_incidence_endpoint_offsets,
+        current_wide_arc_direct_markers, direct_indexed_curve_endpoint_indices,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, extended_compact_endpoint_markers,
+        extended_compact_linked_profile_point_coordinates, extended_geometry_locus_profile_vertex,
+        extended_profile_point_coordinates, extended_radial_circle_index,
+        extended_terminal_repeated_radial_circle_index,
         extended_wide_construction_line_roster_indices, fixed_reference_plane_frame,
         generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
         indexed_rectangle_from_line_cycle, inline_surface_reference_at,
@@ -6792,17 +6790,44 @@ mod marker_tests {
         payload[134..].copy_from_slice(SKETCH_MARKER);
 
         assert_eq!(
-            current_compact_geometry_locus_profile_point_coordinates(&payload, 0),
+            compact_geometry_locus_point_coordinates(&payload, 0),
             Some([-1.125, 0.542])
         );
         let entity = &sketch_input_entities(&payload, "lane")[0];
         assert_eq!(entity.kind, SketchInputKind::Point);
         assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
         payload[82..84].fill(0);
+        assert_eq!(compact_geometry_locus_point_coordinates(&payload, 0), None);
+    }
+
+    #[test]
+    fn legacy_compact_geometry_locus_point_decodes_inline_coordinates() {
+        let mut payload = vec![0; 134 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+        payload[58..66].copy_from_slice(&(-1.125f64).to_le_bytes());
+        payload[66..74].copy_from_slice(&0.542f64.to_le_bytes());
+        payload[74..78].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+        payload[82..84].copy_from_slice(&1u16.to_le_bytes());
+        payload[84..88].copy_from_slice(&(-2i32).to_le_bytes());
+        payload[130..134].copy_from_slice(&7u32.to_le_bytes());
+        payload[134..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
         assert_eq!(
-            current_compact_geometry_locus_profile_point_coordinates(&payload, 0),
-            None
+            compact_geometry_locus_point_coordinates(&payload, 0),
+            Some([-1.125, 0.542])
         );
+        let entity = &sketch_input_entities(&payload, "lane")[0];
+        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
+        payload[130..134].fill(0);
+        assert_eq!(compact_geometry_locus_point_coordinates(&payload, 0), None);
     }
 
     #[test]
