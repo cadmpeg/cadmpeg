@@ -1643,12 +1643,12 @@ mod marker_tests {
         current_compact_104_profile_line, current_coordinate_linked_line_endpoints,
         current_direct_92_profile_line_endpoint_indices, current_geometry_locus_profile_vertex,
         current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
-        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
-        current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
-        enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, extended_compact_endpoint_markers,
-        extended_compact_linked_profile_point_coordinates, extended_geometry_locus_profile_vertex,
-        extended_profile_point_coordinates,
+        current_long_full_circle_radial_index, current_reverse_incidence_endpoint_offsets,
+        current_wide_arc_direct_markers, current_wide_undetailed_line,
+        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
+        explicit_reference_axis_frame, explicit_reference_plane_frame,
+        extended_compact_endpoint_markers, extended_compact_linked_profile_point_coordinates,
+        extended_geometry_locus_profile_vertex, extended_profile_point_coordinates,
         extended_profile_roster_construction_line_endpoint_indices, extended_radial_circle_index,
         extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
         extended_terminal_repeated_radial_circle_index,
@@ -7433,6 +7433,35 @@ mod marker_tests {
 
         payload[120..124].fill(0);
         assert_eq!(legacy_long_profile_line_endpoint_indices(&payload, 0), None);
+    }
+
+    #[test]
+    fn current_long_full_circle_indexes_its_radial_point() {
+        let mut payload = vec![0; 154];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..68].copy_from_slice(&[1, 0, 1, 0]);
+        payload[68..72].copy_from_slice(&1u32.to_le_bytes());
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[80..84].copy_from_slice(&1u32.to_le_bytes());
+        for relative in [86, 90, 94, 98] {
+            payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[134..136].copy_from_slice(&4u16.to_le_bytes());
+        payload[136..154].copy_from_slice(&[
+            0xf1, 0x80, 0x00, 0x00, 0x00, 0x00, 0xf3, 0x80, 0x04, 0x80, 0xff, 0xfe, 0xff, 0x02,
+            0x44, 0x00, 0x31, 0x00,
+        ]);
+
+        assert_eq!(current_long_full_circle_radial_index(&payload, 0), Some(1));
+
+        payload[66..68].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(current_long_full_circle_radial_index(&payload, 0), None);
     }
 
     #[test]
@@ -23393,6 +23422,13 @@ pub(crate) fn project_marker_backed_sketches(
                                 )
                             })
                             .or_else(|| {
+                                coordinate_roster_full_circle(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                )
+                            })
+                            .or_else(|| {
                                 wide_coordinate_roster_full_circle(
                                     &lane.native_payload,
                                     marker,
@@ -33033,42 +33069,48 @@ fn coordinate_roster_full_circle(
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
     let offset = usize::try_from(circle.offset).ok()?;
-    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(0)
-        || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
-        || marker_profile_curve_role(payload, offset) != Some(1)
-        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
-        || payload.get(offset + 31..offset + 39)
-            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
-        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
-        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
-        || payload.get(offset + 72..offset + 76) != Some(&1i32.to_le_bytes())
-        || payload.get(offset + 78..offset + 94)
-            != Some(&[
-                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
-                0xff, 0xff,
-            ])
-        || payload.get(offset + 94..offset + 96) != Some(&[0; 2])
-        || !matches!(
-            compact_indexed_curve_record_end(payload, offset),
-            Some(
-                CompactIndexedCurveRecordEnd::Marker104 | CompactIndexedCurveRecordEnd::Terminal102
+    let radial_index = if let Some(index) = current_long_full_circle_radial_index(payload, offset) {
+        index
+    } else {
+        if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+            != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+            || marker_native_code(payload, offset) != Some(0)
+            || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
+            || marker_profile_curve_role(payload, offset) != Some(1)
+            || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+            || payload.get(offset + 31..offset + 39)
+                != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+            || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+            || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+            || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+            || payload.get(offset + 72..offset + 76) != Some(&1i32.to_le_bytes())
+            || payload.get(offset + 78..offset + 94)
+                != Some(&[
+                    0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe,
+                    0xff, 0xff, 0xff,
+                ])
+            || payload.get(offset + 94..offset + 96) != Some(&[0; 2])
+            || !matches!(
+                compact_indexed_curve_record_end(payload, offset),
+                Some(
+                    CompactIndexedCurveRecordEnd::Marker104
+                        | CompactIndexedCurveRecordEnd::Terminal102
+                )
             )
-        )
-    {
-        return None;
-    }
-    let radial_index = usize::from(u16::from_le_bytes(
-        payload.get(offset + 56..offset + 58)?.try_into().ok()?,
-    ));
-    if radial_index == 0
-        || payload.get(offset + 58..offset + 60)
-            != Some(&u16::try_from(radial_index).ok()?.to_le_bytes())
-    {
-        return None;
-    }
+        {
+            return None;
+        }
+        let index = usize::from(u16::from_le_bytes(
+            payload.get(offset + 56..offset + 58)?.try_into().ok()?,
+        ));
+        if index == 0
+            || payload.get(offset + 58..offset + 60)
+                != Some(&u16::try_from(index).ok()?.to_le_bytes())
+        {
+            return None;
+        }
+        index
+    };
     let mut points = markers
         .iter()
         .copied()
@@ -33086,6 +33128,46 @@ fn coordinate_roster_full_circle(
     let radial = points.get(radial_index)?.coordinates_m?;
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
+}
+
+fn current_long_full_circle_radial_index(payload: &[u8], offset: usize) -> Option<usize> {
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
+        || payload.get(offset + 68..offset + 72) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 80..offset + 84) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 84..offset + 86) != Some(&[0; 2])
+        || payload.get(offset + 86..offset + 102)
+            != Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        || payload.get(offset + 102..offset + 134) != Some(&[0; 32])
+        || payload.get(offset + 134..offset + 136) != Some(&4u16.to_le_bytes())
+        || payload.get(offset + 136..offset + 154)
+            != Some(&[
+                0xf1, 0x80, 0x00, 0x00, 0x00, 0x00, 0xf3, 0x80, 0x04, 0x80, 0xff, 0xfe, 0xff, 0x02,
+                0x44, 0x00, 0x31, 0x00,
+            ])
+    {
+        return None;
+    }
+    let radial_index = usize::from(u16::from_le_bytes(
+        payload.get(offset + 64..offset + 66)?.try_into().ok()?,
+    ));
+    (radial_index != 0
+        && payload.get(offset + 66..offset + 68)
+            == Some(&u16::try_from(radial_index).ok()?.to_le_bytes()))
+    .then_some(radial_index)
 }
 
 fn compact_profile_full_circle(
