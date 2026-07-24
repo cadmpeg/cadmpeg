@@ -14,9 +14,9 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
-    VertexUse,
+    BodyKind, Edge, LoopBoundaryRole, PcurveUse, Point, Sense, Vertex, VertexUse,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -667,9 +667,22 @@ pub(super) fn project(
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
         let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
-        let mut region_shells = Vec::new();
         let mut consumed = BTreeSet::new();
         let mut valid = true;
+        let mut builder = TopologyBuilder::new();
+        builder
+            .body(
+                body_id.clone(),
+                BodySpec {
+                    kind: definition.kind,
+                    transform: definition.transform,
+                    ..BodySpec::default()
+                },
+            )
+            .expect("body id is unique per source body");
+        builder
+            .region(region_id.clone(), &body_id)
+            .expect("region id is unique under a registered body");
         for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
             let shell_definition = shell_definitions[&shell_sequence].clone();
             let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
@@ -678,7 +691,9 @@ pub(super) fn project(
                 format!("{stem}:D{shell_sequence}")
             };
             let shell_id = ShellId(format!("iges:model:shell#{shell_stem}"));
-            let mut shell_faces = Vec::new();
+            builder
+                .shell(shell_id.clone(), &region_id)
+                .expect("shell id is unique under a registered region");
             for (face_sequence, native_face_sense) in shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = faces[&face_sequence].clone();
@@ -694,7 +709,19 @@ pub(super) fn project(
                     break;
                 };
                 let face_id = FaceId(format!("iges:model:face#{shell_stem}:D{face_sequence}"));
-                let mut face_loops = Vec::new();
+                builder
+                    .face(
+                        face_id.clone(),
+                        &shell_id,
+                        FaceSpec {
+                            surface: surface_id,
+                            sense: face_sense,
+                            name: None,
+                            color: None,
+                            tolerance: None,
+                        },
+                    )
+                    .expect("face id is unique under a registered shell");
                 for (face_loop_index, loop_sequence) in
                     face_definition.loops.into_iter().enumerate()
                 {
@@ -721,6 +748,7 @@ pub(super) fn project(
                         .zip(coedge_ids.iter().cloned())
                         .collect::<BTreeMap<_, _>>();
                     let mut loop_vertex_uses = Vec::new();
+                    let mut loop_coedges: Vec<CoedgeSpec> = Vec::with_capacity(coedge_ids.len());
                     for (use_index, use_) in uses.iter().enumerate() {
                         let LoopUse::Edge {
                             edge_list,
@@ -920,15 +948,9 @@ pub(super) fn project(
                             .entry((shell_sequence, edge_key.0, edge_key.1))
                             .or_default()
                             .push(coedge_id.clone());
-                        candidate.model.coedges.push(Coedge {
-                            id: coedge_id.clone(),
-                            owner_loop: loop_id.clone(),
+                        loop_coedges.push(CoedgeSpec {
+                            id: coedge_id,
                             edge: edge_id,
-                            next: coedge_ids[(coedge_position + 1) % coedge_ids.len()].clone(),
-                            previous: coedge_ids
-                                [(coedge_position + coedge_ids.len() - 1) % coedge_ids.len()]
-                            .clone(),
-                            radial_next: coedge_id.clone(),
                             sense: *sense,
                             pcurves: projected,
                             use_curve: None,
@@ -938,47 +960,30 @@ pub(super) fn project(
                     if !valid {
                         break;
                     }
-                    candidate.model.loops.push(Loop {
-                        id: loop_id.clone(),
-                        face: face_id.clone(),
-                        boundary_role: if face_definition.has_outer_loop && face_loop_index == 0 {
-                            cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                        } else {
-                            cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                        },
-                        coedges: coedge_ids,
-                        vertex_uses: loop_vertex_uses,
-                    });
-                    face_loops.push(loop_id);
+                    let boundary_role = if face_definition.has_outer_loop && face_loop_index == 0 {
+                        LoopBoundaryRole::Outer
+                    } else {
+                        LoopBoundaryRole::Inner
+                    };
+                    builder
+                        .ring(
+                            loop_id,
+                            &face_id,
+                            boundary_role,
+                            loop_coedges,
+                            loop_vertex_uses,
+                        )
+                        .expect("loop ring registers under a registered face");
                     consumed.insert(loop_sequence);
                 }
                 if !valid {
                     break;
                 }
-                candidate.model.faces.push(Face {
-                    id: face_id.clone(),
-                    shell: shell_id.clone(),
-                    surface: surface_id,
-                    sense: face_sense,
-                    loops: face_loops,
-                    name: None,
-                    color: None,
-                    tolerance: None,
-                });
-                shell_faces.push(face_id);
                 consumed.insert(face_sequence);
             }
             if !valid {
                 break;
             }
-            candidate.model.shells.push(Shell {
-                id: shell_id.clone(),
-                region: region_id.clone(),
-                faces: shell_faces,
-                wire_edges: Vec::new(),
-                free_vertices: Vec::new(),
-            });
-            region_shells.push(shell_id);
             consumed.insert(shell_sequence);
         }
         if !valid {
@@ -988,6 +993,12 @@ pub(super) fn project(
             ));
             continue;
         }
+        for ring in radial.values() {
+            builder.radial_ring(ring);
+        }
+        builder
+            .finish(&mut candidate.model)
+            .expect("topology appends without id or owner conflicts");
         if definition.closed
             && radial.values().any(|ring| {
                 if ring.len() != 2 {
@@ -1013,32 +1024,6 @@ pub(super) fn project(
             ));
             continue;
         }
-        for ring in radial.values() {
-            for (index, id) in ring.iter().enumerate() {
-                if let Some(coedge) = candidate
-                    .model
-                    .coedges
-                    .iter_mut()
-                    .find(|coedge| coedge.id == *id)
-                {
-                    coedge.radial_next = ring[(index + 1) % ring.len()].clone();
-                }
-            }
-        }
-        candidate.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-        });
-        candidate.model.bodies.push(Body {
-            id: body_id,
-            kind: definition.kind,
-            regions: vec![region_id],
-            transform: definition.transform,
-            name: None,
-            color: None,
-            visible: None,
-        });
         candidate.model.finalize();
         if !cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok() {
             losses.push(entity_loss(
