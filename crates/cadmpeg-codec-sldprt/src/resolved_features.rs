@@ -1427,15 +1427,14 @@ mod marker_tests {
         cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
         current_coordinate_linked_line_endpoints, current_geometry_locus_profile_vertex,
         current_indexed_arc_reverses_center_sweep, current_reverse_incidence_endpoint_offsets,
-        current_wide_arc_direct_markers, current_wide_undetailed_line,
-        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame,
-        extended_compact_endpoint_markers, extended_compact_linked_line_handle_coordinates,
-        extended_line_handle_coordinates, fixed_reference_plane_frame,
-        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
-        inline_surface_reference_at, legacy_compact_diameter_arc_center,
-        legacy_compact_direct_endpoint_markers, legacy_coordinate_circle_radius,
-        legacy_coordinate_roster_selected_axis_endpoint_indices,
+        current_wide_arc_direct_markers, direct_indexed_curve_endpoint_indices,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, extended_compact_endpoint_markers,
+        extended_compact_linked_line_handle_coordinates, extended_line_handle_coordinates,
+        fixed_reference_plane_frame, generated_surface_identities,
+        indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
+        legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
+        legacy_coordinate_circle_radius, legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_extended_rectangle_from_line_cycle, legacy_feature_input_section,
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
@@ -1455,13 +1454,13 @@ mod marker_tests {
         profile_roster_principal_axis_endpoints, reconcile_reference_plane_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
-        roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
-        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, surface_reference_matches_at,
-        surface_selection_producer_features, tangent_bounded_curve, unique_arc_center_marker,
-        unique_cylindrical_face, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle, BooleanOp,
-        CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        roster_curve_endpoint_markers, schema_31_wide_undetailed_line,
+        sketch_block_identity_normalization_origin, sketch_block_record_origin,
+        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        surface_reference_matches_at, surface_selection_producer_features, tangent_bounded_curve,
+        unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
+        unique_locus, unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle,
+        BooleanOp, CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
         FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
         NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
@@ -7197,8 +7196,14 @@ mod marker_tests {
         current[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
         current[92..].copy_from_slice(SKETCH_MARKER);
         assert!(indexed_arc_uses_coordinate_center(&current, 0));
-        assert!(!current_wide_undetailed_line(&current, 0, Some(30)));
-        assert!(current_wide_undetailed_line(&current, 0, Some(31)));
+        assert!(!schema_31_wide_undetailed_line(&current, 0, Some(30)));
+        assert!(schema_31_wide_undetailed_line(&current, 0, Some(31)));
+        let mut extended = current.clone();
+        extended[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert!(schema_31_wide_undetailed_line(&extended, 0, Some(31)));
+        extended[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert!(!schema_31_wide_undetailed_line(&extended, 0, Some(31)));
         let mut detailed = current.clone();
         detailed.resize(172, 0);
         detailed[97..105].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]);
@@ -7208,7 +7213,7 @@ mod marker_tests {
         detailed[123..131].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
         detailed[140..148].copy_from_slice(&1.0f64.to_le_bytes());
         detailed[156..164].copy_from_slice(&(-1.0f64).to_le_bytes());
-        assert!(!current_wide_undetailed_line(&detailed, 0, Some(31)));
+        assert!(!schema_31_wide_undetailed_line(&detailed, 0, Some(31)));
         assert!(!current_indexed_arc_reverses_center_sweep(&current, 0));
         current[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
         assert!(current_indexed_arc_reverses_center_sweep(&current, 0));
@@ -20496,7 +20501,7 @@ pub(crate) fn project_marker_backed_sketches(
                                     };
                                     let (start, end) = (project(start)?, project(end)?);
                                     let offset = usize::try_from(marker.offset).ok()?;
-                                    if current_wide_undetailed_line(
+                                    if schema_31_wide_undetailed_line(
                                         &lane.native_payload,
                                         offset,
                                         modeller_generation,
@@ -27495,13 +27500,16 @@ fn legacy_inline_arc_endpoint_markers<'a>(
     (endpoints[0].id != endpoints[1].id).then_some(endpoints)
 }
 
-fn current_wide_undetailed_line(
+fn schema_31_wide_undetailed_line(
     payload: &[u8],
     offset: usize,
     modeller_generation: Option<u32>,
 ) -> bool {
     matches!(modeller_generation, Some(31..))
-        && payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && matches!(
+            payload.get(offset..offset + SKETCH_MARKER.len()),
+            Some(marker) if marker == SKETCH_MARKER || marker == LEGACY_EXTENDED_SKETCH_MARKER
+        )
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92))
