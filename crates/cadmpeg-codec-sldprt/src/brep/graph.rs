@@ -24,6 +24,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
+use super::blend::BlendSupportRef;
 use super::entity;
 use super::sweep::{self, SweepKind};
 use super::topology::{self, Record};
@@ -882,11 +883,24 @@ fn decode_graph(
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
     let mut surface_ids_by_carrier = HashMap::<u16, u16>::new();
+    let mut face_edges_by_surface_carrier = HashMap::<u16, Vec<(u16, HashSet<u16>)>>::new();
     for face in &faces {
         surface_ids_by_carrier
             .entry(face.surface_attr)
             .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
             .or_insert(face.bridge_attr);
+        let edges = face
+            .loops
+            .iter()
+            .flat_map(|(_, ring)| ring)
+            .filter_map(|coedge| t.coedges.get(coedge))
+            .filter_map(|coedge| coedge.refs.get(6).copied())
+            .filter(|edge| *edge != 0)
+            .collect();
+        face_edges_by_surface_carrier
+            .entry(face.surface_attr)
+            .or_default()
+            .push((face.bridge_attr, edges));
     }
     for f in &faces {
         let loops: Vec<LoopId> = f
@@ -918,10 +932,38 @@ fn decode_graph(
             }
             _ => {
                 let resolved_blend = carriers.blend(f.surface_attr).and_then(|blend| {
-                    let [Some(first), Some(second)] = blend.supports.map(|attr| {
-                        surface_ids_by_carrier
-                            .get(&attr)
-                            .map(|bridge| SurfaceId(id_surf(*bridge)))
+                    let face_edges: HashSet<u16> = f
+                        .loops
+                        .iter()
+                        .flat_map(|(_, ring)| ring)
+                        .filter_map(|coedge| t.coedges.get(coedge))
+                        .filter_map(|coedge| coedge.refs.get(6).copied())
+                        .filter(|edge| *edge != 0)
+                        .collect();
+                    let [Some(first), Some(second)] = blend.supports.map(|support| {
+                        let bridge = match support {
+                            BlendSupportRef::Surface(attr) => {
+                                surface_ids_by_carrier.get(&attr).copied()
+                            }
+                            BlendSupportRef::Pair(attr) => {
+                                let pair = carriers.blend_support_pair(attr)?;
+                                carriers.curve(pair.intersection)?;
+                                let mut adjacent = pair.supports.iter().filter_map(|candidate| {
+                                    face_edges_by_surface_carrier
+                                        .get(candidate)?
+                                        .iter()
+                                        .filter(|(_, edges)| !face_edges.is_disjoint(edges))
+                                        .map(|(bridge, _)| *bridge)
+                                        .min()
+                                });
+                                let bridge = adjacent.next()?;
+                                if adjacent.next().is_some() {
+                                    return None;
+                                }
+                                Some(bridge)
+                            }
+                        }?;
+                        Some(SurfaceId(id_surf(bridge)))
                     }) else {
                         return None;
                     };

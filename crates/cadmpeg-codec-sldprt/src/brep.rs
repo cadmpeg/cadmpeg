@@ -153,6 +153,8 @@ pub(crate) struct CarrierIndex {
     sweeps: HashMap<u16, sweep::SweepCarrier>,
     /// Constant-radius rolling-ball constructions, resolved at face binding.
     blends: HashMap<u16, blend::BlendCarrier>,
+    /// Zero-offset surface pairs referenced by rolling-ball constructions.
+    blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
     /// Curve attrs whose geometry is a derived cache, not an exact carrier.
     derived_curves: HashSet<u16>,
 }
@@ -187,6 +189,11 @@ impl CarrierIndex {
         self.blends.get(&attr)
     }
 
+    /// Zero-offset surface pair carried by `attr`.
+    pub(crate) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
+        self.blend_support_pairs.get(&attr)
+    }
+
     /// Whether a curve attr holds a derived solved cache rather than an
     /// exact carrier.
     pub(crate) fn curve_is_derived(&self, attr: u16) -> bool {
@@ -210,6 +217,9 @@ impl CarrierIndex {
         }
         for (attr, carrier) in other.blends {
             self.blends.entry(attr).or_insert(carrier);
+        }
+        for (attr, carrier) in other.blend_support_pairs {
+            self.blend_support_pairs.entry(attr).or_insert(carrier);
         }
     }
 }
@@ -386,7 +396,7 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
         out.insert(carrier);
     }
     out.sweeps = sweep::scan_sweep_carriers(body);
-    out.blends = blend::scan_blend_carriers(body);
+    (out.blends, out.blend_support_pairs) = blend::scan(body);
     for (attr, carrier) in intersection::scan_intersection_carriers(body) {
         debug_assert_eq!(attr, carrier.attr);
         if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {
@@ -468,6 +478,25 @@ mod tests {
 
         assert!(carriers.curve(7).is_some());
         assert!(carriers.curve(8).is_some());
+    }
+
+    #[test]
+    fn merge_retains_zero_offset_blend_support_pairs() {
+        let mut base = CarrierIndex::default();
+        let mut delta = CarrierIndex::default();
+        delta.blend_support_pairs.insert(
+            9,
+            blend::SupportPairCarrier {
+                supports: [11, 12],
+                intersection: 13,
+            },
+        );
+
+        base.merge_missing(delta);
+
+        let pair = base.blend_support_pair(9).expect("support pair");
+        assert_eq!(pair.supports, [11, 12]);
+        assert_eq!(pair.intersection, 13);
     }
 
     #[test]

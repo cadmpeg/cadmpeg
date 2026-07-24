@@ -843,11 +843,13 @@ A `00 38` surface carrier defines a circular rolling-ball blend between two supp
 ```
 00 38 [ff]? attr u16 BE  ordinal u32 BE  refs u16 BE[5]
              marker u8 (0x2b|0x2d)
-             52  support0 u16 BE  support1 u16 BE  spine u16 BE
+             selector u8 (45|52)  support0 u16 BE  support1 u16 BE  spine u16 BE
              offset0 f64 BE  offset1 f64 BE  side0 f64 BE  side1 f64 BE
 ```
 
-`support0` and `support1` name the two support-surface carriers. `spine` names the center/spine curve that selects the blend branch. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. A sign difference between the offsets reverses the second support relative to the first. Each `side` value is exactly `+1` or `-1`; a negative value independently reverses that support's natural-normal side. Lengths are metres.
+For selector `52`, `support0` and `support1` directly name the two support-surface carriers. For selector `45`, `support1` remains direct and `support0` names a selector-`52` support-pair record. A support-pair record has zero `offset0` and `offset1`; its first two references name candidate surfaces and its third reference names their intersection curve. The pair member whose face shares a topological edge with the selector-`45` face is that face's first blend support. Exactly one pair member is adjacent.
+
+For a blend record, `spine` names the center/spine curve that selects the blend branch. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. A sign difference between the offsets reverses the second support relative to the first. Each `side` value is exactly `+1` or `-1`; a negative value independently reverses that support's natural-normal side. Lengths are metres.
 
 ## 8. Auxiliary lanes
 
