@@ -1441,6 +1441,7 @@ mod marker_tests {
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
         legacy_reference_axis_triads, legacy_single_face_reference_path_at,
         legacy_state_five_curve_endpoint_indices, legacy_terminal_indexed_profile_line,
+        legacy_terminal_profile_endpoint_offset, legacy_unlocated_geometry_handle,
         linked_profile_point, marker_coordinates, marker_is_geometry_locus,
         marker_is_selected_construction_line, marker_local_id, marker_local_links,
         marker_object_index, marker_spatial_coordinates, matrix_reference_plane_frame,
@@ -5958,6 +5959,56 @@ mod marker_tests {
             super::wide_indexed_curve_endpoint_indices(&payload, 0),
             None
         );
+    }
+
+    #[test]
+    fn terminal_legacy_profile_curve_addresses_consecutive_point_identities() {
+        let mut wide = vec![0; 92 + LEGACY_SKETCH_MARKER.len()];
+        wide[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        wide[5..13].fill(0xff);
+        wide[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        wide[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        wide[27..29].copy_from_slice(&1u16.to_le_bytes());
+        wide[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00]);
+        wide[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        wide[64..66].copy_from_slice(&15u16.to_le_bytes());
+        wide[66..68].copy_from_slice(&16u16.to_le_bytes());
+        wide[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        wide[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+        wide[92..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(legacy_terminal_profile_endpoint_offset(&wide, 0), Some(64));
+        let mut compact = wide;
+        compact.copy_within(64..84, 56);
+        compact.truncate(84 + LEGACY_SKETCH_MARKER.len());
+        compact[76..84].fill(0);
+        compact[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(
+            legacy_terminal_profile_endpoint_offset(&compact, 0),
+            Some(56)
+        );
+
+        compact[72..76].fill(0);
+        assert_eq!(legacy_terminal_profile_endpoint_offset(&compact, 0), None);
+    }
+
+    #[test]
+    fn unlocated_legacy_geometry_handle_has_no_neutral_geometry() {
+        let mut payload = vec![0; 142 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&[0x12, 0x00]);
+        payload[92..96].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+        payload[142..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert!(legacy_unlocated_geometry_handle(&payload, 0));
+        payload[92] = 0;
+        assert!(!legacy_unlocated_geometry_handle(&payload, 0));
     }
 
     #[test]
@@ -19859,7 +19910,9 @@ pub(crate) fn project_marker_backed_sketches(
                             | SketchInputKind::ConstrainedPoint
                             | SketchInputKind::LineOrCircle
                             | SketchInputKind::Arc
-                    )
+                    ) && usize::try_from(marker.offset).ok().is_none_or(|offset| {
+                        !legacy_unlocated_geometry_handle(&lane.native_payload, offset)
+                    })
                 })
                 .collect::<Vec<_>>();
             if markers.is_empty() {
@@ -26948,7 +27001,50 @@ fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = coordinate_centered_line_endpoints(payload, curve, markers) {
         return endpoints.to_vec();
     }
+    if let Some(endpoints) = legacy_terminal_profile_indexed_endpoints(payload, curve, markers) {
+        return endpoints.to_vec();
+    }
     consecutive_legacy_profile_line_endpoints(payload, curve, markers)
+}
+
+fn legacy_terminal_profile_indexed_endpoints<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Option<[&'a SketchInputEntity; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    let endpoint_offset = legacy_terminal_profile_endpoint_offset(payload, offset)?;
+    let endpoint = |relative| {
+        Some(u32::from(u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )))
+    };
+    let endpoint_ids = [endpoint(endpoint_offset)?, endpoint(endpoint_offset + 2)?];
+    if endpoint_ids[0].checked_add(1) != Some(endpoint_ids[1]) {
+        return None;
+    }
+    let resolve = |id| {
+        let mut candidates = markers.iter().copied().filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+                && marker.coordinates_m.is_some()
+                && (marker.local_id == Some(id)
+                    || marker.object_index.and_then(|index| index.checked_add(1)) == Some(id))
+        });
+        let candidate = candidates.next()?;
+        candidates.next().is_none().then_some(candidate)
+    };
+    let resolved = endpoint_ids.map(resolve);
+    let [Some(first), Some(second)] = resolved else {
+        return None;
+    };
+    (first.id != second.id).then_some([first, second])
 }
 
 fn legacy_inline_arc_endpoint_markers<'a>(
@@ -28357,6 +28453,59 @@ fn coordinate_ellipse_axes(
 
 fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
     coordinate_roster_endpoint_offset(payload, offset).is_some()
+}
+
+fn legacy_terminal_profile_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(0)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+    {
+        return None;
+    }
+    let layout = |endpoint_offset: usize, state_offset: usize, end: usize| {
+        (payload.get(offset + endpoint_offset + 4..offset + endpoint_offset + 8) == Some(&[0; 4])
+            && payload.get(offset + endpoint_offset + 8..offset + endpoint_offset + 16)
+                == Some(&(-1.0f64).to_le_bytes())
+            && payload.get(offset + state_offset..offset + state_offset + 4)
+                == Some(&[0x00, 0x00, 0x02, 0x00])
+            && payload.get(offset + state_offset + 4..offset + end - 4) == Some(&[0; 4])
+            && sketch_marker_prefix_at(payload, offset.saturating_add(end)))
+        .then_some(endpoint_offset)
+    };
+    if payload.get(offset + 56..offset + 64) == Some(&[0; 8]) {
+        layout(64, 80, 92)
+    } else {
+        layout(56, 72, 84)
+    }
+}
+
+fn legacy_unlocated_geometry_handle(payload: &[u8], offset: usize) -> bool {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(0)
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+    {
+        return false;
+    }
+    let layout = |tag_offset: usize, sentinel_offset: usize, end: usize| {
+        payload.get(offset + tag_offset..offset + tag_offset + 2) == Some(&[0x12, 0x00])
+            && payload.get(offset + tag_offset + 2..offset + sentinel_offset) == Some(&[0; 26])
+            && payload.get(offset + sentinel_offset..offset + sentinel_offset + 4)
+                == Some(&[0xfe, 0xff, 0xff, 0xff])
+            && payload.get(offset + sentinel_offset + 4..offset + end - 4) == Some(&[0; 42])
+            && sketch_marker_prefix_at(payload, offset.saturating_add(end))
+    };
+    payload.get(offset + 56..offset + 64) == Some(&[0; 8]) && layout(64, 92, 142)
+        || layout(56, 84, 134)
 }
 
 fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
@@ -31777,9 +31926,10 @@ mod profile_join_tests {
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
         bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
-        implicit_circle_marker, inferred_point_coordinates_by_index, line_endpoint_markers,
-        line_reference_direction, marker_entities, marker_owns_constraint, marker_point_locus,
-        owned_relation_parameters, profile_loci_by_marker, project_compact_edge_selections,
+        implicit_circle_marker, inferred_point_coordinates_by_index,
+        legacy_terminal_profile_indexed_endpoints, line_endpoint_markers, line_reference_direction,
+        marker_entities, marker_owns_constraint, marker_point_locus, owned_relation_parameters,
+        profile_loci_by_marker, project_compact_edge_selections,
         project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
         project_relation_point_geometry, project_relation_solved_point_geometry,
@@ -32881,6 +33031,36 @@ mod profile_join_tests {
         };
 
         assert!(inferred_point_coordinates_by_index(&lane, "feature-native").is_empty());
+    }
+
+    #[test]
+    fn terminal_profile_curve_resolves_point_identity_endpoints() {
+        let mut payload = vec![0; 92 + super::LEGACY_SKETCH_MARKER.len()];
+        payload[..super::LEGACY_SKETCH_MARKER.len()].copy_from_slice(super::LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&15u16.to_le_bytes());
+        payload[66..68].copy_from_slice(&16u16.to_le_bytes());
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+        payload[92..].copy_from_slice(super::LEGACY_SKETCH_MARKER);
+        let mut curve = marker("curve", None);
+        curve.kind = SketchInputKind::LineOrCircle;
+        let mut first = marker("first", Some([1.0, 0.0]));
+        first.local_id = Some(15);
+        first.object_index = Some(14);
+        let mut second = marker("second", Some([2.0, 0.0]));
+        second.object_index = Some(15);
+
+        assert_eq!(
+            legacy_terminal_profile_indexed_endpoints(&payload, &curve, &[&curve, &first, &second])
+                .map(|endpoints| endpoints.map(|endpoint| endpoint.id.as_str())),
+            Some(["first", "second"])
+        );
     }
 
     #[test]
