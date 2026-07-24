@@ -6046,6 +6046,16 @@ mod marker_tests {
             super::wide_coordinate_roster_full_circle(&payload, &entities[3], &markers),
             Some(([2.0, 3.0], 5.0))
         );
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[112..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        let mut extended_circle = entities[3].clone();
+        extended_circle.kind = SketchInputKind::LineOrCircle;
+        assert_eq!(
+            super::wide_coordinate_roster_full_circle(&payload, &extended_circle, &markers),
+            Some(([2.0, 3.0], 5.0))
+        );
         payload[66..68].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(
             super::wide_coordinate_roster_full_circle(&payload, &entities[3], &markers),
@@ -22775,6 +22785,13 @@ pub(crate) fn project_marker_backed_sketches(
                                     marker,
                                     &object_markers,
                                 )
+                            })
+                            .or_else(|| {
+                                wide_coordinate_roster_full_circle(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                )
                             }) {
                                 let point = transform.apply(quantize(
                                     Point2::new(center[0] * NATIVE_TO_IR, center[1] * NATIVE_TO_IR),
@@ -23039,6 +23056,9 @@ pub(crate) fn project_marker_backed_sketches(
                         sketch: sketch_id.clone(),
                         construction: usize::try_from(marker.offset).ok().is_some_and(|offset| {
                             marker_is_selected_construction_line(&lane.native_payload, offset)
+                                && !(matches!(&geometry, SketchGeometry::Circle { .. })
+                                    && marker_profile_curve_role(&lane.native_payload, offset)
+                                        == Some(1))
                         }),
                         native_ref: Some(marker.id.clone()),
                         geometry_ref: None,
@@ -32443,9 +32463,14 @@ fn wide_coordinate_roster_full_circle(
     markers: &[&SketchInputEntity],
 ) -> Option<([f64; 2], f64)> {
     let offset = usize::try_from(circle.offset).ok()?;
-    if circle.kind != SketchInputKind::LineOrCircle
-        || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(1)
+    let prefix = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?;
+    let supported_kind = prefix == LEGACY_SKETCH_MARKER
+        && marker_native_code(payload, offset) == Some(1)
+        && circle.kind == SketchInputKind::LineOrCircle
+        || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+            && marker_native_code(payload, offset) == Some(2)
+            && circle.kind == SketchInputKind::LineOrCircle;
+    if !supported_kind
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
@@ -32453,11 +32478,19 @@ fn wide_coordinate_roster_full_circle(
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
-        || !wide_indexed_curve_record_ends_at(payload, offset, LEGACY_SKETCH_MARKER)
+        || !(prefix == LEGACY_SKETCH_MARKER
+            && wide_indexed_curve_record_ends_at(payload, offset, prefix)
+            || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+                && extended_wide_repeated_circle_record(payload, offset))
     {
         return None;
     }
-    let [first, second] = wide_indexed_curve_endpoint_indices(payload, offset)?;
+    let endpoints = if prefix == LEGACY_EXTENDED_SKETCH_MARKER {
+        one_based_u16_endpoint_pair(payload, offset, 64)?
+    } else {
+        wide_indexed_curve_endpoint_indices(payload, offset)?
+    };
+    let [first, second] = endpoints;
     if first != second || first <= 1 {
         return None;
     }
@@ -32483,6 +32516,49 @@ fn wide_coordinate_roster_full_circle(
     let radial = coordinates.get(radial_index)?.coordinates_m?;
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
+}
+
+fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
+    let endpoint = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 2)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u16::from_le_bytes)
+    };
+    let endpoints = [endpoint(64), endpoint(66)];
+    let identities = [104usize, 108].map(|relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+    });
+    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && matches!(endpoints, [Some(first), Some(second)] if first != 0 && first == second)
+        && payload.get(offset + 68..offset + 72) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 80..offset + 84) == Some(&1i32.to_le_bytes())
+        && payload
+            .get(offset + 84..offset + 86)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u16::from_le_bytes)
+            .is_some_and(|state| state != 0)
+        && payload.get(offset + 86..offset + 102)
+            == Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        && payload.get(offset + 102..offset + 104) == Some(&[0; 2])
+        && matches!(identities, [Some(first), Some(second)] if first != 0 && first != u32::MAX && second != 0 && second != u32::MAX && first != second)
+        && sketch_marker_prefix_at(payload, offset.saturating_add(112))
 }
 
 fn coordinate_ellipse_axes(
