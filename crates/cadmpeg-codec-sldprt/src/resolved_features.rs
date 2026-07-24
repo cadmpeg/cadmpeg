@@ -3339,7 +3339,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn typed_offset_plane_reference_accepts_principal_and_feature_targets() {
+    fn typed_offset_plane_reference_uses_the_last_known_plane_target() {
         let record = |source: u32, signature: [u8; 4], selector: u32| {
             let mut bytes = Vec::new();
             bytes.extend(source.to_le_bytes());
@@ -3356,39 +3356,44 @@ mod marker_tests {
         let known = HashSet::from([3, 225]);
         let principal = record(3, [0x43, 0xf6, 0x8a, 0x4d], 3);
         assert_eq!(
-            offset_plane_reference_source(&principal, &known, None),
+            offset_plane_reference_source(&principal, &known, &known, None),
             Some(3)
         );
         let feature = record(225, [0x30, 0x92, 0xab, 0x53], 0);
         assert_eq!(
-            offset_plane_reference_source(&feature, &known, None),
+            offset_plane_reference_source(&feature, &known, &known, None),
             Some(225)
         );
         assert_eq!(
-            offset_plane_reference_source(&feature, &known, Some(225)),
+            offset_plane_reference_source(&feature, &known, &known, Some(225)),
             None
         );
 
         let mut ambiguous = principal;
-        ambiguous.extend(feature);
+        ambiguous.extend_from_slice(&feature);
         assert_eq!(
-            offset_plane_reference_source(&ambiguous, &known, None),
-            None
+            offset_plane_reference_source(&ambiguous, &known, &known, None),
+            Some(225)
         );
         ambiguous[38] ^= 1;
         assert_eq!(
-            offset_plane_reference_source(&ambiguous, &known, None),
+            offset_plane_reference_source(&ambiguous, &known, &known, None),
             Some(225)
         );
         let mut malformed = record(3, [0; 4], 2);
         assert_eq!(
-            offset_plane_reference_source(&malformed, &known, None),
+            offset_plane_reference_source(&malformed, &known, &known, None),
             None
         );
         malformed[4..8].copy_from_slice(&[1, 2, 3, 4]);
         malformed[10..14].copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(
-            offset_plane_reference_source(&malformed, &known, None),
+            offset_plane_reference_source(&malformed, &known, &known, None),
+            Some(3)
+        );
+        let principal_only = HashSet::from([3]);
+        assert_eq!(
+            offset_plane_reference_source(&feature, &known, &principal_only, None),
             None
         );
     }
@@ -20497,9 +20502,28 @@ pub(crate) fn enrich_history_reference_planes(
         BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
     let known_sources = histories
         .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
-        .collect::<HashSet<_>>();
+        .map(|history| {
+            history
+                .features
+                .iter()
+                .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .collect::<HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let known_reference_plane_sources = histories
+        .iter()
+        .map(|history| {
+            history
+                .features
+                .iter()
+                .filter(|feature| {
+                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                        == NativeClassKind::ReferencePlane
+                })
+                .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .collect::<HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
     for lane in lanes {
         let mut starts =
             histories
@@ -20540,8 +20564,12 @@ pub(crate) fn enrich_history_reference_planes(
                 .source_id
                 .as_deref()
                 .and_then(|value| value.parse::<u32>().ok());
-            if let Some(source) = offset_plane_reference_source(bytes, &known_sources, self_source)
-            {
+            if let Some(source) = offset_plane_reference_source(
+                bytes,
+                &known_sources[history_index],
+                &known_reference_plane_sources[history_index],
+                self_source,
+            ) {
                 reference_candidates
                     .entry((history_index, feature_index))
                     .or_default()
@@ -21569,35 +21597,34 @@ fn classed_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
 fn offset_plane_reference_source(
     payload: &[u8],
     known_sources: &HashSet<u32>,
+    known_reference_plane_sources: &HashSet<u32>,
     self_source: Option<u32>,
 ) -> Option<u32> {
     const RECORD_LEN: usize = 46;
-    const PRINCIPAL_SIGNATURE: &[u8] = &[0x79, 0x2a, 0xe1, 0x3b];
-    const FEATURE_SIGNATURE: &[u8] = &[0x30, 0x92, 0xab, 0x53];
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
-    let mut sources = payload
+    let typed_sources = payload
         .windows(RECORD_LEN)
-        .filter_map(|bytes| {
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
             let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
             let signature = bytes.get(4..8)?;
             let selector = u32::from_le_bytes(bytes.get(10..14)?.try_into().ok()?);
-            let typed_prefix = bytes.get(8..10) == Some(&[0, 0])
-                && if signature == PRINCIPAL_SIGNATURE {
-                    matches!(selector, 1 | 2)
-                } else if signature == FEATURE_SIGNATURE {
-                    selector == 0
-                } else {
-                    signature != [0; 4] && matches!(selector, 2 | 3)
-                };
-            (known_sources.contains(&source)
+            (known_reference_plane_sources.contains(&source)
                 && Some(source) != self_source
-                && typed_prefix
+                && signature != [0; 4]
+                && bytes.get(8..10) == Some(&[0, 0])
+                && selector <= 3
                 && bytes.get(14..18) == Some(&1u32.to_le_bytes())
                 && bytes.get(18..22) == Some(&[0; 4])
                 && bytes.get(26..38) == Some(&[0; 12])
                 && bytes.get(38..46) == Some(TERMINATOR))
-            .then_some(source)
+            .then_some((offset, source))
         })
+        .collect::<Vec<_>>();
+    let latest_offset = typed_sources.iter().map(|(offset, _)| *offset).max();
+    let mut sources = typed_sources
+        .into_iter()
+        .filter_map(|(offset, source)| (Some(offset) == latest_offset).then_some(source))
         .collect::<Vec<_>>();
     sources.extend(
         compact_offset_plane_source(payload)
