@@ -1436,8 +1436,8 @@ mod marker_tests {
         inline_surface_reference_at, legacy_compact_diameter_arc_center,
         legacy_compact_direct_endpoint_markers, legacy_coordinate_circle_radius,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
-        legacy_coordinate_roster_undetailed_line, legacy_extended_diagonal_rectangle,
-        legacy_extended_profile_curve_kind, legacy_feature_input_section,
+        legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
+        legacy_extended_rectangle_from_line_cycle, legacy_feature_input_section,
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
         legacy_reference_axis_triads, legacy_single_face_reference_path_at,
         legacy_state_five_curve_endpoint_indices, legacy_terminal_indexed_profile_line,
@@ -2493,7 +2493,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn legacy_extended_line_cycle_carries_rectangle_from_opposite_vertices() {
+    fn legacy_extended_line_cycle_carries_rectangle_from_known_vertices() {
         const CURVE_START: usize = 400;
         let mut payload = vec![0; CURVE_START + 4 * 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
         let edges = [[0u16, 2u16], [0, 3], [3, 1], [2, 1]];
@@ -2585,7 +2585,7 @@ mod marker_tests {
         let marker_refs = markers.iter().collect::<Vec<_>>();
 
         assert_eq!(
-            legacy_extended_diagonal_rectangle(&payload, &marker_refs),
+            legacy_extended_rectangle_from_line_cycle(&payload, &marker_refs),
             Some([
                 Point2::new(-0.025, -0.011),
                 Point2::new(0.025, -0.011),
@@ -2594,11 +2594,37 @@ mod marker_tests {
             ])
         );
 
-        let mut adjacent = markers;
+        let mut adjacent = markers.clone();
         adjacent[1].coordinates_m = None;
         adjacent[2].coordinates_m = Some([0.025, 0.011]);
         assert_eq!(
-            legacy_extended_diagonal_rectangle(&payload, &adjacent.iter().collect::<Vec<_>>()),
+            legacy_extended_rectangle_from_line_cycle(
+                &payload,
+                &adjacent.iter().collect::<Vec<_>>(),
+            ),
+            None
+        );
+
+        let mut three_corners = markers;
+        three_corners[2].coordinates_m = Some([0.025, -0.011]);
+        assert_eq!(
+            legacy_extended_rectangle_from_line_cycle(
+                &payload,
+                &three_corners.iter().collect::<Vec<_>>(),
+            ),
+            Some([
+                Point2::new(-0.025, -0.011),
+                Point2::new(0.025, -0.011),
+                Point2::new(0.025, 0.011),
+                Point2::new(-0.025, 0.011),
+            ])
+        );
+        three_corners[2].coordinates_m = Some([0.024, -0.010]);
+        assert_eq!(
+            legacy_extended_rectangle_from_line_cycle(
+                &payload,
+                &three_corners.iter().collect::<Vec<_>>(),
+            ),
             None
         );
     }
@@ -20236,8 +20262,8 @@ pub(crate) fn project_marker_backed_sketches(
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
                 continue;
             };
-            let diagonal_rectangle =
-                legacy_extended_diagonal_rectangle(&lane.native_payload, &object_markers);
+            let encoded_rectangle =
+                legacy_extended_rectangle_from_line_cycle(&lane.native_payload, &object_markers);
             let inferred_points = std::cell::OnceCell::new();
             let mut projected = markers
                 .iter()
@@ -20618,15 +20644,12 @@ pub(crate) fn project_marker_backed_sketches(
                     })
                 })
                 .collect::<Vec<_>>();
-            if let Some(rectangle) = diagonal_rectangle {
+            if let Some(rectangle) = encoded_rectangle {
                 let rectangle_marker_refs = object_markers
                     .iter()
                     .filter_map(|marker| {
                         let offset = usize::try_from(marker.offset).ok()?;
-                        legacy_extended_diagonal_rectangle_line_endpoints(
-                            &lane.native_payload,
-                            offset,
-                        )?;
+                        legacy_extended_rectangle_line_endpoints(&lane.native_payload, offset)?;
                         Some(marker.id.as_str())
                     })
                     .collect::<HashSet<_>>();
@@ -21598,7 +21621,7 @@ fn ordered_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {
         .then_some(corners)
 }
 
-fn legacy_extended_diagonal_rectangle(
+fn legacy_extended_rectangle_from_line_cycle(
     payload: &[u8],
     markers: &[&SketchInputEntity],
 ) -> Option<[Point2; 4]> {
@@ -21606,7 +21629,7 @@ fn legacy_extended_diagonal_rectangle(
         .iter()
         .filter_map(|marker| {
             let offset = usize::try_from(marker.offset).ok()?;
-            let endpoints = legacy_extended_diagonal_rectangle_line_endpoints(payload, offset)?;
+            let endpoints = legacy_extended_rectangle_line_endpoints(payload, offset)?;
             (marker.kind == SketchInputKind::LineOrCircle).then_some(endpoints)
         })
         .collect::<Vec<_>>();
@@ -21647,44 +21670,66 @@ fn legacy_extended_diagonal_rectangle(
         })
         .collect::<Vec<_>>();
     known.sort_unstable_by_key(|(vertex, _)| *vertex);
-    let [(first_vertex, [first_u, first_v]), (second_vertex, [second_u, second_v])] =
-        known.as_slice()
-    else {
-        return None;
+    let corners = match known.as_slice() {
+        [(first_vertex, [first_u, first_v]), (second_vertex, [second_u, second_v])] => {
+            if edges
+                .iter()
+                .any(|edge| edge.contains(first_vertex) && edge.contains(second_vertex))
+                || first_u == second_u
+                || first_v == second_v
+            {
+                return None;
+            }
+            vec![
+                Point2::new(*first_u, *first_v),
+                Point2::new(*first_u, *second_v),
+                Point2::new(*second_u, *first_v),
+                Point2::new(*second_u, *second_v),
+            ]
+        }
+        [_, _, _] => {
+            let missing = *vertices
+                .iter()
+                .find(|vertex| known.iter().all(|(known, _)| known != *vertex))?;
+            let neighbors = edges
+                .iter()
+                .filter(|edge| edge.contains(&missing))
+                .map(|edge| edge[usize::from(edge[0] == missing)])
+                .collect::<Vec<_>>();
+            let [first_neighbor, second_neighbor] = neighbors.as_slice() else {
+                return None;
+            };
+            let opposite = *vertices.iter().find(|vertex| {
+                **vertex != missing && **vertex != *first_neighbor && **vertex != *second_neighbor
+            })?;
+            let coordinates = |vertex| {
+                known
+                    .iter()
+                    .find_map(|(known, coordinates)| (*known == vertex).then_some(*coordinates))
+            };
+            let [first_u, first_v] = coordinates(*first_neighbor)?;
+            let [second_u, second_v] = coordinates(*second_neighbor)?;
+            let [opposite_u, opposite_v] = coordinates(opposite)?;
+            let inferred = [
+                first_u + second_u - opposite_u,
+                first_v + second_v - opposite_v,
+            ];
+            known
+                .iter()
+                .map(|(_, [u, v])| Point2::new(*u, *v))
+                .chain(std::iter::once(Point2::new(inferred[0], inferred[1])))
+                .collect()
+        }
+        _ => return None,
     };
-    if edges
+    corners
         .iter()
-        .any(|edge| edge.contains(first_vertex) && edge.contains(second_vertex))
-        || first_u == second_u
-        || first_v == second_v
-        || ![first_u, first_v, second_u, second_v]
-            .iter()
-            .all(|value| value.is_finite())
-    {
-        return None;
-    }
-    let (u0, u1) = if first_u < second_u {
-        (*first_u, *second_u)
-    } else {
-        (*second_u, *first_u)
-    };
-    let (v0, v1) = if first_v < second_v {
-        (*first_v, *second_v)
-    } else {
-        (*second_v, *first_v)
-    };
-    Some([
-        Point2::new(u0, v0),
-        Point2::new(u1, v0),
-        Point2::new(u1, v1),
-        Point2::new(u0, v1),
-    ])
+        .all(|corner| corner.u.is_finite() && corner.v.is_finite())
+        .then(|| ordered_rectangle_corners(&corners))
+        .flatten()
 }
 
-fn legacy_extended_diagonal_rectangle_line_endpoints(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[u32; 2]> {
+fn legacy_extended_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
