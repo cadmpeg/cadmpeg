@@ -13528,13 +13528,25 @@ fn point_axis_distance_squared(point: Point3, origin: Point3, axis: Vector3) -> 
     across.x * across.x + across.y * across.y + across.z * across.z
 }
 
+/// Topology arenas used to prove generated bore axes.
+pub(crate) struct HoleTopology<'a> {
+    pub(crate) surfaces: &'a [Surface],
+    pub(crate) faces: &'a [Face],
+    pub(crate) loops: &'a [Loop],
+    pub(crate) coedges: &'a [Coedge],
+    pub(crate) edges: &'a [Edge],
+    pub(crate) vertices: &'a [Vertex],
+    pub(crate) points: &'a [Point],
+}
+
 /// Bind Hole placements to uniquely owned or position-constrained bore axes.
 pub(crate) fn project_hole_axes(
     model_features: &mut [cadmpeg_ir::features::Feature],
-    surfaces: &[Surface],
+    topology: &HoleTopology<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    let surfaces = topology.surfaces;
     let native_sources = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -13591,6 +13603,7 @@ pub(crate) fn project_hole_axes(
         let FeatureDefinition::Hole {
             placements,
             diameter: Some(Length(diameter)),
+            extent,
             ..
         } = &mut feature.definition
         else {
@@ -13640,6 +13653,21 @@ pub(crate) fn project_hole_axes(
         let Some(position_feature) = hole_position_feature(native_feature, histories, lanes) else {
             continue;
         };
+        if let Some(depth) = match extent {
+            Some(Termination::Blind {
+                length: Length(depth),
+            }) => Some(*depth),
+            _ => None,
+        } {
+            let bore_axes = cylindrical_face_axes_at_depth(radius, depth, topology);
+            if !bore_axes.is_empty() {
+                *placements = bore_axes
+                    .into_iter()
+                    .map(|(origin, axis)| HolePlacement::Axis { origin, axis })
+                    .collect();
+                continue;
+            }
+        }
         let mut solutions = Vec::new();
         for lane in lanes {
             let Some(&frame) =
@@ -13689,6 +13717,295 @@ pub(crate) fn project_hole_axes(
         if let [solution] = solutions.as_slice() {
             placements.clone_from(solution);
         }
+    }
+}
+
+fn cylindrical_face_axes_at_depth(
+    radius: f64,
+    depth: f64,
+    topology: &HoleTopology<'_>,
+) -> Vec<(Point3, Vector3)> {
+    if !radius.is_finite() || radius <= 0.0 || !depth.is_finite() || depth <= 0.0 {
+        return Vec::new();
+    }
+    let surfaces = topology
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<HashMap<_, _>>();
+    let loops = topology
+        .loops
+        .iter()
+        .map(|loop_| (&loop_.id, loop_))
+        .collect::<HashMap<_, _>>();
+    let coedges = topology
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect::<HashMap<_, _>>();
+    let edges = topology
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
+    let vertices = topology
+        .vertices
+        .iter()
+        .map(|vertex| (&vertex.id, vertex))
+        .collect::<HashMap<_, _>>();
+    let points = topology
+        .points
+        .iter()
+        .map(|point| (&point.id, point))
+        .collect::<HashMap<_, _>>();
+    let radius_tolerance = (radius * 1.0e-9).max(1.0e-9);
+    let depth_tolerance = (depth * 1.0e-9).max(1.0e-9);
+    let mut axes = topology
+        .faces
+        .iter()
+        .filter_map(|face| {
+            let surface = surfaces.get(&face.surface)?;
+            let SurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                radius: candidate_radius,
+                ..
+            } = surface.geometry
+            else {
+                return None;
+            };
+            if (candidate_radius - radius).abs() > radius_tolerance {
+                return None;
+            }
+            let mut stations = face
+                .loops
+                .iter()
+                .filter_map(|loop_id| loops.get(loop_id))
+                .flat_map(|loop_| {
+                    loop_
+                        .coedges
+                        .iter()
+                        .filter_map(|coedge_id| coedges.get(coedge_id))
+                        .filter_map(|coedge| edges.get(&coedge.edge))
+                        .flat_map(|edge| [&edge.start, &edge.end])
+                        .chain(loop_.vertex_uses.iter().map(|use_| &use_.vertex))
+                })
+                .filter_map(|vertex_id| vertices.get(vertex_id))
+                .filter_map(|vertex| points.get(&vertex.point))
+                .map(|point| {
+                    dot(
+                        Vector3::new(
+                            point.position.x - origin.x,
+                            point.position.y - origin.y,
+                            point.position.z - origin.z,
+                        ),
+                        axis,
+                    )
+                });
+            let first = stations.next()?;
+            let (minimum, maximum) = stations
+                .fold((first, first), |(minimum, maximum), station| {
+                    (minimum.min(station), maximum.max(station))
+                });
+            ((maximum - minimum - depth).abs() <= depth_tolerance).then_some((origin, axis))
+        })
+        .collect::<Vec<_>>();
+    axes.sort_by_key(|(origin, axis)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
+            axis.x.to_bits(),
+            axis.y.to_bits(),
+            axis.z.to_bits(),
+        ]
+    });
+    axes.dedup();
+    axes
+}
+
+/// Reconstruct a missing planar position sketch from exact bore axes and their
+/// unique common planar support.
+pub(crate) fn project_bore_backed_position_sketches(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &mut Vec<Sketch>,
+    entities: &mut Vec<SketchEntity>,
+    surfaces: &[Surface],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    struct Projection {
+        feature: cadmpeg_ir::features::FeatureId,
+        sketch: Sketch,
+        entities: Vec<SketchEntity>,
+    }
+
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let model_features = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature.id.clone())))
+        .collect::<HashMap<_, _>>();
+    let mut projections = Vec::new();
+    for hole in features.iter() {
+        let FeatureDefinition::Hole { placements, .. } = &hole.definition else {
+            continue;
+        };
+        let axes = placements
+            .iter()
+            .filter_map(|placement| match placement {
+                HolePlacement::Axis { origin, axis } => Some((*origin, *axis)),
+                HolePlacement::Directed { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        if axes.len() != placements.len() || axes.is_empty() {
+            continue;
+        }
+        let Some(native_hole) = hole
+            .native_ref
+            .as_deref()
+            .and_then(|native| native_features.get(native).copied())
+        else {
+            continue;
+        };
+        let Some(position) = hole_position_feature(native_hole, histories, lanes) else {
+            continue;
+        };
+        let Some(position_feature) = model_features.get(position.id.as_str()) else {
+            continue;
+        };
+        let Some(model_position) = features
+            .iter()
+            .find(|feature| feature.id == *position_feature)
+        else {
+            continue;
+        };
+        if !matches!(
+            model_position.definition,
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            }
+        ) {
+            continue;
+        }
+        let canonical = canonical_axis(axes[0].1);
+        if !axes
+            .iter()
+            .all(|(_, axis)| dot(canonical_axis(*axis), canonical) >= 1.0 - 1.0e-9)
+        {
+            continue;
+        }
+        let mut frames = surfaces
+            .iter()
+            .filter_map(|surface| match surface.geometry {
+                SurfaceGeometry::Plane {
+                    origin,
+                    normal,
+                    u_axis,
+                } if dot(normal, canonical).abs() >= 1.0 - 1.0e-9
+                    && axes.iter().all(|(point, _)| {
+                        dot(
+                            Vector3::new(
+                                point.x - origin.x,
+                                point.y - origin.y,
+                                point.z - origin.z,
+                            ),
+                            normal,
+                        )
+                        .abs()
+                            <= 1.0e-8
+                    }) =>
+                {
+                    Some((origin, normal, u_axis))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        frames.sort_by_key(reference_plane_frame_key);
+        frames.dedup_by_key(|frame| reference_plane_frame_key(frame));
+        let [(origin, normal, u_axis)] = frames.as_slice() else {
+            continue;
+        };
+        let mut owning_lanes = lanes
+            .iter()
+            .filter(|lane| {
+                hole_position_sketch_source(native_hole, lane)
+                    == position
+                        .source_id
+                        .as_deref()
+                        .and_then(|source| source.parse::<u32>().ok())
+            })
+            .collect::<Vec<_>>();
+        owning_lanes.sort_by_key(|lane| lane.id.as_str());
+        owning_lanes.dedup_by_key(|lane| lane.id.as_str());
+        let [lane] = owning_lanes.as_slice() else {
+            continue;
+        };
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        let sketch_id = SketchId(format!(
+            "sldprt:model:sketch#bore:{lane_key}:{}",
+            position.ordinal
+        ));
+        let v_axis = cross(*normal, *u_axis);
+        let projected_entities = axes
+            .iter()
+            .enumerate()
+            .map(|(ordinal, (point, _))| {
+                let delta =
+                    Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+                SketchEntity {
+                    id: SketchEntityId(format!("{}:entity:{ordinal}", sketch_id.0)),
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: None,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SketchGeometry::Point {
+                        position: Point2::new(dot(delta, *u_axis), dot(delta, v_axis)),
+                    },
+                }
+            })
+            .collect();
+        projections.push(Projection {
+            feature: position_feature.clone(),
+            sketch: Sketch {
+                id: sketch_id,
+                name: model_position.name.clone(),
+                configuration: lane.configuration.clone(),
+                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                    origin: *origin,
+                    normal: *normal,
+                    u_axis: *u_axis,
+                },
+                profiles: Vec::new(),
+                native_ref: Some(lane.id.clone()),
+            },
+            entities: projected_entities,
+        });
+    }
+    for projection in projections {
+        let Some(feature) = features
+            .iter_mut()
+            .find(|feature| feature.id == projection.feature)
+        else {
+            continue;
+        };
+        let FeatureDefinition::Sketch { sketch, .. } = &mut feature.definition else {
+            continue;
+        };
+        if sketch.is_some() {
+            continue;
+        }
+        *sketch = Some(projection.sketch.id.clone());
+        entities.extend(projection.entities);
+        sketches.push(projection.sketch);
     }
 }
 
@@ -14319,19 +14636,22 @@ mod hole_axis_tests {
         Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, Termination,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::ids::{
+        CoedgeId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId,
+    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketch,
         SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
     };
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
 
     use super::{
-        compact_position_loci, cylindrical_support_normal, enrich_history_hole_constructions,
-        enrich_history_parameters, hole_position_sketch_source, hole_temporary_axis,
-        marker_pattern_bore_axes, profiled_hole_construction, project_hole_axes,
-        project_hole_position_sketches, project_profiled_hole_constructions,
-        project_spatial_hole_position_sketches,
+        compact_position_loci, cylindrical_face_axes_at_depth, cylindrical_support_normal,
+        enrich_history_hole_constructions, enrich_history_parameters, hole_position_sketch_source,
+        hole_temporary_axis, marker_pattern_bore_axes, profiled_hole_construction,
+        project_hole_axes, project_hole_position_sketches, project_profiled_hole_constructions,
+        project_spatial_hole_position_sketches, HoleTopology,
     };
     use crate::records::{
         FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
@@ -14480,6 +14800,112 @@ mod hole_axis_tests {
             Some(Vector3::new(12.0 / 13.0, 5.0 / 13.0, 0.0))
         );
         assert!(cylindrical_support_normal(&surface, Point3::new(12.0, 4.0, 40.0)).is_none());
+    }
+
+    #[test]
+    fn cylindrical_face_span_identifies_a_blind_bore_depth() {
+        let surface = Surface {
+            id: SurfaceId("surface".into()),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        };
+        let face = Face {
+            id: FaceId("face".into()),
+            shell: ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: Sense::Forward,
+            loops: vec![LoopId("loop".into())],
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let loop_ = Loop {
+            id: LoopId("loop".into()),
+            face: face.id.clone(),
+            boundary_role: LoopBoundaryRole::Outer,
+            coedges: vec![CoedgeId("coedge".into())],
+            vertex_uses: Vec::new(),
+        };
+        let coedge = Coedge {
+            id: CoedgeId("coedge".into()),
+            owner_loop: loop_.id.clone(),
+            edge: EdgeId("edge".into()),
+            next: CoedgeId("coedge".into()),
+            previous: CoedgeId("coedge".into()),
+            radial_next: CoedgeId("coedge".into()),
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+            use_curve_parameter_range: None,
+        };
+        let edge = Edge {
+            id: EdgeId("edge".into()),
+            curve: None,
+            start: VertexId("start".into()),
+            end: VertexId("end".into()),
+            param_range: None,
+            tolerance: None,
+        };
+        let vertices = [
+            Vertex {
+                id: VertexId("start".into()),
+                point: PointId("start-point".into()),
+                tolerance: None,
+            },
+            Vertex {
+                id: VertexId("end".into()),
+                point: PointId("end-point".into()),
+                tolerance: None,
+            },
+        ];
+        let points = [
+            Point {
+                id: PointId("start-point".into()),
+                position: Point3::new(2.0, 0.0, 0.0),
+                source_object: None,
+            },
+            Point {
+                id: PointId("end-point".into()),
+                position: Point3::new(2.0, 0.0, -10.0),
+                source_object: None,
+            },
+        ];
+
+        assert_eq!(
+            cylindrical_face_axes_at_depth(
+                2.0,
+                10.0,
+                &HoleTopology {
+                    surfaces: &[surface.clone()],
+                    faces: &[face.clone()],
+                    loops: &[loop_.clone()],
+                    coedges: &[coedge.clone()],
+                    edges: &[edge.clone()],
+                    vertices: &vertices,
+                    points: &points,
+                },
+            ),
+            vec![(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0))]
+        );
+        assert!(cylindrical_face_axes_at_depth(
+            2.0,
+            9.0,
+            &HoleTopology {
+                surfaces: &[surface],
+                faces: &[face],
+                loops: &[loop_],
+                coedges: &[coedge],
+                edges: &[edge],
+                vertices: &vertices,
+                points: &points,
+            },
+        )
+        .is_empty());
     }
 
     fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
@@ -15273,7 +15699,15 @@ mod hole_axis_tests {
 
         project_hole_axes(
             &mut features,
-            &surfaces,
+            &HoleTopology {
+                surfaces: &surfaces,
+                faces: &[],
+                loops: &[],
+                coedges: &[],
+                edges: &[],
+                vertices: &[],
+                points: &[],
+            },
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
         );
@@ -15287,7 +15721,20 @@ mod hole_axis_tests {
         };
         placements.clear();
         surfaces.push(cylinder(2, 15.0));
-        project_hole_axes(&mut features, &surfaces, &[history], &[lane]);
+        project_hole_axes(
+            &mut features,
+            &HoleTopology {
+                surfaces: &surfaces,
+                faces: &[],
+                loops: &[],
+                coedges: &[],
+                edges: &[],
+                vertices: &[],
+                points: &[],
+            },
+            &[history],
+            &[lane],
+        );
         let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
             unreachable!();
         };

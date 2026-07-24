@@ -1642,6 +1642,22 @@ fn build_geometry_ir(
     );
     crate::resolved_features::project_hole_axes(
         &mut ir.model.features,
+        &crate::resolved_features::HoleTopology {
+            surfaces: &ir.model.surfaces,
+            faces: &ir.model.faces,
+            loops: &ir.model.loops,
+            coedges: &ir.model.coedges,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+            points: &ir.model.points,
+        },
+        &histories,
+        &native.feature_input_lanes,
+    );
+    crate::resolved_features::project_bore_backed_position_sketches(
+        &mut ir.model.features,
+        &mut ir.model.sketches,
+        &mut ir.model.sketch_entities,
         &ir.model.surfaces,
         &histories,
         &native.feature_input_lanes,
@@ -2325,6 +2341,22 @@ fn build_metadata_ir(
     );
     crate::resolved_features::project_hole_axes(
         &mut ir.model.features,
+        &crate::resolved_features::HoleTopology {
+            surfaces: &ir.model.surfaces,
+            faces: &ir.model.faces,
+            loops: &ir.model.loops,
+            coedges: &ir.model.coedges,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+            points: &ir.model.points,
+        },
+        &histories,
+        &lanes,
+    );
+    crate::resolved_features::project_bore_backed_position_sketches(
+        &mut ir.model.features,
+        &mut ir.model.sketches,
+        &mut ir.model.sketch_entities,
         &ir.model.surfaces,
         &histories,
         &lanes,
