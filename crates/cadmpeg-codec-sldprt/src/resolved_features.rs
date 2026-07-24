@@ -8824,6 +8824,44 @@ mod marker_tests {
     }
 
     #[test]
+    fn sketch_surface_component_path_accepts_a_slot_cell_between_entries() {
+        let marker = 12;
+        let mut payload = Vec::new();
+        payload.extend(5u32.to_le_bytes());
+        payload.extend([0, 3, 0, 0]);
+        payload.extend([0; 4]);
+        payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0; 2]);
+        for (index, local_id) in [2u32, 0, 1].into_iter().enumerate() {
+            if index == 1 {
+                payload.extend([0; 4]);
+            } else if index == 2 {
+                payload.extend([1, 0, 0, 0, 0, 0]);
+            }
+            payload.extend((0x8034 + index as u16).to_le_bytes());
+            payload.extend([0; 2]);
+            payload.extend([index as u8 + 1; 12]);
+            payload.extend(local_id.to_le_bytes());
+        }
+
+        assert_eq!(
+            compact_sketch_surface_component_path_at(&payload, marker)
+                .expect("required invariant")
+                .iter()
+                .map(|component| component.local_id)
+                .collect::<Vec<_>>(),
+            [Some(2), Some(0), Some(1)]
+        );
+
+        let slot = marker + 18 + 20 + 4 + 20;
+        payload[slot] = 2;
+        assert_eq!(
+            compact_sketch_surface_component_path_at(&payload, marker),
+            None
+        );
+    }
+
+    #[test]
     fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
         let marker = 12;
         let mut payload = vec![0; marker];
@@ -16340,7 +16378,7 @@ fn compact_heterogeneous_component_path(
         if index + 1 == count {
             continue;
         }
-        let gap = [0usize, 2, 4, 8, 10].into_iter().find(|gap| {
+        let gap = [0usize, 2, 4, 6, 8, 10].into_iter().find(|gap| {
             let filler = match *gap {
                 0 => true,
                 2 => payload.get(cursor..cursor + 2) == Some(&[0; 2]),
@@ -16351,6 +16389,7 @@ fn compact_heterogeneous_component_path(
                             && bytes[0..2] != [0xff, 0xff]
                             && bytes[2..4] == [0, 0])
                 }),
+                6 => payload.get(cursor..cursor + 6) == Some(&[1, 0, 0, 0, 0, 0]),
                 8 => matches!(
                     payload.get(cursor..cursor + 8),
                     Some(
