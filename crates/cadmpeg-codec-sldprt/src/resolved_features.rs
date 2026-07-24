@@ -1493,16 +1493,16 @@ mod marker_tests {
         alternate_current_indexed_curve_endpoint_indices,
         alternate_current_selected_axis_endpoint_indices, angled_reference_plane_frame,
         append_spatial_vertex, arc_angle_relation_kind, bind_resolved_curve_vertices,
-        bounded_profile_axis_endpoints, common_generated_surface_axis,
-        compact_body_component_path_at, compact_body_path_at, compact_body_retention_mode,
-        compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
-        compact_bounded_curve_tangent, compact_combine_operation_at, compact_component_plane_frame,
-        compact_curve_endpoint_indices, compact_edge_component_path_at, compact_edge_selection_at,
-        compact_extrusion_blind_at, compact_extrusion_blind_through_all_second_at,
-        compact_extrusion_mid_plane_at, compact_extrusion_offset_from_face_at,
-        compact_extrusion_through_all_at, compact_extrusion_through_all_both_at,
-        compact_extrusion_through_next_at, compact_extrusion_to_face_at,
-        compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
+        bounded_profile_axis_endpoints, classed_offset_plane_sources,
+        common_generated_surface_axis, compact_body_component_path_at, compact_body_path_at,
+        compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
+        compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
+        compact_component_plane_frame, compact_curve_endpoint_indices,
+        compact_edge_component_path_at, compact_edge_selection_at, compact_extrusion_blind_at,
+        compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
+        compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
+        compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
+        compact_extrusion_to_face_at, compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
         compact_indexed_curve_endpoint_indices, compact_legacy_curve_endpoint_indices,
         compact_legacy_profile_vertex, compact_legacy_radial_circle_index,
         compact_legacy_selected_axis_endpoint_indices, compact_line_chain_addresses,
@@ -2934,6 +2934,16 @@ mod marker_tests {
         assert_eq!(structured_offset_plane_sources(&payload), [3]);
         payload[80] ^= 1;
         assert!(structured_offset_plane_sources(&payload).is_empty());
+    }
+
+    #[test]
+    fn classed_offset_plane_source_requires_exact_length_delimited_type() {
+        let mut payload = 4u32.to_le_bytes().to_vec();
+        payload.extend(b"\xff\xff\x01\x00\x1b\x00moFromSktEnt3IntSurfIdRep_c\x00\x00");
+
+        assert_eq!(classed_offset_plane_sources(&payload), [4]);
+        payload[8] = 0;
+        assert!(classed_offset_plane_sources(&payload).is_empty());
     }
 
     #[test]
@@ -18326,6 +18336,17 @@ fn structured_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
         .collect()
 }
 
+fn classed_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
+    const TRAILER: &[u8] = b"\xff\xff\x01\x00\x1b\x00moFromSktEnt3IntSurfIdRep_c\x00\x00";
+    payload
+        .windows(4 + TRAILER.len())
+        .filter_map(|bytes| {
+            let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+            (bytes.get(4..) == Some(TRAILER)).then_some(source)
+        })
+        .collect()
+}
+
 fn offset_plane_reference_source(
     payload: &[u8],
     known_sources: &HashSet<u32>,
@@ -18365,6 +18386,11 @@ fn offset_plane_reference_source(
     );
     sources.extend(
         structured_offset_plane_sources(payload)
+            .into_iter()
+            .filter(|source| Some(*source) != self_source && known_sources.contains(source)),
+    );
+    sources.extend(
+        classed_offset_plane_sources(payload)
             .into_iter()
             .filter(|source| Some(*source) != self_source && known_sources.contains(source)),
     );
