@@ -7494,6 +7494,27 @@ mod marker_tests {
             super::extended_compact_indexed_curve_endpoint_indices(&continuation_120, 0),
             None
         );
+
+        let mut reference_table_126 = vec![0; 206];
+        reference_table_126[..80].copy_from_slice(&marker(84)[..80]);
+        reference_table_126[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        reference_table_126[126..128].copy_from_slice(&12u16.to_le_bytes());
+        reference_table_126[136..140].fill(0xff);
+        reference_table_126[154..158].copy_from_slice(&5u32.to_le_bytes());
+        reference_table_126[158..162].copy_from_slice(&2u32.to_le_bytes());
+        reference_table_126[166..170].copy_from_slice(&[0xfe, 0xff, 0x00, 0x00]);
+        reference_table_126[170..172].copy_from_slice(&0x88c5u16.to_le_bytes());
+        reference_table_126[174..178].fill(0xff);
+        reference_table_126[190..194].fill(0xff);
+        assert_eq!(
+            compact_indexed_curve_endpoint_indices(&reference_table_126, 0),
+            Some([5, 9])
+        );
+        reference_table_126[126..128].fill(0);
+        assert_eq!(
+            compact_indexed_curve_endpoint_indices(&reference_table_126, 0),
+            None
+        );
     }
 
     #[test]
@@ -33381,6 +33402,7 @@ enum CompactIndexedCurveRecordEnd {
     Terminal102,
     Terminal116,
     Continuation120,
+    ReferenceTable126,
 }
 
 fn compact_indexed_curve_record_end(
@@ -33421,6 +33443,33 @@ fn compact_indexed_curve_record_end(
         && (class_declaration_at(payload, offset.saturating_add(122)) || relation_continuation);
     if continuation_120 {
         return Some(CompactIndexedCurveRecordEnd::Continuation120);
+    }
+    let reference_table_126 = payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 126) == Some(&[0; 54])
+        && payload
+            .get(offset + 126..offset + 128)
+            .is_some_and(|count| !matches!(count, [0, 0] | [0xff, 0xff]))
+        && payload.get(offset + 128..offset + 136) == Some(&[0; 8])
+        && payload.get(offset + 136..offset + 140) == Some(&[0xff; 4])
+        && payload.get(offset + 140..offset + 154) == Some(&[0; 14])
+        && payload
+            .get(offset + 154..offset + 158)
+            .is_some_and(|kind| kind != [0; 4] && kind != [0xff; 4])
+        && payload.get(offset + 158..offset + 170)
+            == Some(&[
+                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfe, 0xff, 0x00, 0x00,
+            ])
+        && payload
+            .get(offset + 170..offset + 172)
+            .is_some_and(|selector| !matches!(selector, [0, 0] | [0xff, 0xff]))
+        && payload.get(offset + 172..offset + 174) == Some(&[0; 2])
+        && payload.get(offset + 174..offset + 178) == Some(&[0xff; 4])
+        && payload.get(offset + 178..offset + 190) == Some(&[0; 12])
+        && payload.get(offset + 190..offset + 194) == Some(&[0xff; 4])
+        && payload.get(offset + 194..offset + 206) == Some(&[0; 12]);
+    if reference_table_126 {
+        return Some(CompactIndexedCurveRecordEnd::ReferenceTable126);
     }
     if payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
