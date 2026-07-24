@@ -17,8 +17,6 @@
 //! the exact strings it was handed. This is what preserves the
 //! *identical input bytes → identical ids* guarantee across adoption: swapping
 //! a codec's inline arena pushes for builder calls changes no emitted id.
-//! [`IdAllocator`] is an opt-in convenience for ordinal-scheme codecs; it only
-//! formats strings and holds no state that could drift.
 //!
 //! **Pillar 2 — the builder does not sort.** [`TopologyBuilder::finish`]
 //! appends per arena in a fixed layer order (bodies, regions, shells, faces,
@@ -98,77 +96,6 @@ pub enum BuildError {
     /// ring around a single shared edge. The string describes the mismatch.
     #[error("radial ring not anchored to a single shared edge: {0}")]
     DanglingRadial(String),
-}
-
-/// Formats ordinal-scheme topology ids under a fixed prefix.
-///
-/// This is an opt-in helper for codecs whose native identity is an ordinal:
-/// `IdAllocator::new("nx:brep").face(3)` yields the [`FaceId`]
-/// `"nx:brep:face#3"`. It allocates nothing and holds no counter — it only
-/// concatenates `"{prefix}:{kind}#{ordinal}"`, so identical ordinals always map
-/// to identical ids (Pillar 1). Codecs with a bespoke id scheme construct typed
-/// ids directly and skip this type.
-#[derive(Debug, Clone)]
-pub struct IdAllocator {
-    prefix: String,
-}
-
-impl IdAllocator {
-    /// Create an allocator that prefixes every id with `prefix`.
-    pub fn new(prefix: impl Into<String>) -> Self {
-        Self {
-            prefix: prefix.into(),
-        }
-    }
-
-    fn id(&self, kind: &str, ordinal: usize) -> String {
-        format!("{}:{}#{}", self.prefix, kind, ordinal)
-    }
-
-    /// `"{prefix}:body#{ordinal}"`.
-    pub fn body(&self, ordinal: usize) -> BodyId {
-        BodyId(self.id("body", ordinal))
-    }
-
-    /// `"{prefix}:region#{ordinal}"`.
-    pub fn region(&self, ordinal: usize) -> RegionId {
-        RegionId(self.id("region", ordinal))
-    }
-
-    /// `"{prefix}:shell#{ordinal}"`.
-    pub fn shell(&self, ordinal: usize) -> ShellId {
-        ShellId(self.id("shell", ordinal))
-    }
-
-    /// `"{prefix}:face#{ordinal}"`.
-    pub fn face(&self, ordinal: usize) -> FaceId {
-        FaceId(self.id("face", ordinal))
-    }
-
-    /// `"{prefix}:loop#{ordinal}"`.
-    pub fn loop_(&self, ordinal: usize) -> LoopId {
-        LoopId(self.id("loop", ordinal))
-    }
-
-    /// `"{prefix}:coedge#{ordinal}"`.
-    pub fn coedge(&self, ordinal: usize) -> CoedgeId {
-        CoedgeId(self.id("coedge", ordinal))
-    }
-
-    /// `"{prefix}:edge#{ordinal}"`.
-    pub fn edge(&self, ordinal: usize) -> EdgeId {
-        EdgeId(self.id("edge", ordinal))
-    }
-
-    /// `"{prefix}:vertex#{ordinal}"`.
-    pub fn vertex(&self, ordinal: usize) -> VertexId {
-        VertexId(self.id("vertex", ordinal))
-    }
-
-    /// `"{prefix}:point#{ordinal}"`.
-    pub fn point(&self, ordinal: usize) -> PointId {
-        PointId(self.id("point", ordinal))
-    }
 }
 
 /// Per-body attributes supplied to [`TopologyBuilder::body`].
@@ -654,14 +581,6 @@ mod tests {
             .face(FaceId("face".into()), &ShellId("shell".into()), face_spec())
             .unwrap();
         builder
-    }
-
-    #[test]
-    fn id_allocator_formats_ordinal_scheme() {
-        let ids = IdAllocator::new("nx:brep");
-        assert_eq!(ids.face(3), FaceId("nx:brep:face#3".into()));
-        assert_eq!(ids.loop_(0), LoopId("nx:brep:loop#0".into()));
-        assert_eq!(ids.coedge(12), CoedgeId("nx:brep:coedge#12".into()));
     }
 
     #[test]

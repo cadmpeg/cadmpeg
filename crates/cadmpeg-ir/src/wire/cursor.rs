@@ -19,10 +19,8 @@
 //! - Once poisoned, every read returns a zero value (`0`, `0.0`, an empty
 //!   slice, or an all-zero compound), [`remaining`](Cursor::remaining)
 //!   reports `0`, and [`position`](Cursor::position) stops moving.
-//! - `f64` reads through [`f64_le`](Cursor::f64_le) reject non-finite bit
-//!   patterns (`NaN`, `±inf`) with [`FaultKind::NonFinite`].
-//!   [`f64_le_raw`](Cursor::f64_le_raw) is the bit-preserving escape hatch
-//!   for callers that must round-trip the exact encoding.
+//! - `f64` reads through [`f64_le`](Cursor::f64_le) unconditionally reject
+//!   non-finite bit patterns (`NaN`, `±inf`) with [`FaultKind::NonFinite`].
 //!
 //! # Adoption pattern: finish before interpret
 //!
@@ -241,8 +239,7 @@ impl<'a> Cursor<'a> {
     /// Reads a finite little-endian `f64`.
     ///
     /// A `NaN` or `±inf` bit pattern poisons [`FaultKind::NonFinite`] at the
-    /// field's start offset and returns `0.0`. Use [`f64_le_raw`](Self::f64_le_raw)
-    /// to preserve non-finite bits.
+    /// field's start offset and returns `0.0`.
     pub fn f64_le(&mut self) -> f64 {
         let start = self.position;
         let value = f64::from_le_bytes(self.array());
@@ -255,13 +252,6 @@ impl<'a> Cursor<'a> {
             self.fault_at(start, FaultKind::NonFinite);
             0.0
         }
-    }
-
-    /// Reads a little-endian `f64`, preserving all bits including `NaN`/`±inf`.
-    ///
-    /// Zero-filled (and so `0.0`) only on a truncated read.
-    pub fn f64_le_raw(&mut self) -> f64 {
-        f64::from_le_bytes(self.array())
     }
 
     /// Reads a [`Point3`] as three finite little-endian `f64` values.
@@ -429,7 +419,6 @@ mod tests {
         assert_eq!(cursor.u32_le(), 0);
         assert_eq!(cursor.u64_le(), 0);
         assert_eq!(cursor.f64_le(), 0.0);
-        assert_eq!(cursor.f64_le_raw(), 0.0);
         assert_eq!(cursor.take(1), b"");
         assert_eq!(cursor.counted(1, 1), 0);
         assert_eq!(cursor.remaining(), 0);
@@ -437,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn f64_le_rejects_nonfinite_and_raw_preserves_bits() {
+    fn f64_le_rejects_nonfinite() {
         let quiet_nan = f64::from_bits(0x7FF8_0000_0000_0001);
         for pattern in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, quiet_nan] {
             let bytes = pattern.to_le_bytes();
@@ -447,10 +436,6 @@ mod tests {
             let fault = checked.fault().expect("non-finite poisons");
             assert_eq!(fault.kind, FaultKind::NonFinite);
             assert_eq!(fault.offset, 0);
-
-            let mut raw = Cursor::new(&bytes);
-            assert_eq!(raw.f64_le_raw().to_bits(), pattern.to_bits());
-            assert!(!raw.is_poisoned());
         }
     }
 

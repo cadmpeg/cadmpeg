@@ -323,7 +323,6 @@ mod tests {
 
         let stream = |kind, schema: Option<&str>, file_offset| Stream {
             file_offset,
-            consumed: 0,
             inflated: Vec::new(),
             kind,
             schema: schema.map(str::to_string),

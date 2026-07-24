@@ -11,9 +11,7 @@
 //! fault back into the `Option`-returning contract those call sites read
 //! against.
 //!
-//! Every `f64`-bearing read is finite-checked and maps to the shared `f64_le`;
-//! no CATIA call site reads raw bits, so the shared `f64_le_raw` escape hatch
-//! is unused here.
+//! Every `f64`-bearing read is finite-checked and maps to the shared `f64_le`.
 
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::wire::cursor::Cursor as WireCursor;
