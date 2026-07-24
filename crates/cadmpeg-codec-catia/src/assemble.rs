@@ -16,7 +16,8 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::report::{DecodeReport, LossNote};
-use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
+use cadmpeg_ir::topology::builder::{BodySpec, TopologyBuilder};
+use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
@@ -193,32 +194,38 @@ pub(crate) fn attach_free_vertices(
             Exactness::Inferred,
         );
     }
-    ir.model.bodies.push(Body {
-        id: body_id.clone(),
-        kind: BodyKind::Wire,
-        regions: vec![region_id.clone()],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
-    });
-    ir.model.shells.push(Shell {
-        id: shell_id,
-        region: region_id,
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices: ir
-            .model
-            .vertices
-            .iter()
-            .map(|vertex| vertex.id.clone())
-            .collect(),
-    });
+    // Snapshot the vertex ids before the mutable `finish` borrow; the builder
+    // aggregates `shell.free_vertices` in this (vertex-arena) order.
+    let free_vertices: Vec<_> = ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.id.clone())
+        .collect();
+    let mut builder = TopologyBuilder::new();
+    builder
+        .body(
+            body_id.clone(),
+            BodySpec {
+                kind: BodyKind::Wire,
+                ..BodySpec::default()
+            },
+        )
+        .expect("unbound-points body id is unique");
+    builder
+        .region(region_id.clone(), &body_id)
+        .expect("unbound-points region id is unique under its body");
+    builder
+        .shell(shell_id.clone(), &region_id)
+        .expect("unbound-points shell id is unique under its region");
+    for vertex in free_vertices {
+        builder
+            .free_vertex(&shell_id, vertex)
+            .expect("free vertex records under the unbound-points shell");
+    }
+    builder
+        .finish(&mut ir.model)
+        .expect("unbound-points hierarchy appends without id or owner conflicts");
 }
 
 pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {

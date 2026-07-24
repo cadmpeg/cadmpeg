@@ -30,9 +30,8 @@ use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
     SpatialSketchId,
 };
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
-};
+use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
+use cadmpeg_ir::topology::{BodyKind, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::validate::{Check, Finding};
 use cadmpeg_ir::wire::cursor::bounded_len;
 use sha2::{Digest, Sha256};
@@ -37434,8 +37433,38 @@ fn sketch_brep(
             entity.id.0
         )));
     }
+    let mut builder = TopologyBuilder::new();
+    builder
+        .body(
+            body_id.clone(),
+            BodySpec {
+                kind: BodyKind::Sheet,
+                name: sketch.name.clone(),
+                ..BodySpec::default()
+            },
+        )
+        .expect("source-less sketch body id is unique");
+    builder
+        .region(region_id.clone(), &body_id)
+        .expect("source-less sketch region id is unique under its body");
+    builder
+        .shell(shell_id.clone(), &region_id)
+        .expect("source-less sketch shell id is unique under its region");
+    builder
+        .face(
+            face_id.clone(),
+            &shell_id,
+            FaceSpec {
+                surface: surface_id,
+                sense: Sense::Forward,
+                name: sketch.name.clone(),
+                color: None,
+                tolerance: None,
+            },
+        )
+        .expect("source-less sketch face id is unique under its shell");
     let profiles = sketch.profiles.clone();
-    let mut face_loops = Vec::new();
+    let mut emitted_loop = false;
     let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
     for (profile_index, profile) in profiles.iter().enumerate() {
         if profile.is_empty() {
@@ -37467,8 +37496,7 @@ fn sketch_brep(
             )));
         }
         let loop_id = LoopId(format!("{prefix}:loop:{profile_index}"));
-        face_loops.push(loop_id.clone());
-        let mut coedge_ids = Vec::new();
+        let mut coedges = Vec::new();
         for (use_index, entity_use) in profile.iter().enumerate() {
             let entity = entities.get(&entity_use.entity).ok_or_else(|| {
                 cadmpeg_ir::codec::CodecError::Malformed(format!(
@@ -37525,44 +37553,29 @@ fn sketch_brep(
                 param_range: Some(generated.param_range.unwrap_or([0.0, length])),
                 tolerance: None,
             });
-            coedge_ids.push(coedge_id.clone());
-            ir.model.coedges.push(Coedge {
-                id: coedge_id.clone(),
-                owner_loop: loop_id.clone(),
+            coedges.push(CoedgeSpec {
+                id: coedge_id,
                 edge: edge_id,
-                next: coedge_id.clone(),
-                previous: coedge_id.clone(),
-                radial_next: coedge_id,
                 sense: if entity_use.reversed {
                     Sense::Reversed
                 } else {
                     Sense::Forward
                 },
+                pcurves: Vec::new(),
                 use_curve: None,
                 use_curve_parameter_range: None,
-                pcurves: Vec::new(),
             });
         }
-        let count = coedge_ids.len();
-        for (index, coedge) in ir
-            .model
-            .coedges
-            .iter_mut()
-            .rev()
-            .take(count)
-            .rev()
-            .enumerate()
-        {
-            coedge.next = coedge_ids[(index + 1) % count].clone();
-            coedge.previous = coedge_ids[(index + count - 1) % count].clone();
-        }
-        ir.model.loops.push(Loop {
-            id: loop_id,
-            face: face_id.clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: coedge_ids,
-            vertex_uses: Vec::new(),
-        });
+        builder
+            .ring(
+                loop_id,
+                &face_id,
+                cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                coedges,
+                Vec::new(),
+            )
+            .expect("source-less sketch profile ring registers under its face");
+        emitted_loop = true;
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
         let SketchGeometry::Point { position } = entity.geometry else {
@@ -37591,64 +37604,33 @@ fn sketch_brep(
             param_range: None,
             tolerance: None,
         });
-        ir.model.coedges.push(Coedge {
-            id: coedge_id.clone(),
-            owner_loop: loop_id.clone(),
-            edge: edge_id,
-            next: coedge_id.clone(),
-            previous: coedge_id.clone(),
-            radial_next: coedge_id.clone(),
-            sense: Sense::Forward,
-            use_curve: None,
-            use_curve_parameter_range: None,
-            pcurves: Vec::new(),
-        });
-        ir.model.loops.push(Loop {
-            id: loop_id.clone(),
-            face: face_id.clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: vec![coedge_id],
-            vertex_uses: Vec::new(),
-        });
-        face_loops.push(loop_id);
+        builder
+            .ring(
+                loop_id,
+                &face_id,
+                cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                vec![CoedgeSpec {
+                    id: coedge_id,
+                    edge: edge_id,
+                    sense: Sense::Forward,
+                    pcurves: Vec::new(),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
+                }],
+                Vec::new(),
+            )
+            .expect("source-less sketch point loop registers under its face");
+        emitted_loop = true;
     }
-    if face_loops.is_empty() {
+    if !emitted_loop {
         return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
             "source-less SLDPRT sketch {} has no profiles",
             sketch.id.0
         )));
     }
-    ir.model.faces.push(Face {
-        id: face_id.clone(),
-        shell: shell_id.clone(),
-        surface: surface_id,
-        sense: Sense::Forward,
-        loops: face_loops,
-        name: sketch.name.clone(),
-        color: None,
-        tolerance: None,
-    });
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: vec![face_id],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
-    ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-    });
-    ir.model.bodies.push(Body {
-        id: body_id,
-        kind: BodyKind::Sheet,
-        regions: vec![region_id],
-        transform: None,
-        name: sketch.name.clone(),
-        color: None,
-        visible: None,
-    });
+    builder
+        .finish(&mut ir.model)
+        .expect("source-less sketch topology appends without id or owner conflicts");
     ir.model.finalize();
     Ok(ir)
 }
