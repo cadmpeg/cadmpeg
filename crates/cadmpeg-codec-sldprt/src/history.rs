@@ -798,7 +798,37 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
     populate_parameter_dependencies(&mut parameters, &feature_names, &global_owners);
     order_parameters_by_dependencies(&mut parameters);
     evaluate_parameter_expressions(&mut parameters, &feature_names, &global_owners);
+    for parameter in parameters
+        .iter_mut()
+        .filter(|parameter| parameter.value.is_none())
+    {
+        parameter.value = bare_text_parameter_literal(&parameter.expression);
+    }
     parameters
+}
+
+fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
+    let expression = expression.trim();
+    if expression.is_empty()
+        || expression.chars().any(|character| {
+            matches!(
+                character,
+                '+' | '-' | '*' | '/' | '^' | '=' | '<' | '>' | '(' | ')' | ','
+            )
+        })
+    {
+        return None;
+    }
+    let identifiers = expression_identifier_tokens(expression);
+    if identifiers.unclosed_quote
+        || identifiers
+            .identifiers
+            .iter()
+            .any(definite_parameter_reference)
+    {
+        return None;
+    }
+    Some(ParameterValue::String(expression.to_owned()))
 }
 
 pub(crate) fn global_parameter_owners(
@@ -1713,6 +1743,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
                 let evaluated =
                     ParameterExpressionParser::new(&parameter.expression, aliases, values)
                         .parse()
+                        .or_else(|| bare_text_parameter_literal(&parameter.expression))
                         .filter(parameter_value_is_finite);
                 if let Some(value) = own {
                     values.insert(parameter.id.clone(), value);
@@ -6999,9 +7030,10 @@ fn format_f64_literal(value: f64) -> String {
 #[cfg(test)]
 mod literal_tests {
     use super::{
-        apply_parameter_function, compare_parameter_values, dimension_display, exact_integer_f64,
-        exponentiate_parameter_value, format_f64_literal, parse_length_mm, parse_parameter_literal,
-        rewrite_parameter_expression, DimensionDisplay, ParameterExpressionParser, ParameterValue,
+        apply_parameter_function, bare_text_parameter_literal, compare_parameter_values,
+        dimension_display, exact_integer_f64, exponentiate_parameter_value, format_f64_literal,
+        parse_length_mm, parse_parameter_literal, rewrite_parameter_expression, DimensionDisplay,
+        ParameterExpressionParser, ParameterValue,
     };
 
     #[test]
@@ -7119,6 +7151,23 @@ mod literal_tests {
         assert_eq!(parse_parameter_literal("x2"), None);
         assert_eq!(parse_parameter_literal("15mmH7"), None);
         assert_eq!(parse_parameter_literal("<MOD-DIAM>15H"), None);
+    }
+
+    #[test]
+    fn bare_native_text_is_distinct_from_scalar_expressions_and_references() {
+        for text in ["M16x2.0", "740四件等高", "plain text"] {
+            assert_eq!(
+                bare_text_parameter_literal(text),
+                Some(ParameterValue::String(text.into()))
+            );
+        }
+        for expression in ["", "1 +", "width/2", "\"D1@Sketch1\"", "D12"] {
+            assert_eq!(
+                bare_text_parameter_literal(expression),
+                None,
+                "{expression}"
+            );
+        }
     }
 
     #[test]
