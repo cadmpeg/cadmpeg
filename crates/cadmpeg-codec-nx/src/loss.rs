@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable loss vocabulary for `.prt` decoding.
 //!
-//! Every fallback, approximation, and drop the decoder reports carries a stable
-//! machine-readable code from [`NxLossCode`]. Codes are the gating surface:
-//! harness oracles and downstream tooling key on them, never on the
-//! human-readable message text, so a reworded message is not a contract change
-//! and a new drop path without a code does not compile.
+//! Every fallback, approximation, and drop the decoder reports carries a
+//! variant of [`NxLossCode`], which fixes the emitted note's shared
+//! [`LossCode`], category, and severity. The vocabulary is crate-private:
+//! downstream tooling keys on the shared `LossCode` carried by the emitted
+//! [`LossNote`], never on this enum, so a reworded message is not a contract
+//! change and a new drop path without a variant does not compile.
 //!
 //! [`NxLossCode::note`] is the single construction path for a decode-time
 //! [`LossNote`] in this crate: it fixes the shared loss code, the category, and
