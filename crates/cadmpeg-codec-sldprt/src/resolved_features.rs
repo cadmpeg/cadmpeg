@@ -1454,10 +1454,11 @@ mod marker_tests {
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
         explicit_reference_plane_frame, extended_compact_endpoint_markers,
         extended_compact_linked_line_handle_coordinates, extended_line_handle_coordinates,
-        fixed_reference_plane_frame, generated_surface_identities,
-        indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
-        legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
-        legacy_coordinate_circle_radius, legacy_coordinate_roster_selected_axis_endpoint_indices,
+        extended_wide_construction_line_roster_indices, fixed_reference_plane_frame,
+        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
+        inline_surface_reference_at, legacy_compact_diameter_arc_center,
+        legacy_compact_direct_endpoint_markers, legacy_coordinate_circle_radius,
+        legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_extended_rectangle_from_line_cycle, legacy_feature_input_section,
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
@@ -6227,6 +6228,52 @@ mod marker_tests {
         payload[35..39].copy_from_slice(&[0x00, 0x00, 0x0c, 0x00]);
         assert_eq!(
             legacy_coordinate_roster_selected_axis_endpoint_indices(&payload, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn extended_wide_construction_line_indexes_the_complete_marker_roster() {
+        let mut payload = vec![0; 92 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&14u16.to_le_bytes());
+        payload[66..68].copy_from_slice(&15u16.to_le_bytes());
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[84..88].copy_from_slice(&1u32.to_le_bytes());
+        payload[88..92].copy_from_slice(&5u32.to_le_bytes());
+        payload[92..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+        assert_eq!(
+            extended_wide_construction_line_roster_indices(&payload, 0),
+            Some([14, 15])
+        );
+        payload[66..68].copy_from_slice(&14u16.to_le_bytes());
+        assert_eq!(
+            extended_wide_construction_line_roster_indices(&payload, 0),
+            None
+        );
+        payload[66..68].copy_from_slice(&15u16.to_le_bytes());
+        payload[82] = 1;
+        payload[84..88].fill(0);
+        assert_eq!(
+            extended_wide_construction_line_roster_indices(&payload, 0),
+            Some([14, 15])
+        );
+        payload[82] = 2;
+        assert_eq!(
+            extended_wide_construction_line_roster_indices(&payload, 0),
+            None
+        );
+        payload[82] = 0;
+        assert_eq!(
+            extended_wide_construction_line_roster_indices(&payload, 0),
             None
         );
     }
@@ -20560,6 +20607,14 @@ pub(crate) fn project_marker_backed_sketches(
                                     };
                                     let (start, end) = (project(start)?, project(end)?);
                                     let offset = usize::try_from(marker.offset).ok()?;
+                                    if extended_wide_construction_line_roster_indices(
+                                        &lane.native_payload,
+                                        offset,
+                                    )
+                                    .is_some()
+                                    {
+                                        return Some(SketchGeometry::Line { start, end });
+                                    }
                                     if schema_31_wide_undetailed_line(
                                         &lane.native_payload,
                                         offset,
@@ -27879,6 +27934,22 @@ fn roster_curve_endpoint_markers<'a>(
             return endpoints;
         }
     }
+    if let Some(indices) = extended_wide_construction_line_roster_indices(payload, offset) {
+        let mut owned = markers
+            .iter()
+            .copied()
+            .filter(|marker| marker.feature_ref == curve.feature_ref)
+            .collect::<Vec<_>>();
+        owned.sort_unstable_by_key(|marker| marker.offset);
+        let endpoints = indices
+            .into_iter()
+            .filter_map(|index| owned.get(index).copied())
+            .filter(|marker| marker.coordinates_m.is_some())
+            .collect::<Vec<_>>();
+        if endpoints.len() == 2 && endpoints[0].id != endpoints[1].id {
+            return endpoints;
+        }
+    }
     if let Some(indices) = resolved_curve_endpoint_indices(payload, offset) {
         let indexed = indices
             .into_iter()
@@ -27987,6 +28058,55 @@ fn roster_curve_endpoint_markers<'a>(
             candidates.next().is_none().then_some(candidate)
         })
         .collect()
+}
+
+fn extended_wide_construction_line_roster_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[usize; 2]> {
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(2)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
+        || payload.get(offset + 68..offset + 72) != Some(&[0; 4])
+        || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
+        || payload
+            .get(offset + 88..offset + 92)
+            .is_none_or(|identity| identity == [0; 4] || identity == [0xff; 4])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
+    {
+        return None;
+    }
+    match (
+        payload.get(offset + 80..offset + 84),
+        payload.get(offset + 84..offset + 88),
+    ) {
+        (Some([0x00, 0x00, 0x00, 0x00]), Some(identity))
+            if identity != [0; 4] && identity != [0xff; 4] => {}
+        (Some([0x00, 0x00, 0x01, 0x00]), Some([0x00, 0x00, 0x00, 0x00])) => {}
+        _ => return None,
+    }
+    let indices = [64, 66].map(|relative| {
+        Some(usize::from(u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )))
+    });
+    let [Some(first), Some(second)] = indices else {
+        return None;
+    };
+    let indices = [first, second];
+    (indices[0] != indices[1]).then_some(indices)
 }
 
 fn extended_compact_endpoint_markers<'a>(
