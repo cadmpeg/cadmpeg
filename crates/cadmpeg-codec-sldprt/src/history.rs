@@ -2187,6 +2187,20 @@ mod history_reference_tests {
             }
         ));
 
+        let placement_dimensions = profile(&[
+            ("a", "<MOD-DIAM>9"),
+            ("b", "6"),
+            ("c", "4"),
+            ("d", "4"),
+            ("e", "6"),
+        ]);
+        assert_eq!(
+            hole_sketch_construction(&placement_dimensions)
+                .expect("diameter remains exact")
+                .depth,
+            None
+        );
+
         let mut canonical = feature("hole", Some("8"), 0);
         canonical.parameters = [
             ("Diameter".into(), "4.2mm".into()),
@@ -6249,15 +6263,26 @@ fn hole_profile_construction(
     features_by_source: &HashMap<&str, &Feature>,
 ) -> Option<HoleProfileConstruction> {
     let children = feature.properties.get("DissectableChildren")?;
-    let mut constructions = children
+    let constructions = children
         .split(',')
         .map(str::trim)
         .filter(|source| !source.is_empty())
         .filter_map(|source| features_by_source.get(source).copied())
         .filter(|profile| classify(profile) == Some(FeatureClass::Sketch))
-        .filter_map(hole_sketch_construction);
-    let construction = constructions.next()?;
-    constructions.next().is_none().then_some(construction)
+        .filter_map(hole_sketch_construction)
+        .collect::<Vec<_>>();
+    let complete = constructions
+        .iter()
+        .filter(|construction| construction.depth.is_some())
+        .collect::<Vec<_>>();
+    match complete.as_slice() {
+        [construction] => Some((**construction).clone()),
+        [] => match constructions.as_slice() {
+            [construction] => Some(construction.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
