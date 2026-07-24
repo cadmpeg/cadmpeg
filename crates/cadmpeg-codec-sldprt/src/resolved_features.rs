@@ -13311,7 +13311,7 @@ fn hole_position_feature<'a>(
 }
 
 /// Materialize Hole Wizard placements from spatial position points whose bore
-/// cylinders uniquely provide the local drilling axes.
+/// cylinders or incident cylindrical supports uniquely provide the local axes.
 pub(crate) fn project_spatial_hole_position_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     spatial_sketches: &[SpatialSketch],
@@ -13423,6 +13423,19 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     _ => None,
                 })
                 .collect::<Vec<_>>();
+            if axes.is_empty() {
+                let mut support_axes = surfaces
+                    .iter()
+                    .filter_map(|surface| cylindrical_support_normal(surface, point))
+                    .map(canonical_axis)
+                    .collect::<Vec<_>>();
+                support_axes
+                    .sort_by_key(|axis| [axis.x.to_bits(), axis.y.to_bits(), axis.z.to_bits()]);
+                support_axes.dedup_by(|left, right| dot(*left, *right) >= 1.0 - 1.0e-9);
+                if let [axis] = support_axes.as_slice() {
+                    axes.push((point, *axis));
+                }
+            }
             axes.sort_by_key(|(origin, axis)| {
                 [
                     origin.x.to_bits(),
@@ -13471,6 +13484,37 @@ pub(crate) fn project_spatial_hole_position_sketches(
             *placements = resolved;
         }
     }
+}
+
+fn cylindrical_support_normal(surface: &Surface, point: Point3) -> Option<Vector3> {
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        radius,
+        ..
+    } = surface.geometry
+    else {
+        return None;
+    };
+    if !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+    let along = dot(delta, axis);
+    let radial = Vector3::new(
+        delta.x - along * axis.x,
+        delta.y - along * axis.y,
+        delta.z - along * axis.z,
+    );
+    let radial_length = dot(radial, radial).sqrt();
+    let tolerance = (radius * 1.0e-9).max(1.0e-9);
+    ((radial_length - radius).abs() <= tolerance).then(|| {
+        Vector3::new(
+            radial.x / radial_length,
+            radial.y / radial_length,
+            radial.z / radial_length,
+        )
+    })
 }
 
 fn point_axis_distance_squared(point: Point3, origin: Point3, axis: Vector3) -> f64 {
@@ -14283,10 +14327,11 @@ mod hole_axis_tests {
     };
 
     use super::{
-        compact_position_loci, enrich_history_hole_constructions, enrich_history_parameters,
-        hole_position_sketch_source, hole_temporary_axis, marker_pattern_bore_axes,
-        profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
-        project_profiled_hole_constructions, project_spatial_hole_position_sketches,
+        compact_position_loci, cylindrical_support_normal, enrich_history_hole_constructions,
+        enrich_history_parameters, hole_position_sketch_source, hole_temporary_axis,
+        marker_pattern_bore_axes, profiled_hole_construction, project_hole_axes,
+        project_hole_position_sketches, project_profiled_hole_constructions,
+        project_spatial_hole_position_sketches,
     };
     use crate::records::{
         FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
@@ -14415,6 +14460,26 @@ mod hole_axis_tests {
             },
             source_object: None,
         }
+    }
+
+    #[test]
+    fn cylindrical_support_point_defines_its_radial_axis() {
+        let surface = Surface {
+            id: SurfaceId("support".into()),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 10.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 13.0,
+            },
+            source_object: None,
+        };
+
+        assert_eq!(
+            cylindrical_support_normal(&surface, Point3::new(12.0, 5.0, 40.0)),
+            Some(Vector3::new(12.0 / 13.0, 5.0 / 13.0, 0.0))
+        );
+        assert!(cylindrical_support_normal(&surface, Point3::new(12.0, 4.0, 40.0)).is_none());
     }
 
     fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
