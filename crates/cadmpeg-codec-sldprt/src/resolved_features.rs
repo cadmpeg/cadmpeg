@@ -18343,6 +18343,33 @@ pub(crate) fn enrich_history_reference_planes(
         }
     }
     for ((history_index, feature_index), mut sources) in reference_candidates {
+        let index = (history_index, feature_index);
+        if let Some(offset) = unique_frames.get(&index) {
+            if let Some(distance) = histories[history_index].features[feature_index]
+                .parameters
+                .get("D1")
+                .and_then(|value| crate::history::parse_dimension_length_mm(value))
+            {
+                let compatible = sources
+                    .iter()
+                    .filter(|source| {
+                        frames_by_reference.iter().any(
+                            |(candidate_source, candidate_index, candidate)| {
+                                candidate_source == *source
+                                    && candidate_index.0 == history_index
+                                    && offset_plane_reference_frame_matches(
+                                        *candidate, *offset, distance,
+                                    )
+                            },
+                        )
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !compatible.is_empty() {
+                    sources = compatible;
+                }
+            }
+        }
         sources.sort_unstable();
         sources.dedup();
         let [source] = sources.as_slice() else {
