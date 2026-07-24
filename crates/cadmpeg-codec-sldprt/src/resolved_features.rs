@@ -5929,6 +5929,38 @@ mod marker_tests {
     }
 
     #[test]
+    fn terminal_legacy_wide_curve_indexes_the_coordinate_roster() {
+        let mut payload = vec![0; 128];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&12u16.to_le_bytes());
+        payload[66..68].copy_from_slice(&13u16.to_le_bytes());
+        payload[68..72].copy_from_slice(&1u32.to_le_bytes());
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+
+        assert_eq!(
+            super::wide_indexed_curve_endpoint_indices(&payload, 0),
+            Some([13, 14])
+        );
+        assert_eq!(
+            super::coordinate_roster_endpoint_offset(&payload, 0),
+            Some(64)
+        );
+
+        payload[127] = 1;
+        assert_eq!(
+            super::wide_indexed_curve_endpoint_indices(&payload, 0),
+            None
+        );
+    }
+
+    #[test]
     fn compact_legacy_profile_selected_axis_indexes_the_coordinate_roster() {
         let mut payload = vec![0; 92 + LEGACY_SKETCH_MARKER.len()];
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -19896,12 +19928,23 @@ pub(crate) fn project_marker_backed_sketches(
             };
             let diagonal_rectangle =
                 legacy_extended_diagonal_rectangle(&lane.native_payload, &object_markers);
+            let inferred_points = std::cell::OnceCell::new();
             let mut projected = markers
                 .iter()
                 .copied()
                 .filter_map(|marker| {
                     let project = |endpoint: &SketchInputEntity| {
                         let [u, v] = endpoint.coordinates_m?;
+                        let point = transform.apply(quantize(
+                            Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
+                            QUANTUM,
+                        ))?;
+                        Some(Point2::new(
+                            point.0 as f64 * QUANTUM,
+                            point.1 as f64 * QUANTUM,
+                        ))
+                    };
+                    let project_coordinates = |[u, v]: [f64; 2]| {
                         let point = transform.apply(quantize(
                             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
                             QUANTUM,
@@ -19942,6 +19985,28 @@ pub(crate) fn project_marker_backed_sketches(
                                 );
                                 if let [start, end] = endpoints.as_slice() {
                                     let (Some(start), Some(end)) = (project(start), project(end))
+                                    else {
+                                        return None;
+                                    };
+                                    if start == end {
+                                        return None;
+                                    }
+                                    SketchGeometry::Line { start, end }
+                                } else if let Some([start, end]) =
+                                    implicit_coordinate_roster_curve_endpoints(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                        inferred_points.get_or_init(|| {
+                                            inferred_point_coordinates_by_index(
+                                                lane,
+                                                native_feature.id.as_str(),
+                                            )
+                                        }),
+                                    )
+                                {
+                                    let (Some(start), Some(end)) =
+                                        (project_coordinates(start), project_coordinates(end))
                                     else {
                                         return None;
                                     };
@@ -27575,6 +27640,221 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
         .unwrap_or_default()
 }
 
+fn inferred_point_coordinates_by_index(
+    lane: &FeatureInputLane,
+    feature: &str,
+) -> HashMap<u32, [f64; 2]> {
+    const POINT_REFERENCE_TAG: u16 = 0x820f;
+
+    let mut candidates = lane
+        .sketch_entities
+        .iter()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+        .filter_map(|marker| marker.coordinates_m)
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        left[0]
+            .total_cmp(&right[0])
+            .then_with(|| left[1].total_cmp(&right[1]))
+    });
+    candidates.dedup_by(|left, right| {
+        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
+    });
+
+    let mut constraints = Vec::new();
+    for scalar in lane.scalars.iter().filter(|scalar| {
+        scalar.feature_ref.as_deref() == Some(feature)
+            && scalar.role == FeatureInputScalarRole::Driving
+            && scalar.value.is_finite()
+            && scalar.value >= 0.0
+            && scalar.operands.len() == 2
+            && scalar
+                .operands
+                .iter()
+                .all(|operand| operand.kind == FeatureInputOperandKind::Native(POINT_REFERENCE_TAG))
+    }) {
+        let [first, second] = scalar.operands.as_slice() else {
+            unreachable!("scalar operand cardinality was filtered above");
+        };
+        let endpoints = [
+            u32::from(first.entity_index),
+            u32::from(second.entity_index),
+        ];
+        constraints.push((endpoints, scalar.value));
+    }
+
+    let mut indices = HashSet::new();
+    for (endpoints, _) in &constraints {
+        indices.extend(endpoints);
+    }
+    let mut domains = indices
+        .into_iter()
+        .map(|index| (index, candidates.clone()))
+        .collect::<HashMap<_, _>>();
+    loop {
+        let previous = domains.clone();
+        for (index, domain) in &mut domains {
+            domain.retain(|candidate| {
+                constraints.iter().all(|(endpoints, distance)| {
+                    let other = match endpoints {
+                        [left, other] if left == index => other,
+                        [other, right] if right == index => other,
+                        _ => return true,
+                    };
+                    if other == index {
+                        same_dimension_length(*distance, 0.0)
+                    } else {
+                        previous.get(other).is_some_and(|other_domain| {
+                            other_domain.iter().any(|point| {
+                                same_dimension_length(
+                                    (candidate[0] - point[0]).hypot(candidate[1] - point[1]),
+                                    *distance,
+                                )
+                            })
+                        })
+                    }
+                })
+            });
+        }
+        if domains == previous {
+            break;
+        }
+    }
+    domains
+        .iter()
+        .filter_map(|(&index, domain)| {
+            let [point] = domain.as_slice() else {
+                return None;
+            };
+            point_distance_component_has_solution(index, &domains, &constraints)
+                .then_some((index, *point))
+        })
+        .collect()
+}
+
+fn point_distance_component_has_solution(
+    seed: u32,
+    domains: &HashMap<u32, Vec<[f64; 2]>>,
+    constraints: &[([u32; 2], f64)],
+) -> bool {
+    let mut component = HashSet::from([seed]);
+    let mut pending = vec![seed];
+    while let Some(index) = pending.pop() {
+        for (endpoints, _) in constraints
+            .iter()
+            .filter(|(endpoints, _)| endpoints.contains(&index))
+        {
+            for endpoint in endpoints {
+                if component.insert(*endpoint) {
+                    pending.push(*endpoint);
+                }
+            }
+        }
+    }
+    let mut unassigned = component.into_iter().collect::<Vec<_>>();
+    unassigned.sort_unstable_by_key(|index| {
+        std::cmp::Reverse(domains.get(index).map_or(usize::MAX, Vec::len))
+    });
+
+    point_distance_assignment_exists(&mut unassigned, &mut HashMap::new(), domains, constraints)
+}
+
+fn point_distance_assignment_exists(
+    unassigned: &mut Vec<u32>,
+    assigned: &mut HashMap<u32, [f64; 2]>,
+    domains: &HashMap<u32, Vec<[f64; 2]>>,
+    constraints: &[([u32; 2], f64)],
+) -> bool {
+    let Some(index) = unassigned.pop() else {
+        return true;
+    };
+    let solved = domains.get(&index).is_some_and(|domain| {
+        domain.iter().copied().any(|candidate| {
+            let compatible = constraints.iter().all(|(endpoints, distance)| {
+                let other = match endpoints {
+                    [left, other] if *left == index => *other,
+                    [other, right] if *right == index => *other,
+                    _ => return true,
+                };
+                if other == index {
+                    same_dimension_length(*distance, 0.0)
+                } else {
+                    assigned.get(&other).is_none_or(|point| {
+                        same_dimension_length(
+                            (candidate[0] - point[0]).hypot(candidate[1] - point[1]),
+                            *distance,
+                        )
+                    })
+                }
+            });
+            if !compatible {
+                return false;
+            }
+            assigned.insert(index, candidate);
+            let solved =
+                point_distance_assignment_exists(unassigned, assigned, domains, constraints);
+            assigned.remove(&index);
+            solved
+        })
+    });
+    unassigned.push(index);
+    solved
+}
+
+fn implicit_coordinate_roster_curve_endpoints(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+    inferred: &HashMap<u32, [f64; 2]>,
+) -> Option<[[f64; 2]; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if !coordinate_roster_curve_layout(payload, offset) {
+        return None;
+    }
+    let mut coordinates = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+        })
+        .collect::<Vec<_>>();
+    coordinates.sort_unstable_by_key(|marker| marker.offset);
+    let endpoint_offset = coordinate_roster_endpoint_offset(payload, offset)?;
+    let endpoint_index = |relative| {
+        Some(u32::from(u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )))
+    };
+    let indices = [
+        endpoint_index(endpoint_offset)?,
+        endpoint_index(endpoint_offset + 2)?,
+    ];
+    let mut used_inferred = false;
+    let endpoints = indices.map(|index| {
+        if let Some(point) = coordinates
+            .get(usize::try_from(index).ok()?)
+            .and_then(|marker| marker.coordinates_m)
+        {
+            Some(point)
+        } else {
+            used_inferred = true;
+            inferred.get(&index).copied()
+        }
+    });
+    used_inferred.then_some([endpoints[0]?, endpoints[1]?])
+}
+
 fn coordinate_roster_arc_center(
     payload: &[u8],
     curve: &SketchInputEntity,
@@ -28562,6 +28842,9 @@ fn current_extended_wide_curve_body(payload: &[u8], offset: usize) -> bool {
 
 fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8]) -> bool {
     if sketch_marker_prefix_at(payload, offset.saturating_add(92)) {
+        return true;
+    }
+    if prefix == LEGACY_SKETCH_MARKER && payload.get(offset + 80..offset + 128) == Some(&[0; 48]) {
         return true;
     }
     let selector = payload
@@ -31494,9 +31777,9 @@ mod profile_join_tests {
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
         bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
-        implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
-        marker_owns_constraint, marker_point_locus, owned_relation_parameters,
-        profile_loci_by_marker, project_compact_edge_selections,
+        implicit_circle_marker, inferred_point_coordinates_by_index, line_endpoint_markers,
+        line_reference_direction, marker_entities, marker_owns_constraint, marker_point_locus,
+        owned_relation_parameters, profile_loci_by_marker, project_compact_edge_selections,
         project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
         project_relation_point_geometry, project_relation_solved_point_geometry,
@@ -32477,6 +32760,127 @@ mod profile_join_tests {
             typed_marker_relation_definition(&relation, &markers, &HashMap::new()),
             None
         );
+    }
+
+    #[test]
+    fn driving_point_distances_resolve_omitted_solver_points() {
+        let mut origin = marker("origin", Some([0.0, 0.0]));
+        origin.offset = 0;
+        let mut negative = marker("negative", Some([-0.007, 0.0]));
+        negative.offset = 1;
+        let mut first_center = marker("first-center", Some([0.008, 0.0]));
+        first_center.offset = 2;
+        let mut second_center = marker("second-center", Some([0.0015, 0.0]));
+        second_center.offset = 3;
+        let operand = |index, marker: Option<&str>| FeatureInputOperand {
+            offset: u64::from(index),
+            reference_ref: format!("reference-{index}"),
+            kind: FeatureInputOperandKind::Native(0x820f),
+            entity_index: index,
+            entity_ref: marker.map(str::to_string),
+        };
+        let scalar = |id: &str, value, operands| FeatureInputScalar {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature-native".into()),
+            ordinal: 0,
+            offset: 0,
+            object_id: 0,
+            name: "name".into(),
+            value,
+            role: FeatureInputScalarRole::Driving,
+            entity_indices: Vec::new(),
+            operands,
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: vec![
+                scalar(
+                    "center-1",
+                    0.008,
+                    vec![operand(13, None), operand(3, Some("first-center"))],
+                ),
+                scalar(
+                    "center-2",
+                    0.0015,
+                    vec![operand(13, None), operand(4, Some("second-center"))],
+                ),
+                scalar(
+                    "terminal",
+                    0.007,
+                    vec![operand(12, None), operand(13, None)],
+                ),
+            ],
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![origin, negative, first_center, second_center],
+        };
+
+        assert_eq!(
+            inferred_point_coordinates_by_index(&lane, "feature-native"),
+            HashMap::from([
+                (3, [0.008, 0.0]),
+                (4, [0.0015, 0.0]),
+                (12, [-0.007, 0.0]),
+                (13, [0.0, 0.0]),
+            ])
+        );
+    }
+
+    #[test]
+    fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
+        let mut first = marker("first", Some([0.0, 0.0]));
+        first.offset = 0;
+        let mut second = marker("second", Some([1.0, 0.0]));
+        second.offset = 1;
+        let mut third = marker("third", Some([2.0, 0.0]));
+        third.offset = 2;
+        let operand = |index| FeatureInputOperand {
+            offset: u64::from(index),
+            reference_ref: format!("reference-{index}"),
+            kind: FeatureInputOperandKind::Native(0x820f),
+            entity_index: index,
+            entity_ref: None,
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: vec![FeatureInputScalar {
+                id: "distance".into(),
+                parent: "lane".into(),
+                feature_ref: Some("feature-native".into()),
+                ordinal: 0,
+                offset: 0,
+                object_id: 0,
+                name: "name".into(),
+                value: 1.0,
+                role: FeatureInputScalarRole::Driving,
+                entity_indices: Vec::new(),
+                operands: vec![operand(12), operand(13)],
+            }],
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![first, second, third],
+        };
+
+        assert!(inferred_point_coordinates_by_index(&lane, "feature-native").is_empty());
     }
 
     #[test]
