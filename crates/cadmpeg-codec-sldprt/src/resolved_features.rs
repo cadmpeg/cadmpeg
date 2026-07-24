@@ -1553,9 +1553,10 @@ mod marker_tests {
         roster_curve_endpoint_markers, schema_31_wide_undetailed_line,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        surface_reference_matches_at, surface_selection_producer_features, tangent_bounded_curve,
-        unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
-        unique_locus, unique_marker_candidate, wide_direct_line_endpoint_markers,
+        structured_offset_plane_sources, surface_reference_matches_at,
+        surface_selection_producer_features, tangent_bounded_curve, unique_arc_center_marker,
+        unique_cylindrical_face, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, wide_direct_line_endpoint_markers,
         wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
         CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
         LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
@@ -2905,6 +2906,34 @@ mod marker_tests {
         assert_eq!(compact_offset_plane_source(&payload), Some(3));
         payload[19] ^= 1;
         assert_eq!(compact_offset_plane_source(&payload), None);
+    }
+
+    #[test]
+    fn structured_offset_plane_source_requires_repeated_identities_and_terminator() {
+        let mut payload = vec![0; 140];
+        let header = 0x8323u32.to_le_bytes();
+        let identity = [
+            0xd7, 0x81, 0x26, 0x03, 0x1d, 0x00, 0x00, 0x00, 0x5e, 0x2c, 0xdb, 0x54,
+        ];
+        let link = 0x81dcu32.to_le_bytes();
+        payload[..4].copy_from_slice(&4u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&header);
+        for offset in [8, 32, 52, 76] {
+            payload[offset..offset + 12].copy_from_slice(&identity);
+        }
+        payload[28..32].copy_from_slice(&link);
+        payload[44..48].copy_from_slice(&3u32.to_le_bytes());
+        payload[48..52].copy_from_slice(&header);
+        for offset in [64, 88, 108] {
+            payload[offset..offset + 4].copy_from_slice(&1u32.to_le_bytes());
+        }
+        payload[72..76].copy_from_slice(&link);
+        payload[116..120].copy_from_slice(&2600u32.to_le_bytes());
+        payload[132..140].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+
+        assert_eq!(structured_offset_plane_sources(&payload), [3]);
+        payload[80] ^= 1;
+        assert!(structured_offset_plane_sources(&payload).is_empty());
     }
 
     #[test]
@@ -18262,6 +18291,41 @@ fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
     matches.next().is_none().then_some(source)
 }
 
+fn structured_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
+    const RECORD_LEN: usize = 140;
+    const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    payload
+        .windows(RECORD_LEN)
+        .filter_map(|bytes| {
+            let header = bytes.get(4..8)?;
+            let identity = bytes.get(8..20)?;
+            let link = bytes.get(28..32)?;
+            let source = u32::from_le_bytes(bytes.get(44..48)?.try_into().ok()?);
+            let address = bytes.get(116..120)?;
+            (bytes.get(..4) == Some(&4u32.to_le_bytes())
+                && header != [0; 4]
+                && bytes.get(48..52) == Some(header)
+                && identity != [0; 12]
+                && bytes.get(32..44) == Some(identity)
+                && bytes.get(52..64) == Some(identity)
+                && bytes.get(76..88) == Some(identity)
+                && bytes.get(20..28) == Some(&[0; 8])
+                && link != [0; 4]
+                && bytes.get(72..76) == Some(link)
+                && bytes.get(64..68) == Some(&1u32.to_le_bytes())
+                && bytes.get(68..72) == Some(&[0; 4])
+                && bytes.get(88..92) == Some(&1u32.to_le_bytes())
+                && bytes.get(92..108) == Some(&[0; 16])
+                && bytes.get(108..112) == Some(&1u32.to_le_bytes())
+                && bytes.get(112..116) == Some(&[0; 4])
+                && address != [0; 4]
+                && bytes.get(120..132) == Some(&[0; 12])
+                && bytes.get(132..140) == Some(TERMINATOR))
+            .then_some(source)
+        })
+        .collect()
+}
+
 fn offset_plane_reference_source(
     payload: &[u8],
     known_sources: &HashSet<u32>,
@@ -18297,6 +18361,11 @@ fn offset_plane_reference_source(
         .collect::<Vec<_>>();
     sources.extend(
         compact_offset_plane_source(payload)
+            .filter(|source| Some(*source) != self_source && known_sources.contains(source)),
+    );
+    sources.extend(
+        structured_offset_plane_sources(payload)
+            .into_iter()
             .filter(|source| Some(*source) != self_source && known_sources.contains(source)),
     );
     sources.sort_unstable();
