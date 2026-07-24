@@ -7071,7 +7071,7 @@ fn parse_positive_angle_rad(value: &str) -> Option<f64> {
     parse_angle_rad(value).filter(|value| *value > 0.0)
 }
 
-fn parse_bounded_angle_rad(value: &str) -> Option<f64> {
+pub(crate) fn parse_bounded_angle_rad(value: &str) -> Option<f64> {
     parse_positive_angle_rad(value).filter(|value| *value < std::f64::consts::PI)
 }
 
@@ -7589,7 +7589,7 @@ fn strip_dimension_fit(value: &str) -> Option<&str> {
     .then_some(nominal)
 }
 
-fn strip_diameter_modifier(expression: &str) -> Option<&str> {
+pub(crate) fn strip_diameter_modifier(expression: &str) -> Option<&str> {
     let expression = expression.trim();
     expression
         .strip_prefix("<MOD-DIAM>")
@@ -7978,6 +7978,11 @@ pub(crate) fn project_configuration_sketch_states(
             &mut features,
             histories,
             scoped_lanes,
+        );
+        crate::resolved_features::project_profiled_hole_constructions(
+            &mut features,
+            &ir.model.sketch_entities,
+            histories,
         );
         crate::resolved_features::project_hole_position_sketches(
             &mut features,

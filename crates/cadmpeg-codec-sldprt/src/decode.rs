@@ -1620,6 +1620,11 @@ fn build_geometry_ir(
         &ir.model.edges,
         &ir.model.curves,
     );
+    crate::resolved_features::project_profiled_hole_constructions(
+        &mut ir.model.features,
+        &ir.model.sketch_entities,
+        &histories,
+    );
     crate::resolved_features::project_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.sketches,
@@ -2297,6 +2302,11 @@ fn build_metadata_ir(
         &ir.model.sketch_entities,
         &ir.model.parameters,
         &lanes,
+    );
+    crate::resolved_features::project_profiled_hole_constructions(
+        &mut ir.model.features,
+        &ir.model.sketch_entities,
+        &histories,
     );
     crate::resolved_features::project_hole_position_sketches(
         &mut ir.model.features,

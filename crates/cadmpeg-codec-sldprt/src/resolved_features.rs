@@ -15,7 +15,8 @@ use crate::records::{
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, FeatureDefinition, HolePlacement, Length, PathRef, PatternKind, PatternSeed,
+    Angle, BooleanOp, FeatureDefinition, HoleBottom, HoleKind, HolePlacement, Length, PathRef,
+    PatternKind, PatternSeed, Termination,
 };
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -12836,7 +12837,6 @@ pub(crate) fn enrich_history_hole_constructions(
                     && !feature.properties.contains_key("DissectableChildren")
             })
             .filter_map(|(feature_index, feature)| {
-                let hole_source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
                 let mut position_sources = lanes
                     .iter()
                     .filter_map(|lane| hole_position_sketch_source(feature, lane))
@@ -12852,7 +12852,6 @@ pub(crate) fn enrich_history_hole_constructions(
                 ]
                 .into_iter()
                 .flatten()
-                .filter(|source| *source < hole_source)
                 .collect::<HashSet<_>>();
                 let mut profiles = history.features.iter().filter(|candidate| {
                     candidate
@@ -12881,6 +12880,297 @@ pub(crate) fn enrich_history_hole_constructions(
                 .properties
                 .insert("DissectableChildren".into(), profile_source);
         }
+    }
+}
+
+#[derive(Clone)]
+struct ProfiledHoleConstruction {
+    diameter: Length,
+    extent: Termination,
+    kind: HoleKind,
+    bottom: Option<HoleBottom>,
+}
+
+fn profiled_hole_construction(
+    profile: &crate::records::Feature,
+    sketch: &SketchId,
+    entities: &[SketchEntity],
+) -> Option<ProfiledHoleConstruction> {
+    let mut diameters = profile
+        .parameters
+        .values()
+        .filter_map(|value| crate::history::strip_diameter_modifier(value))
+        .filter_map(crate::history::parse_dimension_length_mm)
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .collect::<Vec<_>>();
+    let mut angles = profile
+        .parameters
+        .values()
+        .filter_map(|value| crate::history::parse_bounded_angle_rad(value))
+        .collect::<Vec<_>>();
+    let mut lengths = profile
+        .parameters
+        .values()
+        .filter(|value| {
+            crate::history::strip_diameter_modifier(value).is_none()
+                && crate::history::parse_bounded_angle_rad(value).is_none()
+        })
+        .filter_map(|value| crate::history::parse_dimension_length_mm(value))
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .collect::<Vec<_>>();
+    diameters.sort_by(f64::total_cmp);
+    diameters.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-9);
+    angles.sort_by(f64::total_cmp);
+    angles.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-12);
+    lengths.sort_by(f64::total_cmp);
+    lengths.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-9);
+    let [diameter, entry_diameter] = diameters.as_slice() else {
+        return None;
+    };
+    if diameter >= entry_diameter {
+        return None;
+    }
+    let lines = entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch && !entity.construction)
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Line { start, end } => Some((start, end)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let same_point = |left: Point2, right: Point2| {
+        (left.u - right.u).abs() <= 1.0e-7 && (left.v - right.v).abs() <= 1.0e-7
+    };
+    let has_line = |first: Point2, second: Point2| {
+        lines.iter().any(|(start, end)| {
+            (same_point(*start, first) && same_point(*end, second))
+                || (same_point(*start, second) && same_point(*end, first))
+        })
+    };
+    let bore_radius = diameter / 2.0;
+    let entry_radius = entry_diameter / 2.0;
+    for swap in [false, true] {
+        for axial_sign in [-1.0, 1.0] {
+            for radial_sign in [-1.0, 1.0] {
+                let point = |axial: f64, radial: f64| {
+                    let axial = axial * axial_sign;
+                    let radial = radial * radial_sign;
+                    if swap {
+                        Point2::new(radial, axial)
+                    } else {
+                        Point2::new(axial, radial)
+                    }
+                };
+                if let [entry_depth, depth] = lengths.as_slice() {
+                    let entry = point(0.0, entry_radius);
+                    let entry_corner = point(-entry_depth, entry_radius);
+                    let bore_corner = point(-entry_depth, bore_radius);
+                    let bore_end = point(-depth, bore_radius);
+                    if !has_line(entry, entry_corner)
+                        || !has_line(entry_corner, bore_corner)
+                        || !has_line(bore_corner, bore_end)
+                    {
+                        continue;
+                    }
+                    let kind = match angles.as_slice() {
+                        [] => HoleKind::Counterbore {
+                            diameter: Length(*entry_diameter),
+                            depth: Length(*entry_depth),
+                        },
+                        [drill_point_angle] => {
+                            let drill_length = bore_radius / (drill_point_angle / 2.0).tan();
+                            if !drill_length.is_finite()
+                                || !has_line(bore_end, point(-depth - drill_length, 0.0))
+                            {
+                                continue;
+                            }
+                            HoleKind::CounterboreDrilled {
+                                diameter: Length(*entry_diameter),
+                                depth: Length(*entry_depth),
+                                drill_point_angle: Angle(*drill_point_angle),
+                            }
+                        }
+                        _ => continue,
+                    };
+                    return Some(ProfiledHoleConstruction {
+                        diameter: Length(*diameter),
+                        extent: Termination::Blind {
+                            length: Length(*depth),
+                        },
+                        kind,
+                        bottom: None,
+                    });
+                }
+                let [depth] = lengths.as_slice() else {
+                    continue;
+                };
+                let [first_angle, second_angle] = angles.as_slice() else {
+                    continue;
+                };
+                for (sink_angle, drill_point_angle) in
+                    [(*first_angle, *second_angle), (*second_angle, *first_angle)]
+                {
+                    let setback = (entry_radius - bore_radius) / (sink_angle / 2.0).tan();
+                    let drill_length = bore_radius / (drill_point_angle / 2.0).tan();
+                    if !setback.is_finite() || !drill_length.is_finite() {
+                        continue;
+                    }
+                    let entry = point(0.0, entry_radius);
+                    let bore_start = point(-setback, bore_radius);
+                    let bore_end = point(-depth, bore_radius);
+                    if has_line(entry, bore_start)
+                        && has_line(bore_start, bore_end)
+                        && has_line(bore_end, point(-depth - drill_length, 0.0))
+                    {
+                        return Some(ProfiledHoleConstruction {
+                            diameter: Length(*diameter),
+                            extent: Termination::Blind {
+                                length: Length(*depth),
+                            },
+                            kind: HoleKind::Countersink {
+                                diameter: Length(*entry_diameter),
+                                angle: Angle(sink_angle),
+                            },
+                            bottom: Some(HoleBottom::Angled {
+                                included_angle: Angle(drill_point_angle),
+                                depth_to_tip: false,
+                            }),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Recover hole dimensions and entry form from the exact axial profile.
+pub(crate) fn project_profiled_hole_constructions(
+    features: &mut [cadmpeg_ir::features::Feature],
+    entities: &[SketchEntity],
+    histories: &[crate::records::FeatureHistory],
+) {
+    let incomplete = |diameter: &Option<Length>, extent: &Option<Termination>, kind: &HoleKind| {
+        diameter.is_none()
+            || extent
+                .as_ref()
+                .is_none_or(|extent| matches!(extent, Termination::Unresolved))
+            || matches!(kind, HoleKind::Unresolved { .. })
+    };
+    let model_sketches = features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((feature.native_ref.clone()?, sketch.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let native_histories = histories
+        .iter()
+        .enumerate()
+        .flat_map(|(history_index, history)| {
+            history
+                .features
+                .iter()
+                .map(move |feature| (feature.id.as_str(), history_index))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut incomplete_holes = vec![0_usize; histories.len()];
+    for feature in features.iter() {
+        let FeatureDefinition::Hole {
+            diameter,
+            extent,
+            kind,
+            ..
+        } = &feature.definition
+        else {
+            continue;
+        };
+        if !incomplete(diameter, extent, kind) {
+            continue;
+        }
+        let Some(history_index) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| native_histories.get(native))
+        else {
+            continue;
+        };
+        incomplete_holes[*history_index] += 1;
+    }
+    let profiled_constructions = histories
+        .iter()
+        .map(|history| {
+            history
+                .features
+                .iter()
+                .filter_map(|profile| {
+                    let sketch = model_sketches.get(&profile.id)?;
+                    profiled_hole_construction(profile, sketch, entities)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    for feature in features.iter_mut() {
+        let FeatureDefinition::Hole {
+            diameter,
+            extent,
+            kind,
+            bottom,
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        if !incomplete(diameter, extent, kind) {
+            continue;
+        }
+        let Some((history_index, native)) = feature.native_ref.as_deref().and_then(|native| {
+            let history_index = *native_histories.get(native)?;
+            let native = histories[history_index]
+                .features
+                .iter()
+                .find(|candidate| candidate.id == native)?;
+            Some((history_index, native))
+        }) else {
+            continue;
+        };
+        let history = &histories[history_index];
+        let direct = native
+            .properties
+            .get("DissectableChildren")
+            .and_then(|children| {
+                let mut constructions = children.split(',').filter_map(|source| {
+                    let mut profiles = history
+                        .features
+                        .iter()
+                        .filter(|candidate| candidate.source_id.as_deref() == Some(source.trim()));
+                    let profile = profiles.next()?;
+                    profiles.next().is_none().then_some(())?;
+                    let sketch = model_sketches.get(&profile.id)?;
+                    profiled_hole_construction(profile, sketch, entities)
+                });
+                let construction = constructions.next()?;
+                constructions.next().is_none().then_some(construction)
+            });
+        let construction = direct.or_else(|| {
+            let [construction] = profiled_constructions[history_index].as_slice() else {
+                return None;
+            };
+            (incomplete_holes[history_index] == 1).then(|| construction.clone())
+        });
+        let Some(construction) = construction else {
+            continue;
+        };
+        *diameter = Some(construction.diameter);
+        *extent = Some(construction.extent);
+        *kind = construction.kind;
+        *bottom = construction.bottom;
     }
 }
 
@@ -13981,7 +14271,9 @@ fn compact_position_assignments(
 mod hole_axis_tests {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length};
+    use cadmpeg_ir::features::{
+        Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, Termination,
+    };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -13993,7 +14285,8 @@ mod hole_axis_tests {
     use super::{
         compact_position_loci, enrich_history_hole_constructions, enrich_history_parameters,
         hole_position_sketch_source, hole_temporary_axis, marker_pattern_bore_axes,
-        project_hole_axes, project_hole_position_sketches, project_spatial_hole_position_sketches,
+        profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
+        project_profiled_hole_constructions, project_spatial_hole_position_sketches,
     };
     use crate::records::{
         FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
@@ -14122,6 +14415,210 @@ mod hole_axis_tests {
             },
             source_object: None,
         }
+    }
+
+    fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
+        SketchEntity {
+            id: SketchEntityId(format!("profile-line-{ordinal}")),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        }
+    }
+
+    #[test]
+    fn axial_profile_resolves_counterbore_roles() {
+        let mut profile = native_history().features.remove(0);
+        profile.parameters = [
+            ("a".into(), "118°".into()),
+            ("b".into(), "5.7".into()),
+            ("c".into(), "<MOD-DIAM>10".into()),
+            ("d".into(), "15".into()),
+            ("e".into(), "<MOD-DIAM>5.5".into()),
+        ]
+        .into_iter()
+        .collect();
+        let sketch = SketchId("profile".into());
+        let drill_length = 2.75 / (118_f64.to_radians() / 2.0).tan();
+        let entities = [
+            profile_line(&sketch, 0, Point2::new(0.0, 5.0), Point2::new(-5.7, 5.0)),
+            profile_line(&sketch, 1, Point2::new(-5.7, 5.0), Point2::new(-5.7, 2.75)),
+            profile_line(
+                &sketch,
+                2,
+                Point2::new(-5.7, 2.75),
+                Point2::new(-15.0, 2.75),
+            ),
+            profile_line(
+                &sketch,
+                3,
+                Point2::new(-15.0, 2.75),
+                Point2::new(-15.0 - drill_length, 0.0),
+            ),
+        ];
+
+        let construction =
+            profiled_hole_construction(&profile, &sketch, &entities).expect("exact profile");
+        assert_eq!(construction.diameter, Length(5.5));
+        assert_eq!(
+            construction.extent,
+            Termination::Blind {
+                length: Length(15.0)
+            }
+        );
+        assert!(matches!(
+            construction.kind,
+            HoleKind::CounterboreDrilled {
+                diameter: Length(10.0),
+                depth: Length(5.7),
+                drill_point_angle: Angle(angle),
+            } if (angle - 118_f64.to_radians()).abs() < 1.0e-12
+        ));
+        assert_eq!(construction.bottom, None);
+    }
+
+    #[test]
+    fn axial_profile_resolves_countersink_and_drill_point_roles() {
+        let mut profile = native_history().features.remove(0);
+        profile.parameters = [
+            ("a".into(), "120°".into()),
+            ("b".into(), "5".into()),
+            ("c".into(), "<MOD-DIAM>4.134".into()),
+            ("d".into(), "<MOD-DIAM>5".into()),
+            ("e".into(), "90°".into()),
+        ]
+        .into_iter()
+        .collect();
+        let sketch = SketchId("profile".into());
+        let entities = [
+            profile_line(
+                &sketch,
+                0,
+                Point2::new(0.0, 2.5),
+                Point2::new(-0.433, 2.067),
+            ),
+            profile_line(
+                &sketch,
+                1,
+                Point2::new(-0.433, 2.067),
+                Point2::new(-5.0, 2.067),
+            ),
+            profile_line(
+                &sketch,
+                2,
+                Point2::new(-5.0, 2.067),
+                Point2::new(-6.193383012, 0.0),
+            ),
+        ];
+
+        let construction =
+            profiled_hole_construction(&profile, &sketch, &entities).expect("exact profile");
+        assert_eq!(construction.diameter, Length(4.134));
+        assert_eq!(
+            construction.extent,
+            Termination::Blind {
+                length: Length(5.0)
+            }
+        );
+        assert!(matches!(
+            construction.kind,
+            HoleKind::Countersink {
+                diameter: Length(5.0),
+                angle: Angle(angle),
+            } if (angle - 90_f64.to_radians()).abs() < 1.0e-12
+        ));
+        assert_eq!(
+            construction.bottom,
+            Some(HoleBottom::Angled {
+                included_angle: Angle(120_f64.to_radians()),
+                depth_to_tip: false,
+            })
+        );
+    }
+
+    #[test]
+    fn incomplete_axial_profile_does_not_assign_dimension_roles() {
+        let mut profile = native_history().features.remove(0);
+        profile.parameters = [
+            ("a".into(), "8.6".into()),
+            ("b".into(), "<MOD-DIAM>15".into()),
+            ("c".into(), "23".into()),
+            ("d".into(), "<MOD-DIAM>9".into()),
+        ]
+        .into_iter()
+        .collect();
+        let sketch = SketchId("profile".into());
+        let entities = [
+            profile_line(&sketch, 0, Point2::new(0.0, 7.5), Point2::new(-8.6, 7.5)),
+            profile_line(&sketch, 1, Point2::new(-8.6, 4.5), Point2::new(-23.0, 4.5)),
+        ];
+
+        assert!(profiled_hole_construction(&profile, &sketch, &entities).is_none());
+    }
+
+    #[test]
+    fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
+        let mut history = native_history();
+        let mut profile = history.features[0].clone();
+        profile.id = "native-profile".into();
+        profile.source_id = Some("9".into());
+        profile.ordinal = 1;
+        profile.input_class = Some("moProfileFeature_c".into());
+        profile.parameters = [
+            ("a".into(), "8.6".into()),
+            ("b".into(), "<MOD-DIAM>15".into()),
+            ("c".into(), "23".into()),
+            ("d".into(), "<MOD-DIAM>9".into()),
+        ]
+        .into_iter()
+        .collect();
+        history.features.push(profile);
+
+        let sketch = SketchId("profile".into());
+        let entities = [
+            profile_line(&sketch, 0, Point2::new(0.0, 7.5), Point2::new(-8.6, 7.5)),
+            profile_line(&sketch, 1, Point2::new(-8.6, 7.5), Point2::new(-8.6, 4.5)),
+            profile_line(&sketch, 2, Point2::new(-8.6, 4.5), Point2::new(-23.0, 4.5)),
+        ];
+        let sketch_feature = cadmpeg_ir::features::Feature {
+            id: FeatureId("profile-feature".into()),
+            ordinal: 1,
+            name: Some("Profile".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: Some(sketch),
+            },
+            native_ref: Some("native-profile".into()),
+        };
+        let mut features = vec![model_hole(), sketch_feature];
+
+        project_profiled_hole_constructions(&mut features, &entities, &[history]);
+
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Hole {
+                diameter: Some(Length(9.0)),
+                extent: Some(Termination::Blind {
+                    length: Length(23.0)
+                }),
+                kind: HoleKind::Counterbore {
+                    diameter: Length(15.0),
+                    depth: Length(8.6),
+                },
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -14636,7 +15133,7 @@ mod hole_axis_tests {
             parent: "history".into(),
             xml_tag: "Sketch".into(),
             tree_parent: None,
-            source_id: Some("5".into()),
+            source_id: Some("8".into()),
             parent_source_id: None,
             ordinal: 1,
             name: "Profile".into(),
@@ -14659,7 +15156,7 @@ mod hole_axis_tests {
             ],
         });
 
-        let mut lane = lane_with_position_reference(6);
+        let mut lane = lane_with_position_reference(9);
         lane.names.push(FeatureInputName {
             id: "depth-name".into(),
             parent: "lane".into(),
@@ -14674,7 +15171,7 @@ mod hole_axis_tests {
             ordinal: 2,
             offset: 100,
             value: "Profile".into(),
-            object_id: Some(5),
+            object_id: Some(8),
         });
         lane.scalars.push(FeatureInputScalar {
             id: "depth-scalar".into(),
@@ -14698,7 +15195,7 @@ mod hole_axis_tests {
                 .properties
                 .get("DissectableChildren")
                 .map(String::as_str),
-            Some("5")
+            Some("8")
         );
     }
 
