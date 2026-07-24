@@ -516,6 +516,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             {
                 SketchInputKind::Point
             } else if current_geometry_locus_profile_line(payload, offset, code)
+                || current_compact_104_profile_line(payload, offset)
                 || coordinates_m.is_none()
                     && (marker_is_selected_construction_line(payload, offset)
                         || compact_curve_endpoint_indices(payload, offset).is_some())
@@ -1637,14 +1638,14 @@ mod marker_tests {
         coordinate_roster_full_circle, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
         cosmetic_thread_diameter_child_tail, current_compact_104_indexed_line_endpoint_indices,
-        current_coordinate_linked_line_endpoints, current_geometry_locus_profile_vertex,
-        current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
-        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
-        current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
-        enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, extended_compact_endpoint_markers,
-        extended_compact_linked_profile_point_coordinates, extended_geometry_locus_profile_vertex,
-        extended_profile_point_coordinates,
+        current_compact_104_profile_line, current_coordinate_linked_line_endpoints,
+        current_geometry_locus_profile_vertex, current_indexed_arc_reverses_center_sweep,
+        current_linked_semicircle_record, current_reverse_incidence_endpoint_offsets,
+        current_wide_arc_direct_markers, current_wide_undetailed_line,
+        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
+        explicit_reference_axis_frame, explicit_reference_plane_frame,
+        extended_compact_endpoint_markers, extended_compact_linked_profile_point_coordinates,
+        extended_geometry_locus_profile_vertex, extended_profile_point_coordinates,
         extended_profile_roster_construction_line_endpoint_indices, extended_radial_circle_index,
         extended_tagged_indexed_curve_endpoint_indices,
         extended_terminal_repeated_radial_circle_index,
@@ -7318,6 +7319,34 @@ mod marker_tests {
             current_compact_104_indexed_line_endpoint_indices(&payload, 0),
             None
         );
+    }
+
+    #[test]
+    fn current_compact_104_profile_record_is_a_line() {
+        let mut payload = vec![0; 104 + SKETCH_MARKER.len()];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&4u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&6u16.to_le_bytes());
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&1u32.to_le_bytes());
+        for relative in [78, 82, 86, 90] {
+            payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[96..100].copy_from_slice(&2u32.to_le_bytes());
+        payload[100..104].copy_from_slice(&2u32.to_le_bytes());
+        payload[104..].copy_from_slice(SKETCH_MARKER);
+
+        assert!(current_compact_104_profile_line(&payload, 0));
+
+        payload[100..104].copy_from_slice(&3u32.to_le_bytes());
+        assert!(!current_compact_104_profile_line(&payload, 0));
     }
 
     #[test]
@@ -33502,6 +33531,37 @@ fn current_compact_104_indexed_line_endpoint_indices(
     }
     one_based_u16_endpoint_pair(payload, offset, 64)
         .filter(|endpoints| endpoints[0] != endpoints[1])
+}
+
+fn current_compact_104_profile_line(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
+        && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
+        && marker_native_code(payload, offset) == Some(2)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 76) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 76..offset + 78) == Some(&[0; 2])
+        && payload.get(offset + 78..offset + 94)
+            == Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
+        && payload
+            .get(offset + 96..offset + 100)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && payload.get(offset + 96..offset + 100) == payload.get(offset + 100..offset + 104)
+        && offset
+            .checked_add(104)
+            .is_some_and(|next| sketch_marker_prefix_at(payload, next))
 }
 
 fn legacy_referenced_wide_arc_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
