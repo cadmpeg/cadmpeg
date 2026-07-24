@@ -7,8 +7,6 @@
 //! stream.
 #![deny(clippy::disallowed_methods)]
 
-use cadmpeg_ir::wire::cursor::Cursor as WireCursor;
-
 /// Structural token bytes ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#22-structural-tokens)).
 pub mod token {
     /// Named-record header: `e0 <type> <name>\0`.
@@ -258,53 +256,43 @@ pub fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
 
 /// A forward-only byte cursor over a PSB body.
 ///
-/// Typed takes delegate to the module's free decoders ([`compact_int`],
-/// [`short_form_float`], [`reference_id`]) and to any caller-supplied decoder of
-/// the same `fn(&[u8], usize) -> Option<(T, usize)>` shape, advancing the
-/// position only when the decode succeeds. A failed take leaves the position
-/// unchanged: the wrapped decoders are pure and report their consumed extent
-/// through the returned offset, so the cursor never advances partially. This
-/// lets a best-effort walker thread a single `Cursor` instead of hand-carrying a
+/// The cursor owns a borrowed slice and a read position. Typed takes delegate
+/// to the module's free decoders ([`compact_int`], [`short_form_float`],
+/// [`reference_id`]) and to any caller-supplied decoder of the same
+/// `fn(&[u8], usize) -> Option<(T, usize)>` shape, advancing the position only
+/// when the decode succeeds. A failed take leaves the position unchanged: the
+/// wrapped decoders are pure and report their consumed extent through the
+/// returned offset, so the cursor never advances partially. This lets a
+/// best-effort walker thread a single `Cursor` instead of hand-carrying a
 /// `(value, next)` tuple through every field, while preserving the exact
 /// truncation behavior (`break`/`continue` on a `None` take).
 ///
-/// The read position is owned by an inner [`WireCursor`], which bounds every
-/// advance against the buffer's end. The borrowed slice is retained alongside
-/// it because both operations index the slice at an absolute offset — a
-/// capability the shared cursor does not expose: [`take_with`](Cursor::take_with)
-/// hands the whole slice and the current offset to a variable-length decoder,
-/// and [`take_slice_if`](Cursor::take_slice_if) peeks the tail for a prefix. No
-/// read routes through the shared cursor's typed or finite-checked readers; PSB
-/// scalars are decoded by the format-specific free functions and finiteness is
-/// judged at the call sites, not here.
+/// The position is a plain `usize`: PSB decoding threads pure free-function
+/// decoders that report their consumed extent through the returned offset and
+/// signals truncation with a `None` take, not the shared
+/// [`cadmpeg_ir::wire::cursor::Cursor`]'s poison-and-defer contract. It reads
+/// none of that cursor's typed, finite-checked, or bounds-poisoning primitives,
+/// so wrapping one here would only shadow the slice and the position without
+/// exercising a single guarantee.
 pub(crate) struct Cursor<'a> {
     data: &'a [u8],
-    inner: WireCursor<'a>,
+    pos: usize,
 }
 
 impl<'a> Cursor<'a> {
     /// Start a cursor at the beginning of `data`.
     pub(crate) fn new(data: &'a [u8]) -> Self {
-        Self {
-            data,
-            inner: WireCursor::new(data),
-        }
+        Self { data, pos: 0 }
     }
 
     /// Start a cursor at an explicit byte position within `data`.
-    ///
-    /// `pos` is expected to be within `data`; callers derive it from a prior
-    /// decode offset. The inner cursor windows `pos..data.len()`.
     pub(crate) fn at(data: &'a [u8], pos: usize) -> Self {
-        Self {
-            data,
-            inner: WireCursor::new(data).window(pos, data.len()),
-        }
+        Self { data, pos }
     }
 
     /// The current read position, i.e. the offset of the next unread byte.
     pub(crate) fn pos(&self) -> usize {
-        self.inner.position()
+        self.pos
     }
 
     /// Decode one value at the current position with `decode`, advancing to the
@@ -313,16 +301,13 @@ impl<'a> Cursor<'a> {
     /// Returns `None` — leaving the position unchanged — exactly when `decode`
     /// returns `None`. Because `decode` reports its consumed extent through the
     /// returned offset rather than by mutating state, the cursor never advances
-    /// on failure and never advances partially. The threaded decoders are
-    /// forward-only (`next >= start`), and they only report offsets whose bytes
-    /// they read, so advancing the inner cursor to `next` never poisons.
+    /// on failure and never advances partially.
     pub(crate) fn take_with<T>(
         &mut self,
         decode: impl FnOnce(&'a [u8], usize) -> Option<(T, usize)>,
     ) -> Option<T> {
-        let start = self.inner.position();
-        let (value, next) = decode(self.data, start)?;
-        self.inner.skip(next - start);
+        let (value, next) = decode(self.data, self.pos)?;
+        self.pos = next;
         Some(value)
     }
 
@@ -333,10 +318,10 @@ impl<'a> Cursor<'a> {
     pub(crate) fn take_slice_if(&mut self, prefix: &[u8]) -> bool {
         if self
             .data
-            .get(self.inner.position()..)
+            .get(self.pos..)
             .is_some_and(|tail| tail.starts_with(prefix))
         {
-            self.inner.skip(prefix.len());
+            self.pos += prefix.len();
             true
         } else {
             false

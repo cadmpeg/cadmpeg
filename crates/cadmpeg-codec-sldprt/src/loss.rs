@@ -21,7 +21,7 @@ use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 /// variant name may be refactored freely.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SldprtLossCode {
+pub(crate) enum SldprtLossCode {
     /// Active configuration identity does not resolve to exactly one record.
     ConfigActiveIdentityUnresolved,
     /// Active configuration does not resolve to the active geometry partition.
@@ -88,7 +88,8 @@ pub enum SldprtLossCode {
 
 impl SldprtLossCode {
     /// Every code, in declaration order. Used by tests to assert stability.
-    pub const ALL: &'static [SldprtLossCode] = &[
+    #[cfg(test)]
+    pub(crate) const ALL: &'static [SldprtLossCode] = &[
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
         Self::ConfigInferredWithoutNative,
@@ -123,8 +124,9 @@ impl SldprtLossCode {
     ];
 
     /// The stable string identifier. This is the gating contract.
+    #[cfg(test)]
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::ConfigActiveIdentityUnresolved => "config.active-identity-unresolved",
             Self::ConfigActivePartitionMismatch => "config.active-partition-mismatch",
@@ -162,7 +164,7 @@ impl SldprtLossCode {
 
     /// The subsystem category this loss belongs to.
     #[must_use]
-    pub const fn category(self) -> LossCategory {
+    pub(crate) const fn category(self) -> LossCategory {
         match self {
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
@@ -178,7 +180,7 @@ impl SldprtLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    pub(crate) const fn severity(self) -> Severity {
         match self {
             Self::GeometryParasolidNotTransferred | Self::TopologyGraphNotTransferred => {
                 Severity::Blocking
@@ -207,7 +209,7 @@ impl SldprtLossCode {
     /// loss it names. Provenance is left absent; the decoder attributes losses
     /// through the message and record identity, not a source span.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote {
             code: self.shared_code(),
             category: self.category(),

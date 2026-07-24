@@ -27,7 +27,7 @@ use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 /// may be refactored freely.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum F3dLossCode {
+pub(crate) enum F3dLossCode {
     /// Design dimension companion record retained without a typed locus frame.
     DesignDimensionCompanionUntyped,
     /// Design configuration JSON member retained without neutral semantics.
@@ -84,7 +84,8 @@ pub enum F3dLossCode {
 
 impl F3dLossCode {
     /// Every code, in declaration order. Used by tests to assert stability.
-    pub const ALL: &'static [F3dLossCode] = &[
+    #[cfg(test)]
+    pub(crate) const ALL: &'static [F3dLossCode] = &[
         Self::DesignDimensionCompanionUntyped,
         Self::DesignConfigMemberUnassigned,
         Self::DesignConfigRuleUnresolved,
@@ -113,8 +114,9 @@ impl F3dLossCode {
     ];
 
     /// The stable string identifier. This is the gating contract.
+    #[cfg(test)]
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::DesignDimensionCompanionUntyped => "design.dimension-companion-untyped",
             Self::DesignConfigMemberUnassigned => "config.member-unassigned",
@@ -148,7 +150,7 @@ impl F3dLossCode {
 
     /// The subsystem category this loss belongs to.
     #[must_use]
-    pub const fn category(self) -> LossCategory {
+    pub(crate) const fn category(self) -> LossCategory {
         match self {
             Self::DesignReferencedBrepUndecoded
             | Self::AssemblyGeometryExternal
@@ -181,7 +183,7 @@ impl F3dLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    pub(crate) const fn severity(self) -> Severity {
         match self {
             Self::AssemblyGeometryExternal
             | Self::SplineSurfaceCarrierDecoded
@@ -234,7 +236,7 @@ impl F3dLossCode {
     /// attributes losses through the message and record identity, not a source
     /// span.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote {
             code: self.shared_code(),
             category: self.category(),

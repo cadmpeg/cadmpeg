@@ -74,7 +74,7 @@ pub mod container;
 pub mod decode;
 mod feature_schema;
 mod history;
-pub mod loss;
+pub(crate) mod loss;
 mod metadata;
 mod native;
 pub mod parasolid;

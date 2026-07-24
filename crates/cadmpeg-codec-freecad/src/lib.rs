@@ -22,7 +22,7 @@ mod drawing;
 mod element_map;
 mod gui;
 mod joint;
-pub mod loss;
+pub(crate) mod loss;
 mod mutation;
 mod native;
 mod persistence;

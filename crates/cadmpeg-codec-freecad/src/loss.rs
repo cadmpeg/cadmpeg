@@ -20,7 +20,7 @@ use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 /// Rust variant name may be refactored freely.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FcstdLossCode {
+pub(crate) enum FcstdLossCode {
     /// Native design operation is retained but has no neutral semantics.
     DesignOperationNativeRetained,
     /// Linear-pattern direction is retained as a native reference, unresolved.
@@ -33,7 +33,8 @@ pub enum FcstdLossCode {
 
 impl FcstdLossCode {
     /// Every code, in declaration order. Used by tests to assert stability.
-    pub const ALL: &'static [FcstdLossCode] = &[
+    #[cfg(test)]
+    pub(crate) const ALL: &'static [FcstdLossCode] = &[
         Self::DesignOperationNativeRetained,
         Self::LinearPatternDirectionUnresolved,
         Self::SketchGeometryNativeRetained,
@@ -41,8 +42,9 @@ impl FcstdLossCode {
     ];
 
     /// The stable string identifier. This is the gating contract.
+    #[cfg(test)]
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::DesignOperationNativeRetained => "feature.design-operation-native-retained",
             Self::LinearPatternDirectionUnresolved => "feature.linear-pattern-direction-unresolved",
@@ -53,7 +55,7 @@ impl FcstdLossCode {
 
     /// The subsystem category this loss belongs to.
     #[must_use]
-    pub const fn category(self) -> LossCategory {
+    pub(crate) const fn category(self) -> LossCategory {
         match self {
             Self::SketchGeometryNativeRetained => LossCategory::Geometry,
             Self::DesignOperationNativeRetained
@@ -63,15 +65,17 @@ impl FcstdLossCode {
     }
 
     /// The severity of this loss.
+    ///
+    /// Takes `self` for parity with the sibling codecs' per-variant `severity`,
+    /// though every `.FCStd` native-retention loss blocks lossless reconstruction.
     #[must_use]
-    pub const fn severity(self) -> Severity {
-        // Every FCStd native-retention loss blocks lossless reconstruction.
+    #[allow(clippy::unused_self)]
+    pub(crate) const fn severity(self) -> Severity {
         Severity::Blocking
     }
 
     /// The shared IR loss code this loss maps onto.
-    #[must_use]
-    pub const fn shared_code(self) -> LossCode {
+    const fn shared_code(self) -> LossCode {
         match self {
             Self::DesignOperationNativeRetained => LossCode::FeatureHistoryRetained,
             Self::LinearPatternDirectionUnresolved => LossCode::ParametricRecordOmitted,
@@ -89,7 +93,7 @@ impl FcstdLossCode {
     /// `fcstd`/`Document.xml` shape every site emits, carrying `native_ref` as
     /// the record tag.
     #[must_use]
-    pub fn note(self, message: impl Into<String>, native_ref: Option<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>, native_ref: Option<String>) -> LossNote {
         LossNote {
             code: self.shared_code(),
             category: self.category(),
