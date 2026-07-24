@@ -8854,6 +8854,16 @@ mod marker_tests {
         );
 
         let slot = marker + 18 + 20 + 4 + 20;
+        payload[slot..slot + 6].fill(0);
+        assert_eq!(
+            compact_sketch_surface_component_path_at(&payload, marker)
+                .expect("required invariant")
+                .iter()
+                .map(|component| component.local_id)
+                .collect::<Vec<_>>(),
+            [Some(2), Some(0), Some(1)]
+        );
+
         payload[slot] = 2;
         assert_eq!(
             compact_sketch_surface_component_path_at(&payload, marker),
@@ -16389,7 +16399,10 @@ fn compact_heterogeneous_component_path(
                             && bytes[0..2] != [0xff, 0xff]
                             && bytes[2..4] == [0, 0])
                 }),
-                6 => payload.get(cursor..cursor + 6) == Some(&[1, 0, 0, 0, 0, 0]),
+                6 => matches!(
+                    payload.get(cursor..cursor + 6),
+                    Some([0 | 1, 0, 0, 0, 0, 0])
+                ),
                 8 => matches!(
                     payload.get(cursor..cursor + 8),
                     Some(
