@@ -26808,7 +26808,8 @@ pub(crate) fn marker_owns_constraint(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
 ) -> bool {
     marker.kind.owns_constraint()
-        && (!marker.links.is_empty() || !relation_owner_markers(marker, markers_by_id).is_empty())
+        && (marker.links.iter().any(|link| link.entity_ref != marker.id)
+            || !relation_owner_markers(marker, markers_by_id).is_empty())
 }
 
 fn relation_owner_curve_entities(
@@ -31494,25 +31495,25 @@ mod profile_join_tests {
         bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
         implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
-        marker_point_locus, owned_relation_parameters, profile_loci_by_marker,
-        project_compact_edge_selections, project_dimensioned_sketch_geometry,
-        project_dissected_sketches, project_marker_backed_sketches,
-        project_marker_dimensioned_circles, project_relation_point_geometry,
-        project_relation_solved_point_geometry, relation_operand_marker, relation_owner_markers,
-        relation_parameter_by_display_name, resolve_connected_marker_arcs, resolved_marker_locus,
-        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
-        sketch_frame_marker_transform, type_display_relation_parameters,
-        typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
-        typed_relation_definition, unique_axis_aligned_linked_loci,
-        unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
-        unique_profile_axis_distance_locus, unique_profile_axis_distance_pair,
-        unique_profile_distance_loci_pair, unique_profile_distance_locus,
-        unique_profile_line_angle_entity, unique_profile_line_angle_pair,
-        unique_profile_line_distance_entity, unique_profile_line_distance_pair,
-        unique_profile_line_point_locus, unique_profile_point_line_entity,
-        unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
-        unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
-        MarkerTransform, LEGACY_SKETCH_MARKER,
+        marker_owns_constraint, marker_point_locus, owned_relation_parameters,
+        profile_loci_by_marker, project_compact_edge_selections,
+        project_dimensioned_sketch_geometry, project_dissected_sketches,
+        project_marker_backed_sketches, project_marker_dimensioned_circles,
+        project_relation_point_geometry, project_relation_solved_point_geometry,
+        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
+        resolve_connected_marker_arcs, resolved_marker_locus, select_marker_transforms_by_frame,
+        single_marker_curve_entity, single_marker_line_entity, sketch_frame_marker_transform,
+        type_display_relation_parameters, typed_marker_relation_definition,
+        typed_marker_relation_definition_in_sketch, typed_relation_definition,
+        unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
+        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_axis_distance_locus,
+        unique_profile_axis_distance_pair, unique_profile_distance_loci_pair,
+        unique_profile_distance_locus, unique_profile_line_angle_entity,
+        unique_profile_line_angle_pair, unique_profile_line_distance_entity,
+        unique_profile_line_distance_pair, unique_profile_line_point_locus,
+        unique_profile_point_line_entity, unique_profile_point_line_pair,
+        unique_repaired_profile_line_angle_pair, unique_repaired_profile_line_distance_pair,
+        unique_repaired_profile_point_line_pair, MarkerTransform, LEGACY_SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -32458,6 +32459,23 @@ mod profile_join_tests {
                     native_ref: Some(point.id),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn self_link_does_not_make_a_relation_operand_bearing() {
+        let mut relation = marker("relation", Some([0.0, 0.0]));
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Perpendicular);
+        relation.links = vec![SketchInputLink {
+            local_id: 0,
+            entity_ref: relation.id.clone(),
+        }];
+        let markers = HashMap::from([(relation.id.as_str(), &relation)]);
+
+        assert!(!marker_owns_constraint(&relation, &markers));
+        assert_eq!(
+            typed_marker_relation_definition(&relation, &markers, &HashMap::new()),
+            None
         );
     }
 
