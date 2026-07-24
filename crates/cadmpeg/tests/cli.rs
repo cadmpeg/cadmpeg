@@ -1318,3 +1318,25 @@ fn diff_input_format_forces_the_reader_per_input() {
         .assert()
         .code(2);
 }
+
+#[test]
+fn report_to_an_unwritable_path_is_an_operational_error() {
+    // A `--report` destination whose parent directory does not exist cannot be
+    // written atomically. The command that produced the report succeeds, but the
+    // report write fails as an operational error (exit 2), not a semantic one,
+    // and leaves no file behind.
+    let dir = tempdir().unwrap();
+    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let report = dir.path().join("missing-subdir").join("report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "validate",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2);
+    assert!(!report.exists());
+}
