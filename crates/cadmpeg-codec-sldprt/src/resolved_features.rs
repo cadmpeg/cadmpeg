@@ -12006,7 +12006,7 @@ fn compact_line_reference_directions(
         else {
             return Vec::new();
         };
-        if record[..8] != HANDLES || record[8..12] != [0; 4] || address == 0 {
+        if record[..8] != HANDLES || record[8..12] != [0; 4] {
             return Vec::new();
         }
         let scalar = |offset: usize| {
@@ -12032,6 +12032,45 @@ fn compact_line_reference_directions(
                 token & 0x8000 != 0 && token != u16::MAX
             })
         };
+        if address == 0 {
+            let terminated =
+                record.get(80..84) == Some(&[0; 4]) && (tagged_token(84) || record.len() == 84);
+            if record.get(16..24) == Some(&[0; 8]) && terminated {
+                directions.extend(direction_at(56));
+            }
+            return directions;
+        }
+        let shifted_nine_scalar_trailer = record.get(96..104) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
+            && record.get(104..116) == Some(&[0; 12])
+            && tagged_token(116)
+            && record.get(118..134) == Some(&[0; 16])
+            && record.get(134..136) == Some(&[0xff; 2]);
+        if record.get(16..24) == Some(&[0; 8]) && shifted_nine_scalar_trailer {
+            if let Some(direction) = direction_at(72) {
+                directions.push(direction);
+                return directions;
+            }
+        }
+        let shifted_seven_scalar_trailer = (record.get(80..116) == Some(&[0; 36])
+            && tagged_token(116)
+            && record.get(118..134) == Some(&[0; 16])
+            && record.get(134..136) == Some(&[0xff; 2]))
+            || (record.get(80..88) == Some(&[0; 8])
+                && record
+                    .get(88..96)
+                    .and_then(|bytes| {
+                        Some([
+                            u32::from_le_bytes(bytes[..4].try_into().ok()?),
+                            u32::from_le_bytes(bytes[4..].try_into().ok()?),
+                        ])
+                    })
+                    .is_some_and(|values| values.into_iter().all(|value| value != 0)));
+        if record.get(16..24) == Some(&[0; 8]) && shifted_seven_scalar_trailer {
+            if let Some(direction) = direction_at(56) {
+                directions.push(direction);
+                return directions;
+            }
+        }
         let tagged_trailer = record.get(88..104) == Some(&[0; 16])
             && ((record.get(104..124) == Some(&[0; 20])
                 && tagged_token(124)
@@ -12048,6 +12087,23 @@ fn compact_line_reference_directions(
                     && record.get(126..142) == Some(&[0; 16])
                     && record.get(142..144) == Some(&[0xff; 2])));
         if record.get(16..32) == Some(&[0; 16]) && tagged_trailer {
+            if let Some(direction) = direction_at(64) {
+                directions.push(direction);
+                return directions;
+            }
+        }
+        let seven_scalar_trailer = record.get(88..96).is_some_and(|bytes| bytes != [0; 8])
+            || (record.get(88..122) == Some(&[0; 34])
+                && tagged_token(122)
+                && record.get(124..140) == Some(&[0; 16])
+                && record.get(140..142) == Some(&[0xff; 2]))
+            || (record.get(88..102) == Some(&[0; 14])
+                && record.get(102..110) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
+                && record.get(110..122) == Some(&[0; 12])
+                && tagged_token(122)
+                && record.get(124..140) == Some(&[0; 16])
+                && record.get(140..142) == Some(&[0xff; 2]));
+        if record.get(16..32) == Some(&[0; 16]) && seven_scalar_trailer {
             if let Some(direction) = direction_at(64) {
                 directions.push(direction);
                 return directions;
@@ -41815,6 +41871,86 @@ mod profile_join_tests {
         assert_eq!(
             features[0].dependencies,
             [features[1].id.clone(), features[2].id.clone()]
+        );
+    }
+
+    #[test]
+    fn compact_line_reference_scalar_counts_follow_their_trailers() {
+        const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+        let write_scalars = |payload: &mut [u8], start: usize, values: &[f64]| {
+            for (index, value) in values.iter().enumerate() {
+                let offset = start + index * 8;
+                payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+            }
+        };
+
+        let mut shifted_nine = vec![0; 136];
+        shifted_nine[..8].copy_from_slice(&HANDLES);
+        shifted_nine[12..16].copy_from_slice(&8000u32.to_le_bytes());
+        write_scalars(
+            &mut shifted_nine,
+            24,
+            &[0.13, 0.01, -0.02, 0.05, 0.0, 0.0, -1.0, 0.0, 0.0],
+        );
+        shifted_nine[96..104].copy_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+        shifted_nine[116..118].copy_from_slice(&0x81a5u16.to_le_bytes());
+        shifted_nine[134..136].fill(0xff);
+        assert_eq!(
+            compact_line_reference_direction(&shifted_nine, 0, shifted_nine.len(), &[]),
+            Some(Vector3::new(-1.0, 0.0, 0.0))
+        );
+
+        let mut shifted_seven = vec![0; 136];
+        shifted_seven[..8].copy_from_slice(&HANDLES);
+        shifted_seven[12..16].copy_from_slice(&8000u32.to_le_bytes());
+        write_scalars(
+            &mut shifted_seven,
+            24,
+            &[0.01, 0.005, 0.022, 0.031, 1.0, 0.0, 0.0],
+        );
+        shifted_seven[116..118].copy_from_slice(&0x85deu16.to_le_bytes());
+        shifted_seven[134..136].fill(0xff);
+        assert_eq!(
+            compact_line_reference_direction(&shifted_seven, 0, shifted_seven.len(), &[]),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+        shifted_seven[80..136].fill(0);
+        shifted_seven[80..88].copy_from_slice(&[120, 0, 0, 0, 10, 0, 0, 0]);
+        assert_eq!(
+            compact_line_reference_direction(&shifted_seven, 0, shifted_seven.len(), &[]),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+
+        let mut unshifted_seven = vec![0; 96];
+        unshifted_seven[..8].copy_from_slice(&HANDLES);
+        unshifted_seven[12..16].copy_from_slice(&9000u32.to_le_bytes());
+        write_scalars(
+            &mut unshifted_seven,
+            32,
+            &[0.06, 0.03, 0.076, -0.03, 0.0, 0.0, 1.0],
+        );
+        unshifted_seven[88..96].fill(1);
+        assert_eq!(
+            compact_line_reference_direction(&unshifted_seven, 0, unshifted_seven.len(), &[]),
+            Some(Vector3::new(0.0, 0.0, 1.0))
+        );
+
+        let mut addressless = vec![0; 84];
+        addressless[..8].copy_from_slice(&HANDLES);
+        write_scalars(
+            &mut addressless,
+            24,
+            &[0.04, 0.01, 0.0, 0.0, 0.0, 0.0, -1.0],
+        );
+        assert_eq!(
+            compact_line_reference_direction(&addressless, 0, addressless.len(), &[]),
+            Some(Vector3::new(0.0, 0.0, -1.0))
+        );
+        addressless.truncate(80);
+        addressless.extend([0, 0, 0, 0, 0xd8, 0x81]);
+        assert_eq!(
+            compact_line_reference_direction(&addressless, 0, addressless.len(), &[]),
+            Some(Vector3::new(0.0, 0.0, -1.0))
         );
     }
 
