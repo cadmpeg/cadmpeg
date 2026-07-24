@@ -15950,7 +15950,8 @@ mod hole_axis_tests {
         project_spatial_hole_position_sketches, HoleTopology,
     };
     use crate::records::{
-        FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
+        FeatureHistory, FeatureInputClass, FeatureInputClassRole,
+        FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
         FeatureInputRelationFamily, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
         SketchInputKind,
     };
@@ -16983,6 +16984,47 @@ mod hole_axis_tests {
                 .get("DissectableChildren")
                 .map(String::as_str),
             Some("8")
+        );
+    }
+
+    #[test]
+    fn parameter_class_supplies_an_operandless_scalar_unit() {
+        let mut history = native_history();
+        let mut lane = lane_with_position_reference(6);
+        lane.classes.push(FeatureInputClass {
+            id: "angle-parameter-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 100,
+            name: "moAngleParameter_c".into(),
+            role: FeatureInputClassRole::Parameter,
+        });
+        lane.names.push(FeatureInputName {
+            id: "angle-name".into(),
+            parent: "lane".into(),
+            ordinal: 1,
+            offset: 120,
+            value: "D1".into(),
+            object_id: None,
+        });
+        lane.scalars.push(FeatureInputScalar {
+            id: "angle-scalar".into(),
+            parent: "lane".into(),
+            feature_ref: Some("native-hole".into()),
+            ordinal: 0,
+            offset: 150,
+            object_id: 1,
+            name: "angle-name".into(),
+            value: std::f64::consts::TAU,
+            role: FeatureInputScalarRole::Native,
+            entity_indices: Vec::new(),
+            operands: Vec::new(),
+        });
+
+        enrich_history_parameters(std::slice::from_mut(&mut history), [&lane], true);
+        assert_eq!(
+            history.features[0].parameters.get("D1").map(String::as_str),
+            Some("6.283185307179586rad")
         );
     }
 
@@ -19624,6 +19666,11 @@ pub(crate) fn enrich_history_parameters<'a>(
     }
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
     for lane in lanes {
+        let names_by_id = lane
+            .names
+            .iter()
+            .map(|name| (name.id.as_str(), name))
+            .collect::<HashMap<_, _>>();
         let relation_unit = |family| match family {
             FeatureInputRelationFamily::Angle => ScalarUnit::Angle,
             FeatureInputRelationFamily::LineLineDistance
@@ -19634,9 +19681,32 @@ pub(crate) fn enrich_history_parameters<'a>(
             | FeatureInputRelationFamily::CircleDiameter => ScalarUnit::Length,
         };
         let mut scalar_units = lane
-            .relation_bindings
+            .scalars
             .iter()
-            .map(|binding| (binding.scalar_ref.as_str(), relation_unit(binding.family)))
+            .filter_map(|scalar| {
+                let name = names_by_id.get(scalar.name.as_str())?;
+                let parameter_class = lane
+                    .classes
+                    .iter()
+                    .filter(|class| class.offset < name.offset)
+                    .max_by_key(|class| class.offset)?;
+                if lane.names.iter().any(|intervening| {
+                    intervening.offset > parameter_class.offset && intervening.offset < name.offset
+                }) {
+                    return None;
+                }
+                let unit = match parameter_class.name.as_str() {
+                    "moLengthParameter_c" => ScalarUnit::Length,
+                    "moAngleParameter_c" => ScalarUnit::Angle,
+                    _ => return None,
+                };
+                Some((scalar.id.as_str(), unit))
+            })
+            .chain(
+                lane.relation_bindings
+                    .iter()
+                    .map(|binding| (binding.scalar_ref.as_str(), relation_unit(binding.family))),
+            )
             .collect::<HashMap<_, _>>();
         for relation in &lane.relation_instances {
             let unit = relation_unit(relation.family);
@@ -19644,11 +19714,6 @@ pub(crate) fn enrich_history_parameters<'a>(
                 scalar_units.insert(scalar.as_str(), unit);
             }
         }
-        let names_by_id = lane
-            .names
-            .iter()
-            .map(|name| (name.id.as_str(), name))
-            .collect::<HashMap<_, _>>();
         let mut starts = Vec::<(u64, usize, usize)>::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
