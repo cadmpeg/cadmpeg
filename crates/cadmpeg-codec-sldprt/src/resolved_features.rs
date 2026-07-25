@@ -508,6 +508,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 || linked_point.is_some()
                 || coordinates_m.is_some()
                     && (compact_legacy_profile_vertex(payload, offset)
+                        || packed_legacy_profile_vertex(payload, offset)
                         || indexed_profile_vertex(payload, offset)
                         || current_geometry_locus_profile_vertex(payload, offset)
                         || terminal_wide_geometry_locus_profile_vertex(payload, offset)
@@ -601,6 +602,7 @@ fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
             .is_some_and(|state| state[0] == 0 && state[1] == 0 && state[3] == 0);
     shared_geometry_body
         || compact_legacy_marker_body(payload, offset)
+        || packed_legacy_marker_body(payload, offset)
         || alternate_current_curve_body(payload, offset)
 }
 
@@ -673,8 +675,33 @@ fn compact_legacy_marker_body(payload: &[u8], offset: usize) -> bool {
         && matches!(payload.get(offset + 31), Some(0x04 | 0x0c))
 }
 
+fn packed_legacy_marker_body(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
+        && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
+        && payload
+            .get(offset + 13..offset + 17)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|code| code <= 3)
+        && payload.get(offset + 17..offset + 19) == Some(&[0; 2])
+        && matches!(
+            payload.get(offset + 19..offset + 23),
+            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+        )
+        && payload
+            .get(offset + 23..offset + 25)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u16::from_le_bytes)
+            .is_some_and(|role| matches!(role, 1 | 2))
+        && payload.get(offset + 27..offset + 29) == Some(&[0; 2])
+        && matches!(payload.get(offset + 29), Some(0x04 | 0x05 | 0x0c | 0x44))
+        && payload.get(offset + 40..offset + 48) == Some(&1.0f64.to_le_bytes())
+}
+
 fn marker_native_code(payload: &[u8], offset: usize) -> Option<u32> {
-    let relative = if compact_legacy_marker_body(payload, offset) {
+    let relative = if compact_legacy_marker_body(payload, offset)
+        || packed_legacy_marker_body(payload, offset)
+    {
         13
     } else {
         17
@@ -789,7 +816,12 @@ pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
 }
 
 fn marker_state_value(payload: &[u8], offset: usize) -> Option<f64> {
-    let offset = offset.checked_add(48)?;
+    let relative = if packed_legacy_marker_body(payload, offset) {
+        40
+    } else {
+        48
+    };
+    let offset = offset.checked_add(relative)?;
     let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
     value.is_finite().then_some(value)
 }
@@ -806,6 +838,12 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
             return None;
         }
         return finite_coordinate_pair(payload, offset.checked_add(44)?);
+    }
+    if packed_legacy_marker_body(payload, offset) {
+        if payload.get(offset + 48..offset + 50) != Some(&[0x1e, 0x00]) {
+            return None;
+        }
+        return finite_coordinate_pair(payload, offset.checked_add(50)?);
     }
     if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX {
         return None;
@@ -1317,6 +1355,13 @@ fn compact_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && finite_coordinate_pair(payload, offset.saturating_add(44)).is_some()
 }
 
+fn packed_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    packed_legacy_marker_body(payload, offset)
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 48..offset + 50) == Some(&[0x1e, 0x00])
+        && finite_coordinate_pair(payload, offset.saturating_add(50)).is_some()
+}
+
 pub(crate) fn marker_object_index(payload: &[u8], offset: usize) -> Option<u32> {
     let start = offset.checked_sub(4)?;
     let index = u32::from_le_bytes(payload.get(start..offset)?.try_into().ok()?);
@@ -1680,8 +1725,8 @@ mod marker_tests {
         native_scalar_matches_discrete_parameter, normalize_indexed_curve_entities, object_names,
         offset_plane_reference_frame_matches, offset_plane_reference_source,
         offset_reference_plane_frame_pair, ordered_compact_line_profile, ordered_rectangle_corners,
-        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
-        principal_sketch_frame, profile_roster_construction_axis,
+        packed_legacy_curve_endpoint_indices, patch_spatial_vertex, plane_intersection_axis_frame,
+        plane_intersection_axis_sources, principal_sketch_frame, profile_roster_construction_axis,
         profile_roster_origin_axis_endpoints, profile_roster_principal_axis_endpoints,
         reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
         resolve_scalar_operand_markers, resolve_two_center_semicircle_profile,
@@ -5139,6 +5184,53 @@ mod marker_tests {
         let entities = sketch_input_entities(&payload, "lane");
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+    }
+
+    #[test]
+    fn packed_legacy_geometry_locus_carries_profile_coordinates() {
+        let mut payload = vec![0; 126 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&0u32.to_le_bytes());
+        payload[17..23].copy_from_slice(&[0x00, 0x00, 0x05, 0x00, 0x01, 0x00]);
+        payload[23..25].copy_from_slice(&1u16.to_le_bytes());
+        payload[29] = 0x04;
+        payload[40..48].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[48..50].copy_from_slice(&[0x1e, 0x00]);
+        payload[50..58].copy_from_slice(&0.025f64.to_le_bytes());
+        payload[58..66].copy_from_slice(&(-0.004f64).to_le_bytes());
+        payload[126..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
+        let entities = sketch_input_entities(&payload, "lane");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].kind, SketchInputKind::Point);
+        assert_eq!(entities[0].coordinates_m, Some([0.025, -0.004]));
+        assert_eq!(entities[0].state_value, Some(1.0));
+    }
+
+    #[test]
+    fn packed_legacy_curve_carries_coordinate_roster_indices() {
+        let mut payload = vec![0; 76 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&2u32.to_le_bytes());
+        payload[17..23].copy_from_slice(&[0x00, 0x00, 0x04, 0x00, 0x02, 0x00]);
+        payload[23..25].copy_from_slice(&1u16.to_le_bytes());
+        payload[25..27].copy_from_slice(&1u16.to_le_bytes());
+        payload[29] = 0x04;
+        payload[40..48].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[48..50].copy_from_slice(&3u16.to_le_bytes());
+        payload[50..52].copy_from_slice(&4u16.to_le_bytes());
+        payload[52..56].copy_from_slice(&1u32.to_le_bytes());
+        payload[56..64].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[76..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(
+            packed_legacy_curve_endpoint_indices(&payload, 0),
+            Some([3, 4])
+        );
+        assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(48));
     }
 
     #[test]
@@ -33325,6 +33417,12 @@ fn roster_curve_endpoint_markers<'a>(
             return endpoints;
         }
     }
+    if packed_legacy_curve_endpoint_indices(payload, offset).is_some() {
+        let endpoints = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
+        if endpoints.len() == 2 {
+            return endpoints;
+        }
+    }
     if let Some(indices) = extended_wide_construction_line_roster_indices(payload, offset) {
         let mut owned = markers
             .iter()
@@ -34968,6 +35066,9 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
     if prefix != LEGACY_SKETCH_MARKER {
         return None;
     }
+    if packed_legacy_curve_endpoint_indices(payload, offset).is_some() {
+        return Some(48);
+    }
     if legacy_coordinate_roster_selected_axis_endpoint_indices(payload, offset).is_some() {
         return Some(64);
     }
@@ -34998,6 +35099,27 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
     } else {
         None
     }
+}
+
+fn packed_legacy_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if !packed_legacy_marker_body(payload, offset)
+        || !matches!(marker_native_code(payload, offset), Some(1 | 2))
+        || !matches!(marker_profile_curve_role(payload, offset), Some(1 | 2))
+        || payload.get(offset + 52..offset + 56) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 56..offset + 64) != Some(&(-1.0f64).to_le_bytes())
+    {
+        return None;
+    }
+    let endpoint = |relative| {
+        Some(u32::from(u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )))
+    };
+    let endpoints = [endpoint(48)?, endpoint(50)?];
+    (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
 fn legacy_state_five_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
@@ -35805,7 +35927,9 @@ fn class_declaration_at(payload: &[u8], offset: usize) -> bool {
 }
 
 fn marker_profile_curve_role(payload: &[u8], offset: usize) -> Option<u16> {
-    let relative = if compact_legacy_marker_body(payload, offset) {
+    let relative = if compact_legacy_marker_body(payload, offset)
+        || packed_legacy_marker_body(payload, offset)
+    {
         23
     } else {
         27
