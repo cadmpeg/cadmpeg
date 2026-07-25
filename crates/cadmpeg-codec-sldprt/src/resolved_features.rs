@@ -15271,7 +15271,10 @@ struct ProfiledHoleConstruction {
     extent: Termination,
     kind: HoleKind,
     bottom: Option<HoleBottom>,
+    taper_angle: Option<Angle>,
 }
+
+const DISPLAY_DIMENSION_TOLERANCE_MM: f64 = 1.0e-5;
 
 fn profiled_hole_construction(
     profile: &crate::records::Feature,
@@ -15316,6 +15319,7 @@ fn profiled_hole_construction(
                     },
                     kind: HoleKind::Simple,
                     bottom: Some(HoleBottom::Flat),
+                    taper_angle: None,
                 });
             }
             ([diameter], [depth], [drill_point_angle]) => {
@@ -15331,6 +15335,7 @@ fn profiled_hole_construction(
                         included_angle: Angle(*drill_point_angle),
                         depth_to_tip: false,
                     }),
+                    taper_angle: None,
                 });
             }
             _ => {}
@@ -15351,7 +15356,8 @@ fn profiled_hole_construction(
         })
         .collect::<Vec<_>>();
     let same_point = |left: Point2, right: Point2| {
-        (left.u - right.u).abs() <= 1.0e-7 && (left.v - right.v).abs() <= 1.0e-7
+        (left.u - right.u).abs() <= DISPLAY_DIMENSION_TOLERANCE_MM
+            && (left.v - right.v).abs() <= DISPLAY_DIMENSION_TOLERANCE_MM
     };
     let has_line = |first: Point2, second: Point2| {
         lines.iter().any(|(start, end)| {
@@ -15373,6 +15379,36 @@ fn profiled_hole_construction(
                         Point2::new(axial, radial)
                     }
                 };
+                if let ([depth], []) = (lengths.as_slice(), angles.as_slice()) {
+                    for (entry_radius, terminal_radius) in
+                        [(bore_radius, entry_radius), (entry_radius, bore_radius)]
+                    {
+                        let axis_entry = point(0.0, 0.0);
+                        let wall_entry = point(0.0, entry_radius);
+                        let wall_end = point(-depth, terminal_radius);
+                        let axis_end = point(-depth, 0.0);
+                        if !has_line(axis_entry, wall_entry)
+                            || !has_line(wall_entry, wall_end)
+                            || !has_line(wall_end, axis_end)
+                            || !has_line(axis_end, axis_entry)
+                        {
+                            continue;
+                        }
+                        let half_angle = ((terminal_radius - entry_radius).abs() / depth).atan();
+                        if !half_angle.is_finite() || half_angle <= 0.0 {
+                            continue;
+                        }
+                        return Some(ProfiledHoleConstruction {
+                            diameter: Length(entry_radius * 2.0),
+                            extent: Termination::Blind {
+                                length: Length(*depth),
+                            },
+                            kind: HoleKind::Simple,
+                            bottom: Some(HoleBottom::Flat),
+                            taper_angle: Some(Angle(half_angle * 2.0)),
+                        });
+                    }
+                }
                 if let [entry_depth, depth] = lengths.as_slice() {
                     let entry = point(0.0, entry_radius);
                     let entry_corner = point(-entry_depth, entry_radius);
@@ -15411,6 +15447,7 @@ fn profiled_hole_construction(
                         },
                         kind,
                         bottom: None,
+                        taper_angle: None,
                     });
                 }
                 let [depth] = lengths.as_slice() else {
@@ -15447,6 +15484,7 @@ fn profiled_hole_construction(
                                 included_angle: Angle(drill_point_angle),
                                 depth_to_tip: false,
                             }),
+                            taper_angle: None,
                         });
                     }
                 }
@@ -15535,6 +15573,7 @@ pub(crate) fn project_profiled_hole_constructions(
             extent,
             kind,
             bottom,
+            taper_angle,
             ..
         } = &mut feature.definition
         else {
@@ -15588,6 +15627,7 @@ pub(crate) fn project_profiled_hole_constructions(
         *extent = Some(construction.extent);
         *kind = construction.kind;
         *bottom = construction.bottom;
+        *taper_angle = construction.taper_angle;
     }
 }
 
@@ -17672,6 +17712,7 @@ mod hole_axis_tests {
         );
         assert_eq!(flat.kind, HoleKind::Simple);
         assert_eq!(flat.bottom, Some(HoleBottom::Flat));
+        assert_eq!(flat.taper_angle, None);
 
         profile.parameters.insert("point".into(), "118°".into());
         let drilled =
@@ -17688,6 +17729,60 @@ mod hole_axis_tests {
                 included_angle: Angle(118_f64.to_radians()),
                 depth_to_tip: false,
             })
+        );
+    }
+
+    #[test]
+    fn closed_tapered_axial_profile_resolves_conical_hole() {
+        let mut profile = native_history().features.remove(0);
+        profile.parameters = [
+            ("entry".into(), "<MOD-DIAM>12.2".into()),
+            ("terminal".into(), "<MOD-DIAM>13.66623".into()),
+            ("depth".into(), "42".into()),
+        ]
+        .into_iter()
+        .collect();
+        let sketch = SketchId("profile".into());
+        let entry_radius = 6.1;
+        let terminal_radius = 6.833_115;
+        let terminal_geometry_radius = 6.833_112_73;
+        let entities = [
+            profile_line(
+                &sketch,
+                0,
+                Point2::new(0.0, 0.0),
+                Point2::new(0.0, entry_radius),
+            ),
+            profile_line(
+                &sketch,
+                1,
+                Point2::new(0.0, entry_radius),
+                Point2::new(-42.0, terminal_geometry_radius),
+            ),
+            profile_line(
+                &sketch,
+                2,
+                Point2::new(-42.0, terminal_geometry_radius),
+                Point2::new(-42.0, 0.0),
+            ),
+            profile_line(&sketch, 3, Point2::new(-42.0, 0.0), Point2::new(0.0, 0.0)),
+        ];
+
+        let construction =
+            profiled_hole_construction(&profile, &sketch, &entities).expect("exact taper");
+        assert_eq!(construction.diameter, Length(12.2));
+        assert_eq!(
+            construction.extent,
+            Termination::Blind {
+                length: Length(42.0)
+            }
+        );
+        assert_eq!(construction.kind, HoleKind::Simple);
+        assert_eq!(construction.bottom, Some(HoleBottom::Flat));
+        let Angle(included_angle) = construction.taper_angle.expect("included taper angle");
+        assert!(
+            (included_angle - 2.0 * ((terminal_radius - entry_radius) / 42.0_f64).atan()).abs()
+                < 1.0e-12
         );
     }
 
