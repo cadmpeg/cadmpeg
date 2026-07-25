@@ -16189,14 +16189,6 @@ pub(crate) fn project_hole_axes(
                 })
         })
         .collect::<HashMap<_, _>>();
-    let spatial_position_features = model_features
-        .iter()
-        .filter_map(|feature| {
-            matches!(feature.definition, FeatureDefinition::SpatialSketch { .. })
-                .then(|| feature.native_ref.clone())
-                .flatten()
-        })
-        .collect::<HashSet<_>>();
     let mut counts_by_source = HashMap::<u32, HashSet<usize>>::new();
     for lane in lanes {
         let counts = lane.generated_surface_identities.iter().fold(
@@ -16311,19 +16303,9 @@ pub(crate) fn project_hole_axes(
                     }
                 }
             }
-            if !spatial_position_features.contains(position_feature.id.as_str()) {
-                if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
-                    if bore_placements.len() == 1 {
-                        *placements = bore_placements;
-                        continue;
-                    }
-                }
-            }
-            if spatial_position_features.contains(position_feature.id.as_str()) {
-                if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
-                    *placements = bore_placements;
-                    continue;
-                }
+            if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
+                *placements = bore_placements;
+                continue;
             }
         }
         if let Some(depth) = match extent {
