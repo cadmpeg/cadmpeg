@@ -1982,6 +1982,55 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|feature| (feature.id.0.as_str(), feature.ordinal))
         .collect::<HashMap<_, _>>();
+    let feature_records = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.0.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let mut reported_plane_cycles = HashSet::new();
+    for feature in &ir.model.features {
+        let mut path = Vec::new();
+        let mut positions = HashMap::new();
+        let mut cursor = feature.id.0.as_str();
+        loop {
+            if let Some(&cycle_start) = positions.get(cursor) {
+                let mut cycle = path[cycle_start..].to_vec();
+                cycle.sort_unstable();
+                if reported_plane_cycles.insert(cycle.clone()) {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "datum-plane reference cycle contains {}",
+                            cycle
+                                .iter()
+                                .map(|id| format!("`{id}`"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
+                break;
+            }
+            positions.insert(cursor, path.len());
+            path.push(cursor);
+            let Some(next) = feature_records.get(cursor).and_then(|feature| {
+                let FeatureDefinition::DatumOffsetPlane {
+                    reference: Some(DatumPlaneReference::Feature(reference)),
+                    ..
+                } = &feature.definition
+                else {
+                    return None;
+                };
+                Some(reference.0.as_str())
+            }) else {
+                break;
+            };
+            cursor = next;
+        }
+    }
     let parameters_by_id = ir
         .model
         .parameters
@@ -3651,7 +3700,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 if let Some(reference) = reference {
                     match reference {
                         DatumPlaneReference::Feature(reference) => {
-                            match features.get(reference.0.as_str()) {
+                            match feature_records.get(reference.0.as_str()) {
                                 None => {
                                     ref_error(
                                         findings,
@@ -3660,16 +3709,20 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                                         &reference.0,
                                     );
                                 }
-                                Some(ordinal) if *ordinal >= feature.ordinal => {
-                                    findings.push(Finding {
-                                        check: Check::ReferentialIntegrity,
-                                        severity: Severity::Error,
-                                        message: format!(
-                                            "reference plane `{}` does not precede its offset plane",
-                                            reference.0
-                                        ),
-                                        entity: Some(feature.id.0.clone()),
-                                    });
+                                Some(reference)
+                                    if !matches!(
+                                        reference.definition,
+                                        FeatureDefinition::DatumPrincipalPlane { .. }
+                                            | FeatureDefinition::DatumPlane { .. }
+                                            | FeatureDefinition::DatumPlaneUnresolved
+                                            | FeatureDefinition::DatumOffsetPlane { .. }
+                                    ) =>
+                                {
+                                    feature_geometry_error(
+                                        findings,
+                                        feature,
+                                        "datum-plane feature reference does not name a plane",
+                                    );
                                 }
                                 Some(_) => {}
                             }
