@@ -15379,6 +15379,76 @@ pub(crate) fn enrich_history_hole_constructions(
                 .properties
                 .insert("DissectableChildren".into(), profile_source);
         }
+        let claimed_profiles = history
+            .features
+            .iter()
+            .filter_map(|feature| feature.properties.get("DissectableChildren"))
+            .flat_map(|children| children.split(',').map(str::trim))
+            .filter(|child| !child.is_empty())
+            .collect::<HashSet<_>>();
+        let interval_additions = history
+            .features
+            .iter()
+            .enumerate()
+            .filter(|(_, feature)| {
+                classify(feature) == Some(FeatureClass::Hole)
+                    && !feature.properties.contains_key("DissectableChildren")
+            })
+            .filter_map(|(feature_index, feature)| {
+                let source = feature
+                    .source_id
+                    .as_deref()
+                    .and_then(|source| source.parse::<u32>().ok())?;
+                let upper = history
+                    .features
+                    .iter()
+                    .filter(|candidate| classify(candidate) == Some(FeatureClass::Hole))
+                    .filter_map(|candidate| {
+                        candidate
+                            .source_id
+                            .as_deref()
+                            .and_then(|source| source.parse::<u32>().ok())
+                    })
+                    .filter(|candidate| *candidate > source)
+                    .min()?;
+                let mut profiles = history.features.iter().filter(|candidate| {
+                    let identity = candidate.source_id.as_deref().unwrap_or(&candidate.id);
+                    !claimed_profiles.contains(identity)
+                        && candidate
+                            .source_id
+                            .as_deref()
+                            .and_then(|source| source.parse::<u32>().ok())
+                            .is_some_and(|candidate| source < candidate && candidate < upper)
+                        && classify(candidate) == Some(FeatureClass::Sketch)
+                        && crate::history::is_hole_profile_construction(candidate)
+                });
+                let profile = profiles.next()?;
+                profiles.next().is_none().then(|| {
+                    (
+                        feature_index,
+                        profile
+                            .source_id
+                            .clone()
+                            .unwrap_or_else(|| profile.id.clone()),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let interval_claim_counts = interval_additions.iter().fold(
+            HashMap::<String, usize>::new(),
+            |mut counts, (_, profile)| {
+                *counts.entry(profile.clone()).or_default() += 1;
+                counts
+            },
+        );
+        for (feature_index, profile_source) in interval_additions {
+            if interval_claim_counts.get(profile_source.as_str()) != Some(&1) {
+                continue;
+            }
+            history.features[feature_index]
+                .properties
+                .insert("DissectableChildren".into(), profile_source);
+        }
     }
 }
 
@@ -18844,7 +18914,7 @@ mod hole_axis_tests {
     }
 
     #[test]
-    fn source_bounded_sketch_supplies_legacy_hole_profile() {
+    fn source_intervals_supply_legacy_hole_profiles() {
         let mut history = native_history();
         history.features.push(crate::records::Feature {
             id: "native-profile-sketch".into(),
@@ -18908,6 +18978,24 @@ mod hole_axis_tests {
         enrich_history_parameters(&mut histories, [&lane], true);
         assert_eq!(histories[0].features[1].parameters["depth"], "6.8");
         enrich_history_hole_constructions(&mut histories, &[lane]);
+        assert_eq!(
+            histories[0].features[0]
+                .properties
+                .get("DissectableChildren")
+                .map(String::as_str),
+            Some("9")
+        );
+
+        histories[0].features[0]
+            .properties
+            .remove("DissectableChildren");
+        histories[0].features[1].ordinal = 5;
+        let mut next_hole = histories[0].features[0].clone();
+        next_hole.id = "next-hole".into();
+        next_hole.source_id = Some("20".into());
+        next_hole.ordinal = 1;
+        histories[0].features.push(next_hole);
+        enrich_history_hole_constructions(&mut histories, &[]);
         assert_eq!(
             histories[0].features[0]
                 .properties
