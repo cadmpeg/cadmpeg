@@ -10038,10 +10038,44 @@ mod marker_tests {
             compact_edge_selection_at(&payload, marker),
             Some(vec![1, 10, 1, 0])
         );
+    }
+
+    #[test]
+    fn compact_edge_selection_accepts_wide_component_entries() {
+        let marker = 12;
+        let mut payload = vec![0; 160];
+        payload[..4].copy_from_slice(&4u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let signature = [0x2a, 0x81, 0x2c, 1, 28, 0, 0, 0, 0x24, 1, 0xd3, 0x48];
+        let entry = |payload: &mut [u8], offset: usize, instance: u16, local_id: u32| {
+            payload[offset..offset + 2].copy_from_slice(&instance.to_le_bytes());
+            payload[offset + 4..offset + 16].copy_from_slice(&signature);
+            payload[offset + 20..offset + 24].copy_from_slice(&local_id.to_le_bytes());
+        };
+        let first = marker + 18;
+        entry(&mut payload, first, 0x8130, 0);
+        let second = first + 24;
+        entry(&mut payload, second, 0x8130, 2);
+        let third = second + 24;
+        entry(&mut payload, third, 0x8141, 1);
+        let fourth = third + 28;
+        entry(&mut payload, fourth, 0x8141, 0);
+
         assert_eq!(
-            compact_edge_component_path_at(&payload, marker).map(|path| path.len()),
-            Some(4)
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![0, 2, 1, 0])
         );
+        let path = compact_edge_component_path_at(&payload, marker).unwrap();
+        assert_eq!(
+            path.iter()
+                .map(|component| component.local_id)
+                .collect::<Vec<_>>(),
+            [Some(0), Some(2), Some(1), Some(0)]
+        );
+        assert!(path
+            .iter()
+            .all(|component| component.type_signature == signature));
     }
 
     #[test]
@@ -19697,12 +19731,14 @@ fn compact_edge_component_path(
     marker: usize,
     count: usize,
 ) -> Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
-    compact_heterogeneous_component_path(payload, marker + 18, count)
+    let component_path = |count| {
+        compact_heterogeneous_component_path(payload, marker + 18, count)
+            .or_else(|| compact_wide_component_path(payload, marker + 18, count))
+    };
+    component_path(count)
         .map(|(components, _)| (components, None))
         .or_else(|| {
-            let (components, end) = (count > 1)
-                .then(|| compact_heterogeneous_component_path(payload, marker + 18, count - 1))
-                .flatten()?;
+            let (components, end) = (count > 1).then(|| component_path(count - 1)).flatten()?;
             let trailer = payload.get(end..end + 36)?;
             if trailer[..8] != [1, 0, 0, 0, 0, 0, 0, 0]
                 || trailer[8..12] != [0x4a, 0x80, 0, 0]
@@ -19821,9 +19857,28 @@ fn compact_homogeneous_edge_ids(
 
 fn compact_heterogeneous_component_path(
     payload: &[u8],
-    mut cursor: usize,
+    cursor: usize,
     count: usize,
 ) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
+    compact_component_path_with_layout(payload, cursor, count, false)
+}
+
+fn compact_wide_component_path(
+    payload: &[u8],
+    cursor: usize,
+    count: usize,
+) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
+    compact_component_path_with_layout(payload, cursor, count, true)
+}
+
+fn compact_component_path_with_layout(
+    payload: &[u8],
+    mut cursor: usize,
+    count: usize,
+    wide: bool,
+) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
+    let entry_length = if wide { 24 } else { 20 };
+    let local_id_offset = if wide { 20 } else { 16 };
     let entry_at = |offset: usize| {
         let instance = payload.get(offset..offset + 4)?;
         let token = u16::from_le_bytes(instance[0..2].try_into().ok()?);
@@ -19831,11 +19886,17 @@ fn compact_heterogeneous_component_path(
             && token != u16::MAX
             && instance[2..4] == [0, 0]
             && payload.get(offset + 4..offset + 6)? != [0, 0]
-            && payload.get(offset + 4..offset + 20).is_some())
+            && (!wide || payload.get(offset + 16..offset + 20)? == [0; 4])
+            && payload
+                .get(offset + local_id_offset..offset + entry_length)
+                .is_some())
         .then_some(())
     };
-    // Each path entry consumes at least a 20-byte record from `cursor` onward.
-    bounded_len(count as u64, 20, payload.len().saturating_sub(cursor))?;
+    bounded_len(
+        count as u64,
+        entry_length,
+        payload.len().saturating_sub(cursor),
+    )?;
     let mut entries = Vec::with_capacity(count);
     for index in 0..count {
         entry_at(cursor)?;
@@ -19845,10 +19906,13 @@ fn compact_heterogeneous_component_path(
             )),
             type_signature: payload.get(cursor + 4..cursor + 16)?.try_into().ok()?,
             local_id: Some(u32::from_le_bytes(
-                payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
+                payload
+                    .get(cursor + local_id_offset..cursor + entry_length)?
+                    .try_into()
+                    .ok()?,
             )),
         });
-        cursor += 20;
+        cursor += entry_length;
         if index + 1 == count {
             continue;
         }
