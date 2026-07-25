@@ -2338,6 +2338,22 @@ mod history_reference_tests {
         );
         assert_eq!(selection, FaceSelection::Faces(vec![face.id.clone()]));
 
+        let mut native = FaceSelection::Native("component-path".into());
+        resolve_planar_face_selection(
+            &mut native,
+            Point3::new(5.0, -3.0, 12.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            std::slice::from_ref(&face),
+            &surfaces,
+        );
+        assert_eq!(
+            native,
+            FaceSelection::Resolved {
+                faces: vec![face.id.clone()],
+                native: "component-path".into(),
+            }
+        );
+
         let mut duplicate = face.clone();
         duplicate.id = cadmpeg_ir::ids::FaceId("duplicate".into());
         let mut ambiguous = FaceSelection::Unresolved;
@@ -4652,6 +4668,53 @@ pub fn bind_topology_selections(
             } => {
                 resolve_planar_face_selection(reference, *origin, *normal, faces, &surfaces_by_id);
             }
+            FeatureDefinition::DatumOffsetPlane {
+                reference,
+                distance,
+            } if reference.is_none() => {
+                let Some(origin) = feature
+                    .source_properties
+                    .get("Origin")
+                    .and_then(|value| parse_point3_mm(value))
+                else {
+                    continue;
+                };
+                let Some(normal) = feature
+                    .source_properties
+                    .get("Normal")
+                    .and_then(|value| parse_vector3(value))
+                else {
+                    continue;
+                };
+                let Some(u_axis) = feature
+                    .source_properties
+                    .get("UAxis")
+                    .and_then(|value| parse_vector3(value))
+                else {
+                    continue;
+                };
+                let support_origin = Point3::new(
+                    origin.x + normal.x * distance.0,
+                    origin.y + normal.y * distance.0,
+                    origin.z + normal.z * distance.0,
+                );
+                let mut face = FaceSelection::Unresolved;
+                resolve_planar_face_selection(
+                    &mut face,
+                    support_origin,
+                    normal,
+                    faces,
+                    &surfaces_by_id,
+                );
+                if !matches!(face, FaceSelection::Unresolved) {
+                    *reference = Some(DatumPlaneReference::Face {
+                        face,
+                        origin: support_origin,
+                        normal,
+                        u_axis,
+                    });
+                }
+            }
             FeatureDefinition::Extrude {
                 profile, extent, ..
             } => {
@@ -4819,9 +4882,11 @@ fn resolve_planar_face_selection(
     faces: &[Face],
     surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, &Surface>,
 ) {
-    if !matches!(selection, FaceSelection::Unresolved) {
-        return;
-    }
+    let native = match selection {
+        FaceSelection::Unresolved => None,
+        FaceSelection::Native(native) => Some(native.clone()),
+        _ => return,
+    };
     let normal_length = normal.norm();
     if !normal_length.is_finite() || normal_length <= f64::EPSILON {
         return;
@@ -4859,7 +4924,13 @@ fn resolve_planar_face_selection(
         return;
     };
     if matching.next().is_none() {
-        *selection = FaceSelection::Faces(vec![face]);
+        *selection = match native {
+            Some(native) => FaceSelection::Resolved {
+                faces: vec![face],
+                native,
+            },
+            None => FaceSelection::Faces(vec![face]),
+        };
     }
 }
 
@@ -7780,7 +7851,7 @@ mod literal_tests {
     }
 }
 
-fn parse_point3_mm(value: &str) -> Option<Point3> {
+pub(crate) fn parse_point3_mm(value: &str) -> Option<Point3> {
     let values = value
         .split(',')
         .map(|component| parse_length_mm(component.trim()))
@@ -7788,7 +7859,7 @@ fn parse_point3_mm(value: &str) -> Option<Point3> {
     (values.len() == 3).then(|| Point3::new(values[0], values[1], values[2]))
 }
 
-fn parse_vector3(value: &str) -> Option<Vector3> {
+pub(crate) fn parse_vector3(value: &str) -> Option<Vector3> {
     let values = value
         .split(',')
         .map(|component| component.trim().parse::<f64>().ok())

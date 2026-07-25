@@ -1631,24 +1631,25 @@ mod marker_tests {
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_single_face_reference_record_at, compact_sketch_surface_component_path_at,
         compact_surface_selection_at, complete_ordered_compact_line_profile,
-        component_path_features, component_path_preceding_feature, component_path_terminal_feature,
-        component_profile_source_at, component_reference_curve_path_at,
-        consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
-        constraint_reference_plane_frame, coordinate_centered_line_endpoints,
-        coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
+        component_face_reference_at, component_path_features, component_path_preceding_feature,
+        component_path_terminal_feature, component_profile_source_at,
+        component_reference_curve_path_at, consecutive_legacy_profile_line_endpoints,
+        constraint_midplane_frame, constraint_reference_plane_frame,
+        coordinate_centered_line_endpoints, coordinate_circle_radius,
+        coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, coordinate_roster_endpoint_offset,
-        coordinate_roster_full_circle, cosmetic_thread_component_face_reference_at,
-        cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
-        cosmetic_thread_diameter_child_tail, current_compact_104_indexed_line_endpoint_indices,
-        current_compact_104_profile_line, current_coordinate_linked_line_endpoints,
-        current_direct_92_profile_line_endpoint_indices, current_geometry_locus_profile_vertex,
-        current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
-        current_long_full_circle_radial_index, current_reverse_incidence_endpoint_offsets,
-        current_wide_arc_direct_markers, current_wide_undetailed_line,
-        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame,
-        extended_compact_endpoint_markers, extended_compact_linked_profile_point_coordinates,
-        extended_geometry_locus_profile_vertex, extended_profile_point_coordinates,
+        coordinate_roster_full_circle, cosmetic_thread_cylinder_reference_at,
+        cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
+        current_compact_104_indexed_line_endpoint_indices, current_compact_104_profile_line,
+        current_coordinate_linked_line_endpoints, current_direct_92_profile_line_endpoint_indices,
+        current_geometry_locus_profile_vertex, current_indexed_arc_reverses_center_sweep,
+        current_linked_semicircle_record, current_long_full_circle_radial_index,
+        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
+        current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, extended_compact_endpoint_markers,
+        extended_compact_linked_profile_point_coordinates, extended_geometry_locus_profile_vertex,
+        extended_profile_point_coordinates,
         extended_profile_roster_construction_line_endpoint_indices, extended_radial_circle_index,
         extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
         extended_terminal_repeated_radial_circle_index,
@@ -10280,28 +10281,32 @@ mod marker_tests {
     }
 
     #[test]
-    fn cosmetic_thread_component_face_reference_uses_the_nested_body_layout() {
+    fn component_face_reference_accepts_both_nested_body_flags() {
         let body_offset = 30;
+        let build_payload = |flag: u8, marker: usize| {
+            let mut payload = vec![0; marker - 12];
+            payload[body_offset..body_offset + 2].copy_from_slice(&0x802b_u16.to_le_bytes());
+            payload[body_offset + 2..body_offset + 6].copy_from_slice(&2u32.to_le_bytes());
+            payload[body_offset + 6] = flag;
+            assert_eq!(selection_vector_tail(&mut payload, &[6]), marker);
+            payload
+        };
         let marker = body_offset + 92;
-        let mut payload = vec![0; marker - 12];
-        payload[body_offset..body_offset + 2].copy_from_slice(&0x802b_u16.to_le_bytes());
-        payload[body_offset + 2..body_offset + 6].copy_from_slice(&2u32.to_le_bytes());
-        assert_eq!(selection_vector_tail(&mut payload, &[6]), marker);
+        let mut payload = build_payload(0, marker);
 
         let (actual_marker, components) =
-            cosmetic_thread_component_face_reference_at(&payload, body_offset)
-                .expect("required invariant");
+            component_face_reference_at(&payload, body_offset).expect("required invariant");
         assert_eq!(actual_marker, marker);
         assert_eq!(
             components.last().expect("required invariant").local_id,
             Some(6)
         );
 
+        let flagged = build_payload(0x40, body_offset + 100);
+        assert!(component_face_reference_at(&flagged, body_offset).is_some());
+
         payload[body_offset + 6] = 1;
-        assert_eq!(
-            cosmetic_thread_component_face_reference_at(&payload, body_offset),
-            None
-        );
+        assert_eq!(component_face_reference_at(&payload, body_offset), None);
     }
 
     #[test]
@@ -18487,11 +18492,22 @@ fn compact_surface_selections(
                 (class.name == "moCompFace_c" && (start..end).contains(&offset))
                     .then(|| offset.checked_add(6 + class.name.len()))
                     .flatten()
-                    .and_then(|body| {
-                        cosmetic_thread_component_face_reference_at(&lane.native_payload, body)
-                    })
+                    .and_then(|body| component_face_reference_at(&lane.native_payload, body))
             }))
             .collect(),
+            NativeClassKind::ReferencePlane => lane
+                .classes
+                .iter()
+                .filter_map(|class| {
+                    let offset = usize::try_from(class.offset).ok()?;
+                    (feature.parameters.contains_key("D1")
+                        && class.name == "moCompFace_c"
+                        && (start..end).contains(&offset))
+                    .then(|| offset.checked_add(6 + class.name.len()))
+                    .flatten()
+                    .and_then(|body| component_face_reference_at(&lane.native_payload, body))
+                })
+                .collect(),
             NativeClassKind::MirrorPattern => (start.saturating_add(12)
                 ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
                 .filter(|marker| {
@@ -18665,19 +18681,20 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
     })
 }
 
-fn cosmetic_thread_component_face_reference_at(
+fn component_face_reference_at(
     payload: &[u8],
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
     let token = u16::from_le_bytes(payload.get(body_offset..body_offset + 2)?.try_into().ok()?);
+    let flags = payload.get(body_offset + 6..body_offset + 8)?;
     if token & 0x8000 == 0
         || token == 0xffff
         || payload.get(body_offset + 2..body_offset + 6)? != 2u32.to_le_bytes()
-        || payload.get(body_offset + 6..body_offset + 8)? != [0, 0]
+        || !matches!(flags, [0 | 0x40, 0])
     {
         return None;
     }
-    let marker = body_offset.checked_add(92)?;
+    let marker = body_offset.checked_add(if flags == [0x40, 0] { 100 } else { 92 })?;
     compact_surface_reference_at(payload, marker).map(|components| (marker, components))
 }
 
@@ -27260,6 +27277,74 @@ pub(crate) fn project_compact_surface_selections(
         let [selection] = feature_selections else {
             continue;
         };
+        if let FeatureDefinition::DatumOffsetPlane {
+            reference,
+            distance,
+        } = &mut feature.definition
+        {
+            let native = compact_surface_selection_value(&selection.components);
+            let generated = selection
+                .terminal_feature_ref
+                .as_ref()
+                .and_then(|producer| feature_ids_by_native.get(producer))
+                .zip(selection.components.last())
+                .and_then(|(feature, component)| Some((feature, component.local_id?)));
+            let face = match generated {
+                Some((producer, local_id)) => {
+                    if !feature.dependencies.contains(producer) {
+                        feature.dependencies.push(producer.clone());
+                    }
+                    cadmpeg_ir::features::FaceSelection::Generated {
+                        faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                            feature: producer.clone(),
+                            local_id: local_id.to_string(),
+                        }],
+                        native,
+                    }
+                }
+                None => cadmpeg_ir::features::FaceSelection::Native(native),
+            };
+            match reference {
+                Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                    face: existing, ..
+                }) => *existing = face,
+                None => {
+                    let Some(origin) = feature
+                        .source_properties
+                        .get("Origin")
+                        .and_then(|value| crate::history::parse_point3_mm(value))
+                    else {
+                        continue;
+                    };
+                    let Some(normal) = feature
+                        .source_properties
+                        .get("Normal")
+                        .and_then(|value| crate::history::parse_vector3(value))
+                    else {
+                        continue;
+                    };
+                    let Some(u_axis) = feature
+                        .source_properties
+                        .get("UAxis")
+                        .and_then(|value| crate::history::parse_vector3(value))
+                    else {
+                        continue;
+                    };
+                    *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                        face,
+                        origin: Point3::new(
+                            origin.x + normal.x * distance.0,
+                            origin.y + normal.y * distance.0,
+                            origin.z + normal.z * distance.0,
+                        ),
+                        normal,
+                        u_axis,
+                    });
+                }
+                Some(cadmpeg_ir::features::DatumPlaneReference::Feature(_)) => {}
+            }
+            continue;
+        }
         let first_component =
             matches!(feature.definition, FeatureDefinition::CosmeticThread { .. });
         let slot = match &mut feature.definition {
