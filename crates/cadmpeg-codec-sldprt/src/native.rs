@@ -568,6 +568,7 @@ impl SldprtNative {
                                 offset,
                                 &record.components,
                                 &features,
+                                &record.feature_ref,
                             )
                         })
                         .unwrap_or_default();
@@ -578,6 +579,7 @@ impl SldprtNative {
                                 offset,
                                 &record.components,
                                 &features,
+                                &record.feature_ref,
                             )
                         });
                 }
@@ -607,6 +609,7 @@ impl SldprtNative {
                                 offset,
                                 &record.components,
                                 &features,
+                                &record.feature_ref,
                             )
                         })
                         .unwrap_or_default()
@@ -617,6 +620,7 @@ impl SldprtNative {
                             offset,
                             &record.components,
                             &features,
+                            &record.feature_ref,
                         )
                     }) != record.terminal_feature_ref
             }) {
@@ -847,6 +851,7 @@ impl SldprtNative {
                                 offset,
                                 &record.components,
                                 &features,
+                                &record.feature_ref,
                             )
                         })
                         .unwrap_or_default()
@@ -857,6 +862,7 @@ impl SldprtNative {
                             offset,
                             &record.components,
                             &features,
+                            &record.feature_ref,
                         )
                     }) != record.terminal_feature_ref
             }) {

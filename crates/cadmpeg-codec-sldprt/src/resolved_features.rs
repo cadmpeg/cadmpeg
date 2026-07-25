@@ -1632,11 +1632,12 @@ mod marker_tests {
         compact_single_face_reference_record_at, compact_sketch_surface_component_path_at,
         compact_surface_selection_at, complete_ordered_compact_line_profile,
         component_face_reference_at, component_face_reference_in_record, component_path_features,
-        component_path_preceding_feature, component_path_terminal_feature,
-        component_profile_source_at, component_reference_curve_path_at,
-        consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
-        constraint_reference_plane_frame, coordinate_centered_line_endpoints,
-        coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
+        component_path_input_features, component_path_preceding_feature,
+        component_path_terminal_feature, component_profile_source_at,
+        component_reference_curve_path_at, consecutive_legacy_profile_line_endpoints,
+        constraint_midplane_frame, constraint_reference_plane_frame,
+        coordinate_centered_line_endpoints, coordinate_circle_radius,
+        coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, coordinate_roster_endpoint_offset,
         coordinate_roster_full_circle, cosmetic_thread_cylinder_reference_at,
         cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
@@ -10757,10 +10758,31 @@ mod marker_tests {
         let producer = feature("producer", "42");
         let other = feature("other", "43");
         let history = [&producer, &other, &owner];
-        let (component, feature) = component_path_preceding_feature(&mixed, &history, "mirror")
+        let (component, preceding) = component_path_preceding_feature(&mixed, &history, "mirror")
             .expect("required invariant");
-        assert_eq!(feature.id, "other");
+        assert_eq!(preceding.id, "other");
         assert_eq!(component.local_id, Some(1));
+
+        let mut prior = feature("prior", "42");
+        prior.ordinal = 1;
+        let mut consumer = feature("consumer", "88");
+        consumer.ordinal = 2;
+        let path = [88_u32, 42, 88]
+            .into_iter()
+            .map(|source| FeatureInputComponentPathEntry {
+                instance: Some(0x8180),
+                type_signature: {
+                    let mut signature = [0; 12];
+                    signature[4..8].copy_from_slice(&source.to_le_bytes());
+                    signature
+                },
+                local_id: Some(1),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            component_path_input_features(&path, &[prior, consumer], "consumer"),
+            ["prior"]
+        );
     }
 
     #[test]
@@ -18454,12 +18476,14 @@ fn compact_edge_selections(
                 offset,
                 &components,
                 &history_features,
+                &feature.id,
             );
             let producer_feature_refs = compact_edge_producer_features_at(
                 &lane.native_payload,
                 offset,
                 &components,
                 &history_features,
+                &feature.id,
             );
             result.push(FeatureInputEdgeSelection {
                 id: format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
@@ -19475,6 +19499,7 @@ pub(crate) fn compact_edge_owner_feature_at(
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
+    consumer_ref: &str,
 ) -> Option<String> {
     let count = usize::try_from(u32::from_le_bytes(
         payload
@@ -19490,8 +19515,9 @@ pub(crate) fn compact_edge_owner_feature_at(
                 feature.source_id.as_deref().and_then(|id| id.parse().ok()) == Some(source)
             })
         })
+        .filter(|feature| feature_precedes_consumer(feature, features, consumer_ref))
         .map(|feature| feature.id.clone())
-        .or_else(|| component_path_terminal_feature(components, features))
+        .or_else(|| component_path_input_features(components, features, consumer_ref).pop())
 }
 
 pub(crate) fn compact_edge_producer_features_at(
@@ -19499,9 +19525,12 @@ pub(crate) fn compact_edge_producer_features_at(
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
+    consumer_ref: &str,
 ) -> Vec<String> {
-    let mut producers = component_path_features(components, features);
-    if let Some(owner) = compact_edge_owner_feature_at(payload, marker, components, features) {
+    let mut producers = component_path_input_features(components, features, consumer_ref);
+    if let Some(owner) =
+        compact_edge_owner_feature_at(payload, marker, components, features, consumer_ref)
+    {
         if !producers.contains(&owner) {
             producers.push(owner);
         }
@@ -29410,6 +29439,35 @@ pub(crate) fn component_path_features(
         }
     }
     result
+}
+
+fn feature_precedes_consumer(
+    feature: &crate::records::Feature,
+    features: &[crate::records::Feature],
+    consumer_ref: &str,
+) -> bool {
+    features
+        .iter()
+        .find(|consumer| consumer.id == consumer_ref)
+        .is_some_and(|consumer| {
+            feature.parent == consumer.parent && feature.ordinal < consumer.ordinal
+        })
+}
+
+fn component_path_input_features(
+    components: &[FeatureInputComponentPathEntry],
+    features: &[crate::records::Feature],
+    consumer_ref: &str,
+) -> Vec<String> {
+    component_path_features(components, features)
+        .into_iter()
+        .filter(|feature_ref| {
+            features
+                .iter()
+                .find(|feature| feature.id == feature_ref.as_str())
+                .is_some_and(|feature| feature_precedes_consumer(feature, features, consumer_ref))
+        })
+        .collect()
 }
 
 pub(crate) fn surface_selection_producer_features(
