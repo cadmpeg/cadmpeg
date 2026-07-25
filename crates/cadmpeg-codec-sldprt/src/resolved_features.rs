@@ -10011,6 +10011,40 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_edge_selection_accepts_root_and_zero_run_separators() {
+        let marker = 12;
+        let mut payload = vec![0; 180];
+        payload[..4].copy_from_slice(&4u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let signature = [0xff, 0x80, 1, 1, 20, 0, 0, 0, 1, 0x42, 0x3e, 0x4f];
+        let entry = |payload: &mut [u8], offset: usize, instance: u16, local_id: u32| {
+            payload[offset..offset + 2].copy_from_slice(&instance.to_le_bytes());
+            payload[offset + 4..offset + 16].copy_from_slice(&signature);
+            payload[offset + 16..offset + 20].copy_from_slice(&local_id.to_le_bytes());
+        };
+        let first = marker + 18;
+        entry(&mut payload, first, 0x862a, 1);
+        let second = first + 20 + 12;
+        entry(&mut payload, second, 0x8631, 10);
+        payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+        let third = second + 28;
+        entry(&mut payload, third, 0x8102, 1);
+        payload[third + 20..third + 24].copy_from_slice(&[0xa3, 0x86, 1, 0]);
+        let fourth = third + 24;
+        entry(&mut payload, fourth, 0x8102, 0);
+
+        assert_eq!(
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![1, 10, 1, 0])
+        );
+        assert_eq!(
+            compact_edge_component_path_at(&payload, marker).map(|path| path.len()),
+            Some(4)
+        );
+    }
+
+    #[test]
     fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
         let marker = 12;
         let mut payload = vec![0; 160];
@@ -19818,13 +19852,16 @@ fn compact_heterogeneous_component_path(
         if index + 1 == count {
             continue;
         }
-        let gap = [0usize, 2, 4, 6, 8, 10].into_iter().find(|gap| {
+        let gap = [0usize, 2, 4, 6, 8, 10, 12].into_iter().find(|gap| {
             let filler = match *gap {
                 0 => true,
                 2 => payload.get(cursor..cursor + 2) == Some(&[0; 2]),
                 4 => payload.get(cursor..cursor + 4).is_some_and(|bytes| {
                     bytes == [0; 4]
                         || bytes == [0xff; 4]
+                        || (u16::from_le_bytes([bytes[0], bytes[1]]) & 0x8000 != 0
+                            && bytes[0..2] != [0xff, 0xff]
+                            && bytes[2..4] == [1, 0])
                         || (u16::from_le_bytes([bytes[0], bytes[1]]) != 0
                             && bytes[0..2] != [0xff, 0xff]
                             && bytes[2..4] == [0, 0])
@@ -19844,6 +19881,7 @@ fn compact_heterogeneous_component_path(
                     payload.get(cursor..cursor + 10)
                         == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0])
                 }
+                12 => payload.get(cursor..cursor + 12) == Some(&[0; 12]),
                 _ => false,
             };
             filler && entry_at(cursor + *gap).is_some()
