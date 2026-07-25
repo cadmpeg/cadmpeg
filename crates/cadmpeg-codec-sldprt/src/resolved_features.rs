@@ -10107,6 +10107,32 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_edge_selection_accepts_zero_and_state_separator() {
+        let marker = 12;
+        let mut payload = vec![0; 128];
+        payload[..4].copy_from_slice(&2u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[8..12].copy_from_slice(&375_491u32.to_le_bytes());
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let signature = [0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x3e, 0x77, 0x0e, 0x60];
+        let entry = |payload: &mut [u8], offset: usize, local_id: u32| {
+            payload[offset..offset + 2].copy_from_slice(&0x8158u16.to_le_bytes());
+            payload[offset + 4..offset + 16].copy_from_slice(&signature);
+            payload[offset + 16..offset + 20].copy_from_slice(&local_id.to_le_bytes());
+        };
+        let first = marker + 18;
+        entry(&mut payload, first, 3);
+        payload[first + 24..first + 28].copy_from_slice(&1u32.to_le_bytes());
+        let second = first + 28;
+        entry(&mut payload, second, 2);
+
+        assert_eq!(
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![3, 2])
+        );
+    }
+
+    #[test]
     fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
         let marker = 12;
         let mut payload = vec![0; 160];
@@ -19962,17 +19988,15 @@ fn compact_component_path_with_layout(
                 6 => payload.get(cursor..cursor + 6).is_some_and(|bytes| {
                     u16::from_le_bytes([bytes[0], bytes[1]]) != u16::MAX && bytes[2..] == [0; 4]
                 }),
-                8 => {
-                    matches!(
-                        payload.get(cursor..cursor + 8),
-                        Some([0, 0, 0, 0, 0, 0, 0, 0] | [0xff, 0xff, 0xff, 0xff, 0 | 1, 0, 0, 0])
-                    ) || payload.get(cursor..cursor + 8).is_some_and(|bytes| {
-                        let ordinal = u32::from_le_bytes(
-                            bytes[..4].try_into().expect("four-byte path ordinal"),
-                        );
-                        ordinal != 0 && ordinal != u32::MAX && bytes[4..] == [0; 4]
-                    })
-                }
+                8 => payload.get(cursor..cursor + 8).is_some_and(|bytes| {
+                    let first = u32::from_le_bytes(bytes[..4].try_into().expect("four-byte state"));
+                    let second =
+                        u32::from_le_bytes(bytes[4..].try_into().expect("four-byte state"));
+                    (first == 0 && second == 0)
+                        || (first == u32::MAX && second <= 1)
+                        || (first == 0 && !matches!(second, 0 | u32::MAX))
+                        || (second == 0 && !matches!(first, 0 | u32::MAX))
+                }),
                 10 => {
                     payload.get(cursor..cursor + 10)
                         == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0])
