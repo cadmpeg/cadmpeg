@@ -16670,6 +16670,33 @@ fn cylindrical_face_axes_at_depth(
     if !radius.is_finite() || radius <= 0.0 || !depth.is_finite() || depth <= 0.0 {
         return Vec::new();
     }
+    let radius_tolerance = (radius * 1.0e-9).max(1.0e-9);
+    let depth_tolerance = (depth * 1.0e-9).max(1.0e-9);
+    let mut axes = cylindrical_bore_face_spans(topology)
+        .into_iter()
+        .filter_map(|(origin, axis, candidate_radius, span, _)| {
+            ((candidate_radius - radius).abs() <= radius_tolerance
+                && (span - depth).abs() <= depth_tolerance)
+                .then_some((origin, axis))
+        })
+        .collect::<Vec<_>>();
+    axes.sort_by_key(|(origin, axis)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
+            axis.x.to_bits(),
+            axis.y.to_bits(),
+            axis.z.to_bits(),
+        ]
+    });
+    axes.dedup();
+    axes
+}
+
+fn cylindrical_bore_face_spans(
+    topology: &HoleTopology<'_>,
+) -> Vec<(Point3, Vector3, f64, f64, bool)> {
     let surfaces = topology
         .surfaces
         .iter()
@@ -16700,9 +16727,7 @@ fn cylindrical_face_axes_at_depth(
         .iter()
         .map(|point| (&point.id, point))
         .collect::<HashMap<_, _>>();
-    let radius_tolerance = (radius * 1.0e-9).max(1.0e-9);
-    let depth_tolerance = (depth * 1.0e-9).max(1.0e-9);
-    let mut axes = topology
+    topology
         .faces
         .iter()
         .filter_map(|face| {
@@ -16710,15 +16735,12 @@ fn cylindrical_face_axes_at_depth(
             let SurfaceGeometry::Cylinder {
                 origin,
                 axis,
-                radius: candidate_radius,
+                radius,
                 ..
             } = surface.geometry
             else {
                 return None;
             };
-            if (candidate_radius - radius).abs() > radius_tolerance {
-                return None;
-            }
             let mut stations = face
                 .loops
                 .iter()
@@ -16749,21 +16771,100 @@ fn cylindrical_face_axes_at_depth(
                 .fold((first, first), |(minimum, maximum), station| {
                     (minimum.min(station), maximum.max(station))
                 });
-            ((maximum - minimum - depth).abs() <= depth_tolerance).then_some((origin, axis))
+            let span = maximum - minimum;
+            (radius.is_finite() && radius > 0.0 && span.is_finite() && span > 0.0).then_some((
+                origin,
+                axis,
+                radius,
+                span,
+                face.sense == Sense::Reversed,
+            ))
         })
-        .collect::<Vec<_>>();
-    axes.sort_by_key(|(origin, axis)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            axis.x.to_bits(),
-            axis.y.to_bits(),
-            axis.z.to_bits(),
-        ]
-    });
-    axes.dedup();
-    axes
+        .collect()
+}
+
+/// Recover missing bore diameter and blind extent when every authored placement
+/// is carried by cylinders with one common exact radius and axial span.
+pub(crate) fn project_topological_hole_constructions(
+    features: &mut [cadmpeg_ir::features::Feature],
+    topology: &HoleTopology<'_>,
+) {
+    let bore_faces = cylindrical_bore_face_spans(topology);
+    for feature in features {
+        let FeatureDefinition::Hole {
+            placements,
+            diameter,
+            extent,
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        if placements.is_empty()
+            || (diameter.is_some()
+                && extent
+                    .as_ref()
+                    .is_some_and(|extent| !matches!(extent, Termination::Unresolved)))
+        {
+            continue;
+        }
+        let mut common = None::<Vec<(f64, f64)>>;
+        for placement in placements.iter() {
+            let HolePlacement::Axis {
+                origin: placement_origin,
+                axis: placement_axis,
+            } = placement
+            else {
+                common = Some(Vec::new());
+                break;
+            };
+            let mut candidates = bore_faces
+                .iter()
+                .filter_map(|(origin, axis, radius, span, reversed)| {
+                    if !reversed {
+                        return None;
+                    }
+                    let parallel = dot(*axis, *placement_axis).abs() >= 1.0 - 1.0e-9;
+                    let distance = point_axis_distance_squared(*placement_origin, *origin, *axis);
+                    (parallel && distance <= 1.0e-12).then_some((*radius, *span))
+                })
+                .collect::<Vec<_>>();
+            candidates.sort_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.total_cmp(&right.1))
+            });
+            candidates.dedup_by(|left, right| {
+                (left.0 - right.0).abs() <= 1.0e-9 && (left.1 - right.1).abs() <= 1.0e-9
+            });
+            common = Some(match common {
+                None => candidates,
+                Some(previous) => previous
+                    .into_iter()
+                    .filter(|candidate| {
+                        candidates.iter().any(|other| {
+                            (candidate.0 - other.0).abs() <= 1.0e-9
+                                && (candidate.1 - other.1).abs() <= 1.0e-9
+                        })
+                    })
+                    .collect(),
+            });
+        }
+        let Some([(radius, depth)]) = common.as_deref() else {
+            continue;
+        };
+        if diameter.is_none() {
+            *diameter = Some(Length(radius * 2.0));
+        }
+        if extent
+            .as_ref()
+            .is_none_or(|extent| matches!(extent, Termination::Unresolved))
+        {
+            *extent = Some(Termination::Blind {
+                length: Length(*depth),
+            });
+        }
+    }
 }
 
 /// Reconstruct a missing planar position sketch from exact bore axes and their
@@ -17575,7 +17676,8 @@ mod hole_axis_tests {
     use std::collections::{BTreeMap, HashMap};
 
     use cadmpeg_ir::features::{
-        Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, Termination,
+        Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, HolePlacement, Length,
+        Termination,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{
@@ -17594,7 +17696,8 @@ mod hole_axis_tests {
         enrich_history_hole_constructions, enrich_history_parameters, hole_position_sketch_source,
         hole_temporary_axis, marker_pattern_bore_axes, plane_owned_bore_placements,
         profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
-        project_profiled_hole_constructions, project_spatial_hole_position_sketches, HoleTopology,
+        project_profiled_hole_constructions, project_spatial_hole_position_sketches,
+        project_topological_hole_constructions, HoleTopology,
     };
     use crate::records::{
         FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -17930,11 +18033,11 @@ mod hole_axis_tests {
                 2.0,
                 10.0,
                 &HoleTopology {
-                    surfaces: &[surface.clone()],
-                    faces: &[face.clone()],
-                    loops: &[loop_.clone()],
-                    coedges: &[coedge.clone()],
-                    edges: &[edge.clone()],
+                    surfaces: std::slice::from_ref(&surface),
+                    faces: std::slice::from_ref(&face),
+                    loops: std::slice::from_ref(&loop_),
+                    coedges: std::slice::from_ref(&coedge),
+                    edges: std::slice::from_ref(&edge),
                     vertices: &vertices,
                     points: &points,
                 },
@@ -17945,16 +18048,58 @@ mod hole_axis_tests {
             2.0,
             9.0,
             &HoleTopology {
+                surfaces: std::slice::from_ref(&surface),
+                faces: std::slice::from_ref(&face),
+                loops: std::slice::from_ref(&loop_),
+                coedges: std::slice::from_ref(&coedge),
+                edges: std::slice::from_ref(&edge),
+                vertices: &vertices,
+                points: &points,
+            },
+        )
+        .is_empty());
+
+        let mut bore_face = face;
+        bore_face.sense = Sense::Reversed;
+        let mut hole = model_hole();
+        let FeatureDefinition::Hole {
+            placements,
+            diameter,
+            ..
+        } = &mut hole.definition
+        else {
+            unreachable!();
+        };
+        placements.push(HolePlacement::Axis {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        });
+        *diameter = None;
+        project_topological_hole_constructions(
+            std::slice::from_mut(&mut hole),
+            &HoleTopology {
                 surfaces: &[surface],
-                faces: &[face],
+                faces: &[bore_face],
                 loops: &[loop_],
                 coedges: &[coedge],
                 edges: &[edge],
                 vertices: &vertices,
                 points: &points,
             },
-        )
-        .is_empty());
+        );
+        let FeatureDefinition::Hole {
+            diameter, extent, ..
+        } = hole.definition
+        else {
+            unreachable!();
+        };
+        assert_eq!(diameter, Some(Length(4.0)));
+        assert_eq!(
+            extent,
+            Some(Termination::Blind {
+                length: Length(10.0)
+            })
+        );
     }
 
     fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {

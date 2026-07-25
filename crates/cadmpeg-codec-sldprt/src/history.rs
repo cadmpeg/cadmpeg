@@ -8764,6 +8764,18 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         );
+        crate::resolved_features::project_topological_hole_constructions(
+            &mut features,
+            &crate::resolved_features::HoleTopology {
+                surfaces: &surfaces,
+                faces: &ir.model.faces,
+                loops: &ir.model.loops,
+                coedges: &ir.model.coedges,
+                edges: &ir.model.edges,
+                vertices: &ir.model.vertices,
+                points: &ir.model.points,
+            },
+        );
         crate::resolved_features::project_hole_axes(
             &mut features,
             &ir.model.sketch_entities,
