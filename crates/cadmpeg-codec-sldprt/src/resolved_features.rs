@@ -1673,7 +1673,8 @@ mod marker_tests {
         compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
         compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
         compact_component_plane_frame, compact_curve_endpoint_indices,
-        compact_edge_component_path_at, compact_edge_selection_at, compact_extrusion_blind_at,
+        compact_edge_component_path_at, compact_edge_path_value, compact_edge_selection_at,
+        compact_edge_selection_set_value, compact_extrusion_blind_at,
         compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
@@ -1751,9 +1752,10 @@ mod marker_tests {
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-        FeatureInputComponentPathEntry, FeatureInputLane, FeatureInputName, FeatureInputOperand,
-        FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
-        SketchInputKind, SketchInputLink, SketchRelationKind,
+        FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane,
+        FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
+        FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchInputLink,
+        SketchRelationKind,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
@@ -10129,6 +10131,68 @@ mod marker_tests {
         assert_eq!(
             compact_edge_selection_at(&payload, marker),
             Some(vec![3, 2])
+        );
+    }
+
+    #[test]
+    fn compact_edge_selection_preserves_an_idless_path_entry() {
+        let marker = 12;
+        let mut payload = vec![0; 160];
+        payload[..4].copy_from_slice(&4u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[8..12].copy_from_slice(&2_366_854u32.to_le_bytes());
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let entry = |payload: &mut [u8],
+                     offset: usize,
+                     instance: u16,
+                     source: u32,
+                     local_id: Option<u32>| {
+            payload[offset..offset + 2].copy_from_slice(&instance.to_le_bytes());
+            payload[offset + 4..offset + 8].copy_from_slice(&[0xe8, 0x80, 0xea, 0]);
+            payload[offset + 8..offset + 12].copy_from_slice(&source.to_le_bytes());
+            payload[offset + 12..offset + 16].copy_from_slice(&[0x1e, 0x0a, 0xca, 0x5a]);
+            if let Some(local_id) = local_id {
+                payload[offset + 16..offset + 20].copy_from_slice(&local_id.to_le_bytes());
+            }
+        };
+        let first = marker + 18;
+        entry(&mut payload, first, 0x80eb, 130, Some(4));
+        let second = first + 20;
+        entry(&mut payload, second, 0x86e9, 172, None);
+        let third = second + 16;
+        entry(&mut payload, third, 0x80ee, 152, Some(4));
+        payload[third + 20..third + 24].copy_from_slice(&[0xff; 4]);
+        let fourth = third + 28;
+        entry(&mut payload, fourth, 0x80f8, 130, Some(0));
+
+        assert_eq!(
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![4, 4, 0])
+        );
+        let components = compact_edge_component_path_at(&payload, marker).unwrap();
+        assert_eq!(
+            components
+                .iter()
+                .map(|component| component.local_id)
+                .collect::<Vec<_>>(),
+            [Some(4), None, Some(4), Some(0)]
+        );
+        let selection = FeatureInputEdgeSelection {
+            id: "selection".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: marker as u64,
+            object_name_ref: "name".into(),
+            feature_ref: "consumer".into(),
+            local_edge_ids: vec![4, 4, 0],
+            components,
+            producer_feature_refs: vec!["producer".into()],
+            terminal_feature_ref: Some("producer".into()),
+        };
+        assert_eq!(compact_edge_path_value(&selection), "4,_,4,0");
+        assert_eq!(
+            compact_edge_selection_set_value(&[&selection]),
+            "sldprt:feature-input:edge-ids:4,_,4,0"
         );
     }
 
@@ -19751,10 +19815,11 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
     compact_homogeneous_edge_ids(payload, marker + 18, count)
         .or_else(|| {
             compact_edge_component_path(payload, marker, count).and_then(|(components, _)| {
-                components
+                let ids = components
                     .into_iter()
-                    .map(|component| component.local_id)
-                    .collect::<Option<Vec<_>>>()
+                    .filter_map(|component| component.local_id)
+                    .collect::<Vec<_>>();
+                (!ids.is_empty()).then_some(ids)
             })
         })
         .or_else(|| compact_u16_edge_ids(payload, marker + 18, count))
@@ -19788,6 +19853,7 @@ fn compact_edge_component_path(
     let component_path = |count| {
         compact_wide_component_path(payload, marker + 18, count)
             .or_else(|| compact_heterogeneous_component_path(payload, marker + 18, count))
+            .or_else(|| compact_sparse_component_path(payload, marker + 18, count))
     };
     (count > 1)
         .then(|| {
@@ -19972,43 +20038,113 @@ fn compact_component_path_with_layout(
             continue;
         }
         let gap = [0usize, 2, 4, 6, 8, 10, 12].into_iter().find(|gap| {
-            let filler = match *gap {
-                0 => true,
-                2 => payload.get(cursor..cursor + 2) == Some(&[0; 2]),
-                4 => payload.get(cursor..cursor + 4).is_some_and(|bytes| {
-                    bytes == [0; 4]
-                        || bytes == [0xff; 4]
-                        || (u16::from_le_bytes([bytes[0], bytes[1]]) & 0x8000 != 0
-                            && bytes[0..2] != [0xff, 0xff]
-                            && bytes[2..4] == [1, 0])
-                        || (u16::from_le_bytes([bytes[0], bytes[1]]) != 0
-                            && bytes[0..2] != [0xff, 0xff]
-                            && bytes[2..4] == [0, 0])
-                }),
-                6 => payload.get(cursor..cursor + 6).is_some_and(|bytes| {
-                    u16::from_le_bytes([bytes[0], bytes[1]]) != u16::MAX && bytes[2..] == [0; 4]
-                }),
-                8 => payload.get(cursor..cursor + 8).is_some_and(|bytes| {
-                    let first = u32::from_le_bytes(bytes[..4].try_into().expect("four-byte state"));
-                    let second =
-                        u32::from_le_bytes(bytes[4..].try_into().expect("four-byte state"));
-                    (first == 0 && second == 0)
-                        || (first == u32::MAX && second <= 1)
-                        || (first == 0 && !matches!(second, 0 | u32::MAX))
-                        || (second == 0 && !matches!(first, 0 | u32::MAX))
-                }),
-                10 => {
-                    payload.get(cursor..cursor + 10)
-                        == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0])
-                }
-                12 => payload.get(cursor..cursor + 12) == Some(&[0; 12]),
-                _ => false,
-            };
-            filler && entry_at(cursor + *gap).is_some()
+            compact_component_separator(payload, cursor, *gap) && entry_at(cursor + *gap).is_some()
         })?;
         cursor += gap;
     }
     Some((entries, cursor))
+}
+
+fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> bool {
+    match gap {
+        0 => true,
+        2 => payload.get(cursor..cursor + 2) == Some(&[0; 2]),
+        4 => payload.get(cursor..cursor + 4).is_some_and(|bytes| {
+            bytes == [0; 4]
+                || bytes == [0xff; 4]
+                || (u16::from_le_bytes([bytes[0], bytes[1]]) & 0x8000 != 0
+                    && bytes[0..2] != [0xff, 0xff]
+                    && bytes[2..4] == [1, 0])
+                || (u16::from_le_bytes([bytes[0], bytes[1]]) != 0
+                    && bytes[0..2] != [0xff, 0xff]
+                    && bytes[2..4] == [0, 0])
+        }),
+        6 => payload.get(cursor..cursor + 6).is_some_and(|bytes| {
+            u16::from_le_bytes([bytes[0], bytes[1]]) != u16::MAX && bytes[2..] == [0; 4]
+        }),
+        8 => payload.get(cursor..cursor + 8).is_some_and(|bytes| {
+            let first = u32::from_le_bytes(bytes[..4].try_into().expect("four-byte state"));
+            let second = u32::from_le_bytes(bytes[4..].try_into().expect("four-byte state"));
+            (first == 0 && second == 0)
+                || (first == u32::MAX && second <= 1)
+                || (first == 0 && !matches!(second, 0 | u32::MAX))
+                || (second == 0 && !matches!(first, 0 | u32::MAX))
+        }),
+        10 => payload.get(cursor..cursor + 10) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0]),
+        12 => payload.get(cursor..cursor + 12) == Some(&[0; 12]),
+        _ => false,
+    }
+}
+
+fn compact_sparse_component_path(
+    payload: &[u8],
+    cursor: usize,
+    count: usize,
+) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
+    fn entry_prefix(payload: &[u8], offset: usize) -> Option<(u16, [u8; 12])> {
+        let instance = payload.get(offset..offset + 4)?;
+        let token = u16::from_le_bytes(instance[..2].try_into().ok()?);
+        (token & 0x8000 != 0
+            && token != u16::MAX
+            && instance[2..] == [0; 2]
+            && payload.get(offset + 4..offset + 6)? != [0; 2])
+            .then(|| {
+                Some((
+                    token,
+                    payload.get(offset + 4..offset + 16)?.try_into().ok()?,
+                ))
+            })
+            .flatten()
+    }
+
+    fn parse(
+        payload: &[u8],
+        cursor: usize,
+        remaining: usize,
+        failed: &mut HashSet<(usize, usize)>,
+    ) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
+        if !failed.insert((cursor, remaining)) {
+            return None;
+        }
+        let (instance, type_signature) = entry_prefix(payload, cursor)?;
+        for entry_length in [20usize, 16] {
+            let local_id = if entry_length == 20 {
+                Some(u32::from_le_bytes(
+                    payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
+                ))
+            } else {
+                None
+            };
+            let entry = FeatureInputComponentPathEntry {
+                instance: Some(instance),
+                type_signature,
+                local_id,
+            };
+            let end = cursor.checked_add(entry_length)?;
+            if remaining == 1 {
+                return Some((vec![entry], end));
+            }
+            for gap in [0usize, 2, 4, 6, 8, 10, 12] {
+                if !compact_component_separator(payload, end, gap) {
+                    continue;
+                }
+                let Some(next) = end.checked_add(gap) else {
+                    continue;
+                };
+                let Some((mut tail, path_end)) = parse(payload, next, remaining - 1, failed) else {
+                    continue;
+                };
+                let mut entries = Vec::with_capacity(remaining);
+                entries.push(entry);
+                entries.append(&mut tail);
+                return Some((entries, path_end));
+            }
+        }
+        None
+    }
+
+    bounded_len(count as u64, 16, payload.len().saturating_sub(cursor))?;
+    parse(payload, cursor, count, &mut HashSet::new())
 }
 
 fn compact_heterogeneous_edge_path(
@@ -27783,12 +27919,7 @@ pub(crate) fn project_compact_edge_selections(
                     |mut edges, selection| {
                         let native_feature = selection.terminal_feature_ref.as_ref()?;
                         let feature = feature_ids_by_native.get(native_feature)?.clone();
-                        let local_id = selection
-                            .local_edge_ids
-                            .iter()
-                            .map(u32::to_string)
-                            .collect::<Vec<_>>()
-                            .join(",");
+                        let local_id = compact_edge_path_value(selection);
                         let edge = cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id };
                         if !edges.contains(&edge) {
                             edges.push(edge);
@@ -30261,10 +30392,41 @@ fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {
     value
 }
 
+fn compact_edge_path_value(selection: &FeatureInputEdgeSelection) -> String {
+    if selection.components.is_empty() {
+        return selection
+            .local_edge_ids
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+    }
+    selection
+        .components
+        .iter()
+        .map(|component| {
+            component
+                .local_id
+                .map_or_else(|| "_".into(), |id| id.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 pub(crate) fn compact_edge_selection_set_value(
     selections: &[&FeatureInputEdgeSelection],
 ) -> String {
     if let [selection] = selections {
+        if selection
+            .components
+            .iter()
+            .any(|component| component.local_id.is_none())
+        {
+            return format!(
+                "sldprt:feature-input:edge-ids:{}",
+                compact_edge_path_value(selection)
+            );
+        }
         return compact_edge_selection_value(&selection.local_edge_ids);
     }
     let mut value = String::from("sldprt:feature-input:edge-selection-vectors:");
@@ -30272,12 +30434,7 @@ pub(crate) fn compact_edge_selection_set_value(
         if selection_index != 0 {
             value.push(';');
         }
-        for (id_index, id) in selection.local_edge_ids.iter().enumerate() {
-            if id_index != 0 {
-                value.push(',');
-            }
-            write!(&mut value, "{id}").expect("writing to String cannot fail");
-        }
+        value.push_str(&compact_edge_path_value(selection));
     }
     value
 }
