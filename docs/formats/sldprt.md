@@ -494,6 +494,8 @@ A Hole Wizard position sketch may instead store each authored position as the co
 
 When exactly one active Hole Wizard operation has a given diameter, its typed position-sketch plane owns every reversed cylindrical face of that radius whose carrier is normal to the plane. A reversed cylinder bounds excluded material; a forward cylinder bounds material on its radial exterior. Each owned carrier intersects the position plane at the placement origin, and the position-sketch normal is the placement direction. Another active hole with the same diameter, a nonparallel carrier, an inconsistent position plane, or an empty carrier set leaves this ownership form unresolved.
 
+A typed spatial position sketch owns one reversed cylindrical carrier of the hole radius when exactly one active Hole Wizard operation has that diameter and exactly one such carrier exists. Coaxial face segments are one carrier. The carrier supplies the placement axis. Multiple carriers or another active hole of the same diameter leave this ownership form unresolved.
+
 A spatial Hole Wizard position sketch may contain construction points and paired points on bore axes. An object-indexed point selects a placement only when its model-space position lies on exactly one cylinder carrier of the hole radius. The cylinder origin and axis define the placement. Multiple points selecting the same carrier collapse to one placement. Points selecting no carrier are construction geometry. A point selecting multiple distinct carriers leaves the placements unresolved.
 
 A `7b 83` point reference is qualified by its local identifier. The identifier can select a point, constrained-point, line-or-circle, or arc marker.

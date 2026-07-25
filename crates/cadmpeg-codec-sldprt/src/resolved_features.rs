@@ -15964,6 +15964,14 @@ pub(crate) fn project_hole_axes(
                 })
         })
         .collect::<HashMap<_, _>>();
+    let spatial_position_features = model_features
+        .iter()
+        .filter_map(|feature| {
+            matches!(feature.definition, FeatureDefinition::SpatialSketch { .. })
+                .then(|| feature.native_ref.clone())
+                .flatten()
+        })
+        .collect::<HashSet<_>>();
     let mut counts_by_source = HashMap::<u32, HashSet<usize>>::new();
     for lane in lanes {
         let counts = lane.generated_surface_identities.iter().fold(
@@ -16076,6 +16084,12 @@ pub(crate) fn project_hole_axes(
                         *placements = bore_placements;
                         continue;
                     }
+                }
+            }
+            if spatial_position_features.contains(position_feature.id.as_str()) {
+                if let Some(bore_placement) = unique_bore_placement(radius, topology) {
+                    placements.push(bore_placement);
+                    continue;
                 }
             }
         }
@@ -16233,6 +16247,40 @@ fn plane_owned_bore_placements(
         .map(|(_, placement)| placement)
         .collect::<Vec<_>>();
     (!placements.is_empty()).then_some(placements)
+}
+
+fn unique_bore_placement(radius: f64, topology: &HoleTopology<'_>) -> Option<HolePlacement> {
+    const AXIS_QUANTUM: f64 = 1.0e-8;
+    let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
+    let carriers = cylindrical_bore_axes(radius, topology)
+        .into_iter()
+        .map(|(origin, axis)| {
+            let axis = canonical_axis(axis);
+            let station = dot(Vector3::new(origin.x, origin.y, origin.z), axis);
+            let closest = Point3::new(
+                origin.x - station * axis.x,
+                origin.y - station * axis.y,
+                origin.z - station * axis.z,
+            );
+            (
+                [
+                    quantize(closest.x),
+                    quantize(closest.y),
+                    quantize(closest.z),
+                    quantize(axis.x),
+                    quantize(axis.y),
+                    quantize(axis.z),
+                ],
+                HolePlacement::Axis {
+                    origin: closest,
+                    axis,
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut carriers = carriers.into_values();
+    let placement = carriers.next()?;
+    carriers.next().is_none().then_some(placement)
 }
 
 fn cylindrical_face_axes_at_depth(
@@ -17166,7 +17214,8 @@ mod hole_axis_tests {
         enrich_history_hole_constructions, enrich_history_parameters, hole_position_sketch_source,
         hole_temporary_axis, marker_pattern_bore_axes, plane_owned_bore_placements,
         profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
-        project_profiled_hole_constructions, project_spatial_hole_position_sketches, HoleTopology,
+        project_profiled_hole_constructions, project_spatial_hole_position_sketches,
+        unique_bore_placement, HoleTopology,
     };
     use crate::records::{
         FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -17377,6 +17426,24 @@ mod hole_axis_tests {
                 origin: Point3::new(-5.0, 0.0, 10.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
             }])
+        );
+        assert_eq!(
+            unique_bore_placement(
+                2.0,
+                &HoleTopology {
+                    surfaces: &surfaces,
+                    faces: &faces,
+                    loops: &[],
+                    coedges: &[],
+                    edges: &[],
+                    vertices: &[],
+                    points: &[],
+                },
+            ),
+            Some(cadmpeg_ir::features::HolePlacement::Axis {
+                origin: Point3::new(-5.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            })
         );
     }
 
