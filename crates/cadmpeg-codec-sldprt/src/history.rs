@@ -15,10 +15,11 @@ use cadmpeg_ir::features::{
     CurveProjectionDirectionState, DatumPlaneReference, DesignConfiguration, DesignParameter,
     DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode,
-    HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind,
-    PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors,
-    SketchSpace, SweepMode, Termination, VariableRadius, VertexSelection, WrapMode,
+    HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
+    PatternKind, PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
+    ScaleCenter, ScaleFactors, SketchSpace, SweepMode, Termination, VariableRadius,
+    VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::AttributeId;
@@ -2535,6 +2536,36 @@ mod history_reference_tests {
                 ..
             }
         ));
+
+        let tapered_thread = profile(&[
+            ("a", "3.43°"),
+            ("b", "6.92"),
+            ("c", "118°"),
+            ("d", "<MOD-DIAM>8.43"),
+            ("e", "11.62"),
+            ("f", "<MOD-DIAM>10.29"),
+        ]);
+        let construction =
+            hole_sketch_construction(&tapered_thread).expect("tapered thread profile");
+        assert_eq!(construction.diameter, Length(8.43));
+        assert_eq!(construction.depth, Some(Length(11.62)));
+        assert!(matches!(
+            construction.kind,
+            HoleKind::Threaded {
+                major_diameter: Length(10.29),
+                thread_depth: Length(6.92),
+                pitch: None,
+                drill_point_angle: Angle(angle),
+            } if (angle - 118_f64.to_radians()).abs() < 1.0e-12
+        ));
+        assert_eq!(
+            construction.bottom,
+            Some(HoleBottom::Angled {
+                included_angle: Angle(118_f64.to_radians()),
+                depth_to_tip: false,
+            })
+        );
+        assert_eq!(construction.taper_angle, Some(Angle(3.43_f64.to_radians())));
 
         let placement_dimensions = profile(&[
             ("a", "<MOD-DIAM>9"),
@@ -6769,8 +6800,8 @@ fn project_hole(
         exit_kind: None,
         diameter,
         extent,
-        bottom: None,
-        taper_angle: None,
+        bottom: profile.as_ref().and_then(|profile| profile.bottom),
+        taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),
         specification: None,
         allow_multi_profile_faces: None,
     }
@@ -6781,6 +6812,8 @@ struct HoleProfileConstruction {
     diameter: Length,
     depth: Option<Length>,
     kind: HoleKind,
+    bottom: Option<HoleBottom>,
+    taper_angle: Option<Angle>,
 }
 
 fn hole_profile_construction(
@@ -6857,6 +6890,7 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
     }
     diameters.sort_by(|left, right| left.0.total_cmp(&right.0));
     lengths.sort_by(|left, right| left.0.total_cmp(&right.0));
+    angles.sort_by(|left, right| left.0.total_cmp(&right.0));
     match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
         ([diameter], depths, []) => Some(HoleProfileConstruction {
             diameter: *diameter,
@@ -6865,6 +6899,8 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                 _ => None,
             },
             kind: HoleKind::Simple,
+            bottom: matches!(depths, [_]).then_some(HoleBottom::Flat),
+            taper_angle: None,
         }),
         ([diameter], [depth], [drill_point_angle]) => Some(HoleProfileConstruction {
             diameter: *diameter,
@@ -6872,6 +6908,11 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
             kind: HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
             },
+            bottom: Some(HoleBottom::Angled {
+                included_angle: *drill_point_angle,
+                depth_to_tip: false,
+            }),
+            taper_angle: None,
         }),
         ([diameter, entry_diameter], [depth], [angle]) if diameter.0 < entry_diameter.0 => {
             Some(HoleProfileConstruction {
@@ -6881,6 +6922,8 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     diameter: *entry_diameter,
                     angle: *angle,
                 },
+                bottom: None,
+                taper_angle: None,
             })
         }
         ([diameter, major_diameter], [thread_depth, drill_depth], [drill_point_angle])
@@ -6904,6 +6947,35 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     pitch: None,
                     drill_point_angle: *drill_point_angle,
                 },
+                bottom: Some(HoleBottom::Angled {
+                    included_angle: *drill_point_angle,
+                    depth_to_tip: false,
+                }),
+                taper_angle: None,
+            })
+        }
+        (
+            [diameter, major_diameter],
+            [thread_depth, drill_depth],
+            [taper_angle, drill_point_angle],
+        ) if diameter.0 < major_diameter.0
+            && thread_depth.0 < drill_depth.0
+            && taper_angle.0 < drill_point_angle.0 =>
+        {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*drill_depth),
+                kind: HoleKind::Threaded {
+                    major_diameter: *major_diameter,
+                    thread_depth: *thread_depth,
+                    pitch: None,
+                    drill_point_angle: *drill_point_angle,
+                },
+                bottom: Some(HoleBottom::Angled {
+                    included_angle: *drill_point_angle,
+                    depth_to_tip: false,
+                }),
+                taper_angle: Some(*taper_angle),
             })
         }
         ([diameter, entry_diameter], [entry_depth, depth], [drill_point_angle])
@@ -6919,6 +6991,11 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     depth: *entry_depth,
                     drill_point_angle: *drill_point_angle,
                 },
+                bottom: Some(HoleBottom::Angled {
+                    included_angle: *drill_point_angle,
+                    depth_to_tip: false,
+                }),
+                taper_angle: None,
             })
         }
         ([diameter, entry_diameter], [entry_depth, depth], [])
@@ -6931,6 +7008,8 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     diameter: *entry_diameter,
                     depth: *entry_depth,
                 },
+                bottom: None,
+                taper_angle: None,
             })
         }
         _ => None,
