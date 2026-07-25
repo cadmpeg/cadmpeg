@@ -15204,7 +15204,7 @@ fn hole_position_sketch_source(
     Some(source)
 }
 
-/// Recover legacy Hole Wizard profile ownership from its adjacent typed child sources.
+/// Recover legacy Hole Wizard profile ownership from its typed child sources.
 pub(crate) fn enrich_history_hole_constructions(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -15250,6 +15250,31 @@ pub(crate) fn enrich_history_hole_constructions(
                         profiles.next().is_none().then_some(profile)
                     };
                     if let Some(profile) = source_profile() {
+                        return Some((profile, 3_u8));
+                    }
+                    let hole_source = feature
+                        .source_id
+                        .as_deref()
+                        .and_then(|source| source.parse::<u32>().ok())?;
+                    let (lower, upper) = if hole_source < *position_source {
+                        (hole_source, *position_source)
+                    } else {
+                        (*position_source, hole_source)
+                    };
+                    let mut bounded_profiles = history.features.iter().filter(|candidate| {
+                        candidate
+                            .source_id
+                            .as_deref()
+                            .and_then(|source| source.parse::<u32>().ok())
+                            .is_some_and(|source| lower < source && source < upper)
+                            && classify(candidate) == Some(FeatureClass::Sketch)
+                            && crate::history::is_hole_profile_construction(candidate)
+                    });
+                    let bounded_profile = bounded_profiles.next();
+                    if bounded_profiles.next().is_some() {
+                        return None;
+                    }
+                    if let Some(profile) = bounded_profile {
                         return Some((profile, 2_u8));
                     }
                     let mut positions = history.features.iter().filter(|candidate| {
@@ -18819,14 +18844,14 @@ mod hole_axis_tests {
     }
 
     #[test]
-    fn adjacent_dimensioned_sketch_supplies_legacy_hole_profile() {
+    fn source_bounded_sketch_supplies_legacy_hole_profile() {
         let mut history = native_history();
         history.features.push(crate::records::Feature {
             id: "native-profile-sketch".into(),
             parent: "history".into(),
             xml_tag: "Sketch".into(),
             tree_parent: None,
-            source_id: Some("8".into()),
+            source_id: Some("9".into()),
             parent_source_id: None,
             ordinal: 1,
             name: "Profile".into(),
@@ -18849,7 +18874,7 @@ mod hole_axis_tests {
             ],
         });
 
-        let mut lane = lane_with_position_reference(9);
+        let mut lane = lane_with_position_reference(12);
         lane.names.push(FeatureInputName {
             id: "depth-name".into(),
             parent: "lane".into(),
@@ -18888,7 +18913,7 @@ mod hole_axis_tests {
                 .properties
                 .get("DissectableChildren")
                 .map(String::as_str),
-            Some("8")
+            Some("9")
         );
     }
 
