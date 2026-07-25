@@ -45258,6 +45258,7 @@ fn project_brep(
                 }
             }
             if !profile.is_empty() {
+                orient_closed_profile_by_topology(&mut profile, &entities[first_entity..]);
                 profiles.push(profile);
             }
         }
@@ -45329,6 +45330,151 @@ fn project_brep(
             profiles,
             native_ref: Some(native_ref.to_string()),
         });
+    }
+}
+
+fn orient_closed_profile_by_topology(profile: &mut [SketchEntityUse], entities: &[SketchEntity]) {
+    if profile.len() < 2 {
+        return;
+    }
+    let entities = entities
+        .iter()
+        .map(|entity| (&entity.id, entity))
+        .collect::<HashMap<_, _>>();
+    let orientations = profile
+        .iter()
+        .enumerate()
+        .map(|(index, use_)| {
+            let current = entities.get(&use_.entity)?;
+            let next = entities.get(&profile[(index + 1) % profile.len()].entity)?;
+            let [start, end] = current.endpoint_refs.as_slice() else {
+                return None;
+            };
+            let shared = current
+                .endpoint_refs
+                .iter()
+                .filter(|endpoint| next.endpoint_refs.contains(endpoint))
+                .collect::<Vec<_>>();
+            let [shared] = shared.as_slice() else {
+                return None;
+            };
+            if *shared == end {
+                Some(false)
+            } else if *shared == start {
+                Some(true)
+            } else {
+                None
+            }
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(orientations) = orientations else {
+        return;
+    };
+    for (use_, reversed) in profile.iter_mut().zip(orientations) {
+        use_.reversed = reversed;
+    }
+}
+
+#[cfg(test)]
+mod projected_profile_orientation_tests {
+    use super::{circle_contains_point, ellipse_contains_point, orient_closed_profile_by_topology};
+    use cadmpeg_ir::{
+        math::Point2,
+        sketches::{SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId},
+    };
+
+    fn line(id: &str, start_ref: &str, end_ref: &str) -> SketchEntity {
+        SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: vec![start_ref.into(), end_ref.into()],
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+        }
+    }
+
+    #[test]
+    fn orients_each_closed_profile_edge_toward_its_topological_successor() {
+        let entities = [
+            line("a", "p0", "p1"),
+            line("b", "p1", "p2"),
+            line("c", "p0", "p2"),
+        ];
+        let mut profile = entities
+            .iter()
+            .map(|entity| SketchEntityUse {
+                entity: entity.id.clone(),
+                reversed: true,
+            })
+            .collect::<Vec<_>>();
+
+        orient_closed_profile_by_topology(&mut profile, &entities);
+
+        assert_eq!(
+            profile.iter().map(|use_| use_.reversed).collect::<Vec<_>>(),
+            [false, false, true]
+        );
+    }
+
+    #[test]
+    fn preserves_all_orientations_when_endpoint_incidence_is_ambiguous() {
+        let entities = [
+            line("a", "p0", "p1"),
+            line("b", "p1", "p2"),
+            line("c", "p3", "p4"),
+        ];
+        let mut profile = entities
+            .iter()
+            .map(|entity| SketchEntityUse {
+                entity: entity.id.clone(),
+                reversed: true,
+            })
+            .collect::<Vec<_>>();
+
+        orient_closed_profile_by_topology(&mut profile, &entities);
+
+        assert!(profile.iter().all(|use_| use_.reversed));
+    }
+
+    #[test]
+    fn rejects_analytic_carriers_that_do_not_contain_the_edge_vertex() {
+        assert!(!circle_contains_point(
+            Point2::new(-35.0, -5.85),
+            1.25,
+            Point2::new(-75.0, -8.85),
+            1.0e-9,
+        ));
+        assert!(!ellipse_contains_point(
+            Point2::new(-60.0, -150.0),
+            0.0,
+            7.5,
+            f64::MIN_POSITIVE,
+            Point2::new(140.0, -70.5),
+            1.0e-9,
+        ));
+    }
+
+    #[test]
+    fn accepts_vertices_on_nondegenerate_analytic_carriers() {
+        assert!(circle_contains_point(
+            Point2::new(2.0, 3.0),
+            4.0,
+            Point2::new(6.0, 3.0),
+            1.0e-9,
+        ));
+        assert!(ellipse_contains_point(
+            Point2::new(2.0, 3.0),
+            0.0,
+            4.0,
+            2.0,
+            Point2::new(2.0, 5.0),
+            1.0e-9,
+        ));
     }
 }
 
@@ -45421,9 +45567,16 @@ fn project_edge(
         u_axis,
         v_axis,
     );
+    let line = || Some(SketchGeometry::Line { start, end });
+    let tolerance = edge.tolerance.unwrap_or(1.0e-9).max(1.0e-9);
     match edge.curve.as_ref().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Circle { center, radius, .. }) => {
             let center = project_point(*center, origin, u_axis, v_axis);
+            if !circle_contains_point(center, *radius, start, tolerance)
+                || !circle_contains_point(center, *radius, end, tolerance)
+            {
+                return line();
+            }
             if (start.u - end.u).hypot(start.v - end.v) <= 1.0e-9 {
                 Some(SketchGeometry::Circle {
                     center,
@@ -45458,6 +45611,23 @@ fn project_edge(
             let major_u = dot(*major_direction, u_axis);
             let major_v = dot(*major_direction, v_axis);
             let major_angle = major_v.atan2(major_u);
+            if !ellipse_contains_point(
+                center,
+                major_angle,
+                *major_radius,
+                *minor_radius,
+                start,
+                tolerance,
+            ) || !ellipse_contains_point(
+                center,
+                major_angle,
+                *major_radius,
+                *minor_radius,
+                end,
+                tolerance,
+            ) {
+                return line();
+            }
             let full = (start.u - end.u).hypot(start.v - end.v) <= 1.0e-9;
             let parameter = |point: Point2| {
                 let du = point.u - center.u;
@@ -45498,11 +45668,50 @@ fn project_edge(
             periodic: nurbs.periodic,
         }),
         None if edge.start == edge.end => Some(SketchGeometry::Point { position: start }),
-        Some(CurveGeometry::Line { .. }) | None => Some(SketchGeometry::Line { start, end }),
+        Some(CurveGeometry::Line { .. }) | None => line(),
         Some(other) => Some(SketchGeometry::Native {
             native_kind: format!("{other:?}"),
         }),
     }
+}
+
+fn circle_contains_point(center: Point2, radius: f64, point: Point2, tolerance: f64) -> bool {
+    let distance = (point.u - center.u).hypot(point.v - center.v);
+    distance.is_finite()
+        && radius.is_finite()
+        && (distance - radius.abs()).abs() <= tolerance.max(radius.abs() * 1.0e-9)
+}
+
+fn ellipse_contains_point(
+    center: Point2,
+    major_angle: f64,
+    major_radius: f64,
+    minor_radius: f64,
+    point: Point2,
+    tolerance: f64,
+) -> bool {
+    if !major_radius.is_finite()
+        || !minor_radius.is_finite()
+        || major_radius.abs() <= tolerance
+        || minor_radius.abs() <= tolerance
+    {
+        return false;
+    }
+    let du = point.u - center.u;
+    let dv = point.v - center.v;
+    let major = du * major_angle.cos() + dv * major_angle.sin();
+    let minor = -du * major_angle.sin() + dv * major_angle.cos();
+    let parameter = (minor / minor_radius).atan2(major / major_radius);
+    let reconstructed = Point2::new(
+        center.u + major_radius * parameter.cos() * major_angle.cos()
+            - minor_radius * parameter.sin() * major_angle.sin(),
+        center.v
+            + major_radius * parameter.cos() * major_angle.sin()
+            + minor_radius * parameter.sin() * major_angle.cos(),
+    );
+    let distance = (point.u - reconstructed.u).hypot(point.v - reconstructed.v);
+    distance.is_finite()
+        && distance <= tolerance.max(major_radius.abs().max(minor_radius.abs()) * 1.0e-9)
 }
 
 fn project_point(point: Point3, origin: Point3, u_axis: Vector3, v_axis: Vector3) -> Point2 {
