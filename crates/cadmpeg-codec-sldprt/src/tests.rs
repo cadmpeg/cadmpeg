@@ -7741,6 +7741,8 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
         .unwrap();
 
     assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 3);
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);

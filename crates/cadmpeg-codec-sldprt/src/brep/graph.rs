@@ -1292,6 +1292,38 @@ fn decode_graph(
 }
 
 fn prune_rejected_topology(out: &mut Brep) {
+    let kept_loops = out
+        .faces
+        .iter()
+        .flat_map(|face| &face.loops)
+        .cloned()
+        .collect::<HashSet<_>>();
+    out.loops.retain(|loop_| kept_loops.contains(&loop_.id));
+
+    let kept_coedges = out
+        .loops
+        .iter()
+        .flat_map(|loop_| &loop_.coedges)
+        .cloned()
+        .collect::<HashSet<_>>();
+    out.coedges
+        .retain(|coedge| kept_coedges.contains(&coedge.id));
+    for coedge in &mut out.coedges {
+        if !kept_coedges.contains(&coedge.radial_next) {
+            coedge.radial_next = coedge.id.clone();
+        }
+    }
+
+    let kept_pcurves = out
+        .coedges
+        .iter()
+        .flat_map(|coedge| &coedge.pcurves)
+        .map(|use_| &use_.pcurve)
+        .cloned()
+        .collect::<HashSet<_>>();
+    out.pcurves
+        .retain(|pcurve| kept_pcurves.contains(&pcurve.id));
+
     let kept_edges = out
         .coedges
         .iter()
