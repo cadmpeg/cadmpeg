@@ -10027,7 +10027,7 @@ mod marker_tests {
         entry(&mut payload, first, 0x862a, 1);
         let second = first + 20 + 12;
         entry(&mut payload, second, 0x8631, 10);
-        payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+        payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 1, 0, 0, 0]);
         let third = second + 28;
         entry(&mut payload, third, 0x8102, 1);
         payload[third + 20..third + 24].copy_from_slice(&[0xa3, 0x86, 1, 0]);
@@ -19873,7 +19873,7 @@ fn compact_heterogeneous_component_path(
                     payload.get(cursor..cursor + 8),
                     Some(
                         [0, 0, 0, 0, 0, 0, 0, 0]
-                            | [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]
+                            | [0xff, 0xff, 0xff, 0xff, 0 | 1, 0, 0, 0]
                             | [0xa0, 0x86, 0x01, 0x00, 0, 0, 0, 0]
                     )
                 ),
