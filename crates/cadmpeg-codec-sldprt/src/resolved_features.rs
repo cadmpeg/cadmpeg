@@ -15977,6 +15977,20 @@ pub(crate) fn project_hole_axes(
             counts_by_source.entry(source).or_default().insert(count);
         }
     }
+    let hole_diameter_counts = model_features
+        .iter()
+        .filter(|feature| feature.suppressed != Some(true))
+        .filter_map(|feature| match feature.definition {
+            FeatureDefinition::Hole {
+                diameter: Some(Length(diameter)),
+                ..
+            } if diameter.is_finite() && diameter > 0.0 => Some(diameter.to_bits()),
+            _ => None,
+        })
+        .fold(HashMap::<u64, usize>::new(), |mut counts, diameter| {
+            *counts.entry(diameter).or_default() += 1;
+            counts
+        });
 
     for feature in model_features {
         if feature.suppressed == Some(true) {
@@ -16035,6 +16049,36 @@ pub(crate) fn project_hole_axes(
         let Some(position_feature) = hole_position_feature(native_feature, histories, lanes) else {
             continue;
         };
+        let mut frames = lanes.iter().filter_map(|lane| {
+            feature_frames
+                .get(&(lane.id.as_str(), position_feature.id.as_str()))
+                .copied()
+        });
+        if hole_diameter_counts.get(&diameter.to_bits()) == Some(&1) {
+            if let Some(frame) = frames.next() {
+                let same_frame = |candidate: (Point3, Vector3, Vector3)| {
+                    dot(frame.1, candidate.1).abs() >= 1.0 - 1.0e-9
+                        && dot(
+                            Vector3::new(
+                                candidate.0.x - frame.0.x,
+                                candidate.0.y - frame.0.y,
+                                candidate.0.z - frame.0.z,
+                            ),
+                            frame.1,
+                        )
+                        .abs()
+                            <= 1.0e-8
+                };
+                if frames.all(same_frame) {
+                    if let Some(bore_placements) =
+                        plane_owned_bore_placements(frame.0, frame.1, radius, topology)
+                    {
+                        *placements = bore_placements;
+                        continue;
+                    }
+                }
+            }
+        }
         if let Some(depth) = match extent {
             Some(Termination::Blind {
                 length: Length(depth),
@@ -16100,6 +16144,95 @@ pub(crate) fn project_hole_axes(
             placements.clone_from(solution);
         }
     }
+}
+
+fn cylindrical_bore_axes(radius: f64, topology: &HoleTopology<'_>) -> Vec<(Point3, Vector3)> {
+    let surfaces = topology
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<HashMap<_, _>>();
+    let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let mut axes = topology
+        .faces
+        .iter()
+        .filter(|face| face.sense == Sense::Reversed)
+        .filter_map(|face| {
+            let SurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                radius: candidate,
+                ..
+            } = surfaces.get(&face.surface)?.geometry
+            else {
+                return None;
+            };
+            ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
+        })
+        .collect::<Vec<_>>();
+    axes.sort_by_key(|(origin, axis)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
+            axis.x.to_bits(),
+            axis.y.to_bits(),
+            axis.z.to_bits(),
+        ]
+    });
+    axes.dedup();
+    axes
+}
+
+fn plane_owned_bore_placements(
+    plane_origin: Point3,
+    plane_normal: Vector3,
+    radius: f64,
+    topology: &HoleTopology<'_>,
+) -> Option<Vec<HolePlacement>> {
+    const AXIS_QUANTUM: f64 = 1.0e-8;
+    let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
+    let mut placements = cylindrical_bore_axes(radius, topology)
+        .into_iter()
+        .filter(|(_, axis)| dot(*axis, plane_normal).abs() >= 1.0 - 1.0e-9)
+        .map(|(origin, axis)| {
+            let station = dot(
+                Vector3::new(
+                    plane_origin.x - origin.x,
+                    plane_origin.y - origin.y,
+                    plane_origin.z - origin.z,
+                ),
+                axis,
+            );
+            HolePlacement::Axis {
+                origin: Point3::new(
+                    origin.x + station * axis.x,
+                    origin.y + station * axis.y,
+                    origin.z + station * axis.z,
+                ),
+                axis: plane_normal,
+            }
+        })
+        .fold(
+            HashMap::<[i64; 3], HolePlacement>::new(),
+            |mut placements, placement| {
+                let HolePlacement::Axis { origin, .. } = placement else {
+                    unreachable!("bore carriers always produce axis placements");
+                };
+                placements
+                    .entry([quantize(origin.x), quantize(origin.y), quantize(origin.z)])
+                    .or_insert(placement);
+                placements
+            },
+        )
+        .into_iter()
+        .collect::<Vec<_>>();
+    placements.sort_by_key(|(key, _)| *key);
+    let placements = placements
+        .into_iter()
+        .map(|(_, placement)| placement)
+        .collect::<Vec<_>>();
+    (!placements.is_empty()).then_some(placements)
 }
 
 fn cylindrical_face_axes_at_depth(
@@ -17031,9 +17164,9 @@ mod hole_axis_tests {
     use super::{
         compact_position_loci, cylindrical_face_axes_at_depth, cylindrical_support_normal,
         enrich_history_hole_constructions, enrich_history_parameters, hole_position_sketch_source,
-        hole_temporary_axis, marker_pattern_bore_axes, profiled_hole_construction,
-        project_hole_axes, project_hole_position_sketches, project_profiled_hole_constructions,
-        project_spatial_hole_position_sketches, HoleTopology,
+        hole_temporary_axis, marker_pattern_bore_axes, plane_owned_bore_placements,
+        profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
+        project_profiled_hole_constructions, project_spatial_hole_position_sketches, HoleTopology,
     };
     use crate::records::{
         FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -17183,6 +17316,68 @@ mod hole_axis_tests {
             Some(Vector3::new(12.0 / 13.0, 5.0 / 13.0, 0.0))
         );
         assert!(cylindrical_support_normal(&surface, Point3::new(12.0, 4.0, 40.0)).is_none());
+    }
+
+    #[test]
+    fn position_plane_owns_only_reversed_normal_cylinders() {
+        let mut surfaces = [cylinder(0, -5.0), cylinder(1, 5.0), cylinder(2, -5.0)];
+        let SurfaceGeometry::Cylinder { origin, .. } = &mut surfaces[2].geometry else {
+            unreachable!();
+        };
+        origin.z = 20.0;
+        let faces = [
+            Face {
+                id: FaceId("bore".into()),
+                shell: ShellId("shell".into()),
+                surface: surfaces[0].id.clone(),
+                sense: Sense::Reversed,
+                loops: Vec::new(),
+                name: None,
+                color: None,
+                tolerance: None,
+            },
+            Face {
+                id: FaceId("boss".into()),
+                shell: ShellId("shell".into()),
+                surface: surfaces[1].id.clone(),
+                sense: Sense::Forward,
+                loops: Vec::new(),
+                name: None,
+                color: None,
+                tolerance: None,
+            },
+            Face {
+                id: FaceId("coaxial-bore-segment".into()),
+                shell: ShellId("shell".into()),
+                surface: surfaces[2].id.clone(),
+                sense: Sense::Reversed,
+                loops: Vec::new(),
+                name: None,
+                color: None,
+                tolerance: None,
+            },
+        ];
+
+        assert_eq!(
+            plane_owned_bore_placements(
+                Point3::new(0.0, 0.0, 10.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                2.0,
+                &HoleTopology {
+                    surfaces: &surfaces,
+                    faces: &faces,
+                    loops: &[],
+                    coedges: &[],
+                    edges: &[],
+                    vertices: &[],
+                    points: &[],
+                },
+            ),
+            Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
+                origin: Point3::new(-5.0, 0.0, 10.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            }])
+        );
     }
 
     #[test]
