@@ -15219,45 +15219,94 @@ pub(crate) fn enrich_history_hole_constructions(
                     && !feature.properties.contains_key("DissectableChildren")
             })
             .filter_map(|(feature_index, feature)| {
-                let mut position_sources = lanes
-                    .iter()
-                    .filter_map(|lane| hole_position_sketch_source(feature, lane))
-                    .collect::<Vec<_>>();
-                position_sources.sort_unstable();
-                position_sources.dedup();
-                let [position_source] = position_sources.as_slice() else {
-                    return None;
-                };
-                let adjacent = [
-                    position_source.checked_sub(1),
-                    position_source.checked_add(1),
-                ]
-                .into_iter()
-                .flatten()
-                .collect::<HashSet<_>>();
-                let mut profiles = history.features.iter().filter(|candidate| {
-                    candidate
-                        .source_id
-                        .as_deref()
-                        .and_then(|source| source.parse::<u32>().ok())
-                        .is_some_and(|source| adjacent.contains(&source))
-                        && classify(candidate) == Some(FeatureClass::Sketch)
-                        && crate::history::is_hole_profile_construction(candidate)
-                });
-                let profile = profiles.next()?;
-                profiles.next().is_none().then(|| {
-                    (
-                        feature_index,
-                        profile
+                let profile_from_position_source = || {
+                    let mut position_sources = lanes
+                        .iter()
+                        .filter_map(|lane| hole_position_sketch_source(feature, lane))
+                        .collect::<Vec<_>>();
+                    position_sources.sort_unstable();
+                    position_sources.dedup();
+                    let [position_source] = position_sources.as_slice() else {
+                        return None;
+                    };
+                    let adjacent = [
+                        position_source.checked_sub(1),
+                        position_source.checked_add(1),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect::<HashSet<_>>();
+                    let mut profiles = history.features.iter().filter(|candidate| {
+                        candidate
                             .source_id
-                            .as_ref()
-                            .expect("profile candidates carry source identity")
-                            .clone(),
-                    )
-                })
+                            .as_deref()
+                            .and_then(|source| source.parse::<u32>().ok())
+                            .is_some_and(|source| adjacent.contains(&source))
+                            && classify(candidate) == Some(FeatureClass::Sketch)
+                            && crate::history::is_hole_profile_construction(candidate)
+                    });
+                    let profile = profiles.next()?;
+                    profiles.next().is_none().then_some(profile)
+                };
+                let profile_from_child_order = || {
+                    let child_ordinals = [
+                        feature.ordinal.checked_add(1)?,
+                        feature.ordinal.checked_add(2)?,
+                    ];
+                    let children = child_ordinals
+                        .iter()
+                        .filter_map(|ordinal| {
+                            let mut children = history
+                                .features
+                                .iter()
+                                .filter(|child| child.ordinal == *ordinal);
+                            let child = children.next()?;
+                            children.next().is_none().then_some(child)
+                        })
+                        .collect::<Vec<_>>();
+                    if children.len() != child_ordinals.len()
+                        || children
+                            .iter()
+                            .any(|child| classify(child) != Some(FeatureClass::Sketch))
+                    {
+                        return None;
+                    }
+                    let mut profiles = children
+                        .into_iter()
+                        .filter(|child| crate::history::is_hole_profile_construction(child));
+                    let profile = profiles.next()?;
+                    profiles.next().is_none().then_some(profile)
+                };
+                profile_from_position_source()
+                    .or_else(profile_from_child_order)
+                    .and_then(|profile| {
+                        let profile_index = history
+                            .features
+                            .iter()
+                            .position(|candidate| candidate.id == profile.id)?;
+                        let profile_source = profile
+                            .source_id
+                            .clone()
+                            .unwrap_or_else(|| profile.ordinal.to_string());
+                        (!history.features.iter().enumerate().any(
+                            |(candidate_index, candidate)| {
+                                candidate_index != profile_index
+                                    && candidate.source_id.as_deref()
+                                        == Some(profile_source.as_str())
+                            },
+                        ))
+                        .then_some((
+                            feature_index,
+                            profile_index,
+                            profile_source,
+                        ))
+                    })
             })
             .collect::<Vec<_>>();
-        for (feature_index, profile_source) in additions {
+        for (feature_index, profile_index, profile_source) in additions {
+            history.features[profile_index]
+                .source_id
+                .get_or_insert_with(|| profile_source.clone());
             history.features[feature_index]
                 .properties
                 .insert("DissectableChildren".into(), profile_source);
@@ -18569,6 +18618,57 @@ mod hole_axis_tests {
                 .map(String::as_str),
             Some("8")
         );
+    }
+
+    #[test]
+    fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
+        let mut history = native_history();
+        let mut position = history.features[0].clone();
+        position.id = "native-position-sketch".into();
+        position.source_id = Some("8".into());
+        position.ordinal = 1;
+        position.xml_tag = "Sketch".into();
+        position.kind = "Sketch".into();
+        position.input_class = Some("moProfileFeature_c".into());
+        position.parameters.clear();
+        position.content.clear();
+        history.features.push(position);
+        history.features.push(crate::records::Feature {
+            id: "native-profile-sketch".into(),
+            parent: "history".into(),
+            xml_tag: "Sketch".into(),
+            tree_parent: None,
+            source_id: None,
+            parent_source_id: None,
+            ordinal: 2,
+            name: "Profile".into(),
+            kind: "Sketch".into(),
+            input_class: Some("moProfileFeature_c".into()),
+            suppressed: false,
+            parameters: [
+                ("bore".into(), "<MOD-DIAM>4.2".into()),
+                ("depth".into(), "6.8".into()),
+            ]
+            .into(),
+            dimension_properties: BTreeMap::default(),
+            properties: BTreeMap::default(),
+            text: None,
+            content: vec![
+                crate::records::FeatureContent::Dimension("bore".into()),
+                crate::records::FeatureContent::Dimension("depth".into()),
+            ],
+        });
+
+        enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[]);
+
+        assert_eq!(
+            history.features[0]
+                .properties
+                .get("DissectableChildren")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(history.features[2].source_id.as_deref(), Some("2"));
     }
 
     #[test]
