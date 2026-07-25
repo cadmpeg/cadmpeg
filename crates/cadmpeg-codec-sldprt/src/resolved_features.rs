@@ -18639,38 +18639,57 @@ fn compact_edge_selections(
         ));
         selections.sort_unstable_by_key(|selection| selection.0);
         selections.dedup_by_key(|selection| selection.0);
-        for (offset, local_edge_ids) in selections {
-            let components =
-                compact_edge_component_path_at(&lane.native_payload, offset).unwrap_or_default();
-            let terminal_feature_ref = compact_edge_owner_feature_at(
-                &lane.native_payload,
-                offset,
-                &components,
-                &history_features,
-                &feature.id,
-            );
-            let producer_feature_refs = compact_edge_producer_features_at(
-                &lane.native_payload,
-                offset,
-                &components,
-                &history_features,
-                &feature.id,
-            );
-            result.push(FeatureInputEdgeSelection {
-                id: format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
-                parent: lane.id.clone(),
-                ordinal: result.len() as u32,
-                offset: offset as u64,
-                object_name_ref: name.id.clone(),
-                feature_ref: feature.id.clone(),
-                local_edge_ids,
-                components,
-                producer_feature_refs,
-                terminal_feature_ref,
-            });
+        let feature_selections = selections
+            .into_iter()
+            .map(|(offset, local_edge_ids)| {
+                let components = compact_edge_component_path_at(&lane.native_payload, offset)
+                    .unwrap_or_default();
+                let terminal_feature_ref = compact_edge_owner_feature_at(
+                    &lane.native_payload,
+                    offset,
+                    &components,
+                    &history_features,
+                    &feature.id,
+                );
+                let producer_feature_refs = compact_edge_producer_features_at(
+                    &lane.native_payload,
+                    offset,
+                    &components,
+                    &history_features,
+                    &feature.id,
+                );
+                FeatureInputEdgeSelection {
+                    id: format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
+                    parent: lane.id.clone(),
+                    ordinal: 0,
+                    offset: offset as u64,
+                    object_name_ref: name.id.clone(),
+                    feature_ref: feature.id.clone(),
+                    local_edge_ids,
+                    components,
+                    producer_feature_refs,
+                    terminal_feature_ref,
+                }
+            })
+            .collect::<Vec<_>>();
+        for mut selection in input_owned_edge_selections(feature_selections) {
+            selection.ordinal = result.len() as u32;
+            result.push(selection);
         }
     }
     result
+}
+
+fn input_owned_edge_selections(
+    mut selections: Vec<FeatureInputEdgeSelection>,
+) -> Vec<FeatureInputEdgeSelection> {
+    if selections
+        .iter()
+        .any(|selection| !selection.producer_feature_refs.is_empty())
+    {
+        selections.retain(|selection| !selection.producer_feature_refs.is_empty());
+    }
+    selections
 }
 
 fn compact_surface_selections(
@@ -39151,10 +39170,11 @@ mod profile_join_tests {
         bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
         declared_line_reference_directions, dimensioned_circle_surface_transforms,
         dimensioned_circle_transform, fitted_marker_circle, implicit_circle_marker,
-        inferred_point_coordinates_by_index, legacy_terminal_profile_indexed_endpoints,
-        line_endpoint_markers, line_reference_direction, linear_pattern_display_directions,
-        marker_entities, marker_owns_constraint, marker_point_locus, marker_relation_is_inactive,
-        owned_relation_parameters, profile_loci_by_marker, project_compact_edge_selections,
+        inferred_point_coordinates_by_index, input_owned_edge_selections,
+        legacy_terminal_profile_indexed_endpoints, line_endpoint_markers, line_reference_direction,
+        linear_pattern_display_directions, marker_entities, marker_owns_constraint,
+        marker_point_locus, marker_relation_is_inactive, owned_relation_parameters,
+        profile_loci_by_marker, project_compact_edge_selections,
         project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
         project_relation_point_geometry, project_relation_solved_point_geometry,
@@ -39308,6 +39328,37 @@ mod profile_join_tests {
             "sldprt:feature-input:edge-selection-vectors:1,2;3,4;1,2"
         );
         assert_eq!(features[1].dependencies, vec![FeatureId("producer".into())]);
+    }
+
+    #[test]
+    fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
+        let selection = |ordinal, producer: Option<&str>| FeatureInputEdgeSelection {
+            id: format!("selection-{ordinal}"),
+            parent: "lane".into(),
+            ordinal,
+            offset: u64::from(ordinal),
+            object_name_ref: "name".into(),
+            feature_ref: "consumer".into(),
+            local_edge_ids: vec![ordinal],
+            components: Vec::new(),
+            producer_feature_refs: producer.into_iter().map(str::to_string).collect(),
+            terminal_feature_ref: producer.map(str::to_string),
+        };
+        let retained = input_owned_edge_selections(vec![
+            selection(0, Some("input")),
+            selection(1, None),
+            selection(2, Some("input")),
+        ]);
+        assert_eq!(
+            retained
+                .iter()
+                .map(|selection| selection.ordinal)
+                .collect::<Vec<_>>(),
+            vec![0, 2]
+        );
+
+        let retained = input_owned_edge_selections(vec![selection(3, None), selection(4, None)]);
+        assert_eq!(retained.len(), 2);
     }
 
     #[test]
