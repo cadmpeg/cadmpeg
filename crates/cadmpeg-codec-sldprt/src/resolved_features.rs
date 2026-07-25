@@ -1674,7 +1674,7 @@ mod marker_tests {
         compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
         compact_component_plane_frame, compact_curve_endpoint_indices,
         compact_edge_component_path_at, compact_edge_path_value, compact_edge_selection_at,
-        compact_edge_selection_set_value, compact_extrusion_blind_at,
+        compact_edge_selection_set_value, compact_edge_selections, compact_extrusion_blind_at,
         compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
@@ -10193,6 +10193,94 @@ mod marker_tests {
         assert_eq!(
             compact_edge_selection_set_value(&[&selection]),
             "sldprt:feature-input:edge-ids:4,_,4,0"
+        );
+    }
+
+    #[test]
+    fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
+        let native_feature =
+            |id: &str, name: &str, source_id: u32, ordinal: u32, input_class: &str| Feature {
+                id: id.into(),
+                parent: "history".into(),
+                xml_tag: "Feature".into(),
+                tree_parent: None,
+                source_id: Some(source_id.to_string()),
+                parent_source_id: None,
+                ordinal,
+                name: name.into(),
+                kind: "Feature".into(),
+                input_class: Some(input_class.into()),
+                suppressed: false,
+                parameters: BTreeMap::new(),
+                dimension_properties: BTreeMap::new(),
+                properties: BTreeMap::new(),
+                text: None,
+                content: Vec::new(),
+            };
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                native_feature("producer", "Producer", 1, 0, "moExtrusion_c"),
+                native_feature("consumer", "Consumer", 2, 1, "Chamfer_c"),
+            ],
+        };
+        let marker = 52;
+        let mut payload = vec![0; 96];
+        payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let entry = marker + 18;
+        payload[entry..entry + 2].copy_from_slice(&0x8130u16.to_le_bytes());
+        payload[entry + 4..entry + 8].copy_from_slice(&[0x2a, 0x81, 0x2c, 1]);
+        payload[entry + 8..entry + 12].copy_from_slice(&1u32.to_le_bytes());
+        payload[entry + 12..entry + 16].copy_from_slice(&[0x24, 1, 0xd3, 0x48]);
+        payload[entry + 16..entry + 20].copy_from_slice(&7u32.to_le_bytes());
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: vec![
+                FeatureInputName {
+                    id: "producer-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 0,
+                    offset: 0,
+                    object_id: Some(1),
+                    value: "Producer".into(),
+                },
+                FeatureInputName {
+                    id: "consumer-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 1,
+                    offset: 24,
+                    object_id: Some(2),
+                    value: "Consumer".into(),
+                },
+            ],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        let selections = compact_edge_selections(&[history], &lane);
+
+        assert_eq!(selections.len(), 1);
+        assert_eq!(selections[0].feature_ref, "consumer");
+        assert_eq!(selections[0].local_edge_ids, [7]);
+        assert_eq!(
+            selections[0].terminal_feature_ref.as_deref(),
+            Some("producer")
         );
     }
 
@@ -18766,15 +18854,14 @@ fn compact_edge_selections(
         .classes
         .iter()
         .filter(|class| class.name == "moCompEdge_c");
-    let Some(compact_edge_class) = compact_edge_classes.next() else {
-        return result;
-    };
-    if compact_edge_classes.next().is_some() {
-        return result;
-    }
-    let class_name_end = usize::try_from(compact_edge_class.offset)
-        .ok()
-        .and_then(|offset| offset.checked_add(6 + compact_edge_class.name.len()));
+    let compact_edge_class = compact_edge_classes
+        .next()
+        .filter(|_| compact_edge_classes.next().is_none());
+    let class_name_end = compact_edge_class.and_then(|class| {
+        usize::try_from(class.offset)
+            .ok()?
+            .checked_add(6 + class.name.len())
+    });
     let compact_edge_token = class_name_end.and_then(|offset| {
         Some(u16::from_le_bytes(
             lane.native_payload
@@ -18797,8 +18884,8 @@ fn compact_edge_selections(
             .get(object_index + 1)
             .and_then(|(next, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let direct_child = usize::try_from(compact_edge_class.offset)
-            .ok()
+        let direct_child = compact_edge_class
+            .and_then(|class| usize::try_from(class.offset).ok())
             .filter(|offset| (start..end).contains(offset));
         let mut selections = Vec::new();
         if let Some(child_start) = direct_child {
