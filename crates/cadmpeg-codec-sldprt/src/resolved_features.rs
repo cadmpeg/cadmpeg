@@ -16162,8 +16162,8 @@ pub(crate) fn project_hole_axes(
                 }
             }
             if spatial_position_features.contains(position_feature.id.as_str()) {
-                if let Some(bore_placement) = unique_bore_placement(radius, topology) {
-                    placements.push(bore_placement);
+                if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
+                    *placements = bore_placements;
                     continue;
                 }
             }
@@ -16324,10 +16324,10 @@ fn plane_owned_bore_placements(
     (!placements.is_empty()).then_some(placements)
 }
 
-fn unique_bore_placement(radius: f64, topology: &HoleTopology<'_>) -> Option<HolePlacement> {
+fn bore_carrier_placements(radius: f64, topology: &HoleTopology<'_>) -> Option<Vec<HolePlacement>> {
     const AXIS_QUANTUM: f64 = 1.0e-8;
     let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
-    let carriers = cylindrical_bore_axes(radius, topology)
+    let mut carriers = cylindrical_bore_axes(radius, topology)
         .into_iter()
         .map(|(origin, axis)| {
             let axis = canonical_axis(axis);
@@ -16352,10 +16352,15 @@ fn unique_bore_placement(radius: f64, topology: &HoleTopology<'_>) -> Option<Hol
                 },
             )
         })
-        .collect::<HashMap<_, _>>();
-    let mut carriers = carriers.into_values();
-    let placement = carriers.next()?;
-    carriers.next().is_none().then_some(placement)
+        .collect::<HashMap<_, _>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    carriers.sort_by_key(|(key, _)| *key);
+    let placements = carriers
+        .into_iter()
+        .map(|(_, placement)| placement)
+        .collect::<Vec<_>>();
+    (!placements.is_empty()).then_some(placements)
 }
 
 fn cylindrical_face_axes_at_depth(
@@ -17285,12 +17290,12 @@ mod hole_axis_tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
 
     use super::{
-        compact_position_loci, cylindrical_face_axes_at_depth, cylindrical_support_normal,
-        enrich_history_hole_constructions, enrich_history_parameters, hole_position_sketch_source,
-        hole_temporary_axis, marker_pattern_bore_axes, plane_owned_bore_placements,
-        profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
-        project_profiled_hole_constructions, project_spatial_hole_position_sketches,
-        unique_bore_placement, HoleTopology,
+        bore_carrier_placements, compact_position_loci, cylindrical_face_axes_at_depth,
+        cylindrical_support_normal, enrich_history_hole_constructions, enrich_history_parameters,
+        hole_position_sketch_source, hole_temporary_axis, marker_pattern_bore_axes,
+        plane_owned_bore_placements, profiled_hole_construction, project_hole_axes,
+        project_hole_position_sketches, project_profiled_hole_constructions,
+        project_spatial_hole_position_sketches, HoleTopology,
     };
     use crate::records::{
         FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -17449,7 +17454,7 @@ mod hole_axis_tests {
             unreachable!();
         };
         origin.z = 20.0;
-        let faces = [
+        let mut faces = [
             Face {
                 id: FaceId("bore".into()),
                 shell: ShellId("shell".into()),
@@ -17503,7 +17508,7 @@ mod hole_axis_tests {
             }])
         );
         assert_eq!(
-            unique_bore_placement(
+            bore_carrier_placements(
                 2.0,
                 &HoleTopology {
                     surfaces: &surfaces,
@@ -17515,10 +17520,35 @@ mod hole_axis_tests {
                     points: &[],
                 },
             ),
-            Some(cadmpeg_ir::features::HolePlacement::Axis {
+            Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
                 origin: Point3::new(-5.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
-            })
+            }])
+        );
+        faces[1].sense = Sense::Reversed;
+        assert_eq!(
+            bore_carrier_placements(
+                2.0,
+                &HoleTopology {
+                    surfaces: &surfaces,
+                    faces: &faces,
+                    loops: &[],
+                    coedges: &[],
+                    edges: &[],
+                    vertices: &[],
+                    points: &[],
+                },
+            ),
+            Some(vec![
+                cadmpeg_ir::features::HolePlacement::Axis {
+                    origin: Point3::new(-5.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                cadmpeg_ir::features::HolePlacement::Axis {
+                    origin: Point3::new(5.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+            ])
         );
     }
 
