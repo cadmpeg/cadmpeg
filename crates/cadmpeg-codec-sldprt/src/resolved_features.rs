@@ -16253,6 +16253,14 @@ pub(crate) fn project_hole_axes(
                     }
                 }
             }
+            if !spatial_position_features.contains(position_feature.id.as_str()) {
+                if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
+                    if bore_placements.len() == 1 {
+                        *placements = bore_placements;
+                        continue;
+                    }
+                }
+            }
             if spatial_position_features.contains(position_feature.id.as_str()) {
                 if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
                     *placements = bore_placements;
