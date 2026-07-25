@@ -831,7 +831,14 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf,
     ];
     if compact_legacy_marker_body(payload, offset) {
-        if marker_native_code(payload, offset) != Some(1)
+        let coordinate_kind = matches!(
+            (
+                marker_native_code(payload, offset),
+                payload.get(offset + 19..offset + 23)
+            ),
+            (Some(1), Some([0x04, 0x00, 0x02, 0x00])) | (Some(0), Some([0x05, 0x00, 0x01, 0x00]))
+        );
+        if !coordinate_kind
             || marker_profile_curve_role(payload, offset) != Some(1)
             || payload.get(offset + 42..offset + 44) != Some(&[0x1e, 0x00])
         {
@@ -1349,10 +1356,8 @@ fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
 
 fn compact_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
     compact_legacy_marker_body(payload, offset)
-        && marker_native_code(payload, offset) == Some(1)
         && marker_profile_curve_role(payload, offset) == Some(1)
-        && payload.get(offset + 42..offset + 44) == Some(&[0x1e, 0x00])
-        && finite_coordinate_pair(payload, offset.saturating_add(44)).is_some()
+        && marker_coordinates(payload, offset).is_some()
 }
 
 fn packed_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
@@ -5184,6 +5189,39 @@ mod marker_tests {
         let entities = sketch_input_entities(&payload, "lane");
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+
+        payload[68..].fill(0);
+        payload.resize(90 + LEGACY_SKETCH_MARKER.len(), 0);
+        payload[58..62].copy_from_slice(&1u32.to_le_bytes());
+        for cell in payload[64..80].chunks_exact_mut(4) {
+            cell.copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[82..86].copy_from_slice(&76u32.to_le_bytes());
+        payload[90..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(
+            compact_legacy_curve_endpoint_indices(&payload, 0),
+            Some([30, 31])
+        );
+    }
+
+    #[test]
+    fn compact_legacy_geometry_locus_carries_profile_coordinates() {
+        let mut payload = vec![0; 120 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&0u32.to_le_bytes());
+        payload[17..23].copy_from_slice(&[0x00, 0x00, 0x05, 0x00, 0x01, 0x00]);
+        payload[23..25].copy_from_slice(&1u16.to_le_bytes());
+        payload[31] = 0x04;
+        payload[42..44].copy_from_slice(&[0x1e, 0x00]);
+        payload[44..52].copy_from_slice(&0.025f64.to_le_bytes());
+        payload[52..60].copy_from_slice(&(-0.004f64).to_le_bytes());
+        payload[120..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
+        let entities = sketch_input_entities(&payload, "lane");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].kind, SketchInputKind::Point);
     }
 
     #[test]
@@ -35577,6 +35615,21 @@ fn legacy_profile_roster_selected_axis_endpoint_indices(
 }
 
 fn compact_legacy_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    let short_record = sketch_marker_prefix_at(payload, offset.checked_add(68)?);
+    let extended_record = payload.get(offset + 58..offset + 62) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 62..offset + 64) == Some(&0u16.to_le_bytes())
+        && payload
+            .get(offset + 64..offset + 80)
+            .is_some_and(|trailer| {
+                trailer
+                    .chunks_exact(4)
+                    .all(|cell| cell == (-2i32).to_le_bytes())
+            })
+        && payload.get(offset + 80..offset + 82) == Some(&0u16.to_le_bytes())
+        && payload
+            .get(offset + 82..offset + 86)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.checked_add(90)?);
     if !compact_legacy_marker_body(payload, offset)
         || marker_native_code(payload, offset) != Some(0)
         || marker_profile_curve_role(payload, offset) != Some(1)
@@ -35584,7 +35637,7 @@ fn compact_legacy_curve_endpoint_indices(payload: &[u8], offset: usize) -> Optio
         || payload.get(offset + 31..offset + 42) != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         || payload.get(offset + 46..offset + 50) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
-        || !sketch_marker_prefix_at(payload, offset.checked_add(68)?)
+        || !(short_record || extended_record)
     {
         return None;
     }
