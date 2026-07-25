@@ -16146,9 +16146,50 @@ pub(crate) struct HoleTopology<'a> {
     pub(crate) points: &'a [Point],
 }
 
+fn direct_hole_position_feature<'a>(
+    hole: &crate::records::Feature,
+    histories: &'a [crate::records::FeatureHistory],
+    model_sketches: &HashMap<String, cadmpeg_ir::sketches::SketchId>,
+    sketch_entities: &[SketchEntity],
+) -> Option<&'a crate::records::Feature> {
+    let children = hole.properties.get("DissectableChildren")?;
+    let history = histories
+        .iter()
+        .find(|history| history.features.iter().any(|feature| feature.id == hole.id))?;
+    let mut direct_sketches = children
+        .split(',')
+        .map(str::trim)
+        .filter(|source| !source.is_empty())
+        .filter_map(|source| {
+            let mut matches = history.features.iter().filter(|candidate| {
+                candidate.source_id.as_deref() == Some(source) || candidate.id == source
+            });
+            let child = matches.next()?;
+            matches.next().is_none().then_some(child)
+        })
+        .filter(|child| classify(child) == Some(FeatureClass::Sketch))
+        .collect::<Vec<_>>();
+    direct_sketches.sort_by_key(|child| child.id.as_str());
+    direct_sketches.dedup_by_key(|child| child.id.as_str());
+    let [first, second] = direct_sketches.as_slice() else {
+        return None;
+    };
+    let is_axial_profile = |child: &&crate::records::Feature| {
+        model_sketches.get(&child.id).is_some_and(|sketch| {
+            profiled_hole_construction(child, sketch, sketch_entities).is_some()
+        })
+    };
+    match (is_axial_profile(first), is_axial_profile(second)) {
+        (true, false) => Some(second),
+        (false, true) => Some(first),
+        _ => None,
+    }
+}
+
 /// Bind Hole placements to uniquely owned or position-constrained bore axes.
 pub(crate) fn project_hole_axes(
     model_features: &mut [cadmpeg_ir::features::Feature],
+    sketch_entities: &[SketchEntity],
     topology: &HoleTopology<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -16169,10 +16210,33 @@ pub(crate) fn project_hole_axes(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
-    let position_features = native_features
+    let model_sketches = model_features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((feature.native_ref.clone()?, sketch.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let hole_positions = native_features
         .values()
         .filter(|feature| classify(feature) == Some(FeatureClass::Hole))
-        .filter_map(|feature| hole_position_feature(feature, histories, lanes))
+        .filter_map(|hole| {
+            Some((
+                hole.id.as_str(),
+                hole_position_feature(hole, histories, lanes).or_else(|| {
+                    direct_hole_position_feature(hole, histories, &model_sketches, sketch_entities)
+                })?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let position_features = hole_positions
+        .values()
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
     let feature_frames = lanes
@@ -16271,7 +16335,7 @@ pub(crate) fn project_hole_axes(
         else {
             continue;
         };
-        let Some(position_feature) = hole_position_feature(native_feature, histories, lanes) else {
+        let Some(position_feature) = hole_positions.get(native_feature.id.as_str()).copied() else {
             continue;
         };
         let mut frames = lanes.iter().filter_map(|lane| {
@@ -17413,7 +17477,7 @@ fn compact_position_assignments(
 
 #[cfg(test)]
 mod hole_axis_tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use cadmpeg_ir::features::{
         Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, Termination,
@@ -17431,11 +17495,11 @@ mod hole_axis_tests {
 
     use super::{
         bore_carrier_placements, compact_position_loci, cylindrical_face_axes_at_depth,
-        cylindrical_support_normal, enrich_history_hole_constructions, enrich_history_parameters,
-        hole_position_sketch_source, hole_temporary_axis, marker_pattern_bore_axes,
-        plane_owned_bore_placements, profiled_hole_construction, project_hole_axes,
-        project_hole_position_sketches, project_profiled_hole_constructions,
-        project_spatial_hole_position_sketches, HoleTopology,
+        cylindrical_support_normal, direct_hole_position_feature,
+        enrich_history_hole_constructions, enrich_history_parameters, hole_position_sketch_source,
+        hole_temporary_axis, marker_pattern_bore_axes, plane_owned_bore_placements,
+        profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
+        project_profiled_hole_constructions, project_spatial_hole_position_sketches, HoleTopology,
     };
     use crate::records::{
         FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -18045,6 +18109,8 @@ mod hole_axis_tests {
         profile.id = "native-profile".into();
         profile.source_id = Some("9".into());
         profile.ordinal = 1;
+        profile.xml_tag = "Sketch".into();
+        profile.kind = "Sketch".into();
         profile.input_class = Some("moProfileFeature_c".into());
         profile.parameters = [
             ("a".into(), "8.6".into()),
@@ -18062,12 +18128,9 @@ mod hole_axis_tests {
         position.xml_tag = "Sketch".into();
         position.kind = "Sketch".into();
         position.input_class = Some("moProfileFeature_c".into());
-        position.parameters = [
-            ("diameter".into(), "<MOD-DIAM>50".into()),
-            ("depth".into(), "35".into()),
-        ]
-        .into_iter()
-        .collect();
+        position.parameters = [("D1".into(), "50".into()), ("D2".into(), "35".into())]
+            .into_iter()
+            .collect();
         history.features.push(position);
 
         let sketch = SketchId("profile".into());
@@ -18114,6 +18177,30 @@ mod hole_axis_tests {
         };
         let mut features = vec![model_hole(), sketch_feature, position_feature];
         let lane = lane_with_position_reference(6);
+        let model_sketches = features
+            .iter()
+            .filter_map(|feature| {
+                let FeatureDefinition::Sketch {
+                    sketch: Some(sketch),
+                    ..
+                } = &feature.definition
+                else {
+                    return None;
+                };
+                Some((feature.native_ref.clone()?, sketch.clone()))
+            })
+            .collect::<HashMap<_, _>>();
+        let histories = [history.clone()];
+        assert_eq!(
+            direct_hole_position_feature(
+                &histories[0].features[0],
+                &histories,
+                &model_sketches,
+                &entities,
+            )
+            .map(|feature| feature.id.as_str()),
+            Some("native-position")
+        );
 
         project_profiled_hole_constructions(&mut features, &entities, &[history], &[lane]);
 
@@ -18906,6 +18993,7 @@ mod hole_axis_tests {
 
         project_hole_axes(
             &mut features,
+            &[],
             &HoleTopology {
                 surfaces: &surfaces,
                 faces: &[],
@@ -18930,6 +19018,7 @@ mod hole_axis_tests {
         surfaces.push(cylinder(2, 15.0));
         project_hole_axes(
             &mut features,
+            &[],
             &HoleTopology {
                 surfaces: &surfaces,
                 faces: &[],

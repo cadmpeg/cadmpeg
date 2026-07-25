@@ -8766,6 +8766,7 @@ pub(crate) fn project_configuration_sketch_states(
         );
         crate::resolved_features::project_hole_axes(
             &mut features,
+            &ir.model.sketch_entities,
             &crate::resolved_features::HoleTopology {
                 surfaces: &surfaces,
                 faces: &ir.model.faces,

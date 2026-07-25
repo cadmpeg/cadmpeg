@@ -1650,6 +1650,7 @@ fn build_geometry_ir(
     );
     crate::resolved_features::project_hole_axes(
         &mut ir.model.features,
+        &ir.model.sketch_entities,
         &crate::resolved_features::HoleTopology {
             surfaces: &ir.model.surfaces,
             faces: &ir.model.faces,
@@ -2349,6 +2350,7 @@ fn build_metadata_ir(
     );
     crate::resolved_features::project_hole_axes(
         &mut ir.model.features,
+        &ir.model.sketch_entities,
         &crate::resolved_features::HoleTopology {
             surfaces: &ir.model.surfaces,
             faces: &ir.model.faces,
