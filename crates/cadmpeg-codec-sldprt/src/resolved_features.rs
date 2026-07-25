@@ -15623,7 +15623,7 @@ pub(crate) fn project_profiled_hole_constructions(
                 .map(move |feature| (feature.id.as_str(), history_index))
         })
         .collect::<HashMap<_, _>>();
-    let mut unowned_incomplete_holes = vec![0_usize; histories.len()];
+    let mut unowned_incomplete_holes = vec![Vec::<(String, u32)>::new(); histories.len()];
     for feature in features.iter() {
         let FeatureDefinition::Hole {
             diameter,
@@ -15655,7 +15655,17 @@ pub(crate) fn project_profiled_hole_constructions(
             })
             .is_some_and(|native| !native.properties.contains_key("DissectableChildren"));
         if unowned {
-            unowned_incomplete_holes[*history_index] += 1;
+            let native = feature
+                .native_ref
+                .as_deref()
+                .expect("unowned holes carry a native reference");
+            let ordinal = histories[*history_index]
+                .features
+                .iter()
+                .find(|candidate| candidate.id == native)
+                .expect("native hole was resolved above")
+                .ordinal;
+            unowned_incomplete_holes[*history_index].push((native.into(), ordinal));
         }
     }
     let profiled_constructions = histories
@@ -15681,11 +15691,32 @@ pub(crate) fn project_profiled_hole_constructions(
                 .filter(|profile| !claimed_profiles.contains(&profile.id))
                 .filter_map(|profile| {
                     let sketch = model_sketches.get(&profile.id)?;
-                    profiled_hole_construction(profile, sketch, entities)
+                    Some((
+                        profile.ordinal,
+                        profiled_hole_construction(profile, sketch, entities)?,
+                    ))
                 })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
+    let fallback_constructions = unowned_incomplete_holes
+        .iter_mut()
+        .zip(profiled_constructions.iter())
+        .flat_map(|(holes, profiles)| {
+            holes.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+            let mut profiles = profiles.clone();
+            profiles.sort_by_key(|(ordinal, _)| *ordinal);
+            (holes.len() == profiles.len())
+                .then_some(
+                    holes
+                        .iter()
+                        .zip(profiles)
+                        .map(|((hole, _), (_, construction))| (hole.clone(), construction)),
+                )
+                .into_iter()
+                .flatten()
+        })
+        .collect::<HashMap<_, _>>();
     for feature in features.iter_mut() {
         let FeatureDefinition::Hole {
             diameter,
@@ -15737,10 +15768,7 @@ pub(crate) fn project_profiled_hole_constructions(
             if native.properties.contains_key("DissectableChildren") {
                 return None;
             }
-            let [construction] = profiled_constructions[history_index].as_slice() else {
-                return None;
-            };
-            (unowned_incomplete_holes[history_index] == 1).then(|| construction.clone())
+            fallback_constructions.get(&native.id).cloned()
         });
         let Some(construction) = construction else {
             continue;
@@ -18124,12 +18152,16 @@ mod hole_axis_tests {
     }
 
     #[test]
-    fn singleton_profile_fallback_excludes_claimed_profiles() {
+    fn ordered_profile_fallback_excludes_claimed_profiles() {
         let mut history = native_history();
+        let mut second_hole = history.features[0].clone();
+        second_hole.id = "second-hole".into();
+        second_hole.source_id = Some("8".into());
+        second_hole.ordinal = 1;
         let mut claimed_hole = history.features[0].clone();
         claimed_hole.id = "claimed-hole".into();
-        claimed_hole.source_id = Some("8".into());
-        claimed_hole.ordinal = 1;
+        claimed_hole.source_id = Some("11".into());
+        claimed_hole.ordinal = 2;
         claimed_hole
             .properties
             .insert("DissectableChildren".into(), "9".into());
@@ -18148,11 +18180,16 @@ mod hole_axis_tests {
             .into();
             profile
         };
-        let claimed_profile = profile("claimed-profile", "9", 2, "15", "23");
-        let unclaimed_profile = profile("unclaimed-profile", "10", 3, "4.2", "6.8");
-        history
-            .features
-            .extend([claimed_hole, claimed_profile, unclaimed_profile]);
+        let claimed_profile = profile("claimed-profile", "9", 3, "15", "23");
+        let first_profile = profile("first-profile", "10", 4, "4.2", "6.8");
+        let second_profile = profile("second-profile", "12", 5, "6", "14");
+        history.features.extend([
+            second_hole,
+            claimed_hole,
+            claimed_profile,
+            first_profile,
+            second_profile,
+        ]);
 
         let model_sketch = |id: &str, sketch: &str, ordinal| cadmpeg_ir::features::Feature {
             id: FeatureId(format!("{id}-feature")),
@@ -18172,10 +18209,16 @@ mod hole_axis_tests {
             },
             native_ref: Some(id.into()),
         };
+        let mut second_model_hole = model_hole();
+        second_model_hole.id = FeatureId("second-model-hole".into());
+        second_model_hole.ordinal = 1;
+        second_model_hole.native_ref = Some("second-hole".into());
         let mut features = vec![
             model_hole(),
+            second_model_hole,
             model_sketch("claimed-profile", "claimed-sketch", 1),
-            model_sketch("unclaimed-profile", "unclaimed-sketch", 2),
+            model_sketch("first-profile", "first-sketch", 2),
+            model_sketch("second-profile", "second-sketch", 3),
         ];
 
         project_profiled_hole_constructions(&mut features, &[], &[history], &[]);
@@ -18186,6 +18229,16 @@ mod hole_axis_tests {
                 diameter: Some(Length(4.2)),
                 extent: Some(Termination::Blind {
                     length: Length(6.8)
+                }),
+                ..
+            }
+        ));
+        assert!(matches!(
+            features[1].definition,
+            FeatureDefinition::Hole {
+                diameter: Some(Length(6.0)),
+                extent: Some(Termination::Blind {
+                    length: Length(14.0)
                 }),
                 ..
             }
