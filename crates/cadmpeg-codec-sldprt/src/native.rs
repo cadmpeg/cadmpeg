@@ -625,6 +625,11 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            let mut surface_features = features.clone();
+            crate::resolved_features::enrich_feature_object_sources(
+                &mut surface_features,
+                std::slice::from_ref(lane),
+            );
             lane.surface_selections = surface_selections
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -650,14 +655,14 @@ impl SldprtNative {
                                 &lane.native_payload,
                                 offset,
                                 &record.components,
-                                &features,
+                                &surface_features,
                             )
                         });
                     record.producer_feature_refs =
                         crate::resolved_features::surface_selection_producer_features(
                             &record.components,
                             record.terminal_feature_ref.as_deref(),
-                            &features,
+                            &surface_features,
                         );
                 }
             }
@@ -671,14 +676,14 @@ impl SldprtNative {
                 }) || crate::resolved_features::surface_selection_producer_features(
                     &record.components,
                     record.terminal_feature_ref.as_deref(),
-                    &features,
+                    &surface_features,
                 ) != record.producer_feature_refs
                     || usize::try_from(record.offset).ok().and_then(|offset| {
                         crate::resolved_features::surface_selection_terminal_feature_at(
                             &lane.native_payload,
                             offset,
                             &record.components,
-                            &features,
+                            &surface_features,
                         )
                     }) != record.terminal_feature_ref
             }) {
@@ -860,6 +865,11 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            let mut surface_features = features.clone();
+            crate::resolved_features::enrich_feature_object_sources(
+                &mut surface_features,
+                std::slice::from_ref(lane),
+            );
             if let Some(record) = lane.surface_selections.iter().find(|record| {
                 record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
@@ -868,14 +878,14 @@ impl SldprtNative {
                     || crate::resolved_features::surface_selection_producer_features(
                         &record.components,
                         record.terminal_feature_ref.as_deref(),
-                        &features,
+                        &surface_features,
                     ) != record.producer_feature_refs
                     || usize::try_from(record.offset).ok().and_then(|offset| {
                         crate::resolved_features::surface_selection_terminal_feature_at(
                             &lane.native_payload,
                             offset,
                             &record.components,
-                            &features,
+                            &surface_features,
                         )
                     }) != record.terminal_feature_ref
                     || !usize::try_from(record.offset).ok().is_some_and(|offset| {

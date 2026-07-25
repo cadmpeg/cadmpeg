@@ -1654,7 +1654,8 @@ mod marker_tests {
         extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
         extended_terminal_repeated_radial_circle_index,
         extended_wide_construction_line_roster_indices, fixed_reference_plane_frame,
-        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
+        generated_surface_identities, history_features_with_object_sources,
+        indexed_arc_uses_coordinate_center, indexed_profile_vertex,
         indexed_rectangle_from_line_cycle, inline_surface_reference_at,
         legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
         legacy_coordinate_circle_radius, legacy_coordinate_roster_selected_axis_endpoint_indices,
@@ -10763,6 +10764,75 @@ mod marker_tests {
     }
 
     #[test]
+    fn idless_history_features_use_unique_feature_input_object_sources() {
+        let feature = Feature {
+            id: "producer".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: None,
+            parent_source_id: None,
+            ordinal: 0,
+            name: "Producer".into(),
+            kind: "Feature".into(),
+            input_class: Some("ProducerClass".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature],
+        };
+        let mut lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: vec![FeatureInputName {
+                id: "name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                object_id: Some(233),
+                value: "Producer".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        let ambiguous_history = history.clone();
+        let resolved = history_features_with_object_sources(&[history], &lane);
+
+        assert_eq!(resolved[0].source_id.as_deref(), Some("233"));
+
+        lane.names.push(FeatureInputName {
+            id: "ambiguous-name".into(),
+            parent: "lane".into(),
+            ordinal: 1,
+            offset: 1,
+            object_id: Some(234),
+            value: "Producer".into(),
+        });
+        let ambiguous = history_features_with_object_sources(&[ambiguous_history], &lane);
+        assert_eq!(ambiguous[0].source_id, None);
+    }
+
+    #[test]
     fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
         let mut payload = vec![0; 240];
         let handles = 96;
@@ -18412,11 +18482,7 @@ fn compact_surface_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Vec<FeatureInputSurfaceSelection> {
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .cloned()
-        .collect::<Vec<_>>();
+    let history_features = history_features_with_object_sources(histories, lane);
     let mut classes = lane
         .classes
         .iter()
@@ -18568,6 +18634,43 @@ fn compact_surface_selections(
         }
     }
     result
+}
+
+fn history_features_with_object_sources(
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+) -> Vec<crate::records::Feature> {
+    let mut features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .cloned()
+        .collect::<Vec<_>>();
+    enrich_feature_object_sources(&mut features, std::slice::from_ref(lane));
+    features
+}
+
+/// Bind flat idless history records to identities from unique feature-input
+/// object names without changing records that already carry source identity.
+pub(crate) fn enrich_feature_object_sources(
+    features: &mut [crate::records::Feature],
+    lanes: &[FeatureInputLane],
+) {
+    for feature in features
+        .iter_mut()
+        .filter(|feature| feature.source_id.is_none())
+    {
+        let sources = lanes
+            .iter()
+            .filter_map(|lane| feature_object_name(feature, lane)?.object_id)
+            .collect::<HashSet<_>>();
+        if sources.len() == 1 {
+            let source = sources
+                .iter()
+                .next()
+                .expect("singleton source set has one member");
+            feature.source_id = Some(source.to_string());
+        }
+    }
 }
 
 fn cosmetic_thread_cylinder_references(
