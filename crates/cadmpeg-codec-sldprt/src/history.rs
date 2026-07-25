@@ -3591,6 +3591,62 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
+        for d1 in ["0", "6.2831853071796rad"] {
+            let mut thread = feature("thread", Some("42"), 0);
+            thread.input_class = Some("moCosmeticThread_c".into());
+            thread.parameters.insert("D1".into(), d1.into());
+            thread
+                .parameters
+                .insert("thread size".into(), "<MOD-DIAM>4.9".into());
+            let history = FeatureHistory {
+                id: "history".into(),
+                part_name: None,
+                properties: BTreeMap::new(),
+                content: Vec::new(),
+                configurations: Vec::new(),
+                features: vec![thread],
+            };
+
+            let projected = project_features(&[history]);
+            assert_eq!(
+                projected[0].definition,
+                FeatureDefinition::CosmeticThread {
+                    face: FaceSelection::Unresolved,
+                    diameter: Some(Length(4.9)),
+                    extent: Some(CosmeticThreadExtent::Through),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn cosmetic_thread_requires_one_named_diameter() {
+        let mut thread = feature("thread", Some("42"), 0);
+        thread.input_class = Some("moCosmeticThread_c".into());
+        thread
+            .parameters
+            .insert("major".into(), "<MOD-DIAM>8".into());
+        thread
+            .parameters
+            .insert("minor".into(), "<MOD-DIAM>6.8".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![thread],
+        };
+
+        let projected = project_features(&[history]);
+        let FeatureDefinition::CosmeticThread { diameter, .. } = &projected[0].definition else {
+            panic!("expected a cosmetic thread");
+        };
+        assert_eq!(*diameter, None);
+    }
+
+    #[test]
     fn profile_consumers_require_a_regeneration_profile() {
         let mut definition = FeatureDefinition::Extrude {
             profile: ProfileRef::Native("sketch-native".into()),
@@ -5362,26 +5418,41 @@ fn project_definition(
 }
 
 fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
+    let diameter = feature
+        .parameters
+        .get("D2")
+        .and_then(|value| parse_dimension_display_length(value))
+        .or_else(|| {
+            let mut tagged = feature
+                .parameters
+                .values()
+                .filter(|value| strip_diameter_modifier(value).is_some())
+                .filter_map(|value| parse_dimension_display_length(value));
+            let diameter = tagged.next()?;
+            tagged.next().is_none().then_some(diameter)
+        })
+        .filter(|value| *value > 0.0)
+        .map(Length);
+    let extent = match feature.parameters.get("D1") {
+        Some(value) => parse_positive_dimension_length_mm(value)
+            .map(|length| CosmeticThreadExtent::Blind {
+                length: Length(length),
+            })
+            .or_else(|| {
+                (parse_angle_rad(value).is_some()
+                    || parse_dimension_display_length(value) == Some(0.0))
+                .then_some(CosmeticThreadExtent::Through)
+            }),
+        None => Some(CosmeticThreadExtent::Through),
+    };
     FeatureDefinition::CosmeticThread {
         face: feature
             .properties
             .get("Face")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        diameter: feature
-            .parameters
-            .get("D2")
-            .and_then(|value| parse_dimension_display_length(value))
-            .filter(|value| *value > 0.0)
-            .map(Length),
-        extent: match feature.parameters.get("D1") {
-            Some(value) => parse_positive_dimension_length_mm(value).map(|length| {
-                CosmeticThreadExtent::Blind {
-                    length: Length(length),
-                }
-            }),
-            None => Some(CosmeticThreadExtent::Through),
-        },
+        diameter,
+        extent,
     }
 }
 
