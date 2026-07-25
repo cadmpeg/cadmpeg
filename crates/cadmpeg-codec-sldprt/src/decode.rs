@@ -1631,6 +1631,7 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &histories,
+        &native.feature_input_lanes,
     );
     crate::resolved_features::project_hole_position_sketches(
         &mut ir.model.features,
@@ -2329,6 +2330,7 @@ fn build_metadata_ir(
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &histories,
+        &lanes,
     );
     crate::resolved_features::project_hole_position_sketches(
         &mut ir.model.features,

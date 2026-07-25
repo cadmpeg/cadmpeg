@@ -8502,6 +8502,7 @@ pub(crate) fn project_configuration_sketch_states(
             &mut features,
             &ir.model.sketch_entities,
             histories,
+            scoped_lanes,
         );
         crate::resolved_features::project_hole_position_sketches(
             &mut features,
