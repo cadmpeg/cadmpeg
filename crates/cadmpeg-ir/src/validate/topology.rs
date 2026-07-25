@@ -3025,10 +3025,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                     HoleKind::Counterdrill {
                         diameter,
+                        entry_diameter,
                         depth,
                         angle,
                     } => {
                         positive_feature_length(*diameter)
+                            && entry_diameter.is_none_or(|entry| {
+                                positive_feature_length(entry) && entry.0 > diameter.0
+                            })
                             && positive_feature_length(*depth)
                             && angle.0.is_finite()
                             && angle.0 > 0.0

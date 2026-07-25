@@ -3046,8 +3046,11 @@ pub enum HoleKind {
     },
     /// Hole with a conical entry followed by a wider cylindrical recess.
     Counterdrill {
-        /// Entry-recess diameter.
+        /// Cylindrical entry-recess diameter.
         diameter: Length,
+        /// Diameter at the reference surface before the conical transition.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry_diameter: Option<Length>,
         /// Cylindrical recess depth.
         depth: Length,
         /// Included conical entry angle.

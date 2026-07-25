@@ -2594,6 +2594,35 @@ mod history_reference_tests {
             })
         );
 
+        let counterdrill = profile(&[
+            ("a", "12.4"),
+            ("b", "<MOD-DIAM>5.5"),
+            ("c", "118°"),
+            ("d", "<MOD-DIAM>10.05"),
+            ("e", "90°"),
+            ("f", "5.4"),
+            ("g", "<MOD-DIAM>9.95"),
+        ]);
+        let construction = hole_sketch_construction(&counterdrill).expect("counterdrill profile");
+        assert_eq!(construction.diameter, Length(5.5));
+        assert_eq!(construction.depth, Some(Length(12.4)));
+        assert_eq!(
+            construction.kind,
+            HoleKind::Counterdrill {
+                diameter: Length(9.95),
+                entry_diameter: Some(Length(10.05)),
+                depth: Length(5.4),
+                angle: Angle(std::f64::consts::FRAC_PI_2),
+            }
+        );
+        assert_eq!(
+            construction.bottom,
+            Some(HoleBottom::Angled {
+                included_angle: Angle(118_f64.to_radians()),
+                depth_to_tip: false,
+            })
+        );
+
         let placement_dimensions = profile(&[
             ("a", "<MOD-DIAM>9"),
             ("b", "6"),
@@ -7083,6 +7112,32 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     angle: *exit_angle,
                 }),
                 bottom: None,
+                taper_angle: None,
+            })
+        }
+        (
+            [diameter, recess_diameter, entry_diameter],
+            [recess_depth, drill_depth],
+            [entry_angle, drill_point_angle],
+        ) if diameter.0 < recess_diameter.0
+            && recess_diameter.0 < entry_diameter.0
+            && recess_depth.0 < drill_depth.0
+            && entry_angle.0 < drill_point_angle.0 =>
+        {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*drill_depth),
+                kind: HoleKind::Counterdrill {
+                    diameter: *recess_diameter,
+                    entry_diameter: Some(*entry_diameter),
+                    depth: *recess_depth,
+                    angle: *entry_angle,
+                },
+                exit_kind: None,
+                bottom: Some(HoleBottom::Angled {
+                    included_angle: *drill_point_angle,
+                    depth_to_tip: false,
+                }),
                 taper_angle: None,
             })
         }
