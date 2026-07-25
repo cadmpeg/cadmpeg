@@ -2567,6 +2567,33 @@ mod history_reference_tests {
         );
         assert_eq!(construction.taper_angle, Some(Angle(3.43_f64.to_radians())));
 
+        let counterbore_with_exit_countersink = profile(&[
+            ("a", "4.6"),
+            ("b", "<MOD-DIAM>8"),
+            ("c", "90°"),
+            ("d", "10"),
+            ("e", "<MOD-DIAM>4.5"),
+            ("f", "<MOD-DIAM>4.55"),
+        ]);
+        let construction = hole_sketch_construction(&counterbore_with_exit_countersink)
+            .expect("dual-ended profile");
+        assert_eq!(construction.diameter, Length(4.5));
+        assert_eq!(construction.depth, Some(Length(10.0)));
+        assert_eq!(
+            construction.kind,
+            HoleKind::Counterbore {
+                diameter: Length(8.0),
+                depth: Length(4.6),
+            }
+        );
+        assert_eq!(
+            construction.exit_kind,
+            Some(HoleKind::Countersink {
+                diameter: Length(4.55),
+                angle: Angle(std::f64::consts::FRAC_PI_2),
+            })
+        );
+
         let placement_dimensions = profile(&[
             ("a", "<MOD-DIAM>9"),
             ("b", "6"),
@@ -6758,6 +6785,13 @@ fn project_hole(
             .map_or(HoleKind::Simple, |profile| profile.kind)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
+        None | Some("Blind")
+            if profile
+                .as_ref()
+                .is_some_and(|profile| profile.exit_kind.is_some()) =>
+        {
+            Some(Termination::ThroughAll)
+        }
         None | Some("Blind") => feature
             .parameters
             .get("Depth")
@@ -6797,7 +6831,7 @@ fn project_hole(
             })
             .unwrap_or_default(),
         kind,
-        exit_kind: None,
+        exit_kind: profile.as_ref().and_then(|profile| profile.exit_kind),
         diameter,
         extent,
         bottom: profile.as_ref().and_then(|profile| profile.bottom),
@@ -6812,6 +6846,7 @@ struct HoleProfileConstruction {
     diameter: Length,
     depth: Option<Length>,
     kind: HoleKind,
+    exit_kind: Option<HoleKind>,
     bottom: Option<HoleBottom>,
     taper_angle: Option<Angle>,
 }
@@ -6899,6 +6934,7 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                 _ => None,
             },
             kind: HoleKind::Simple,
+            exit_kind: None,
             bottom: matches!(depths, [_]).then_some(HoleBottom::Flat),
             taper_angle: None,
         }),
@@ -6908,6 +6944,7 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
             kind: HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
             },
+            exit_kind: None,
             bottom: Some(HoleBottom::Angled {
                 included_angle: *drill_point_angle,
                 depth_to_tip: false,
@@ -6922,6 +6959,7 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     diameter: *entry_diameter,
                     angle: *angle,
                 },
+                exit_kind: None,
                 bottom: None,
                 taper_angle: None,
             })
@@ -6947,6 +6985,7 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     pitch: None,
                     drill_point_angle: *drill_point_angle,
                 },
+                exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
                     included_angle: *drill_point_angle,
                     depth_to_tip: false,
@@ -6971,6 +7010,7 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     pitch: None,
                     drill_point_angle: *drill_point_angle,
                 },
+                exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
                     included_angle: *drill_point_angle,
                     depth_to_tip: false,
@@ -6991,6 +7031,7 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     depth: *entry_depth,
                     drill_point_angle: *drill_point_angle,
                 },
+                exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
                     included_angle: *drill_point_angle,
                     depth_to_tip: false,
@@ -7008,6 +7049,39 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     diameter: *entry_diameter,
                     depth: *entry_depth,
                 },
+                exit_kind: None,
+                bottom: None,
+                taper_angle: None,
+            })
+        }
+        (
+            [diameter, exit_diameter, counterbore_diameter],
+            [counterbore_depth, through_depth],
+            [exit_angle],
+        ) if roles
+            == [
+                DimensionRole::Length,
+                DimensionRole::Diameter,
+                DimensionRole::Angle,
+                DimensionRole::Length,
+                DimensionRole::Diameter,
+                DimensionRole::Diameter,
+            ]
+            && diameter.0 < exit_diameter.0
+            && exit_diameter.0 < counterbore_diameter.0
+            && counterbore_depth.0 < through_depth.0 =>
+        {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*through_depth),
+                kind: HoleKind::Counterbore {
+                    diameter: *counterbore_diameter,
+                    depth: *counterbore_depth,
+                },
+                exit_kind: Some(HoleKind::Countersink {
+                    diameter: *exit_diameter,
+                    angle: *exit_angle,
+                }),
                 bottom: None,
                 taper_angle: None,
             })
