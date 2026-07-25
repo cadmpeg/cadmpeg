@@ -10079,6 +10079,34 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_edge_selection_accepts_ordinal_and_zero_separator() {
+        let marker = 12;
+        let mut payload = vec![0; 160];
+        payload[..4].copy_from_slice(&3u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let signature = [0x35, 0x80, 0x38, 0, 13, 1, 0, 0, 0x8a, 0xd8, 0x3f, 0x58];
+        let entry = |payload: &mut [u8], offset: usize, instance: u16, local_id: u32| {
+            payload[offset..offset + 2].copy_from_slice(&instance.to_le_bytes());
+            payload[offset + 4..offset + 16].copy_from_slice(&signature);
+            payload[offset + 16..offset + 20].copy_from_slice(&local_id.to_le_bytes());
+        };
+        let first = marker + 18;
+        entry(&mut payload, first, 0x803e, 1);
+        payload[first + 20..first + 24].copy_from_slice(&3u32.to_le_bytes());
+        let second = first + 28;
+        entry(&mut payload, second, 0x8385, 12);
+        payload[second + 20..second + 24].copy_from_slice(&[0xff; 4]);
+        let third = second + 28;
+        entry(&mut payload, third, 0x8385, 12);
+
+        assert_eq!(
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![1, 12, 12])
+        );
+    }
+
+    #[test]
     fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
         let marker = 12;
         let mut payload = vec![0; 160];
@@ -19732,13 +19760,12 @@ fn compact_edge_component_path(
     count: usize,
 ) -> Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
     let component_path = |count| {
-        compact_heterogeneous_component_path(payload, marker + 18, count)
-            .or_else(|| compact_wide_component_path(payload, marker + 18, count))
+        compact_wide_component_path(payload, marker + 18, count)
+            .or_else(|| compact_heterogeneous_component_path(payload, marker + 18, count))
     };
-    component_path(count)
-        .map(|(components, _)| (components, None))
-        .or_else(|| {
-            let (components, end) = (count > 1).then(|| component_path(count - 1)).flatten()?;
+    (count > 1)
+        .then(|| {
+            let (components, end) = component_path(count - 1)?;
             let trailer = payload.get(end..end + 36)?;
             if trailer[..8] != [1, 0, 0, 0, 0, 0, 0, 0]
                 || trailer[8..12] != [0x4a, 0x80, 0, 0]
@@ -19752,6 +19779,8 @@ fn compact_edge_component_path(
             let source = u32::from_le_bytes(trailer[16..20].try_into().ok()?);
             (source != 0).then_some((components, Some(source)))
         })
+        .flatten()
+        .or_else(|| component_path(count).map(|(components, _)| (components, None)))
 }
 
 pub(crate) fn compact_edge_owner_feature_at(
@@ -19933,14 +19962,17 @@ fn compact_component_path_with_layout(
                 6 => payload.get(cursor..cursor + 6).is_some_and(|bytes| {
                     u16::from_le_bytes([bytes[0], bytes[1]]) != u16::MAX && bytes[2..] == [0; 4]
                 }),
-                8 => matches!(
-                    payload.get(cursor..cursor + 8),
-                    Some(
-                        [0, 0, 0, 0, 0, 0, 0, 0]
-                            | [0xff, 0xff, 0xff, 0xff, 0 | 1, 0, 0, 0]
-                            | [0xa0, 0x86, 0x01, 0x00, 0, 0, 0, 0]
-                    )
-                ),
+                8 => {
+                    matches!(
+                        payload.get(cursor..cursor + 8),
+                        Some([0, 0, 0, 0, 0, 0, 0, 0] | [0xff, 0xff, 0xff, 0xff, 0 | 1, 0, 0, 0])
+                    ) || payload.get(cursor..cursor + 8).is_some_and(|bytes| {
+                        let ordinal = u32::from_le_bytes(
+                            bytes[..4].try_into().expect("four-byte path ordinal"),
+                        );
+                        ordinal != 0 && ordinal != u32::MAX && bytes[4..] == [0; 4]
+                    })
+                }
                 10 => {
                     payload.get(cursor..cursor + 10)
                         == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0])
