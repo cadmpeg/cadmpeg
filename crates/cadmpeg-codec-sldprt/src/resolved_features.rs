@@ -649,6 +649,7 @@ fn alternate_current_curve_body(payload: &[u8], offset: usize) -> bool {
 }
 
 fn compact_legacy_marker_body(payload: &[u8], offset: usize) -> bool {
+    let locus = payload.get(offset + 19..offset + 23);
     payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
         && (payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
             || payload.get(offset + 5..offset + 13)
@@ -658,7 +659,11 @@ fn compact_legacy_marker_body(payload: &[u8], offset: usize) -> bool {
             .and_then(|bytes| bytes.try_into().ok())
             .map(u32::from_le_bytes)
             .is_some_and(|code| matches!(code, 0 | 1))
-        && payload.get(offset + 17..offset + 23) == Some(&[0x00, 0x00, 0x04, 0x00, 0x02, 0x00])
+        && payload.get(offset + 17..offset + 19) == Some(&[0; 2])
+        && matches!(
+            locus,
+            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+        )
         && payload
             .get(offset + 23..offset + 25)
             .and_then(|bytes| bytes.try_into().ok())
@@ -5109,6 +5114,31 @@ mod marker_tests {
             compact_legacy_selected_axis_endpoint_indices(&payload, 200),
             Some([16, 1])
         );
+    }
+
+    #[test]
+    fn compact_legacy_geometry_locus_carries_curve_endpoint_indices() {
+        let mut payload = vec![0; 68 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&0u32.to_le_bytes());
+        payload[17..23].copy_from_slice(&[0x00, 0x00, 0x05, 0x00, 0x01, 0x00]);
+        payload[23..25].copy_from_slice(&1u16.to_le_bytes());
+        payload[25..27].copy_from_slice(&1u16.to_le_bytes());
+        payload[31] = 0x04;
+        payload[42..44].copy_from_slice(&29u16.to_le_bytes());
+        payload[44..46].copy_from_slice(&30u16.to_le_bytes());
+        payload[46..50].copy_from_slice(&1u32.to_le_bytes());
+        payload[50..58].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[68..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(
+            compact_legacy_curve_endpoint_indices(&payload, 0),
+            Some([30, 31])
+        );
+        let entities = sketch_input_entities(&payload, "lane");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
     }
 
     #[test]
