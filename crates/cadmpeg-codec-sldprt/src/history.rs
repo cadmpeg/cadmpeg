@@ -2361,10 +2361,26 @@ mod history_reference_tests {
             &mut ambiguous,
             Point3::new(0.0, 0.0, 12.0),
             Vector3::new(0.0, 0.0, 1.0),
-            &[face, duplicate],
+            &[face.clone(), duplicate.clone()],
             &surfaces,
         );
         assert_eq!(ambiguous, FaceSelection::Unresolved);
+
+        let mut split = FaceSelection::Native("historical-face".into());
+        resolve_planar_face_selection(
+            &mut split,
+            Point3::new(0.0, 0.0, 12.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            &[face.clone(), duplicate.clone()],
+            &surfaces,
+        );
+        assert_eq!(
+            split,
+            FaceSelection::Resolved {
+                faces: vec![face.id, duplicate.id],
+                native: "historical-face".into(),
+            }
+        );
     }
 
     #[test]
@@ -4891,47 +4907,46 @@ fn resolve_planar_face_selection(
     if !normal_length.is_finite() || normal_length <= f64::EPSILON {
         return;
     }
-    let mut matching = faces.iter().filter_map(|face| {
-        let SurfaceGeometry::Plane {
-            origin: candidate_origin,
-            normal: candidate_normal,
-            ..
-        } = &surfaces.get(&face.surface)?.geometry
-        else {
-            return None;
-        };
-        let candidate_length = candidate_normal.norm();
-        if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
-            return None;
-        }
-        let alignment = (normal.x * candidate_normal.x
-            + normal.y * candidate_normal.y
-            + normal.z * candidate_normal.z)
-            / (normal_length * candidate_length);
-        let displacement = Vector3::new(
-            origin.x - candidate_origin.x,
-            origin.y - candidate_origin.y,
-            origin.z - candidate_origin.z,
-        );
-        let separation = (displacement.x * candidate_normal.x
-            + displacement.y * candidate_normal.y
-            + displacement.z * candidate_normal.z)
-            / candidate_length;
-        ((alignment.abs() - 1.0).abs() <= 1.0e-9 && separation.abs() <= 1.0e-8)
-            .then_some(face.id.clone())
-    });
-    let Some(face) = matching.next() else {
-        return;
+    let matching = faces
+        .iter()
+        .filter_map(|face| {
+            let SurfaceGeometry::Plane {
+                origin: candidate_origin,
+                normal: candidate_normal,
+                ..
+            } = &surfaces.get(&face.surface)?.geometry
+            else {
+                return None;
+            };
+            let candidate_length = candidate_normal.norm();
+            if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
+                return None;
+            }
+            let alignment = (normal.x * candidate_normal.x
+                + normal.y * candidate_normal.y
+                + normal.z * candidate_normal.z)
+                / (normal_length * candidate_length);
+            let displacement = Vector3::new(
+                origin.x - candidate_origin.x,
+                origin.y - candidate_origin.y,
+                origin.z - candidate_origin.z,
+            );
+            let separation = (displacement.x * candidate_normal.x
+                + displacement.y * candidate_normal.y
+                + displacement.z * candidate_normal.z)
+                / candidate_length;
+            ((alignment.abs() - 1.0).abs() <= 1.0e-9 && separation.abs() <= 1.0e-8)
+                .then_some(face.id.clone())
+        })
+        .collect::<Vec<_>>();
+    *selection = match (native, matching.as_slice()) {
+        (Some(native), [_, ..]) => FaceSelection::Resolved {
+            faces: matching,
+            native,
+        },
+        (None, [face]) => FaceSelection::Faces(vec![face.clone()]),
+        _ => return,
     };
-    if matching.next().is_none() {
-        *selection = match native {
-            Some(native) => FaceSelection::Resolved {
-                faces: vec![face],
-                native,
-            },
-            None => FaceSelection::Faces(vec![face]),
-        };
-    }
 }
 
 fn resolve_profile_ref(
@@ -5852,6 +5867,7 @@ fn project_offset_plane(
     feature: &Feature,
     by_source: &HashMap<&str, FeatureId>,
 ) -> Option<FeatureDefinition> {
+    let distance = Length(parse_dimension_length_mm(feature.parameters.get("D1")?)?);
     let reference = feature
         .properties
         .get("Reference")
@@ -5865,10 +5881,24 @@ fn project_offset_plane(
                 normal: parse_vector3(feature.properties.get("ReferenceFaceNormal")?)?,
                 u_axis: parse_vector3(feature.properties.get("ReferenceFaceUAxis")?)?,
             })
+        })
+        .or_else(|| {
+            let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
+            let normal = parse_vector3(feature.properties.get("Normal")?)?;
+            Some(DatumPlaneReference::Face {
+                face: FaceSelection::Native(feature.properties.get("ReferenceFaceNative")?.clone()),
+                origin: Point3::new(
+                    origin.x + normal.x * distance.0,
+                    origin.y + normal.y * distance.0,
+                    origin.z + normal.z * distance.0,
+                ),
+                normal,
+                u_axis: parse_vector3(feature.properties.get("UAxis")?)?,
+            })
         });
     Some(FeatureDefinition::DatumOffsetPlane {
         reference,
-        distance: Length(parse_dimension_length_mm(feature.parameters.get("D1")?)?),
+        distance,
     })
 }
 

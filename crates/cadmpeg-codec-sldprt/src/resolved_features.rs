@@ -1631,12 +1631,12 @@ mod marker_tests {
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_single_face_reference_record_at, compact_sketch_surface_component_path_at,
         compact_surface_selection_at, complete_ordered_compact_line_profile,
-        component_face_reference_at, component_path_features, component_path_preceding_feature,
-        component_path_terminal_feature, component_profile_source_at,
-        component_reference_curve_path_at, consecutive_legacy_profile_line_endpoints,
-        constraint_midplane_frame, constraint_reference_plane_frame,
-        coordinate_centered_line_endpoints, coordinate_circle_radius,
-        coordinate_marker_local_links, coordinate_roster_arc_center,
+        component_face_reference_at, component_face_reference_in_record, component_path_features,
+        component_path_preceding_feature, component_path_terminal_feature,
+        component_profile_source_at, component_reference_curve_path_at,
+        consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
+        constraint_reference_plane_frame, coordinate_centered_line_endpoints,
+        coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, coordinate_roster_endpoint_offset,
         coordinate_roster_full_circle, cosmetic_thread_cylinder_reference_at,
         cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
@@ -1661,13 +1661,13 @@ mod marker_tests {
         legacy_direct_compact_selected_axis_endpoint_indices, legacy_extended_profile_curve_kind,
         legacy_extended_rectangle_diagonal_endpoint, legacy_feature_input_section,
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
-        legacy_long_profile_line_endpoint_indices, legacy_reference_axis_triads,
-        legacy_referenced_wide_arc_endpoint_indices, legacy_single_face_reference_path_at,
-        legacy_state_five_curve_endpoint_indices, legacy_terminal_indexed_profile_line,
-        legacy_terminal_profile_endpoint_offset, legacy_undetailed_profile_line,
-        legacy_unlocated_geometry_handle, linked_profile_point, marker_coordinates,
-        marker_is_geometry_locus, marker_is_selected_construction_line, marker_local_id,
-        marker_local_links, marker_object_index, marker_spatial_coordinates,
+        legacy_long_profile_line_endpoint_indices, legacy_offset_plane_face_alias,
+        legacy_reference_axis_triads, legacy_referenced_wide_arc_endpoint_indices,
+        legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
+        legacy_terminal_indexed_profile_line, legacy_terminal_profile_endpoint_offset,
+        legacy_undetailed_profile_line, legacy_unlocated_geometry_handle, linked_profile_point,
+        marker_coordinates, marker_is_geometry_locus, marker_is_selected_construction_line,
+        marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
         matrix_reference_plane_frame, minimal_reference_plane_frame,
         mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
         native_scalar_matches_discrete_parameter, normalize_indexed_curve_entities, object_names,
@@ -3299,6 +3299,28 @@ mod marker_tests {
         assert_eq!(compact_offset_plane_source(&payload), Some(3));
         payload[19] ^= 1;
         assert_eq!(compact_offset_plane_source(&payload), None);
+    }
+
+    #[test]
+    fn legacy_offset_plane_face_alias_requires_the_complete_nested_record() {
+        let mut body = vec![0; 115];
+        body[..2].copy_from_slice(&0x802d_u16.to_le_bytes());
+        body[2..6].copy_from_slice(&2u32.to_le_bytes());
+        body[45..61].fill(0xff);
+        body[69..73].copy_from_slice(&2u32.to_le_bytes());
+        body[73..77].copy_from_slice(&0x4c41_ac95_u32.to_le_bytes());
+        body[77..83].copy_from_slice(&[0, 0, 3, 0, 0, 0]);
+        body[83..87].copy_from_slice(&1u32.to_le_bytes());
+        body[91..95].copy_from_slice(&175u32.to_le_bytes());
+        body[99..103].copy_from_slice(&3u32.to_le_bytes());
+        body[107..115].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+
+        assert_eq!(legacy_offset_plane_face_alias(&body), Some((0, 175)));
+        body[91..95].fill(0);
+        assert_eq!(legacy_offset_plane_face_alias(&body), None);
+        body[91..95].copy_from_slice(&175u32.to_le_bytes());
+        body[83] = 2;
+        assert_eq!(legacy_offset_plane_face_alias(&body), None);
     }
 
     #[test]
@@ -10304,6 +10326,11 @@ mod marker_tests {
 
         let flagged = build_payload(0x40, body_offset + 100);
         assert!(component_face_reference_at(&flagged, body_offset).is_some());
+        let mut record = CLASS_MARKER.to_vec();
+        record.extend((b"moCompFace_c".len() as u16).to_le_bytes());
+        record.extend(b"moCompFace_c");
+        record.extend_from_slice(&flagged[body_offset..]);
+        assert!(component_face_reference_in_record(&record).is_some());
 
         payload[body_offset + 6] = 1;
         assert_eq!(component_face_reference_at(&payload, body_offset), None);
@@ -18495,19 +18522,6 @@ fn compact_surface_selections(
                     .and_then(|body| component_face_reference_at(&lane.native_payload, body))
             }))
             .collect(),
-            NativeClassKind::ReferencePlane => lane
-                .classes
-                .iter()
-                .filter_map(|class| {
-                    let offset = usize::try_from(class.offset).ok()?;
-                    (feature.parameters.contains_key("D1")
-                        && class.name == "moCompFace_c"
-                        && (start..end).contains(&offset))
-                    .then(|| offset.checked_add(6 + class.name.len()))
-                    .flatten()
-                    .and_then(|body| component_face_reference_at(&lane.native_payload, body))
-                })
-                .collect(),
             NativeClassKind::MirrorPattern => (start.saturating_add(12)
                 ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
                 .filter(|marker| {
@@ -18696,6 +18710,31 @@ fn component_face_reference_at(
     }
     let marker = body_offset.checked_add(if flags == [0x40, 0] { 100 } else { 92 })?;
     compact_surface_reference_at(payload, marker).map(|components| (marker, components))
+}
+
+fn component_face_reference_in_record(
+    payload: &[u8],
+) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    const CLASS: &[u8] = b"moCompFace_c";
+    let header_length = CLASS_MARKER.len() + 2 + CLASS.len();
+    let mut references = payload
+        .windows(header_length)
+        .enumerate()
+        .filter_map(|(offset, header)| {
+            (&header[..CLASS_MARKER.len()] == CLASS_MARKER
+                && header[CLASS_MARKER.len()..CLASS_MARKER.len() + 2]
+                    == (CLASS.len() as u16).to_le_bytes()
+                && &header[CLASS_MARKER.len() + 2..] == CLASS)
+                .then_some(offset + header_length)
+        })
+        .filter_map(|body| component_face_reference_at(payload, body))
+        .collect::<Vec<_>>();
+    references.sort_by_key(|(offset, _)| *offset);
+    references.dedup();
+    let [reference] = references.as_slice() else {
+        return None;
+    };
+    Some(reference.clone())
 }
 
 fn compact_sketch_surface_component_path_at(
@@ -20519,6 +20558,8 @@ pub(crate) fn enrich_history_reference_planes(
     let mut reference_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let mut reference_frame_candidates =
         BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
+    let mut face_feature_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
+    let mut face_native_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let known_sources = histories
         .iter()
         .map(|history| {
@@ -20527,6 +20568,21 @@ pub(crate) fn enrich_history_reference_planes(
                 .iter()
                 .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
                 .collect::<HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let features_by_source = histories
+        .iter()
+        .map(|history| {
+            history
+                .features
+                .iter()
+                .filter_map(|feature| {
+                    Some((
+                        feature.source_id.as_deref()?.parse::<u32>().ok()?,
+                        feature.id.clone(),
+                    ))
+                })
+                .collect::<HashMap<_, _>>()
         })
         .collect::<Vec<_>>();
     let known_reference_plane_sources = histories
@@ -20594,6 +20650,39 @@ pub(crate) fn enrich_history_reference_planes(
                     .or_default()
                     .push(source.to_string());
             }
+            if let Some((relative_offset, owner)) = legacy_offset_plane_face_alias(bytes) {
+                face_native_candidates
+                    .entry((history_index, feature_index))
+                    .or_default()
+                    .push(format!(
+                        "sldprt:feature-input:legacy-face-alias#{}:{}:{}",
+                        lane.id,
+                        start + relative_offset,
+                        owner
+                    ));
+                if let Some(target) = features_by_source[history_index].get(&owner) {
+                    face_feature_candidates
+                        .entry((history_index, feature_index))
+                        .or_default()
+                        .push(target.clone());
+                }
+            }
+            if let Some((relative_offset, components)) = component_face_reference_in_record(bytes) {
+                face_native_candidates
+                    .entry((history_index, feature_index))
+                    .or_default()
+                    .push(format!(
+                        "sldprt:feature-input:surface-component-ids#{}:{}:{}",
+                        lane.id,
+                        start + relative_offset,
+                        components
+                            .iter()
+                            .filter_map(|component| component.local_id)
+                            .map(|local_id| local_id.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ));
+            }
             let offset_frames = feature
                 .parameters
                 .get("D1")
@@ -20644,6 +20733,24 @@ pub(crate) fn enrich_history_reference_planes(
                 .entry((history_index, feature_index))
                 .or_default()
                 .push((origin, normal, u_axis));
+        }
+    }
+    for ((history_index, feature_index), mut native) in face_native_candidates {
+        native.sort_unstable();
+        native.dedup();
+        if let [native] = native.as_slice() {
+            histories[history_index].features[feature_index]
+                .properties
+                .insert("ReferenceFaceNative".into(), native.clone());
+        }
+    }
+    for ((history_index, feature_index), mut targets) in face_feature_candidates {
+        targets.sort_unstable();
+        targets.dedup();
+        if let [target] = targets.as_slice() {
+            histories[history_index].features[feature_index]
+                .properties
+                .insert("ReferenceFaceFeature".into(), target.clone());
         }
     }
     let unique_frames = candidates
@@ -21696,6 +21803,43 @@ fn offset_plane_reference_source(
         return None;
     };
     Some(*source)
+}
+
+fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
+    const TERMINATOR: &[u8] = b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff";
+    let mut aliases = payload
+        .windows(115)
+        .enumerate()
+        .filter_map(|(offset, body)| {
+            let token = u16::from_le_bytes(body[..2].try_into().ok()?);
+            if token & 0x8000 == 0
+                || token == u16::MAX
+                || body[2..6] != 2u32.to_le_bytes()
+                || body[6..42] != [0; 36]
+                || body[42..45] != [0; 3]
+                || body[45..61] != [0xff; 16]
+                || body[61..69] != [0; 8]
+                || body[69..73] != 2u32.to_le_bytes()
+                || body[73..77] == [0; 4]
+                || body[77..83] != [0, 0, 3, 0, 0, 0]
+                || body[83..91] != [1, 0, 0, 0, 0, 0, 0, 0]
+                || body[95..99] != [0; 4]
+                || body[99..103] != 3u32.to_le_bytes()
+                || body[103..107] != [0; 4]
+                || &body[107..115] != TERMINATOR
+            {
+                return None;
+            }
+            let owner = u32::from_le_bytes(body[91..95].try_into().ok()?);
+            (owner != 0 && owner != u32::MAX).then_some((offset, owner))
+        })
+        .collect::<Vec<_>>();
+    aliases.sort_unstable();
+    aliases.dedup();
+    let [alias] = aliases.as_slice() else {
+        return None;
+    };
+    Some(*alias)
 }
 
 const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;
@@ -27216,7 +27360,7 @@ pub(crate) fn project_compact_surface_selections(
             map
         },
     );
-    for feature in features {
+    for feature in features.iter_mut() {
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
@@ -27451,6 +27595,83 @@ pub(crate) fn project_compact_surface_selections(
                 feature.dependencies.push(producer.clone());
             }
         }
+    }
+    let face_aliases = features
+        .iter()
+        .filter_map(|feature| {
+            let native = feature.native_ref.as_deref()?;
+            let FeatureDefinition::CosmeticThread { face, .. } = &feature.definition else {
+                return None;
+            };
+            (!matches!(
+                face,
+                cadmpeg_ir::features::FaceSelection::Unresolved
+                    | cadmpeg_ir::features::FaceSelection::Native(_)
+            ))
+            .then_some((native.to_string(), face.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let Some(target) = feature.source_properties.get("ReferenceFaceFeature") else {
+            continue;
+        };
+        let Some(face) = face_aliases.get(target.as_str()).cloned() else {
+            continue;
+        };
+        let FeatureDefinition::DatumOffsetPlane {
+            reference,
+            distance,
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        if let cadmpeg_ir::features::FaceSelection::Generated { faces, .. } = &face {
+            for producer in faces.iter().map(|face| &face.feature) {
+                if producer != &feature.id && !feature.dependencies.contains(producer) {
+                    feature.dependencies.push(producer.clone());
+                }
+            }
+        }
+        if let Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing, .. }) =
+            reference
+        {
+            *existing = face;
+            continue;
+        }
+        if reference.is_some() {
+            continue;
+        }
+        let Some(origin) = feature
+            .source_properties
+            .get("Origin")
+            .and_then(|value| crate::history::parse_point3_mm(value))
+        else {
+            continue;
+        };
+        let Some(normal) = feature
+            .source_properties
+            .get("Normal")
+            .and_then(|value| crate::history::parse_vector3(value))
+        else {
+            continue;
+        };
+        let Some(u_axis) = feature
+            .source_properties
+            .get("UAxis")
+            .and_then(|value| crate::history::parse_vector3(value))
+        else {
+            continue;
+        };
+        *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+            face,
+            origin: Point3::new(
+                origin.x + normal.x * distance.0,
+                origin.y + normal.y * distance.0,
+                origin.z + normal.z * distance.0,
+            ),
+            normal,
+            u_axis,
+        });
     }
 }
 
