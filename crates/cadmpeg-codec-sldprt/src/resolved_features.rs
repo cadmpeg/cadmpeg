@@ -15229,24 +15229,57 @@ pub(crate) fn enrich_history_hole_constructions(
                     let [position_source] = position_sources.as_slice() else {
                         return None;
                     };
-                    let adjacent = [
+                    let adjacent_sources = [
                         position_source.checked_sub(1),
                         position_source.checked_add(1),
                     ]
                     .into_iter()
                     .flatten()
                     .collect::<HashSet<_>>();
-                    let mut profiles = history.features.iter().filter(|candidate| {
-                        candidate
+                    let source_profile = || {
+                        let mut profiles = history.features.iter().filter(|candidate| {
+                            candidate
+                                .source_id
+                                .as_deref()
+                                .and_then(|source| source.parse::<u32>().ok())
+                                .is_some_and(|source| adjacent_sources.contains(&source))
+                                && classify(candidate) == Some(FeatureClass::Sketch)
+                                && crate::history::is_hole_profile_construction(candidate)
+                        });
+                        let profile = profiles.next()?;
+                        profiles.next().is_none().then_some(profile)
+                    };
+                    if let Some(profile) = source_profile() {
+                        return Some((profile, 2_u8));
+                    }
+                    let mut positions = history.features.iter().filter(|candidate| {
+                        (candidate
                             .source_id
                             .as_deref()
                             .and_then(|source| source.parse::<u32>().ok())
-                            .is_some_and(|source| adjacent.contains(&source))
+                            == Some(*position_source)
+                            || candidate.ordinal == *position_source)
+                            && classify(candidate) == Some(FeatureClass::Sketch)
+                    });
+                    let position = positions.next()?;
+                    if positions.next().is_some() {
+                        return None;
+                    }
+                    let adjacent_ordinals = [
+                        position.ordinal.checked_sub(1),
+                        position.ordinal.checked_add(1),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect::<HashSet<_>>();
+                    let mut profiles = history.features.iter().filter(|candidate| {
+                        adjacent_ordinals.contains(&candidate.ordinal)
+                            && candidate.id != position.id
                             && classify(candidate) == Some(FeatureClass::Sketch)
                             && crate::history::is_hole_profile_construction(candidate)
                     });
                     let profile = profiles.next()?;
-                    profiles.next().is_none().then_some(profile)
+                    profiles.next().is_none().then_some((profile, 1_u8))
                 };
                 let profile_from_child_order = || {
                     let child_ordinals = [
@@ -15275,38 +15308,48 @@ pub(crate) fn enrich_history_hole_constructions(
                         .into_iter()
                         .filter(|child| crate::history::is_hole_profile_construction(child));
                     let profile = profiles.next()?;
-                    profiles.next().is_none().then_some(profile)
+                    profiles.next().is_none().then_some((profile, 1_u8))
                 };
                 profile_from_position_source()
                     .or_else(profile_from_child_order)
-                    .and_then(|profile| {
-                        let profile_index = history
-                            .features
-                            .iter()
-                            .position(|candidate| candidate.id == profile.id)?;
-                        let profile_source = profile
-                            .source_id
-                            .clone()
-                            .unwrap_or_else(|| profile.ordinal.to_string());
-                        (!history.features.iter().enumerate().any(
-                            |(candidate_index, candidate)| {
-                                candidate_index != profile_index
-                                    && candidate.source_id.as_deref()
-                                        == Some(profile_source.as_str())
-                            },
-                        ))
-                        .then_some((
+                    .map(|(profile, rank)| {
+                        (
                             feature_index,
-                            profile_index,
-                            profile_source,
-                        ))
+                            profile
+                                .source_id
+                                .clone()
+                                .unwrap_or_else(|| profile.id.clone()),
+                            rank,
+                        )
                     })
             })
             .collect::<Vec<_>>();
-        for (feature_index, profile_index, profile_source) in additions {
-            history.features[profile_index]
-                .source_id
-                .get_or_insert_with(|| profile_source.clone());
+        let claimed_profiles = history
+            .features
+            .iter()
+            .filter_map(|feature| feature.properties.get("DissectableChildren"))
+            .flat_map(|children| children.split(',').map(str::trim))
+            .filter(|child| !child.is_empty())
+            .map(str::to_owned)
+            .collect::<HashSet<_>>();
+        let profile_claim_ranks = additions.iter().fold(
+            HashMap::<String, (u8, usize)>::new(),
+            |mut ranks, (_, profile, rank)| {
+                let entry = ranks.entry(profile.clone()).or_default();
+                match rank.cmp(&entry.0) {
+                    std::cmp::Ordering::Greater => *entry = (*rank, 1),
+                    std::cmp::Ordering::Equal => entry.1 += 1,
+                    std::cmp::Ordering::Less => {}
+                }
+                ranks
+            },
+        );
+        for (feature_index, profile_source, rank) in additions {
+            if claimed_profiles.contains(profile_source.as_str())
+                || profile_claim_ranks.get(profile_source.as_str()) != Some(&(rank, 1))
+            {
+                continue;
+            }
             history.features[feature_index]
                 .properties
                 .insert("DissectableChildren".into(), profile_source);
@@ -15648,10 +15691,10 @@ pub(crate) fn project_profiled_hole_constructions(
             .get("DissectableChildren")
             .and_then(|children| {
                 let mut constructions = children.split(',').filter_map(|source| {
-                    let mut profiles = history
-                        .features
-                        .iter()
-                        .filter(|candidate| candidate.source_id.as_deref() == Some(source.trim()));
+                    let mut profiles = history.features.iter().filter(|candidate| {
+                        candidate.source_id.as_deref() == Some(source.trim())
+                            || candidate.id == source.trim()
+                    });
                     let profile = profiles.next()?;
                     profiles.next().is_none().then_some(())?;
                     if position == Some(&profile.id) {
@@ -18666,9 +18709,9 @@ mod hole_axis_tests {
                 .properties
                 .get("DissectableChildren")
                 .map(String::as_str),
-            Some("2")
+            Some("native-profile-sketch")
         );
-        assert_eq!(history.features[2].source_id.as_deref(), Some("2"));
+        assert_eq!(history.features[2].source_id, None);
     }
 
     #[test]

@@ -2637,6 +2637,29 @@ mod history_reference_tests {
             None
         );
 
+        let mut native_profile = profile(&[("diameter", "<MOD-DIAM>6.6"), ("depth", "9.4")]);
+        native_profile.id = "native-profile".into();
+        native_profile.source_id = None;
+        let mut native_owned = feature("native-owned-hole", None, 0);
+        native_owned
+            .properties
+            .insert("DissectableChildren".into(), native_profile.id.clone());
+        let projected = project_hole(
+            &native_owned,
+            &HashMap::new(),
+            &[native_owned.clone(), native_profile],
+        );
+        assert!(matches!(
+            projected,
+            FeatureDefinition::Hole {
+                diameter: Some(Length(6.6)),
+                extent: Some(Termination::Blind {
+                    length: Length(9.4)
+                }),
+                ..
+            }
+        ));
+
         let mut canonical = feature("hole", Some("8"), 0);
         canonical.parameters = [
             ("Diameter".into(), "4.2mm".into()),
@@ -2646,7 +2669,11 @@ mod history_reference_tests {
             ("DrillPointAngle".into(), "118°".into()),
         ]
         .into();
-        let projected = project_hole(&canonical, &HashMap::new());
+        let projected = project_hole(
+            &canonical,
+            &HashMap::new(),
+            std::slice::from_ref(&canonical),
+        );
         let FeatureDefinition::Hole {
             kind:
                 HoleKind::Threaded {
@@ -5318,7 +5345,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Scale) {
         project_scale(feature)
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(feature, features_by_source)
+        project_hole(feature, features_by_source, history_features)
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(feature, native_by_source)
     } else if class == Some(FeatureClass::Pattern) {
@@ -6705,8 +6732,9 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
 fn project_hole(
     feature: &Feature,
     features_by_source: &HashMap<&str, &Feature>,
+    history_features: &[Feature],
 ) -> FeatureDefinition {
-    let profile = hole_profile_construction(feature, features_by_source);
+    let profile = hole_profile_construction(feature, features_by_source, history_features);
     let diameter = feature
         .parameters
         .get("Diameter")
@@ -6883,13 +6911,22 @@ struct HoleProfileConstruction {
 fn hole_profile_construction(
     feature: &Feature,
     features_by_source: &HashMap<&str, &Feature>,
+    history_features: &[Feature],
 ) -> Option<HoleProfileConstruction> {
     let children = feature.properties.get("DissectableChildren")?;
     let constructions = children
         .split(',')
         .map(str::trim)
         .filter(|source| !source.is_empty())
-        .filter_map(|source| features_by_source.get(source).copied())
+        .filter_map(|source| {
+            features_by_source.get(source).copied().or_else(|| {
+                let mut profiles = history_features
+                    .iter()
+                    .filter(|candidate| candidate.id == source);
+                let profile = profiles.next()?;
+                profiles.next().is_none().then_some(profile)
+            })
+        })
         .filter(|profile| classify(profile) == Some(FeatureClass::Sketch))
         .filter_map(hole_sketch_construction)
         .collect::<Vec<_>>();
