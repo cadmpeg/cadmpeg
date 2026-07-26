@@ -1745,10 +1745,10 @@ mod marker_tests {
         terminal_extended_profile_point_coordinates, terminal_repeated_radial_circle_pairs,
         unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
         unique_locus, unique_marker_candidate, wide_direct_line_endpoint_markers,
-        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
-        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
-        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, MINIMAL_REFERENCE_PLANE_FRAME_LEN,
-        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
+        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind,
+        CompactReferencePlaneIndex, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
+        MINIMAL_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -3558,10 +3558,11 @@ mod marker_tests {
         payload.extend(component);
         let profile_start = payload.len();
         payload.extend([0xaa; 64]);
+        let plane_index = CompactReferencePlaneIndex::new(&payload);
 
         assert_eq!(
             compact_profile_reference_plane_source(
-                &payload,
+                &plane_index,
                 profile_start,
                 profile_start,
                 payload.len(),
@@ -3570,7 +3571,7 @@ mod marker_tests {
         );
         assert_eq!(
             compact_profile_reference_plane_source(
-                &payload,
+                &plane_index,
                 component_start,
                 component_start,
                 payload.len(),
@@ -17308,9 +17309,11 @@ fn marker_backed_feature_frame(
 ) -> Option<(Point3, Vector3, Vector3)> {
     let (context_start, start, end) = feature_object_byte_range(histories, lane, native_feature)?;
     let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
+    let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
     feature_input_sketch_frame(
         &lane.native_payload,
         &plane_frames,
+        &plane_index,
         context_start,
         start,
         end,
@@ -17409,11 +17412,12 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
 fn feature_input_sketch_frame(
     payload: &[u8],
     plane_frames: &HashMap<u32, (Point3, Vector3, Vector3)>,
+    plane_index: &CompactReferencePlaneIndex,
     context_start: usize,
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    compact_profile_reference_plane_source(payload, context_start, start, end)
+    compact_profile_reference_plane_source(plane_index, context_start, start, end)
         .and_then(|source| plane_frames.get(&source).copied())
         .or_else(|| compact_profile_component_plane_frame(payload, context_start, start, end))
         .or_else(|| {
@@ -25631,6 +25635,7 @@ pub(crate) fn project_compact_sketch_profiles(
         .collect::<HashMap<_, _>>();
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
+        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
         let mut objects = native_features
             .values()
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
@@ -25744,13 +25749,9 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let source_frame = compact_profile_reference_plane_source(
-                &lane.native_payload,
-                context_start,
-                start,
-                end,
-            )
-            .and_then(|source| plane_frames.get(&source).copied());
+            let source_frame =
+                compact_profile_reference_plane_source(&plane_index, context_start, start, end)
+                    .and_then(|source| plane_frames.get(&source).copied());
             let Some((origin, normal, u_axis)) = source_frame.or_else(|| {
                 compact_profile_component_plane_frame(
                     &lane.native_payload,
@@ -26037,6 +26038,7 @@ pub(crate) fn project_marker_backed_sketches(
         .collect::<HashMap<_, _>>();
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
+        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
         let markers_by_id = lane
             .sketch_entities
             .iter()
@@ -26104,6 +26106,7 @@ pub(crate) fn project_marker_backed_sketches(
             let frame = feature_input_sketch_frame(
                 &lane.native_payload,
                 &plane_frames,
+                &plane_index,
                 context_start,
                 start,
                 end,
@@ -28500,116 +28503,204 @@ fn compact_line_chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     Some(addresses.clone())
 }
 
-fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
-    let declared = compact_declared_reference_plane_source(payload).into_iter();
-    let component = payload.windows(138).filter_map(|bytes| {
-        let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
-        let scalar = |offset| {
-            let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
-            value.is_finite().then_some(value)
-        };
-        let basis = [
-            Vector3::new(scalar(15)?, scalar(23)?, scalar(31)?),
-            Vector3::new(scalar(39)?, scalar(47)?, scalar(55)?),
-            Vector3::new(scalar(63)?, scalar(71)?, scalar(79)?),
-        ];
-        let norm = |vector: Vector3| {
-            (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt()
-        };
-        let dot =
-            |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-        (source != 0
-            && bytes.get(8..14)?.iter().all(|byte| *byte == 0)
-            && bytes.get(14) == Some(&1)
-            && basis
-                .iter()
-                .all(|vector| (norm(*vector) - 1.0).abs() <= 1.0e-9)
-            && dot(basis[0], basis[1]).abs() <= 1.0e-9
-            && dot(basis[0], basis[2]).abs() <= 1.0e-9
-            && dot(basis[1], basis[2]).abs() <= 1.0e-9
-            && bytes.get(122..126) == Some(&4u32.to_le_bytes())
-            && bytes.get(126..130) == Some(&[0xff; 4]))
-        .then_some(source)
-    });
-    let matches = declared.chain(component).collect::<HashSet<_>>();
-    let mut matches = matches.into_iter();
-    let source = matches.next()?;
-    matches.next().is_none().then_some(source)
+const COMPACT_REFERENCE_PLANE_CLASS: &[u8] = b"moCompRefPlane_c";
+const COMPACT_REFERENCE_PLANE_RECORD_LEN: usize = 67;
+const COMPACT_COMPONENT_PLANE_RECORD_LEN: usize = 138;
+
+struct CompactReferencePlaneIndex {
+    payload_len: usize,
+    class_offsets: Vec<usize>,
+    declared: Vec<(usize, u32)>,
+    components: Vec<(usize, u32)>,
 }
 
-fn compact_declared_reference_plane_source(payload: &[u8]) -> Option<u32> {
-    const CLASS: &[u8] = b"moCompRefPlane_c";
-    let class_count = payload
-        .windows(CLASS.len())
-        .filter(|bytes| *bytes == CLASS)
-        .count();
-    if class_count != 1 {
-        return None;
+impl CompactReferencePlaneIndex {
+    fn new(payload: &[u8]) -> Self {
+        Self {
+            payload_len: payload.len(),
+            class_offsets: payload
+                .iter()
+                .enumerate()
+                .filter_map(|(offset, byte)| {
+                    (*byte == COMPACT_REFERENCE_PLANE_CLASS[0]
+                        && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
+                            == Some(COMPACT_REFERENCE_PLANE_CLASS))
+                    .then_some(offset)
+                })
+                .collect(),
+            declared: payload
+                .iter()
+                .enumerate()
+                .filter_map(|(end, byte)| {
+                    if *byte != 0x3f {
+                        return None;
+                    }
+                    let offset = end.checked_sub(46)?;
+                    let bytes = payload.get(offset..offset + COMPACT_REFERENCE_PLANE_RECORD_LEN)?;
+                    compact_declared_reference_plane_record(bytes).map(|source| (offset, source))
+                })
+                .collect(),
+            components: payload
+                .iter()
+                .enumerate()
+                .filter_map(|(anchor, byte)| {
+                    if *byte != 4
+                        || payload.get(anchor..anchor + 8)
+                            != Some(&[4, 0, 0, 0, 0xff, 0xff, 0xff, 0xff])
+                    {
+                        return None;
+                    }
+                    let offset = anchor.checked_sub(122)?;
+                    let bytes = payload.get(offset..offset + COMPACT_COMPONENT_PLANE_RECORD_LEN)?;
+                    compact_component_reference_plane_record(bytes).map(|source| (offset, source))
+                })
+                .collect(),
+        }
     }
-    let current = payload
-        .windows(67)
-        .filter_map(|bytes| {
-            let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
-            let trailer = bytes.get(47..63)?;
-            (source != 0
-                && !(bytes.get(4..10)?.iter().all(|byte| *byte == 0)
-                    && u16::from_le_bytes(bytes.get(10..12)?.try_into().ok()?) != 0)
-                && bytes.get(8..12) == Some(&[0, 0, 3, 0])
-                && bytes.get(12..39)?.iter().all(|byte| *byte == 0)
-                && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
-                && trailer[..3] == [0; 3]
-                && matches!(trailer[3], 2..=4)
-                && trailer[4..7] == [0; 3]
-                && matches!(trailer[7], 0xf9 | 0xfb | 0xff)
-                && trailer[8..11] == [0xff; 3]
-                && trailer[11..15] == [0; 4]
-                && trailer[15] >= 0x65)
-                .then_some(source)
-        })
-        .collect::<HashSet<_>>();
-    let compact_legacy = payload.windows(67).filter_map(|bytes| {
-        let identity = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
-        let source = u16::from_le_bytes(bytes.get(10..12)?.try_into().ok()?);
-        let trailer = bytes.get(47..63)?;
-        (identity != 0
-            && identity != u32::MAX
-            && source != 0
-            && bytes.get(4..10)?.iter().all(|byte| *byte == 0)
-            && bytes.get(12..39)?.iter().all(|byte| *byte == 0)
-            && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
-            && trailer[..3] == [0; 3]
-            && matches!(trailer[3], 2..=4)
-            && trailer[4..7] == [0; 3]
-            && matches!(trailer[7], 0xf9 | 0xfb | 0xff)
-            && trailer[8..11] == [0xff; 3]
-            && trailer[11..15] == [0; 4]
-            && trailer[15] >= 0x65)
-            .then_some(u32::from(source))
-    });
-    let matches = current
-        .into_iter()
-        .chain(compact_legacy)
-        .collect::<HashSet<_>>();
-    let mut matches = matches.into_iter();
-    let source = matches.next()?;
-    matches.next().is_none().then_some(source)
+
+    fn declared_source(&self, start: usize, end: usize) -> Option<u32> {
+        if start > end || end > self.payload_len {
+            return None;
+        }
+        let class_count = self
+            .class_offsets
+            .iter()
+            .filter(|offset| {
+                **offset >= start
+                    && offset.saturating_add(COMPACT_REFERENCE_PLANE_CLASS.len()) <= end
+            })
+            .count();
+        if class_count != 1 {
+            return None;
+        }
+        unique_reference_plane_source(
+            self.declared
+                .iter()
+                .filter(|(offset, _)| {
+                    *offset >= start
+                        && offset.saturating_add(COMPACT_REFERENCE_PLANE_RECORD_LEN) <= end
+                })
+                .map(|(_, source)| *source),
+        )
+    }
+
+    fn reference_source(&self, start: usize, end: usize) -> Option<u32> {
+        if start > end || end > self.payload_len {
+            return None;
+        }
+        unique_reference_plane_source(
+            self.declared_source(start, end).into_iter().chain(
+                self.components
+                    .iter()
+                    .filter(|(offset, _)| {
+                        *offset >= start
+                            && offset.saturating_add(COMPACT_COMPONENT_PLANE_RECORD_LEN) <= end
+                    })
+                    .map(|(_, source)| *source),
+            ),
+        )
+    }
+
+    fn lane_source(&self) -> Option<u32> {
+        self.declared_source(0, self.payload_len)
+            .or_else(|| self.reference_source(0, self.payload_len))
+    }
+
+    fn profile_source(
+        &self,
+        context_start: usize,
+        profile_start: usize,
+        profile_end: usize,
+    ) -> Option<u32> {
+        self.reference_source(profile_start, profile_end)
+            .or_else(|| self.reference_source(context_start, profile_end))
+            .or_else(|| self.lane_source())
+    }
 }
 
 fn compact_profile_reference_plane_source(
-    payload: &[u8],
+    index: &CompactReferencePlaneIndex,
     context_start: usize,
     profile_start: usize,
     profile_end: usize,
 ) -> Option<u32> {
-    let profile = payload.get(profile_start..profile_end)?;
-    compact_reference_plane_source(profile)
-        .or_else(|| {
-            payload
-                .get(context_start..profile_end)
-                .and_then(compact_reference_plane_source)
-        })
-        .or_else(|| compact_declared_reference_plane_source(payload))
-        .or_else(|| compact_reference_plane_source(payload))
+    index.profile_source(context_start, profile_start, profile_end)
+}
+
+fn unique_reference_plane_source(sources: impl IntoIterator<Item = u32>) -> Option<u32> {
+    let matches = sources.into_iter().collect::<HashSet<_>>();
+    let mut matches = matches.into_iter();
+    let source = matches.next()?;
+    matches.next().is_none().then_some(source)
+}
+
+fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
+    let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+    if source == 0
+        || bytes.get(8..14)?.iter().any(|byte| *byte != 0)
+        || bytes.get(14) != Some(&1)
+        || bytes.get(122..126) != Some(&4u32.to_le_bytes())
+        || bytes.get(126..130) != Some(&[0xff; 4])
+    {
+        return None;
+    }
+    let scalar = |offset| {
+        let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let basis = [
+        Vector3::new(scalar(15)?, scalar(23)?, scalar(31)?),
+        Vector3::new(scalar(39)?, scalar(47)?, scalar(55)?),
+        Vector3::new(scalar(63)?, scalar(71)?, scalar(79)?),
+    ];
+    let norm =
+        |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    (basis
+        .iter()
+        .all(|vector| (norm(*vector) - 1.0).abs() <= 1.0e-9)
+        && dot(basis[0], basis[1]).abs() <= 1.0e-9
+        && dot(basis[0], basis[2]).abs() <= 1.0e-9
+        && dot(basis[1], basis[2]).abs() <= 1.0e-9)
+        .then_some(source)
+}
+
+fn compact_declared_reference_plane_record(bytes: &[u8]) -> Option<u32> {
+    let identity = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+    let legacy_source = u16::from_le_bytes(bytes.get(10..12)?.try_into().ok()?);
+    let trailer = bytes.get(47..63)?;
+    let common = bytes.get(12..39)?.iter().all(|byte| *byte == 0)
+        && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
+        && trailer[..3] == [0; 3]
+        && matches!(trailer[3], 2..=4)
+        && trailer[4..7] == [0; 3]
+        && matches!(trailer[7], 0xf9 | 0xfb | 0xff)
+        && trailer[8..11] == [0xff; 3]
+        && trailer[11..15] == [0; 4]
+        && trailer[15] >= 0x65;
+    if !common {
+        return None;
+    }
+    if identity != 0
+        && !(bytes.get(4..10)?.iter().all(|byte| *byte == 0) && legacy_source != 0)
+        && bytes.get(8..12) == Some(&[0, 0, 3, 0])
+    {
+        Some(identity)
+    } else if identity != 0
+        && identity != u32::MAX
+        && legacy_source != 0
+        && bytes.get(4..10)?.iter().all(|byte| *byte == 0)
+    {
+        Some(u32::from(legacy_source))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
+    CompactReferencePlaneIndex::new(payload).reference_source(0, payload.len())
 }
 
 fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
@@ -31901,6 +31992,9 @@ pub(crate) fn project_dimensioned_sketch_geometry(
 }
 
 fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER) {
+        return None;
+    }
     let ordinary = matches!(marker_native_code(payload, offset), Some(1 | 2))
         && marker_profile_curve_role(payload, offset) == Some(1)
         && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
@@ -31924,8 +32018,7 @@ fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) -> Option<u
             ])
         && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
         && sketch_marker_prefix_at(payload, offset.saturating_add(104));
-    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
-        || !(ordinary || construction)
+    if !(ordinary || construction)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
@@ -32058,6 +32151,15 @@ pub(crate) fn project_marker_dimensioned_circles(
     const QUANTUM: f64 = 1.0e-8;
 
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    let radial_records_by_lane = lanes
+        .iter()
+        .map(|lane| {
+            (
+                lane.id.as_str(),
+                radial_circle_records(&lane.native_payload),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     'feature: for feature in features {
         let (
             Some(native_ref),
@@ -32259,12 +32361,12 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .collect::<Vec<_>>();
                 let start = range.iter().min().copied().unwrap_or(0);
                 let end = range.iter().max().copied().unwrap_or(0);
-                radial_circle_records(&lane.native_payload)
+                radial_records_by_lane
+                    .get(lane.id.as_str())
                     .into_iter()
+                    .flatten()
                     .filter(move |(offset, ..)| *offset >= start && *offset <= end)
-                    .map(move |record| (*lane, record))
-                    .collect::<Vec<_>>()
-                    .into_iter()
+                    .map(move |record| (*lane, *record))
             })
             .collect::<Vec<_>>();
         let repeated_radial_sets = radial_records

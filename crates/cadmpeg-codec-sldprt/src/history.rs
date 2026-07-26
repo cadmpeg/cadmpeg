@@ -1140,7 +1140,7 @@ fn populate_parameter_dependencies(
 ) {
     let aliases = parameter_aliases_by_owner(parameters, feature_names, global_owners);
     for parameter in parameters.iter_mut() {
-        let aliases = &aliases[&parameter.owner];
+        let aliases = aliases.for_owner(parameter.owner.as_ref());
         let mut seen = std::collections::HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
             .filter_map(|identifier| aliases.get(&identifier).and_then(Clone::clone))
@@ -1191,98 +1191,151 @@ fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) {
     }
 }
 
+#[cfg(test)]
 fn parameter_aliases(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
     expression_owner: Option<&FeatureId>,
 ) -> HashMap<String, Option<ParameterId>> {
-    fn insert(
-        aliases: &mut HashMap<String, Option<ParameterId>>,
-        alias: String,
-        parameter: &ParameterId,
-    ) {
-        aliases
-            .entry(alias)
-            .and_modify(|candidate| {
-                if candidate
-                    .as_ref()
-                    .is_some_and(|existing| existing != parameter)
-                {
-                    *candidate = None;
+    ParameterAliases::new(parameters, feature_names, global_owners).materialize(expression_owner)
+}
+
+fn insert_parameter_alias(
+    aliases: &mut HashMap<String, Option<ParameterId>>,
+    alias: String,
+    parameter: &ParameterId,
+) {
+    aliases
+        .entry(alias)
+        .and_modify(|candidate| {
+            if candidate
+                .as_ref()
+                .is_some_and(|existing| existing != parameter)
+            {
+                *candidate = None;
+            }
+        })
+        .or_insert_with(|| Some(parameter.clone()));
+}
+
+struct ParameterAliases {
+    global: HashMap<String, Option<ParameterId>>,
+    exact: HashMap<String, Option<ParameterId>>,
+    document_local: HashMap<String, Option<ParameterId>>,
+    feature_local: HashMap<FeatureId, HashMap<String, Option<ParameterId>>>,
+}
+
+impl ParameterAliases {
+    fn new(
+        parameters: &[DesignParameter],
+        feature_names: &HashMap<FeatureId, String>,
+        global_owners: &HashSet<FeatureId>,
+    ) -> Self {
+        let mut aliases = Self {
+            global: HashMap::new(),
+            exact: HashMap::new(),
+            document_local: HashMap::new(),
+            feature_local: HashMap::new(),
+        };
+        for parameter in parameters {
+            insert_parameter_alias(&mut aliases.exact, parameter.id.0.clone(), &parameter.id);
+            let mut unqualified = vec![parameter.name.clone()];
+            if let Some(equation_id) = parameter
+                .properties
+                .get("EquationId")
+                .filter(|equation_id| !equation_id.contains('@'))
+            {
+                unqualified.push(equation_id.clone());
+            }
+            if let Some(owner_name) = parameter
+                .owner
+                .as_ref()
+                .and_then(|owner| feature_names.get(owner))
+            {
+                insert_parameter_alias(
+                    &mut aliases.exact,
+                    format!("{}@{owner_name}", parameter.name),
+                    &parameter.id,
+                );
+                if let Some(equation_id) = parameter.properties.get("EquationId") {
+                    let qualified = if equation_id.contains('@') {
+                        equation_id.clone()
+                    } else {
+                        format!("{equation_id}@{owner_name}")
+                    };
+                    insert_parameter_alias(&mut aliases.exact, qualified, &parameter.id);
                 }
-            })
-            .or_insert_with(|| Some(parameter.clone()));
+            }
+            if parameter
+                .owner
+                .as_ref()
+                .is_some_and(|owner| global_owners.contains(owner))
+            {
+                for alias in &unqualified {
+                    insert_parameter_alias(&mut aliases.global, alias.clone(), &parameter.id);
+                }
+            }
+            let local = parameter
+                .owner
+                .as_ref()
+                .map(|owner| aliases.feature_local.entry(owner.clone()).or_default())
+                .unwrap_or(&mut aliases.document_local);
+            for alias in unqualified {
+                insert_parameter_alias(local, alias, &parameter.id);
+            }
+        }
+        aliases
     }
 
-    let mut global = HashMap::new();
-    let mut local = HashMap::new();
-    let mut exact = HashMap::new();
-    for parameter in parameters {
-        insert(&mut exact, parameter.id.0.clone(), &parameter.id);
-        let mut unqualified = vec![parameter.name.clone()];
-        if let Some(equation_id) = parameter
-            .properties
-            .get("EquationId")
-            .filter(|equation_id| !equation_id.contains('@'))
-        {
-            unqualified.push(equation_id.clone());
-        }
-        if let Some(owner_name) = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| feature_names.get(owner))
-        {
-            insert(
-                &mut exact,
-                format!("{}@{owner_name}", parameter.name),
-                &parameter.id,
-            );
-            if let Some(equation_id) = parameter.properties.get("EquationId") {
-                let qualified = if equation_id.contains('@') {
-                    equation_id.clone()
-                } else {
-                    format!("{equation_id}@{owner_name}")
-                };
-                insert(&mut exact, qualified, &parameter.id);
-            }
-        }
-        if parameter
-            .owner
-            .as_ref()
-            .is_some_and(|owner| global_owners.contains(owner))
-        {
-            for alias in &unqualified {
-                insert(&mut global, alias.clone(), &parameter.id);
-            }
-        }
-        if parameter.owner.as_ref() == expression_owner {
-            for alias in unqualified {
-                insert(&mut local, alias, &parameter.id);
-            }
+    fn for_owner<'a>(&'a self, owner: Option<&'a FeatureId>) -> ParameterAliasView<'a> {
+        ParameterAliasView {
+            aliases: self,
+            owner,
         }
     }
-    global.extend(local);
-    global.extend(exact);
-    global
+
+    #[cfg(test)]
+    fn materialize(&self, owner: Option<&FeatureId>) -> HashMap<String, Option<ParameterId>> {
+        let mut aliases = self.global.clone();
+        aliases.extend(
+            owner
+                .and_then(|owner| self.feature_local.get(owner))
+                .unwrap_or(&self.document_local)
+                .clone(),
+        );
+        aliases.extend(self.exact.clone());
+        aliases
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ParameterAliasView<'a> {
+    aliases: &'a ParameterAliases,
+    owner: Option<&'a FeatureId>,
+}
+
+impl ParameterAliasView<'_> {
+    fn get(&self, alias: &str) -> Option<&Option<ParameterId>> {
+        self.aliases
+            .exact
+            .get(alias)
+            .or_else(|| {
+                self.owner
+                    .and_then(|owner| self.aliases.feature_local.get(owner))
+                    .unwrap_or(&self.aliases.document_local)
+                    .get(alias)
+            })
+            .or_else(|| self.aliases.global.get(alias))
+    }
 }
 
 fn parameter_aliases_by_owner(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-) -> HashMap<Option<FeatureId>, HashMap<String, Option<ParameterId>>> {
-    parameters
-        .iter()
-        .map(|parameter| parameter.owner.clone())
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .map(|owner| {
-            let aliases =
-                parameter_aliases(parameters, feature_names, global_owners, owner.as_ref());
-            (owner, aliases)
-        })
-        .collect()
+) -> ParameterAliases {
+    ParameterAliases::new(parameters, feature_names, global_owners)
 }
 
 fn evaluate_parameter_expressions(
@@ -1306,7 +1359,7 @@ fn evaluate_parameter_expressions(
             .iter_mut()
             .filter(|parameter| parameter.value.is_none())
         {
-            let aliases = &aliases[&parameter.owner];
+            let aliases = aliases.for_owner(parameter.owner.as_ref());
             let Some(value) =
                 ParameterExpressionParser::new(&parameter.expression, aliases, &values).parse()
             else {
@@ -1328,12 +1381,42 @@ fn evaluate_parameter_expressions(
 struct ParameterExpressionParser<'a> {
     input: &'a str,
     offset: usize,
-    aliases: &'a HashMap<String, Option<ParameterId>>,
+    aliases: ParameterAliasMap<'a>,
     values: &'a HashMap<ParameterId, ParameterValue>,
+}
+
+enum ParameterAliasMap<'a> {
+    Layered(ParameterAliasView<'a>),
+    #[cfg(test)]
+    Flat(&'a HashMap<String, Option<ParameterId>>),
+}
+
+impl ParameterAliasMap<'_> {
+    fn get(&self, alias: &str) -> Option<&Option<ParameterId>> {
+        match self {
+            Self::Layered(aliases) => aliases.get(alias),
+            #[cfg(test)]
+            Self::Flat(aliases) => aliases.get(alias),
+        }
+    }
 }
 
 impl<'a> ParameterExpressionParser<'a> {
     fn new(
+        input: &'a str,
+        aliases: ParameterAliasView<'a>,
+        values: &'a HashMap<ParameterId, ParameterValue>,
+    ) -> Self {
+        Self {
+            input,
+            offset: 0,
+            aliases: ParameterAliasMap::Layered(aliases),
+            values,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_flat(
         input: &'a str,
         aliases: &'a HashMap<String, Option<ParameterId>>,
         values: &'a HashMap<ParameterId, ParameterValue>,
@@ -1341,7 +1424,7 @@ impl<'a> ParameterExpressionParser<'a> {
         Self {
             input,
             offset: 0,
-            aliases,
+            aliases: ParameterAliasMap::Flat(aliases),
             values,
         }
     }
@@ -1881,7 +1964,7 @@ pub(crate) fn parameters_with_unresolved_references(
     parameters
         .iter()
         .filter(|parameter| {
-            let aliases = &aliases[&parameter.owner];
+            let aliases = aliases.for_owner(parameter.owner.as_ref());
             let parsed = expression_identifier_tokens(&parameter.expression);
             parsed.unclosed_quote
                 || parsed
@@ -1912,7 +1995,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     parameters
         .iter()
         .filter(|parameter| {
-            let aliases = &aliases[&parameter.owner];
+            let aliases = aliases.for_owner(parameter.owner.as_ref());
             states.iter_mut().any(|values| {
                 let own = values.remove(&parameter.id);
                 let evaluated =
@@ -1955,7 +2038,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
         .iter()
         .filter(|parameter| !parameter.dependencies.is_empty())
         .filter(|parameter| {
-            let aliases = &aliases[&parameter.owner];
+            let aliases = aliases.for_owner(parameter.owner.as_ref());
             states.iter_mut().any(|values| {
                 let actual = values.remove(&parameter.id);
                 let evaluated =
@@ -3823,6 +3906,50 @@ mod history_reference_tests {
         );
 
         assert_eq!(aliases.get("Width"), Some(&Some(parameters[0].id.clone())));
+    }
+
+    #[test]
+    fn layered_parameter_aliases_match_materialized_precedence() {
+        let global_owner = FeatureId("global".into());
+        let local_owner = FeatureId("local".into());
+        let parameters = [
+            DesignParameter {
+                id: ParameterId("global-id".into()),
+                owner: Some(global_owner.clone()),
+                ordinal: 0,
+                name: "Width".into(),
+                expression: "1".into(),
+                display: None,
+                value: None,
+                dependencies: Vec::new(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            },
+            DesignParameter {
+                id: ParameterId("local-id".into()),
+                owner: Some(local_owner.clone()),
+                ordinal: 0,
+                name: "Width".into(),
+                expression: "2".into(),
+                display: None,
+                value: None,
+                dependencies: Vec::new(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            },
+        ];
+        let aliases =
+            ParameterAliases::new(&parameters, &HashMap::new(), &HashSet::from([global_owner]));
+
+        for owner in [Some(local_owner), Some(FeatureId("unrelated".into())), None] {
+            let materialized = aliases.materialize(owner.as_ref());
+            let layered = aliases.for_owner(owner.as_ref());
+            for alias in ["Width", "global-id", "local-id", "missing"] {
+                assert_eq!(layered.get(alias), materialized.get(alias));
+            }
+        }
     }
 
     #[test]
@@ -7985,15 +8112,16 @@ mod literal_tests {
         let aliases = std::collections::HashMap::new();
         let values = std::collections::HashMap::new();
         assert_eq!(
-            ParameterExpressionParser::new("<MOD-DIAM>4mm / 2", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("<MOD-DIAM>4mm / 2", &aliases, &values).parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
         );
         assert_eq!(
-            ParameterExpressionParser::new("<MOD-DIAM>4 + 1mm", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("<MOD-DIAM>4 + 1mm", &aliases, &values).parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(5.0)))
         );
         assert_eq!(
-            ParameterExpressionParser::new("&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values,)
+                .parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
         );
         assert_eq!(
@@ -8007,11 +8135,12 @@ mod literal_tests {
         let aliases = std::collections::HashMap::new();
         let values = std::collections::HashMap::new();
         assert_eq!(
-            ParameterExpressionParser::new("<MOD-RHO>4mm / 2", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("<MOD-RHO>4mm / 2", &aliases, &values).parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
         );
         assert_eq!(
-            ParameterExpressionParser::new("&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values,)
+                .parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(5.0)))
         );
         assert_eq!(
@@ -8043,7 +8172,7 @@ mod literal_tests {
             );
             assert_eq!(dimension_display(expression), Some(display), "{expression}");
             assert_eq!(
-                ParameterExpressionParser::new(expression, &aliases, &values).parse(),
+                ParameterExpressionParser::new_flat(expression, &aliases, &values).parse(),
                 Some(ParameterValue::Length(cadmpeg_ir::features::Length(
                     expected
                 ))),
