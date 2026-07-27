@@ -6415,6 +6415,15 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(decoded.report.coverage["transferred_parameter_count"], 2);
     assert_eq!(
+        decoded.report.coverage["transferred_formula_design_record_count"],
+        4
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 0);
+    assert!(decoded.report.losses.iter().all(|loss| {
+        loss.category != cadmpeg_ir::report::LossCategory::DesignIntent
+            || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    assert_eq!(
         decoded.source_fidelity.annotations.exactness[&input.id.0].fields["expression"],
         cadmpeg_ir::Exactness::Derived
     );
@@ -6624,6 +6633,16 @@ fn decode_transfers_each_supported_formula_input_independently() {
         Some(cadmpeg_ir::features::ParameterValue::Real(6.5))
     );
     assert!(depth.dependencies.is_empty());
+    assert_eq!(
+        decoded.report.coverage["transferred_formula_design_record_count"],
+        2
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 4);
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+            && loss.message.contains("4 field record(s)")
+    }));
 }
 
 #[test]

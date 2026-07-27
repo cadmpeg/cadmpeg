@@ -11,7 +11,7 @@
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
@@ -66,9 +66,8 @@ fn finish_decode(
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
-    let transferred_formula_parameter_count =
-        transfer_formula_parameters(&mut ir, &native, &mut annotations);
-    let object_record_count = native
+    let formula_transfer = transfer_formula_parameters(&mut ir, &native, &mut annotations);
+    let object_record_count: usize = native
         .object_graphs
         .iter()
         .map(|graph| graph.records.len())
@@ -163,6 +162,29 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter(|object| object.owner_record.is_none())
+        .count();
+    let structurally_owned_records = native
+        .design_objects
+        .iter()
+        .filter(|object| object.owner_record.is_some())
+        .flat_map(|object| object.fields.iter().cloned())
+        .collect::<HashSet<_>>();
+    let transferred_formula_design_records = formula_transfer
+        .consumed_object_records
+        .intersection(&structurally_owned_records)
+        .cloned()
+        .collect::<HashSet<_>>();
+    let unresolved_object_record_count =
+        object_record_count.saturating_sub(transferred_formula_design_records.len());
+    let unresolved_design_object_count = native
+        .design_objects
+        .iter()
+        .filter(|object| {
+            object
+                .fields
+                .iter()
+                .any(|field| !transferred_formula_design_records.contains(field))
+        })
         .count();
     let value_field_count = native
         .value_blocks
@@ -278,6 +300,14 @@ fn finish_decode(
             ir.model.parameters.len(),
         ),
         (
+            "transferred_formula_design_record_count".to_string(),
+            transferred_formula_design_records.len(),
+        ),
+        (
+            "unresolved_design_record_count".to_string(),
+            unresolved_object_record_count,
+        ),
+        (
             "transferred_sketch_count".to_string(),
             ir.model.sketches.len(),
         ),
@@ -290,15 +320,16 @@ fn finish_decode(
             ir.model.configurations.len(),
         ),
     ]);
-    if object_record_count != 0 {
+    if unresolved_object_record_count != 0 {
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s) transferred, while neutral features, other parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s) and {} exact formula, expression, or parameter field record(s) transferred, while {unresolved_object_record_count} field record(s) across {unresolved_design_object_count} design object(s), neutral features, other parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
-                transferred_formula_parameter_count,
+                formula_transfer.parameter_count,
+                transferred_formula_design_records.len(),
             ),
             provenance: None,
         });
@@ -323,7 +354,7 @@ fn transfer_formula_parameters(
     ir: &mut CadIr,
     native: &CatiaNative,
     annotations: &mut Annotations,
-) -> usize {
+) -> FormulaTransfer {
     let entities = native
         .entity_records
         .iter()
@@ -331,6 +362,7 @@ fn transfer_formula_parameters(
         .collect::<HashMap<_, _>>();
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting = BTreeSet::<ParameterId>::new();
+    let mut programs = Vec::<FormulaProgramCandidate>::new();
 
     for formula_entity in &native.entity_records {
         let Some(formula) = &formula_entity.formula_relation else {
@@ -418,6 +450,12 @@ fn transfer_formula_parameters(
                     if let Some(value) =
                         typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
                     {
+                        programs.push(FormulaProgramCandidate {
+                            formula_entity: formula_entity.id.clone(),
+                            expression_entity: expression_entity.id.clone(),
+                            output: output_id.clone(),
+                            inputs: dependencies.clone(),
+                        });
                         transferred.push(FormulaParameterCandidate {
                             parameter: DesignParameter {
                                 id: output_id,
@@ -499,6 +537,41 @@ fn transfer_formula_parameters(
         }
     }
     candidates.retain(|id, _| derivable.contains(id));
+    let mut consumed_entity_records = candidates
+        .values()
+        .filter_map(|candidate| candidate.parameter.native_ref.clone())
+        .collect::<HashSet<_>>();
+    let mut programs_by_output = BTreeMap::<ParameterId, Vec<FormulaProgramCandidate>>::new();
+    for program in programs {
+        programs_by_output
+            .entry(program.output.clone())
+            .or_default()
+            .push(program);
+    }
+    for programs in programs_by_output.into_values() {
+        let [program] = programs.as_slice() else {
+            continue;
+        };
+        if candidates
+            .get(&program.output)
+            .is_some_and(|candidate| candidate.formula_output)
+            && program
+                .inputs
+                .iter()
+                .all(|input| candidates.contains_key(input))
+        {
+            consumed_entity_records.insert(program.formula_entity.clone());
+            consumed_entity_records.insert(program.expression_entity.clone());
+        }
+    }
+    let consumed_object_records = consumed_entity_records
+        .iter()
+        .filter_map(|entity| {
+            entities
+                .get(entity.as_str())
+                .map(|entity| entity.object_record.clone())
+        })
+        .collect();
     let mut parameters = candidates.into_values().collect::<Vec<_>>();
     parameters.sort_by_key(|candidate| candidate.source_order);
     let Some(parameters) = parameters
@@ -510,7 +583,7 @@ fn transfer_formula_parameters(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return 0;
+        return FormulaTransfer::default();
     };
     for parameter in &parameters {
         if parameter.dependencies.is_empty() {
@@ -524,13 +597,29 @@ fn transfer_formula_parameters(
     }
     let transferred = parameters.len();
     ir.model.parameters.extend(parameters);
-    transferred
+    FormulaTransfer {
+        parameter_count: transferred,
+        consumed_object_records,
+    }
+}
+
+#[derive(Default)]
+struct FormulaTransfer {
+    parameter_count: usize,
+    consumed_object_records: HashSet<String>,
 }
 
 struct FormulaParameterCandidate {
     parameter: DesignParameter,
     formula_output: bool,
     source_order: u64,
+}
+
+struct FormulaProgramCandidate {
+    formula_entity: String,
+    expression_entity: String,
+    output: ParameterId,
+    inputs: Vec<ParameterId>,
 }
 
 fn formula_parameter_candidates_agree(
