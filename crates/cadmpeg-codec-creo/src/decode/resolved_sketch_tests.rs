@@ -5638,6 +5638,70 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             SketchConstraintDefinition::Native { .. }
         ));
     }
+    for kind in [12, 13] {
+        let mut oriented_arc = definition.clone();
+        let relations = oriented_arc.relations.as_mut().expect("relations");
+        relations.skamps = vec![crate::feature::FeatureSkamp {
+            id: 18,
+            kind,
+            flags: 0,
+            status: 35,
+            items: vec![crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 0,
+            }],
+            offset: 83,
+        }];
+        synchronize_skamp_count(&mut oriented_arc);
+        let expected_entity = SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string());
+        let expected = if kind == 12 {
+            SketchConstraintDefinition::HorizontalLoci {
+                first: SketchLocus::Start(expected_entity.clone()),
+                second: SketchLocus::End(expected_entity),
+            }
+        } else {
+            SketchConstraintDefinition::VerticalLoci {
+                first: SketchLocus::Start(expected_entity.clone()),
+                second: SketchLocus::End(expected_entity),
+            }
+        };
+        assert_eq!(
+            section_skamp_constraints(&oriented_arc, &SketchId("creo:model:sketch#917".into()))[0]
+                .0
+                .definition,
+            expected
+        );
+        oriented_arc.relations.as_mut().expect("relations").skamps[0].status = 34;
+        assert!(matches!(
+            section_skamp_constraints(&oriented_arc, &SketchId("creo:model:sketch#917".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::HorizontalLoci { .. }
+                | SketchConstraintDefinition::VerticalLoci { .. }
+        ));
+        oriented_arc.relations.as_mut().expect("relations").skamps[0].items[0] =
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 0,
+            };
+        assert!(matches!(
+            section_skamp_constraints(&oriented_arc, &SketchId("creo:model:sketch#917".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
+        oriented_arc.relations.as_mut().expect("relations").skamps[0].items[0] =
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 2,
+            };
+        assert!(matches!(
+            section_skamp_constraints(&oriented_arc, &SketchId("creo:model:sketch#917".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
+    }
     let point_entity = crate::feature::FeatureSkampItem {
         entity_id: 14,
         sense: 0,

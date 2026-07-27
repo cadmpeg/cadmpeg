@@ -102,6 +102,10 @@ fixtures, claims above L1 remain unproven.
   transfer as neutral 90-degree and 180-degree fixed arc-angle constraints.
   Solver activity controls constraint activity, not the stored arc role or
   fixed angle.
+- Unary type-twelve and type-thirteen incidences on a uniquely established arc
+  transfer as horizontal and vertical alignment of the arc endpoint loci.
+  Solver activity controls constraint activity, not the stored arc role or
+  endpoint selection.
 - A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`

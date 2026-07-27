@@ -8185,7 +8185,9 @@ fn reconcile_constraint_entity_references(
         | SketchConstraintDefinition::Radius { entity, .. }
         | SketchConstraintDefinition::Diameter { entity, .. } => emitted.contains(entity),
         SketchConstraintDefinition::HorizontalPoints { first, second }
-        | SketchConstraintDefinition::VerticalPoints { first, second } => {
+        | SketchConstraintDefinition::VerticalPoints { first, second }
+        | SketchConstraintDefinition::HorizontalLoci { first, second }
+        | SketchConstraintDefinition::VerticalLoci { first, second } => {
             locus_emitted(first) && locus_emitted(second)
         }
         SketchConstraintDefinition::ArcAngle { entity, .. }
@@ -9863,6 +9865,18 @@ fn section_skamp_constraints_for_geometry(
                             }),
                         }
                     }
+                    (kind @ (12 | 13), [item])
+                        if item.sense == 0 && section_skamp_is_arc(definition, item) =>
+                    {
+                        let entity = sketch_entity_id(sketch, item.entity_id);
+                        let first = SketchLocus::Start(entity.clone());
+                        let second = SketchLocus::End(entity);
+                        if kind == 12 {
+                            SketchConstraintDefinition::HorizontalLoci { first, second }
+                        } else {
+                            SketchConstraintDefinition::VerticalLoci { first, second }
+                        }
+                    }
                     (14, [axis, first, second])
                         if axis.sense == 0
                             && section_skamp_is_line(definition, axis)
@@ -9996,7 +10010,9 @@ fn sketch_constraint_loci_compatible(
         | SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
-        | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
+        | SketchConstraintDefinition::VerticalDistance { first, second, .. }
+        | SketchConstraintDefinition::HorizontalLoci { first, second }
+        | SketchConstraintDefinition::VerticalLoci { first, second } => {
             locus_compatible(first) && locus_compatible(second)
         }
         SketchConstraintDefinition::Midpoint { point, entity }
