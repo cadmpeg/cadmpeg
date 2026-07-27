@@ -9329,6 +9329,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: Some(profile),
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,

@@ -202,6 +202,7 @@ struct DesignProjectionGaps {
     unprojected_sketch_relations: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
+    path_selections: usize,
     face_selections: usize,
     body_selections: usize,
     partially_resolved_face_members: usize,
@@ -315,7 +316,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, Termination,
     };
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef, ProfileRef};
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
     use std::collections::{HashMap, HashSet};
 
@@ -611,6 +612,29 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     edge_selection(&group.edges);
                 }
             }
+            FeatureDefinition::Sweep { profile, path, .. } => {
+                if profile.as_ref().is_some_and(|profile| {
+                    matches!(
+                        profile,
+                        ProfileRef::Native(_)
+                            | ProfileRef::Unresolved(_)
+                            | ProfileRef::SketchSelection { .. }
+                            | ProfileRef::SpatialSketchSelection { .. }
+                    )
+                }) {
+                    gaps.profile_selections += 1;
+                }
+                if path.as_ref().is_some_and(|path| {
+                    matches!(
+                        path,
+                        PathRef::Native(_)
+                            | PathRef::Unresolved(_)
+                            | PathRef::SpatialSketchSelection { .. }
+                    )
+                }) {
+                    gaps.path_selections += 1;
+                }
+            }
             FeatureDefinition::Shell {
                 bodies,
                 removed_faces,
@@ -777,6 +801,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} feature profile selection(s) retain native selection identities because no unique neutral profile was resolved.",
             gaps.profile_selections
+        ),
+    );
+    push(
+        gaps.path_selections,
+        format!(
+            "{} feature path selection(s) retain native selection identities because no unique neutral path was resolved.",
+            gaps.path_selections
         ),
     );
     push(
@@ -1162,6 +1193,18 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                     &native.sketch_relations,
                     ir.tolerances.linear,
                 );
+            crate::design::profile_select::bind_sweep_sketch_selections(
+                &mut ir.model.features,
+                &crate::design::profile_select::SweepSketchResolution {
+                    scopes: &native.design_parameter_scopes,
+                    groups: &native.design_construction_operand_groups,
+                    operands: &native.design_entity_selection_operands,
+                    placements: &native.design_sketch_placements,
+                    curve_identities: &native.sketch_curve_identities,
+                    sketches: &ir.model.sketches,
+                    sketch_entities: &ir.model.sketch_entities,
+                },
+            );
             crate::design::profile_select::bind_loft_sketch_selections(
                 &scan,
                 &native.design_construction_operand_groups,
@@ -1515,6 +1558,18 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             &native.sketch_relations,
             ir.tolerances.linear,
         );
+    crate::design::profile_select::bind_sweep_sketch_selections(
+        &mut ir.model.features,
+        &crate::design::profile_select::SweepSketchResolution {
+            scopes: &native.design_parameter_scopes,
+            groups: &native.design_construction_operand_groups,
+            operands: &native.design_entity_selection_operands,
+            placements: &native.design_sketch_placements,
+            curve_identities: &native.sketch_curve_identities,
+            sketches: &ir.model.sketches,
+            sketch_entities: &ir.model.sketch_entities,
+        },
+    );
     crate::design::profile_select::bind_loft_sketch_selections(
         &scan,
         &native.design_construction_operand_groups,
@@ -3125,8 +3180,21 @@ mod tests {
         );
         ir.model.features.push(
             serde_json::from_value(serde_json::json!({
-                "id": "fillet",
+                "id": "sweep",
                 "ordinal": 1,
+                "definition": {
+                    "definition": "sweep",
+                    "profile": {"kind": "native", "value": "native:sweep-profile"},
+                    "path": {"kind": "native", "value": "native:sweep-path"},
+                    "mode": {"mode": "solid", "op": "cut"}
+                }
+            }))
+            .expect("Sweep feature"),
+        );
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "fillet",
+                "ordinal": 2,
                 "definition": {
                     "definition": "fillet",
                     "groups": [
@@ -3357,6 +3425,7 @@ mod tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            sweep_profile: None,
             base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -3384,7 +3453,8 @@ mod tests {
                 unprojected_sketch_texts: 0,
                 unprojected_sketch_relations: 1,
                 unprojected_dimensions: 1,
-                profile_selections: 1,
+                profile_selections: 2,
+                path_selections: 1,
                 face_selections: 1,
                 body_selections: 0,
                 partially_resolved_face_members: 0,
@@ -3509,6 +3579,7 @@ mod tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            sweep_profile: None,
             base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,

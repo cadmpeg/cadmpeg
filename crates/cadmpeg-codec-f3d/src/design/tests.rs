@@ -3973,6 +3973,73 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             }),
         })
     );
+    sweep_scope.id = "stream:sweep-scope".into();
+    sweep_scope.path_feature_construction = exact_path_feature_construction(&bytes, &sweep_scope);
+    let sweep_group = |ordinal: u32, role: u64| {
+        let mut group = thicken_group.clone();
+        group.id = format!("stream:sweep-group-{ordinal}");
+        group.scope_record_index = sweep_scope.record_index;
+        group.scope_reference_ordinal = ordinal;
+        group.role = role;
+        group
+    };
+    let profile = sweep_group(0, 0x41_0000_0000);
+    let path = sweep_group(1, 0x5_0000_0000);
+    let body = sweep_group(2, 0x4_0000_0000);
+    assert_eq!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile.clone(), path.clone()]
+        ),
+        None
+    );
+    let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
+    sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: (sweep_start + 25) as u64,
+        values: complete_sweep_values,
+        record_indexes: [80, 81, 82, 83, 84, 85],
+        value_offsets: std::array::from_fn(|ordinal| {
+            (sweep_scalar_start + ordinal * 111 + 40) as u64
+        }),
+    });
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile.clone(), path.clone()]
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanOp::NewBody
+            },
+            ..
+        })
+    ));
+    assert_eq!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile.clone(), path.clone(), body.clone()]
+        ),
+        None
+    );
+    sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
+        operation: DesignExtrudeOperation::Cut,
+        operation_offset: (sweep_start + 25) as u64,
+        values: complete_sweep_values,
+        record_indexes: [80, 81, 82, 83, 84, 85],
+        value_offsets: std::array::from_fn(|ordinal| {
+            (sweep_scalar_start + ordinal * 111 + 40) as u64
+        }),
+    });
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile, path, body]),
+        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanOp::Cut
+            },
+            ..
+        })
+    ));
 
     let mut companion = DesignParameterCompanion {
         id: "f3d:native:parameter-companion#11".into(),
@@ -4284,12 +4351,53 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         member_offsets: Vec::new(),
     };
 
-    let profile = parse_sketch_profile(&bytes, "f3d:Design/BulkStream.dat", 4, &header, &[entity])
-        .expect("sketch-profile operand");
+    let profile = parse_sketch_profile(
+        &bytes,
+        "f3d:Design/BulkStream.dat",
+        4,
+        &header,
+        std::slice::from_ref(&entity),
+    )
+    .expect("sketch-profile operand");
     assert_eq!(profile.scope_reference_ordinal, 4);
     assert_eq!(profile.entity_suffix, 172);
     assert_eq!(profile.entity_id, "0_172");
     assert_eq!(profile.paired_byte_offset, paired_at as u64);
+
+    bytes.truncate(paired_at - 94);
+    bytes[4..7].copy_from_slice(b"477");
+    let mut compact_tail = vec![0; 93];
+    compact_tail[0] = 1;
+    compact_tail[8..12].copy_from_slice(&1u32.to_le_bytes());
+    compact_tail[12] = 1;
+    compact_tail[13..17].copy_from_slice(&500u32.to_le_bytes());
+    compact_tail[41..45].copy_from_slice(&99u32.to_le_bytes());
+    compact_tail[53..57].copy_from_slice(&99u32.to_le_bytes());
+    compact_tail[57] = 1;
+    compact_tail[58..62].copy_from_slice(&102u32.to_le_bytes());
+    compact_tail[70] = 1;
+    compact_tail[71..75].copy_from_slice(&101u32.to_le_bytes());
+    compact_tail[82] = 1;
+    compact_tail[83..87].copy_from_slice(&777u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_tail);
+    let compact_paired_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"258");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    let compact_header = DesignRecordHeader {
+        class_tag: "477".into(),
+        ..header
+    };
+    let compact = parse_sketch_profile(
+        &bytes,
+        "f3d:Design/BulkStream.dat",
+        2,
+        &compact_header,
+        std::slice::from_ref(&entity),
+    )
+    .expect("compact sketch-profile operand");
+    assert_eq!(compact.scope_reference_ordinal, 2);
+    assert_eq!(compact.paired_byte_offset, compact_paired_at as u64);
 }
 
 #[test]
@@ -4470,6 +4578,7 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -4948,6 +5057,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -5368,6 +5478,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -9925,6 +10036,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -10048,6 +10160,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -10229,6 +10342,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             paired_class_tag: "259".into(),
             paired_byte_offset: 520,
         }),
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -10840,6 +10954,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -11611,6 +11726,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -12002,6 +12118,7 @@ fn parameter_expressions_project_feature_dependencies() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -12116,6 +12233,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -12765,6 +12883,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,

@@ -1121,6 +1121,9 @@ pub struct DesignParameterScope {
     /// Profile operand carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_profile: Option<DesignSketchProfileOperand>,
+    /// Sketch-profile operand carried by a `Sweep` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_profile: Option<DesignSketchProfileOperand>,
     /// Sketch-profile operand carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_flange_profile: Option<DesignSketchProfileOperand>,

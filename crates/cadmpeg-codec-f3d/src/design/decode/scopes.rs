@@ -1382,6 +1382,7 @@ pub(crate) fn parse_parameter_scope(
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        sweep_profile: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,

@@ -2300,7 +2300,7 @@ pub(crate) fn loft_path_from_edge_selection(
     }
 }
 
-fn project_fixed_sweep(
+pub(crate) fn project_fixed_sweep(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -2328,10 +2328,19 @@ fn project_fixed_sweep(
         .iter()
         .filter(|group| group.role == ROLE_0X5)
         .collect::<Vec<_>>();
+    let bodies = groups
+        .iter()
+        .filter(|group| group.role == ROLE_0X4)
+        .collect::<Vec<_>>();
     let ([profile], [path]) = (profile.as_slice(), path.as_slice()) else {
         return None;
     };
-    if groups.len() != 2 || values[5] != 0.0 {
+    if bodies.len() > 1
+        || groups.len() != 2 + bodies.len()
+        || (*operation == DesignExtrudeOperation::NewBody && !bodies.is_empty())
+        || values[..4] != [1.0; 4]
+        || values[5] != 0.0
+    {
         return None;
     }
     Some(FeatureDefinition::Sweep {

@@ -666,6 +666,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .extrude_profile
             .as_ref()
             .is_none_or(|profile| is_extrude && valid_sketch_profile(profile));
+        let is_sweep =
+            design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Sweep);
+        let sweep_profile_link = scope
+            .sweep_profile
+            .as_ref()
+            .is_none_or(|profile| is_sweep && valid_sketch_profile(profile));
         let is_base_flange = scope.kind == "BaseFlange";
         let base_flange_profile_link = scope
             .base_flange_profile
@@ -919,6 +925,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && record_indices.contains(&(native_stream, scope.record_index))
             && entity_link.unwrap_or(scope.kind != "Sketch")
             && extrude_profile_link
+            && sweep_profile_link
             && base_flange_profile_link
             && base_flange_link
             && edge_flange_link
@@ -1465,6 +1472,32 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: "Fusion Design Extrude start or extent conflicts with its parameters and face operands"
+                        .into(),
+                    entity: Some(scope.id.clone()),
+                });
+            }
+        }
+        if design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Sweep) {
+            let mut profile_groups =
+                native
+                    .design_construction_operand_groups
+                    .iter()
+                    .filter(|group| {
+                        design_stream(&group.id) == native_stream
+                            && group.scope_record_index == scope.record_index
+                            && group.role == 0x0000_0041_0000_0000
+                    });
+            let profile_group = profile_groups.next();
+            let profile_matches_operand = profile_groups.next().is_none()
+                && scope.sweep_profile.as_ref().is_none_or(|profile| {
+                    profile_group
+                        .is_some_and(|group| group.members.as_slice() == [profile.record_index])
+                });
+            if !profile_matches_operand {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "Fusion Design Sweep profile conflicts with its profile operand group"
                         .into(),
                     entity: Some(scope.id.clone()),
                 });

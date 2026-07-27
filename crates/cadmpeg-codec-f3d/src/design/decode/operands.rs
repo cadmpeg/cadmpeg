@@ -438,6 +438,7 @@ pub fn bind_sketch_profiles(
         .collect::<HashMap<_, _>>();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
             || scope.kind == "BaseFlange"
     }) {
         let Some(stream) = native_stream(&scope.id) else {
@@ -465,6 +466,8 @@ pub fn bind_sketch_profiles(
         if let [profile] = candidates.as_slice() {
             if scope.kind == "BaseFlange" {
                 scope.base_flange_profile = Some(profile.clone());
+            } else if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep) {
+                scope.sweep_profile = Some(profile.clone());
             } else {
                 scope.extrude_profile = Some(profile.clone());
             }
@@ -1778,10 +1781,25 @@ pub(crate) fn parse_sketch_profile(
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
     let (paired_class_tag, after_paired_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_paired_tag)? != header.record_index
-        || after_entity_suffix.checked_add(94)? != paired_at
-    {
+    let tail_length = paired_at.checked_sub(after_entity_suffix)?;
+    if u32_at(bytes, after_paired_tag)? != header.record_index || !matches!(tail_length, 93 | 94) {
         return None;
+    }
+    if tail_length == 93 {
+        let tail = after_entity_suffix;
+        if header.class_tag != "477"
+            || bytes.get(tail..tail + 8) != Some(&[1, 0, 0, 0, 0, 0, 0, 0])
+            || u32_at(bytes, tail + 8) != Some(1)
+            || marked_record_reference(bytes, tail + 57) != header.record_index.checked_add(2)
+            || bytes.get(tail + 68..tail + 70) != Some(&[0; 2])
+            || marked_record_reference(bytes, tail + 70) != header.record_index.checked_add(1)
+            || bytes.get(tail + 81) != Some(&0)
+            || marked_record_reference(bytes, tail + 82).is_none()
+            || u32_at(bytes, tail + 41) == Some(0)
+            || u32_at(bytes, tail + 41) != u32_at(bytes, tail + 53)
+        {
+            return None;
+        }
     }
     let matches = entities
         .iter()
@@ -1807,6 +1825,13 @@ pub(crate) fn parse_sketch_profile(
         paired_class_tag,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
+}
+
+fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
+    if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
+        return None;
+    }
+    u32_at(bytes, at + 1)
 }
 
 pub(crate) fn parse_edge_operand(

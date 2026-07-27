@@ -34,6 +34,158 @@ pub(crate) struct ExtrudeProfileResolution<'a> {
     pub linear_tolerance: f64,
 }
 
+/// Native and neutral arenas required to resolve Sweep sketch selections.
+pub(crate) struct SweepSketchResolution<'a> {
+    /// Decoded Design feature scopes.
+    pub scopes: &'a [DesignParameterScope],
+    /// Counted construction-operand groups.
+    pub groups: &'a [DesignConstructionOperandGroup],
+    /// Nested entity-selection operands.
+    pub operands: &'a [DesignEntitySelectionOperand],
+    /// Projected Sketch placement carriers.
+    pub placements: &'a [DesignSketchPlacement],
+    /// Persistent Sketch curve identities.
+    pub curve_identities: &'a [SketchCurveIdentity],
+    /// Neutral planar Sketches.
+    pub sketches: &'a [cadmpeg_ir::sketches::Sketch],
+    /// Neutral planar Sketch entities.
+    pub sketch_entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+}
+
+/// Bind exact Sweep sketch-profile and sole-curve path carriers.
+pub(crate) fn bind_sweep_sketch_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    resolution: &SweepSketchResolution<'_>,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef, ProfileRef};
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let SweepSketchResolution {
+        scopes,
+        groups,
+        operands,
+        placements,
+        curve_identities,
+        sketches,
+        sketch_entities,
+    } = resolution;
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let FeatureDefinition::Sweep { profile, path, .. } = &mut feature.definition else {
+            continue;
+        };
+        if let (Some(ProfileRef::Native(group_id)), Some(profile_operand)) =
+            (profile.as_ref(), scope.sweep_profile.as_ref())
+        {
+            let group_id = group_id.clone();
+            let group_matches = {
+                let mut matching_groups = groups.iter().filter(|group| {
+                    group.id == group_id
+                        && group.scope_record_index == scope.record_index
+                        && group.role == 0x0000_0041_0000_0000
+                        && group.members.as_slice() == [profile_operand.record_index]
+                        && native_stream(&group.id) == Some(stream)
+                });
+                matches!(
+                    (matching_groups.next(), matching_groups.next()),
+                    (Some(_), None)
+                )
+            };
+            if group_matches {
+                let mut candidates = placements.iter().filter(|placement| {
+                    native_stream(&placement.id) == Some(stream)
+                        && placement.entity_suffix == profile_operand.entity_suffix
+                });
+                if let (Some(placement), None) = (candidates.next(), candidates.next()) {
+                    let sketch = neutral_sketch_id(placement);
+                    if sketches.iter().any(|candidate| candidate.id == sketch) {
+                        *profile = Some(ProfileRef::Sketch(sketch));
+                    }
+                }
+            }
+        }
+        let Some(path) = path.as_mut() else {
+            continue;
+        };
+        let PathRef::Native(group_id) = path else {
+            continue;
+        };
+        let group_id = group_id.clone();
+        let mut matching_groups = groups.iter().filter(|group| {
+            group.id == group_id
+                && group.scope_record_index == scope.record_index
+                && group.role == 0x0000_0005_0000_0000
+                && native_stream(&group.id) == Some(stream)
+        });
+        let Some(group) = matching_groups.next() else {
+            continue;
+        };
+        if matching_groups.next().is_some() || group.members.len() != 1 {
+            continue;
+        }
+        let mut matching_operands = operands.iter().filter(|operand| {
+            operand.scope_record_index == scope.record_index
+                && operand.group_record_index == group.record_index
+                && operand.group_member_ordinal == 0
+                && operand.record_index == group.members[0]
+                && native_stream(&operand.id) == Some(stream)
+        });
+        let Some(operand) = matching_operands.next() else {
+            continue;
+        };
+        if matching_operands.next().is_some() {
+            continue;
+        }
+        let mut matching_placements = placements.iter().filter(|placement| {
+            native_stream(&placement.id) == Some(stream)
+                && placement.entity_suffix == operand.primary_identity
+        });
+        let Some(placement) = matching_placements.next() else {
+            continue;
+        };
+        if matching_placements.next().is_some() {
+            continue;
+        }
+        let sketch = neutral_sketch_id(placement);
+        if !sketches.iter().any(|candidate| candidate.id == sketch) {
+            continue;
+        }
+        let Ok(owner_reference) = u32::try_from(operand.primary_identity) else {
+            continue;
+        };
+        let mut matching_curves = curve_identities.iter().filter(|curve| {
+            native_stream(&curve.id) == Some(stream)
+                && curve.owner_reference == Some(owner_reference)
+                && curve.primary_id == operand.secondary_identity
+        });
+        let Some(curve) = matching_curves.next() else {
+            continue;
+        };
+        if matching_curves.next().is_some() {
+            continue;
+        }
+        let selected = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
+        let mut curves = sketch_entities.iter().filter(|entity| {
+            entity.sketch == sketch && !matches!(entity.geometry, SketchGeometry::Point { .. })
+        });
+        if curves.next().is_some_and(|entity| entity.id == selected) && curves.next().is_none() {
+            *path = PathRef::Sketch(sketch);
+        }
+    }
+}
+
 pub(crate) fn bind_extrude_profile_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
