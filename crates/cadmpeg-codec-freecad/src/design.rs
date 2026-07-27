@@ -3325,6 +3325,8 @@ fn sweep_definition(
         path_tangent: bool_property(properties, "SpineTangent").unwrap_or(false),
         linearize: bool_property(properties, "Linearize").unwrap_or(false),
         twist: None,
+        path_extent: None,
+        taper: None,
         scale: None,
         allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
             Some(bool_property(properties, "AllowMultiFace")?)

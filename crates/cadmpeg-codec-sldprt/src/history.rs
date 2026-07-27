@@ -5658,6 +5658,8 @@ fn project_sweep(
         path_tangent: false,
         linearize: false,
         twist,
+        path_extent: None,
+        taper: None,
         scale,
         allow_multi_profile_faces: None,
     })
@@ -12563,6 +12565,8 @@ pub fn sync_neutral_features(
                 path_tangent,
                 linearize,
                 twist,
+                path_extent,
+                taper,
                 scale,
                 allow_multi_profile_faces,
             } => {
@@ -12572,6 +12576,8 @@ pub fn sync_neutral_features(
                     || transformation.is_some()
                     || *path_tangent
                     || *linearize
+                    || path_extent.is_some()
+                    || taper.is_some()
                     || allow_multi_profile_faces.is_some()
                 {
                     return Err(CodecError::NotImplemented(format!(

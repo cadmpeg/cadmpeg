@@ -2305,6 +2305,8 @@ fn encoder_writes_source_less_line_sketches() {
             path_tangent: false,
             linearize: false,
             twist: Some(Angle(0.3)),
+            path_extent: None,
+            taper: None,
             scale: Some(1.5),
             allow_multi_profile_faces: None,
         },

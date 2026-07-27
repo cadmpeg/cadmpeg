@@ -2470,6 +2470,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 path,
                 orientation,
                 twist,
+                path_extent,
+                taper,
                 scale,
                 ..
             } => {
@@ -2481,6 +2483,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     paths.push(path);
                 }
                 if twist.is_some_and(|value| !value.0.is_finite())
+                    || taper.is_some_and(|value| !value.0.is_finite())
+                    || path_extent.is_some_and(|extent| {
+                        !(0.0..=1.0).contains(&extent.along_fraction)
+                            || !(0.0..=1.0).contains(&extent.against_fraction)
+                    })
                     || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
                     || matches!(orientation, Some(crate::features::SweepOrientation::Binormal { direction }) if !valid_feature_direction(*direction))
                 {

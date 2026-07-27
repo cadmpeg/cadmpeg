@@ -781,6 +781,12 @@ pub enum FeatureDefinition {
         /// Total profile twist along the path, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         twist: Option<Angle>,
+        /// Fractions of the selected path swept on either side of the profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path_extent: Option<SweepPathExtent>,
+        /// Profile taper angle over the swept extent, when specified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taper: Option<Angle>,
         /// End-to-start profile scale ratio, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scale: Option<f64>,
@@ -2439,6 +2445,15 @@ pub enum SweepMode {
     },
     /// Sweep creates a sheet body.
     Surface,
+}
+
+/// Directed fractions of a sweep path consumed from the profile location.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SweepPathExtent {
+    /// Fraction consumed along the path from the profile.
+    pub along_fraction: f64,
+    /// Fraction consumed against the profile normal.
+    pub against_fraction: f64,
 }
 
 /// One directed use of a solved sketch curve in an arrangement boundary.

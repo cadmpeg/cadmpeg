@@ -2346,7 +2346,9 @@ pub(crate) fn project_fixed_sweep(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, PathRef, ProfileRef, SweepMode};
+    use cadmpeg_ir::features::{
+        Angle, FeatureDefinition, PathRef, ProfileRef, SweepMode, SweepPathExtent,
+    };
 
     let DesignPathFeatureConstruction::Sweep {
         operation, values, ..
@@ -2380,8 +2382,11 @@ pub(crate) fn project_fixed_sweep(
     if bodies.len() > 1
         || groups.len() != 2 + bodies.len()
         || (*operation == DesignExtrudeOperation::NewBody && !bodies.is_empty())
-        || values[..4] != [1.0; 4]
-        || values[5] != 0.0
+        || values[2..4] != [1.0; 2]
+        || !(0.0..=1.0).contains(&values[0])
+        || !(0.0..=1.0).contains(&values[1])
+        || !values[4].is_finite()
+        || !values[5].is_finite()
     {
         return None;
     }
@@ -2398,6 +2403,11 @@ pub(crate) fn project_fixed_sweep(
         path_tangent: false,
         linearize: false,
         twist: (values[4] != 0.0).then_some(Angle(values[4])),
+        path_extent: Some(SweepPathExtent {
+            along_fraction: values[0],
+            against_fraction: values[1],
+        }),
+        taper: (values[5] != 0.0).then_some(Angle(values[5])),
         scale: None,
         allow_multi_profile_faces: None,
     })

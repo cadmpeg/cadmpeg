@@ -4004,13 +4004,21 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let profile = sweep_group(0, 0x41_0000_0000);
     let path = sweep_group(1, 0x5_0000_0000);
     let body = sweep_group(2, 0x4_0000_0000);
-    assert_eq!(
+    assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
             &[profile.clone(), path.clone()]
         ),
-        None
-    );
+        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
+                along_fraction: 0.8,
+                against_fraction: 0.0,
+            }),
+            twist: Some(cadmpeg_ir::features::Angle(6.632251157578453)),
+            taper: None,
+            ..
+        })
+    ));
     let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
     sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
         operation: DesignExtrudeOperation::NewBody,
