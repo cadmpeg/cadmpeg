@@ -444,13 +444,15 @@ Type 38 is the XT `INTERSECTION` node. Delta-stream `0x5a` records use the `inte
 
 ### 4.2 Deltas-stream framing
 
-A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode (valid record ends on a plausible next-record tag). Records use the following forms:
+A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode. Records use the following forms:
 
-Status-framed fixed records are normalized by removing each reference status byte before fixed-record graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
+Status-framed fixed records use a status byte in `0..=1` after each encoded reference. They are normalized by removing each reference status byte before fixed-record graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
 
 Type-81 entity/attribute-list records and type-82, type-83, and type-84 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted type-82 integer and type-83 finite-binary64 records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
 
 Type-91 records are `type:005b, xmt, zero:u32 BE, reference_status[6]`. The record XMT is non-null. Each `reference_status` entry is a nonzero encoded XMT followed by a status byte in `0..=1`. The record ends after the sixth status byte. Type-91 records participate in the deltas byte ledger, retain exact serialized bytes in the semantic lane, and do not replace topology or geometry records.
+
+Status-framed type-38 `INTERSECTION` records end after their six construction references and do not require a following recognized tag. Single-byte `5a` `INTERSECTION_DATA` records use the layout in section 6.3 and end after their sixth construction reference. Both participate in the deltas byte ledger and remain in the semantic lane.
 
 **Full record:**
 
@@ -461,7 +463,7 @@ node_id:u32 BE                   0-based delta-stream ordinal
 <type signature fields>          reference slot = encoded_xmt + status:u8
 ```
 
-FIN omits `node_id` and begins its nine signature references immediately after `xmt`. The status byte is `0x01` and frames each reference. The record form carries the merge operation.
+FIN omits `node_id` and begins its nine signature references immediately after `xmt`. A binary status byte frames each reference. The record form carries the merge operation.
 
 **Tombstone:** a compact 6-byte deletion begins with `type:u16 BE`. A short XMT identity occupies `xmt:i16 BE` followed by `00 01`. A high-bit XMT identity occupies the remaining four bytes in the standard extended form: a negative signed remainder followed by quotient `1`, with `xmt = 32767 + abs(remainder)`. A whole-record tombstone has this complete form. In a full record, `xmt 01` is a reference and status byte.
 

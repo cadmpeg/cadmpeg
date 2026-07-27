@@ -505,22 +505,25 @@ pub struct ParasolidIntersectionRecord {
 
 /// Decode complete typed source records for retained intersection constructions.
 pub(crate) fn parasolid_intersection_records(
-    parsed: &ParsedStreams,
+    streams: &[Stream],
 ) -> Vec<ParasolidIntersectionRecord> {
-    per_parasolid_stream::<ParasolidIntersectionRecord>(parsed)
+    per_parasolid_scan::<ParasolidIntersectionRecord>(streams)
 }
 
-impl ParasolidStreamRecords for ParasolidIntersectionRecord {
+impl ParasolidScanRecords for ParasolidIntersectionRecord {
     type Row = crate::topology::CompositeCurve;
     type Record = ParasolidIntersectionRecord;
     const ID_STEM: &'static str = "intersection-record";
-    fn rows(view: &StreamView) -> &[Self::Row] {
-        &view.intersections.constructions
+    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
+        crate::topology::composite_curves(bytes)
+            .into_iter()
+            .chain(crate::topology::intersection_data_curves(bytes))
+            .collect()
     }
     fn xmt(row: &Self::Row) -> u32 {
         row.xmt
     }
-    fn record(id: String, stream_ordinal: u32, row: &Self::Row) -> Self::Record {
+    fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
         ParasolidIntersectionRecord {
             id,
             stream_ordinal,
@@ -1633,8 +1636,17 @@ mod tests {
 
     #[test]
     fn decode_preserves_deltas_intersection_data_curve() {
-        let stream = deltas_intersection_curve_stream();
-        let mut cur = Cursor::new(prt_with_partition(&stream));
+        let mut partition = topology_partition_stream();
+        for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
+            let marker = [0, tag, 0, xmt];
+            let record = partition
+                .windows(marker.len())
+                .position(|window| window == marker)
+                .expect("topology record");
+            put_ref(&mut partition, record + offset, 12);
+        }
+        let deltas = deltas_intersection_curve_stream();
+        let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
         let result = NxCodec
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");

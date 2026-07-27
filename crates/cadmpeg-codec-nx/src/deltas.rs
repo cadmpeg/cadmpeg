@@ -323,6 +323,13 @@ pub fn walk(stream: &[u8]) -> Census {
     let mut census = Census::default();
     let mut offset = 0;
     while offset + 4 <= stream.len() {
+        if let Some(record) = consume_intersection_data(stream, offset) {
+            census.bytes_decoded += record.end - record.offset;
+            *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
+            offset = record.end;
+            census.records.push(record);
+            continue;
+        }
         let Some(kind) = be::u16_at(stream, offset) else {
             break;
         };
@@ -340,7 +347,7 @@ pub fn walk(stream: &[u8]) -> Census {
         }
         let decoded = fixed_signature(kind)
             .and_then(|signature| consume_fixed(stream, offset, kind, signature))
-            .filter(|record| plausible_next(stream, record.end))
+            .filter(|record| record.kind == 38 || plausible_next(stream, record.end))
             .or_else(|| consume_variable(stream, offset, kind));
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
@@ -585,7 +592,7 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
         .records
         .iter()
         .filter(|record| {
-            record.offset >= revision_start && matches!(record.kind, 38 | 81..=84 | 91)
+            record.offset >= revision_start && matches!(record.kind, 38 | 81..=84 | 90 | 91)
         })
         .map(|record| record.canonical_bytes.clone())
         .collect::<Vec<_>>();
@@ -623,9 +630,7 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
                 let start = at;
                 let (reference, consumed) = read_xmt(stream, at)?;
                 at += consumed;
-                if stream.get(at) != Some(&1) {
-                    return None;
-                }
+                matches!(stream.get(at), Some(0 | 1)).then_some(())?;
                 at += 1;
                 canonical_bytes.extend_from_slice(stream.get(start..start + consumed)?);
                 references.push(reference);
@@ -748,6 +753,22 @@ fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
         canonical_bytes: stream.get(offset..at)?.to_vec(),
         offset,
         end: at,
+    })
+}
+
+fn consume_intersection_data(stream: &[u8], offset: usize) -> Option<Record> {
+    let (curve, end) = crate::topology::intersection_data_curve_at(stream, offset)?;
+    let mut references = curve.header_references.to_vec();
+    references.extend(curve.references);
+    Some(Record {
+        kind: 90,
+        xmt: curve.xmt,
+        node_id: None,
+        references,
+        position: None,
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        offset,
+        end,
     })
 }
 

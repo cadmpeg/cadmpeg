@@ -6109,11 +6109,56 @@ fn deltas_point_normalizes_to_partition_record_framing() {
 
 #[test]
 fn deltas_intersection_normalizes_before_partition_style_decode() {
-    let residual = crate::deltas::semantic_residual(&status_framed_deltas_intersection_stream());
+    let mut stream = status_framed_deltas_intersection_stream();
+    stream[10] = 0;
+    let record_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 38);
+    assert_eq!(census.bytes_decoded, record_len);
+
+    let residual = crate::deltas::semantic_residual(&stream);
     let intersections = crate::topology::composite_curves(&residual);
     assert_eq!(intersections.len(), 1);
     assert_eq!(intersections[0].xmt, 12);
     assert_eq!(intersections[0].references, [6, 7, 20, 21, 22, 23]);
+}
+
+#[test]
+fn deltas_walks_complete_single_byte_intersection_data_records() {
+    let mut stream = vec![0x5a];
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(b'+');
+    for reference in [6u16, 6, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    let record_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 90);
+    assert_eq!(census.records[0].xmt, 12);
+    assert_eq!(
+        census.records[0].references,
+        [1, 1, 1, 1, 1, 6, 6, 1, 1, 1, 1]
+    );
+    assert_eq!(census.records[0].canonical_bytes, stream[..record_len]);
+    assert_eq!(census.full_counts["INTERSECTION_DATA"], 1);
+    assert_eq!(census.bytes_decoded, record_len);
+    assert_eq!(
+        crate::topology::intersection_data_curves(&stream)[0].references,
+        [6, 6, 1, 1, 1, 1]
+    );
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..record_len].iter().all(|byte| *byte == 0xff));
+    assert!(residual.ends_with(&stream[..record_len]));
 }
 
 #[test]
@@ -6131,7 +6176,7 @@ fn deltas_offset_surface_normalizes_exact_record_envelope() {
         .windows(4)
         .position(|window| window == [0, 60, 0, 12])
         .expect("OFFSET_SURF record");
-    invalid_status[offset + 28] = 0;
+    invalid_status[offset + 28] = 2;
     assert!(!crate::deltas::walk(&invalid_status)
         .records
         .iter()

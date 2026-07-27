@@ -1934,23 +1934,7 @@ pub(crate) fn inline_descriptor_intersection_curve_stream() -> Vec<u8> {
 }
 
 pub(crate) fn deltas_intersection_curve_stream() -> Vec<u8> {
-    let mut stream = topology_partition_stream();
-    let subtype = stream
-        .windows(b"(partition)".len())
-        .position(|window| window == b"(partition)")
-        .expect("partition subtype");
-    stream.splice(
-        subtype..subtype + b"(partition)".len(),
-        b"(deltas)".iter().copied(),
-    );
-    for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
-        let marker = [0, tag, 0, xmt];
-        let record = stream
-            .windows(marker.len())
-            .position(|window| window == marker)
-            .expect("topology record");
-        put_ref(&mut stream, record + offset, 12);
-    }
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(b"intersection_data");
     stream.push(0x5a);
     stream.extend_from_slice(&12u16.to_be_bytes());

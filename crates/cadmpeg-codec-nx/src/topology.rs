@@ -427,68 +427,68 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
         .enumerate()
         .filter_map(|(pos, byte)| (*byte == 0x5a).then_some(pos))
     {
-        let Some((xmt, xmt_extra)) = read_xmt(stream, pos + 1) else {
+        let Some((curve, _)) = intersection_data_curve_at(stream, pos) else {
             continue;
         };
-        if xmt <= 1 || !seen.insert(xmt) {
+        if !seen.insert(curve.xmt) {
             continue;
         }
-        let mut at = pos + 1 + 2 + xmt_extra + 4;
-        let mut header_refs = [0u32; 5];
-        let mut valid = true;
-        for reference in &mut header_refs {
-            let Some((value, extra)) = read_xmt(stream, at) else {
-                valid = false;
-                break;
-            };
-            *reference = value;
-            at += 2 + extra;
-        }
-        if !valid || header_refs[0] != 1 {
-            continue;
-        }
-        if header_refs[4] != 1
-            && !stream[..pos]
-                .windows(b"intersection_data".len())
-                .rev()
-                .take(64)
-                .any(|window| window == b"intersection_data")
-        {
-            continue;
-        }
-        let sense = match stream.get(at) {
-            Some(b'+') => true,
-            Some(b'-') => false,
-            _ => continue,
-        };
-        at += 1;
-        let mut references = [0u32; 6];
-        for reference in &mut references {
-            let Some((value, extra)) = read_xmt(stream, at) else {
-                valid = false;
-                break;
-            };
-            *reference = value;
-            at += 2 + extra;
-        }
-        let complete_witness = references[2..=4].iter().all(|reference| *reference > 1);
-        let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
-        if valid
-            && references.iter().all(|reference| *reference != 0)
-            && (complete_witness || null_witness)
-            && (references[0] > 1 || references[1] > 1)
-        {
-            out.push(CompositeCurve {
-                xmt,
-                header_references: header_refs,
-                sense,
-                references,
-                delta_twin: true,
-                pos,
-            });
-        }
+        out.push(curve);
     }
     out
+}
+
+pub(crate) fn intersection_data_curve_at(
+    stream: &[u8],
+    pos: usize,
+) -> Option<(CompositeCurve, usize)> {
+    (stream.get(pos) == Some(&0x5a)).then_some(())?;
+    let (xmt, xmt_extra) = read_xmt(stream, pos.checked_add(1)?)?;
+    (xmt > 1).then_some(())?;
+    let mut at = pos.checked_add(7 + xmt_extra)?;
+    let mut header_references = [0u32; 5];
+    for reference in &mut header_references {
+        let (value, extra) = read_xmt(stream, at)?;
+        *reference = value;
+        at += 2 + extra;
+    }
+    (header_references[0] == 1).then_some(())?;
+    (header_references[4] == 1
+        || stream[..pos]
+            .windows(b"intersection_data".len())
+            .rev()
+            .take(64)
+            .any(|window| window == b"intersection_data"))
+    .then_some(())?;
+    let sense = match stream.get(at) {
+        Some(b'+') => true,
+        Some(b'-') => false,
+        _ => return None,
+    };
+    at += 1;
+    let mut references = [0u32; 6];
+    for reference in &mut references {
+        let (value, extra) = read_xmt(stream, at)?;
+        *reference = value;
+        at += 2 + extra;
+    }
+    let complete_witness = references[2..=4].iter().all(|reference| *reference > 1);
+    let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
+    (references.iter().all(|reference| *reference != 0)
+        && (complete_witness || null_witness)
+        && (references[0] > 1 || references[1] > 1))
+        .then_some(())?;
+    Some((
+        CompositeCurve {
+            xmt,
+            header_references,
+            sense,
+            references,
+            delta_twin: true,
+            pos,
+        },
+        at,
+    ))
 }
 
 /// Decode validated type-56 rolling-ball blend surfaces.
