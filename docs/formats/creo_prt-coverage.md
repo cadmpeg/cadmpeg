@@ -81,11 +81,13 @@ fixtures, claims above L1 remain unproven.
   dimension ordinal. A uniquely identified type-10 circle whose primary field
   resolves to a type-three or type-four dimension uses the neutral radius or
   diameter form; all other bindings remain native.
-- A complete endpoint-selection or type-35 midpoint-target incidence
-  establishes its sense-zero operand's line role independently of solver
-  activity. A unique unary type-one or type-two incidence can therefore
-  transfer as a neutral horizontal or vertical constraint on that native line
-  without activating the corroborating equation.
+- A complete endpoint-selection or type-35 incidence whose non-target operand
+  resolves to a point locus establishes its sense-zero operand's line role
+  independently of solver activity. A unique unary type-one or type-two
+  incidence can therefore transfer as a neutral horizontal or vertical
+  constraint on that native line without activating the corroborating equation.
+  The type-35 incidence itself transfers as a neutral midpoint constraint when
+  that native line and point locus are both emitted.
 - A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`

@@ -9187,6 +9187,13 @@ fn section_skamp_oriented_line(
     if section_skamp_is_line(definition, item) {
         return Some(entity);
     }
+    if section_skamp_is_point(definition, item)
+        || section_skamp_is_circular(definition, item)
+        || section_saved_entity(definition, item.entity_id)
+            .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Spline(_)))
+    {
+        return None;
+    }
     let line_role_evidence = complete_section_skamps(definition).any(|skamp| {
         skamp.items.iter().any(|candidate| {
             candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3)
@@ -9194,10 +9201,10 @@ fn section_skamp_oriented_line(
             (35, [first, second]) => {
                 (first.entity_id == item.entity_id
                     && first.sense == 0
-                    && matches!(second.sense, 2..=4))
+                    && section_skamp_point_locus(definition, sketch, second).is_some())
                     || (second.entity_id == item.entity_id
                         && second.sense == 0
-                        && matches!(first.sense, 2..=4))
+                        && section_skamp_point_locus(definition, sketch, first).is_some())
             }
             _ => false,
         }
@@ -9346,11 +9353,14 @@ fn section_skamp_midpoint(
     sketch: &SketchId,
     first: &crate::feature::FeatureSkampItem,
     second: &crate::feature::FeatureSkampItem,
+    geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let target = |item: &crate::feature::FeatureSkampItem| {
-        (item.sense == 0
-            && (section_skamp_is_line(definition, item) || section_skamp_is_arc(definition, item)))
-        .then(|| sketch_entity_id(sketch, item.entity_id))
+        (item.sense == 0).then_some(())?;
+        if section_skamp_is_arc(definition, item) {
+            return Some(sketch_entity_id(sketch, item.entity_id));
+        }
+        section_skamp_oriented_line(definition, sketch, item, geometry)
     };
     let point = |item| section_skamp_point_locus(definition, sketch, item);
     match (target(first), point(second), target(second), point(first)) {
@@ -9817,7 +9827,7 @@ fn section_skamp_constraints_for_geometry(
                     }
                     (35, [first, second]) => {
                         if let Some((point, entity)) =
-                            section_skamp_midpoint(definition, sketch, first, second)
+                            section_skamp_midpoint(definition, sketch, first, second, geometry)
                         {
                             SketchConstraintDefinition::Midpoint { point, entity }
                         } else {

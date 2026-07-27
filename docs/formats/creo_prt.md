@@ -1420,10 +1420,10 @@ A two-item type-nine incidence with sense zero on two lines makes the lines
 collinear. The line-and-point form maps to point-on-object as defined above.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
-line vertical. A separate sense-`2` or sense-`3` solver operand or sense-zero
-type-35 midpoint-target operand establishes the line role when that entity's
-geometry remains native. Other senses select a locus and do not define an
-entity-level orientation constraint.
+line vertical. A separate sense-`2` or sense-`3` solver operand or a sense-zero
+type-35 target whose other operand resolves to a point locus establishes the
+line role when that entity's geometry remains native. Other senses select a
+locus and do not define an entity-level orientation constraint.
 The corroborating incidence establishes this operand role independently of its
 solver activity; disabling its equation does not change the referenced entity
 family.

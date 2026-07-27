@@ -6071,6 +6071,33 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .definition,
         SketchConstraintDefinition::Horizontal { .. }
     ));
+    assert!(matches!(
+        section_skamp_constraints_for_geometry(
+            &point_coincidence_definition,
+            &SketchId("creo:model:sketch#917".into()),
+            Some(&incidence_geometry),
+        )[1]
+        .0
+        .definition,
+        SketchConstraintDefinition::Midpoint { .. }
+    ));
+    point_coincidence_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[1]
+        .items[1]
+        .sense = 0;
+    assert!(matches!(
+        section_skamp_constraints_for_geometry(
+            &point_coincidence_definition,
+            &SketchId("creo:model:sketch#917".into()),
+            Some(&incidence_geometry),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
     let mut collinear_definition = definition.clone();
     let collinear_relations = collinear_definition.relations.as_mut().expect("relations");
     collinear_relations.skamps = vec![crate::feature::FeatureSkamp {
@@ -6644,10 +6671,29 @@ fn section_solver_constraints_require_complete_unique_semantics() {
                 sense: 0,
             },
             &opaque_point_item,
+            None,
         ),
         Some((SketchLocus::Entity(entity), target))
             if entity.0.ends_with(":99") && target.0.ends_with(":12")
     ));
+    assert_eq!(
+        section_skamp_midpoint(
+            &opaque_point,
+            &SketchId("creo:model:sketch#917".into()),
+            &opaque_point_item,
+            &crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 2,
+            },
+            Some(&BTreeMap::from([(
+                SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
+                SketchGeometry::Native {
+                    native_kind: "point".to_string(),
+                },
+            )])),
+        ),
+        None
+    );
     let centered_line = crate::feature::FeatureOpaqueSegment {
         kind: 47,
         directions: [Some(0); 3],
