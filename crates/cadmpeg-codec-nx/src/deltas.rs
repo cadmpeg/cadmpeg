@@ -964,7 +964,7 @@ fn group_layout(
         at += 1;
         references.push(reference);
     }
-    matches!(stream.get(at), Some(2 | 4)).then_some(())?;
+    matches!(stream.get(at), Some(2 | 4 | 9)).then_some(())?;
     at += 1;
     let (reference, consumed) = read_xmt(stream, at)?;
     at = at.checked_add(consumed)?;

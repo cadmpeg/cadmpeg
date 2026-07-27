@@ -6141,7 +6141,7 @@ fn deltas_walks_complete_group_records() {
         escaped.extend_from_slice(&reference.to_be_bytes());
         escaped.push(1);
     }
-    escaped.push(2);
+    escaped.push(9);
     escaped.extend_from_slice(&8u16.to_be_bytes());
     escaped.push(1);
     assert_eq!(crate::deltas::walk(&escaped).records[0].xmt, 10);
@@ -6151,7 +6151,7 @@ fn deltas_walks_complete_group_records() {
     escaped[11] = 1;
     escaped[21] = 3;
     assert!(crate::deltas::walk(&escaped).records.is_empty());
-    escaped[21] = 2;
+    escaped[21] = 9;
     escaped[24] = 2;
     assert!(crate::deltas::walk(&escaped).records.is_empty());
 }
