@@ -9100,6 +9100,69 @@ mod marker_tests {
     }
 
     #[test]
+    fn extended_marker104_arc_prefers_point_roster_endpoints() {
+        let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&0u32.to_le_bytes());
+        payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&4u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&6u16.to_le_bytes());
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+        for start in (78..94).step_by(4) {
+            payload[start..start + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[96..100].copy_from_slice(&2u32.to_le_bytes());
+        payload[100..104].copy_from_slice(&2u32.to_le_bytes());
+        payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        let entity = |id: &str, offset, object_index, coordinates_m, kind| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("sketch".into()),
+            ordinal: 0,
+            offset,
+            object_index,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let curve = entity("curve", 0, None, None, SketchInputKind::Arc);
+        let object_indices = [1, 2, 4, 5, 6, 7, 8];
+        let points = object_indices.map(|object_index| {
+            entity(
+                &format!("point-{object_index}"),
+                u64::from(object_index) * 10,
+                Some(object_index),
+                Some([f64::from(object_index), 0.0]),
+                SketchInputKind::Point,
+            )
+        });
+        let markers = std::iter::once(&curve)
+            .chain(points.iter())
+            .collect::<Vec<_>>();
+
+        assert!(indexed_arc_uses_coordinate_center(&payload, 0));
+        assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
+        let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+        assert_eq!(
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["point-6", "point-8"]
+        );
+    }
+
+    #[test]
     fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         let mut payload = vec![0; 104 + LEGACY_SKETCH_MARKER.len()];
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -35350,6 +35413,14 @@ fn roster_curve_endpoint_markers<'a>(
     if let Some((endpoints, _)) = current_wide_arc_direct_markers(payload, curve, markers) {
         return endpoints.to_vec();
     }
+    if curve.kind == SketchInputKind::Arc
+        && extended_marker104_arc_uses_point_roster(payload, offset)
+    {
+        let endpoints = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
+        if endpoints.len() == 2 {
+            return endpoints;
+        }
+    }
     if let Some(offsets) = current_reverse_incidence_endpoint_offsets(payload, curve, markers) {
         let endpoints = offsets
             .into_iter()
@@ -36935,6 +37006,13 @@ fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
     coordinate_roster_endpoint_offset(payload, offset).is_some()
 }
 
+fn extended_marker104_arc_uses_point_roster(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && indexed_arc_uses_coordinate_center(payload, offset)
+        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+}
+
 fn legacy_terminal_profile_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(0)
@@ -37006,7 +37084,8 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
             .is_some()
         {
             Some(64)
-        } else if extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+        } else if extended_marker104_arc_uses_point_roster(payload, offset)
+            || extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some()
             || compact_curve_endpoint_indices(payload, offset).is_some()
         {
             Some(56)
