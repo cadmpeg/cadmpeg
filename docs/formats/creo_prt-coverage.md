@@ -80,9 +80,10 @@ fixtures, claims above L1 remain unproven.
   dimension selector as scalar properties distinct from object-reference
   operands. Native `skamp_ptr` constraints also retain the complete stored flags
   separately from solver status. Each ordered incidence item retains its owning
-  sketch namespace with its entity identifier and sense; the known status low
-  bit is projected as constraint activity. A native `relat_ptr` constraint
-  retains its
+  sketch namespace and `items.entity_id` field with its entity identifier; the
+  item sense is its numeric native role. An incomplete or duplicate incidence
+  identity remains an exact scalar property. The known status low bit is
+  projected as constraint activity. A native `relat_ptr` constraint retains its
   `triples_ptr.skamp_id` incidence link when the relation, join, and incidence
   identities are complete and unique. The same unique join retains its
   non-null equation identity without assigning semantics to that namespace. An

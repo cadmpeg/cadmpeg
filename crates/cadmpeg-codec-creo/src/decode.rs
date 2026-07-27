@@ -9381,16 +9381,20 @@ fn section_skamp_constraints_for_geometry(
                     native_kind: format!("creo:skamp:{}", skamp.kind),
                     native_state: Some(u64::from(skamp.status)),
                     native_flags: Some(u64::from(skamp.flags)),
-                    native_properties: BTreeMap::new(),
+                    native_properties: if unique_skamp_id {
+                        BTreeMap::new()
+                    } else {
+                        BTreeMap::from([("id".to_string(), skamp.id.to_string())])
+                    },
                     entities,
                     parameter: None,
                     operands: skamp
                         .items
                         .iter()
                         .map(|item| SketchNativeOperand {
-                            native_kind: format!("sense:{}", item.sense),
-                            native_field: None,
-                            native_role: None,
+                            native_kind: "skamp_ptr".to_string(),
+                            native_field: Some("items.entity_id".to_string()),
+                            native_role: Some(item.sense),
                             object_index: item.entity_id,
                             native_ref: Some(native_ref.clone()),
                         })

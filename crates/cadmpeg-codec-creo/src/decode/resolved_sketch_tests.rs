@@ -6574,14 +6574,35 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .push(redundant);
     let equivalent_constraints =
         section_skamp_constraints(&equivalent_skamp, &SketchId("creo:model:sketch#917".into()));
+    let mut first_definition = equivalent_constraints[0].0.definition.clone();
+    let mut redundant_definition = equivalent_constraints
+        .last()
+        .expect("redundant")
+        .0
+        .definition
+        .clone();
+    let SketchConstraintDefinition::Native {
+        native_properties: first_properties,
+        ..
+    } = &mut first_definition
+    else {
+        panic!("incomplete incidence table must remain native");
+    };
+    let SketchConstraintDefinition::Native {
+        native_properties: redundant_properties,
+        ..
+    } = &mut redundant_definition
+    else {
+        panic!("incomplete incidence table must remain native");
+    };
+    assert_eq!(first_properties.get("id").map(String::as_str), Some("3"));
     assert_eq!(
-        equivalent_constraints[0].0.definition,
-        equivalent_constraints
-            .last()
-            .expect("redundant")
-            .0
-            .definition
+        redundant_properties.get("id").map(String::as_str),
+        Some("100")
     );
+    first_properties.clear();
+    redundant_properties.clear();
+    assert_eq!(first_definition, redundant_definition);
     assert_ne!(
         equivalent_constraints[0].0.id,
         equivalent_constraints.last().expect("redundant").0.id
@@ -6624,6 +6645,18 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         duplicate_constraints.last().expect("duplicate").0.id.0,
         "creo:featdefs:sketch_constraint#917:skamp:offset:500"
     );
+    for (constraint, _) in [
+        &duplicate_constraints[0],
+        duplicate_constraints.last().expect("duplicate"),
+    ] {
+        let SketchConstraintDefinition::Native {
+            native_properties, ..
+        } = &constraint.definition
+        else {
+            panic!("duplicate incidence must remain native");
+        };
+        assert_eq!(native_properties.get("id").map(String::as_str), Some("3"));
+    }
     assert_eq!(
         constraints[2].0.definition,
         SketchConstraintDefinition::Native {
@@ -6636,9 +6669,9 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             )],
             parameter: None,
             operands: vec![SketchNativeOperand {
-                native_kind: "sense:4".to_string(),
-                native_field: None,
-                native_role: None,
+                native_kind: "skamp_ptr".to_string(),
+                native_field: Some("items.entity_id".to_string()),
+                native_role: Some(4),
                 object_index: 12,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
@@ -6664,9 +6697,9 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             ..
         } if entities.is_empty()
             && operands == &[SketchNativeOperand {
-                native_kind: "sense:4".to_string(),
-                native_field: None,
-                native_role: None,
+                native_kind: "skamp_ptr".to_string(),
+                native_field: Some("items.entity_id".to_string()),
+                native_role: Some(4),
                 object_index: 999,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }]
