@@ -25991,8 +25991,13 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut unresolved_datum_plane_feature_count = 0;
     let mut unresolved_datum_coordinate_system_feature_count = 0;
     let mut unresolved_boundary_surface_feature_count = 0;
+    let mut extrude_feature_count = 0;
+    let mut unresolved_extrude_profile_feature_count = 0;
+    let mut native_extrude_profile_feature_count = 0;
+    let mut unresolved_extrude_termination_feature_count = 0;
+    let mut unresolved_extrude_boolean_operation_feature_count = 0;
     for feature in &ir.model.features {
-        match feature.definition {
+        match &feature.definition {
             IrFeatureDefinition::DatumPlaneUnresolved => {
                 unresolved_datum_plane_feature_count += 1;
             }
@@ -26001,6 +26006,30 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             }
             IrFeatureDefinition::BoundarySurfaceUnresolved => {
                 unresolved_boundary_surface_feature_count += 1;
+            }
+            IrFeatureDefinition::Extrude {
+                profile,
+                extent,
+                op,
+                ..
+            } => {
+                extrude_feature_count += 1;
+                unresolved_extrude_profile_feature_count +=
+                    usize::from(matches!(profile, ProfileRef::Unresolved(_)));
+                native_extrude_profile_feature_count +=
+                    usize::from(matches!(profile, ProfileRef::Native(_)));
+                let termination_unresolved = match extent {
+                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                        matches!(side.termination, Termination::Unresolved)
+                    }
+                    ExtrudeExtent::TwoSided { first, second } => {
+                        matches!(first.termination, Termination::Unresolved)
+                            || matches!(second.termination, Termination::Unresolved)
+                    }
+                };
+                unresolved_extrude_termination_feature_count += usize::from(termination_unresolved);
+                unresolved_extrude_boolean_operation_feature_count +=
+                    usize::from(*op == BooleanOp::Unresolved);
             }
             _ => {}
         }
@@ -26035,6 +26064,26 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_unresolved_boundary_surface_feature_count".to_string(),
         unresolved_boundary_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_extrude_feature_count".to_string(),
+        extrude_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_extrude_profile_feature_count".to_string(),
+        unresolved_extrude_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_extrude_profile_feature_count".to_string(),
+        native_extrude_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_extrude_termination_feature_count".to_string(),
+        unresolved_extrude_termination_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_extrude_boolean_operation_feature_count".to_string(),
+        unresolved_extrude_boolean_operation_feature_count,
     );
     Ok((ir, annotations.build(), unknowns, coverage))
 }

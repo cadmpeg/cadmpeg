@@ -2476,6 +2476,26 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
             ..
         }
     ));
+    assert_eq!(
+        result.report.coverage["transferred_extrude_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_extrude_profile_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_native_extrude_profile_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_extrude_termination_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_extrude_boolean_operation_feature_count"],
+        0
+    );
 }
 
 #[test]

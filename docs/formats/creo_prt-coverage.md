@@ -155,7 +155,9 @@ fixtures, claims above L1 remain unproven.
    definitions whose model-space construction is explicitly unresolved. The
    unresolved count is partitioned into datum-plane, datum-coordinate-system,
    and boundary-surface families. Every explicit unresolved definition raises a
-   decode loss note.
+   decode loss note. Extrusions are counted separately, with unresolved and
+   native profiles, unresolved termination, and unresolved Boolean operation
+   partitions.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts
