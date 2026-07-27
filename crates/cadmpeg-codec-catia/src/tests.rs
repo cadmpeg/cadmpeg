@@ -6341,7 +6341,9 @@ fn relation_expression_signature_requires_the_selected_placeholder() {
 
 #[test]
 fn native_namespace_types_and_validates_named_parameter_values() {
-    use crate::native::{CatiaEntityEvaluation, CatiaEntitySuffixValue};
+    use crate::native::{
+        CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixValue,
+    };
 
     let scalar = 35.0_f64.to_bits();
     let mut scalar_suffix = vec![0x85, 0x96, 0x82, 0x6a, 0xe6];
@@ -6365,6 +6367,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
             prefix_atoms: [5, 22, 2],
             prefix_code: 0x6a,
             evaluation: CatiaEntityEvaluation::Scalar { bits: scalar },
+            encoding: CatiaEntityEvaluationEncoding::Direct,
             trailer: vec![0x81, 0x52],
         })
     );
@@ -6400,7 +6403,9 @@ fn native_namespace_types_and_validates_named_parameter_values() {
 
 #[test]
 fn native_namespace_types_and_validates_generic_entity_suffix_values() {
-    use crate::native::{CatiaEntityEvaluation, CatiaEntitySuffixValue};
+    use crate::native::{
+        CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixValue,
+    };
 
     let bits = 0.1_f64.to_bits();
     let mut suffix = vec![0x84, 0x96, 0x82, 0xad, 0xe6];
@@ -6431,6 +6436,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             prefix_atoms: [4, 22, 2],
             prefix_code: 0xad,
             evaluation: CatiaEntityEvaluation::Scalar { bits },
+            encoding: CatiaEntityEvaluationEncoding::Direct,
             trailer: vec![0x81, 0x49],
         })
     );
@@ -6488,6 +6494,32 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         CatiaEntityEvaluation::Unset
     ));
 
+    let nested_bits = 11.725_f64.to_bits();
+    let mut nested_scalar = vec![0x84, 0x88, 0x82, 0x32, 0xe6, 0, 0, 0, 0xe6];
+    nested_scalar.extend_from_slice(&nested_bits.to_le_bytes());
+    let nested_scalar =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&nested_scalar));
+    let nested_value = nested_scalar.entity_records[0]
+        .suffix_value
+        .as_ref()
+        .expect("complete zero-padded scalar suffix");
+    assert_eq!(
+        nested_value.evaluation,
+        CatiaEntityEvaluation::Scalar { bits: nested_bits }
+    );
+    assert_eq!(
+        nested_value.encoding,
+        CatiaEntityEvaluationEncoding::ZeroPaddedScalar
+    );
+    assert!(nested_value.trailer.is_empty());
+
+    let mut nonfinite_nested = vec![0x84, 0x88, 0x82, 0x32, 0xe6, 0, 0, 0, 0xe6];
+    nonfinite_nested.extend_from_slice(&f64::INFINITY.to_bits().to_le_bytes());
+    let nonfinite_nested = crate::native::CatiaNative::decode(
+        &standard_catpart_with_parameter_value(&nonfinite_nested),
+    );
+    assert_eq!(nonfinite_nested.entity_records[0].suffix_value, None);
+
     let mut zero_frame_scalar = vec![0x84, 0x96, 0x82, 0x55, 0xe6];
     zero_frame_scalar.extend_from_slice(&(-26.703_618_806_753_155_f64).to_bits().to_le_bytes());
     zero_frame_scalar.extend_from_slice(&[0xfe, 0xf6]);
@@ -6515,6 +6547,21 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         &standard_catpart_with_parameter_value(&malformed_zero_frame),
     );
     assert_eq!(malformed_zero_frame.entity_records[0].suffix_value, None);
+
+    let mut malformed_encoding = native.clone();
+    malformed_encoding.entity_records[0]
+        .suffix_value
+        .as_mut()
+        .expect("complete suffix value")
+        .encoding = CatiaEntityEvaluationEncoding::ZeroPaddedScalar;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_encoding
+        .store(&mut namespace)
+        .expect("store malformed suffix encoding");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 
     let mut malformed = native;
     malformed.entity_records[0]
