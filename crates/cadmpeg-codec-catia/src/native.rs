@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 121;
+pub const CATIA_NATIVE_VERSION: u32 = 122;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -748,6 +748,13 @@ pub enum CatiaEntitySuffixPayload {
         /// Decoded atom value.
         value: u32,
     },
+    /// One fixed-width selector followed by one canonical atom.
+    FixedWidthAtom {
+        /// Stored little-endian selector.
+        selector: u32,
+        /// Decoded atom value.
+        value: u32,
+    },
     /// One zero-payload `E8` control state.
     ControlE8,
 }
@@ -1461,44 +1468,56 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
     };
     let prefix_atoms = [atom(prefix[0])?, atom(prefix[1])?, atom(prefix[2])?];
     let prefix_code = prefix[3];
-    let (payload, trailer_offset) = match *suffix.get(4)? {
-        0xe7 => (
+    let (payload, trailer_offset) = if suffix.get(4..9) == Some(&[0xe6, 0x00, 0x00, 0x00, 0xe6]) {
+        let bits = u64::from_le_bytes(suffix.get(9..17)?.try_into().ok()?);
+        f64::from_bits(bits).is_finite().then_some(())?;
+        (
             CatiaEntitySuffixPayload::Evaluation {
-                evaluation: CatiaEntityEvaluation::Unset,
-                encoding: CatiaEntityEvaluationEncoding::Direct,
+                evaluation: CatiaEntityEvaluation::Scalar { bits },
+                encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
             },
-            5,
-        ),
-        0xe8 => (CatiaEntitySuffixPayload::ControlE8, 5),
-        0xe6 if suffix.get(5..9) == Some(&[0x00, 0x00, 0x00, 0xe6]) => {
-            let bits = u64::from_le_bytes(suffix.get(9..17)?.try_into().ok()?);
-            f64::from_bits(bits).is_finite().then_some(())?;
-            (
+            17,
+        )
+    } else if prefix_code == 0x32 {
+        let selector = u32::from_le_bytes(suffix.get(4..8)?.try_into().ok()?);
+        let encoded_value = *suffix.get(8)?;
+        (0x80..=0xd0).contains(&encoded_value).then_some(())?;
+        (
+            CatiaEntitySuffixPayload::FixedWidthAtom {
+                selector,
+                value: u32::from(encoded_value - 0x80),
+            },
+            9,
+        )
+    } else {
+        match *suffix.get(4)? {
+            0xe7 => (
                 CatiaEntitySuffixPayload::Evaluation {
-                    evaluation: CatiaEntityEvaluation::Scalar { bits },
-                    encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
-                },
-                17,
-            )
-        }
-        0xe6 => {
-            let bits = u64::from_le_bytes(suffix.get(5..13)?.try_into().ok()?);
-            f64::from_bits(bits).is_finite().then_some(())?;
-            (
-                CatiaEntitySuffixPayload::Evaluation {
-                    evaluation: CatiaEntityEvaluation::Scalar { bits },
+                    evaluation: CatiaEntityEvaluation::Unset,
                     encoding: CatiaEntityEvaluationEncoding::Direct,
                 },
-                13,
-            )
+                5,
+            ),
+            0xe8 => (CatiaEntitySuffixPayload::ControlE8, 5),
+            0xe6 => {
+                let bits = u64::from_le_bytes(suffix.get(5..13)?.try_into().ok()?);
+                f64::from_bits(bits).is_finite().then_some(())?;
+                (
+                    CatiaEntitySuffixPayload::Evaluation {
+                        evaluation: CatiaEntityEvaluation::Scalar { bits },
+                        encoding: CatiaEntityEvaluationEncoding::Direct,
+                    },
+                    13,
+                )
+            }
+            atom @ 0x80..=0xd0 => (
+                CatiaEntitySuffixPayload::Atom {
+                    value: u32::from(atom - 0x80),
+                },
+                5,
+            ),
+            _ => return None,
         }
-        atom @ 0x80..=0xd0 => (
-            CatiaEntitySuffixPayload::Atom {
-                value: u32::from(atom - 0x80),
-            },
-            5,
-        ),
-        _ => return None,
     };
     let trailer = suffix.get(trailer_offset..)?;
     let fixed_zero_frame = trailer.len() == 18
