@@ -6434,6 +6434,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         0
     );
     assert_eq!(
+        decoded.report.coverage["decoded_separator_entity_suffix_value_count"],
+        0
+    );
+    assert_eq!(
         decoded.report.coverage["decoded_atom_entity_suffix_value_count"],
         0
     );
@@ -6532,6 +6536,37 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             0x84, 0x96, 0x81, 0xa6, 0xe8, 0x81,
         ]));
     assert_eq!(malformed_control.entity_records[0].suffix_value, None);
+
+    let separator = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parameter_value(&[
+                0x84, 0x93, 0x81, 0xa1, 0x37, 0x81, 0x49,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generic separator entity suffix");
+    assert_eq!(
+        separator.report.coverage["decoded_separator_entity_suffix_value_count"],
+        1
+    );
+    let separator = crate::native::CatiaNative::load(
+        separator.ir.native.namespace("catia").expect("namespace"),
+    )
+    .expect("load generic separator suffix");
+    assert!(matches!(
+        separator.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete separator suffix")
+            .payload,
+        CatiaEntitySuffixPayload::Separator37
+    ));
+
+    let malformed_separator =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x84, 0x93, 0x81, 0xa1, 0x37, 0x81, 0x49, 0,
+        ]));
+    assert_eq!(malformed_separator.entity_records[0].suffix_value, None);
 
     let atom = CatiaCodec
         .decode(
