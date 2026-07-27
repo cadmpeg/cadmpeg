@@ -2164,6 +2164,45 @@ fn standard_catpart_with_design_class(class: &str) -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_sketch_point(ambiguous_sketch: bool) -> Vec<u8> {
+    let mut coordinate_value = vec![0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6];
+    coordinate_value.extend_from_slice(&12.5_f64.to_bits().to_le_bytes());
+    coordinate_value.push(0xe6);
+    coordinate_value.extend_from_slice(&(-3.25_f64).to_bits().to_le_bytes());
+    coordinate_value.extend_from_slice(&[0xfe, 0xfe]);
+
+    let mut records = vec![
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x85], &[0x32, 1, 0, 0, 0, 0xfe]),
+    ];
+    let mut stream = entity_table_record(1);
+    stream.extend(entity_table_record_with_value(2, &coordinate_value));
+    if ambiguous_sketch {
+        records.push(object_graph_record(&[0x04, 0x01, 0x83, 0x84], &[0xfe]));
+        records.push(object_graph_record(
+            &[0x04, 0x01, 0x82, 0x85],
+            &[0x32, 3, 0, 0, 0, 0xfe],
+        ));
+        stream.extend(entity_table_record(3));
+        stream.extend(entity_table_record(4));
+    }
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "2DPoint",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn surface_alias_stream() -> Vec<u8> {
     let mut bytes = 1u32.to_le_bytes().to_vec();
     bytes.extend_from_slice(&[0x01, 0x00, 0x04, 0x00]);
@@ -5558,6 +5597,65 @@ fn decode_links_design_objects_through_their_owner_record_group() {
     assert_eq!(
         decoded.report.coverage["decoded_design_object_owner_link_count"],
         1
+    );
+}
+
+#[test]
+fn decode_transfers_an_exact_point_owned_by_one_sketch() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchGeometry, SketchPlacement};
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_sketch_point(false)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode sketch point");
+    let [sketch] = decoded.ir.model.sketches.as_slice() else {
+        panic!("one sketch")
+    };
+    let [entity] = decoded.ir.model.sketch_entities.as_slice() else {
+        panic!("one sketch entity")
+    };
+
+    assert_eq!(sketch.placement, SketchPlacement::Unresolved);
+    assert_eq!(entity.sketch, sketch.id);
+    assert_eq!(
+        entity.geometry,
+        SketchGeometry::Point {
+            position: Point2::new(12.5, -3.25),
+        }
+    );
+    assert_eq!(decoded.report.coverage["transferred_sketch_count"], 1);
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_entity_count"],
+        1
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 2);
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+    }));
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+        .findings
+        .is_empty());
+}
+
+#[test]
+fn decode_rejects_a_point_related_to_multiple_sketches() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_sketch_point(true)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode ambiguous sketch point");
+
+    assert!(decoded.ir.model.sketches.is_empty());
+    assert!(decoded.ir.model.sketch_entities.is_empty());
+    assert_eq!(decoded.report.coverage["transferred_sketch_count"], 0);
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_entity_count"],
+        0
     );
 }
 

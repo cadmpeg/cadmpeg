@@ -17,7 +17,11 @@ use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::sketches::{
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
+};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, Exactness, SourceFidelity};
 
@@ -67,6 +71,7 @@ fn finish_decode(
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
     let formula_transfer = transfer_formula_parameters(&mut ir, &native, &mut annotations);
+    transfer_sketch_points(&mut ir, &native);
     let object_record_count: usize = native
         .object_graphs
         .iter()
@@ -312,6 +317,10 @@ fn finish_decode(
             ir.model.sketches.len(),
         ),
         (
+            "transferred_sketch_entity_count".to_string(),
+            ir.model.sketch_entities.len(),
+        ),
+        (
             "transferred_sketch_constraint_count".to_string(),
             ir.model.sketch_constraints.len(),
         ),
@@ -348,6 +357,139 @@ fn finish_decode(
     }
     native.store_owned(ir.native.namespace_mut("catia"))?;
     decode_result(ir, report, annotations, unknowns)
+}
+
+fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) {
+    let entities = native
+        .entity_records
+        .iter()
+        .map(|entity| (entity.object_record.as_str(), entity))
+        .collect::<HashMap<_, _>>();
+    let design_objects = native
+        .design_objects
+        .iter()
+        .map(|object| (object.id.as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let existing_sketch_ids = ir
+        .model
+        .sketches
+        .iter()
+        .map(|sketch| sketch.id.clone())
+        .collect::<HashSet<_>>();
+    let existing_entity_ids = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| entity.id.clone())
+        .collect::<HashSet<_>>();
+    let mut points_by_sketch = HashMap::<String, (u64, Vec<SketchPointCandidate>)>::new();
+
+    for object in &native.design_objects {
+        let Some(owner_record) = object.owner_record.as_deref() else {
+            continue;
+        };
+        let Some(entity) = entities.get(owner_record) else {
+            continue;
+        };
+        let Some(position) = exact_point2(entity.numeric_tuple.as_ref()) else {
+            continue;
+        };
+        let sketch_targets = object
+            .relations
+            .iter()
+            .filter(|relation| {
+                relation
+                    .source_class
+                    .as_ref()
+                    .is_some_and(|class| class.name == "2DPoint")
+            })
+            .map(|relation| relation.target_design_object.as_str())
+            .collect::<BTreeSet<_>>();
+        let mut sketch_targets = sketch_targets.into_iter();
+        let Some(sketch_target) = sketch_targets.next() else {
+            continue;
+        };
+        if sketch_targets.next().is_some() {
+            continue;
+        }
+        let Some(sketch_object) = design_objects.get(sketch_target) else {
+            continue;
+        };
+        if !sketch_object
+            .field_classes
+            .iter()
+            .any(|class| class.name == "PRTSketch")
+        {
+            continue;
+        }
+        points_by_sketch
+            .entry(sketch_object.id.clone())
+            .or_insert_with(|| (sketch_object.first_field_byte_offset, Vec::new()))
+            .1
+            .push(SketchPointCandidate {
+                design_object: object.id.clone(),
+                native_entity: entity.id.clone(),
+                source_order: object.first_field_byte_offset,
+                position,
+            });
+    }
+
+    let mut sketch_groups = points_by_sketch.into_iter().collect::<Vec<_>>();
+    sketch_groups.sort_by_key(|(_, (source_order, _))| *source_order);
+    for (native_sketch, (_, mut points)) in sketch_groups {
+        let sketch_id = SketchId(format!("{native_sketch}:sketch"));
+        if existing_sketch_ids.contains(&sketch_id) {
+            continue;
+        }
+        points.sort_by_key(|point| point.source_order);
+        let entities = points
+            .into_iter()
+            .filter_map(|point| {
+                let id = SketchEntityId(format!("{}:sketch-point", point.design_object));
+                (!existing_entity_ids.contains(&id)).then_some(SketchEntity {
+                    id,
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: Some(point.native_entity),
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SketchGeometry::Point {
+                        position: point.position,
+                    },
+                })
+            })
+            .collect::<Vec<_>>();
+        if entities.is_empty() {
+            continue;
+        }
+        ir.model.sketches.push(Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            placement: SketchPlacement::Unresolved,
+            profiles: Vec::new(),
+            native_ref: Some(native_sketch),
+        });
+        ir.model.sketch_entities.extend(entities);
+    }
+}
+
+fn exact_point2(tuple: Option<&entity_table::NumericTuple>) -> Option<Point2> {
+    let tuple = tuple?;
+    let [entity_table::NumericTupleItem::Binary64 { bits: x, .. }, entity_table::NumericTupleItem::Binary64 { bits: y, .. }] =
+        tuple.items.as_slice()
+    else {
+        return None;
+    };
+    let (x, y) = (f64::from_bits(*x), f64::from_bits(*y));
+    (x.is_finite() && y.is_finite()).then(|| Point2::new(x, y))
+}
+
+struct SketchPointCandidate {
+    design_object: String,
+    native_entity: String,
+    source_order: u64,
+    position: Point2,
 }
 
 fn transfer_formula_parameters(
