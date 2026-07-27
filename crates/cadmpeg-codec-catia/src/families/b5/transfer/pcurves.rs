@@ -655,7 +655,15 @@ pub(super) fn emit_pcurves(
             if *cylinder_reparameterized {
                 annotations.derived(&id, "geometry.control_points");
             }
-            annotations.derived(&id, "parameter_range");
+            let parameter_range = range_bits.map(f64::from_bits);
+            if graph
+                .pcurves
+                .get(&object_id)
+                .and_then(|pcurve| pcurve.parameter_range)
+                != Some(parameter_range)
+            {
+                annotations.derived(&id, "parameter_range");
+            }
             for occurrence in occurrences {
                 pcurve_ids.insert(occurrence, id.clone());
             }
@@ -663,7 +671,7 @@ pub(super) fn emit_pcurves(
                 id,
                 geometry: geometry.clone(),
                 wrapper_reversed: None,
-                parameter_range: Some(range_bits.map(f64::from_bits)),
+                parameter_range: Some(parameter_range),
                 fit_tolerance: None,
                 native_tail_flags: None,
             });

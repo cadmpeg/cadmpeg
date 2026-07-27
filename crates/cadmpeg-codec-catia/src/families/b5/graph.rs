@@ -334,6 +334,8 @@ pub struct B5Pcurve {
     pub control_points: Vec<[f64; 2]>,
     /// Per-pole rational weights. `None` denotes a polynomial pcurve.
     pub weights: Option<Vec<f64>>,
+    /// Explicit native parameter interval when the pcurve record stores one.
+    pub parameter_range: Option<[f64; 2]>,
     /// The curve's two clamped-end poles lifted through `surface` into
     /// world-frame 3D points, or `None` before [`parse`] resolves them or
     /// when the lift fails (unresolved surface, degenerate revolution
@@ -438,9 +440,21 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         return None;
     }
     let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes);
-    let a8_pcurve_supports = object_stream_pcurve_jets
+    let mut object_stream_pcurve_candidates = BTreeMap::new();
+    let mut conflicting_object_stream_pcurves = HashSet::new();
+    for jet in &object_stream_pcurve_jets {
+        let Some(candidate) = object_stream_pcurve_candidate(jet) else {
+            continue;
+        };
+        merge_pcurve_candidate(
+            &mut object_stream_pcurve_candidates,
+            &mut conflicting_object_stream_pcurves,
+            candidate,
+        );
+    }
+    let a8_pcurve_supports = object_stream_pcurve_candidates
         .iter()
-        .map(|pcurve| (pcurve.object_id, pcurve.support_id))
+        .map(|(&object_id, pcurve)| (object_id, pcurve.surface))
         .collect::<HashMap<_, _>>();
     let a8_headers: BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader> =
         crate::families::a5a8::records::a8_surface_headers(bytes)
@@ -500,9 +514,11 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             surfaces.insert(record.object_id, surface);
         }
     }
-    let object_stream_pcurves = crate::families::a5a8::records::object_stream_pcurves(bytes)
-        .into_iter()
-        .map(|pcurve| (pcurve.object_id, (pcurve.support_id, pcurve.range)))
+    let object_stream_pcurves = object_stream_pcurve_candidates
+        .iter()
+        .filter_map(|(&object_id, pcurve)| {
+            Some((object_id, (pcurve.surface, pcurve.parameter_range?)))
+        })
         .collect();
     let extrusion_surfaces: BTreeMap<u32, B5ExtrusionSurface> = records
         .iter()
@@ -605,34 +621,15 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             conflicting_pcurves.insert(object_id);
         }
     }
-    for jet in object_stream_pcurve_jets {
-        let directrix_reference = extrusion_pcurves.contains(&jet.object_id);
+    for candidate in object_stream_pcurve_candidates.into_values() {
+        let directrix_reference = extrusion_pcurves.contains(&candidate.object_id);
         if !directrix_reference
             && by_id
-                .get(&jet.object_id)
+                .get(&candidate.object_id)
                 .is_none_or(|record| record.class != 0x20)
         {
             continue;
         }
-        let Some((_, control_points)) = crate::nurbs::quintic_jet_bspline(
-            jet.degree,
-            &jet.knots,
-            &jet.points,
-            &jet.first_derivatives,
-            &jet.second_derivatives,
-        ) else {
-            continue;
-        };
-        let candidate = B5Pcurve {
-            object_id: jet.object_id,
-            surface: jet.support_id,
-            degree: jet.degree,
-            distinct_knots: jet.knots.clone(),
-            multiplicities: vec![jet.degree + 1; jet.knots.len()],
-            control_points,
-            weights: None,
-            lifted_endpoints: None,
-        };
         merge_pcurve_candidate(&mut pcurves, &mut conflicting_pcurves, candidate);
     }
     let mut opaque_pcurves: BTreeMap<u32, B5OpaquePcurve> = records
@@ -817,6 +814,29 @@ fn merge_pcurve_candidate(
             conflicts.insert(object_id);
         }
     }
+}
+
+fn object_stream_pcurve_candidate(
+    jet: &crate::families::a5a8::records::A8Pcurve,
+) -> Option<B5Pcurve> {
+    let (_, control_points) = crate::nurbs::quintic_jet_bspline(
+        jet.degree,
+        &jet.knots,
+        &jet.points,
+        &jet.first_derivatives,
+        &jet.second_derivatives,
+    )?;
+    Some(B5Pcurve {
+        object_id: jet.object_id,
+        surface: jet.support_id,
+        degree: jet.degree,
+        distinct_knots: jet.knots.clone(),
+        multiplicities: vec![jet.degree + 1; jet.knots.len()],
+        control_points,
+        weights: None,
+        parameter_range: Some(jet.range),
+        lifted_endpoints: None,
+    })
 }
 
 /// Return native start/end vertex identities for every framed `b5 03 5e`
@@ -2399,6 +2419,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         multiplicities,
         control_points,
         weights: None,
+        parameter_range: None,
         lifted_endpoints: None,
     })
 }
@@ -2549,6 +2570,7 @@ fn rational_arc_pcurve(
         multiplicities,
         control_points,
         weights: Some(weights),
+        parameter_range: None,
         lifted_endpoints: None,
     })
 }
@@ -2703,6 +2725,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         multiplicities: vec![2, 2],
         control_points,
         weights: None,
+        parameter_range: None,
         lifted_endpoints: None,
     })
 }
@@ -3114,6 +3137,7 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 0.0], [1.0, 0.0]],
             weights: None,
+            parameter_range: None,
             lifted_endpoints: None,
         }
     }
@@ -3645,6 +3669,7 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[2.0, 3.0], [4.0, 7.0]],
             weights: None,
+            parameter_range: None,
             lifted_endpoints: None,
         };
         assert_eq!(evaluate_pcurve(&pcurve, 0.0), Some([3.0, 5.0]));

@@ -248,6 +248,29 @@ fn referenced_surface_ids(
     referenced
 }
 
+fn native_pcurve_parameter_range(
+    pcurve: &super::graph::B5Pcurve,
+    knots: &[f64],
+) -> Option<[f64; 2]> {
+    let degree = usize::try_from(pcurve.degree).ok()?;
+    let spline_domain = knots
+        .get(degree)
+        .copied()
+        .zip(
+            knots
+                .len()
+                .checked_sub(degree + 1)
+                .and_then(|index| knots.get(index))
+                .copied(),
+        )
+        .map(|(start, end)| [start, end])
+        .filter(|range| range[0].is_finite() && range[0] < range[1])?;
+    match pcurve.parameter_range {
+        Some(range) => bounded_occurrence_range(range, spline_domain),
+        None => Some(spline_domain),
+    }
+}
+
 /// Resolve the whole graph into the cross-pass [`TransferPlan`]. Returns `None`
 /// when any referenced surface, pcurve, edge endpoint, or loop chain fails to
 /// close so the caller leaves the model untouched.
@@ -349,19 +372,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                 return None;
             }
             let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
-            let degree = usize::try_from(pcurve.degree).ok()?;
-            let parameter_range = knots
-                .get(degree)
-                .copied()
-                .zip(
-                    knots
-                        .len()
-                        .checked_sub(degree + 1)
-                        .and_then(|index| knots.get(index))
-                        .copied(),
-                )
-                .map(|(start, end)| [start, end])
-                .filter(|range| range[0].is_finite() && range[0] < range[1])?;
+            let parameter_range = native_pcurve_parameter_range(pcurve, &knots)?;
             let surface = graph.surfaces.get(&loop_.surface)?;
             let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
             let geometry = PcurveGeometry::Nurbs {
@@ -905,7 +916,9 @@ mod tests {
     };
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
-    use super::{referenced_surface_ids, transfer, CurvePlan, SurfacePlan};
+    use super::{
+        native_pcurve_parameter_range, referenced_surface_ids, transfer, CurvePlan, SurfacePlan,
+    };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
@@ -917,6 +930,33 @@ mod tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    fn explicit_pcurve_range_must_be_a_subrange_of_its_knot_domain() {
+        let mut pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![0.0, 10.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+            weights: None,
+            parameter_range: Some([2.0, 8.0]),
+            lifted_endpoints: None,
+        };
+        let knots = vec![0.0, 0.0, 10.0, 10.0];
+        assert_eq!(
+            native_pcurve_parameter_range(&pcurve, &knots),
+            Some([2.0, 8.0])
+        );
+        pcurve.parameter_range = None;
+        assert_eq!(
+            native_pcurve_parameter_range(&pcurve, &knots),
+            Some([0.0, 10.0])
+        );
+        pcurve.parameter_range = Some([-1.0, 8.0]);
+        assert_eq!(native_pcurve_parameter_range(&pcurve, &knots), None);
+    }
 
     #[test]
     fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
@@ -1075,6 +1115,7 @@ mod tests {
                     multiplicities: vec![2, 2],
                     control_points: vec![[0.0, 0.0], [1.0, 0.0]],
                     weights: None,
+                    parameter_range: None,
                     lifted_endpoints: None,
                 },
             )]),
@@ -1652,6 +1693,7 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 2.0], [3.0, 2.0]],
             weights: None,
+            parameter_range: None,
             lifted_endpoints: None,
         };
         let plane = B5Surface::Plane {
@@ -1695,6 +1737,7 @@ mod tests {
             multiplicities: vec![3, 3],
             control_points: vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
             weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+            parameter_range: None,
             lifted_endpoints: None,
         };
         let plane = B5Surface::Plane {
@@ -1774,6 +1817,7 @@ mod tests {
             multiplicities: vec![3, 3],
             control_points: vec![[4.0, 2.0], [4.0, 6.0], [4.0, 10.0]],
             weights: Some(vec![1.0, 2.0, 1.0]),
+            parameter_range: None,
             lifted_endpoints: None,
         };
         assert_eq!(
@@ -1850,6 +1894,7 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[11.0, 3.0], [13.0, 3.0]],
             weights: None,
+            parameter_range: None,
             lifted_endpoints: None,
         };
         let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
@@ -2027,6 +2072,7 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 4.0], [3.0 * std::f64::consts::PI, 4.0]],
             weights: None,
+            parameter_range: None,
             lifted_endpoints: None,
         };
         assert_eq!(
@@ -2112,6 +2158,7 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 0.0], [0.0, 4.0 * std::f64::consts::PI]],
             weights: None,
+            parameter_range: None,
             lifted_endpoints: None,
         };
         assert_eq!(
@@ -2185,6 +2232,7 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 3.0], [4.0, 7.0]],
             weights: None,
+            parameter_range: None,
             lifted_endpoints: None,
         };
         let cylinder = B5Surface::Cylinder {
