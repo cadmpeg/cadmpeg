@@ -3778,7 +3778,33 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .iter()
         .filter(|constraint| constraint.sketch == sketch.id)
         .collect::<Vec<_>>();
-    assert_eq!(constraints.len(), 5);
+    assert_eq!(constraints.len(), 7);
+    for (field, ordinal) in [("radius", 11), ("radius2", 12)] {
+        let constraint = constraints
+            .iter()
+            .find(|constraint| {
+                constraint.id.0 == format!("creo:featdefs:sketch_constraint#40:segtab-{field}:43")
+            })
+            .expect("segment radius binding");
+        let SketchConstraintDefinition::Native {
+            native_kind,
+            native_properties,
+            entities,
+            operands,
+            ..
+        } = &constraint.definition
+        else {
+            panic!("untyped segment radius binding must remain native");
+        };
+        assert_eq!(native_kind, &format!("creo:segtab:{field}"));
+        assert_eq!(native_properties["dimension_ordinal"], ordinal.to_string());
+        assert_eq!(
+            entities,
+            &[SketchEntityId("creo:featdefs:sketch_entity#40:43".into())]
+        );
+        assert_eq!(operands[1].native_field.as_deref(), Some(field));
+        assert_eq!(operands[1].object_index, ordinal);
+    }
     let point_verhor = constraints
         .iter()
         .find(|constraint| constraint.id.0 == "creo:featdefs:sketch_constraint#40:verhor:4")

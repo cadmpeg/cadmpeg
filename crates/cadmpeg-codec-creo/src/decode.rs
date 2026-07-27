@@ -8399,54 +8399,153 @@ fn section_angular_entities(
         .then(|| [first, second].map(|external_id| sketch_entity_id(sketch, external_id)))
 }
 
-fn section_circle_size_constraints(
+fn native_section_segment_radius_definition(
+    sketch: &SketchId,
+    entity: SketchEntityId,
+    external_id: u32,
+    field: &str,
+    dimension_ordinal: u32,
+) -> SketchConstraintDefinition {
+    SketchConstraintDefinition::Native {
+        native_kind: format!("creo:segtab:{field}"),
+        native_state: None,
+        native_flags: None,
+        native_properties: BTreeMap::from([(
+            "dimension_ordinal".to_string(),
+            dimension_ordinal.to_string(),
+        )]),
+        entities: vec![entity],
+        parameter: None,
+        operands: vec![
+            SketchNativeOperand {
+                native_kind: "segtab_ptr".to_string(),
+                native_field: Some("ext_id".to_string()),
+                native_role: None,
+                object_index: external_id,
+                native_ref: Some(sketch_native_ref(sketch)),
+            },
+            SketchNativeOperand {
+                native_kind: "dimension_ordinal".to_string(),
+                native_field: Some(field.to_string()),
+                native_role: None,
+                object_index: dimension_ordinal,
+                native_ref: Some(sketch_native_ref(sketch)),
+            },
+        ],
+    }
+}
+
+fn section_segment_radius_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    let Some(dimensions) = definition.dimensions.as_ref() else {
-        return Vec::new();
-    };
-    definition
+    let unique_segment_ids = unique_section_segment_external_ids(definition);
+    let typed = definition
         .segments
         .iter()
-        .flat_map(|segments| &segments.opaque_rows)
-        .filter(|segment| segment.kind == 10)
-        .filter(|segment| {
-            unique_opaque_section_segment(definition, segment.external_id, 10)
-                .is_some_and(|candidate| candidate == *segment)
-        })
-        .filter_map(|segment| Some((segment, usize::try_from(segment.radius_ref?).ok()?)))
-        .filter_map(|(circle, ordinal)| {
-            let (dimension, parameter) =
-                resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?;
-            let kind = match dimension.dimension_type {
-                3 => "radius",
-                4 => "diameter",
-                _ => return None,
-            };
-            Some((
-                SketchConstraint {
-                    id: sketch_constraint_id(sketch, format_args!("{kind}:{}", circle.external_id)),
-                    sketch: sketch.clone(),
-                    definition: circular_dimension_constraint(
-                        sketch_entity_id(sketch, circle.external_id),
-                        parameter,
-                        dimension.dimension_type,
+        .flat_map(|table| &table.rows)
+        .flat_map(|segment| {
+            let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
+            [
+                ("radius", segment.radius_ref),
+                ("radius2", segment.radius2_ref),
+            ]
+            .into_iter()
+            .filter_map(move |(field, ordinal)| {
+                Some((
+                    suffix.clone(),
+                    segment.external_id,
+                    field,
+                    ordinal?,
+                    segment.offset,
+                    None,
+                ))
+            })
+        });
+    let opaque = definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.opaque_rows)
+        .flat_map(|segment| {
+            let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
+            [
+                ("radius", segment.radius_ref),
+                ("radius2", segment.radius2_ref),
+            ]
+            .into_iter()
+            .filter_map(move |(field, ordinal)| {
+                let typed_circle = (field == "radius"
+                    && segment.kind == 10
+                    && unique_opaque_section_segment(definition, segment.external_id, 10)
+                        .is_some_and(|candidate| candidate == segment))
+                .then_some(ordinal?)
+                .and_then(|ordinal| usize::try_from(ordinal).ok())
+                .and_then(|ordinal| {
+                    resolved_feature_dimension_parameter(
+                        sketch,
+                        definition.dimensions.as_ref()?,
+                        ordinal,
+                    )
+                });
+                Some((
+                    suffix.clone(),
+                    segment.external_id,
+                    field,
+                    ordinal?,
+                    segment.offset,
+                    typed_circle,
+                ))
+            })
+        });
+    typed
+        .chain(opaque)
+        .map(
+            |(suffix, external_id, field, ordinal, offset, typed_circle)| {
+                let entity = sketch_entity_id(sketch, &suffix);
+                let (definition, kind) = match typed_circle {
+                    Some((dimension, parameter)) if matches!(dimension.dimension_type, 3 | 4) => (
+                        circular_dimension_constraint(entity, parameter, dimension.dimension_type),
+                        if dimension.dimension_type == 4 {
+                            "diameter"
+                        } else {
+                            "radius"
+                        },
                     ),
-                    name: None,
-                    driving: None,
-                    active: None,
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                dimension.offset,
-            ))
-        })
+                    _ => (
+                        native_section_segment_radius_definition(
+                            sketch,
+                            entity,
+                            external_id,
+                            field,
+                            ordinal,
+                        ),
+                        if field == "radius2" {
+                            "segtab-radius2"
+                        } else {
+                            "segtab-radius"
+                        },
+                    ),
+                };
+                (
+                    SketchConstraint {
+                        id: sketch_constraint_id(sketch, format_args!("{kind}:{suffix}")),
+                        sketch: sketch.clone(),
+                        definition,
+                        name: None,
+                        driving: None,
+                        active: None,
+                        virtual_space: None,
+                        visible: None,
+                        orientation: None,
+                        label_distance: None,
+                        label_position: None,
+                        metadata: None,
+                        native_ref: Some(sketch_native_ref(sketch)),
+                    },
+                    offset,
+                )
+            },
+        )
         .collect()
 }
 
@@ -11311,7 +11410,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             );
             constraints.push(constraint);
         }
-        for (mut constraint, offset) in section_circle_size_constraints(definition, &sketch_id) {
+        for (mut constraint, offset) in section_segment_radius_constraints(definition, &sketch_id) {
             if !reconcile_constraint_entity_references(
                 &mut constraint.definition,
                 &emitted_entity_ids,
@@ -11323,7 +11422,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 &constraint.id.0,
                 "FeatDefs",
                 offset as u64,
-                "section_circle_size_constraint",
+                "section_segment_radius_constraint",
                 Exactness::ByteExact,
             );
             constraints.push(constraint);

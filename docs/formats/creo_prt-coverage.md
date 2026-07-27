@@ -76,6 +76,11 @@ fixtures, claims above L1 remain unproven.
   constraint. Values zero and one on a line use the defined neutral vertical
   and horizontal forms; other segment families and selector values retain the
   exact scalar and segment identity in a native constraint.
+- Every decoded non-null primary and secondary `segtab` radius field transfers
+  as a distinct source constraint with its segment identity, field role, and
+  dimension ordinal. A uniquely identified type-10 circle whose primary field
+  resolves to a type-three or type-four dimension uses the neutral radius or
+  diameter form; all other bindings remain native.
 - A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`

@@ -4911,7 +4911,7 @@ fn dimension_identity_includes_its_feature_definition() {
         resolved_section_radii(&definition),
         BTreeMap::from([(0, 5.0)])
     );
-    let radius = section_circle_size_constraints(&definition, &sketch_917);
+    let radius = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(radius.len(), 1);
     assert_eq!(
         radius[0].0.definition,
@@ -4930,7 +4930,7 @@ fn dimension_identity_includes_its_feature_definition() {
         resolved_section_radii(&definition),
         BTreeMap::from([(0, 2.5)])
     );
-    let diameter = section_circle_size_constraints(&definition, &sketch_917);
+    let diameter = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(diameter.len(), 1);
     assert_eq!(
         diameter[0].0.definition,
@@ -4949,7 +4949,7 @@ fn dimension_identity_includes_its_feature_definition() {
         BTreeMap::from([(0, 2.5)])
     );
     assert_eq!(
-        section_circle_size_constraints(&definition, &sketch_917)[0]
+        section_segment_radius_constraints(&definition, &sketch_917)[0]
             .0
             .definition,
         SketchConstraintDefinition::Diameter {
@@ -4969,7 +4969,95 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 2;
     assert!(resolved_section_radii(&definition).is_empty());
-    assert!(section_circle_size_constraints(&definition, &sketch_917).is_empty());
+    let unresolved_kind = section_segment_radius_constraints(&definition, &sketch_917);
+    assert!(matches!(
+        unresolved_kind[0].0.definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
+    definition
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .opaque_rows[0]
+        .radius2_ref = Some(7);
+    let retained_slots = section_segment_radius_constraints(&definition, &sketch_917);
+    assert_eq!(retained_slots.len(), 2);
+    let secondary = retained_slots
+        .iter()
+        .find(|(constraint, _)| constraint.id.0.ends_with("radius2:42"))
+        .expect("secondary radius binding");
+    let SketchConstraintDefinition::Native {
+        native_kind,
+        native_properties,
+        entities,
+        operands,
+        ..
+    } = &secondary.0.definition
+    else {
+        panic!("secondary radius binding must remain native");
+    };
+    assert_eq!(native_kind, "creo:segtab:radius2");
+    assert_eq!(native_properties["dimension_ordinal"], "7");
+    assert_eq!(
+        entities,
+        &[SketchEntityId(
+            "creo:featdefs:sketch_entity#917:42".to_string()
+        )]
+    );
+    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(operands[0].object_index, 42);
+    assert_eq!(operands[1].native_field.as_deref(), Some("radius2"));
+    assert_eq!(operands[1].object_index, 7);
+    definition
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .opaque_rows[0]
+        .radius2_ref = None;
+    definition
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .rows
+        .push(crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Arc,
+            directions: [None; 3],
+            point_ids: [1, 2],
+            center_id: Some(7),
+            arc_orientation: Some(0),
+            vertical_horizontal: None,
+            radius_ref: Some(8),
+            radius2_ref: Some(9),
+            external_id: 43,
+            offset: 21,
+        });
+    let typed_slots = section_segment_radius_constraints(&definition, &sketch_917);
+    assert!(typed_slots.iter().any(|(constraint, _)| {
+        constraint.id.0.ends_with("segtab-radius:43")
+            && matches!(
+                &constraint.definition,
+                SketchConstraintDefinition::Native {
+                    native_properties,
+                    ..
+                } if native_properties["dimension_ordinal"] == "8"
+            )
+    }));
+    assert!(typed_slots.iter().any(|(constraint, _)| {
+        constraint.id.0.ends_with("segtab-radius2:43")
+            && matches!(
+                &constraint.definition,
+                SketchConstraintDefinition::Native {
+                    native_properties,
+                    ..
+                } if native_properties["dimension_ordinal"] == "9"
+            )
+    }));
+    definition
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .rows
+        .clear();
     definition
         .dimensions
         .as_mut()
