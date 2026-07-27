@@ -740,7 +740,7 @@ pub(crate) fn exact_fixed_fillet_parameters(
                 .then_some((*record_index, scalar))
         })
         .collect::<Vec<_>>();
-    if lanes.len() < 2
+    if lanes.is_empty()
         || lanes
             .iter()
             .enumerate()
@@ -748,26 +748,42 @@ pub(crate) fn exact_fixed_fillet_parameters(
     {
         return None;
     }
-    let (tangency_weight_record_index, tangency) = lanes[0];
-    if tangency.value <= 0.0 {
-        return None;
-    }
-    let radius_lanes = if lanes.len() <= 3 {
-        lanes[1..].iter().collect::<Vec<_>>()
+    let (tangency_weight, radius_lanes) = if lanes.len() == 1 {
+        (None, lanes.iter().collect::<Vec<_>>())
     } else {
-        if lanes.len() % 2 == 0 {
+        let (tangency_weight_record_index, tangency) = lanes[0];
+        if tangency.value <= 0.0 {
             return None;
         }
-        lanes[1..3]
-            .iter()
-            .chain(lanes[3..].chunks_exact(2).map(|pair| &pair[0]))
-            .collect::<Vec<_>>()
+        let radius_lanes = if lanes.len() <= 3 {
+            lanes[1..].iter().collect::<Vec<_>>()
+        } else {
+            if lanes.len() % 2 == 0 {
+                return None;
+            }
+            lanes[1..3]
+                .iter()
+                .chain(lanes[3..].chunks_exact(2).map(|pair| &pair[0]))
+                .collect::<Vec<_>>()
+        };
+        (
+            Some(crate::records::DesignFixedFilletTangencyWeight {
+                value: tangency.value,
+                record_index: tangency_weight_record_index,
+                value_offset: tangency.value_offset,
+            }),
+            radius_lanes,
+        )
     };
-    let parameter_lanes = lanes
-        .get(3..)
-        .into_iter()
-        .flat_map(|lanes| lanes.chunks_exact(2).map(|pair| &pair[1]))
-        .collect::<Vec<_>>();
+    let parameter_lanes = if tangency_weight.is_some() {
+        lanes
+            .get(3..)
+            .into_iter()
+            .flat_map(|lanes| lanes.chunks_exact(2).map(|pair| &pair[1]))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     let radii = radius_lanes
         .iter()
         .map(|(_, scalar)| scalar.value)
@@ -788,9 +804,7 @@ pub(crate) fn exact_fixed_fillet_parameters(
         return None;
     }
     Some(DesignFixedFilletParameters {
-        tangency_weight: tangency.value,
-        tangency_weight_record_index,
-        tangency_weight_offset: tangency.value_offset,
+        tangency_weight,
         radii,
         radius_record_indexes: radius_lanes
             .iter()

@@ -272,7 +272,8 @@ pub(crate) fn resolved_edge_group(
         .iter()
         .map(|operand| resolved_edge_operand(operand))
         .collect::<Option<Vec<_>>>()
-        .or_else(|| unique_edge_group_assignment(&matched_operands));
+        .or_else(|| unique_edge_group_assignment(&matched_operands))
+        .or_else(|| changed_reference_edge_group_candidates(&matched_operands));
     let transition_slots = || {
         treatment_radius
             .and_then(|radius| radius_edge_group_candidates(&matched_operands, radius))
@@ -475,6 +476,29 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
         })
         .collect::<Option<Vec<_>>>()?;
     unique_edge_assignment_with_context(&candidate_sets)
+}
+
+pub(crate) fn changed_reference_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+) -> Option<Vec<i64>> {
+    let candidate_sets = operands
+        .iter()
+        .map(|operand| {
+            let mut changed_sets = operand
+                .recipe_reference_contexts
+                .iter()
+                .map(|context| context.changed_reference_edge_slots.as_slice())
+                .filter(|edges| !edges.is_empty());
+            let mut candidates = changed_sets.next()?.to_vec();
+            for changed in changed_sets {
+                candidates.retain(|candidate| changed.contains(candidate));
+            }
+            candidates.sort_unstable();
+            candidates.dedup();
+            (!candidates.is_empty()).then_some(candidates)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    unique_bipartite_assignment(&candidate_sets)
 }
 
 #[derive(Debug, PartialEq)]
@@ -1271,7 +1295,10 @@ pub(crate) fn project_fixed_fillet(
         groups: vec![FilletGroup {
             edges,
             radius,
-            tangency_weight: Some(fixed.tangency_weight),
+            tangency_weight: fixed
+                .tangency_weight
+                .as_ref()
+                .map(|tangency| tangency.value),
         }],
     })
 }
@@ -1346,9 +1373,11 @@ mod radius_identity_tests {
             "reference_members": [2],
             "reference_member_offsets": [0],
             "fixed_fillet_parameters": {
-                "tangency_weight": 1.0,
-                "tangency_weight_record_index": 4,
-                "tangency_weight_offset": 0,
+                "tangency_weight": {
+                    "value": 1.0,
+                    "record_index": 4,
+                    "value_offset": 0
+                },
                 "radii": [0.3],
                 "radius_record_indexes": [5],
                 "radius_offsets": [0],

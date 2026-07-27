@@ -1670,8 +1670,10 @@ fn validate_fillet_operand_groups<'a>(
                 let intermediate_count = fixed.intermediate_parameters.len();
                 let valid_law_shape = (radius_count == 1 && intermediate_count == 0)
                     || (radius_count >= 2 && radius_count == intermediate_count.saturating_add(2));
-                fixed.tangency_weight.is_finite()
-                    && fixed.tangency_weight > 0.0
+                fixed
+                    .tangency_weight
+                    .as_ref()
+                    .is_none_or(|tangency| tangency.value.is_finite() && tangency.value > 0.0)
                     && valid_law_shape
                     && fixed
                         .radii
@@ -1694,7 +1696,10 @@ fn validate_fillet_operand_groups<'a>(
                         design_stream(&owner.id) != native_stream
                             || owner.scope_record_index != scope.record_index
                     })
-                    && std::iter::once(fixed.tangency_weight_record_index)
+                    && fixed
+                        .tangency_weight
+                        .iter()
+                        .map(|tangency| tangency.record_index)
                         .chain(fixed.radius_record_indexes.iter().copied())
                         .chain(fixed.intermediate_parameter_record_indexes.iter().copied())
                         .all(|record_index| {

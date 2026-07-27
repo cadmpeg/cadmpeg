@@ -888,12 +888,9 @@ pub struct DesignFixedExtrudeParameters {
 /// Exact fixed scalar lanes carried by a Fillet scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignFixedFilletParameters {
-    /// Dimensionless tangency weight.
-    pub tangency_weight: f64,
-    /// Referenced tangency-weight scalar record.
-    pub tangency_weight_record_index: u32,
-    /// Byte offset of the tangency-weight scalar.
-    pub tangency_weight_offset: u64,
+    /// Optional explicit dimensionless tangency-weight lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tangency_weight: Option<DesignFixedFilletTangencyWeight>,
     /// One constant radius, or endpoint radii followed by intermediate radii,
     /// in source centimetres.
     pub radii: Vec<f64>,
@@ -910,6 +907,17 @@ pub struct DesignFixedFilletParameters {
     /// Byte offsets of intermediate-position scalars in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub intermediate_parameter_offsets: Vec<u64>,
+}
+
+/// One explicit fixed Fillet tangency-weight lane and its source provenance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedFilletTangencyWeight {
+    /// Positive dimensionless tangency weight.
+    pub value: f64,
+    /// Referenced tangency-weight scalar record.
+    pub record_index: u32,
+    /// Byte offset of the tangency-weight scalar.
+    pub value_offset: u64,
 }
 
 /// Exact fixed scalar lane carried by an equal-distance Chamfer scope.

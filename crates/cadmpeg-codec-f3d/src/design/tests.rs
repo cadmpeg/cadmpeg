@@ -3741,9 +3741,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &fillet_scope),
         Some(DesignFixedFilletParameters {
-            tangency_weight: 1.0,
-            tangency_weight_record_index: 77,
-            tangency_weight_offset: (fillet_start + 40) as u64,
+            tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
+                value: 1.0,
+                record_index: 77,
+                value_offset: (fillet_start + 40) as u64,
+            }),
             radii: vec![0.0, 0.65, 0.4],
             radius_record_indexes: vec![78, 79, 87],
             radius_offsets: vec![
@@ -3754,6 +3756,19 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             intermediate_parameters: vec![0.2],
             intermediate_parameter_record_indexes: vec![88],
             intermediate_parameter_offsets: vec![(fillet_start + 460 + 40) as u64],
+        })
+    );
+    fillet_scope.reference_members = vec![50, 77];
+    assert_eq!(
+        exact_fixed_fillet_parameters(&bytes, &fillet_scope),
+        Some(DesignFixedFilletParameters {
+            tangency_weight: None,
+            radii: vec![1.0],
+            radius_record_indexes: vec![77],
+            radius_offsets: vec![(fillet_start + 40) as u64],
+            intermediate_parameters: Vec::new(),
+            intermediate_parameter_record_indexes: Vec::new(),
+            intermediate_parameter_offsets: Vec::new(),
         })
     );
 
@@ -5544,6 +5559,30 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         crate::design::edge_resolve::edge_operand_reference_edge_sets(&edge_operand),
         vec![&[18, 19][..], &[17][..], &[18, 19][..]]
+    );
+    edge_operand.recipe_reference_contexts = vec![
+        reference_context(0, Vec::new()),
+        reference_context(1, vec![17]),
+    ];
+    let mut second_changed_operand = edge_operand.clone();
+    second_changed_operand.recipe_reference_contexts = vec![
+        reference_context(0, Vec::new()),
+        reference_context(1, vec![18]),
+    ];
+    assert_eq!(
+        crate::design::edge_resolve::changed_reference_edge_group_candidates(&[
+            &edge_operand,
+            &second_changed_operand,
+        ]),
+        Some(vec![17, 18])
+    );
+    second_changed_operand.recipe_reference_contexts[0].changed_reference_edge_slots = vec![17];
+    assert_eq!(
+        crate::design::edge_resolve::changed_reference_edge_group_candidates(&[
+            &edge_operand,
+            &second_changed_operand,
+        ]),
+        None
     );
     edge_operand.recipe_reference_contexts.clear();
     edge_operand.local_topology_references = None;
@@ -11799,9 +11838,11 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ];
     let mut indexed_scope = scope.clone();
     indexed_scope.fixed_fillet_parameters = Some(crate::records::DesignFixedFilletParameters {
-        tangency_weight: 1.0,
-        tangency_weight_record_index: 10,
-        tangency_weight_offset: 100,
+        tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
+            value: 1.0,
+            record_index: 10,
+            value_offset: 100,
+        }),
         radii: vec![0.5],
         radius_record_indexes: vec![20],
         radius_offsets: vec![200],
