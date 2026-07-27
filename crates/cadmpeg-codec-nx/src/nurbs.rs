@@ -395,6 +395,20 @@ fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)> {
     Some((xmt, Payload { values }, end))
 }
 
+fn curve_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
+    (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
+    let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+    let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+    (xmt > 10).then_some(())?;
+    let mut at = pos.checked_add(2 + escape + xmt_len)?;
+    (bytes.get(at) == Some(&2)).then_some(())?;
+    at += 1;
+    let (_, reference_len) = read_xmt(bytes, at)?;
+    at += reference_len;
+    (bytes.get(at) == Some(&1)).then_some(())?;
+    Some((xmt, at + 1))
+}
+
 fn finite_f64_values(raw: &[u8]) -> Option<Vec<f64>> {
     let values = raw
         .chunks_exact(8)
@@ -579,10 +593,9 @@ pub(crate) fn auxiliary_record_at(bytes: &[u8], pos: usize) -> Option<AuxiliaryR
             let record = array_record_at(bytes, pos)?;
             (record.reference, record.end)
         }
-        135 => {
-            let (xmt, _, end) = curve_payload_at(bytes, pos)?;
-            (xmt, end)
-        }
+        135 => curve_payload_at(bytes, pos)
+            .map(|(xmt, _, end)| (xmt, end))
+            .or_else(|| curve_data_header_at(bytes, pos))?,
         136 => {
             let (xmt, _, end) = curve_descriptor_at(bytes, pos)?;
             (xmt, end)
