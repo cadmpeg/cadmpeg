@@ -4070,8 +4070,8 @@ mod record_decoders {
     use std::collections::{HashMap, HashSet};
 
     use crate::tests::{
-        a8_freeform_curve_stream, append_b5_record, b5_closed_triangle_stream, le_f32, le_f64,
-        standard_quad_topology_stream,
+        a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
+        le_f32, le_f64, standard_quad_topology_stream,
     };
 
     #[test]
@@ -4730,6 +4730,65 @@ mod record_decoders {
         assert!(matches!(
             evidence.surface_geometries.get(&501),
             Some(SurfaceGeometry::Plane { .. })
+        ));
+    }
+
+    #[test]
+    fn standard_freeform_tag_resolves_standalone_a8_carrier() {
+        let mut stream = a8_surface_stream();
+        stream[7..11].copy_from_slice(&100u32.to_le_bytes());
+        append_b5_record(&mut stream, 0x2e, 501, &[0x18, 100, 0]);
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [stream],
+            &HashSet::from([100, 501]),
+            &HashSet::new(),
+        );
+        for tag in [100, 501] {
+            assert!(matches!(
+                evidence.surface_geometries.get(&tag),
+                Some(SurfaceGeometry::Nurbs(surface))
+                    if surface.u_degree == 2
+                        && surface.v_degree == 2
+                        && surface.u_count == 3
+                        && surface.v_count == 3
+            ));
+        }
+    }
+
+    #[test]
+    fn standard_freeform_tag_rejects_conflicting_standalone_a8_carriers() {
+        let mut first = a8_surface_stream();
+        first[7..11].copy_from_slice(&100u32.to_le_bytes());
+        let mut second = first.clone();
+        second[67..75].copy_from_slice(&1.0f64.to_le_bytes());
+        first.extend(second);
+
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [first],
+            &HashSet::from([100]),
+            &HashSet::new(),
+        );
+        assert!(!evidence.surface_geometries.contains_key(&100));
+    }
+
+    #[test]
+    fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [a8_freeform_curve_stream()],
+            &HashSet::from([0x1234_5678]),
+            &HashSet::new(),
+        );
+        assert!(matches!(
+            evidence.procedural_surfaces.get(&0x1234_5678),
+            Some(
+                crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
+                    carrier_object_id: 0x1234_5678,
+                    definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
+                        degree: 5,
+                        ..
+                    },
+                }
+            )
         ));
     }
 

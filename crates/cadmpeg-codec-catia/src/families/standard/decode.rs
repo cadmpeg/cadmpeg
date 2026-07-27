@@ -773,6 +773,25 @@ pub(crate) fn standard_object_evidence_from_streams(
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
     for stream in streams {
+        for (object_id, surface) in crate::families::b5::graph::targeted_surfaces(&stream, tags) {
+            let Some(carrier) = crate::families::b5::transfer::resolved_surface_carrier(&surface)
+            else {
+                continue;
+            };
+            let evidence = match carrier {
+                crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
+                    StandardSurfaceEvidence::Geometry(geometry)
+                }
+                crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+                    carrier_object_id,
+                    definition,
+                } => StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall {
+                    carrier_object_id,
+                    definition: *definition,
+                }),
+            };
+            merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
+        }
         let face_surfaces = crate::families::b5::graph::face_surface_references(&stream);
         let edge_pcurves =
             crate::families::b5::graph::edge_support_pcurve_references(&stream, edge_tags);

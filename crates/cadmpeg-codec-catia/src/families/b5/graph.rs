@@ -884,6 +884,16 @@ pub(crate) fn targeted_surfaces(
     bytes: &[u8],
     object_ids: &HashSet<u32>,
 ) -> BTreeMap<u32, B5Surface> {
+    let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
+    for surface in crate::families::a5a8::records::resolved_a8_surfaces(bytes) {
+        let Some(object_id) = surface.object_id() else {
+            continue;
+        };
+        let SurfaceGeometry::Nurbs(nurbs) = surface.geometry else {
+            continue;
+        };
+        merge_targeted_surface(&mut resolved, object_id, B5Surface::Nurbs(nurbs));
+    }
     let headers = crate::families::a5a8::records::a8_surface_headers(bytes)
         .into_iter()
         .map(|header| (header.object_id, header))
@@ -913,48 +923,73 @@ pub(crate) fn targeted_surfaces(
             })
             .or_insert(Some(record));
     }
-    let rolling = crate::families::a5a8::records::a8_freeform_curves(bytes)
-        .into_iter()
-        .filter_map(|jet| {
-            let definition = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)?;
-            Some((
-                jet.object_id,
-                B5Surface::RollingBall {
-                    carrier_object_id: jet.object_id,
-                    definition,
-                },
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut rolling = HashMap::<u32, Option<B5Surface>>::new();
+    for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
+        let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
+        else {
+            continue;
+        };
+        merge_targeted_surface(
+            &mut rolling,
+            jet.object_id,
+            B5Surface::RollingBall {
+                carrier_object_id: jet.object_id,
+                definition,
+            },
+        );
+    }
     object_ids
         .iter()
         .filter_map(|&object_id| {
-            resolve_targeted_surface(object_id, &records, &headers, &rolling, 0)
+            resolve_targeted_surface(object_id, &records, &headers, &resolved, &rolling, 0)
                 .map(|surface| (object_id, surface))
         })
         .collect()
+}
+
+fn merge_targeted_surface(
+    candidates: &mut HashMap<u32, Option<B5Surface>>,
+    object_id: u32,
+    surface: B5Surface,
+) {
+    candidates
+        .entry(object_id)
+        .and_modify(|stored| {
+            if stored.as_ref().is_some_and(|stored| stored != &surface) {
+                *stored = None;
+            }
+        })
+        .or_insert(Some(surface));
 }
 
 fn resolve_targeted_surface(
     object_id: u32,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
-    rolling: &HashMap<u32, B5Surface>,
+    resolved: &HashMap<u32, Option<B5Surface>>,
+    rolling: &HashMap<u32, Option<B5Surface>>,
     depth: usize,
 ) -> Option<B5Surface> {
     (depth < 16).then_some(())?;
+    if records.get(&object_id).is_some_and(Option::is_none) {
+        return None;
+    }
     if let Some(surface) = rolling.get(&object_id) {
-        return Some(surface.clone());
+        return surface.clone();
+    }
+    if let Some(surface) = resolved.get(&object_id) {
+        return surface.clone();
     }
     let record = records.get(&object_id)?.as_ref()?;
     if let Some(target) = surface_alias_target(record) {
-        return resolve_targeted_surface(target, records, headers, rolling, depth + 1);
+        return resolve_targeted_surface(target, records, headers, resolved, rolling, depth + 1);
     }
     if let Some(construction) = parse_supported_surface(record) {
         return resolve_targeted_surface(
             construction.carrier_surface,
             records,
             headers,
+            resolved,
             rolling,
             depth + 1,
         );
@@ -3064,14 +3099,14 @@ mod tests {
         let records = HashMap::from([(10, Some(record))]);
         let rolling = HashMap::from([(
             1,
-            B5Surface::RollingBall {
+            Some(B5Surface::RollingBall {
                 carrier_object_id: 1,
                 definition: ProceduralSurfaceDefinition::Unknown { record: None },
-            },
+            }),
         )]);
         assert_eq!(
-            resolve_targeted_surface(10, &records, &HashMap::new(), &rolling, 0),
-            rolling.get(&1).cloned()
+            resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling, 0,),
+            rolling.get(&1).cloned().flatten()
         );
     }
 

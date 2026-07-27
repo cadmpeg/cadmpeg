@@ -606,13 +606,9 @@ pub(crate) enum ResolvedPcurveSurface {
     },
 }
 
-/// Lower one decoded degree-5 UV jet through its resolved native chart.
-#[must_use]
-pub(crate) fn resolved_object_stream_pcurve(
-    pcurve: &crate::families::a5a8::records::A8Pcurve,
-    surface: &B5Surface,
-) -> Option<ResolvedObjectStreamPcurve> {
-    let carrier = surfaces::neutral_analytic_surface(surface)
+/// Lower one resolved object-stream surface to an exact neutral carrier.
+pub(crate) fn resolved_surface_carrier(surface: &B5Surface) -> Option<ResolvedPcurveSurface> {
+    surfaces::neutral_analytic_surface(surface)
         .map(ResolvedPcurveSurface::Geometry)
         .or_else(|| match surface {
             B5Surface::RollingBall {
@@ -623,7 +619,16 @@ pub(crate) fn resolved_object_stream_pcurve(
                 definition: Box::new(definition.clone()),
             }),
             _ => None,
-        })?;
+        })
+}
+
+/// Lower one decoded degree-5 UV jet through its resolved native chart.
+#[must_use]
+pub(crate) fn resolved_object_stream_pcurve(
+    pcurve: &crate::families::a5a8::records::A8Pcurve,
+    surface: &B5Surface,
+) -> Option<ResolvedObjectStreamPcurve> {
+    let carrier = resolved_surface_carrier(surface)?;
     let (knots, control_points) = crate::nurbs::quintic_jet_bspline(
         pcurve.degree,
         &pcurve.knots,
