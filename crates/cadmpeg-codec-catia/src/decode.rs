@@ -163,6 +163,30 @@ fn finish_decode(
         .filter_map(|record| record.formula_relation.as_ref())
         .map(|formula| formula.parameter_dependencies.len())
         .sum();
+    let scalar_entity_suffix_value_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record.suffix_value.as_ref().is_some_and(|value| {
+                matches!(
+                    value.evaluation,
+                    crate::native::CatiaEntityEvaluation::Scalar { .. }
+                )
+            })
+        })
+        .count();
+    let unset_entity_suffix_value_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record.suffix_value.as_ref().is_some_and(|value| {
+                matches!(
+                    value.evaluation,
+                    crate::native::CatiaEntityEvaluation::Unset
+                )
+            })
+        })
+        .count();
     let unresolved_design_owner_count = native
         .design_objects
         .iter()
@@ -284,6 +308,14 @@ fn finish_decode(
             formula_parameter_dependency_count,
         ),
         (
+            "decoded_scalar_entity_suffix_value_count".to_string(),
+            scalar_entity_suffix_value_count,
+        ),
+        (
+            "decoded_unset_entity_suffix_value_count".to_string(),
+            unset_entity_suffix_value_count,
+        ),
+        (
             "unresolved_design_owner_count".to_string(),
             unresolved_design_owner_count,
         ),
@@ -335,7 +367,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s) and {} exact formula, expression, or parameter field record(s) transferred, while {unresolved_object_record_count} field record(s) across {unresolved_design_object_count} design object(s), neutral features, other parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s) and {} exact formula, expression, or parameter field record(s) transferred, while {unresolved_object_record_count} field record(s) across {unresolved_design_object_count} design object(s), neutral features, other parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
                 formula_transfer.parameter_count,
                 transferred_formula_design_records.len(),
@@ -797,7 +829,7 @@ enum TypedParameterEvaluation {
 
 fn typed_parameter_evaluation(
     source_type: &str,
-    evaluation: &crate::native::CatiaParameterEvaluation,
+    evaluation: &crate::native::CatiaEntityEvaluation,
 ) -> Option<TypedParameterEvaluation> {
     if !matches!(
         source_type,
@@ -805,7 +837,7 @@ fn typed_parameter_evaluation(
     ) {
         return None;
     }
-    let crate::native::CatiaParameterEvaluation::Scalar { bits } = evaluation else {
+    let crate::native::CatiaEntityEvaluation::Scalar { bits } = evaluation else {
         return Some(TypedParameterEvaluation::Unset);
     };
     let value = f64::from_bits(*bits);

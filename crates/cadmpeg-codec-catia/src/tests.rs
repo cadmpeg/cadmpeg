@@ -6341,7 +6341,7 @@ fn relation_expression_signature_requires_the_selected_placeholder() {
 
 #[test]
 fn native_namespace_types_and_validates_named_parameter_values() {
-    use crate::native::CatiaParameterEvaluation;
+    use crate::native::{CatiaEntityEvaluation, CatiaEntitySuffixValue};
 
     let scalar = 35.0_f64.to_bits();
     let mut scalar_suffix = vec![0x85, 0x96, 0x82, 0x6a, 0xe6];
@@ -6357,7 +6357,15 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     assert_eq!(parameter.binding.value, "#1_ /2");
     assert_eq!(
         parameter.evaluation,
-        CatiaParameterEvaluation::Scalar { bits: scalar }
+        CatiaEntityEvaluation::Scalar { bits: scalar }
+    );
+    assert_eq!(
+        native.entity_records[0].suffix_value,
+        Some(CatiaEntitySuffixValue {
+            prefix: [0x85, 0x96, 0x82, 0x6a],
+            evaluation: CatiaEntityEvaluation::Scalar { bits: scalar },
+            trailer: [0x81, 0x52],
+        })
     );
 
     let unset = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
@@ -6369,7 +6377,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
             .as_ref()
             .expect("complete unset parameter")
             .evaluation,
-        CatiaParameterEvaluation::Unset
+        CatiaEntityEvaluation::Unset
     );
 
     let mut malformed = native;
@@ -6390,6 +6398,80 @@ fn native_namespace_types_and_validates_named_parameter_values() {
 }
 
 #[test]
+fn native_namespace_types_and_validates_generic_entity_suffix_values() {
+    use crate::native::{CatiaEntityEvaluation, CatiaEntitySuffixValue};
+
+    let bits = 0.1_f64.to_bits();
+    let mut suffix = vec![0x84, 0x96, 0x82, 0xad, 0xe6];
+    suffix.extend_from_slice(&bits.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0x49]);
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parameter_value(&suffix)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generic entity suffix");
+    assert_eq!(
+        decoded.report.coverage["decoded_scalar_entity_suffix_value_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_unset_entity_suffix_value_count"],
+        0
+    );
+    let native =
+        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
+            .expect("load generic entity suffix");
+
+    assert_eq!(native.entity_records[0].parameter_value, None);
+    assert_eq!(
+        native.entity_records[0].suffix_value,
+        Some(CatiaEntitySuffixValue {
+            prefix: [0x84, 0x96, 0x82, 0xad],
+            evaluation: CatiaEntityEvaluation::Scalar { bits },
+            trailer: [0x81, 0x49],
+        })
+    );
+
+    let unset = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parameter_value(&[
+                0x84, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x49,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generic unset entity suffix");
+    assert_eq!(
+        unset.report.coverage["decoded_scalar_entity_suffix_value_count"],
+        0
+    );
+    assert_eq!(
+        unset.report.coverage["decoded_unset_entity_suffix_value_count"],
+        1
+    );
+
+    let incomplete = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x84, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x49, 0x00,
+    ]));
+    assert_eq!(incomplete.entity_records[0].suffix_value, None);
+
+    let mut malformed = native;
+    malformed.entity_records[0]
+        .suffix_value
+        .as_mut()
+        .expect("complete suffix value")
+        .trailer[1] ^= 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed suffix value");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
 fn named_parameter_value_requires_the_complete_finite_suffix() {
     let nonfinite = f64::NAN.to_bits();
     let mut suffix = vec![0x85, 0x96, 0x82, 0x6a, 0xe6];
@@ -6398,6 +6480,7 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
 
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&suffix));
+    assert!(native.entity_records[0].suffix_value.is_none());
     assert!(native.entity_records[0].parameter_value.is_none());
 }
 

@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 114;
+pub const CATIA_NATIVE_VERSION: u32 = 115;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -712,9 +712,9 @@ pub struct CatiaRelationTypeInput {
     pub input_type: String,
 }
 
-/// Evaluation state of one named parameter value.
+/// Evaluation state of one complete entity-record suffix value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum CatiaParameterEvaluation {
+pub enum CatiaEntityEvaluation {
     /// The `E7` form carries no evaluated scalar.
     Unset,
     /// The `E6` form carries one finite IEEE-754 binary64 scalar.
@@ -722,6 +722,17 @@ pub enum CatiaParameterEvaluation {
         /// Exact stored binary64 bits.
         bits: u64,
     },
+}
+
+/// One complete scalar or unset value in an entity-record suffix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaEntitySuffixValue {
+    /// Four exact bytes preceding the evaluation opcode.
+    pub prefix: [u8; 4],
+    /// Stored scalar or unset evaluation.
+    pub evaluation: CatiaEntityEvaluation,
+    /// Two exact bytes closing the suffix production.
+    pub trailer: [u8; 2],
 }
 
 /// One complete named parameter-value record.
@@ -732,7 +743,7 @@ pub struct CatiaParameterValue {
     /// Stored scope, expression, or presentation binding.
     pub binding: CatiaEntitySchemaValue,
     /// Stored evaluation state.
-    pub evaluation: CatiaParameterEvaluation,
+    pub evaluation: CatiaEntityEvaluation,
 }
 
 /// One complete formula relation stored by an entity and its object payload.
@@ -834,6 +845,9 @@ pub struct CatiaEntityRecord {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub record_suffix: Vec<u8>,
+    /// Complete scalar or unset production occupying the record suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suffix_value: Option<CatiaEntitySuffixValue>,
 }
 
 /// One outer `7C08` ownership graph in source order.
@@ -1214,6 +1228,7 @@ fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         && record.numeric_tuple == entity_table::parse_numeric_tuple(&record.value_payload)
         && record.reference_signature
             == entity_table::parse_reference_signature(&record.value_payload)
+        && record.suffix_value == entity_suffix_value(&record.record_suffix)
 }
 
 fn definition_schema_selections(
@@ -1374,7 +1389,7 @@ fn relation_type_signature(placeholder: &str, source: &str) -> Option<CatiaRelat
 fn parameter_value(
     lead: u8,
     values: &[CatiaEntityValueSchemaSelection],
-    suffix: &[u8],
+    suffix_value: Option<&CatiaEntitySuffixValue>,
 ) -> Option<CatiaParameterValue> {
     if lead != 2 {
         return None;
@@ -1382,15 +1397,9 @@ fn parameter_value(
     let [name, binding] = values else {
         return None;
     };
-    let evaluation = match suffix {
-        [0x85, 0x96, 0x82, 0x6a, 0xe7, 0x81, 0x52] => CatiaParameterEvaluation::Unset,
-        [0x85, 0x96, 0x82, 0x6a, 0xe6, b0, b1, b2, b3, b4, b5, b6, b7, 0x81, 0x52] => {
-            let bits = u64::from_le_bytes([*b0, *b1, *b2, *b3, *b4, *b5, *b6, *b7]);
-            f64::from_bits(bits).is_finite().then_some(())?;
-            CatiaParameterEvaluation::Scalar { bits }
-        }
-        _ => return None,
-    };
+    let suffix_value = suffix_value?;
+    (suffix_value.prefix == [0x85, 0x96, 0x82, 0x6a] && suffix_value.trailer == [0x81, 0x52])
+        .then_some(())?;
     let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
         entry: selection.entry.clone(),
         value: selection.name.clone(),
@@ -1398,7 +1407,26 @@ fn parameter_value(
     Some(CatiaParameterValue {
         name: schema_value(name),
         binding: schema_value(binding),
+        evaluation: suffix_value.evaluation.clone(),
+    })
+}
+
+fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
+    let prefix = suffix.get(..4)?.try_into().ok()?;
+    let (evaluation, trailer_offset) = match *suffix.get(4)? {
+        0xe7 => (CatiaEntityEvaluation::Unset, 5),
+        0xe6 => {
+            let bits = u64::from_le_bytes(suffix.get(5..13)?.try_into().ok()?);
+            f64::from_bits(bits).is_finite().then_some(())?;
+            (CatiaEntityEvaluation::Scalar { bits }, 13)
+        }
+        _ => return None,
+    };
+    let trailer = suffix.get(trailer_offset..)?.try_into().ok()?;
+    Some(CatiaEntitySuffixValue {
+        prefix,
         evaluation,
+        trailer,
     })
 }
 
@@ -2917,10 +2945,11 @@ impl CatiaNative {
                     &entity.definition_schema_selections,
                     &entity.value_schema_selections,
                 );
+                entity.suffix_value = entity_suffix_value(&entity.record_suffix);
                 entity.parameter_value = parameter_value(
                     entity.lead,
                     &entity.value_schema_selections,
-                    &entity.record_suffix,
+                    entity.suffix_value.as_ref(),
                 );
             }
         }
@@ -3192,11 +3221,14 @@ impl CatiaNative {
                             )
                     })
                     || graph_entities.iter().any(|entity| {
+                        entity.suffix_value != entity_suffix_value(&entity.record_suffix)
+                    })
+                    || graph_entities.iter().any(|entity| {
                         entity.parameter_value
                             != parameter_value(
                                 entity.lead,
                                 &entity.value_schema_selections,
-                                &entity.record_suffix,
+                                entity.suffix_value.as_ref(),
                             )
                     })
                     || graph_entities.iter().any(|entity| {
@@ -3817,6 +3849,7 @@ fn native_object_graph(
                 numeric_tuple: entity.numeric_tuple,
                 reference_signature: entity.reference_signature,
                 record_suffix: entity.record_suffix,
+                suffix_value: None,
             })
         })
         .collect();
