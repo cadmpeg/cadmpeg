@@ -6241,6 +6241,38 @@ fn deltas_walks_complete_type_101_records() {
 }
 
 #[test]
+fn deltas_walks_auxiliary_family_tombstones() {
+    let mut stream = Vec::new();
+    for kind in [41u16, 45, 125, 136, 141, 204] {
+        stream.extend_from_slice(&kind.to_be_bytes());
+        stream.extend_from_slice(&(-2i16).to_be_bytes());
+        stream.extend_from_slice(&1u16.to_be_bytes());
+    }
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 0);
+    assert_eq!(census.tombstones.len(), 6);
+    assert!(census
+        .tombstones
+        .iter()
+        .all(|tombstone| tombstone.xmt == 32_769));
+    for family in [
+        "TERM_USE",
+        "TYPE_45",
+        "B_SURFACE_DATA",
+        "B_CURVE_DESCRIPTOR",
+        "TYPE_141",
+        "SUPPORT_UV",
+    ] {
+        assert_eq!(census.tombstone_counts[family], 1);
+    }
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert!(crate::deltas::semantic_residual(&stream)
+        .iter()
+        .all(|byte| *byte == 0xff));
+}
+
+#[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
         .records

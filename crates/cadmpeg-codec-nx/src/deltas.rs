@@ -1143,61 +1143,55 @@ fn plausible_next(stream: &[u8], offset: usize) -> bool {
 }
 
 fn is_next_kind(kind: u16) -> bool {
-    matches!(
-        kind,
-        12..=19
-            | 29..=32
-            | 38
-            | 40
-            | 41
-            | 50..=60
-            | 70
-            | 74
-            | 79..=84
-            | 90
-            | 91
-            | 101
-            | 124..=128
-            | 133..=137
-            | 141
-            | 204
-    )
+    family_name(kind).is_some() || matches!(kind, 70 | 79 | 80)
 }
 
 fn family_name(kind: u16) -> Option<&'static str> {
     Some(match kind {
+        12 => "BODY",
+        13 => "SHELL",
         14 => "FACE",
         15 => "LOOP",
         16 => "EDGE",
         17 => "FIN",
         18 => "VERTEX",
+        19 => "REGION",
         29 => "POINT",
         30 => "LINE",
         31 => "CIRCLE",
         32 => "ELLIPSE",
+        38 => "INTERSECTION",
+        40 => "CHART",
+        41 => "TERM_USE",
+        45 => "TYPE_45",
         50 => "PLANE",
         51 => "CYLINDER",
         52 => "CONE",
         53 => "SPHERE",
         54 => "TORUS",
         56 => "BLEND_SURF",
+        59 => "BLEND_BOUND",
         60 => "OFFSET_SURF",
-        38 => "INTERSECTION",
-        124 => "B_SURFACE",
-        133 => "TRIMMED_CURVE",
-        134 => "B_CURVE",
-        137 => "SP_CURVE",
+        74 => "ATTDEF_LIST",
         81 => "ENTITY_51",
         82 => "ENTITY_52",
         83 => "ENTITY_53",
-        74 => "ATTDEF_LIST",
         84 => "ENTITY_54",
         90 => "GROUP",
         91 => "TYPE_91",
         101 => "TYPE_101",
-        12 => "BODY",
-        13 => "SHELL",
-        19 => "REGION",
+        124 => "B_SURFACE",
+        125 => "B_SURFACE_DATA",
+        126 => "B_SURFACE_DESCRIPTOR",
+        127 => "MULTIPLICITIES",
+        128 => "KNOTS",
+        133 => "TRIMMED_CURVE",
+        134 => "B_CURVE",
+        135 => "B_CURVE_DATA",
+        136 => "B_CURVE_DESCRIPTOR",
+        137 => "SP_CURVE",
+        141 => "TYPE_141",
+        204 => "SUPPORT_UV",
         _ => return None,
     })
 }
