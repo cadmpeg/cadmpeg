@@ -322,7 +322,7 @@ fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Ve
         let mut prefixed_at = *at;
         let mut references = Vec::new();
         for _ in 0..count {
-            (bytes.get(prefixed_at) == Some(&1)).then_some(())?;
+            matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
             prefixed_at += 1;
             references.push(read_xmt(bytes, &mut prefixed_at)?);
         }

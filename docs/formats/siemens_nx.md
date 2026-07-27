@@ -1198,7 +1198,7 @@ the low flags byte is in `1..=0x20`. The reference count is seven for
 `(discriminator, low_flags) = (001d|001e, 02)`, nine for
 `(0020|0024|0027, 04)`, and six otherwise, including
 `(0018|0020|0025, 01)`. References are either consecutive XMT values or
-individually `01`-prefixed XMT values followed by `00`; the two forms are
+individually binary-status-prefixed XMT values followed by `00`; the two forms are
 atomic. A topology attribute-list identity resolves only when exactly one
 type-81 record in the same stream has that xmt.
 

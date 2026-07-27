@@ -5980,8 +5980,8 @@ fn deltas_walks_complete_status_prefixed_entity_51_records() {
     stream.extend_from_slice(&10u16.to_be_bytes());
     stream.extend_from_slice(&2u32.to_be_bytes());
     stream.extend_from_slice(&0x21u16.to_be_bytes());
-    for reference in 3..=8u16 {
-        stream.push(1);
+    for (status, reference) in [1, 1, 0, 1, 0, 1].into_iter().zip(3..=8u16) {
+        stream.push(status);
         stream.extend_from_slice(&reference.to_be_bytes());
     }
     stream.push(0);
