@@ -583,6 +583,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             Some((record.object_id, pcurve))
         })
         .collect();
+    let mut conflicting_pcurves = HashSet::new();
     let mut circle_candidates = BTreeMap::<u32, Vec<B5Pcurve>>::new();
     for pcurve in circle_pcurves(bytes) {
         if surfaces.contains_key(&pcurve.surface) {
@@ -598,7 +599,10 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             continue;
         };
         if distinct.all(|other| other == candidate) {
-            pcurves.entry(object_id).or_insert(candidate);
+            merge_pcurve_candidate(&mut pcurves, &mut conflicting_pcurves, candidate);
+        } else {
+            pcurves.remove(&object_id);
+            conflicting_pcurves.insert(object_id);
         }
     }
     for jet in object_stream_pcurve_jets {
@@ -619,7 +623,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         ) else {
             continue;
         };
-        pcurves.entry(jet.object_id).or_insert_with(|| B5Pcurve {
+        let candidate = B5Pcurve {
             object_id: jet.object_id,
             surface: jet.support_id,
             degree: jet.degree,
@@ -628,7 +632,8 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             control_points,
             weights: None,
             lifted_endpoints: None,
-        });
+        };
+        merge_pcurve_candidate(&mut pcurves, &mut conflicting_pcurves, candidate);
     }
     let mut opaque_pcurves: BTreeMap<u32, B5OpaquePcurve> = records
         .iter()
@@ -791,6 +796,27 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         vertex_tolerances,
         profiles,
     })
+}
+
+fn merge_pcurve_candidate(
+    pcurves: &mut BTreeMap<u32, B5Pcurve>,
+    conflicts: &mut HashSet<u32>,
+    candidate: B5Pcurve,
+) {
+    let object_id = candidate.object_id;
+    if conflicts.contains(&object_id) {
+        return;
+    }
+    match pcurves.entry(object_id) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(candidate);
+        }
+        std::collections::btree_map::Entry::Occupied(entry) if entry.get() == &candidate => {}
+        std::collections::btree_map::Entry::Occupied(entry) => {
+            entry.remove();
+            conflicts.insert(object_id);
+        }
+    }
 }
 
 /// Return native start/end vertex identities for every framed `b5 03 5e`
@@ -3078,6 +3104,33 @@ fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_pcurve(object_id: u32, surface: u32) -> B5Pcurve {
+        B5Pcurve {
+            object_id,
+            surface,
+            degree: 1,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+            weights: None,
+            lifted_endpoints: None,
+        }
+    }
+
+    #[test]
+    fn pcurve_candidate_merge_collapses_repeats_and_permanently_rejects_conflicts() {
+        let mut pcurves = BTreeMap::new();
+        let mut conflicts = HashSet::new();
+        merge_pcurve_candidate(&mut pcurves, &mut conflicts, test_pcurve(1, 10));
+        merge_pcurve_candidate(&mut pcurves, &mut conflicts, test_pcurve(1, 10));
+        assert_eq!(pcurves.get(&1), Some(&test_pcurve(1, 10)));
+
+        merge_pcurve_candidate(&mut pcurves, &mut conflicts, test_pcurve(1, 11));
+        merge_pcurve_candidate(&mut pcurves, &mut conflicts, test_pcurve(1, 10));
+        assert!(!pcurves.contains_key(&1));
+        assert!(conflicts.contains(&1));
+    }
 
     #[test]
     fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_carrier() {
