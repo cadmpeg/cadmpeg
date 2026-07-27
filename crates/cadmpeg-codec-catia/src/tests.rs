@@ -1816,22 +1816,28 @@ fn standard_catpart_with_formula_relation(
         &expression_definition,
         &expression_value,
     ));
-    let parameter = |entity_id| {
-        let parameter_value = [0x32, 12, 0, 0, 0, 0x32, 13, 0, 0, 0, 0xfe];
+    let parameter = |entity_id, name_ordinal: u32, binding_ordinal: u32, value: f64| {
+        let mut parameter_value = vec![0x32];
+        parameter_value.extend_from_slice(&name_ordinal.to_le_bytes());
+        parameter_value.push(0x32);
+        parameter_value.extend_from_slice(&binding_ordinal.to_le_bytes());
+        parameter_value.push(0xfe);
         let mut parameter =
             entity_table_record_with_definition_and_value(entity_id, &[0x01], &parameter_value);
         parameter[6] = 2;
-        parameter.extend_from_slice(&[
-            0x85, 0x96, 0x82, 0x6a, 0xe6, 0, 0, 0, 0, 0, 0x80, 0x41, 0x40, 0x81, 0x52,
-        ]);
+        parameter.extend_from_slice(&[0x85, 0x96, 0x82, 0x6a, 0xe6]);
+        parameter.extend_from_slice(&value.to_bits().to_le_bytes());
+        parameter.extend_from_slice(&[0x81, 0x52]);
         let parameter_len = u32::try_from(parameter.len()).expect("bounded parameter entity");
         parameter[2..6].copy_from_slice(&parameter_len.to_le_bytes());
         parameter
     };
-    stream.extend(parameter(3));
+    stream.extend(parameter(3, 12_u32, 13_u32, 35.0));
     if duplicate_binding {
-        stream.extend(parameter(4));
+        stream.extend(parameter(4, 12_u32, 13_u32, 35.0));
     }
+    let output_entity_id = if duplicate_binding { 5 } else { 4 };
+    stream.extend(parameter(output_entity_id, 14_u32, 15_u32, 33.0));
     stream.push(0xde);
     let mut records = vec![
         object_graph_record(
@@ -1856,6 +1862,7 @@ fn standard_catpart_with_formula_relation(
     if duplicate_binding {
         records.push(object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]));
     }
+    records.push(object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]));
     stream.extend(object_graph_from_records(&records));
     stream.extend(catalog_stream(&[
         "CATCatalogManager",
@@ -1872,6 +1879,8 @@ fn standard_catpart_with_formula_relation(
         "RelationExpFct",
         "Thickness",
         "#1_ /2",
+        "Result",
+        "#1_ /3",
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -5946,6 +5955,50 @@ fn formula_parameter_dependency_requires_a_unique_binding() {
         .expect("complete formula relation")
         .parameter_dependencies
         .is_empty());
+}
+
+#[test]
+fn decode_transfers_a_closed_length_formula_and_its_input() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_relation(4, false)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode closed length formula");
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("closed formula parameters")
+    };
+
+    assert_eq!(input.name, "Thickness");
+    assert_eq!(input.expression, "35 mm");
+    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert!(input.dependencies.is_empty());
+    assert_eq!(output.name, "Result");
+    assert_eq!(output.expression, "#1_ /2-2mm");
+    assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 2);
+    assert_eq!(
+        decoded.source_fidelity.annotations.exactness[&input.id.0].fields["expression"],
+        cadmpeg_ir::Exactness::Derived
+    );
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+        .findings
+        .is_empty());
+}
+
+#[test]
+fn decode_rejects_a_formula_with_ambiguous_input_binding() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_relation(5, true)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode ambiguous formula");
+
+    assert!(decoded.ir.model.parameters.is_empty());
 }
 
 #[test]

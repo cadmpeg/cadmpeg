@@ -11,12 +11,15 @@
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{DesignParameter, Length, ParameterId, ParameterValue};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::SourceFidelity;
+use cadmpeg_ir::{Annotations, Exactness, SourceFidelity};
 
 use crate::assemble::{build_container_report, build_metadata_ir};
 use crate::container::{self, ContainerScan};
@@ -59,10 +62,12 @@ fn finish_decode(
     scan: &ContainerScan,
     mut ir: CadIr,
     mut report: DecodeReport,
-    annotations: cadmpeg_ir::Annotations,
+    mut annotations: Annotations,
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
+    let transferred_formula_parameter_count =
+        transfer_formula_parameters(&mut ir, &native, &mut annotations);
     let object_record_count = native
         .object_graphs
         .iter()
@@ -283,8 +288,9 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} closed formula parameter(s) transferred, while neutral features, other parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
+                transferred_formula_parameter_count,
             ),
             provenance: None,
         });
@@ -305,10 +311,169 @@ fn finish_decode(
     decode_result(ir, report, annotations, unknowns)
 }
 
+fn transfer_formula_parameters(
+    ir: &mut CadIr,
+    native: &CatiaNative,
+    annotations: &mut Annotations,
+) -> usize {
+    let entities = native
+        .entity_records
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect::<HashMap<_, _>>();
+    let mut candidates = BTreeMap::<ParameterId, DesignParameter>::new();
+    let mut conflicting = BTreeSet::<ParameterId>::new();
+
+    for formula_entity in &native.entity_records {
+        let Some(formula) = &formula_entity.formula_relation else {
+            continue;
+        };
+        let Some(expression_entity) = entities.get(formula.expression.as_str()) else {
+            continue;
+        };
+        let Some(expression) = &expression_entity.relation_expression else {
+            continue;
+        };
+        let Some(signature) = &expression.signature else {
+            continue;
+        };
+        if signature.input_type != "LENGTH" || signature.result_type != "LENGTH" {
+            continue;
+        }
+        let Some(output) = formula.parameter.as_deref().and_then(|id| entities.get(id)) else {
+            continue;
+        };
+        let Some(output_value) = &output.parameter_value else {
+            continue;
+        };
+
+        let mut transferred = Vec::with_capacity(formula.parameter_dependencies.len() + 1);
+        let mut dependencies = Vec::with_capacity(formula.parameter_dependencies.len());
+        let mut complete = !formula.parameter_dependencies.is_empty();
+        for dependency in &formula.parameter_dependencies {
+            let Some(entity) = entities.get(dependency.parameter.as_str()) else {
+                complete = false;
+                break;
+            };
+            let Some(parameter) = &entity.parameter_value else {
+                complete = false;
+                break;
+            };
+            let crate::native::CatiaParameterEvaluation::Scalar { bits } = parameter.evaluation
+            else {
+                complete = false;
+                break;
+            };
+            let value = f64::from_bits(bits);
+            let id = neutral_parameter_id(&entity.id);
+            if entity.id == output.id || dependencies.contains(&id) {
+                complete = false;
+                break;
+            }
+            let Ok(ordinal) = u32::try_from(entity.ordinal) else {
+                complete = false;
+                break;
+            };
+            dependencies.push(id.clone());
+            transferred.push(DesignParameter {
+                id,
+                owner: None,
+                ordinal,
+                name: parameter.name.value.clone(),
+                expression: format!("{value} mm"),
+                display: None,
+                value: Some(ParameterValue::Length(Length(value))),
+                dependencies: Vec::new(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: Some(entity.id.clone()),
+            });
+        }
+        if !complete {
+            continue;
+        }
+        let Ok(ordinal) = u32::try_from(output.ordinal) else {
+            continue;
+        };
+        let value = match output_value.evaluation {
+            crate::native::CatiaParameterEvaluation::Unset => None,
+            crate::native::CatiaParameterEvaluation::Scalar { bits } => {
+                Some(ParameterValue::Length(Length(f64::from_bits(bits))))
+            }
+        };
+        transferred.push(DesignParameter {
+            id: neutral_parameter_id(&output.id),
+            owner: None,
+            ordinal,
+            name: output_value.name.value.clone(),
+            expression: expression.expression.value.clone(),
+            display: None,
+            value,
+            dependencies,
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(output.id.clone()),
+        });
+
+        for parameter in transferred {
+            match candidates.get(&parameter.id) {
+                Some(existing) if existing != &parameter => {
+                    conflicting.insert(parameter.id);
+                }
+                Some(_) => {}
+                None => {
+                    candidates.insert(parameter.id.clone(), parameter);
+                }
+            }
+        }
+    }
+
+    for id in &conflicting {
+        candidates.remove(id);
+    }
+    loop {
+        let invalid = candidates
+            .iter()
+            .filter(|(_, parameter)| {
+                parameter
+                    .dependencies
+                    .iter()
+                    .any(|dependency| !candidates.contains_key(dependency))
+            })
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        if invalid.is_empty() {
+            break;
+        }
+        for id in invalid {
+            candidates.remove(&id);
+        }
+    }
+    let mut parameters = candidates.into_values().collect::<Vec<_>>();
+    parameters.sort_by_key(|parameter| parameter.ordinal);
+    for parameter in &parameters {
+        if parameter.dependencies.is_empty() {
+            annotations
+                .exactness
+                .entry(parameter.id.0.clone())
+                .or_default()
+                .fields
+                .insert("expression".to_string(), Exactness::Derived);
+        }
+    }
+    let transferred = parameters.len();
+    ir.model.parameters.extend(parameters);
+    transferred
+}
+
+fn neutral_parameter_id(native_id: &str) -> ParameterId {
+    ParameterId(format!("{native_id}:parameter"))
+}
+
 fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
-    annotations: cadmpeg_ir::Annotations,
+    annotations: Annotations,
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     let mut source_fidelity = SourceFidelity {
