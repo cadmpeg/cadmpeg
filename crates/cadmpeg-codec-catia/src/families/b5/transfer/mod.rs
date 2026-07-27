@@ -215,22 +215,26 @@ fn referenced_surface_ids(
     offsets: &BTreeMap<u32, B5OffsetSurface>,
     supported: &BTreeMap<u32, B5SupportedSurface>,
     extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
+    aliases: &BTreeMap<u32, u32>,
 ) -> HashSet<u32> {
     let mut referenced = roots.into_iter().collect::<HashSet<_>>();
     let mut pending = referenced.iter().copied().collect::<Vec<_>>();
     while let Some(surface_id) = pending.pop() {
+        let Some(construction_id) = super::graph::canonical_surface_id(aliases, surface_id) else {
+            continue;
+        };
         let dependencies = offsets
-            .get(&surface_id)
+            .get(&construction_id)
             .map(|offset| vec![offset.source_surface, offset.carrier_surface])
             .or_else(|| {
-                supported.get(&surface_id).map(|construction| {
+                supported.get(&construction_id).map(|construction| {
                     let mut dependencies = construction.support_surfaces.to_vec();
                     dependencies.push(construction.carrier_surface);
                     dependencies
                 })
             })
             .or_else(|| {
-                extrusions.get(&surface_id).map(|extrusion| {
+                extrusions.get(&construction_id).map(|extrusion| {
                     extrusion
                         .directrix
                         .supports
@@ -288,6 +292,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         &graph.offset_surfaces,
         &graph.supported_surfaces,
         &graph.extrusion_surfaces,
+        &graph.surface_aliases,
     );
     let mut surface_plan = BTreeMap::new();
     for surface_id in referenced_surfaces {
@@ -739,7 +744,8 @@ pub(crate) fn resolved_extrusion_surface(
     graph: &B5Graph,
     surface_id: u32,
 ) -> Option<ResolvedExtrusionSurface> {
-    let extrusion = graph.extrusion_surfaces.get(&surface_id)?;
+    let construction_id = graph.canonical_surface_id(surface_id)?;
+    let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
     let supports: [ResolvedExtrusionSupport; 2] = extrusion
         .directrix
         .supports
@@ -780,7 +786,7 @@ pub(crate) fn resolved_extrusion_surface(
         .ok()?;
     (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
     Some(ResolvedExtrusionSurface {
-        surface_object_id: extrusion.object_id,
+        surface_object_id: surface_id,
         directrix_object_id: extrusion.directrix.object_id,
         directrix_parameter_range: extrusion.directrix.parameter_range,
         cache_fit_tolerance: extrusion.directrix.cache_fit_tolerance,
@@ -794,7 +800,8 @@ pub(crate) fn resolved_offset_surface(
     graph: &B5Graph,
     surface_id: u32,
 ) -> Option<ResolvedOffsetSurface> {
-    let offset = graph.offset_surfaces.get(&surface_id)?;
+    let construction_id = graph.canonical_surface_id(surface_id)?;
+    let offset = graph.offset_surfaces.get(&construction_id)?;
     let support = resolved_surface_geometry(graph, offset.source_surface)
         .map(ResolvedOffsetSupport::Geometry)
         .or_else(|| {
@@ -1000,8 +1007,29 @@ mod tests {
         )]);
 
         assert_eq!(
-            referenced_surface_ids([10], &offsets, &supported, &extrusions),
+            referenced_surface_ids([10], &offsets, &supported, &extrusions, &BTreeMap::new(),),
             HashSet::from([10, 20, 30, 31, 40, 50, 90, 100])
+        );
+    }
+
+    #[test]
+    fn surface_closure_follows_aliases_to_native_constructions() {
+        let offsets = BTreeMap::from([(
+            20,
+            B5OffsetSurface {
+                object_id: 20,
+                carrier_surface: 30,
+                source_surface: 40,
+                distance: 2.0,
+                carrier_kind: 2,
+                parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
+            },
+        )]);
+        let aliases = BTreeMap::from([(10, 11), (11, 20)]);
+
+        assert_eq!(
+            referenced_surface_ids([10], &offsets, &BTreeMap::new(), &BTreeMap::new(), &aliases,),
+            HashSet::from([10, 30, 40])
         );
     }
 
@@ -1050,6 +1078,7 @@ mod tests {
             opaque_pcurves: BTreeMap::new(),
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
@@ -1129,6 +1158,7 @@ mod tests {
                     direction_v: [0.0, 1.0, 0.0],
                 },
             )]),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
@@ -1426,6 +1456,7 @@ mod tests {
             opaque_pcurves: BTreeMap::new(),
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
@@ -1524,6 +1555,7 @@ mod tests {
             opaque_pcurves: BTreeMap::new(),
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
@@ -1580,6 +1612,7 @@ mod tests {
             opaque_pcurves: BTreeMap::new(),
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),

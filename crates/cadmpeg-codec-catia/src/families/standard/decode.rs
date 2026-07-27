@@ -957,8 +957,22 @@ fn standard_surface_evidence(
     graph: &crate::families::b5::graph::B5Graph,
     surface_id: u32,
 ) -> Option<StandardSurfaceEvidence> {
-    crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id)
-        .map(StandardSurfaceEvidence::Geometry)
+    crate::families::b5::transfer::resolved_offset_surface(graph, surface_id)
+        .map(|offset| {
+            StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
+                carrier_object_id: offset.carrier_object_id,
+                support_object_id: offset.support_object_id,
+                support: offset.support,
+                distance: offset.distance,
+                parameter_bounds: offset.parameter_bounds,
+            })
+        })
+        .or_else(|| {
+            crate::families::b5::transfer::resolved_extrusion_surface(graph, surface_id)
+                .map(Box::new)
+                .map(StandardSurfaceProcedure::Extrusion)
+                .map(StandardSurfaceEvidence::Procedural)
+        })
         .or_else(|| {
             crate::families::b5::transfer::resolved_surface_procedural_definition(graph, surface_id)
                 .map(|(carrier_object_id, definition)| {
@@ -969,23 +983,8 @@ fn standard_surface_evidence(
                 })
         })
         .or_else(|| {
-            crate::families::b5::transfer::resolved_offset_surface(graph, surface_id).map(
-                |offset| {
-                    StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
-                        carrier_object_id: offset.carrier_object_id,
-                        support_object_id: offset.support_object_id,
-                        support: offset.support,
-                        distance: offset.distance,
-                        parameter_bounds: offset.parameter_bounds,
-                    })
-                },
-            )
-        })
-        .or_else(|| {
-            crate::families::b5::transfer::resolved_extrusion_surface(graph, surface_id)
-                .map(Box::new)
-                .map(StandardSurfaceProcedure::Extrusion)
-                .map(StandardSurfaceEvidence::Procedural)
+            crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id)
+                .map(StandardSurfaceEvidence::Geometry)
         })
 }
 

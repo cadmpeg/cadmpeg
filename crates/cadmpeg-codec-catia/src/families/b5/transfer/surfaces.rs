@@ -560,7 +560,10 @@ pub(super) fn emit_surfaces(
             Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
                 definition,
-            }) if !graph.offset_surfaces.contains_key(&object_id) => {
+            }) if graph
+                .canonical_surface_id(object_id)
+                .is_some_and(|id| !graph.offset_surfaces.contains_key(&id)) =>
+            {
                 let procedural_id =
                     ProceduralSurfaceId(format!("catia:b5:rolling-ball#{object_id}"));
                 let carrier_tag = format!("result_carrier:{carrier_object_id:08x}");
@@ -582,14 +585,20 @@ pub(super) fn emit_surfaces(
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
     }
-    for offset in graph.offset_surfaces.values() {
+    for &object_id in surface_ids.keys() {
+        let Some(construction_id) = graph.canonical_surface_id(object_id) else {
+            continue;
+        };
+        let Some(offset) = graph.offset_surfaces.get(&construction_id) else {
+            continue;
+        };
         let (Some(surface), Some(support)) = (
-            surface_ids.get(&offset.object_id),
+            surface_ids.get(&object_id),
             surface_ids.get(&offset.source_surface),
         ) else {
             continue;
         };
-        let procedural_id = ProceduralSurfaceId(format!("catia:b5:offset#{}", offset.object_id));
+        let procedural_id = ProceduralSurfaceId(format!("catia:b5:offset#{object_id}"));
         annotate(
             annotations,
             &procedural_id,

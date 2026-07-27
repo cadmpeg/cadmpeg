@@ -37,6 +37,8 @@ pub struct B5Graph {
     /// `b5 03 27/28/2d` analytic surface nodes and `a8 03 34` NURBS
     /// surfaces, keyed by `object_id`.
     pub surfaces: BTreeMap<u32, B5Surface>,
+    /// Resolved class-`2e`/`38` surface alias targets, keyed by alias identity.
+    pub surface_aliases: BTreeMap<u32, u32>,
     /// `b5 03 30` offset constructions, keyed by their result surface id.
     pub offset_surfaces: BTreeMap<u32, B5OffsetSurface>,
     /// `b5 03 2c` extrusion constructions, keyed by their result surface id.
@@ -64,6 +66,29 @@ pub struct B5Graph {
     /// `b5 03 0e`/`0f` line and arc profile curves, keyed by `object_id`;
     /// referenced by `B5Surface::Revolution::profile_curve`.
     pub profiles: BTreeMap<u32, B5Profile>,
+}
+
+impl B5Graph {
+    /// Follow surface aliases to their canonical terminal identity.
+    #[must_use]
+    pub(crate) fn canonical_surface_id(&self, object_id: u32) -> Option<u32> {
+        canonical_surface_id(&self.surface_aliases, object_id)
+    }
+}
+
+/// Follow one surface identity through a direct alias map.
+pub(crate) fn canonical_surface_id(
+    aliases: &BTreeMap<u32, u32>,
+    mut object_id: u32,
+) -> Option<u32> {
+    let mut visited = HashSet::new();
+    while let Some(&target) = aliases.get(&object_id) {
+        if !visited.insert(object_id) {
+            return None;
+        }
+        object_id = target;
+    }
+    Some(object_id)
 }
 
 /// A profile curve swept by a `b5 03 2d` surface of revolution.
@@ -810,6 +835,11 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                     && loop_chain_senses(loop_, &edge_vertices).is_some()
             })
         });
+    let surface_aliases = records
+        .iter()
+        .filter(|record| surfaces.contains_key(&record.object_id))
+        .filter_map(|record| surface_alias_target(record).map(|target| (record.object_id, target)))
+        .collect();
     Some(B5Graph {
         complete,
         faces,
@@ -818,6 +848,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         opaque_pcurves,
         implicit_pcurves,
         surfaces,
+        surface_aliases,
         offset_surfaces,
         extrusion_surfaces,
         supported_surfaces,
@@ -3364,6 +3395,20 @@ mod tests {
         );
         assert!(!surfaces.contains_key(&40));
         assert!(!surfaces.contains_key(&41));
+    }
+
+    #[test]
+    fn canonical_surface_identity_follows_unbounded_aliases_and_rejects_cycles() {
+        let aliases = (1..30)
+            .map(|object_id| (object_id, object_id + 1))
+            .chain([(40, 41), (41, 40)])
+            .collect();
+
+        assert_eq!(canonical_surface_id(&aliases, 1), Some(30));
+        assert_eq!(canonical_surface_id(&aliases, 29), Some(30));
+        assert_eq!(canonical_surface_id(&aliases, 30), Some(30));
+        assert_eq!(canonical_surface_id(&aliases, 40), None);
+        assert_eq!(canonical_surface_id(&aliases, 41), None);
     }
 
     #[test]
