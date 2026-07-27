@@ -9187,7 +9187,7 @@ fn section_skamp_oriented_line(
     if section_skamp_is_line(definition, item) {
         return Some(entity);
     }
-    let line_role_evidence = active_complete_section_skamps(definition).any(|skamp| {
+    let line_role_evidence = complete_section_skamps(definition).any(|skamp| {
         skamp.items.iter().any(|candidate| {
             candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3)
         }) || match (skamp.kind, skamp.items.as_slice()) {
@@ -9451,7 +9451,7 @@ fn section_skamp_active(status: u32) -> bool {
     status & 1 != 0
 }
 
-fn active_complete_section_skamps(
+fn complete_section_skamps(
     definition: &crate::feature::FeatureDefinition,
 ) -> impl Iterator<Item = &crate::feature::FeatureSkamp> {
     definition
@@ -9459,7 +9459,12 @@ fn active_complete_section_skamps(
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
         .flat_map(|relations| &relations.skamps)
-        .filter(|skamp| section_skamp_active(skamp.status))
+}
+
+fn active_complete_section_skamps(
+    definition: &crate::feature::FeatureDefinition,
+) -> impl Iterator<Item = &crate::feature::FeatureSkamp> {
+    complete_section_skamps(definition).filter(|skamp| section_skamp_active(skamp.status))
 }
 
 fn section_skamp_constraints_for_geometry(

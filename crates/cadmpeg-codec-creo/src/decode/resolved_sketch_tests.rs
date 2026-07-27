@@ -6033,6 +6033,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .as_mut()
         .expect("skamp header")
         .declared_count = 2;
+    point_coincidence_relations.skamps[1].status = 0;
     assert_eq!(
         section_skamp_constraints_for_geometry(
             &point_coincidence_definition,
