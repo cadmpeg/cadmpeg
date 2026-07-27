@@ -16428,20 +16428,43 @@ pub(crate) fn project_hole_axes(
         .values()
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
-    let feature_frames = lanes
+    let feature_ranges = lanes
         .iter()
-        .flat_map(|lane| {
-            native_features
-                .values()
-                .filter(|feature| position_features.contains(feature.id.as_str()))
-                .filter_map(|feature| {
-                    Some((
-                        (lane.id.as_str(), feature.id.as_str()),
-                        marker_backed_feature_frame(model_features, histories, lane, feature)?,
-                    ))
-                })
+        .map(|lane| {
+            (
+                lane.id.as_str(),
+                feature_object_byte_ranges(histories, lane),
+            )
         })
         .collect::<HashMap<_, _>>();
+    let mut feature_frames = HashMap::new();
+    for lane in lanes {
+        let Some(ranges) = feature_ranges.get(lane.id.as_str()) else {
+            continue;
+        };
+        let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
+        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+        for feature in native_features
+            .values()
+            .filter(|feature| position_features.contains(feature.id.as_str()))
+        {
+            let Some(&range) = ranges.get(feature.id.as_str()) else {
+                continue;
+            };
+            let (context_start, start, end) = range;
+            let Some(frame) = feature_input_sketch_frame(
+                &lane.native_payload,
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            ) else {
+                continue;
+            };
+            feature_frames.insert((lane.id.as_str(), feature.id.as_str()), frame);
+        }
+    }
     let mut counts_by_source = HashMap::<u32, HashSet<usize>>::new();
     for lane in lanes {
         let counts = lane.generated_surface_identities.iter().fold(
@@ -16593,13 +16616,19 @@ pub(crate) fn project_hole_axes(
         }
         if solutions.is_empty() {
             for lane in lanes {
+                let temporary_axis = feature_ranges
+                    .get(lane.id.as_str())
+                    .and_then(|ranges| ranges.get(position_feature.id.as_str()))
+                    .and_then(|(_, start, end)| {
+                        hole_temporary_axis(&lane.native_payload, *start, *end)
+                    })
+                    .map(|(_, direction)| direction);
                 if let Some(solution) = marker_pattern_bore_axes(
                     lane,
                     position_feature.id.as_str(),
                     radius,
                     surfaces,
-                    hole_position_temporary_axis(histories, lane, position_feature)
-                        .map(|(_, direction)| direction),
+                    temporary_axis,
                 ) {
                     solutions.push(solution);
                 }
@@ -17394,59 +17423,33 @@ fn bore_axis_combinations(
     }
 }
 
-fn marker_backed_feature_frame(
-    model_features: &[cadmpeg_ir::features::Feature],
-    histories: &[crate::records::FeatureHistory],
+fn feature_object_byte_ranges<'a>(
+    histories: &'a [crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-    native_feature: &crate::records::Feature,
-) -> Option<(Point3, Vector3, Vector3)> {
-    let (context_start, start, end) = feature_object_byte_range(histories, lane, native_feature)?;
-    let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
-    let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
-    feature_input_sketch_frame(
-        &lane.native_payload,
-        &plane_frames,
-        &plane_index,
-        context_start,
-        start,
-        end,
-    )
-}
-
-fn feature_object_byte_range(
-    histories: &[crate::records::FeatureHistory],
-    lane: &FeatureInputLane,
-    native_feature: &crate::records::Feature,
-) -> Option<(usize, usize, usize)> {
+) -> HashMap<&'a str, (usize, usize, usize)> {
     let mut objects = histories
         .iter()
         .flat_map(|history| &history.features)
         .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
         .collect::<Vec<_>>();
     objects.sort_by_key(|(offset, _)| *offset);
-    let index = objects
+    objects
         .iter()
-        .position(|(_, feature)| feature.id == native_feature.id)?;
-    let start = usize::try_from(objects[index].0).ok()?;
-    let context_start = index
-        .checked_sub(1)
-        .and_then(|index| objects.get(index))
-        .and_then(|(offset, _)| usize::try_from(*offset).ok())
-        .unwrap_or(0);
-    let end = objects
-        .get(index + 1)
-        .and_then(|(offset, _)| usize::try_from(*offset).ok())
-        .unwrap_or(lane.native_payload.len());
-    Some((context_start, start, end))
-}
-
-fn hole_position_temporary_axis(
-    histories: &[crate::records::FeatureHistory],
-    lane: &FeatureInputLane,
-    native_feature: &crate::records::Feature,
-) -> Option<(Point3, Vector3)> {
-    let (_, start, end) = feature_object_byte_range(histories, lane, native_feature)?;
-    hole_temporary_axis(&lane.native_payload, start, end)
+        .enumerate()
+        .filter_map(|(index, (offset, feature))| {
+            let start = usize::try_from(*offset).ok()?;
+            let context_start = index
+                .checked_sub(1)
+                .and_then(|index| objects.get(index))
+                .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                .unwrap_or(0);
+            let end = objects
+                .get(index + 1)
+                .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                .unwrap_or(lane.native_payload.len());
+            Some((feature.id.as_str(), (context_start, start, end)))
+        })
+        .collect()
 }
 
 fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Point3, Vector3)> {
