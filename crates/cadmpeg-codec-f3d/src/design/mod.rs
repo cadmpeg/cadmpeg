@@ -50,7 +50,9 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Extrude" | "Extrusion" | "Extrusão" => Some(DesignFeatureFamily::Extrude),
         "Fillet" | "Congé" | "Abrundung" | "Arredondamento" => Some(DesignFeatureFamily::Fillet),
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
-        "Circular Pattern" | "Réseau C" => Some(DesignFeatureFamily::CircularPattern),
+        "C-Pattern" | "Circular Pattern" | "Réseau C" => {
+            Some(DesignFeatureFamily::CircularPattern)
+        }
         "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
         "Move" => Some(DesignFeatureFamily::Move),
         "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),

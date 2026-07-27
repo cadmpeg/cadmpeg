@@ -208,11 +208,15 @@ pub fn decode_face_operands(
             design_feature_family(&scope.kind),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
         );
+        let is_circular_pattern_seed = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::CircularPattern)
+            && group.role == 0x0000_0008_0000_0000;
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
             && !is_loft_profile
             && !is_edge_treatment_support
+            && !is_circular_pattern_seed
         {
             continue;
         }
@@ -545,6 +549,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)
             || scope.kind == "RemoveBody"
             || scope.kind == "SurfaceStitch"
             || matches!(scope.kind.as_str(), "BaseFlange" | "EdgeFlange" | "Hem")

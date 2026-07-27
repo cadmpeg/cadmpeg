@@ -1244,9 +1244,26 @@ pub(crate) fn bind_face_operand_history_candidates(
                     direct
                 }
             }
-            _ => crate::design::face_resolve::resolve_face_operand_history_candidates(operand)
-                .into_iter()
-                .collect(),
+            _ => {
+                let direct =
+                    crate::design::face_resolve::resolve_face_operand_history_candidates(operand);
+                direct
+                    .or_else(|| {
+                        (crate::design::design_feature_family(&scope.kind)
+                            == Some(crate::design::DesignFeatureFamily::CircularPattern))
+                        .then(|| {
+                            resolve_pattern_face_by_surface_radius(
+                                crate::design::face_resolve::face_operand_candidates(operand),
+                                topology,
+                                state.topology.as_ref()?,
+                                &changed_faces,
+                            )
+                        })
+                        .flatten()
+                    })
+                    .into_iter()
+                    .collect()
+            }
         };
         if crate::design::design_feature_family(&scope.kind)
             == Some(crate::design::DesignFeatureFamily::Split)
@@ -1280,6 +1297,64 @@ pub(crate) fn bind_face_operand_history_candidates(
         }
     }
     bind_profile_face_group_cardinality(operands, scopes, operand_groups, histories);
+}
+
+fn resolve_pattern_face_by_surface_radius(
+    candidates: &[cadmpeg_ir::ids::FaceId],
+    preceding: &crate::history_records::AsmHistoricalTopology,
+    result: &crate::history_records::AsmHistoricalTopology,
+    changed_faces: &HashSet<i64>,
+) -> Option<i64> {
+    let candidate_faces = candidates
+        .iter()
+        .filter_map(|face| stable_ref(&face.0))
+        .collect::<HashSet<_>>();
+    if candidate_faces.is_empty() {
+        return None;
+    }
+    let mut result_radius = None;
+    let mut bound_candidates = HashSet::new();
+    for binding in result
+        .face_surfaces
+        .iter()
+        .filter(|binding| candidate_faces.contains(&binding.entity))
+    {
+        if !bound_candidates.insert(binding.entity) {
+            return None;
+        }
+        let mut radii = result
+            .surface_radii
+            .iter()
+            .filter(|radius| radius.surface == binding.carrier);
+        let radius = radii.next()?.radius;
+        if radii.next().is_some() || !radius.is_finite() || radius <= 0.0 {
+            return None;
+        }
+        match result_radius {
+            None => result_radius = Some(radius.to_bits()),
+            Some(expected) if expected == radius.to_bits() => {}
+            Some(_) => return None,
+        }
+    }
+    if bound_candidates != candidate_faces {
+        return None;
+    }
+    let result_radius = result_radius?;
+    let mut matches = preceding
+        .face_surfaces
+        .iter()
+        .filter(|binding| changed_faces.contains(&binding.entity))
+        .filter_map(|binding| {
+            let mut radii = preceding
+                .surface_radii
+                .iter()
+                .filter(|radius| radius.surface == binding.carrier);
+            let radius = radii.next()?;
+            (radii.next().is_none() && radius.radius.to_bits() == result_radius)
+                .then_some(binding.entity)
+        });
+    let face = matches.next()?;
+    matches.next().is_none().then_some(face)
 }
 
 fn resolve_split_tool_face(
@@ -4060,8 +4135,84 @@ mod tests {
         assert_eq!(historical_brep_source("f3d:unqualified:state#42"), None);
     }
     use crate::history_records::{
-        AsmHistoricalCurveAxis, AsmHistoricalOptionalCarrierBinding, AsmHistoricalSurfaceRadius,
+        AsmHistoricalCarrierBinding, AsmHistoricalCurveAxis, AsmHistoricalOptionalCarrierBinding,
+        AsmHistoricalSurfaceRadius,
     };
+
+    #[test]
+    fn circular_pattern_face_uses_unique_rigid_surface_radius() {
+        let preceding = AsmHistoricalTopology {
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 11,
+                    carrier: 101,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 12,
+                    carrier: 102,
+                },
+            ],
+            surface_radii: vec![
+                AsmHistoricalSurfaceRadius {
+                    surface: 101,
+                    radius: 2.5,
+                },
+                AsmHistoricalSurfaceRadius {
+                    surface: 102,
+                    radius: 4.0,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        let result = AsmHistoricalTopology {
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 21,
+                    carrier: 201,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 22,
+                    carrier: 202,
+                },
+            ],
+            surface_radii: vec![
+                AsmHistoricalSurfaceRadius {
+                    surface: 201,
+                    radius: 2.5,
+                },
+                AsmHistoricalSurfaceRadius {
+                    surface: 202,
+                    radius: 2.5,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        let candidates = [
+            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(21)),
+            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(22)),
+        ];
+        assert_eq!(
+            resolve_pattern_face_by_surface_radius(
+                &candidates,
+                &preceding,
+                &result,
+                &HashSet::from([11, 12]),
+            ),
+            Some(11)
+        );
+
+        let mut ambiguous = preceding;
+        ambiguous.surface_radii[1].radius = 2.5;
+        assert_eq!(
+            resolve_pattern_face_by_surface_radius(
+                &candidates,
+                &ambiguous,
+                &result,
+                &HashSet::from([11, 12]),
+            ),
+            None
+        );
+    }
 
     #[test]
     fn historical_edge_axis_uses_the_state_specific_curve_carrier() {

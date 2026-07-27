@@ -50,6 +50,29 @@ pub(crate) fn resolved_profile_face_group(
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::ProfileRef;
 
+    let selection = resolved_historical_face_group(scope, group, operands)?;
+    let cadmpeg_ir::features::FaceSelection::Historical {
+        state,
+        faces,
+        native,
+    } = selection
+    else {
+        return None;
+    };
+    Some(ProfileRef::HistoricalFaces {
+        state,
+        faces,
+        native: vec![native],
+    })
+}
+
+pub(crate) fn resolved_historical_face_group(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    use cadmpeg_ir::features::FaceSelection;
+
     let previous_state_id = scope.previous_history_state_id?;
     let stream = native_stream(&group.id)?;
     let mut faces = Vec::with_capacity(group.members.len());
@@ -81,7 +104,7 @@ pub(crate) fn resolved_profile_face_group(
             .0
             .split_once('#')
             .map_or(feature.0.as_str(), |(_, key)| key);
-        ProfileRef::HistoricalFaces {
+        FaceSelection::Historical {
             state: feature_input_topology_id(&feature, previous_state_id),
             faces: faces
                 .into_iter()
@@ -92,7 +115,7 @@ pub(crate) fn resolved_profile_face_group(
                     )
                 })
                 .collect(),
-            native: vec![group.id.clone()],
+            native: group.id.clone(),
         }
     })
 }

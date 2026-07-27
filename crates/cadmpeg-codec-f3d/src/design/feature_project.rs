@@ -7,7 +7,8 @@ use crate::design::edge_resolve::{
     feature_input_topology_id, project_fixed_fillet, resolved_edge_group,
 };
 use crate::design::face_resolve::{
-    design_angle, resolved_face_group, resolved_profile_face_group, valid_chamfer_spec,
+    design_angle, resolved_face_group, resolved_historical_face_group, resolved_profile_face_group,
+    valid_chamfer_spec,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{
@@ -250,18 +251,20 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     })
                 }
-                Some(DesignFeatureFamily::CircularPattern | DesignFeatureFamily::Mirror) => {
-                    FeatureDefinition::Pattern {
-                        seeds: Vec::new(),
-                        pattern: PatternKind::Unresolved {
-                            form: Some(if family == Some(DesignFeatureFamily::CircularPattern) {
-                                PatternForm::Circular
-                            } else {
-                                PatternForm::Mirror
-                            }),
-                        },
-                    }
-                }
+                Some(DesignFeatureFamily::CircularPattern | DesignFeatureFamily::Mirror) => (family
+                    == Some(DesignFeatureFamily::CircularPattern))
+                .then(|| project_circular_pattern(scope, construction_groups, face_operands))
+                .flatten()
+                .unwrap_or_else(|| FeatureDefinition::Pattern {
+                    seeds: Vec::new(),
+                    pattern: PatternKind::Unresolved {
+                        form: Some(if family == Some(DesignFeatureFamily::CircularPattern) {
+                            PatternForm::Circular
+                        } else {
+                            PatternForm::Mirror
+                        }),
+                    },
+                }),
                 Some(DesignFeatureFamily::OffsetFaces) => {
                     project_offset_faces(scope, &parameters, face_operands, construction_groups)
                         .unwrap_or_else(|| FeatureDefinition::Native {
@@ -2298,6 +2301,45 @@ pub(crate) fn loft_path_from_edge_selection(
         | EdgeSelection::Generated { .. }
         | EdgeSelection::HistoricalPartial { .. } => PathRef::Native(native.to_owned()),
     }
+}
+
+pub(crate) fn project_circular_pattern(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, PatternKind, PatternSeed};
+
+    let construction = scope.circular_pattern_construction.as_ref()?;
+    let stream = native_stream(&scope.id)?;
+    let mut matching_groups = groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+            && group.role == 0x0000_0008_0000_0000
+            && !group.members.is_empty()
+    });
+    let group = matching_groups.next()?;
+    if matching_groups.next().is_some() {
+        return None;
+    }
+    let faces = resolved_historical_face_group(scope, group, face_operands)?;
+    Some(FeatureDefinition::Pattern {
+        seeds: vec![PatternSeed::Faces(faces)],
+        pattern: PatternKind::Circular {
+            axis_origin: Point3::new(
+                construction.origin[0] * 10.0,
+                construction.origin[1] * 10.0,
+                construction.origin[2] * 10.0,
+            ),
+            axis_dir: Vector3::new(
+                construction.direction[0],
+                construction.direction[1],
+                construction.direction[2],
+            ),
+            angle: Angle(construction.angle),
+            count: construction.count,
+        },
+    })
 }
 
 pub(crate) fn project_fixed_sweep(

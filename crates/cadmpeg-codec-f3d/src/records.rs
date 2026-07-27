@@ -920,6 +920,35 @@ pub struct DesignFixedFilletTangencyWeight {
     pub value_offset: u64,
 }
 
+/// Exact construction carried by a fixed circular-pattern scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignCircularPatternConstruction {
+    /// Positive total instance count, including the seed.
+    pub count: u32,
+    /// Referenced compact count-parameter owner.
+    pub count_record_index: u32,
+    /// Byte offset of the evaluated count scalar.
+    pub count_offset: u64,
+    /// Positive angular span in radians.
+    pub angle: f64,
+    /// Referenced total-angle scalar.
+    pub angle_record_index: u32,
+    /// Byte offset of the total-angle scalar.
+    pub angle_offset: u64,
+    /// Axis origin in source centimetres.
+    pub origin: [f64; 3],
+    /// Byte offset of the first origin coordinate.
+    pub origin_offset: u64,
+    /// Unit axis direction.
+    pub direction: [f64; 3],
+    /// Byte offset of the first direction coordinate.
+    pub direction_offset: u64,
+    /// Referenced axis record.
+    pub axis_record_index: u32,
+    /// Referenced persistent selection operand.
+    pub selection_record_index: u32,
+}
+
 /// Exact fixed scalar lane carried by an equal-distance Chamfer scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignFixedChamferParameters {
@@ -1102,6 +1131,9 @@ pub struct DesignParameterScope {
     /// Exact fixed construction carried by a Loft or Sweep scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_feature_construction: Option<DesignPathFeatureConstruction>,
+    /// Exact construction carried by a circular-pattern scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub circular_pattern_construction: Option<DesignCircularPatternConstruction>,
     /// Exact source-to-copy body mapping carried by a `CopyPasteBodies` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copy_paste_bodies_operation: Option<DesignCopyPasteBodiesOperation>,

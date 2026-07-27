@@ -9,13 +9,14 @@ use crate::design::decode::sketch::{
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignCopyPasteBodiesOperation, DesignDirectFaceOperation,
-    DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudeStart, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-    DesignFixedFilletParameters, DesignHemOperation, DesignMoveOperation, DesignObjectKind,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation,
-    DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignCircularPatternConstruction,
+    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement,
+    DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignEdgeFlangeOperation,
+    DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudeStart,
+    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
+    DesignHemOperation, DesignMoveOperation, DesignObjectKind, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation, DesignSolidPrimitive,
+    DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -95,6 +96,8 @@ pub fn decode_parameter_scopes(
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &scope);
             scope.fixed_chamfer_parameters = exact_fixed_chamfer_parameters(bytes, &scope);
             scope.path_feature_construction = exact_path_feature_construction(bytes, &scope);
+            scope.circular_pattern_construction =
+                exact_circular_pattern_construction(bytes, &scope);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
@@ -104,6 +107,194 @@ pub fn decode_parameter_scopes(
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+pub(crate) fn exact_circular_pattern_construction(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignCircularPatternConstruction> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::CircularPattern) {
+        return None;
+    }
+    let mut axis_candidates = Vec::new();
+    for pair in scope.reference_members.windows(2) {
+        let [record_index, selection_record_index] = pair else {
+            continue;
+        };
+        for (start, paired_at) in indexed_record_pairs(bytes, *record_index) {
+            if let Some((origin, direction)) = exact_circular_pattern_axis(
+                bytes,
+                start,
+                paired_at,
+                *record_index,
+                *selection_record_index,
+                scope.record_index,
+            ) {
+                axis_candidates.push((
+                    origin,
+                    (start + 25) as u64,
+                    direction,
+                    (start + 49) as u64,
+                    *record_index,
+                    *selection_record_index,
+                ));
+            }
+        }
+    }
+    let [(origin, origin_offset, direction, direction_offset, record_index, selection_record_index)] =
+        axis_candidates.as_slice()
+    else {
+        return None;
+    };
+    let count_candidates = scope
+        .reference_members
+        .iter()
+        .filter_map(|record_index| {
+            exact_fixed_pattern_count(bytes, *record_index, scope.record_index)
+                .map(|(count, count_offset)| (count, *record_index, count_offset))
+        })
+        .collect::<Vec<_>>();
+    let [(count, count_record_index, count_offset)] = count_candidates.as_slice() else {
+        return None;
+    };
+    let angle_candidates = scope
+        .reference_members
+        .iter()
+        .filter_map(|record_index| {
+            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            (scalar.owner_record_index == Some(scope.record_index)
+                && scalar.ordinal == 1
+                && scalar.value > 0.0)
+                .then_some((scalar.value, *record_index, scalar.value_offset))
+        })
+        .collect::<Vec<_>>();
+    let [(angle, angle_record_index, angle_offset)] = angle_candidates.as_slice() else {
+        return None;
+    };
+    Some(DesignCircularPatternConstruction {
+        count: *count,
+        count_record_index: *count_record_index,
+        count_offset: *count_offset,
+        angle: *angle,
+        angle_record_index: *angle_record_index,
+        angle_offset: *angle_offset,
+        origin: *origin,
+        origin_offset: *origin_offset,
+        direction: *direction,
+        direction_offset: *direction_offset,
+        axis_record_index: *record_index,
+        selection_record_index: *selection_record_index,
+    })
+}
+
+fn exact_circular_pattern_axis(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    record_index: u32,
+    selection_record_index: u32,
+    scope_record_index: u32,
+) -> Option<([f64; 3], [f64; 3])> {
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    if class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || after_tag != start + 7
+        || u32_at(bytes, after_tag) != Some(record_index)
+        || paired_at.checked_sub(start) != Some(195)
+        || bytes.get(start + 11..start + 21) != Some(&[0; 10])
+        || u32_at(bytes, start + 21) != Some(8)
+        || bytes.get(start + 73..start + 89) != Some(&[0; 16])
+        || u32_at(bytes, start + 89) != Some(9)
+        || u32_at(bytes, start + 93) != Some(1)
+        || marked_record_reference(bytes, start + 97) != Some(selection_record_index)
+        || bytes.get(start + 102..start + 108) != Some(&[0; 6])
+        || bytes.get(start + 108..start + 110) != Some(&[0; 2])
+        || u32_at(bytes, start + 110) != Some(1)
+        || marked_record_reference(bytes, start + 114).is_none()
+        || bytes.get(start + 119..start + 125) != Some(&[0; 6])
+        || read_u64(bytes, start + 125) != Some(0x0000_0004_0000_0000)
+        || bytes.get(start + 133..start + 143) != Some(&[0; 10])
+    {
+        return None;
+    }
+    let opaque_index = u32_at(bytes, start + 143)?;
+    if opaque_index == 0
+        || !f64_at(bytes, start + 147)?.is_finite()
+        || u32_at(bytes, start + 155) != Some(opaque_index)
+        || marked_record_reference(bytes, start + 159) != record_index.checked_add(2)
+        || bytes.get(start + 164..start + 172) != Some(&[0; 8])
+        || marked_record_reference(bytes, start + 172) != record_index.checked_add(1)
+        || bytes.get(start + 177..start + 184) != Some(&[0; 7])
+        || marked_record_reference(bytes, start + 184) != Some(scope_record_index)
+        || bytes.get(start + 189..start + 195) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let (paired_class_tag, paired_after_tag) =
+        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+    if paired_class_tag.len() != 3
+        || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || paired_after_tag != paired_at + 7
+        || u32_at(bytes, paired_after_tag) != Some(record_index)
+    {
+        return None;
+    }
+    let origin: [f64; 3] = f64s_at(bytes, start + 25, 3)?.try_into().ok()?;
+    let direction: [f64; 3] = f64s_at(bytes, start + 49, 3)?.try_into().ok()?;
+    let direction_norm = direction
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>();
+    if origin.iter().any(|coordinate| !coordinate.is_finite())
+        || direction.iter().any(|coordinate| !coordinate.is_finite())
+        || (direction_norm - 1.0).abs() > 1.0e-12
+    {
+        return None;
+    }
+    Some((origin, direction))
+}
+
+fn exact_fixed_pattern_count(
+    bytes: &[u8],
+    record_index: u32,
+    scope_record_index: u32,
+) -> Option<(u32, u64)> {
+    let candidates = indexed_record_pairs(bytes, record_index)
+        .into_iter()
+        .filter_map(|(start, paired_at)| {
+            let (class_tag, after_tag) =
+                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+            if class_tag.len() != 3
+                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                || after_tag != start + 7
+                || u32_at(bytes, after_tag) != Some(record_index)
+                || paired_at.checked_sub(start) != Some(99)
+                || bytes.get(start + 11..start + 19) != Some(&[0; 8])
+                || bytes.get(start + 19) != Some(&1)
+                || u32_at(bytes, start + 20) != Some(1)
+                || marked_record_reference(bytes, start + 24) != Some(scope_record_index)
+                || bytes.get(start + 29..start + 40) != Some(&[0; 11])
+                || marked_record_reference(bytes, start + 44) != record_index.checked_add(2)
+                || bytes.get(start + 49..start + 55) != Some(&[0; 6])
+                || u32_at(bytes, start + 55)? == 0
+                || bytes.get(start + 59..start + 63) != Some(&[0; 4])
+                || marked_record_reference(bytes, start + 63) != Some(scope_record_index)
+                || bytes.get(start + 68..start + 76) != Some(&[0; 8])
+                || marked_record_reference(bytes, start + 76) != record_index.checked_add(1)
+                || bytes.get(start + 81..start + 88) != Some(&[0; 7])
+                || marked_record_reference(bytes, start + 88) != Some(scope_record_index)
+                || bytes.get(start + 93..start + 99) != Some(&[0; 6])
+            {
+                return None;
+            }
+            let count = u32_at(bytes, start + 40)?;
+            (count > 0).then_some((count, (start + 40) as u64))
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 pub(crate) fn exact_copy_paste_bodies_operation(
@@ -1397,6 +1588,7 @@ pub(crate) fn parse_parameter_scope(
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,

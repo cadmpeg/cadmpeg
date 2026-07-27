@@ -29,10 +29,11 @@ use crate::design::decode::parameters::{
     parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::decode::scopes::{
-    exact_base_feature_construction, exact_direct_face_operation, exact_fixed_chamfer_parameters,
-    exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_path_feature_construction,
-    exact_scale_operation, exact_solid_primitive, exact_surface_stitch_operation,
-    exact_work_plane_frame, exact_work_point_position, parse_parameter_scope,
+    exact_base_feature_construction, exact_circular_pattern_construction,
+    exact_direct_face_operation, exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
+    exact_fixed_fillet_parameters, exact_path_feature_construction, exact_scale_operation,
+    exact_solid_primitive, exact_surface_stitch_operation, exact_work_plane_frame,
+    exact_work_point_position, parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -77,9 +78,9 @@ use crate::ids::{
 use crate::ids::{neutral_feature_id_parts, neutral_parameter_id_parts};
 
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignConfiguration, DesignConfigurationKind,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    ConstructionRecipe, ConstructionRecipeKind, DesignCircularPatternConstruction,
+    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignConfiguration,
+    DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
     DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
@@ -218,10 +219,12 @@ fn feature_family_tokens_are_localized() {
         design_feature_family("Chanfrein"),
         Some(DesignFeatureFamily::Chamfer)
     );
-    assert_eq!(
-        design_feature_family("Réseau C"),
-        Some(DesignFeatureFamily::CircularPattern)
-    );
+    for token in ["C-Pattern", "Réseau C"] {
+        assert_eq!(
+            design_feature_family(token),
+            Some(DesignFeatureFamily::CircularPattern)
+        );
+    }
     assert_eq!(
         design_feature_family("Symétrie miroir"),
         Some(DesignFeatureFamily::Mirror)
@@ -4594,6 +4597,7 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -5073,6 +5077,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -5494,6 +5499,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -10076,6 +10082,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -10200,6 +10207,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -10382,6 +10390,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             paired_byte_offset: 520,
         }),
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -10994,6 +11003,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -11766,6 +11776,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -12160,6 +12171,7 @@ fn parameter_expressions_project_feature_dependencies() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -12275,6 +12287,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -12925,6 +12938,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         work_point_position_offset: None,
         extrude_profile: None,
         sweep_profile: None,
+        circular_pattern_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -12939,6 +12953,191 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(construction.metadata_record, 401);
     assert_eq!(construction.result_records, [501, 502]);
     assert_eq!(construction.body_entity_fields[0], [0, 0, 1, 0, 0, 0]);
+}
+
+#[test]
+fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
+    let scope_record_index = 10_u32;
+    let count_record_index = 20_u32;
+    let angle_record_index = 30_u32;
+    let axis_record_index = 40_u32;
+    let selection_record_index = 43_u32;
+    let mut bytes = Vec::new();
+
+    let count_start = bytes.len();
+    let mut count = vec![0; 99];
+    count[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    count[4..7].copy_from_slice(b"357");
+    count[7..11].copy_from_slice(&count_record_index.to_le_bytes());
+    count[19] = 1;
+    count[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    count[24] = 1;
+    count[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
+    count[40..44].copy_from_slice(&25_u32.to_le_bytes());
+    count[44] = 1;
+    count[45..49].copy_from_slice(&(count_record_index + 2).to_le_bytes());
+    count[55..59].copy_from_slice(&99_u32.to_le_bytes());
+    count[63] = 1;
+    count[64..68].copy_from_slice(&scope_record_index.to_le_bytes());
+    count[76] = 1;
+    count[77..81].copy_from_slice(&(count_record_index + 1).to_le_bytes());
+    count[88] = 1;
+    count[89..93].copy_from_slice(&scope_record_index.to_le_bytes());
+    count.extend_from_slice(&3_u32.to_le_bytes());
+    count.extend_from_slice(b"258");
+    count.extend_from_slice(&count_record_index.to_le_bytes());
+    bytes.extend_from_slice(&count);
+
+    let angle_start = bytes.len();
+    let mut angle = vec![0; 103];
+    angle[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    angle[4..7].copy_from_slice(b"354");
+    angle[7..11].copy_from_slice(&angle_record_index.to_le_bytes());
+    angle[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    angle[24] = 1;
+    angle[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
+    angle[35] = 1;
+    angle[40..48].copy_from_slice(&std::f64::consts::TAU.to_le_bytes());
+    angle[48] = 1;
+    angle[49..53].copy_from_slice(&77_u32.to_le_bytes());
+    angle[67] = 1;
+    angle[68..72].copy_from_slice(&scope_record_index.to_le_bytes());
+    angle[80] = 1;
+    angle[81..85].copy_from_slice(&78_u32.to_le_bytes());
+    angle[92] = 1;
+    angle[93..97].copy_from_slice(&scope_record_index.to_le_bytes());
+    angle.extend_from_slice(&3_u32.to_le_bytes());
+    angle.extend_from_slice(b"258");
+    angle.extend_from_slice(&angle_record_index.to_le_bytes());
+    bytes.extend_from_slice(&angle);
+
+    let axis_start = bytes.len();
+    let mut axis = vec![0; 195];
+    axis[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    axis[4..7].copy_from_slice(b"379");
+    axis[7..11].copy_from_slice(&axis_record_index.to_le_bytes());
+    axis[21..25].copy_from_slice(&8_u32.to_le_bytes());
+    for (offset, value) in [1.0_f64, 2.0, 3.0].into_iter().enumerate() {
+        axis[25 + offset * 8..33 + offset * 8].copy_from_slice(&value.to_le_bytes());
+    }
+    axis[49..57].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    axis[89..93].copy_from_slice(&9_u32.to_le_bytes());
+    axis[93..97].copy_from_slice(&1_u32.to_le_bytes());
+    axis[97] = 1;
+    axis[98..102].copy_from_slice(&selection_record_index.to_le_bytes());
+    axis[110..114].copy_from_slice(&1_u32.to_le_bytes());
+    axis[114] = 1;
+    axis[115..119].copy_from_slice(&79_u32.to_le_bytes());
+    axis[125..133].copy_from_slice(&0x0000_0004_0000_0000_u64.to_le_bytes());
+    axis[143..147].copy_from_slice(&99_u32.to_le_bytes());
+    axis[147..155].copy_from_slice(&0.5_f64.to_le_bytes());
+    axis[155..159].copy_from_slice(&99_u32.to_le_bytes());
+    axis[159] = 1;
+    axis[160..164].copy_from_slice(&(axis_record_index + 2).to_le_bytes());
+    axis[172] = 1;
+    axis[173..177].copy_from_slice(&(axis_record_index + 1).to_le_bytes());
+    axis[184] = 1;
+    axis[185..189].copy_from_slice(&scope_record_index.to_le_bytes());
+    axis.extend_from_slice(&3_u32.to_le_bytes());
+    axis.extend_from_slice(b"258");
+    axis.extend_from_slice(&axis_record_index.to_le_bytes());
+    bytes.extend_from_slice(&axis);
+
+    let mut scope = DesignParameterScope {
+        id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
+        byte_offset: 0,
+        class_tag: "291".into(),
+        record_index: scope_record_index,
+        frame_length: 329,
+        kind: "C-Pattern".into(),
+        kind_offset: 0,
+        extrude_operation: None,
+        extrude_operation_offset: None,
+        extrude_extent: None,
+        extrude_extent_offsets: None,
+        extrude_direction_reversed: None,
+        extrude_direction_reversed_offset: None,
+        extrude_start: None,
+        extrude_start_offset: None,
+        coil_operation: None,
+        coil_operation_offset: None,
+        coil_extent: None,
+        coil_extent_offset: None,
+        coil_section: None,
+        coil_section_offset: None,
+        coil_section_placement: None,
+        coil_section_placement_offset: None,
+        coil_clockwise: None,
+        coil_clockwise_offset: None,
+        feature_ordinal: 1,
+        feature_ordinal_offset: 0,
+        history_state_id: Some(2),
+        history_state_id_offset: 0,
+        previous_history_state_id: Some(1),
+        previous_history_state_id_offset: 0,
+        reference_count_offset: 0,
+        reference_members: vec![
+            count_record_index,
+            angle_record_index,
+            axis_record_index,
+            selection_record_index,
+        ],
+        reference_member_offsets: vec![0; 4],
+        solid_primitive: None,
+        direct_face_operation: None,
+        move_operation: None,
+        scale_operation: None,
+        surface_stitch_operation: None,
+        base_flange_operation: None,
+        edge_flange_operation: None,
+        hem_operation: None,
+        fixed_extrude_parameters: None,
+        fixed_fillet_parameters: None,
+        fixed_chamfer_parameters: None,
+        path_feature_construction: None,
+        copy_paste_bodies_operation: None,
+        base_feature_construction: None,
+        work_plane_transform: None,
+        work_plane_transform_offset: None,
+        work_plane_reference: None,
+        work_plane_reference_offset: None,
+        work_point_position: None,
+        work_point_position_offset: None,
+        extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        base_flange_profile: None,
+        entity_id: None,
+        entity_suffix: None,
+        entity_reference_offset: None,
+        paired_class_tag: "258".into(),
+        paired_byte_offset: 329,
+    };
+    assert_eq!(
+        exact_circular_pattern_construction(&bytes, &scope),
+        Some(DesignCircularPatternConstruction {
+            count: 25,
+            count_record_index,
+            count_offset: (count_start + 40) as u64,
+            angle: std::f64::consts::TAU,
+            angle_record_index,
+            angle_offset: (angle_start + 40) as u64,
+            origin: [1.0, 2.0, 3.0],
+            origin_offset: (axis_start + 25) as u64,
+            direction: [-1.0, 0.0, 0.0],
+            direction_offset: (axis_start + 49) as u64,
+            axis_record_index,
+            selection_record_index,
+        })
+    );
+
+    bytes[axis_start + 57..axis_start + 65].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert_eq!(exact_circular_pattern_construction(&bytes, &scope), None);
+    bytes[axis_start + 57..axis_start + 65].fill(0);
+    scope
+        .reference_members
+        .extend([axis_record_index, selection_record_index]);
+    assert_eq!(exact_circular_pattern_construction(&bytes, &scope), None);
 }
 
 #[test]
