@@ -1739,6 +1739,38 @@ fn standard_catpart_with_entity_value_schema_selection() -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_relation_expression(parameter_role: &str) -> Vec<u8> {
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
+    let mut value = Vec::new();
+    for ordinal in 5u32..=10 {
+        value.push(0x32);
+        value.extend_from_slice(&ordinal.to_le_bytes());
+    }
+    value.push(0xfe);
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
+    let mut stream = entity_table_record_with_definition_and_value(1, &definition, &value);
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "body",
+        "#1_ ",
+        "#1_ /2-2mm",
+        parameter_role,
+        "(#1_ : #In LENGTH) : LENGTH",
+        "opened",
+        "RelationExpFct",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_crossing_entity_value_packet() -> Vec<u8> {
     let value = [
         0x32, 4, 0, 0, 0, 0x81, 0x82, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6, 0x32, 4, 0, 0, 0,
@@ -5617,6 +5649,49 @@ fn native_namespace_resolves_and_validates_entity_value_schema_selections() {
     };
     *value_selector += 1;
     assert_rejected(wrong_packet);
+}
+
+#[test]
+fn native_namespace_types_and_validates_complete_relation_expressions() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression("param"));
+    let expression = native.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .expect("complete relation expression");
+    assert_eq!(expression.placeholder.value, "#1_ ");
+    assert_eq!(expression.expression.value, "#1_ /2-2mm");
+    assert_eq!(expression.parameter_role.value, "param");
+    assert_eq!(
+        expression.type_signature.value,
+        "(#1_ : #In LENGTH) : LENGTH"
+    );
+    assert_eq!(expression.state_role.value, "opened");
+    assert_eq!(expression.function_role.value, "RelationExpFct");
+
+    let mut malformed = native;
+    malformed.entity_records[0]
+        .relation_expression
+        .as_mut()
+        .expect("complete relation expression")
+        .expression
+        .value = "changed".to_string();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed relation expression");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn relation_expression_requires_every_exact_role() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression("parameter"));
+
+    assert!(native.entity_records[0].relation_expression.is_none());
 }
 
 #[test]

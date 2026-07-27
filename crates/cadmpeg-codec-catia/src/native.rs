@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 104;
+pub const CATIA_NATIVE_VERSION: u32 = 105;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -585,6 +585,32 @@ pub struct CatiaRepeatedReferenceSchemaSelection {
     pub name: Option<String>,
 }
 
+/// One exact schema entry selected by a typed entity-value program.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaEntitySchemaValue {
+    /// Selected source-schema entry.
+    pub entry: String,
+    /// UTF-8 value stored by the selected entry.
+    pub value: String,
+}
+
+/// One complete relation-expression value program.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaRelationExpression {
+    /// Expression-local placeholder selected by the first value field.
+    pub placeholder: CatiaEntitySchemaValue,
+    /// Stored source expression selected by the second value field.
+    pub expression: CatiaEntitySchemaValue,
+    /// Exact `param` role selector.
+    pub parameter_role: CatiaEntitySchemaValue,
+    /// Stored source type signature.
+    pub type_signature: CatiaEntitySchemaValue,
+    /// Exact `opened` state selector.
+    pub state_role: CatiaEntitySchemaValue,
+    /// Exact `RelationExpFct` function selector.
+    pub function_role: CatiaEntitySchemaValue,
+}
+
 /// Field order used by a repeated-reference schema preamble.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum CatiaRepeatedReferenceSchemaOrder {
@@ -638,6 +664,9 @@ pub struct CatiaEntityRecord {
     /// Value selectors resolved against the containing graph's source schema.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_schema_selections: Vec<CatiaEntityValueSchemaSelection>,
+    /// Complete relation-expression program carried by the value selectors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relation_expression: Option<CatiaRelationExpression>,
     /// Exact packets in the value program, in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_packets: Vec<entity_table::EntityValuePacket>,
@@ -1109,6 +1138,44 @@ fn entity_value_schema_selections(
             })
         })
         .collect()
+}
+
+fn relation_expression(
+    definitions: &[CatiaDefinitionSchemaSelection],
+    values: &[CatiaEntityValueSchemaSelection],
+) -> Option<CatiaRelationExpression> {
+    let [definition0, definition1] = definitions else {
+        return None;
+    };
+    if definition0.name.as_deref() != Some("body")
+        || definition1.name.as_deref() != Some("body")
+        || definition0.entry != definition1.entry
+    {
+        return None;
+    }
+    let [placeholder, expression, parameter_role, type_signature, state_role, function_role] =
+        values
+    else {
+        return None;
+    };
+    if parameter_role.name != "param"
+        || state_role.name != "opened"
+        || function_role.name != "RelationExpFct"
+    {
+        return None;
+    }
+    let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
+        entry: selection.entry.clone(),
+        value: selection.name.clone(),
+    };
+    Some(CatiaRelationExpression {
+        placeholder: schema_value(placeholder),
+        expression: schema_value(expression),
+        parameter_role: schema_value(parameter_role),
+        type_signature: schema_value(type_signature),
+        state_role: schema_value(state_role),
+        function_role: schema_value(function_role),
+    })
 }
 
 fn value_field_offset(field: &value_block::ValueField) -> usize {
@@ -2271,6 +2338,10 @@ impl CatiaNative {
                     catalog,
                     &entity.value_packets,
                 );
+                entity.relation_expression = relation_expression(
+                    &entity.definition_schema_selections,
+                    &entity.value_schema_selections,
+                );
             }
         }
         alias_rows.retain(|row| {
@@ -2498,6 +2569,13 @@ impl CatiaNative {
                                 &entity.value_fields,
                                 catalog,
                                 &entity.value_packets,
+                            )
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        entity.relation_expression
+                            != relation_expression(
+                                &entity.definition_schema_selections,
+                                &entity.value_schema_selections,
                             )
                     })
                     || graph_entities.windows(2).any(|pair| {
@@ -3063,6 +3141,7 @@ fn native_object_graph(
                 value_payload: entity.value_payload,
                 value_fields,
                 value_schema_selections: Vec::new(),
+                relation_expression: None,
                 value_packets,
                 numeric_tuple: entity.numeric_tuple,
                 reference_signature: entity.reference_signature,
