@@ -4835,8 +4835,8 @@ mod record_decoders {
             .position(|bytes| bytes == [0x05, 0x08, 0x01])
             .expect("vertex run");
         let mut records = a8_freeform_curve_stream();
-        records[7..11].copy_from_slice(&100u32.to_le_bytes());
-        let mut offset = vec![0x82, 0xe4, 0xe5];
+        records[7..11].copy_from_slice(&110u32.to_le_bytes());
+        let mut offset = vec![0x82, 0xee, 0xef];
         offset.extend_from_slice(&le_f64(-0.5));
         offset.push(0x19);
         for bound in [-2.0, 3.0, -4.0, 5.0] {
@@ -4856,7 +4856,7 @@ mod record_decoders {
             evidence.procedural_surfaces.get(&501),
             Some(
                 crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
-                    carrier_object_id: 100,
+                    carrier_object_id: 110,
                     definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
                 }
             )

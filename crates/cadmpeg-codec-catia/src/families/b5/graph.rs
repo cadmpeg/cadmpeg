@@ -468,6 +468,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 .map(|surface| (record.object_id, surface))
         })
         .collect();
+    let mut conflicting_surfaces = HashSet::new();
     for surface_id in topology_surface_references(&records) {
         if surfaces.contains_key(&surface_id) {
             continue;
@@ -491,13 +492,20 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         if let (Some(object_id), SurfaceGeometry::Nurbs(nurbs)) =
             (surface.object_id(), surface.geometry)
         {
-            surfaces.insert(object_id, B5Surface::Nurbs(nurbs));
+            merge_surface_candidate(
+                &mut surfaces,
+                &mut conflicting_surfaces,
+                object_id,
+                B5Surface::Nurbs(nurbs),
+            );
         }
     }
     for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
         if let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
         {
-            surfaces.insert(
+            merge_surface_candidate(
+                &mut surfaces,
+                &mut conflicting_surfaces,
                 jet.object_id,
                 B5Surface::RollingBall {
                     carrier_object_id: jet.object_id,
@@ -511,7 +519,12 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             continue;
         };
         if let Some(surface) = surfaces.get(&target).cloned() {
-            surfaces.insert(record.object_id, surface);
+            merge_surface_candidate(
+                &mut surfaces,
+                &mut conflicting_surfaces,
+                record.object_id,
+                surface,
+            );
         }
     }
     let object_stream_pcurves = object_stream_pcurve_candidates
@@ -545,10 +558,19 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 payload: record.payload.clone(),
             }
         };
-        surfaces
-            .entry(offset.carrier_surface)
-            .or_insert_with(|| carrier.clone());
-        surfaces.insert(record.object_id, carrier);
+        if !merge_surface_candidate(
+            &mut surfaces,
+            &mut conflicting_surfaces,
+            offset.carrier_surface,
+            carrier.clone(),
+        ) || !merge_surface_candidate(
+            &mut surfaces,
+            &mut conflicting_surfaces,
+            record.object_id,
+            carrier,
+        ) {
+            continue;
+        }
         offset_surfaces.insert(record.object_id, offset);
     }
     let extrusion_pcurves = extrusion_surfaces
@@ -571,8 +593,12 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         };
         let parameters_match_carrier =
             supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
-        surfaces.insert(record.object_id, carrier);
-        if parameters_match_carrier
+        if merge_surface_candidate(
+            &mut surfaces,
+            &mut conflicting_surfaces,
+            record.object_id,
+            carrier,
+        ) && parameters_match_carrier
             && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
             && construction
                 .support_surfaces
@@ -814,6 +840,42 @@ fn merge_pcurve_candidate(
             conflicts.insert(object_id);
         }
     }
+}
+
+fn merge_surface_candidate(
+    surfaces: &mut BTreeMap<u32, B5Surface>,
+    conflicts: &mut HashSet<u32>,
+    object_id: u32,
+    candidate: B5Surface,
+) -> bool {
+    if conflicts.contains(&object_id) {
+        return false;
+    }
+    match surfaces.entry(object_id) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(candidate);
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry)
+            if unresolved_surface_candidate(entry.get()) =>
+        {
+            entry.insert(candidate);
+        }
+        std::collections::btree_map::Entry::Occupied(entry)
+            if unresolved_surface_candidate(&candidate) || entry.get() == &candidate => {}
+        std::collections::btree_map::Entry::Occupied(entry) => {
+            entry.remove();
+            conflicts.insert(object_id);
+            return false;
+        }
+    }
+    true
+}
+
+fn unresolved_surface_candidate(surface: &B5Surface) -> bool {
+    matches!(
+        surface,
+        B5Surface::Unknown { .. } | B5Surface::UnresolvedNurbs { .. }
+    )
 }
 
 fn object_stream_pcurve_candidate(
@@ -3153,6 +3215,50 @@ mod tests {
         merge_pcurve_candidate(&mut pcurves, &mut conflicts, test_pcurve(1, 11));
         merge_pcurve_candidate(&mut pcurves, &mut conflicts, test_pcurve(1, 10));
         assert!(!pcurves.contains_key(&1));
+        assert!(conflicts.contains(&1));
+    }
+
+    #[test]
+    fn surface_candidate_merge_refines_opaque_wrappers_and_rejects_exact_conflicts() {
+        let unknown = B5Surface::Unknown {
+            family: 0xb5,
+            class: 0x2e,
+            payload: vec![0x81, 0x82],
+        };
+        let plane = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        let cylinder = B5Surface::Cylinder {
+            origin: [0.0; 3],
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 1.0,
+        };
+        let mut surfaces = BTreeMap::from([(1, unknown)]);
+        let mut conflicts = HashSet::new();
+        assert!(merge_surface_candidate(
+            &mut surfaces,
+            &mut conflicts,
+            1,
+            plane.clone(),
+        ));
+        assert_eq!(surfaces.get(&1), Some(&plane));
+
+        assert!(!merge_surface_candidate(
+            &mut surfaces,
+            &mut conflicts,
+            1,
+            cylinder,
+        ));
+        assert!(!merge_surface_candidate(
+            &mut surfaces,
+            &mut conflicts,
+            1,
+            plane,
+        ));
+        assert!(!surfaces.contains_key(&1));
         assert!(conflicts.contains(&1));
     }
 
