@@ -1128,6 +1128,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
                 operands: Vec::new(),
                 native_state: None,
                 native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
             },
         ),
         constraint(
@@ -2856,6 +2857,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         operands: Vec::new(),
         native_state: None,
         native_flags: None,
+        native_properties: std::collections::BTreeMap::new(),
     };
     assert!(reconcile_constraint_entity_references(
         &mut native,
@@ -2892,6 +2894,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         operands: Vec::new(),
         native_state: None,
         native_flags: None,
+        native_properties: std::collections::BTreeMap::new(),
     };
     assert!(reconcile_constraint_parameter_reference(
         &mut native_parameter,
@@ -6627,6 +6630,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             native_kind: "creo:skamp:7".to_string(),
             native_state: Some(1),
             native_flags: Some(0),
+            native_properties: std::collections::BTreeMap::new(),
             entities: vec![SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )],
@@ -8068,6 +8072,10 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             native_kind: "creo:relation:99".to_string(),
             native_state: Some(1),
             native_flags: None,
+            native_properties: std::collections::BTreeMap::from([
+                ("dimension_id".to_string(), "0".to_string()),
+                ("sign".to_string(), "1".to_string()),
+            ]),
             entities: Vec::new(),
             parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string(),)),
             operands: vec![SketchNativeOperand {
@@ -8087,10 +8095,21 @@ fn section_solver_constraints_require_complete_unique_semantics() {
     ]);
     let vector_relation =
         section_dimension_constraints(&vector_native, &SketchId("creo:model:sketch#917".into()));
-    let SketchConstraintDefinition::Native { operands, .. } = &vector_relation[0].0.definition
+    let SketchConstraintDefinition::Native {
+        native_properties,
+        operands,
+        ..
+    } = &vector_relation[0].0.definition
     else {
         panic!("native relation");
     };
+    assert_eq!(
+        native_properties,
+        &std::collections::BTreeMap::from([
+            ("dimension_id".to_string(), "0".to_string()),
+            ("sign".to_string(), "1".to_string()),
+        ])
+    );
     assert_eq!(
         operands
             .iter()

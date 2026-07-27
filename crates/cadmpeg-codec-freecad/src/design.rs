@@ -1296,6 +1296,7 @@ fn parse_constraints(
                 native_kind: constraint_kind(type_code).into(),
                 native_state: None,
                 native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
                 entities: resolved.iter().map(locus_entity).cloned().collect(),
                 parameter,
                 operands: operands

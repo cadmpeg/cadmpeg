@@ -8698,6 +8698,13 @@ fn section_dimension_constraints(
                     native_kind: format!("creo:relation:{}", relation.relation_type),
                     native_state: Some(u64::from(relation.used)),
                     native_flags: None,
+                    native_properties: BTreeMap::from([
+                        (
+                            "dimension_id".to_string(),
+                            relation.dimension_id.to_string(),
+                        ),
+                        ("sign".to_string(), relation.sign.to_string()),
+                    ]),
                     entities: incidence_entities,
                     parameter,
                     operands: {
@@ -9362,6 +9369,7 @@ fn section_skamp_constraints_for_geometry(
                     native_kind: format!("creo:skamp:{}", skamp.kind),
                     native_state: Some(u64::from(skamp.status)),
                     native_flags: Some(u64::from(skamp.flags)),
+                    native_properties: BTreeMap::new(),
                     entities,
                     parameter: None,
                     operands: skamp

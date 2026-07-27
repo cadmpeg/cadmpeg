@@ -9038,6 +9038,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
                 entities,
                 parameter: Some(actual_parameter),
                 operands,
+                ..
             },
             native_ref: Some(native_ref),
             ..

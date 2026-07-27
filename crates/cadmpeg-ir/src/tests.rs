@@ -2286,6 +2286,10 @@ fn sketch_constraint_native_ref_must_resolve() {
                 native_kind: "test".into(),
                 native_state: None,
                 native_flags: Some(0x4000),
+                native_properties: std::collections::BTreeMap::from([(
+                    "mode".to_string(),
+                    "7".to_string(),
+                )]),
                 entities: Vec::new(),
                 parameter: None,
                 operands: vec![crate::sketches::SketchNativeOperand {
@@ -2318,7 +2322,8 @@ fn sketch_constraint_native_ref_must_resolve() {
             && finding.entity.as_deref() == Some(id.0.as_str())
             && finding.message.contains("native:missing-operand#0")
     }));
-    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    let serialized = serde_json::to_string(&ir).unwrap();
+    let round_trip = CadIr::from_json(&serialized).unwrap();
     assert!(matches!(
         round_trip.model.sketch_constraints[0].definition,
         crate::sketches::SketchConstraintDefinition::Native {
@@ -2326,6 +2331,26 @@ fn sketch_constraint_native_ref_must_resolve() {
             ..
         }
     ));
+    let crate::sketches::SketchConstraintDefinition::Native {
+        native_properties, ..
+    } = &round_trip.model.sketch_constraints[0].definition
+    else {
+        unreachable!("test constraint is native")
+    };
+    assert_eq!(native_properties.get("mode").map(String::as_str), Some("7"));
+    let mut legacy = serde_json::from_str::<serde_json::Value>(&serialized).unwrap();
+    legacy["model"]["sketch_constraints"][0]["definition"]
+        .as_object_mut()
+        .unwrap()
+        .remove("native_properties");
+    let legacy = CadIr::from_json(&serde_json::to_string(&legacy).unwrap()).unwrap();
+    let crate::sketches::SketchConstraintDefinition::Native {
+        native_properties, ..
+    } = &legacy.model.sketch_constraints[0].definition
+    else {
+        unreachable!("test constraint is native")
+    };
+    assert!(native_properties.is_empty());
     let crate::sketches::SketchConstraintDefinition::Native { operands, .. } =
         &mut ir.model.sketch_constraints[0].definition
     else {

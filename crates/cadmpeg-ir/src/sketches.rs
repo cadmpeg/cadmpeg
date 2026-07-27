@@ -6,6 +6,7 @@ use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 macro_rules! string_id {
     ($name:ident, $doc:literal) => {
@@ -1053,6 +1054,9 @@ pub enum SketchConstraintDefinition {
         /// Source-native constraint flags, when distinct from constraint state.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_flags: Option<u64>,
+        /// Exact source-native scalar properties not represented by common state or flags.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        native_properties: BTreeMap<String, String>,
         /// Referenced entities.
         entities: Vec<SketchEntityId>,
         /// Driving or driven parameter attached to the relation.

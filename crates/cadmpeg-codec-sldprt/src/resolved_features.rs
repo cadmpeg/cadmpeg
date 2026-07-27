@@ -23603,6 +23603,7 @@ pub(crate) fn project_relation_bindings(
                 native_kind: native_kind.into(),
                 native_state: None,
                 native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
                 entities,
                 parameter: parameter_id,
                 operands: relation
@@ -23839,6 +23840,7 @@ fn typed_marker_relation_definition_in_sketch(
             },
             native_state: None,
             native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
             entities,
             parameter: None,
             operands,
@@ -33207,6 +33209,7 @@ mod profile_join_tests {
                 native_kind: "sldprt:marker-relation:28".into(),
                 native_state: None,
                 native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
                 entities: vec![first.clone(), second.clone()],
                 parameter: None,
                 operands: vec![
@@ -33301,6 +33304,7 @@ mod profile_join_tests {
                 native_kind: "sldprt:marker-relation:11".into(),
                 native_state: None,
                 native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
                 entities: vec![first.clone(), SketchEntityId("second".into())],
                 parameter: None,
                 operands: vec![

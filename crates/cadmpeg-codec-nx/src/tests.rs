@@ -902,6 +902,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
             operands: Vec::new(),
             native_state: None,
             native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
         },
         name: None,
         driving: None,

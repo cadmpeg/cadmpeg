@@ -76,11 +76,13 @@ fixtures, claims above L1 remain unproven.
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`
   constraints retain the complete stored `used` and solver-status values,
-  respectively. Native `skamp_ptr` constraints also retain the complete stored
-  flags separately from solver status. Each ordered incidence item retains its
-  owning sketch namespace with its entity identifier and sense; the known
-  status low bit is projected as constraint activity. A native `relat_ptr`
-  constraint retains its
+  respectively. Native `relat_ptr` constraints retain the stored sign and
+  dimension selector as scalar properties distinct from object-reference
+  operands. Native `skamp_ptr` constraints also retain the complete stored flags
+  separately from solver status. Each ordered incidence item retains its owning
+  sketch namespace with its entity identifier and sense; the known status low
+  bit is projected as constraint activity. A native `relat_ptr` constraint
+  retains its
   `triples_ptr.skamp_id` incidence link when the relation, join, and incidence
   identities are complete and unique. The same unique join retains its
   non-null equation identity without assigning semantics to that namespace.
