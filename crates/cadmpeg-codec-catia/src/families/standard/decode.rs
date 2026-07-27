@@ -866,96 +866,21 @@ pub(crate) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(owners));
         }
+        for &surface_id in tags {
+            let Some(evidence) = standard_surface_evidence(&graph, surface_id) else {
+                continue;
+            };
+            merge_standard_procedure_supports(&mut support_candidates, &evidence);
+            merge_standard_surface_evidence(&mut surface_candidates, surface_id, evidence);
+        }
         for &(face_id, surface_id) in face_surfaces
             .iter()
             .filter(|(face_id, _)| tags.contains(face_id))
         {
-            let evidence =
-                crate::families::b5::transfer::resolved_surface_geometry(&graph, surface_id)
-                    .map(StandardSurfaceEvidence::Geometry)
-                    .or_else(|| {
-                        crate::families::b5::transfer::resolved_surface_procedural_definition(
-                            &graph, surface_id,
-                        )
-                        .map(|(carrier_object_id, definition)| {
-                            StandardSurfaceEvidence::Procedural(
-                                StandardSurfaceProcedure::RollingBall {
-                                    carrier_object_id,
-                                    definition,
-                                },
-                            )
-                        })
-                    })
-                    .or_else(|| {
-                        crate::families::b5::transfer::resolved_offset_surface(&graph, surface_id)
-                            .map(|offset| {
-                                StandardSurfaceEvidence::Procedural(
-                                    StandardSurfaceProcedure::Offset {
-                                        carrier_object_id: offset.carrier_object_id,
-                                        support_object_id: offset.support_object_id,
-                                        support: offset.support,
-                                        distance: offset.distance,
-                                        parameter_bounds: offset.parameter_bounds,
-                                    },
-                                )
-                            })
-                    })
-                    .or_else(|| {
-                        crate::families::b5::transfer::resolved_extrusion_surface(
-                            &graph, surface_id,
-                        )
-                        .map(Box::new)
-                        .map(StandardSurfaceProcedure::Extrusion)
-                        .map(StandardSurfaceEvidence::Procedural)
-                    });
+            let evidence = standard_surface_evidence(&graph, surface_id);
             let Some(evidence) = evidence else { continue };
-            if let StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
-                support_object_id,
-                support,
-                ..
-            }) = &evidence
-            {
-                support_candidates
-                    .entry(*support_object_id)
-                    .and_modify(|stored| {
-                        if stored.as_ref().is_some_and(|stored| stored != support) {
-                            *stored = None;
-                        }
-                    })
-                    .or_insert_with(|| Some(support.clone()));
-            }
-            if let StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Extrusion(
-                extrusion,
-            )) = &evidence
-            {
-                for side in &extrusion.supports {
-                    support_candidates
-                        .entry(side.surface_object_id)
-                        .and_modify(|stored| {
-                            if stored.as_ref().is_some_and(|stored| {
-                                stored
-                                    != &crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
-                                        side.surface.clone(),
-                                    )
-                            }) {
-                                *stored = None;
-                            }
-                        })
-                        .or_insert_with(|| {
-                            Some(crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
-                                side.surface.clone(),
-                            ))
-                        });
-                }
-            }
-            surface_candidates
-                .entry(face_id)
-                .and_modify(|stored| {
-                    if stored.as_ref().is_some_and(|stored| *stored != evidence) {
-                        *stored = None;
-                    }
-                })
-                .or_insert(Some(evidence));
+            merge_standard_procedure_supports(&mut support_candidates, &evidence);
+            merge_standard_surface_evidence(&mut surface_candidates, face_id, evidence);
         }
     }
     StandardObjectEvidence {
@@ -1006,6 +931,96 @@ pub(crate) fn standard_object_evidence_from_streams(
             .into_iter()
             .filter_map(|(edge, support)| Some((edge, support?)))
             .collect(),
+    }
+}
+
+fn standard_surface_evidence(
+    graph: &crate::families::b5::graph::B5Graph,
+    surface_id: u32,
+) -> Option<StandardSurfaceEvidence> {
+    crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id)
+        .map(StandardSurfaceEvidence::Geometry)
+        .or_else(|| {
+            crate::families::b5::transfer::resolved_surface_procedural_definition(graph, surface_id)
+                .map(|(carrier_object_id, definition)| {
+                    StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall {
+                        carrier_object_id,
+                        definition,
+                    })
+                })
+        })
+        .or_else(|| {
+            crate::families::b5::transfer::resolved_offset_surface(graph, surface_id).map(
+                |offset| {
+                    StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
+                        carrier_object_id: offset.carrier_object_id,
+                        support_object_id: offset.support_object_id,
+                        support: offset.support,
+                        distance: offset.distance,
+                        parameter_bounds: offset.parameter_bounds,
+                    })
+                },
+            )
+        })
+        .or_else(|| {
+            crate::families::b5::transfer::resolved_extrusion_surface(graph, surface_id)
+                .map(Box::new)
+                .map(StandardSurfaceProcedure::Extrusion)
+                .map(StandardSurfaceEvidence::Procedural)
+        })
+}
+
+fn merge_standard_surface_evidence(
+    candidates: &mut HashMap<u32, Option<StandardSurfaceEvidence>>,
+    tag: u32,
+    evidence: StandardSurfaceEvidence,
+) {
+    candidates
+        .entry(tag)
+        .and_modify(|stored| {
+            if stored.as_ref().is_some_and(|stored| *stored != evidence) {
+                *stored = None;
+            }
+        })
+        .or_insert(Some(evidence));
+}
+
+fn merge_standard_procedure_supports(
+    candidates: &mut HashMap<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>,
+    evidence: &StandardSurfaceEvidence,
+) {
+    match evidence {
+        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
+            support_object_id,
+            support,
+            ..
+        }) => {
+            candidates
+                .entry(*support_object_id)
+                .and_modify(|stored| {
+                    if stored.as_ref().is_some_and(|stored| stored != support) {
+                        *stored = None;
+                    }
+                })
+                .or_insert_with(|| Some(support.clone()));
+        }
+        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Extrusion(extrusion)) => {
+            for side in &extrusion.supports {
+                let support = crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
+                    side.surface.clone(),
+                );
+                candidates
+                    .entry(side.surface_object_id)
+                    .and_modify(|stored| {
+                        if stored.as_ref().is_some_and(|stored| stored != &support) {
+                            *stored = None;
+                        }
+                    })
+                    .or_insert(Some(support));
+            }
+        }
+        StandardSurfaceEvidence::Geometry(_)
+        | StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall { .. }) => {}
     }
 }
 

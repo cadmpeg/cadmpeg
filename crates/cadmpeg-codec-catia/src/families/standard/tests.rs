@@ -4704,7 +4704,7 @@ mod record_decoders {
     }
 
     #[test]
-    fn standard_freeform_tag_resolves_object_stream_face_carrier() {
+    fn standard_freeform_tag_resolves_direct_and_face_carriers() {
         let mut stream = b5_closed_triangle_stream();
         let vertex_start = stream
             .windows(3)
@@ -4720,9 +4720,13 @@ mod record_decoders {
         stream.splice(vertex_start..vertex_start, unresolved_face);
         let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
             [stream],
-            &HashSet::from([501]),
+            &HashSet::from([100, 501]),
             &HashSet::new(),
         );
+        assert!(matches!(
+            evidence.surface_geometries.get(&100),
+            Some(SurfaceGeometry::Plane { .. })
+        ));
         assert!(matches!(
             evidence.surface_geometries.get(&501),
             Some(SurfaceGeometry::Plane { .. })
