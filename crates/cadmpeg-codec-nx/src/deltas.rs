@@ -975,10 +975,33 @@ fn group_layout(
 }
 
 fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
-    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2)?)?;
+    (be::u16_at(stream, offset) == Some(91)).then_some(())?;
+    let direct = type_91_layout(stream, offset, 0);
+    let escaped = (stream.get(offset + 2) == Some(&0xff))
+        .then(|| type_91_layout(stream, offset, 1))
+        .flatten();
+    let (xmt, references, end) = unique_layout(direct, escaped)?;
+    Some(Record {
+        kind: 91,
+        xmt,
+        node_id: None,
+        references,
+        position: None,
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        offset,
+        end,
+    })
+}
+
+fn type_91_layout(
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Option<(u32, Vec<u32>, usize)> {
+    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
-    let mut at = offset.checked_add(2 + consumed)?;
-    (be::u32_at(stream, at) == Some(0)).then_some(())?;
+    let mut at = offset.checked_add(2 + envelope_len + consumed)?;
+    matches!(be::u32_at(stream, at), Some(0 | 1)).then_some(())?;
     at += 4;
     let mut references = Vec::new();
     for _ in 0..6 {
@@ -989,16 +1012,7 @@ fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
         at += 1;
         references.push(reference);
     }
-    Some(Record {
-        kind: 91,
-        xmt,
-        node_id: None,
-        references,
-        position: None,
-        canonical_bytes: stream.get(offset..at)?.to_vec(),
-        offset,
-        end: at,
-    })
+    Some((xmt, references, at))
 }
 
 fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
