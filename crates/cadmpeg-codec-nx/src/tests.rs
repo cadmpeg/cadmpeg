@@ -6622,11 +6622,13 @@ fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
         escaped_point.extend_from_slice(&coordinate.to_be_bytes());
     }
     stream.extend_from_slice(&escaped_point);
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
 
     let census = crate::deltas::walk(&stream);
     assert_eq!(census.full_counts["FIN"], 2);
     assert_eq!(census.full_counts["POINT"], 1);
-    assert_eq!(census.bytes_decoded, stream.len());
+    assert_eq!(census.bytes_decoded, decoded_len);
     assert_eq!(census.records[0].xmt, 32_768);
     assert_eq!(census.records[0].canonical_bytes, direct_canonical);
     assert_eq!(census.records[1].xmt, 40);

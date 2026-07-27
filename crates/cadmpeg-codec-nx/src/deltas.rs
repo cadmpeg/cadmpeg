@@ -681,13 +681,18 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
 }
 
 fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -> Option<Record> {
-    let direct = fixed_layout(stream, offset, kind, signature, 0)
-        .filter(|record| kind == 38 || plausible_next(stream, record.end));
+    let direct = fixed_layout(stream, offset, kind, signature, 0);
     let escaped = (stream.get(offset + 2) == Some(&0xff))
         .then(|| fixed_layout(stream, offset, kind, signature, 1))
-        .flatten()
-        .filter(|record| kind == 38 || plausible_next(stream, record.end));
-    unique_layout(direct, escaped)
+        .flatten();
+    match (direct, escaped) {
+        (Some(direct), Some(escaped)) => unique_layout(
+            plausible_next(stream, direct.end).then_some(direct),
+            plausible_next(stream, escaped.end).then_some(escaped),
+        ),
+        (Some(record), None) | (None, Some(record)) => Some(record),
+        (None, None) => None,
+    }
 }
 
 fn fixed_layout(
