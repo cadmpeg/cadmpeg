@@ -6586,6 +6586,57 @@ fn deltas_fixed_record_boundary_accepts_known_auxiliary_tag() {
 }
 
 #[test]
+fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
+    fn fin(escape: bool, xmt: u32) -> (Vec<u8>, Vec<u8>) {
+        let mut source = 17u16.to_be_bytes().to_vec();
+        let mut canonical = source.clone();
+        if escape {
+            source.push(0xff);
+            canonical.push(0xff);
+        }
+        let encoded_identity = encoded_xmt(xmt);
+        source.extend_from_slice(&encoded_identity);
+        canonical.extend_from_slice(&encoded_identity);
+        for reference in 20..29 {
+            let encoded_reference = encoded_xmt(reference);
+            source.extend_from_slice(&encoded_reference);
+            source.push(1);
+            canonical.extend_from_slice(&encoded_reference);
+        }
+        source.push(b'+');
+        canonical.push(b'+');
+        (source, canonical)
+    }
+
+    let (direct_extended, direct_canonical) = fin(false, 32_768);
+    let (escaped, escaped_canonical) = fin(true, 40);
+    let mut stream = direct_extended.clone();
+    stream.extend_from_slice(&escaped);
+    let mut escaped_point = vec![0, 29, 0xff, 0, 41];
+    escaped_point.extend_from_slice(&42u32.to_be_bytes());
+    for reference in 43..47 {
+        escaped_point.extend(encoded_xmt(reference));
+        escaped_point.push(1);
+    }
+    for coordinate in [1.0f64, 2.0, 3.0] {
+        escaped_point.extend_from_slice(&coordinate.to_be_bytes());
+    }
+    stream.extend_from_slice(&escaped_point);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.full_counts["FIN"], 2);
+    assert_eq!(census.full_counts["POINT"], 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert_eq!(census.records[0].xmt, 32_768);
+    assert_eq!(census.records[0].canonical_bytes, direct_canonical);
+    assert_eq!(census.records[1].xmt, 40);
+    assert_eq!(census.records[1].canonical_bytes, escaped_canonical);
+    assert_eq!(census.records[2].xmt, 41);
+    assert_eq!(census.records[2].node_id, Some(42));
+    assert_eq!(census.records[2].position, Some([1.0, 2.0, 3.0]));
+}
+
+#[test]
 fn merged_deltas_full_record_replaces_partition_node() {
     let partition = topology_partition_stream();
     let mut deltas = status_framed_deltas_point_stream();

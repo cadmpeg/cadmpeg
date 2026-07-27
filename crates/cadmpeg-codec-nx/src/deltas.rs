@@ -405,7 +405,6 @@ pub fn walk(stream: &[u8]) -> Census {
         }
         let decoded = fixed_signature(kind)
             .and_then(|signature| consume_fixed(stream, offset, kind, signature))
-            .filter(|record| record.kind == 38 || plausible_next(stream, record.end))
             .or_else(|| consume_variable(stream, offset, kind));
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
@@ -682,11 +681,28 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
 }
 
 fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -> Option<Record> {
-    let (xmt, consumed) = read_xmt(stream, offset + 2)?;
+    let direct = fixed_layout(stream, offset, kind, signature, 0)
+        .filter(|record| kind == 38 || plausible_next(stream, record.end));
+    let escaped = (stream.get(offset + 2) == Some(&0xff))
+        .then(|| fixed_layout(stream, offset, kind, signature, 1))
+        .flatten()
+        .filter(|record| kind == 38 || plausible_next(stream, record.end));
+    unique_layout(direct, escaped)
+}
+
+fn fixed_layout(
+    stream: &[u8],
+    offset: usize,
+    kind: u16,
+    signature: &[Token],
+    envelope_len: usize,
+) -> Option<Record> {
+    let xmt_at = offset.checked_add(2 + envelope_len)?;
+    let (xmt, consumed) = read_xmt(stream, xmt_at)?;
     if xmt <= 1 {
         return None;
     }
-    let mut at = offset + 2 + consumed;
+    let mut at = xmt_at.checked_add(consumed)?;
     let node_id = if kind == 17 {
         None
     } else {
