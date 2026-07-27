@@ -645,13 +645,13 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
                         | 45
                         | 59
                         | 81..=84
-                        | 90
                         | 91
                         | 125..=128
                         | 135..=136
                         | 141
                         | 204
                 )
+                || record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a)
         })
         .map(|record| record.canonical_bytes.clone())
         .collect::<Vec<_>>();
@@ -769,6 +769,7 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
             let record = crate::parasolid::entity_54_string_record_at(stream, offset)?;
             (record.xmt, record.byte_len, Vec::new())
         }
+        90 => return consume_group(stream, offset),
         91 => return consume_type_91(stream, offset),
         _ => return None,
     };
@@ -786,6 +787,53 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
         offset,
         end,
     })
+}
+
+fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
+    (be::u16_at(stream, offset) == Some(90)).then_some(())?;
+    let direct = group_layout(stream, offset, 0);
+    let escaped = (stream.get(offset + 2) == Some(&0xff))
+        .then(|| group_layout(stream, offset, 1))
+        .flatten();
+    let (xmt, node_id, references, end) = unique_layout(direct, escaped)?;
+    Some(Record {
+        kind: 90,
+        xmt,
+        node_id: Some(node_id),
+        references,
+        position: None,
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        offset,
+        end,
+    })
+}
+
+fn group_layout(
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Option<(u32, u32, Vec<u32>, usize)> {
+    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
+    (xmt > 1).then_some(())?;
+    let mut at = offset.checked_add(2 + envelope_len + consumed)?;
+    let node_id = be::u32_at(stream, at)?;
+    at += 4;
+    let mut references = Vec::new();
+    for _ in 0..4 {
+        let (reference, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        (stream.get(at) == Some(&1)).then_some(())?;
+        at += 1;
+        references.push(reference);
+    }
+    matches!(stream.get(at), Some(2 | 4)).then_some(())?;
+    at += 1;
+    let (reference, consumed) = read_xmt(stream, at)?;
+    at = at.checked_add(consumed)?;
+    matches!(stream.get(at), Some(0 | 1)).then_some(())?;
+    at += 1;
+    references.push(reference);
+    Some((xmt, node_id, references, at))
 }
 
 fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
@@ -1026,6 +1074,7 @@ fn family_name(kind: u16) -> Option<&'static str> {
         82 => "ENTITY_52",
         83 => "ENTITY_53",
         84 => "ENTITY_54",
+        90 => "GROUP",
         91 => "TYPE_91",
         12 => "BODY",
         13 => "SHELL",
