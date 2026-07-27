@@ -1231,7 +1231,7 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
         [Some((first_tag, first_id, true)), Some((second_tag, second_id, true))]
             if first_tag != 0
                 && first_tag == second_tag
-                && first_id.checked_add(1) == Some(second_id)
+                && first_id != second_id
     ) && payload.get(offset + 102..offset + 108)
         == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 108..offset + 144) == Some(&[0; 36])
@@ -7171,7 +7171,17 @@ mod marker_tests {
             SketchInputKind::Point
         );
         linked[92..94].copy_from_slice(&4u16.to_le_bytes());
+        assert_eq!(
+            extended_profile_point_coordinates(&linked, 0),
+            Some([0.435, 0.0075])
+        );
+        linked[92..94].copy_from_slice(&1u16.to_le_bytes());
         assert_eq!(extended_profile_point_coordinates(&linked, 0), None);
+        linked[92..94].fill(0);
+        assert_eq!(
+            extended_profile_point_coordinates(&linked, 0),
+            Some([0.435, 0.0075])
+        );
     }
 
     #[test]
