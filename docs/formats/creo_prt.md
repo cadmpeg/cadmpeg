@@ -2268,6 +2268,11 @@ origin. Incomplete sibling `local_sys` fields do not compete with the complete
 frame.
 
 For a linear section sweep, generated plane carriers parallel to the section normal bound the sweep axially. Their signed offsets are measured from the section origin along the section normal. The extreme nonzero offset on one side defines a blind extrusion from offset zero to that offset; its sign determines the sweep direction. Extreme offsets on opposite sides define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. Interior axis-normal planes do not shorten the sweep. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain. The first resolved section sweep in feature-definition order forms the base body. A later sweep requires its Boolean operation before it can be committed as an independent body. A section-sweep definition is solid when its evaluated closed-profile topology produces a solid body. An absent evaluated body does not define a nonsolid sweep.
+One or more uniquely decoded positional cylinder frames joined from section arcs
+to same-feature generated cylinder rows independently define a blind extent when
+their axes, positive lengths, and section-plane origins agree. Generated arc
+rows without a decoded frame do not compete with those direct witnesses.
+Duplicate parameter rows for any joined cylinder reject the construction.
 A class-916 or class-917 section sweep with one complete section transform and
 parallel generated cap-plane equations is a linear extrusion even when its
 current feature-state record omits the recipe discriminator. A stored

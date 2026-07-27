@@ -2795,6 +2795,44 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
 }
 
 #[test]
+fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
+    let frame = crate::surface::PositionalCylinderFrame {
+        origin: [1.0, 2.0, 3.0],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        radius: 4.0,
+        length: Some(5.0),
+    };
+    let parameter =
+        |surface_id, positional_cylinder_frame| crate::surface::SurfaceParameterRecord {
+            surface_id,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 0,
+            body_offset: 0,
+        };
+    let surface_ids = BTreeSet::from([1, 2, 3]);
+    let parameters = [parameter(1, Some(frame)), parameter(2, None)];
+    assert_eq!(
+        unique_available_positional_cylinder_frames(&surface_ids, &parameters),
+        Some(vec![frame])
+    );
+
+    let duplicates = [parameter(1, Some(frame)), parameter(1, Some(frame))];
+    assert!(unique_available_positional_cylinder_frames(&surface_ids, &duplicates).is_none());
+}
+
+#[test]
 fn section_line_requires_two_solved_points() {
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,

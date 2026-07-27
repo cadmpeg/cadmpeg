@@ -4594,7 +4594,6 @@ fn generated_arc_cylinder_extent(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let feature_id = definition.owner_feature_id?;
     definition.segments.as_ref()?.is_complete().then_some(())?;
-    let mut frames = Vec::new();
     let mut surface_ids = BTreeSet::new();
     for entry in scan
         .features
@@ -4619,13 +4618,32 @@ fn generated_arc_cylinder_extent(
         else {
             continue;
         };
-        let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
-            .positional_cylinder_frame?;
         surface_ids.insert(row.id).then_some(())?;
-        frames.push(frame);
     }
+    let frames =
+        unique_available_positional_cylinder_frames(&surface_ids, &scan.surfaces.parameters)?;
     (!frames.is_empty()).then_some(())?;
     agreed_generated_cylinder_extent(transform, &frames)
+}
+
+fn unique_available_positional_cylinder_frames(
+    surface_ids: &BTreeSet<u32>,
+    parameters: &[crate::surface::SurfaceParameterRecord],
+) -> Option<Vec<crate::surface::PositionalCylinderFrame>> {
+    let mut frames = Vec::new();
+    for surface_id in surface_ids {
+        let mut matching = parameters
+            .iter()
+            .filter(|record| record.surface_id == *surface_id);
+        let first = matching.next();
+        if matching.next().is_some() {
+            return None;
+        }
+        if let Some(frame) = first.and_then(|record| record.positional_cylinder_frame) {
+            frames.push(frame);
+        }
+    }
+    Some(frames)
 }
 
 fn agreed_generated_cylinder_extent(
