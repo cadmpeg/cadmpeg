@@ -74,7 +74,7 @@ pub struct ReferenceSignature {
 /// One exact packet in a tokenized `7C07` value program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum EntityValuePacket {
-    /// `<atom> <atom> E8 <selector:u16le> 37 <atom> <atom>
+    /// `<compact_atom> <compact_atom> E8 <selector:u16le> 37 <atom> <atom>
     /// (<E6:f64>|<E7..E9>)+ FE+`.
     Numeric {
         /// Byte offset of the first prefix atom within the value payload.
@@ -158,21 +158,15 @@ pub fn value_packets(payload: &[u8], fields: &[value_block::ValueField]) -> Vec<
             _ => None,
         })
         .collect::<HashSet<_>>();
-    let one_byte_atom_offsets = fields
+    let atom_offsets = fields
         .iter()
         .filter_map(|field| match field {
-            value_block::ValueField::Atom {
-                offset, width: 1, ..
-            } => Some(*offset),
+            value_block::ValueField::Atom { offset, .. } => Some(*offset),
             _ => None,
         })
         .collect::<HashSet<_>>();
-    let mut packets = numeric_value_packets(
-        payload,
-        &e8_opcode_offsets,
-        &marker_offsets,
-        &one_byte_atom_offsets,
-    );
+    let mut packets =
+        numeric_value_packets(payload, &e8_opcode_offsets, &marker_offsets, &atom_offsets);
     packets.extend(
         (0..payload.len())
             .filter(|index| opcode_offsets.contains(index))
@@ -208,18 +202,22 @@ fn numeric_value_packets(
     payload: &[u8],
     opcode_offsets: &HashSet<usize>,
     marker_offsets: &HashSet<usize>,
-    one_byte_atom_offsets: &HashSet<usize>,
+    atom_offsets: &HashSet<usize>,
 ) -> Vec<EntityValuePacket> {
     let candidates = (0..payload.len())
         .filter(|offset| {
-            one_byte_atom_offsets.contains(offset)
-                && offset.checked_add(1).is_some_and(|prefix1_offset| {
-                    marker_offsets.contains(&prefix1_offset)
-                        || (one_byte_atom_offsets.contains(&prefix1_offset)
-                            && offset.checked_add(2).is_some_and(|opcode_offset| {
-                                opcode_offsets.contains(&opcode_offset)
-                            }))
-                })
+            if !atom_offsets.contains(offset) {
+                return false;
+            }
+            let Some((_, prefix1_offset)) = compact_atom(payload, *offset) else {
+                return false;
+            };
+            if marker_offsets.contains(&prefix1_offset) {
+                return true;
+            }
+            atom_offsets.contains(&prefix1_offset)
+                && compact_atom(payload, prefix1_offset)
+                    .is_some_and(|(_, opcode_offset)| opcode_offsets.contains(&opcode_offset))
         })
         .filter_map(|offset| parse_numeric_value_packet(payload, offset))
         .collect::<Vec<_>>();
@@ -242,8 +240,8 @@ fn parse_numeric_value_packet(
     payload: &[u8],
     offset: usize,
 ) -> Option<(EntityValuePacket, std::ops::Range<usize>)> {
-    let (prefix0, mut at) = one_byte_atom(payload, offset)?;
-    let (prefix1, next) = one_byte_atom(payload, at)?;
+    let (prefix0, mut at) = compact_atom(payload, offset)?;
+    let (prefix1, next) = compact_atom(payload, at)?;
     at = next;
     (payload.get(at) == Some(&0xe8)).then_some(())?;
     let selector = u16::from_le_bytes(payload.get(at + 1..at + 3)?.try_into().ok()?);
@@ -970,6 +968,60 @@ mod tests {
                     NumericTupleItem::Binary64 {
                         bits: 180.902_997_326_510_7_f64.to_bits(),
                         offset: 20,
+                    },
+                ],
+                terminator_count: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn embedded_numeric_value_packet_accepts_compact_prefix_atoms() {
+        let mut payload = vec![
+            0x88, 0xd5, 0x3f, 0xe8, 0xe4, 0x07, 0x37, 0x88, 0x81, 0xe8, 0xe8, 0xe8, 0xe6,
+        ];
+        payload.extend_from_slice(&12.7_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0xe8, 0xe6]);
+        payload.extend_from_slice(&std::f64::consts::PI.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0xe7, 0xfe]);
+        let fields = value_block::tokenize(&payload);
+
+        assert_eq!(
+            value_packets(&payload, &fields),
+            [EntityValuePacket::Numeric {
+                offset: 0,
+                prefix_atoms: [8, 1088],
+                type_selector: 0x07e4,
+                layout_atom: 8,
+                value_atom: 1,
+                items: vec![
+                    NumericTupleItem::Control {
+                        code: 0xe8,
+                        offset: 9,
+                    },
+                    NumericTupleItem::Control {
+                        code: 0xe8,
+                        offset: 10,
+                    },
+                    NumericTupleItem::Control {
+                        code: 0xe8,
+                        offset: 11,
+                    },
+                    NumericTupleItem::Binary64 {
+                        bits: 12.7_f64.to_bits(),
+                        offset: 12,
+                    },
+                    NumericTupleItem::Control {
+                        code: 0xe8,
+                        offset: 21,
+                    },
+                    NumericTupleItem::Binary64 {
+                        bits: std::f64::consts::PI.to_bits(),
+                        offset: 22,
+                    },
+                    NumericTupleItem::Control {
+                        code: 0xe7,
+                        offset: 31,
                     },
                 ],
                 terminator_count: 1,
