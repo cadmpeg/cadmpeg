@@ -888,17 +888,28 @@ pub struct B2Cone {
 }
 
 /// Axis-and-profile surface of revolution stored in a `b2 03 2d` record.
-#[derive(Debug, Clone)]
-#[cfg(test)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct B2Revolution {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Reference-token dialect (`0x08` or `0x0a`).
+    pub reference_token: u8,
     /// Referenced profile-curve identifier.
     pub profile_curve_id: u16,
     /// Axis-frame origin.
     pub origin: [f64; 3],
+    /// First transverse unit direction.
+    pub direction_x: [f64; 3],
+    /// Second transverse unit direction.
+    pub direction_y: [f64; 3],
     /// Revolution-axis direction.
     pub axis: [f64; 3],
+    /// Stored angular parameter interval.
+    pub angular_range: [f64; 2],
     /// Stored profile parameter interval.
     pub profile_range: [f64; 2],
+    /// Positive angular chart scale.
+    pub angular_scale: f64,
 }
 
 /// Constant `b2 03 65` separator preceding a typed group opener.
@@ -1121,7 +1132,6 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
 
 /// Decode `b2 03 2d` axis-and-profile surfaces of revolution.
 #[must_use]
-#[cfg(test)]
 pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
     let mut out = Vec::new();
     for frame in b_family_frames(data, 0x2d) {
@@ -1164,10 +1174,20 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
             continue;
         }
         out.push(B2Revolution {
+            pos: frame.pos,
+            reference_token: data[p],
             profile_curve_id,
             origin: axis_frame[0..3].try_into().expect("three origin values"),
+            direction_x: axis_frame[3..6]
+                .try_into()
+                .expect("three first-direction values"),
+            direction_y: axis_frame[6..9]
+                .try_into()
+                .expect("three second-direction values"),
             axis: axis_frame[9..12].try_into().expect("three axis values"),
+            angular_range: [bounds[0], bounds[1]],
             profile_range: [bounds[2], bounds[3]],
+            angular_scale,
         });
     }
     out

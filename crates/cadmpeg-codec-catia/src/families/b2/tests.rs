@@ -261,10 +261,19 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         stream[5] = reference_token;
         let records = crate::families::b2::records::b2_revolutions(&stream);
         assert_eq!(records.len(), 1);
+        assert_eq!(records[0].pos, 0);
+        assert_eq!(records[0].reference_token, reference_token);
         assert_eq!(records[0].profile_curve_id, 0x1234);
         assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
+        assert_eq!(records[0].direction_x, [1.0, 0.0, 0.0]);
+        assert_eq!(records[0].direction_y, [0.0, 1.0, 0.0]);
         assert_eq!(records[0].axis, [0.0, 0.0, 1.0]);
+        assert_eq!(
+            records[0].angular_range,
+            [2.0 * 0.5, 2.0 * (0.5 + std::f64::consts::TAU)]
+        );
         assert_eq!(records[0].profile_range, [-4.0, 9.0]);
+        assert_eq!(records[0].angular_scale, 2.0);
     }
 }
 

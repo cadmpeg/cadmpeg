@@ -183,6 +183,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         .map(|support| support.tag)
         .collect::<HashSet<_>>();
     let object_evidence = standard_object_evidence(scan, &freeform_tags, &edge_tags);
+    let revolution_record_count = crate::families::b2::records::b2_revolutions(&scan.data).len();
     let freeform_geometries = &object_evidence.surface_geometries;
     let freeform_procedural_surfaces = &object_evidence.procedural_surfaces;
     let unresolved_freeform_record_count = records
@@ -623,7 +624,10 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         &typed,
         plane_faces,
         analytic_record_count,
-        unresolved_freeform_record_count,
+        &crate::assemble::UnresolvedSurfaceCounts {
+            face_local_freeform: unresolved_freeform_record_count,
+            unbound_revolution: revolution_record_count,
+        },
         topology_result.err().map(StandardTopologyFailure::message),
     );
     Some(FamilyOutput {

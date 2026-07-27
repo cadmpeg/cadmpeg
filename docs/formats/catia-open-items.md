@@ -57,6 +57,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - Plane-cap digon orientation and rank-deficient plane frames.
 - The two root `extra_orientation_signs`.
 - The E5 body and shell orientation equation remains incomplete because the two root `extra_orientation_signs` lack assigned roles.
+- The `b2 03 2d` revolution record's `u16le` profile identifier is typed, but its binding to the owning consolidated profile-curve record is unresolved. The axis frame, angular chart, and profile interval do not establish a surface without that directrix identity.
 - Curve-support records: the mode byte following the pcurve reference lane and the bytes after the fixed header are carried raw; both are unresolved.
 - Bounds records: the trailing `u32` code after each bound parameter is unresolved.
 - Edge-use records: the bytes after the five counted reference fields are unresolved.

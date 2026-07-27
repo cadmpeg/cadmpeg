@@ -319,6 +319,12 @@ impl TypedCounts {
     }
 }
 
+/// Counts of typed surface records that still lack an exact neutral carrier.
+pub(crate) struct UnresolvedSurfaceCounts {
+    pub(crate) face_local_freeform: usize,
+    pub(crate) unbound_revolution: usize,
+}
+
 pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("variant".to_string(), scan.variant.token().to_string());
@@ -400,7 +406,7 @@ pub(crate) fn build_geometry_report(
     typed: &TypedCounts,
     plane_faces: usize,
     analytic_record_count: usize,
-    freeform_record_count: usize,
+    unresolved_surfaces: &UnresolvedSurfaceCounts,
     topology_failure: Option<&str>,
 ) -> DecodeReport {
     let mut losses = Vec::new();
@@ -465,15 +471,29 @@ pub(crate) fn build_geometry_report(
             provenance: None,
         });
     }
-    if freeform_record_count > 0 {
+    if unresolved_surfaces.face_local_freeform > 0 {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
-                "{freeform_record_count} face-local free-form carrier record(s) retain their \
-                 tag, bounds, and orientation, but their aliased surface geometry is not yet \
-                 transferred."
+                "{} face-local free-form carrier record(s) retain their tag, bounds, and \
+                 orientation, but their aliased surface geometry is not yet transferred.",
+                unresolved_surfaces.face_local_freeform,
+            ),
+            provenance: None,
+        });
+    }
+    if unresolved_surfaces.unbound_revolution > 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} consolidated surface-of-revolution record(s) retain their profile identity, \
+                 orthonormal axis frame, angular chart, and profile interval, but the profile \
+                 identities are not yet bound to directrix curves.",
+                unresolved_surfaces.unbound_revolution,
             ),
             provenance: None,
         });
