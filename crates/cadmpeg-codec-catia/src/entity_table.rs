@@ -330,7 +330,7 @@ pub fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
         .windows(2)
         .enumerate()
         .filter(|(_, marker)| *marker == [0x7c, 0x05])
-        .filter_map(|(pos, _)| parse_candidate(data, pos))
+        .filter_map(|(pos, _)| parse_candidate_variants(data, pos))
         .collect::<Vec<_>>();
     let roots = candidates
         .iter()
@@ -350,29 +350,122 @@ pub fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
 
     roots
         .into_iter()
-        .fold(Vec::<Vec<EntityRecord>>::new(), |mut runs, record| {
-            if runs
-                .last()
-                .and_then(|run| run.last())
-                .is_some_and(|last| last.pos.checked_add(last.total_len) == Some(record.pos))
-            {
-                runs.last_mut()
-                    .expect("a final record implies a final run")
-                    .push(record);
-            } else {
-                runs.push(vec![record]);
-            }
-            runs
-        })
+        .fold(
+            Vec::<Vec<EntityRecordCandidates>>::new(),
+            |mut runs, variants| {
+                if runs
+                    .last()
+                    .and_then(|run| run.last())
+                    .is_some_and(|last| last.pos.checked_add(last.total_len) == Some(variants.pos))
+                {
+                    runs.last_mut()
+                        .expect("a final record implies a final run")
+                        .push(variants);
+                } else {
+                    runs.push(vec![variants]);
+                }
+                runs
+            },
+        )
         .into_iter()
-        .filter(|run| {
-            run.windows(2)
-                .all(|pair| pair[0].entity_id < pair[1].entity_id)
+        .filter_map(|run| {
+            let identities = unique_monotone_run(&run)?;
+            run.iter()
+                .zip(identities)
+                .map(|(record, identity)| materialize_record(data, record, identity))
+                .collect()
         })
         .collect()
 }
 
-fn parse_candidate(data: &[u8], pos: usize) -> Option<EntityRecord> {
+#[derive(Debug, Clone, Copy)]
+struct EntityIdentityCandidate {
+    delimiter: usize,
+    entity_id: u32,
+}
+
+#[derive(Clone)]
+struct EntityRecordCandidates {
+    pos: usize,
+    total_len: usize,
+    lead: u8,
+    definition_len: u32,
+    definition_end: usize,
+    value_len: u32,
+    value_end: usize,
+    identities: Vec<EntityIdentityCandidate>,
+}
+
+#[derive(Clone, Copy)]
+struct MonotonePathState {
+    identity: EntityIdentityCandidate,
+    path_count: u8,
+    predecessor: Option<usize>,
+}
+
+fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityIdentityCandidate>> {
+    let first = &records.first()?.identities;
+    let mut layers = vec![first
+        .iter()
+        .copied()
+        .map(|identity| MonotonePathState {
+            identity,
+            path_count: 1,
+            predecessor: None,
+        })
+        .collect::<Vec<_>>()];
+    for record in &records[1..] {
+        let previous = layers.last().expect("first candidate layer");
+        let mut ordered_predecessors = previous.iter().enumerate().collect::<Vec<_>>();
+        ordered_predecessors.sort_by_key(|(_, state)| state.identity.entity_id);
+        let mut cumulative = Vec::with_capacity(ordered_predecessors.len());
+        let mut cumulative_count = 0u8;
+        for (index, state) in &ordered_predecessors {
+            cumulative_count = cumulative_count.saturating_add(state.path_count).min(2);
+            cumulative.push((cumulative_count, (cumulative_count == 1).then_some(*index)));
+        }
+        let layer = record
+            .identities
+            .iter()
+            .filter_map(|identity| {
+                let predecessor_count = ordered_predecessors
+                    .partition_point(|(_, state)| state.identity.entity_id < identity.entity_id);
+                let (path_count, predecessor) = predecessor_count
+                    .checked_sub(1)
+                    .map_or((0, None), |index| cumulative[index]);
+                (path_count != 0).then_some(MonotonePathState {
+                    identity: *identity,
+                    path_count,
+                    predecessor,
+                })
+            })
+            .collect::<Vec<_>>();
+        if layer.is_empty() {
+            return None;
+        }
+        layers.push(layer);
+    }
+    let final_layer = layers.last()?;
+    if final_layer.iter().fold(0u8, |count, state| {
+        count.saturating_add(state.path_count).min(2)
+    }) != 1
+    {
+        return None;
+    }
+    let mut state_index = final_layer.iter().position(|state| state.path_count == 1)?;
+    let mut result = Vec::with_capacity(layers.len());
+    for layer in layers.iter().rev() {
+        let state = &layer[state_index];
+        result.push(state.identity);
+        if let Some(predecessor) = state.predecessor {
+            state_index = predecessor;
+        }
+    }
+    result.reverse();
+    Some(result)
+}
+
+fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandidates> {
     let total_len = usize::try_from(u32_le(data, pos.checked_add(2)?)?).ok()?;
     let end = pos.checked_add(total_len)?;
     if total_len < 19
@@ -391,42 +484,71 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<EntityRecord> {
         return None;
     }
     let definition_start = pos + 13;
-    let mut at = definition_start;
-    while at < definition_end {
-        match data[at] {
-            0xea => break,
-            0x32 => at = at.checked_add(5)?,
-            _ => at += 1,
-        }
-    }
-    let identity_end = at.checked_add(5)?;
-    if identity_end > definition_end
-        || data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07]
-    {
-        return None;
-    }
-    let entity_id = u32_le(data, at + 1)?;
     let value_len = u32_le(data, definition_end + 2)?;
     let value_len_usize = usize::try_from(value_len).ok()?;
     let value_end = definition_end.checked_add(value_len_usize)?;
-    if entity_id == 0 || value_len_usize < 6 || value_end > end {
+    if value_len_usize < 6 || value_end > end {
         return None;
     }
-
-    Some(EntityRecord {
+    let mut identities = Vec::new();
+    let mut at = definition_start;
+    while at < definition_end {
+        match data[at] {
+            0xea => {
+                if at.checked_add(5).is_some_and(|end| end <= definition_end) {
+                    let entity_id = u32_le(data, at + 1)?;
+                    if entity_id != 0 {
+                        identities.push(EntityIdentityCandidate {
+                            delimiter: at,
+                            entity_id,
+                        });
+                    }
+                }
+                at += 1;
+            }
+            0x32 if at.checked_add(5).is_some_and(|end| end <= definition_end) => at += 5,
+            _ => at += 1,
+        }
+    }
+    if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
+        return None;
+    }
+    (!identities.is_empty()).then_some(EntityRecordCandidates {
         pos,
         total_len,
         lead,
         definition_len,
-        definition_prefix: data[definition_start..at].to_vec(),
-        definition_schema_selectors: parse_definition_schema_selectors(&data[definition_start..at]),
-        entity_id,
-        definition_suffix: data[identity_end..definition_end].to_vec(),
+        definition_end,
         value_len,
-        value_payload: data[definition_end + 6..value_end].to_vec(),
-        numeric_tuple: parse_numeric_tuple(&data[definition_end + 6..value_end]),
-        reference_signature: parse_reference_signature(&data[definition_end + 6..value_end]),
-        record_suffix: data[value_end..end].to_vec(),
+        value_end,
+        identities,
+    })
+}
+
+fn materialize_record(
+    data: &[u8],
+    candidate: &EntityRecordCandidates,
+    identity: EntityIdentityCandidate,
+) -> Option<EntityRecord> {
+    let definition_start = candidate.pos.checked_add(13)?;
+    let record_end = candidate.pos.checked_add(candidate.total_len)?;
+    let identity_end = identity.delimiter.checked_add(5)?;
+    let value_payload = data.get(candidate.definition_end + 6..candidate.value_end)?;
+    let prefix = data.get(definition_start..identity.delimiter)?;
+    Some(EntityRecord {
+        pos: candidate.pos,
+        total_len: candidate.total_len,
+        lead: candidate.lead,
+        definition_len: candidate.definition_len,
+        definition_prefix: prefix.to_vec(),
+        definition_schema_selectors: parse_definition_schema_selectors(prefix),
+        entity_id: identity.entity_id,
+        definition_suffix: data.get(identity_end..candidate.definition_end)?.to_vec(),
+        value_len: candidate.value_len,
+        value_payload: value_payload.to_vec(),
+        numeric_tuple: parse_numeric_tuple(value_payload),
+        reference_signature: parse_reference_signature(value_payload),
+        record_suffix: data.get(candidate.value_end..record_end)?.to_vec(),
     })
 }
 
@@ -626,6 +748,30 @@ mod tests {
         assert_eq!(run[0].value_len, 7);
         assert_eq!(run[0].value_payload, [0xfe]);
         assert_eq!(run[0].record_suffix, [0xbb]);
+    }
+
+    #[test]
+    fn entity_table_run_resolves_a_literal_ea_by_monotone_identity() {
+        let mut records = record(&[0x11], 89);
+        records.extend(record(&[0xe9, 0xea], 90));
+        records.extend(record(&[0x12], 91));
+
+        let runs = parse_runs(&records);
+        let [run] = runs.as_slice() else {
+            panic!("one uniquely resolved entity-table run");
+        };
+        assert_eq!(
+            run.iter()
+                .map(|record| record.entity_id)
+                .collect::<Vec<_>>(),
+            [89, 90, 91]
+        );
+        assert_eq!(run[1].definition_prefix, [0xe9, 0xea]);
+    }
+
+    #[test]
+    fn entity_table_run_rejects_an_ambiguous_identity_delimiter() {
+        assert!(parse_runs(&record(&[0xe9, 0xea], 90)).is_empty());
     }
 
     #[test]
