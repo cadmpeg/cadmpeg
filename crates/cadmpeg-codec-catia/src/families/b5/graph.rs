@@ -917,7 +917,11 @@ pub(crate) fn targeted_surfaces(
         records
             .entry(found_id)
             .and_modify(|stored| {
-                if stored.as_ref().is_some_and(|stored| stored != &record) {
+                if stored.as_ref().is_some_and(|stored| {
+                    stored.family != record.family
+                        || stored.class != record.class
+                        || stored.payload != record.payload
+                }) {
                     *stored = None;
                 }
             })

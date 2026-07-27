@@ -4772,6 +4772,23 @@ mod record_decoders {
     }
 
     #[test]
+    fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
+        let mut stream = a8_surface_stream();
+        stream[7..11].copy_from_slice(&100u32.to_le_bytes());
+        stream.extend(stream.clone());
+
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [stream],
+            &HashSet::from([100]),
+            &HashSet::new(),
+        );
+        assert!(matches!(
+            evidence.surface_geometries.get(&100),
+            Some(SurfaceGeometry::Nurbs(_))
+        ));
+    }
+
+    #[test]
     fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
         let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
             [a8_freeform_curve_stream()],
