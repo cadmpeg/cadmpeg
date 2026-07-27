@@ -3473,7 +3473,7 @@ fn saved_line_joins_through_order_table() {
         }),
         triples: vec![crate::feature::FeatureRelationTriple {
             relation_id: Some(7),
-            equation_id: None,
+            equation_id: Some(11),
             skamp_id: Some(5),
             offset: 31,
         }],
@@ -3532,6 +3532,11 @@ fn saved_line_joins_through_order_table() {
             && operand.native_field.as_deref() == Some("triples_ptr.skamp_id")
             && operand.object_index == 5
     }));
+    assert!(operands.iter().any(|operand| {
+        operand.native_kind == "triples_ptr"
+            && operand.native_field.as_deref() == Some("equation_id")
+            && operand.object_index == 11
+    }));
     native_join
         .relations
         .as_mut()
@@ -3561,6 +3566,9 @@ fn saved_line_joins_through_order_table() {
     assert!(!operands
         .iter()
         .any(|operand| operand.native_field.as_deref() == Some("triples_ptr.skamp_id")));
+    assert!(!operands
+        .iter()
+        .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
     let mut solver_families = constrained.clone();
     let family_relations = solver_families.relations.as_mut().expect("relations");
     family_relations.skamps = vec![crate::feature::FeatureSkamp {

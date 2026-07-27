@@ -8246,6 +8246,16 @@ fn joined_relation_incidence(
     definition: &crate::feature::FeatureDefinition,
     relation_id: u32,
 ) -> Option<&crate::feature::FeatureSkamp> {
+    joined_relation_incidence_link(definition, relation_id).map(|(_, incidence)| incidence)
+}
+
+fn joined_relation_incidence_link(
+    definition: &crate::feature::FeatureDefinition,
+    relation_id: u32,
+) -> Option<(
+    &crate::feature::FeatureRelationTriple,
+    &crate::feature::FeatureSkamp,
+)> {
     let Some(relations) = &definition.relations else {
         return None;
     };
@@ -8254,13 +8264,13 @@ fn joined_relation_incidence(
     {
         return None;
     }
-    let incidence_ids = relations
+    let joins = relations
         .triples
         .iter()
         .filter(|triple| triple.relation_id == Some(relation_id))
-        .filter_map(|triple| triple.skamp_id)
+        .filter_map(|triple| triple.skamp_id.map(|incidence_id| (triple, incidence_id)))
         .collect::<Vec<_>>();
-    let [incidence_id] = incidence_ids.as_slice() else {
+    let [(join, incidence_id)] = joins.as_slice() else {
         return None;
     };
     let incidences = relations
@@ -8271,7 +8281,7 @@ fn joined_relation_incidence(
     let [incidence] = incidences.as_slice() else {
         return None;
     };
-    Some(*incidence)
+    Some((*join, *incidence))
 }
 
 fn relation_incidence(
@@ -8449,9 +8459,10 @@ fn section_dimension_constraints(
                 )
             });
             let parameter = dimension.as_ref().map(|(_, parameter)| parameter.clone());
-            let joined_incidence = unique_relation_id
-                .then(|| joined_relation_incidence(definition, relation.relation_id))
+            let joined_incidence_link = unique_relation_id
+                .then(|| joined_relation_incidence_link(definition, relation.relation_id))
                 .flatten();
+            let joined_incidence = joined_incidence_link.map(|(_, incidence)| incidence);
             let typed = (|| {
                 unique_relation_id.then_some(())?;
                 let (dimension, _) = dimension.as_ref()?;
@@ -8704,6 +8715,17 @@ fn section_dimension_constraints(
                                 native_field: Some("triples_ptr.skamp_id".to_string()),
                                 native_role: None,
                                 object_index: incidence.id,
+                                native_ref: Some(native_ref.clone()),
+                            });
+                        }
+                        if let Some(equation_id) =
+                            joined_incidence_link.and_then(|(join, _)| join.equation_id)
+                        {
+                            operands.push(SketchNativeOperand {
+                                native_kind: "triples_ptr".to_string(),
+                                native_field: Some("equation_id".to_string()),
+                                native_role: None,
+                                object_index: equation_id,
                                 native_ref: Some(native_ref.clone()),
                             });
                         }

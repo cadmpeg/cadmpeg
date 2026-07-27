@@ -80,7 +80,8 @@ fixtures, claims above L1 remain unproven.
   flags separately from solver status; the known status low bit is projected
   as constraint activity. A native `relat_ptr` constraint retains its
   `triples_ptr.skamp_id` incidence link when the relation, join, and incidence
-  identities are complete and unique.
+  identities are complete and unique. The same unique join retains its
+  non-null equation identity without assigning semantics to that namespace.
 
 ## Evidence required to raise the score
 
