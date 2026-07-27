@@ -1797,6 +1797,63 @@ fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_formula_relation(parameter_entity_id: u8) -> Vec<u8> {
+    let formula_definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
+    let expression_definition = [0x00, 0x08, 0x32, 5, 0, 0, 0, 0x32, 5, 0, 0, 0];
+    let mut expression_value = Vec::new();
+    for ordinal in 6u32..=11 {
+        expression_value.push(0x32);
+        expression_value.extend_from_slice(&ordinal.to_le_bytes());
+    }
+    expression_value.push(0xfe);
+
+    let mut stream = entity_table_record_with_definition_and_value(1, &formula_definition, &[0xfe]);
+    stream.extend(entity_table_record_with_definition_and_value(
+        2,
+        &expression_definition,
+        &expression_value,
+    ));
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&[
+        object_graph_record(
+            &[0x04, 0x01, 0x81, 0x84],
+            &[
+                0xf9,
+                0x84,
+                0x81,
+                0x81,
+                0x81,
+                0x82,
+                0x81,
+                parameter_entity_id,
+                0xd1,
+                0x80,
+                0xfe,
+            ],
+        ),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
+    ]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Formula",
+        "body",
+        "#1_ ",
+        "#1_ /2-2mm",
+        "param",
+        "(#1_ : #In LENGTH) : LENGTH",
+        "opened",
+        "RelationExpFct",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_crossing_entity_value_packet() -> Vec<u8> {
     let value = [
         0x32, 4, 0, 0, 0, 0x81, 0x82, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6, 0x32, 4, 0, 0, 0,
@@ -5780,6 +5837,46 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&suffix));
     assert!(native.entity_records[0].parameter_value.is_none());
+}
+
+#[test]
+fn native_namespace_types_and_validates_formula_relations() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63));
+    let formula = native.entity_records[0]
+        .formula_relation
+        .as_ref()
+        .expect("complete formula relation");
+    assert_eq!(formula.expression, native.entity_records[1].id);
+    assert_eq!(formula.parameter_entity_id, 99);
+    assert_eq!(formula.parameter, None);
+
+    let mut malformed = native;
+    malformed.entity_records[0]
+        .formula_relation
+        .as_mut()
+        .expect("complete formula relation")
+        .parameter_entity_id = 98;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed formula relation");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn formula_relation_requires_a_complete_relation_expression_target() {
+    let mut file = standard_catpart_with_formula_relation(0x63);
+    let role = file
+        .windows("param".len())
+        .position(|bytes| bytes == b"param")
+        .expect("formula parameter role");
+    file[role..role + "param".len()].copy_from_slice(b"other");
+
+    let native = crate::native::CatiaNative::decode(&file);
+    assert!(native.entity_records[0].formula_relation.is_none());
 }
 
 #[test]

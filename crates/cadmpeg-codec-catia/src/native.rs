@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 106;
+pub const CATIA_NATIVE_VERSION: u32 = 107;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -634,6 +634,18 @@ pub struct CatiaParameterValue {
     pub evaluation: CatiaParameterEvaluation,
 }
 
+/// One complete formula relation stored by an entity and its object payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaFormulaRelation {
+    /// Complete relation-expression entity selected by the second payload reference.
+    pub expression: String,
+    /// Stored parameter identity selected by the third payload reference.
+    pub parameter_entity_id: u32,
+    /// Parameter entity when the stored identity resolves inside the same graph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter: Option<String>,
+}
+
 /// Field order used by a repeated-reference schema preamble.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum CatiaRepeatedReferenceSchemaOrder {
@@ -693,6 +705,9 @@ pub struct CatiaEntityRecord {
     /// Complete named parameter-value production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_value: Option<CatiaParameterValue>,
+    /// Complete formula-to-expression and formula-to-parameter relation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formula_relation: Option<CatiaFormulaRelation>,
     /// Exact packets in the value program, in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_packets: Vec<entity_table::EntityValuePacket>,
@@ -1232,6 +1247,60 @@ fn parameter_value(
         name: schema_value(name),
         binding: schema_value(binding),
         evaluation,
+    })
+}
+
+fn formula_relation(
+    definitions: &[CatiaDefinitionSchemaSelection],
+    entity_id: u32,
+    object: &CatiaObjectRecord,
+    relation_expressions: &HashMap<String, String>,
+    entities_by_object: &HashMap<String, String>,
+) -> Option<CatiaFormulaRelation> {
+    let [definition0, definition1] = definitions else {
+        return None;
+    };
+    if definition0.name.as_deref() != Some("Formula")
+        || definition1.name.as_deref() != Some("Formula")
+        || definition0.entry != definition1.entry
+    {
+        return None;
+    }
+    let [PayloadField::Atom { value: 249, .. }, PayloadField::Atom { value: 4, .. }, PayloadField::Reference { value: owner, .. }, PayloadField::Reference {
+        value: expression_entity_id,
+        ..
+    }, PayloadField::Reference {
+        value: parameter_entity_id,
+        ..
+    }, PayloadField::Atom { value: 129, .. }, PayloadField::Terminator] =
+        object.payload.fields.as_slice()
+    else {
+        return None;
+    };
+    if *owner != entity_id {
+        return None;
+    }
+    let [owner_reference, expression_reference, parameter_reference] = object.references.as_slice()
+    else {
+        return None;
+    };
+    if owner_reference.entity_id != entity_id
+        || expression_reference.entity_id != *expression_entity_id
+        || parameter_reference.entity_id != *parameter_entity_id
+        || owner_reference.target.as_deref() != Some(object.id.as_str())
+    {
+        return None;
+    }
+    let expression_object = expression_reference.target.as_ref()?;
+    let expression = relation_expressions.get(expression_object)?.clone();
+    Some(CatiaFormulaRelation {
+        expression,
+        parameter_entity_id: *parameter_entity_id,
+        parameter: parameter_reference
+            .target
+            .as_ref()
+            .and_then(|object| entities_by_object.get(object))
+            .cloned(),
     })
 }
 
@@ -2406,6 +2475,36 @@ impl CatiaNative {
                 );
             }
         }
+        let relation_expressions = entity_records
+            .iter()
+            .filter(|entity| entity.relation_expression.is_some())
+            .map(|entity| (entity.object_record.clone(), entity.id.clone()))
+            .collect::<HashMap<_, _>>();
+        let entities_by_object = entity_records
+            .iter()
+            .map(|entity| (entity.object_record.clone(), entity.id.clone()))
+            .collect::<HashMap<_, _>>();
+        for entity in &mut entity_records {
+            let Some(object) = object_graphs
+                .iter()
+                .find(|graph| graph.id == entity.object_graph)
+                .and_then(|graph| {
+                    graph
+                        .records
+                        .iter()
+                        .find(|record| record.id == entity.object_record)
+                })
+            else {
+                continue;
+            };
+            entity.formula_relation = formula_relation(
+                &entity.definition_schema_selections,
+                entity.entity_id,
+                object,
+                &relation_expressions,
+                &entities_by_object,
+            );
+        }
         alias_rows.retain(|row| {
             let row_start = row.byte_offset.saturating_sub(4);
             !object_graphs
@@ -2588,6 +2687,15 @@ impl CatiaNative {
                 entity.id
             )));
         }
+        let relation_expressions = entity_records
+            .iter()
+            .filter(|entity| entity.relation_expression.is_some())
+            .map(|entity| (entity.object_record.clone(), entity.id.clone()))
+            .collect::<HashMap<_, _>>();
+        let entities_by_object = entity_records
+            .iter()
+            .map(|entity| (entity.object_record.clone(), entity.id.clone()))
+            .collect::<HashMap<_, _>>();
         for graph in &mut graphs {
             graph.records = records
                 .iter()
@@ -2647,6 +2755,22 @@ impl CatiaNative {
                                 &entity.value_schema_selections,
                                 &entity.record_suffix,
                             )
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        let object = graph
+                            .records
+                            .iter()
+                            .find(|record| record.id == entity.object_record);
+                        entity.formula_relation
+                            != object.and_then(|object| {
+                                formula_relation(
+                                    &entity.definition_schema_selections,
+                                    entity.entity_id,
+                                    object,
+                                    &relation_expressions,
+                                    &entities_by_object,
+                                )
+                            })
                     })
                     || graph_entities.windows(2).any(|pair| {
                         pair[0].byte_offset.checked_add(pair[0].byte_len)
@@ -3213,6 +3337,7 @@ fn native_object_graph(
                 value_schema_selections: Vec::new(),
                 relation_expression: None,
                 parameter_value: None,
+                formula_relation: None,
                 value_packets,
                 numeric_tuple: entity.numeric_tuple,
                 reference_signature: entity.reference_signature,
