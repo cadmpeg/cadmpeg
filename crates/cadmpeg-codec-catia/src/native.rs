@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 107;
+pub const CATIA_NATIVE_VERSION: u32 = 108;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -605,10 +605,24 @@ pub struct CatiaRelationExpression {
     pub parameter_role: CatiaEntitySchemaValue,
     /// Stored source type signature.
     pub type_signature: CatiaEntitySchemaValue,
+    /// Parsed parameter and value types when the source signature has the typed form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<CatiaRelationTypeSignature>,
     /// Exact `opened` state selector.
     pub state_role: CatiaEntitySchemaValue,
     /// Exact `RelationExpFct` function selector.
     pub function_role: CatiaEntitySchemaValue,
+}
+
+/// Typed roles in a relation-expression source signature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaRelationTypeSignature {
+    /// Expression-local parameter named before `#In`.
+    pub parameter: String,
+    /// Source input type named after `#In`.
+    pub input_type: String,
+    /// Source result type named after the closing parenthesis.
+    pub result_type: String,
 }
 
 /// Evaluation state of one named parameter value.
@@ -1209,13 +1223,37 @@ fn relation_expression(
         entry: selection.entry.clone(),
         value: selection.name.clone(),
     };
+    let signature = relation_type_signature(&placeholder.name, &type_signature.name);
     Some(CatiaRelationExpression {
         placeholder: schema_value(placeholder),
         expression: schema_value(expression),
         parameter_role: schema_value(parameter_role),
         type_signature: schema_value(type_signature),
+        signature,
         state_role: schema_value(state_role),
         function_role: schema_value(function_role),
+    })
+}
+
+fn relation_type_signature(placeholder: &str, source: &str) -> Option<CatiaRelationTypeSignature> {
+    let source = source.strip_suffix('\n').unwrap_or(source);
+    let (input_clause, result_type) = source.rsplit_once(") : ")?;
+    let input_clause = input_clause.strip_prefix('(')?;
+    let (parameter, input_type) = input_clause.split_once(':')?;
+    let parameter = parameter.trim();
+    let input_type = input_type.trim().strip_prefix("#In")?.trim();
+    let result_type = result_type.trim();
+    if parameter.is_empty()
+        || input_type.is_empty()
+        || result_type.is_empty()
+        || parameter != placeholder.trim()
+    {
+        return None;
+    }
+    Some(CatiaRelationTypeSignature {
+        parameter: parameter.to_string(),
+        input_type: input_type.to_string(),
+        result_type: result_type.to_string(),
     })
 }
 

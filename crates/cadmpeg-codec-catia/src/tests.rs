@@ -5749,6 +5749,10 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         expression.type_signature.value,
         "(#1_ : #In LENGTH) : LENGTH"
     );
+    let signature = expression.signature.as_ref().expect("typed signature");
+    assert_eq!(signature.parameter, "#1_");
+    assert_eq!(signature.input_type, "LENGTH");
+    assert_eq!(signature.result_type, "LENGTH");
     assert_eq!(expression.state_role.value, "opened");
     assert_eq!(expression.function_role.value, "RelationExpFct");
 
@@ -5775,6 +5779,24 @@ fn relation_expression_requires_every_exact_role() {
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression("parameter"));
 
     assert!(native.entity_records[0].relation_expression.is_none());
+}
+
+#[test]
+fn relation_expression_signature_requires_the_selected_placeholder() {
+    let mut file = standard_catpart_with_relation_expression("param");
+    let signature = file
+        .windows("(#1_ : #In LENGTH) : LENGTH".len())
+        .position(|bytes| bytes == b"(#1_ : #In LENGTH) : LENGTH")
+        .expect("relation type signature");
+    file[signature + 2] = b'2';
+
+    let native = crate::native::CatiaNative::decode(&file);
+    assert!(native.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .expect("complete relation expression")
+        .signature
+        .is_none());
 }
 
 #[test]
