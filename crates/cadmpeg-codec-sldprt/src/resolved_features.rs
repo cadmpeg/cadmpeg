@@ -1681,19 +1681,19 @@ mod marker_tests {
         compact_extrusion_to_face_at, compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
         compact_geometry_locus_point_coordinates, compact_indexed_curve_endpoint_indices,
         compact_legacy_curve_endpoint_indices, compact_legacy_profile_vertex,
-        compact_legacy_radial_circle_index, compact_legacy_selected_axis_endpoint_indices,
-        compact_line_chain_addresses, compact_line_region_addresses, compact_offset_plane_source,
-        compact_profile_reference_plane_source, compact_reference_plane_frame,
-        compact_reference_plane_source, compact_single_face_reference_path_at,
-        compact_single_face_reference_record_at, compact_sketch_surface_component_path_at,
-        compact_surface_selection_at, complete_ordered_compact_line_profile,
-        component_face_reference_at, component_face_reference_in_record, component_path_features,
-        component_path_input_features, component_path_preceding_feature,
-        component_path_terminal_feature, component_profile_source_at,
-        component_reference_curve_path_at, consecutive_legacy_profile_line_endpoints,
-        constraint_midplane_frame, constraint_reference_plane_frame,
-        coordinate_centered_line_endpoints, coordinate_circle_radius,
-        coordinate_marker_local_links, coordinate_roster_arc_center,
+        compact_legacy_selected_axis_endpoint_indices, compact_line_chain_addresses,
+        compact_line_region_addresses, compact_offset_plane_source,
+        compact_profile_reference_plane_source, compact_radial_circle_index,
+        compact_reference_plane_frame, compact_reference_plane_source,
+        compact_single_face_reference_path_at, compact_single_face_reference_record_at,
+        compact_sketch_surface_component_path_at, compact_surface_selection_at,
+        complete_ordered_compact_line_profile, component_face_reference_at,
+        component_face_reference_in_record, component_path_features, component_path_input_features,
+        component_path_preceding_feature, component_path_terminal_feature,
+        component_profile_source_at, component_reference_curve_path_at,
+        consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
+        constraint_reference_plane_frame, coordinate_centered_line_endpoints,
+        coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, coordinate_roster_endpoint_offset,
         coordinate_roster_full_circle, cosmetic_thread_cylinder_reference_at,
         cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
@@ -1734,13 +1734,13 @@ mod marker_tests {
         packed_legacy_curve_endpoint_indices, patch_spatial_vertex, plane_intersection_axis_frame,
         plane_intersection_axis_sources, principal_sketch_frame, profile_roster_construction_axis,
         profile_roster_origin_axis_endpoints, profile_roster_principal_axis_endpoints,
-        reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
-        resolve_scalar_operand_markers, resolve_two_center_semicircle_profile,
-        revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
-        roster_curve_endpoint_markers, select_reference_plane_frame_source,
-        sketch_block_identity_normalization_origin, sketch_block_record_origin,
-        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        structured_offset_plane_sources, surface_reference_matches_at,
+        radial_dimension_radius, reconcile_reference_plane_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        resolve_two_center_semicircle_profile, revolution_line_reference_inputs,
+        revolution_operation, revolution_temporary_axis, roster_curve_endpoint_markers,
+        select_reference_plane_frame_source, sketch_block_identity_normalization_origin,
+        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, structured_offset_plane_sources, surface_reference_matches_at,
         surface_selection_producer_features, tangent_bounded_curve,
         terminal_extended_profile_point_coordinates, terminal_repeated_radial_circle_pairs,
         unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
@@ -1756,6 +1756,9 @@ mod marker_tests {
         FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
         FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchInputLink,
         SketchRelationKind,
+    };
+    use cadmpeg_ir::features::{
+        DesignParameter, DimensionDisplay, FeatureId, ParameterId, ParameterValue,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
@@ -8369,13 +8372,48 @@ mod marker_tests {
 
         for construction in [false, true] {
             let mut payload = marker(construction);
-            assert_eq!(compact_legacy_radial_circle_index(&payload, 0), Some(9));
+            assert_eq!(compact_radial_circle_index(&payload, 0), Some(9));
             payload[58..60].copy_from_slice(&10u16.to_le_bytes());
-            assert_eq!(compact_legacy_radial_circle_index(&payload, 0), None);
+            assert_eq!(compact_radial_circle_index(&payload, 0), None);
         }
+        let mut extended_envelope = marker(false);
+        extended_envelope[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert_eq!(compact_radial_circle_index(&extended_envelope, 0), Some(9));
         let mut terminal = marker(false);
         terminal.truncate(102);
-        assert_eq!(compact_legacy_radial_circle_index(&terminal, 0), Some(9));
+        assert_eq!(compact_radial_circle_index(&terminal, 0), Some(9));
+    }
+
+    #[test]
+    fn radial_dimensions_normalize_radius_and_diameter_displays() {
+        let parameter = |display, value| DesignParameter {
+            id: ParameterId("radial".into()),
+            owner: Some(FeatureId("sketch".into())),
+            ordinal: 0,
+            name: "radial".into(),
+            expression: String::new(),
+            display,
+            value: Some(ParameterValue::Length(Length(value))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+
+        assert_eq!(
+            radial_dimension_radius(&parameter(Some(DimensionDisplay::Radius), 2.0)),
+            Some(2.0)
+        );
+        assert_eq!(
+            radial_dimension_radius(&parameter(Some(DimensionDisplay::Diameter), 4.0)),
+            Some(2.0)
+        );
+        assert_eq!(radial_dimension_radius(&parameter(None, 2.0)), None);
+        assert_eq!(
+            radial_dimension_radius(&parameter(Some(DimensionDisplay::Radius), -2.0)),
+            None
+        );
     }
 
     #[test]
@@ -31991,8 +32029,9 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     }
 }
 
-fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
-    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER) {
+fn compact_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
+    let marker = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len());
+    if marker != Some(LEGACY_SKETCH_MARKER) && marker != Some(LEGACY_EXTENDED_SKETCH_MARKER) {
         return None;
     }
     let ordinary = matches!(marker_native_code(payload, offset), Some(1 | 2))
@@ -32001,7 +32040,8 @@ fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) -> Option<u
         && payload.get(offset + 31..offset + 39)
             == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes());
-    let construction = marker_native_code(payload, offset) == Some(7)
+    let construction = marker == Some(LEGACY_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(7)
         && payload.get(offset + 5..offset + 13)
             == Some(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff])
         && marker_profile_curve_role(payload, offset) == Some(2)
@@ -32031,10 +32071,16 @@ fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) -> Option<u
     (first == second).then_some(usize::from(first))
 }
 
+fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
+    (payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER))
+        .then(|| compact_radial_circle_index(payload, offset))
+        .flatten()
+}
+
 fn radial_circle_records(payload: &[u8]) -> Vec<(usize, usize, bool)> {
     (0..payload.len().saturating_sub(LEGACY_SKETCH_MARKER.len() - 1))
         .filter_map(|offset| {
-            let radial = compact_legacy_radial_circle_index(payload, offset)
+            let radial = compact_radial_circle_index(payload, offset)
                 .or_else(|| extended_terminal_repeated_radial_circle_index(payload, offset))?;
             Some((
                 offset,
@@ -32138,8 +32184,20 @@ fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> 
     })
 }
 
-/// Materialize marker-only circles whose radial witnesses have exact diameter
-/// parameters, including repeated circles constrained to the same diameter.
+fn radial_dimension_radius(parameter: &cadmpeg_ir::features::DesignParameter) -> Option<f64> {
+    let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let radius = match parameter.display {
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        None => return None,
+    };
+    (radius.is_finite() && radius > 0.0).then_some(radius)
+}
+
+/// Materialize marker-only circles whose radial witnesses have exact radial
+/// dimensions, including repeated circles constrained to the same radius.
 pub(crate) fn project_marker_dimensioned_circles(
     entities: &mut Vec<SketchEntity>,
     sketches: &mut [Sketch],
@@ -32172,22 +32230,14 @@ pub(crate) fn project_marker_dimensioned_circles(
         else {
             continue;
         };
-        let diameters = parameters
+        let radial_dimensions = parameters
             .iter()
             .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
             .filter_map(|parameter| {
-                let cadmpeg_ir::features::ParameterValue::Length(diameter) =
-                    parameter.value.as_ref()?
-                else {
-                    return None;
-                };
-                (parameter.display == Some(cadmpeg_ir::features::DimensionDisplay::Diameter)
-                    && diameter.0.is_finite()
-                    && diameter.0 > 0.0)
-                    .then_some((parameter, diameter.0 * 0.5))
+                radial_dimension_radius(parameter).map(|radius| (parameter, radius))
             })
             .collect::<Vec<_>>();
-        if diameters.is_empty() {
+        if radial_dimensions.is_empty() {
             continue;
         }
         let owned_lanes = lanes
@@ -32257,7 +32307,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 .filter_map(|(center_index, center)| {
                     let [cu, cv] = center.coordinates_m?;
                     let later = &roster[center_index + 1..];
-                    diameters
+                    radial_dimensions
                         .iter()
                         .all(|(_, radius)| {
                             later
@@ -32331,7 +32381,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                             native_ref: carrier_radius
                                 .is_some_and(|carrier| same_dimension_length(carrier, radius))
                                 .then(|| carrier_ref.clone()),
-                            geometry_ref: diameters
+                            geometry_ref: radial_dimensions
                                 .iter()
                                 .find(|(_, candidate)| same_dimension_length(*candidate, radius))
                                 .and_then(|(parameter, _)| parameter.native_ref.clone()),
@@ -32368,6 +32418,18 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter(move |(offset, ..)| *offset >= start && *offset <= end)
                     .map(move |record| (*lane, *record))
             })
+            .filter(|(lane, (offset, ..))| {
+                let lane_key = lane
+                    .id
+                    .rsplit_once('#')
+                    .map_or(lane.id.as_str(), |(_, key)| key);
+                let carrier_ref = format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}");
+                entities.iter().any(|entity| {
+                    entity.sketch == *sketch_id
+                        && entity.native_ref.as_deref() == Some(carrier_ref.as_str())
+                        && matches!(entity.geometry, SketchGeometry::Native { .. })
+                })
+            })
             .collect::<Vec<_>>();
         let repeated_radial_sets = radial_records
             .iter()
@@ -32382,7 +32444,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter(|marker| marker.coordinates_m.is_some())
                     .collect::<Vec<_>>();
                 roster.sort_unstable_by_key(|marker| marker.offset);
-                diameters
+                radial_dimensions
                     .iter()
                     .filter_map(|(parameter, radius)| {
                         let pairs = terminal_repeated_radial_circle_pairs(
@@ -32463,6 +32525,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             }
         }
         if !radial_records.is_empty() {
+            let radial_record_count = radial_records.len();
             let mut resolved = Vec::with_capacity(radial_records.len());
             for (lane, (offset, radial_index, construction)) in radial_records {
                 let mut roster = lane
@@ -32485,7 +32548,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter_map(|marker| {
                         let [cu, cv] = marker.coordinates_m?;
                         let radius = (ru - cu).hypot(rv - cv) * NATIVE_TO_IR;
-                        let parameters = diameters
+                        let parameters = radial_dimensions
                             .iter()
                             .filter(|(_, candidate)| same_dimension_length(*candidate, radius))
                             .collect::<Vec<_>>();
@@ -32515,7 +32578,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     *radius,
                 ));
             }
-            if !resolved.is_empty() {
+            if resolved.len() == radial_record_count {
                 let transformed = resolved
                     .iter()
                     .filter_map(|record| {
@@ -32636,13 +32699,13 @@ pub(crate) fn project_marker_dimensioned_circles(
         let [center] = centers.as_slice() else {
             continue;
         };
-        if radial.len() != diameters.len() {
+        if radial.len() != radial_dimensions.len() {
             continue;
         }
         let [cu, cv] = center
             .coordinates_m
             .expect("coordinate markers carry coordinates");
-        let matches = diameters
+        let matches = radial_dimensions
             .iter()
             .map(|(_, radius)| {
                 radial
@@ -32683,7 +32746,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) else {
             continue;
         };
-        for (parameter, radius) in diameters {
+        for (parameter, radius) in radial_dimensions {
             if entities.iter().any(|entity| {
                 entity.sketch == *sketch_id
                     && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
@@ -40826,7 +40889,8 @@ mod profile_join_tests {
         unique_profile_line_point_locus, unique_profile_point_line_entity,
         unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
         unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
-        MarkerTransform, COMPACT_EDGE_VECTOR_MARKER, LEGACY_SKETCH_MARKER,
+        MarkerTransform, COMPACT_EDGE_VECTOR_MARKER, LEGACY_EXTENDED_SKETCH_MARKER,
+        LEGACY_SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -41461,7 +41525,7 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn marker_center_and_radial_points_project_complete_diameter_circles() {
+    fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         let sketch_id = SketchId("sketch".into());
         let feature = Feature {
             id: FeatureId("feature".into()),
@@ -41508,12 +41572,30 @@ mod profile_join_tests {
         };
         let mut center = marker("center", Some([0.0, 0.0]));
         center.kind = SketchInputKind::LineOrCircle;
-        let first = marker("first", Some([0.005, 0.0]));
-        let second = marker("second", Some([0.0, 0.008]));
+        let mut first = marker("first", Some([0.005, 0.0]));
+        first.offset = 100;
+        let mut second = marker("second", Some([0.0, 0.008]));
+        second.offset = 200;
+        let mut native_payload = vec![0; 102];
+        native_payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        native_payload[5..13].fill(0xff);
+        native_payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        native_payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        native_payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        native_payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        native_payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        native_payload[56..60].copy_from_slice(&[1, 0, 1, 0]);
+        native_payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        native_payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        native_payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+        for at in (78..94).step_by(4) {
+            native_payload[at..at + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload,
             classes: Vec::new(),
             names: Vec::new(),
             scalars: Vec::new(),
