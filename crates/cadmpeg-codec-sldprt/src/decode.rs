@@ -3119,6 +3119,7 @@ mod design_loss_tests {
             feature(
                 4,
                 FeatureDefinition::Shell {
+                    bodies: None,
                     removed_faces: FaceSelection::Faces(Vec::new()),
                     thickness: Some(Length(1.0)),
                     outward: Some(false),

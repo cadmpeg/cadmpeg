@@ -451,8 +451,8 @@ fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<FixedScalarFram
         .filter_map(|pair| {
             let start = pair[0];
             let frame_length = pair[1].checked_sub(start)?;
-            matches!(frame_length, 100 | 104 | 105).then_some(())?;
-            if frame_length == 100 {
+            matches!(frame_length, 100 | 103 | 104 | 105).then_some(())?;
+            if frame_length == 100 || frame_length == 103 {
                 let (class_tag, after_tag) =
                     lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
                 if after_tag != start + 7
@@ -462,6 +462,18 @@ fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<FixedScalarFram
                     || bytes.get(start + 19..start + 24) != Some(&[1, 1, 0, 0, 0])
                     || bytes.get(start + 29..start + 35) != Some(&[0; 6])
                     || bytes.get(start + 36..start + 40) != Some(&[0; 4])
+                {
+                    return None;
+                }
+                if frame_length == 103
+                    && (class_tag != "354"
+                        || marked_record_reference(bytes, start + 24).is_none()
+                        || marked_record_reference(bytes, start + 48).is_none()
+                        || marked_record_reference(bytes, start + 67) != u32_at(bytes, start + 25)
+                        || bytes.get(start + 78..start + 80) != Some(&[0; 2])
+                        || marked_record_reference(bytes, start + 80).is_none()
+                        || bytes.get(start + 85..start + 92) != Some(&[0; 7])
+                        || marked_record_reference(bytes, start + 92) != u32_at(bytes, start + 25))
                 {
                     return None;
                 }
@@ -528,19 +540,44 @@ pub(crate) fn exact_direct_face_operation(
                 thickness_offset: scalar.value_offset,
             })
         }
-        DesignFeatureFamily::Shell
-            if parameter_scope_payload_length(scope) == Some(268)
-                && scope.reference_members.len() == 3
-                && matches!(bytes.get(start + 25), Some(0 | 1))
-                && bytes.get(start + 26) == Some(&0)
-                && bytes.get(start + 27) == Some(&1)
-                && u32_at(bytes, start + 51) == Some(1)
-                && bytes.get(start + 55) == Some(&1) =>
-        {
-            let thickness_record_index = u32_at(bytes, start + 28)?;
-            if scope.reference_members.last() != Some(&thickness_record_index)
-                || u32_at(bytes, start + 56) != scope.reference_members.first().copied()
-            {
+        DesignFeatureFamily::Shell if scope.reference_members.len() == 3 => {
+            let (thickness_record_index, outward, outward_offset) =
+                match parameter_scope_payload_length(scope) {
+                    Some(268)
+                        if matches!(bytes.get(start + 25), Some(0 | 1))
+                            && bytes.get(start + 26) == Some(&0)
+                            && bytes.get(start + 27) == Some(&1)
+                            && u32_at(bytes, start + 51) == Some(1)
+                            && bytes.get(start + 55) == Some(&1)
+                            && u32_at(bytes, start + 56)
+                                == scope.reference_members.first().copied() =>
+                    {
+                        (
+                            u32_at(bytes, start + 28)?,
+                            bytes[start + 25] != 0,
+                            start + 25,
+                        )
+                    }
+                    Some(258)
+                        if bytes.get(start + 11..start + 21) == Some(&[0; 10])
+                            && matches!(bytes.get(start + 21), Some(0 | 1))
+                            && bytes.get(start + 22) == Some(&1)
+                            && bytes.get(start + 27..start + 42) == Some(&[0; 15])
+                            && u32_at(bytes, start + 42) == Some(1)
+                            && bytes.get(start + 46) == Some(&1)
+                            && u32_at(bytes, start + 47)
+                                == scope.reference_members.first().copied()
+                            && bytes.get(start + 51..start + 57) == Some(&[0; 6]) =>
+                    {
+                        (
+                            u32_at(bytes, start + 23)?,
+                            bytes[start + 21] != 0,
+                            start + 21,
+                        )
+                    }
+                    _ => return None,
+                };
+            if scope.reference_members.last() != Some(&thickness_record_index) {
                 return None;
             }
             let scalar = exact_fixed_scalar(bytes, thickness_record_index)?;
@@ -551,8 +588,8 @@ pub(crate) fn exact_direct_face_operation(
                 thickness: scalar.value,
                 thickness_record_index,
                 thickness_offset: scalar.value_offset,
-                outward: bytes[start + 25] != 0,
-                outward_offset: u64::try_from(start + 25).ok()?,
+                outward,
+                outward_offset: u64::try_from(outward_offset).ok()?,
             })
         }
         _ => None,

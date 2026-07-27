@@ -2731,6 +2731,7 @@ fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
         return None;
     }
     Some(FeatureDefinition::Shell {
+        bodies: None,
         removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection.id.clone()),
         thickness: Some(Length(thickness.abs())),
         outward: Some(if kind == "Part::Thickness" {

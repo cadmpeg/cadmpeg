@@ -1207,7 +1207,7 @@ pub(crate) fn project_shell(
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, Length};
 
     let DesignDirectFaceOperation::Shell {
         thickness, outward, ..
@@ -1215,11 +1215,16 @@ pub(crate) fn project_shell(
     else {
         return None;
     };
-    let removed_faces = direct_face_selection(scope, operands).or_else(|| {
-        let group = single_operand_group(groups, scope, ROLE_0X10)?;
-        Some(FaceSelection::Native(group.id.clone()))
-    })?;
+    let bodies = single_operand_group(groups, scope, ROLE_0X4)
+        .map(|group| BodySelection::Native(group.id.clone()));
+    let removed_faces = direct_face_selection(scope, operands)
+        .or_else(|| {
+            let group = single_operand_group(groups, scope, ROLE_0X10)?;
+            Some(FaceSelection::Native(group.id.clone()))
+        })
+        .or_else(|| bodies.is_some().then(|| FaceSelection::Faces(Vec::new())))?;
     Some(FeatureDefinition::Shell {
+        bodies,
         removed_faces,
         thickness: Some(Length(*thickness * 10.0)),
         outward: Some(*outward),

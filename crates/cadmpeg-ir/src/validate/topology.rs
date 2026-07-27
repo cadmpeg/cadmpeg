@@ -2610,10 +2610,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Shell {
+                bodies,
                 removed_faces,
                 thickness,
                 ..
             } => {
+                if let Some(bodies) = bodies {
+                    body_selections.push(bodies);
+                }
                 face_selections.push(removed_faces);
                 if thickness.is_some_and(|value| !positive_feature_length(value)) {
                     feature_geometry_error(findings, feature, "shell thickness is invalid");

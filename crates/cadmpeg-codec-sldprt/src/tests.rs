@@ -3646,6 +3646,7 @@ fn encoder_writes_source_less_native_features() {
             flip_direction: false,
         },
         FeatureDefinition::Shell {
+            bodies: None,
             removed_faces: FaceSelection::Resolved {
                 faces: vec![ir.model.faces[0].id.clone()],
                 native: "face-a".into(),

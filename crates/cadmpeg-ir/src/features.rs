@@ -878,6 +878,9 @@ pub enum FeatureDefinition {
     },
     /// Thin-wall shell operation.
     Shell {
+        /// Bodies explicitly selected as shell inputs, when the source names them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bodies: Option<BodySelection>,
         /// Faces removed to open the shell.
         removed_faces: FaceSelection,
         /// Wall thickness left after shelling, when resolved.

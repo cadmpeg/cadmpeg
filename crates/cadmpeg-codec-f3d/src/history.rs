@@ -654,6 +654,10 @@ pub(crate) fn bind_feature_body_selections(
             FeatureDefinition::MoveBody { bodies, .. } => {
                 (bodies, BodySelectionProof::TopologyStableRevision)
             }
+            FeatureDefinition::Shell {
+                bodies: Some(bodies),
+                ..
+            } => (bodies, BodySelectionProof::RevisedInput),
             FeatureDefinition::SplitBody { targets, .. } => {
                 (targets, BodySelectionProof::RevisedInput)
             }

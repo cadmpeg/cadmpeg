@@ -3597,6 +3597,69 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         }) if native == "shell-group"
     ));
+    let compact_shell_at = bytes.len();
+    let mut compact_shell = vec![0; 268];
+    compact_shell[21] = 1;
+    compact_shell[22] = 1;
+    compact_shell[23..27].copy_from_slice(&9_000u32.to_le_bytes());
+    compact_shell[42..46].copy_from_slice(&1u32.to_le_bytes());
+    compact_shell[46] = 1;
+    compact_shell[47..51].copy_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_shell);
+    let mut compact_shell_thickness = vec![0; 103];
+    compact_shell_thickness[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_shell_thickness[4..7].copy_from_slice(b"354");
+    compact_shell_thickness[7..11].copy_from_slice(&9_000u32.to_le_bytes());
+    compact_shell_thickness[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    compact_shell_thickness[24] = 1;
+    compact_shell_thickness[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+    compact_shell_thickness[40..48].copy_from_slice(&0.25f64.to_le_bytes());
+    compact_shell_thickness[48] = 1;
+    compact_shell_thickness[49..53].copy_from_slice(&9_001u32.to_le_bytes());
+    compact_shell_thickness[59..63].copy_from_slice(&10u32.to_le_bytes());
+    compact_shell_thickness[67] = 1;
+    compact_shell_thickness[68..72].copy_from_slice(&scope.record_index.to_le_bytes());
+    compact_shell_thickness[80] = 1;
+    compact_shell_thickness[81..85].copy_from_slice(&9_002u32.to_le_bytes());
+    compact_shell_thickness[92] = 1;
+    compact_shell_thickness[93..97].copy_from_slice(&scope.record_index.to_le_bytes());
+    compact_shell_thickness.extend_from_slice(&3u32.to_le_bytes());
+    compact_shell_thickness.extend_from_slice(b"258");
+    compact_shell_thickness.extend_from_slice(&9_000u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_shell_thickness);
+    let mut compact_shell_scope = DesignParameterScope {
+        byte_offset: compact_shell_at as u64,
+        frame_length: 268,
+        reference_members: vec![200, 201, 9_000],
+        ..shell_scope.clone()
+    };
+    assert!(matches!(
+        exact_direct_face_operation(&bytes, &compact_shell_scope),
+        Some(DesignDirectFaceOperation::Shell {
+            thickness: 0.25,
+            thickness_record_index: 9_000,
+            outward: true,
+            outward_offset,
+            ..
+        }) if outward_offset == (compact_shell_at + 21) as u64
+    ));
+    compact_shell_scope.direct_face_operation =
+        exact_direct_face_operation(&bytes, &compact_shell_scope);
+    shell_group.role = 0x0000_0004_0000_0000;
+    assert!(matches!(
+        crate::design::feature_project::project_shell(
+            &compact_shell_scope,
+            &[],
+            std::slice::from_ref(&shell_group)
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Shell {
+            bodies: Some(cadmpeg_ir::features::BodySelection::Native(body)),
+            removed_faces: cadmpeg_ir::features::FaceSelection::Faces(removed),
+            thickness: Some(cadmpeg_ir::features::Length(2.5)),
+            outward: Some(true),
+            ..
+        }) if body == "shell-group" && removed.is_empty()
+    ));
     offset_scope.direct_face_operation = exact_direct_face_operation(&bytes, &offset_scope);
     let mut offset_group = thicken_group.clone();
     offset_group.id = "offset-group".into();

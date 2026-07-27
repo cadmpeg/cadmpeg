@@ -611,6 +611,18 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     edge_selection(&group.edges);
                 }
             }
+            FeatureDefinition::Shell {
+                bodies,
+                removed_faces,
+                ..
+            } => {
+                if bodies.as_ref().is_some_and(|bodies| {
+                    matches!(bodies, BodySelection::Native(_) | BodySelection::Unresolved)
+                }) {
+                    gaps.body_selections += 1;
+                }
+                face_selection(removed_faces);
+            }
             FeatureDefinition::MoveFace { faces, .. } => face_selection(faces),
             _ => {}
         }

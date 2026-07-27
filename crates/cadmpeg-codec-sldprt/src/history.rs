@@ -6200,6 +6200,7 @@ fn project_shell(feature: &Feature) -> FeatureDefinition {
         .get("Outward")
         .and_then(|value| parse_bool(value));
     FeatureDefinition::Shell {
+        bodies: None,
         removed_faces: feature
             .properties
             .get("RemovedFaces")
@@ -11226,6 +11227,7 @@ pub fn sync_neutral_features(
                 )));
             }
             FeatureDefinition::Shell {
+                bodies,
                 removed_faces,
                 thickness,
                 outward,
@@ -11234,7 +11236,8 @@ pub fn sync_neutral_features(
                 resolve_intersections,
                 allow_self_intersections,
             } => {
-                if mode.is_some()
+                if bodies.is_some()
+                    || mode.is_some()
                     || join.is_some()
                     || resolve_intersections.is_some()
                     || allow_self_intersections.is_some()
