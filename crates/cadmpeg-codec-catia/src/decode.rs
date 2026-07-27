@@ -321,7 +321,7 @@ fn transfer_formula_parameters(
         .iter()
         .map(|entity| (entity.id.as_str(), entity))
         .collect::<HashMap<_, _>>();
-    let mut candidates = BTreeMap::<ParameterId, DesignParameter>::new();
+    let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting = BTreeSet::<ParameterId>::new();
 
     for formula_entity in &native.entity_records {
@@ -386,24 +386,27 @@ fn transfer_formula_parameters(
                 break;
             };
             dependencies.push(id.clone());
-            transferred.push(DesignParameter {
-                id,
-                owner: None,
-                ordinal,
-                name: parameter.name.value.clone(),
-                expression: match &value {
-                    ParameterValue::Length(Length(value)) => format!("{value} mm"),
-                    ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
-                    ParameterValue::Real(value) => value.to_string(),
-                    ParameterValue::Integer(value) => value.to_string(),
-                    ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
+            transferred.push(FormulaParameterCandidate {
+                parameter: DesignParameter {
+                    id,
+                    owner: None,
+                    ordinal,
+                    name: parameter.name.value.clone(),
+                    expression: match &value {
+                        ParameterValue::Length(Length(value)) => format!("{value} mm"),
+                        ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
+                        ParameterValue::Real(value) => value.to_string(),
+                        ParameterValue::Integer(value) => value.to_string(),
+                        ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
+                    },
+                    display: None,
+                    value: Some(value),
+                    dependencies: Vec::new(),
+                    properties: BTreeMap::new(),
+                    pmi: None,
+                    native_ref: Some(entity.id.clone()),
                 },
-                display: None,
-                value: Some(value),
-                dependencies: Vec::new(),
-                properties: BTreeMap::new(),
-                pmi: None,
-                native_ref: Some(entity.id.clone()),
+                formula_output: false,
             });
         }
         if !complete
@@ -420,31 +423,37 @@ fn transfer_formula_parameters(
         else {
             continue;
         };
-        transferred.push(DesignParameter {
-            id: neutral_parameter_id(&output.id),
-            owner: None,
-            ordinal,
-            name: output_value.name.value.clone(),
-            expression: expression.expression.value.clone(),
-            display: None,
-            value: match value {
-                TypedParameterEvaluation::Unset => None,
-                TypedParameterEvaluation::Value(value) => Some(value),
+        transferred.push(FormulaParameterCandidate {
+            parameter: DesignParameter {
+                id: neutral_parameter_id(&output.id),
+                owner: None,
+                ordinal,
+                name: output_value.name.value.clone(),
+                expression: expression.expression.value.clone(),
+                display: None,
+                value: match value {
+                    TypedParameterEvaluation::Unset => None,
+                    TypedParameterEvaluation::Value(value) => Some(value),
+                },
+                dependencies,
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: Some(output.id.clone()),
             },
-            dependencies,
-            properties: BTreeMap::new(),
-            pmi: None,
-            native_ref: Some(output.id.clone()),
+            formula_output: true,
         });
 
-        for parameter in transferred {
-            match candidates.get(&parameter.id) {
-                Some(existing) if existing != &parameter => {
-                    conflicting.insert(parameter.id);
+        for candidate in transferred {
+            match candidates.get(&candidate.parameter.id) {
+                Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
+                    conflicting.insert(candidate.parameter.id);
+                }
+                Some(existing) if !existing.formula_output && candidate.formula_output => {
+                    candidates.insert(candidate.parameter.id.clone(), candidate);
                 }
                 Some(_) => {}
                 None => {
-                    candidates.insert(parameter.id.clone(), parameter);
+                    candidates.insert(candidate.parameter.id.clone(), candidate);
                 }
             }
         }
@@ -458,6 +467,7 @@ fn transfer_formula_parameters(
             .iter()
             .filter(|(_, parameter)| {
                 parameter
+                    .parameter
                     .dependencies
                     .iter()
                     .any(|dependency| !candidates.contains_key(dependency))
@@ -471,7 +481,28 @@ fn transfer_formula_parameters(
             candidates.remove(&id);
         }
     }
-    let mut parameters = candidates.into_values().collect::<Vec<_>>();
+    let mut derivable = BTreeSet::new();
+    loop {
+        let previous_len = derivable.len();
+        for (id, candidate) in &candidates {
+            if candidate
+                .parameter
+                .dependencies
+                .iter()
+                .all(|dependency| derivable.contains(dependency))
+            {
+                derivable.insert(id.clone());
+            }
+        }
+        if derivable.len() == previous_len {
+            break;
+        }
+    }
+    candidates.retain(|id, _| derivable.contains(id));
+    let mut parameters = candidates
+        .into_values()
+        .map(|candidate| candidate.parameter)
+        .collect::<Vec<_>>();
     parameters.sort_by_key(|parameter| parameter.ordinal);
     for parameter in &parameters {
         if parameter.dependencies.is_empty() {
@@ -486,6 +517,34 @@ fn transfer_formula_parameters(
     let transferred = parameters.len();
     ir.model.parameters.extend(parameters);
     transferred
+}
+
+struct FormulaParameterCandidate {
+    parameter: DesignParameter,
+    formula_output: bool,
+}
+
+fn formula_parameter_candidates_agree(
+    existing: &FormulaParameterCandidate,
+    candidate: &FormulaParameterCandidate,
+) -> bool {
+    match (existing.formula_output, candidate.formula_output) {
+        (true, true) | (false, false) => existing.parameter == candidate.parameter,
+        (true, false) => formula_parameter_matches_input(&existing.parameter, &candidate.parameter),
+        (false, true) => formula_parameter_matches_input(&candidate.parameter, &existing.parameter),
+    }
+}
+
+fn formula_parameter_matches_input(formula: &DesignParameter, input: &DesignParameter) -> bool {
+    formula.id == input.id
+        && formula.owner == input.owner
+        && formula.ordinal == input.ordinal
+        && formula.name == input.name
+        && formula.display == input.display
+        && formula.value == input.value
+        && formula.properties == input.properties
+        && formula.pmi == input.pmi
+        && formula.native_ref == input.native_ref
 }
 
 enum TypedParameterEvaluation {

@@ -1972,6 +1972,127 @@ fn standard_catpart_with_typed_formula_inputs(
     file
 }
 
+fn standard_catpart_with_formula_chain(cyclic: bool) -> Vec<u8> {
+    let definition = |ordinal: u32| {
+        let mut bytes = vec![0x00, 0x08, 0x32];
+        bytes.extend_from_slice(&ordinal.to_le_bytes());
+        bytes.push(0x32);
+        bytes.extend_from_slice(&ordinal.to_le_bytes());
+        bytes
+    };
+    let expression_value = |ordinals: [u32; 6]| {
+        let mut bytes = Vec::new();
+        for ordinal in ordinals {
+            bytes.push(0x32);
+            bytes.extend_from_slice(&ordinal.to_le_bytes());
+        }
+        bytes.push(0xfe);
+        bytes
+    };
+    let parameter = |entity_id: u32, name: u32, binding: u32, value: f64| {
+        let mut payload = vec![0x32];
+        payload.extend_from_slice(&name.to_le_bytes());
+        payload.push(0x32);
+        payload.extend_from_slice(&binding.to_le_bytes());
+        payload.push(0xfe);
+        let mut entity =
+            entity_table_record_with_definition_and_value(entity_id, &[0x01], &payload);
+        entity[6] = 2;
+        entity.extend_from_slice(&[0x85, 0x96, 0x82, 0x6a, 0xe6]);
+        entity.extend_from_slice(&value.to_bits().to_le_bytes());
+        entity.extend_from_slice(&[0x81, 0x52]);
+        let len = u32::try_from(entity.len()).expect("bounded parameter entity");
+        entity[2..6].copy_from_slice(&len.to_le_bytes());
+        entity
+    };
+    let formula_object = |owner: u8, expression: u8, output: u8| {
+        object_graph_record(
+            &[0x04, 0x01, 0x81, 0x84],
+            &[
+                0xf9,
+                0x84,
+                0x81,
+                0x80 + owner,
+                0x81,
+                0x80 + expression,
+                0x81,
+                output,
+                0xd1,
+                0x80,
+                0xfe,
+            ],
+        )
+    };
+    let empty_object = || object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]);
+
+    let mut stream = entity_table_record_with_definition_and_value(1, &definition(4), &[0xfe]);
+    stream.extend(entity_table_record_with_definition_and_value(
+        2,
+        &definition(5),
+        &expression_value([6, 7, 8, 9, 10, 11]),
+    ));
+    stream.extend(parameter(3, 12, 13, 1.0));
+    stream.extend(parameter(4, 14, 15, 2.0));
+    stream.extend(entity_table_record_with_definition_and_value(
+        5,
+        &definition(4),
+        &[0xfe],
+    ));
+    stream.extend(entity_table_record_with_definition_and_value(
+        6,
+        &definition(5),
+        &expression_value([16, 17, 8, 18, 10, 11]),
+    ));
+    stream.extend(parameter(7, 19, 20, 3.0));
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&[
+        formula_object(1, 2, 4),
+        empty_object(),
+        empty_object(),
+        empty_object(),
+        formula_object(5, 6, 7),
+        empty_object(),
+        empty_object(),
+    ]));
+    let first_expression = if cyclic { "#3_ /4+1mm" } else { "#1_ /2+1mm" };
+    let first_placeholder = if cyclic { "#3_ " } else { "#1_ " };
+    let first_signature = if cyclic {
+        "(#3_ : #In LENGTH) : LENGTH"
+    } else {
+        "(#1_ : #In LENGTH) : LENGTH"
+    };
+    let catalog = vec![
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Formula",
+        "body",
+        first_placeholder,
+        first_expression,
+        "param",
+        first_signature,
+        "opened",
+        "RelationExpFct",
+        "Input",
+        "#1_ /2",
+        "Intermediate",
+        "#2_ /3",
+        "#2_ ",
+        "#2_ /3+1mm",
+        "(#2_ : #In LENGTH) : LENGTH",
+        "Final",
+        "#3_ /4",
+    ];
+    stream.extend(catalog_stream(&catalog));
+
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_crossing_entity_value_packet() -> Vec<u8> {
     let value = [
         0x32, 4, 0, 0, 0, 0x81, 0x82, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6, 0x32, 4, 0, 0, 0,
@@ -6311,6 +6432,39 @@ fn decode_rejects_a_multi_input_formula_missing_a_declared_input() {
             &DecodeOptions::default(),
         )
         .expect("decode incomplete multi-input formula");
+
+    assert!(decoded.ir.model.parameters.is_empty());
+}
+
+#[test]
+fn decode_transfers_a_chained_formula_definition_once() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_chain(false)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode formula chain");
+    let [input, intermediate, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("formula chain parameters")
+    };
+
+    assert_eq!(intermediate.expression, "#1_ /2+1mm");
+    assert_eq!(intermediate.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(output.expression, "#2_ /3+1mm");
+    assert_eq!(output.dependencies, std::slice::from_ref(&intermediate.id));
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+        .findings
+        .is_empty());
+}
+
+#[test]
+fn decode_rejects_a_cyclic_formula_component() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_chain(true)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode cyclic formula component");
 
     assert!(decoded.ir.model.parameters.is_empty());
 }
