@@ -4819,6 +4819,15 @@ fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
 }
 
 #[test]
+fn container_resource_limits_match_the_declared_f3d_profile() {
+    assert_eq!(crate::container::MAX_ARCHIVE_BYTES, 1024 * 1024 * 1024);
+    assert_eq!(
+        crate::container::MAX_INFLATED_ENTRY_BYTES,
+        512 * 1024 * 1024
+    );
+}
+
+#[test]
 fn oversized_nested_protein_entry_is_rejected_before_allocation() {
     let target = b"AssetData/InstanceProperties.bin";
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));

@@ -19,9 +19,9 @@ use zip::CompressionMethod;
 use crate::asm_header;
 
 /// Maximum `.f3d` archive accepted by the container scanner.
-const INPUT_CAP: u64 = 256 * 1024 * 1024;
+const INPUT_CAP: u64 = 1024 * 1024 * 1024;
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = INPUT_CAP;
-pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
+pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
 
 const EXPAND_CHUNK: usize = 16 * 1024;
 
