@@ -6425,6 +6425,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         decoded.report.coverage["decoded_unset_entity_suffix_value_count"],
         0
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_control_entity_suffix_value_count"],
+        0
+    );
     let native =
         crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
             .expect("load generic entity suffix");
@@ -6468,6 +6472,36 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             0x7f, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x49,
         ]));
     assert_eq!(invalid_prefix.entity_records[0].suffix_value, None);
+
+    let control = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parameter_value(&[
+                0x84, 0x96, 0x81, 0xa6, 0xe8,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generic control entity suffix");
+    assert_eq!(
+        control.report.coverage["decoded_control_entity_suffix_value_count"],
+        1
+    );
+    let control =
+        crate::native::CatiaNative::load(control.ir.native.namespace("catia").expect("namespace"))
+            .expect("load generic control suffix");
+    assert!(matches!(
+        control.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete control suffix")
+            .evaluation,
+        CatiaEntityEvaluation::ControlE8
+    ));
+
+    let malformed_control =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x84, 0x96, 0x81, 0xa6, 0xe8, 0x81,
+        ]));
+    assert_eq!(malformed_control.entity_records[0].suffix_value, None);
 
     let mut bare_scalar = vec![0x84, 0x96, 0x82, 0xb1, 0xe6];
     bare_scalar.extend_from_slice(&6.75_f64.to_bits().to_le_bytes());
@@ -6590,6 +6624,19 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&suffix));
     assert!(native.entity_records[0].suffix_value.is_none());
     assert!(native.entity_records[0].parameter_value.is_none());
+
+    let control = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x85, 0x96, 0x82, 0x6a, 0xe8, 0x81, 0x52,
+    ]));
+    assert!(matches!(
+        control.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete control suffix")
+            .evaluation,
+        crate::native::CatiaEntityEvaluation::ControlE8
+    ));
+    assert!(control.entity_records[0].parameter_value.is_none());
 }
 
 #[test]

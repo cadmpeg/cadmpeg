@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 119;
+pub const CATIA_NATIVE_VERSION: u32 = 120;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -717,6 +717,8 @@ pub struct CatiaRelationTypeInput {
 pub enum CatiaEntityEvaluation {
     /// The `E7` form carries no evaluated scalar.
     Unset,
+    /// The `E8` form carries one zero-payload control state.
+    ControlE8,
     /// The `E6` form carries one finite IEEE-754 binary64 scalar.
     Scalar {
         /// Exact stored binary64 bits.
@@ -1416,6 +1418,10 @@ fn parameter_value(
     (suffix_value.prefix_atoms == [5, 22, 2]
         && suffix_value.prefix_code == 0x6a
         && suffix_value.encoding == CatiaEntityEvaluationEncoding::Direct
+        && matches!(
+            suffix_value.evaluation,
+            CatiaEntityEvaluation::Unset | CatiaEntityEvaluation::Scalar { .. }
+        )
         && suffix_value.trailer == [0x81, 0x52])
     .then_some(())?;
     let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
@@ -1441,6 +1447,11 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
     let (evaluation, encoding, trailer_offset) = match *suffix.get(4)? {
         0xe7 => (
             CatiaEntityEvaluation::Unset,
+            CatiaEntityEvaluationEncoding::Direct,
+            5,
+        ),
+        0xe8 => (
+            CatiaEntityEvaluation::ControlE8,
             CatiaEntityEvaluationEncoding::Direct,
             5,
         ),
