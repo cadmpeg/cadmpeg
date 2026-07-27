@@ -2771,6 +2771,20 @@ fn decode_types_class_913_without_an_edge_array() {
             ..
         }])
     ));
+    assert_eq!(
+        result.report.coverage["untransferred_visible_plane_surface_row_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["untransferred_visible_cylinder_surface_row_count"],
+        0
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message.contains(
+            "1 unique VisibGeom surface row(s) were not transferred as carriers and remain \
+             structural namespace records (plane=1).",
+        )
+    }));
 }
 
 #[test]

@@ -862,6 +862,16 @@ fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
     }
 }
 
+const SURFACE_KINDS: [crate::surface::SurfaceKind; 7] = [
+    crate::surface::SurfaceKind::Plane,
+    crate::surface::SurfaceKind::Cylinder,
+    crate::surface::SurfaceKind::Cone,
+    crate::surface::SurfaceKind::TorusOrSphere,
+    crate::surface::SurfaceKind::Spline,
+    crate::surface::SurfaceKind::Fillet,
+    crate::surface::SurfaceKind::Extrusion,
+];
+
 #[derive(Default)]
 struct SurfaceTransferCoverage {
     unique_rows: usize,
@@ -1000,15 +1010,7 @@ fn surface_transfer_coverage(
         ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
         ..SurfaceTransferCoverage::default()
     };
-    for kind in [
-        crate::surface::SurfaceKind::Plane,
-        crate::surface::SurfaceKind::Cylinder,
-        crate::surface::SurfaceKind::Cone,
-        crate::surface::SurfaceKind::TorusOrSphere,
-        crate::surface::SurfaceKind::Spline,
-        crate::surface::SurfaceKind::Fillet,
-        crate::surface::SurfaceKind::Extrusion,
-    ] {
+    for kind in SURFACE_KINDS {
         coverage.by_family.insert(surface_family(kind), (0, 0));
     }
     for row in unique_rows {
@@ -24593,6 +24595,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 format!("transferred_visible_{family}_surface_row_count"),
                 *transferred,
             );
+            coverage.insert(
+                format!("untransferred_visible_{family}_surface_row_count"),
+                rows.saturating_sub(*transferred),
+            );
         }
         coverage.insert(
             "unique_visible_curve_row_count".to_string(),
@@ -27054,13 +27060,23 @@ fn build_report(
     // but could not be transferred, resolved, or evaluated.
     let untransferred_surface_rows = count("untransferred_visible_surface_row_count");
     if untransferred_surface_rows != 0 {
+        let unresolved_families = SURFACE_KINDS
+            .into_iter()
+            .filter_map(|kind| {
+                let family = surface_family(kind);
+                let count = count(&format!("untransferred_visible_{family}_surface_row_count"));
+                (count != 0).then_some(format!("{family}={count}"))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
                 "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
-                 transferred as carriers and remain structural namespace records."
+                 transferred as carriers and remain structural namespace records \
+                 ({unresolved_families})."
             ),
             provenance: None,
         });
