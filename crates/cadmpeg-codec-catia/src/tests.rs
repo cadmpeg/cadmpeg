@@ -6480,6 +6480,34 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         CatiaEntityEvaluation::Unset
     ));
 
+    let mut zero_frame_scalar = vec![0x84, 0x96, 0x82, 0x55, 0xe6];
+    zero_frame_scalar.extend_from_slice(&(-26.703_618_806_753_155_f64).to_bits().to_le_bytes());
+    zero_frame_scalar.extend_from_slice(&[0xfe, 0xf6]);
+    zero_frame_scalar.extend_from_slice(&[0; 16]);
+    let zero_frame_scalar = crate::native::CatiaNative::decode(
+        &standard_catpart_with_parameter_value(&zero_frame_scalar),
+    );
+    let mut zero_frame = vec![0xfe, 0xf6];
+    zero_frame.extend_from_slice(&[0; 16]);
+    assert_eq!(
+        zero_frame_scalar.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete zero-frame scalar suffix")
+            .trailer,
+        zero_frame
+    );
+
+    let mut malformed_zero_frame = vec![0x84, 0x96, 0x82, 0x55, 0xe6];
+    malformed_zero_frame.extend_from_slice(&1.0_f64.to_bits().to_le_bytes());
+    malformed_zero_frame.extend_from_slice(&[0xfe, 0xf6]);
+    malformed_zero_frame.extend_from_slice(&[0; 15]);
+    malformed_zero_frame.push(1);
+    let malformed_zero_frame = crate::native::CatiaNative::decode(
+        &standard_catpart_with_parameter_value(&malformed_zero_frame),
+    );
+    assert_eq!(malformed_zero_frame.entity_records[0].suffix_value, None);
+
     let mut malformed = native;
     malformed.entity_records[0]
         .suffix_value
