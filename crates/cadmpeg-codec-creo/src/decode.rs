@@ -9851,6 +9851,18 @@ fn section_skamp_constraints_for_geometry(
                             entity: sketch_entity_id(sketch, line.entity_id),
                         }
                     }
+                    (kind @ (10 | 11), [item])
+                        if item.sense == 0 && section_skamp_is_arc(definition, item) =>
+                    {
+                        SketchConstraintDefinition::ArcAngle {
+                            entity: sketch_entity_id(sketch, item.entity_id),
+                            angle: Angle(if kind == 10 {
+                                std::f64::consts::FRAC_PI_2
+                            } else {
+                                std::f64::consts::PI
+                            }),
+                        }
+                    }
                     (14, [axis, first, second])
                         if axis.sense == 0
                             && section_skamp_is_line(definition, axis)

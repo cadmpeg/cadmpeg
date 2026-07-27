@@ -98,6 +98,10 @@ fixtures, claims above L1 remain unproven.
   therefore transfer its selected center onto a sense-zero curve. A disabled
   type-three incidence between two emitted sense-zero point entities transfers
   as coincident loci.
+- Unary type-ten and type-eleven incidences on a uniquely established arc
+  transfer as neutral 90-degree and 180-degree fixed arc-angle constraints.
+  Solver activity controls constraint activity, not the stored arc role or
+  fixed angle.
 - A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`

@@ -1424,6 +1424,10 @@ geometry; carrier evaluation is not required to satisfy the disabled tangent
 equation.
 A two-item type-nine incidence with sense zero on two lines makes the lines
 collinear. The line-and-point form maps to point-on-object as defined above.
+A one-item type-ten incidence with sense zero on an arc fixes its positive
+sweep to 90 degrees. The corresponding type-eleven incidence fixes the
+positive sweep to 180 degrees. These map to neutral fixed arc-angle
+constraints. A nonzero sense or a non-arc entity does not satisfy either form.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
 line vertical. A separate sense-`2` or sense-`3` solver operand or a sense-zero
