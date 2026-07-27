@@ -260,6 +260,7 @@ struct ChartPoints {
     points: Vec<Point3>,
     native_parameters: Option<Vec<f64>>,
     ext_support_uv: SupportUv,
+    end: usize,
 }
 
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
@@ -445,60 +446,67 @@ pub fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 59]) {
-        for escape in [0usize, 1] {
-            if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
-                continue;
-            }
-            let mut at = tag + 2 + escape;
-            let Some((xmt, consumed)) = read_xmt(stream, at) else {
-                continue;
-            };
-            at += consumed + 4;
-            let mut header = [0u32; 5];
-            let mut valid = true;
-            for reference in &mut header {
-                let Some((value, consumed)) = read_xmt(stream, at) else {
-                    valid = false;
-                    break;
-                };
-                *reference = value;
-                at += consumed;
-            }
-            if !valid || header[0] != 1 {
-                continue;
-            }
-            let sense = match stream.get(at) {
-                Some(b'+') => true,
-                Some(b'-') => false,
-                _ => continue,
-            };
-            at += 1;
-            let Some((boundary, consumed)) = read_xmt(stream, at) else {
-                continue;
-            };
-            let Some((surface, _)) = read_xmt(stream, at + consumed) else {
-                continue;
-            };
-            if boundary <= 1 && surface > 1 {
-                insert_unique(
-                    &mut out,
-                    &mut duplicates,
-                    xmt,
-                    BlendBound {
-                        xmt,
-                        header_references: header,
-                        sense,
-                        boundary_index: boundary,
-                        blend_surface: surface,
-                        escaped: escape == 1,
-                        pos: tag,
-                    },
-                );
-                break;
-            }
+        if let Some((bound, _)) = blend_bound_at(stream, tag) {
+            insert_unique(&mut out, &mut duplicates, bound.xmt, bound);
         }
     }
     out.into_values().collect()
+}
+
+pub(crate) fn blend_bound_at(stream: &[u8], tag: usize) -> Option<(BlendBound, usize)> {
+    (stream.get(tag..tag + 2) == Some(&[0, 59])).then_some(())?;
+    for escape in [0usize, 1] {
+        if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
+            continue;
+        }
+        let mut at = tag + 2 + escape;
+        let Some((xmt, consumed)) = read_xmt(stream, at) else {
+            continue;
+        };
+        at += consumed + 4;
+        let mut header = [0u32; 5];
+        let mut valid = true;
+        for reference in &mut header {
+            let Some((value, consumed)) = read_xmt(stream, at) else {
+                valid = false;
+                break;
+            };
+            *reference = value;
+            at += consumed;
+        }
+        if !valid || header[0] != 1 {
+            continue;
+        }
+        let sense = match stream.get(at) {
+            Some(b'+') => true,
+            Some(b'-') => false,
+            _ => continue,
+        };
+        at += 1;
+        let Some((boundary, consumed)) = read_xmt(stream, at) else {
+            continue;
+        };
+        at += consumed;
+        let Some((surface, consumed)) = read_xmt(stream, at) else {
+            continue;
+        };
+        at += consumed;
+        if boundary <= 1 && surface > 1 {
+            return Some((
+                BlendBound {
+                    xmt,
+                    header_references: header,
+                    sense,
+                    boundary_index: boundary,
+                    blend_surface: surface,
+                    escaped: escape == 1,
+                    pos: tag,
+                },
+                at,
+            ));
+        }
+    }
+    None
 }
 
 fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
@@ -569,61 +577,75 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
 pub fn chart_source_records(stream: &[u8]) -> Vec<ChartSourceRecord> {
     let mut out = Vec::new();
     for tag in find_tags(stream, [0, 40]) {
-        for escape in [0usize, 1] {
-            if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
-                continue;
-            }
-            let base = tag + 2 + escape;
-            let Some(count) = be::u32_at(stream, base).map(|value| value as usize) else {
-                continue;
-            };
-            if !(2..=1024).contains(&count) {
-                continue;
-            }
-            let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else {
-                continue;
-            };
-            let preamble = base + 4 + xmt_len;
-            let Some(base_parameter) = be::f64_at(stream, preamble) else {
-                continue;
-            };
-            let Some(base_scale) = be::f64_at(stream, preamble + 8) else {
-                continue;
-            };
-            let Some(chart_count) = be::u32_at(stream, preamble + 16) else {
-                continue;
-            };
-            let Some(chordal_error) = be::f64_at(stream, preamble + 20) else {
-                continue;
-            };
-            let Some(angular_error) = be::f64_at(stream, preamble + 28) else {
-                continue;
-            };
-            let errors = [
-                be::f64_at(stream, preamble + 36),
-                be::f64_at(stream, preamble + 44),
-            ];
-            if chart_count as usize != count
-                || !base_parameter.is_finite()
-                || !base_scale.is_finite()
-                || base_scale == 0.0
-                || !chordal_error.is_finite()
-                || chordal_error <= 0.0
-                || !angular_error.is_finite()
-                || errors != [Some(MISSING_PARAMETER), Some(MISSING_PARAMETER)]
-            {
-                continue;
-            }
-            let block = preamble + 52;
-            let Some(chart_points) = chart_points(stream, block, count) else {
-                continue;
-            };
-            let point_layout = if chart_points.native_parameters.is_some() {
-                ChartPointLayout::Ext11
-            } else {
-                ChartPointLayout::Xyz3
-            };
-            out.push(ChartSourceRecord {
+        if let Some((record, _)) = chart_source_record_at(stream, tag) {
+            out.push(record);
+        }
+    }
+    out
+}
+
+pub(crate) fn chart_source_record_at(
+    stream: &[u8],
+    tag: usize,
+) -> Option<(ChartSourceRecord, usize)> {
+    (stream.get(tag..tag + 2) == Some(&[0, 40])).then_some(())?;
+    for escape in [0usize, 1] {
+        if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
+            continue;
+        }
+        let base = tag + 2 + escape;
+        let Some(count) = be::u32_at(stream, base).map(|value| value as usize) else {
+            continue;
+        };
+        if !(2..=1024).contains(&count) {
+            continue;
+        }
+        let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else {
+            continue;
+        };
+        let preamble = base + 4 + xmt_len;
+        let Some(base_parameter) = be::f64_at(stream, preamble) else {
+            continue;
+        };
+        let Some(base_scale) = be::f64_at(stream, preamble + 8) else {
+            continue;
+        };
+        let Some(chart_count) = be::u32_at(stream, preamble + 16) else {
+            continue;
+        };
+        let Some(chordal_error) = be::f64_at(stream, preamble + 20) else {
+            continue;
+        };
+        let Some(angular_error) = be::f64_at(stream, preamble + 28) else {
+            continue;
+        };
+        let errors = [
+            be::f64_at(stream, preamble + 36),
+            be::f64_at(stream, preamble + 44),
+        ];
+        if chart_count as usize != count
+            || !base_parameter.is_finite()
+            || !base_scale.is_finite()
+            || base_scale == 0.0
+            || !chordal_error.is_finite()
+            || chordal_error <= 0.0
+            || !angular_error.is_finite()
+            || errors != [Some(MISSING_PARAMETER), Some(MISSING_PARAMETER)]
+        {
+            continue;
+        }
+        let block = preamble + 52;
+        let Some(chart_points) = chart_points(stream, block, count) else {
+            continue;
+        };
+        let point_layout = if chart_points.native_parameters.is_some() {
+            ChartPointLayout::Ext11
+        } else {
+            ChartPointLayout::Xyz3
+        };
+        let end = chart_points.end;
+        return Some((
+            ChartSourceRecord {
                 xmt,
                 count: count as u32,
                 base_parameter,
@@ -645,11 +667,11 @@ pub fn chart_source_records(stream: &[u8]) -> Vec<ChartSourceRecord> {
                     ChartFraming::Escaped
                 },
                 pos: tag,
-            });
-            break;
-        }
+            },
+            end,
+        ));
     }
-    out
+    None
 }
 
 fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<ChartPoints> {
@@ -700,6 +722,7 @@ fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<ChartPoints
                 points,
                 native_parameters: Some(native_parameters),
                 ext_support_uv,
+                end: block.checked_add(count.checked_mul(88)?)?,
             });
         }
     }
@@ -710,6 +733,7 @@ fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<ChartPoints
         points,
         native_parameters: None,
         ext_support_uv: [None, None],
+        end: block.checked_add(count.checked_mul(24)?)?,
     })
 }
 
@@ -725,27 +749,15 @@ pub fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 41]) {
-        for escape in [0usize, 1] {
-            if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
-                continue;
-            }
-            let base = tag + 2 + escape;
-            let framing = if escape == 0 {
-                TermUseFraming::Direct
-            } else {
-                TermUseFraming::Escaped
-            };
-            if let Some(term) = term_at(stream, base, framing, tag) {
-                insert_unique(&mut out, &mut duplicates, term.xmt, term);
-                break;
-            }
+        if let Some((term, _)) = term_use_at(stream, tag) {
+            insert_unique(&mut out, &mut duplicates, term.xmt, term);
         }
     }
     for label in find_bytes(stream, b"term_use") {
         let tail = label + b"term_use".len();
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             let pos = tail + INLINE_TERM_TAIL.len();
-            if let Some(term) = term_at(stream, pos, TermUseFraming::DescriptorInline, pos) {
+            if let Some((term, _)) = term_at(stream, pos, TermUseFraming::DescriptorInline, pos) {
                 insert_unique(&mut out, &mut duplicates, term.xmt, term);
             }
         }
@@ -753,21 +765,48 @@ pub fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
     out.into_values().collect()
 }
 
-fn term_at(stream: &[u8], base: usize, framing: TermUseFraming, pos: usize) -> Option<TermUse> {
+pub(crate) fn term_use_at(stream: &[u8], tag: usize) -> Option<(TermUse, usize)> {
+    (stream.get(tag..tag + 2) == Some(&[0, 41])).then_some(())?;
+    for escape in [0usize, 1] {
+        if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
+            continue;
+        }
+        let base = tag + 2 + escape;
+        let framing = if escape == 0 {
+            TermUseFraming::Direct
+        } else {
+            TermUseFraming::Escaped
+        };
+        if let Some(term) = term_at(stream, base, framing, tag) {
+            return Some(term);
+        }
+    }
+    None
+}
+
+fn term_at(
+    stream: &[u8],
+    base: usize,
+    framing: TermUseFraming,
+    pos: usize,
+) -> Option<(TermUse, usize)> {
     let count = be::u32_at(stream, base)?;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let payload = base + 4 + xmt_len;
     let form: [u8; 2] = stream.get(payload..payload + 2)?.try_into().ok()?;
     let valid = (count == 1 && form == *b"L?") || (count == 2 && matches!(&form, b"TF" | b"TS"));
     valid.then_some(())?;
-    Some(TermUse {
-        xmt,
-        count,
-        form,
-        point: point_m(stream, payload + 2)?,
-        framing,
-        pos,
-    })
+    Some((
+        TermUse {
+            xmt,
+            count,
+            form,
+            point: point_m(stream, payload + 2)?,
+            framing,
+            pos,
+        },
+        payload.checked_add(26)?,
+    ))
 }
 
 fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUv> {
@@ -782,32 +821,39 @@ pub fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 204]) {
-        for escape in [0usize, 1] {
-            if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
-                continue;
-            }
-            let base = tag + 2 + escape;
-            let framing = if escape == 0 {
-                SupportUvFraming::Direct
-            } else {
-                SupportUvFraming::Escaped
-            };
-            if let Some(record) = uv_at(stream, base, framing, tag) {
-                insert_unique(&mut out, &mut duplicates, record.xmt, record);
-                break;
-            }
+        if let Some((record, _)) = support_uv_record_at(stream, tag) {
+            insert_unique(&mut out, &mut duplicates, record.xmt, record);
         }
     }
     for label in find_bytes(stream, b"values") {
         let tail = label + b"values".len();
         if stream.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             let pos = tail + INLINE_UV_TAIL.len();
-            if let Some(record) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos) {
+            if let Some((record, _)) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos) {
                 insert_unique(&mut out, &mut duplicates, record.xmt, record);
             }
         }
     }
     out.into_values().collect()
+}
+
+pub(crate) fn support_uv_record_at(stream: &[u8], tag: usize) -> Option<(SupportUvRecord, usize)> {
+    (stream.get(tag..tag + 2) == Some(&[0, 204])).then_some(())?;
+    for escape in [0usize, 1] {
+        if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
+            continue;
+        }
+        let base = tag + 2 + escape;
+        let framing = if escape == 0 {
+            SupportUvFraming::Direct
+        } else {
+            SupportUvFraming::Escaped
+        };
+        if let Some(record) = uv_at(stream, base, framing, tag) {
+            return Some(record);
+        }
+    }
+    None
 }
 
 fn insert_unique<T>(
@@ -830,7 +876,7 @@ fn uv_at(
     base: usize,
     framing: SupportUvFraming,
     pos: usize,
-) -> Option<SupportUvRecord> {
+) -> Option<(SupportUvRecord, usize)> {
     let count = be::u32_at(stream, base)?;
     let count_usize = count as usize;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
@@ -848,14 +894,17 @@ fn uv_at(
     if !values.iter().all(|value| value.is_finite()) {
         return None;
     }
-    Some(SupportUvRecord {
-        xmt,
-        count,
-        marker,
-        values,
-        framing,
-        pos,
-    })
+    Some((
+        SupportUvRecord {
+            xmt,
+            count,
+            marker,
+            values,
+            framing,
+            pos,
+        },
+        payload.checked_add(1 + count_usize.checked_mul(8)?)?,
+    ))
 }
 
 fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {

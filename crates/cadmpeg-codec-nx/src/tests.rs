@@ -6162,6 +6162,47 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
 }
 
 #[test]
+fn deltas_walks_complete_intersection_auxiliary_records() {
+    let source = charted_intersection_curve_topology_partition_stream();
+    let blend_source = blend_bound_charted_intersection_curve_stream();
+    let chart_pos = crate::intersection::chart_source_records(&source)[0].pos;
+    let (_, chart_end) =
+        crate::intersection::chart_source_record_at(&source, chart_pos).expect("chart");
+    let term_pos = crate::intersection::term_use_records(&source)[0].pos;
+    let (_, term_end) = crate::intersection::term_use_at(&source, term_pos).expect("term use");
+    let support_uv_pos = crate::intersection::support_uv_records(&source)[0].pos;
+    let (_, support_uv_end) =
+        crate::intersection::support_uv_record_at(&source, support_uv_pos).expect("support UV");
+    let blend_bound_pos = crate::intersection::blend_bounds(&blend_source)[0].pos;
+    let (_, blend_bound_end) =
+        crate::intersection::blend_bound_at(&blend_source, blend_bound_pos).expect("blend bound");
+
+    for (bytes, kind, family) in [
+        (&source[chart_pos..chart_end], 40, "CHART"),
+        (&source[term_pos..term_end], 41, "TERM_USE"),
+        (
+            &blend_source[blend_bound_pos..blend_bound_end],
+            59,
+            "BLEND_BOUND",
+        ),
+        (&source[support_uv_pos..support_uv_end], 204, "SUPPORT_UV"),
+    ] {
+        let mut stream = bytes.to_vec();
+        stream.extend_from_slice(&[0xfe, 0xdc]);
+        let census = crate::deltas::walk(&stream);
+        assert_eq!(census.records.len(), 1);
+        assert_eq!(census.records[0].kind, kind);
+        assert_eq!(census.records[0].canonical_bytes, bytes);
+        assert_eq!(census.full_counts[family], 1);
+        assert_eq!(census.bytes_decoded, bytes.len());
+
+        let residual = crate::deltas::semantic_residual(&stream);
+        assert!(residual[..bytes.len()].iter().all(|byte| *byte == 0xff));
+        assert!(residual.ends_with(bytes));
+    }
+}
+
+#[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
     let record = crate::deltas::walk(&stream).records.remove(0);

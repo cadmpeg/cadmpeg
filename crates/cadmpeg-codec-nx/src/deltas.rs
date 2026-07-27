@@ -323,6 +323,20 @@ pub fn walk(stream: &[u8]) -> Census {
     let mut census = Census::default();
     let mut offset = 0;
     while offset + 4 <= stream.len() {
+        if let Some(record) = consume_intersection_auxiliary(stream, offset) {
+            census.bytes_decoded += record.end - record.offset;
+            let family = match record.kind {
+                40 => "CHART",
+                41 => "TERM_USE",
+                59 => "BLEND_BOUND",
+                204 => "SUPPORT_UV",
+                _ => unreachable!("intersection auxiliary parser returns owned auxiliary types"),
+            };
+            *census.full_counts.entry(family).or_default() += 1;
+            offset = record.end;
+            census.records.push(record);
+            continue;
+        }
         if let Some(record) = consume_intersection_data(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
@@ -592,7 +606,8 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
         .records
         .iter()
         .filter(|record| {
-            record.offset >= revision_start && matches!(record.kind, 38 | 81..=84 | 90 | 91)
+            record.offset >= revision_start
+                && matches!(record.kind, 38 | 40 | 41 | 59 | 81..=84 | 90 | 91 | 204)
         })
         .map(|record| record.canonical_bytes.clone())
         .collect::<Vec<_>>();
@@ -763,6 +778,32 @@ fn consume_intersection_data(stream: &[u8], offset: usize) -> Option<Record> {
     Some(Record {
         kind: 90,
         xmt: curve.xmt,
+        node_id: None,
+        references,
+        position: None,
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        offset,
+        end,
+    })
+}
+
+fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
+    let (kind, xmt, references, end) =
+        if let Some((chart, end)) = crate::intersection::chart_source_record_at(stream, offset) {
+            (40, chart.xmt, Vec::new(), end)
+        } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
+            (41, term.xmt, Vec::new(), end)
+        } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
+            let mut references = bound.header_references.to_vec();
+            references.extend([bound.boundary_index, bound.blend_surface]);
+            (59, bound.xmt, references, end)
+        } else {
+            let (support_uv, end) = crate::intersection::support_uv_record_at(stream, offset)?;
+            (204, support_uv.xmt, Vec::new(), end)
+        };
+    Some(Record {
+        kind,
+        xmt,
         node_id: None,
         references,
         position: None,

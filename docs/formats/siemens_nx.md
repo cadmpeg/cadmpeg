@@ -454,6 +454,8 @@ Type-91 records are `type:005b, xmt, zero:u32 BE, reference_status[6]`. The reco
 
 Status-framed type-38 `INTERSECTION` records end after their six construction references and do not require a following recognized tag. Single-byte `5a` `INTERSECTION_DATA` records use the layout in section 6.3 and end after their sixth construction reference. Both participate in the deltas byte ledger and remain in the semantic lane.
 
+Direct and escaped type-40 `CHART_s`, type-41 `term_use`, type-59 blend-bound, and type-204 support-UV records use the layouts in section 6.3. A `CHART_s` record ends after its declared `xyz3` or `ext11` point lane. A `term_use` record ends after its model-space point. A blend-bound record ends after its blend-surface reference. A support-UV record ends after its declared finite-scalar lane. These records participate in the deltas byte ledger and remain in the semantic lane.
+
 **Full record:**
 
 ```text
