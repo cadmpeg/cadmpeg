@@ -3518,6 +3518,49 @@ fn saved_line_joins_through_order_table() {
         "{:?}",
         dimension_constraints[0].0.definition
     );
+    let mut native_join = constrained.clone();
+    native_join.relations.as_mut().expect("relations").rows[0].relation_type = 99;
+    let native_join_constraints =
+        section_dimension_constraints(&native_join, &SketchId("creo:model:sketch#5".to_string()));
+    let SketchConstraintDefinition::Native { operands, .. } =
+        &native_join_constraints[0].0.definition
+    else {
+        panic!("untyped relation must remain native");
+    };
+    assert!(operands.iter().any(|operand| {
+        operand.native_kind == "skamp_ptr"
+            && operand.native_field.as_deref() == Some("triples_ptr.skamp_id")
+            && operand.object_index == 5
+    }));
+    native_join
+        .relations
+        .as_mut()
+        .expect("relations")
+        .triples
+        .push(crate::feature::FeatureRelationTriple {
+            relation_id: Some(7),
+            equation_id: None,
+            skamp_id: Some(5),
+            offset: 32,
+        });
+    native_join
+        .relations
+        .as_mut()
+        .expect("relations")
+        .triples_header
+        .as_mut()
+        .expect("triples header")
+        .declared_count = 2;
+    let ambiguous_join_constraints =
+        section_dimension_constraints(&native_join, &SketchId("creo:model:sketch#5".to_string()));
+    let SketchConstraintDefinition::Native { operands, .. } =
+        &ambiguous_join_constraints[0].0.definition
+    else {
+        panic!("untyped relation must remain native");
+    };
+    assert!(!operands
+        .iter()
+        .any(|operand| operand.native_field.as_deref() == Some("triples_ptr.skamp_id")));
     let mut solver_families = constrained.clone();
     let family_relations = solver_families.relations.as_mut().expect("relations");
     family_relations.skamps = vec![crate::feature::FeatureSkamp {

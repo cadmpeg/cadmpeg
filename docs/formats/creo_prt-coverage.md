@@ -78,7 +78,9 @@ fixtures, claims above L1 remain unproven.
   constraints retain the complete stored `used` and solver-status values,
   respectively. Native `skamp_ptr` constraints also retain the complete stored
   flags separately from solver status; the known status low bit is projected
-  as constraint activity.
+  as constraint activity. A native `relat_ptr` constraint retains its
+  `triples_ptr.skamp_id` incidence link when the relation, join, and incidence
+  identities are complete and unique.
 
 ## Evidence required to raise the score
 

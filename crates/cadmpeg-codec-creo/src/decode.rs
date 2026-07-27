@@ -8698,6 +8698,15 @@ fn section_dimension_constraints(
                             object_index: relation.relation_id,
                             native_ref: Some(native_ref.clone()),
                         }];
+                        if let Some(incidence) = joined_incidence {
+                            operands.push(SketchNativeOperand {
+                                native_kind: "skamp_ptr".to_string(),
+                                native_field: Some("triples_ptr.skamp_id".to_string()),
+                                native_role: None,
+                                object_index: incidence.id,
+                                native_ref: Some(native_ref.clone()),
+                            });
+                        }
                         if let Some(vectors) = relation.operand_vectors {
                             for (vector, values) in ["a", "b", "c"].into_iter().zip(vectors) {
                                 operands.extend(values.into_iter().enumerate().filter_map(
