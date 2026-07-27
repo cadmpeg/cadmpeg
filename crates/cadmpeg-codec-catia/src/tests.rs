@@ -6366,6 +6366,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         native.entity_records[0].suffix_value,
         Some(CatiaEntitySuffixValue {
             prefix_atoms: [5, 22, 2],
+            prefix_atom_widths: [1, 1, 1],
             prefix_code: 0x6a,
             payload: CatiaEntitySuffixPayload::Evaluation {
                 evaluation: CatiaEntityEvaluation::Scalar { bits: scalar },
@@ -6461,6 +6462,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         decoded.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
         0
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_wide_prefix_entity_suffix_value_count"],
+        0
+    );
     let native =
         crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
             .expect("load generic entity suffix");
@@ -6470,6 +6475,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         native.entity_records[0].suffix_value,
         Some(CatiaEntitySuffixValue {
             prefix_atoms: [4, 22, 2],
+            prefix_atom_widths: [1, 1, 1],
             prefix_code: 0xad,
             payload: CatiaEntitySuffixPayload::Evaluation {
                 evaluation: CatiaEntityEvaluation::Scalar { bits },
@@ -6478,6 +6484,77 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             trailer: vec![0x81, 0x49],
         })
     );
+
+    let wide_scalar_bits = 0.001_f64.to_bits();
+    let mut wide_scalar_suffix = vec![0xd1, 0x53, 0x96, 0x82, 0xa6, 0xe6];
+    wide_scalar_suffix.extend_from_slice(&wide_scalar_bits.to_le_bytes());
+    let wide_scalar = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parameter_value(&wide_scalar_suffix)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode wide-prefix scalar suffix");
+    assert_eq!(
+        wide_scalar.report.coverage["decoded_wide_prefix_entity_suffix_value_count"],
+        1
+    );
+    let wide_scalar = crate::native::CatiaNative::load(
+        wide_scalar.ir.native.namespace("catia").expect("namespace"),
+    )
+    .expect("load wide-prefix scalar suffix");
+    assert_eq!(
+        wide_scalar.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete wide-prefix scalar")
+            .prefix_atoms,
+        [84, 22, 2]
+    );
+    assert_eq!(
+        wide_scalar.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete wide-prefix scalar")
+            .prefix_atom_widths,
+        [2, 1, 1]
+    );
+    let mut malformed_wide_scalar = wide_scalar;
+    malformed_wide_scalar.entity_records[0]
+        .suffix_value
+        .as_mut()
+        .expect("complete wide-prefix scalar")
+        .prefix_atom_widths[0] = 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_wide_scalar
+        .store(&mut namespace)
+        .expect("store malformed wide-prefix scalar");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let wide_control =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49,
+        ]));
+    assert!(matches!(
+        wide_control.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete wide-prefix control"),
+        CatiaEntitySuffixValue {
+            prefix_atoms: [104, 8, 1],
+            prefix_atom_widths: [2, 1, 1],
+            payload: CatiaEntitySuffixPayload::ControlE8,
+            ..
+        }
+    ));
+
+    let truncated_wide_prefix =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0xd1, 0x53, 0xd1,
+        ]));
+    assert_eq!(truncated_wide_prefix.entity_records[0].suffix_value, None);
 
     let unset = CatiaCodec
         .decode(
