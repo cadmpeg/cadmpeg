@@ -611,10 +611,19 @@ pub(super) fn emit_surfaces(
                 revision_form: None,
             },
             cache_fit_tolerance: None,
-            record_bounds: None,
+            record_bounds: Some(parameter_record_bounds(offset.parameter_bounds)),
         });
     }
     surface_ids
+}
+
+fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
+    [
+        Some(bounds[0][0]),
+        Some(bounds[0][1]),
+        Some(bounds[1][0]),
+        Some(bounds[1][1]),
+    ]
 }
 
 fn emit_extrusion_procedure(
@@ -690,12 +699,7 @@ fn emit_extrusion_procedure(
             native_position: None,
         },
         cache_fit_tolerance: None,
-        record_bounds: Some([
-            Some(extrusion.parameter_bounds[0][0]),
-            Some(extrusion.parameter_bounds[0][1]),
-            Some(extrusion.parameter_bounds[1][0]),
-            Some(extrusion.parameter_bounds[1][1]),
-        ]),
+        record_bounds: Some(parameter_record_bounds(extrusion.parameter_bounds)),
     });
 }
 

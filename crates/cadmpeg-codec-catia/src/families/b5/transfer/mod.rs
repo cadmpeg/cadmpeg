@@ -715,6 +715,8 @@ pub(crate) struct ResolvedOffsetSurface {
     pub(crate) support: ResolvedOffsetSupport,
     /// Signed offset distance.
     pub(crate) distance: f64,
+    /// Ordered native U and V chart bounds.
+    pub(crate) parameter_bounds: [[f64; 2]; 2],
 }
 
 pub(crate) fn resolved_extrusion_surface(
@@ -789,6 +791,7 @@ pub(crate) fn resolved_offset_surface(
         support_object_id: offset.source_surface,
         support,
         distance: offset.distance,
+        parameter_bounds: offset.parameter_bounds,
     })
 }
 

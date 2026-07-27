@@ -132,14 +132,12 @@ pub(crate) fn emit_standard_extrusion_definition(
     definition
 }
 
-fn extrusion_record_bounds(
-    extrusion: &crate::families::b5::transfer::ResolvedExtrusionSurface,
-) -> [Option<f64>; 4] {
+fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
     [
-        Some(extrusion.parameter_bounds[0][0]),
-        Some(extrusion.parameter_bounds[0][1]),
-        Some(extrusion.parameter_bounds[1][0]),
-        Some(extrusion.parameter_bounds[1][1]),
+        Some(bounds[0][0]),
+        Some(bounds[0][1]),
+        Some(bounds[1][0]),
+        Some(bounds[1][1]),
     ]
 }
 
@@ -390,10 +388,12 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         let procedural_id = ProceduralSurfaceId(format!("catia:standard:procedural-surf#{index}"));
         let record_bounds = match &procedure {
             StandardSurfaceProcedure::Extrusion(extrusion) => {
-                Some(extrusion_record_bounds(extrusion))
+                Some(parameter_record_bounds(extrusion.parameter_bounds))
             }
-            StandardSurfaceProcedure::RollingBall { .. }
-            | StandardSurfaceProcedure::Offset { .. } => None,
+            StandardSurfaceProcedure::Offset {
+                parameter_bounds, ..
+            } => Some(parameter_record_bounds(*parameter_bounds)),
+            StandardSurfaceProcedure::RollingBall { .. } => None,
         };
         let (source, carrier, definition, exactness) = match procedure {
             StandardSurfaceProcedure::RollingBall {
@@ -410,6 +410,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                 support_object_id,
                 support,
                 distance,
+                parameter_bounds: _,
             } => {
                 let support_id = match support {
                     crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(support) => {
@@ -437,7 +438,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                             .clone()
                     }
                     crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
-                        let record_bounds = extrusion_record_bounds(&extrusion);
+                        let record_bounds = parameter_record_bounds(extrusion.parameter_bounds);
                         let support_id = SurfaceId(format!(
                             "catia:standard:procedural-support#{support_object_id}"
                         ));
@@ -733,6 +734,7 @@ pub(crate) enum StandardSurfaceProcedure {
         support_object_id: u32,
         support: crate::families::b5::transfer::ResolvedOffsetSupport,
         distance: f64,
+        parameter_bounds: [[f64; 2]; 2],
     },
     Extrusion(Box<crate::families::b5::transfer::ResolvedExtrusionSurface>),
 }
@@ -893,6 +895,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                                         support_object_id: offset.support_object_id,
                                         support: offset.support,
                                         distance: offset.distance,
+                                        parameter_bounds: offset.parameter_bounds,
                                     },
                                 )
                             })
