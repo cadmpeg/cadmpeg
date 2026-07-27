@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{DesignParameter, Length, ParameterId, ParameterValue};
+use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, Exactness, SourceFidelity};
@@ -337,9 +337,6 @@ fn transfer_formula_parameters(
         let Some(signature) = &expression.signature else {
             continue;
         };
-        if signature.input_type != "LENGTH" || signature.result_type != "LENGTH" {
-            continue;
-        }
         let Some(output) = formula.parameter.as_deref().and_then(|id| entities.get(id)) else {
             continue;
         };
@@ -359,16 +356,19 @@ fn transfer_formula_parameters(
                 complete = false;
                 break;
             };
-            let crate::native::CatiaParameterEvaluation::Scalar { bits } = parameter.evaluation
+            let Some(TypedParameterEvaluation::Value(value)) =
+                typed_parameter_evaluation(&signature.input_type, &parameter.evaluation)
             else {
                 complete = false;
                 break;
             };
-            let value = f64::from_bits(bits);
             let id = neutral_parameter_id(&entity.id);
-            if entity.id == output.id || dependencies.contains(&id) {
+            if entity.id == output.id {
                 complete = false;
                 break;
+            }
+            if dependencies.contains(&id) {
+                continue;
             }
             let Ok(ordinal) = u32::try_from(entity.ordinal) else {
                 complete = false;
@@ -380,26 +380,31 @@ fn transfer_formula_parameters(
                 owner: None,
                 ordinal,
                 name: parameter.name.value.clone(),
-                expression: format!("{value} mm"),
+                expression: match &value {
+                    ParameterValue::Length(Length(value)) => format!("{value} mm"),
+                    ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
+                    ParameterValue::Real(value) => value.to_string(),
+                    ParameterValue::Integer(value) => value.to_string(),
+                    ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
+                },
                 display: None,
-                value: Some(ParameterValue::Length(Length(value))),
+                value: Some(value),
                 dependencies: Vec::new(),
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: Some(entity.id.clone()),
             });
         }
-        if !complete {
+        if !complete || dependencies.len() != 1 {
             continue;
         }
         let Ok(ordinal) = u32::try_from(output.ordinal) else {
             continue;
         };
-        let value = match output_value.evaluation {
-            crate::native::CatiaParameterEvaluation::Unset => None,
-            crate::native::CatiaParameterEvaluation::Scalar { bits } => {
-                Some(ParameterValue::Length(Length(f64::from_bits(bits))))
-            }
+        let Some(value) =
+            typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
+        else {
+            continue;
         };
         transferred.push(DesignParameter {
             id: neutral_parameter_id(&output.id),
@@ -408,7 +413,10 @@ fn transfer_formula_parameters(
             name: output_value.name.value.clone(),
             expression: expression.expression.value.clone(),
             display: None,
-            value,
+            value: match value {
+                TypedParameterEvaluation::Unset => None,
+                TypedParameterEvaluation::Value(value) => Some(value),
+            },
             dependencies,
             properties: BTreeMap::new(),
             pmi: None,
@@ -464,6 +472,39 @@ fn transfer_formula_parameters(
     let transferred = parameters.len();
     ir.model.parameters.extend(parameters);
     transferred
+}
+
+enum TypedParameterEvaluation {
+    Unset,
+    Value(ParameterValue),
+}
+
+fn typed_parameter_evaluation(
+    source_type: &str,
+    evaluation: &crate::native::CatiaParameterEvaluation,
+) -> Option<TypedParameterEvaluation> {
+    if !matches!(
+        source_type,
+        "LENGTH" | "ANGLE" | "Real" | "R" | "Integer" | "I"
+    ) {
+        return None;
+    }
+    let crate::native::CatiaParameterEvaluation::Scalar { bits } = evaluation else {
+        return Some(TypedParameterEvaluation::Unset);
+    };
+    let value = f64::from_bits(*bits);
+    let value = match source_type {
+        "LENGTH" => ParameterValue::Length(Length(value)),
+        "ANGLE" => ParameterValue::Angle(Angle(value)),
+        "Real" | "R" => ParameterValue::Real(value),
+        "Integer" | "I"
+            if value.fract() == 0.0 && value >= i64::MIN as f64 && value < -(i64::MIN as f64) =>
+        {
+            ParameterValue::Integer(value as i64)
+        }
+        _ => return None,
+    };
+    Some(TypedParameterEvaluation::Value(value))
 }
 
 fn neutral_parameter_id(native_id: &str) -> ParameterId {

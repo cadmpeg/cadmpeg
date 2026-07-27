@@ -1801,6 +1801,26 @@ fn standard_catpart_with_formula_relation(
     parameter_entity_id: u8,
     duplicate_binding: bool,
 ) -> Vec<u8> {
+    standard_catpart_with_typed_formula_relation(
+        parameter_entity_id,
+        duplicate_binding,
+        "LENGTH",
+        "LENGTH",
+        35.0,
+        33.0,
+        "#1_ /2-2mm",
+    )
+}
+
+fn standard_catpart_with_typed_formula_relation(
+    parameter_entity_id: u8,
+    duplicate_binding: bool,
+    input_type: &str,
+    result_type: &str,
+    input_value: f64,
+    output_value: f64,
+    source_expression: &str,
+) -> Vec<u8> {
     let formula_definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
     let expression_definition = [0x00, 0x08, 0x32, 5, 0, 0, 0, 0x32, 5, 0, 0, 0];
     let mut expression_value = Vec::new();
@@ -1832,12 +1852,12 @@ fn standard_catpart_with_formula_relation(
         parameter[2..6].copy_from_slice(&parameter_len.to_le_bytes());
         parameter
     };
-    stream.extend(parameter(3, 12_u32, 13_u32, 35.0));
+    stream.extend(parameter(3, 12_u32, 13_u32, input_value));
     if duplicate_binding {
-        stream.extend(parameter(4, 12_u32, 13_u32, 35.0));
+        stream.extend(parameter(4, 12_u32, 13_u32, input_value));
     }
     let output_entity_id = if duplicate_binding { 5 } else { 4 };
-    stream.extend(parameter(output_entity_id, 14_u32, 15_u32, 33.0));
+    stream.extend(parameter(output_entity_id, 14_u32, 15_u32, output_value));
     stream.push(0xde);
     let mut records = vec![
         object_graph_record(
@@ -1864,6 +1884,7 @@ fn standard_catpart_with_formula_relation(
     }
     records.push(object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]));
     stream.extend(object_graph_from_records(&records));
+    let type_signature = format!("(#1_ : #In {input_type}) : {result_type}");
     stream.extend(catalog_stream(&[
         "CATCatalogManager",
         "catalogManager",
@@ -1872,9 +1893,9 @@ fn standard_catpart_with_formula_relation(
         "Formula",
         "body",
         "#1_ ",
-        "#1_ /2-2mm",
+        source_expression,
         "param",
-        "(#1_ : #In LENGTH) : LENGTH",
+        &type_signature,
         "opened",
         "RelationExpFct",
         "Thickness",
@@ -6017,6 +6038,109 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .is_empty());
+}
+
+#[test]
+fn decode_transfers_typed_integer_to_angle_formula() {
+    use cadmpeg_ir::features::{Angle, ParameterValue};
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_relation(
+                4,
+                false,
+                "Integer",
+                "ANGLE",
+                3.0,
+                0.5,
+                "#1_ /2-2mm",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode typed formula");
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("typed formula parameters")
+    };
+
+    assert_eq!(input.expression, "3");
+    assert_eq!(input.value, Some(ParameterValue::Integer(3)));
+    assert_eq!(output.value, Some(ParameterValue::Angle(Angle(0.5))));
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+        .findings
+        .is_empty());
+}
+
+#[test]
+fn decode_transfers_dimensionless_real_formula() {
+    use cadmpeg_ir::features::ParameterValue;
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_relation(
+                4,
+                false,
+                "Real",
+                "R",
+                2.5,
+                1.25,
+                "#1_ /2-2mm",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode real formula");
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("real formula parameters")
+    };
+
+    assert_eq!(input.expression, "2.5");
+    assert_eq!(input.value, Some(ParameterValue::Real(2.5)));
+    assert_eq!(output.value, Some(ParameterValue::Real(1.25)));
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+}
+
+#[test]
+fn decode_rejects_nonintegral_integer_formula_input() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_relation(
+                4,
+                false,
+                "Integer",
+                "I",
+                3.5,
+                4.0,
+                "#1_ /2-2mm",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode invalid integer formula");
+
+    assert!(decoded.ir.model.parameters.is_empty());
+}
+
+#[test]
+fn decode_deduplicates_repeated_single_input_formula_symbols() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_relation(
+                4,
+                false,
+                "ANGLE",
+                "ANGLE",
+                0.25,
+                0.5,
+                "#1_ /2+#1_ /2",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode repeated formula input");
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("repeated formula input parameters")
+    };
+
+    assert_eq!(input.expression, "0.25 rad");
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
 }
 
 #[test]
