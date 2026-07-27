@@ -4791,7 +4791,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         panic!("an undefined line selector must remain native");
     };
     assert_eq!(native_properties["verhor"], "2");
-    assert_eq!(entities, [entity.clone()]);
+    assert_eq!(entities, std::slice::from_ref(&entity));
     assert_eq!(operands[0].native_kind, "segtab_ptr");
     assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
     assert_eq!(operands[0].object_index, 12);

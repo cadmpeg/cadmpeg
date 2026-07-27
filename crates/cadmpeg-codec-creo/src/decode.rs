@@ -25970,19 +25970,26 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .iter()
         .filter(|feature| matches!(feature.definition, IrFeatureDefinition::Native { .. }))
         .count();
-    let explicitly_unresolved_feature_count = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| {
-            matches!(
-                feature.definition,
-                IrFeatureDefinition::DatumPlaneUnresolved
-                    | IrFeatureDefinition::DatumCoordinateSystemUnresolved
-                    | IrFeatureDefinition::BoundarySurfaceUnresolved
-            )
-        })
-        .count();
+    let mut unresolved_datum_plane_feature_count = 0;
+    let mut unresolved_datum_coordinate_system_feature_count = 0;
+    let mut unresolved_boundary_surface_feature_count = 0;
+    for feature in &ir.model.features {
+        match feature.definition {
+            IrFeatureDefinition::DatumPlaneUnresolved => {
+                unresolved_datum_plane_feature_count += 1;
+            }
+            IrFeatureDefinition::DatumCoordinateSystemUnresolved => {
+                unresolved_datum_coordinate_system_feature_count += 1;
+            }
+            IrFeatureDefinition::BoundarySurfaceUnresolved => {
+                unresolved_boundary_surface_feature_count += 1;
+            }
+            _ => {}
+        }
+    }
+    let explicitly_unresolved_feature_count = unresolved_datum_plane_feature_count
+        + unresolved_datum_coordinate_system_feature_count
+        + unresolved_boundary_surface_feature_count;
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
@@ -25998,6 +26005,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_explicitly_unresolved_feature_count".to_string(),
         explicitly_unresolved_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_datum_plane_feature_count".to_string(),
+        unresolved_datum_plane_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_datum_coordinate_system_feature_count".to_string(),
+        unresolved_datum_coordinate_system_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_boundary_surface_feature_count".to_string(),
+        unresolved_boundary_surface_feature_count,
     );
     Ok((ir, annotations.build(), unknowns, coverage))
 }

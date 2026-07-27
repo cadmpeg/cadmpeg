@@ -152,8 +152,10 @@ fixtures, claims above L1 remain unproven.
    partitions. Every active native constraint raises a decode loss note.
    It also counts all transferred history features, partitions their
    definitions into typed and native forms, and separately counts typed
-   definitions whose model-space construction is explicitly unresolved. Every
-   explicit unresolved definition raises a decode loss note.
+   definitions whose model-space construction is explicitly unresolved. The
+   unresolved count is partitioned into datum-plane, datum-coordinate-system,
+   and boundary-surface families. Every explicit unresolved definition raises a
+   decode loss note.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts

@@ -2219,6 +2219,18 @@ fn decode_types_default_part_coordinate_system() {
         result.report.coverage["transferred_explicitly_unresolved_feature_count"],
         1
     );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_datum_coordinate_system_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_datum_plane_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_boundary_surface_feature_count"],
+        0
+    );
     assert!(result.report.losses.iter().any(|loss| {
         loss.message
             .contains("1 typed history feature definition(s)")
