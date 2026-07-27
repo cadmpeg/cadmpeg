@@ -6342,7 +6342,8 @@ fn relation_expression_signature_requires_the_selected_placeholder() {
 #[test]
 fn native_namespace_types_and_validates_named_parameter_values() {
     use crate::native::{
-        CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixValue,
+        CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixPayload,
+        CatiaEntitySuffixValue,
     };
 
     let scalar = 35.0_f64.to_bits();
@@ -6366,8 +6367,10 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         Some(CatiaEntitySuffixValue {
             prefix_atoms: [5, 22, 2],
             prefix_code: 0x6a,
-            evaluation: CatiaEntityEvaluation::Scalar { bits: scalar },
-            encoding: CatiaEntityEvaluationEncoding::Direct,
+            payload: CatiaEntitySuffixPayload::Evaluation {
+                evaluation: CatiaEntityEvaluation::Scalar { bits: scalar },
+                encoding: CatiaEntityEvaluationEncoding::Direct,
+            },
             trailer: vec![0x81, 0x52],
         })
     );
@@ -6404,7 +6407,8 @@ fn native_namespace_types_and_validates_named_parameter_values() {
 #[test]
 fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     use crate::native::{
-        CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixValue,
+        CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixPayload,
+        CatiaEntitySuffixValue,
     };
 
     let bits = 0.1_f64.to_bits();
@@ -6429,6 +6433,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         decoded.report.coverage["decoded_control_entity_suffix_value_count"],
         0
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_atom_entity_suffix_value_count"],
+        0
+    );
     let native =
         crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
             .expect("load generic entity suffix");
@@ -6439,8 +6447,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         Some(CatiaEntitySuffixValue {
             prefix_atoms: [4, 22, 2],
             prefix_code: 0xad,
-            evaluation: CatiaEntityEvaluation::Scalar { bits },
-            encoding: CatiaEntityEvaluationEncoding::Direct,
+            payload: CatiaEntitySuffixPayload::Evaluation {
+                evaluation: CatiaEntityEvaluation::Scalar { bits },
+                encoding: CatiaEntityEvaluationEncoding::Direct,
+            },
             trailer: vec![0x81, 0x49],
         })
     );
@@ -6493,8 +6503,8 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .suffix_value
             .as_ref()
             .expect("complete control suffix")
-            .evaluation,
-        CatiaEntityEvaluation::ControlE8
+            .payload,
+        CatiaEntitySuffixPayload::ControlE8
     ));
 
     let malformed_control =
@@ -6502,6 +6512,50 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             0x84, 0x96, 0x81, 0xa6, 0xe8, 0x81,
         ]));
     assert_eq!(malformed_control.entity_records[0].suffix_value, None);
+
+    let atom = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parameter_value(&[
+                0x81, 0x92, 0x81, 0xb3, 0x83, 0x81, 0x49,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generic atom entity suffix");
+    assert_eq!(
+        atom.report.coverage["decoded_atom_entity_suffix_value_count"],
+        1
+    );
+    let atom =
+        crate::native::CatiaNative::load(atom.ir.native.namespace("catia").expect("namespace"))
+            .expect("load generic atom suffix");
+    assert!(matches!(
+        atom.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete atom suffix")
+            .payload,
+        CatiaEntitySuffixPayload::Atom { value: 3 }
+    ));
+    let mut malformed_atom = atom;
+    malformed_atom.entity_records[0]
+        .suffix_value
+        .as_mut()
+        .expect("complete atom suffix")
+        .payload = CatiaEntitySuffixPayload::Atom { value: 4 };
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_atom
+        .store(&mut namespace)
+        .expect("store malformed atom suffix");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let truncated_compact_atom =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x81, 0x92, 0x81, 0xb3, 0xd1,
+        ]));
+    assert_eq!(truncated_compact_atom.entity_records[0].suffix_value, None);
 
     let mut bare_scalar = vec![0x84, 0x96, 0x82, 0xb1, 0xe6];
     bare_scalar.extend_from_slice(&6.75_f64.to_bits().to_le_bytes());
@@ -6524,8 +6578,11 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .suffix_value
             .as_ref()
             .expect("complete bare unset suffix")
-            .evaluation,
-        CatiaEntityEvaluation::Unset
+            .payload,
+        CatiaEntitySuffixPayload::Evaluation {
+            evaluation: CatiaEntityEvaluation::Unset,
+            ..
+        }
     ));
 
     let nested_bits = 11.725_f64.to_bits();
@@ -6538,12 +6595,11 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_ref()
         .expect("complete zero-padded scalar suffix");
     assert_eq!(
-        nested_value.evaluation,
-        CatiaEntityEvaluation::Scalar { bits: nested_bits }
-    );
-    assert_eq!(
-        nested_value.encoding,
-        CatiaEntityEvaluationEncoding::ZeroPaddedScalar
+        nested_value.payload,
+        CatiaEntitySuffixPayload::Evaluation {
+            evaluation: CatiaEntityEvaluation::Scalar { bits: nested_bits },
+            encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
+        }
     );
     assert!(nested_value.trailer.is_empty());
 
@@ -6587,7 +6643,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .suffix_value
         .as_mut()
         .expect("complete suffix value")
-        .encoding = CatiaEntityEvaluationEncoding::ZeroPaddedScalar;
+        .payload = CatiaEntitySuffixPayload::Evaluation {
+        evaluation: CatiaEntityEvaluation::Scalar { bits },
+        encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
+    };
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_encoding
         .store(&mut namespace)
@@ -6633,8 +6692,8 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
             .suffix_value
             .as_ref()
             .expect("complete control suffix")
-            .evaluation,
-        crate::native::CatiaEntityEvaluation::ControlE8
+            .payload,
+        crate::native::CatiaEntitySuffixPayload::ControlE8
     ));
     assert!(control.entity_records[0].parameter_value.is_none());
 }

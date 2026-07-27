@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 120;
+pub const CATIA_NATIVE_VERSION: u32 = 121;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -717,8 +717,6 @@ pub struct CatiaRelationTypeInput {
 pub enum CatiaEntityEvaluation {
     /// The `E7` form carries no evaluated scalar.
     Unset,
-    /// The `E8` form carries one zero-payload control state.
-    ControlE8,
     /// The `E6` form carries one finite IEEE-754 binary64 scalar.
     Scalar {
         /// Exact stored binary64 bits.
@@ -735,17 +733,34 @@ pub enum CatiaEntityEvaluationEncoding {
     ZeroPaddedScalar,
 }
 
-/// One complete scalar or unset value in an entity-record suffix.
+/// Payload of one complete entity-record suffix value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaEntitySuffixPayload {
+    /// An unset or finite scalar evaluation with exact framing.
+    Evaluation {
+        /// Stored scalar or unset evaluation.
+        evaluation: CatiaEntityEvaluation,
+        /// Exact evaluation framing variant.
+        encoding: CatiaEntityEvaluationEncoding,
+    },
+    /// One canonical one-byte atom.
+    Atom {
+        /// Decoded atom value.
+        value: u32,
+    },
+    /// One zero-payload `E8` control state.
+    ControlE8,
+}
+
+/// One complete typed value in an entity-record suffix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntitySuffixValue {
     /// Three canonical one-byte atoms preceding the field code.
     pub prefix_atoms: [u32; 3],
-    /// Exact field code preceding the evaluation opcode.
+    /// Exact field code preceding the payload.
     pub prefix_code: u8,
-    /// Stored scalar or unset evaluation.
-    pub evaluation: CatiaEntityEvaluation,
-    /// Exact evaluation framing variant.
-    pub encoding: CatiaEntityEvaluationEncoding,
+    /// Stored suffix payload.
+    pub payload: CatiaEntitySuffixPayload,
     /// Exact bytes closing the suffix production.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
@@ -1417,13 +1432,15 @@ fn parameter_value(
     let suffix_value = suffix_value?;
     (suffix_value.prefix_atoms == [5, 22, 2]
         && suffix_value.prefix_code == 0x6a
-        && suffix_value.encoding == CatiaEntityEvaluationEncoding::Direct
-        && matches!(
-            suffix_value.evaluation,
-            CatiaEntityEvaluation::Unset | CatiaEntityEvaluation::Scalar { .. }
-        )
         && suffix_value.trailer == [0x81, 0x52])
     .then_some(())?;
+    let CatiaEntitySuffixPayload::Evaluation {
+        evaluation,
+        encoding: CatiaEntityEvaluationEncoding::Direct,
+    } = &suffix_value.payload
+    else {
+        return None;
+    };
     let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
         entry: selection.entry.clone(),
         value: selection.name.clone(),
@@ -1431,7 +1448,7 @@ fn parameter_value(
     Some(CatiaParameterValue {
         name: schema_value(name),
         binding: schema_value(binding),
-        evaluation: suffix_value.evaluation.clone(),
+        evaluation: evaluation.clone(),
     })
 }
 
@@ -1444,23 +1461,23 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
     };
     let prefix_atoms = [atom(prefix[0])?, atom(prefix[1])?, atom(prefix[2])?];
     let prefix_code = prefix[3];
-    let (evaluation, encoding, trailer_offset) = match *suffix.get(4)? {
+    let (payload, trailer_offset) = match *suffix.get(4)? {
         0xe7 => (
-            CatiaEntityEvaluation::Unset,
-            CatiaEntityEvaluationEncoding::Direct,
+            CatiaEntitySuffixPayload::Evaluation {
+                evaluation: CatiaEntityEvaluation::Unset,
+                encoding: CatiaEntityEvaluationEncoding::Direct,
+            },
             5,
         ),
-        0xe8 => (
-            CatiaEntityEvaluation::ControlE8,
-            CatiaEntityEvaluationEncoding::Direct,
-            5,
-        ),
+        0xe8 => (CatiaEntitySuffixPayload::ControlE8, 5),
         0xe6 if suffix.get(5..9) == Some(&[0x00, 0x00, 0x00, 0xe6]) => {
             let bits = u64::from_le_bytes(suffix.get(9..17)?.try_into().ok()?);
             f64::from_bits(bits).is_finite().then_some(())?;
             (
-                CatiaEntityEvaluation::Scalar { bits },
-                CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
+                CatiaEntitySuffixPayload::Evaluation {
+                    evaluation: CatiaEntityEvaluation::Scalar { bits },
+                    encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
+                },
                 17,
             )
         }
@@ -1468,11 +1485,19 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             let bits = u64::from_le_bytes(suffix.get(5..13)?.try_into().ok()?);
             f64::from_bits(bits).is_finite().then_some(())?;
             (
-                CatiaEntityEvaluation::Scalar { bits },
-                CatiaEntityEvaluationEncoding::Direct,
+                CatiaEntitySuffixPayload::Evaluation {
+                    evaluation: CatiaEntityEvaluation::Scalar { bits },
+                    encoding: CatiaEntityEvaluationEncoding::Direct,
+                },
                 13,
             )
         }
+        atom @ 0x80..=0xd0 => (
+            CatiaEntitySuffixPayload::Atom {
+                value: u32::from(atom - 0x80),
+            },
+            5,
+        ),
         _ => return None,
     };
     let trailer = suffix.get(trailer_offset..)?;
@@ -1483,8 +1508,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
     Some(CatiaEntitySuffixValue {
         prefix_atoms,
         prefix_code,
-        evaluation,
-        encoding,
+        payload,
         trailer: trailer.to_vec(),
     })
 }
