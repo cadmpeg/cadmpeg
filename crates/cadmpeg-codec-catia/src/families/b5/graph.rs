@@ -945,7 +945,7 @@ pub(crate) fn targeted_surfaces(
     object_ids
         .iter()
         .filter_map(|&object_id| {
-            resolve_targeted_surface(object_id, &records, &headers, &resolved, &rolling, 0)
+            resolve_targeted_surface(object_id, &records, &headers, &resolved, &rolling)
                 .map(|surface| (object_id, surface))
         })
         .collect()
@@ -967,38 +967,34 @@ fn merge_targeted_surface(
 }
 
 fn resolve_targeted_surface(
-    object_id: u32,
+    mut object_id: u32,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
-    depth: usize,
 ) -> Option<B5Surface> {
-    (depth < 16).then_some(())?;
-    if records.get(&object_id).is_some_and(Option::is_none) {
-        return None;
+    let mut visited = HashSet::new();
+    loop {
+        if !visited.insert(object_id) || records.get(&object_id).is_some_and(Option::is_none) {
+            return None;
+        }
+        if let Some(surface) = rolling.get(&object_id) {
+            return surface.clone();
+        }
+        if let Some(surface) = resolved.get(&object_id) {
+            return surface.clone();
+        }
+        let record = records.get(&object_id)?.as_ref()?;
+        if let Some(target) = surface_alias_target(record) {
+            object_id = target;
+            continue;
+        }
+        if let Some(construction) = parse_supported_surface(record) {
+            object_id = construction.carrier_surface;
+            continue;
+        }
+        return surface_node(record, headers.get(&object_id));
     }
-    if let Some(surface) = rolling.get(&object_id) {
-        return surface.clone();
-    }
-    if let Some(surface) = resolved.get(&object_id) {
-        return surface.clone();
-    }
-    let record = records.get(&object_id)?.as_ref()?;
-    if let Some(target) = surface_alias_target(record) {
-        return resolve_targeted_surface(target, records, headers, resolved, rolling, depth + 1);
-    }
-    if let Some(construction) = parse_supported_surface(record) {
-        return resolve_targeted_surface(
-            construction.carrier_surface,
-            records,
-            headers,
-            resolved,
-            rolling,
-            depth + 1,
-        );
-    }
-    surface_node(record, headers.get(&object_id))
 }
 
 fn parse_edge_refs(record: &B5Record) -> Option<[u32; 5]> {
@@ -3109,9 +3105,63 @@ mod tests {
             }),
         )]);
         assert_eq!(
-            resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling, 0,),
+            resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling),
             rolling.get(&1).cloned().flatten()
         );
+    }
+
+    #[test]
+    fn targeted_surface_resolution_has_no_alias_depth_limit() {
+        let records = (1u32..=20)
+            .map(|object_id| {
+                (
+                    object_id,
+                    Some(B5Record {
+                        offset: usize::try_from(object_id).expect("small object id"),
+                        family: 0xb5,
+                        class: 0x2e,
+                        object_id,
+                        payload: vec![
+                            0x81,
+                            0x80 + u8::try_from(object_id + 1).expect("compact target"),
+                        ],
+                    }),
+                )
+            })
+            .collect();
+        let rolling = HashMap::from([(
+            21,
+            Some(B5Surface::RollingBall {
+                carrier_object_id: 21,
+                definition: ProceduralSurfaceDefinition::Unknown { record: None },
+            }),
+        )]);
+        assert_eq!(
+            resolve_targeted_surface(1, &records, &HashMap::new(), &HashMap::new(), &rolling),
+            rolling.get(&21).cloned().flatten()
+        );
+    }
+
+    #[test]
+    fn targeted_surface_resolution_rejects_alias_cycles() {
+        let alias = |object_id, target| {
+            Some(B5Record {
+                offset: usize::try_from(object_id).expect("small object id"),
+                family: 0xb5,
+                class: 0x2e,
+                object_id,
+                payload: vec![0x81, 0x80 + u8::try_from(target).expect("compact target")],
+            })
+        };
+        let records = HashMap::from([(1, alias(1, 2)), (2, alias(2, 1))]);
+        assert!(resolve_targeted_surface(
+            1,
+            &records,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .is_none());
     }
 
     #[test]
