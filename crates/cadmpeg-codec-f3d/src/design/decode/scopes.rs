@@ -579,7 +579,7 @@ pub(crate) fn exact_move_operation(
             }
             if !matches!(
                 (class_tag.as_str(), frame_length),
-                ("349", 254 | 274) | ("368", 254)
+                ("296", 253) | ("349", 254 | 274) | ("368", 254)
             ) || bytes.get(start + 47) != Some(&0)
             {
                 continue;

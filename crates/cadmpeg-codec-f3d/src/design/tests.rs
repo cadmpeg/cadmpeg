@@ -3298,6 +3298,31 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (move_at + 48) as u64);
     assert_eq!(decoded.form, 5);
 
+    let compact_move_at = bytes.len();
+    let mut compact_move = vec![0; 253];
+    compact_move[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_move[4..7].copy_from_slice(b"296");
+    compact_move[7..11].copy_from_slice(&91u32.to_le_bytes());
+    compact_move[43..47].copy_from_slice(&1u32.to_le_bytes());
+    for (ordinal, value) in move_transform.into_iter().flatten().enumerate() {
+        let at = 48 + ordinal * 8;
+        compact_move[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact_move.extend_from_slice(&3u32.to_le_bytes());
+    compact_move.extend_from_slice(b"265");
+    compact_move.extend_from_slice(&91u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_move);
+    let mut compact_move_scope = scope.clone();
+    compact_move_scope.kind = "Move".into();
+    compact_move_scope.reference_members = vec![91];
+    let decoded = crate::design::decode::scopes::exact_move_operation(&bytes, &compact_move_scope)
+        .expect("class-296 Move frame");
+    assert_eq!(decoded.transform, move_transform);
+    assert_eq!(decoded.transform_offset, (compact_move_at + 48) as u64);
+    assert_eq!(decoded.transform_record_index, 91);
+    assert_eq!(decoded.form, 1);
+    assert_eq!(decoded.form_offset, (compact_move_at + 43) as u64);
+
     let scale_at = bytes.len();
     let mut scale = vec![0; 317];
     scale[20..24].copy_from_slice(&1u32.to_le_bytes());
@@ -4445,6 +4470,27 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
     assert_eq!(compact.members, [200, 201]);
     assert_eq!(compact.role, 0x0000_0008_0000_0000);
     assert_eq!(compact.paired_byte_offset, (paired_at - 3) as u64);
+
+    let tail_at = 11 + 10 + 4 + 2 * 11;
+    let mut flagless = bytes[..tail_at + 62].to_vec();
+    flagless.extend_from_slice(&[0; 2]);
+    flagless.push(1);
+    flagless.extend_from_slice(&101u32.to_le_bytes());
+    flagless.extend_from_slice(&[0; 7]);
+    flagless.push(1);
+    flagless.extend_from_slice(&12u32.to_le_bytes());
+    flagless.extend_from_slice(&[0; 6]);
+    let flagless_paired_at = flagless.len();
+    header(&mut flagless, *b"259", 100);
+    let flagless = parse_construction_operand_group(&flagless, &scope, 0, &record)
+        .expect("flagless counted operand group");
+    assert_eq!(flagless.members, [200, 201]);
+    assert_eq!(flagless.role, 0x0000_0008_0000_0000);
+    assert!(!flagless.variant);
+    assert_eq!(
+        flagless.paired_byte_offset,
+        u64::try_from(flagless_paired_at).unwrap()
+    );
 
     let mut remove_scope = scope.clone();
     remove_scope.kind = "RemoveBody".into();

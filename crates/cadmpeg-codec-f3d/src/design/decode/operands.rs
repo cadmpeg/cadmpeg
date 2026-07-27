@@ -843,21 +843,35 @@ pub(crate) fn parse_construction_operand_group(
         || bytes.get(position + 51) != Some(&1)
         || u32_at(bytes, position + 52)? != header.record_index.checked_add(2)?
         || bytes.get(position + 56..position + 62)? != [0; 6]
-        || bytes.get(position + 62) != Some(&1)
-        || !matches!(bytes.get(position + 63), Some(0 | 1))
-        || bytes.get(position + 64) != Some(&0)
-        || bytes.get(position + 65) != Some(&1)
-        || u32_at(bytes, position + 66)? != header.record_index.checked_add(1)?
-        || bytes.get(position + 70..position + 77)? != [0; 7]
-        || bytes.get(position + 77) != Some(&1)
-        || u32_at(bytes, position + 78)? != scope.record_index
     {
         return None;
     }
-    let paired_at = if bytes.get(position + 82..position + 88)? == [0; 6] {
-        position + 88
-    } else if bytes.get(position + 82..position + 85)? == [0; 3] {
-        position + 85
+    let (variant, paired_at) = if bytes.get(position + 62) == Some(&1)
+        && matches!(bytes.get(position + 63), Some(0 | 1))
+        && bytes.get(position + 64) == Some(&0)
+        && bytes.get(position + 65) == Some(&1)
+        && u32_at(bytes, position + 66)? == header.record_index.checked_add(1)?
+        && bytes.get(position + 70..position + 77)? == [0; 7]
+        && bytes.get(position + 77) == Some(&1)
+        && u32_at(bytes, position + 78)? == scope.record_index
+    {
+        let paired_at = if bytes.get(position + 82..position + 88)? == [0; 6] {
+            position + 88
+        } else if bytes.get(position + 82..position + 85)? == [0; 3] {
+            position + 85
+        } else {
+            return None;
+        };
+        (bytes[position + 63] != 0, paired_at)
+    } else if bytes.get(position + 62..position + 64)? == [0; 2]
+        && bytes.get(position + 64) == Some(&1)
+        && u32_at(bytes, position + 65)? == header.record_index.checked_add(1)?
+        && bytes.get(position + 69..position + 76)? == [0; 7]
+        && bytes.get(position + 76) == Some(&1)
+        && u32_at(bytes, position + 77)? == scope.record_index
+        && bytes.get(position + 81..position + 87)? == [0; 6]
+    {
+        (false, position + 87)
     } else {
         return None;
     };
@@ -887,7 +901,7 @@ pub(crate) fn parse_construction_operand_group(
         opaque_index_offset: u64::try_from(position + 35).ok()?,
         opaque_scalar,
         opaque_scalar_offset: u64::try_from(position + 39).ok()?,
-        variant: bytes[position + 63] != 0,
+        variant,
         paired_class_tag,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
