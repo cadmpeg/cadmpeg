@@ -14614,11 +14614,18 @@ fn named_feature_definition(
             ),
         ));
     }
-    if let Some(role) = match kind {
+    let tree_node_role = match kind {
         "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
         "Cross Section" | "Querschnitt" => Some(FeatureTreeNodeRole::CrossSections),
+        "Body" | "Körper" if feature_reference_name(scan, feature_id).is_none() => {
+            Some(FeatureTreeNodeRole::SolidBodies)
+        }
+        "Surface" if feature_reference_name(scan, feature_id).is_none() => {
+            Some(FeatureTreeNodeRole::SurfaceBodies)
+        }
         _ => None,
-    } {
+    };
+    if let Some(role) = tree_node_role {
         return Some(IrFeatureDefinition::TreeNode {
             role,
             children: Vec::new(),

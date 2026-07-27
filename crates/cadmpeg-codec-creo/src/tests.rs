@@ -2850,6 +2850,43 @@ fn decode_types_localized_cross_section_nodes() {
 }
 
 #[test]
+fn decode_types_body_and_surface_tree_nodes() {
+    let data = build_prt(
+        "c",
+        &[(
+            "MdlStatus",
+            b"Body id 4\0K\xc3\xb6rper ID 5\0Surface id 6\0".to_vec(),
+        )],
+    );
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+
+    assert_eq!(result.ir.model.features.len(), 3);
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
+            ..
+        }
+    ));
+    assert!(matches!(
+        result.ir.model.features[1].definition,
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
+            ..
+        }
+    ));
+    assert!(matches!(
+        result.ir.model.features[2].definition,
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::SurfaceBodies,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

@@ -1873,8 +1873,12 @@ and `Schräge` denote the same datum-plane, round, and draft families as
 `Datum Plane`, `Round`, and `Draft`, respectively. `Annotation Feature` is a
 non-modeling annotation container.
 `Cross Section` and its German operation-family name `Querschnitt` are
-non-modeling cross-section definitions. `Mirror` identifies a reflection
-operation.
+non-modeling cross-section definitions. A current-state `Body` or `Körper`
+record with no recipe, root feature-definition class, or feature reference name
+is a solid-body model-tree node. A `Surface` record under the same conditions
+is a surface-body model-tree node. A recipe, root class, or reference name
+takes precedence and identifies the corresponding modeling operation. `Mirror`
+identifies a reflection operation.
 
 Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
 name's localization. An ASCII `o`, `x`, `y`, or `z` byte immediately preceding

@@ -69,6 +69,10 @@ fixtures, claims above L1 remain unproven.
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
   distinct producing feature, independent of feature-row order.
+- Bare `Body`, `Körper`, and `Surface` operation states without a recipe,
+  schema row, or feature reference name transfer as solid-body and surface-body
+  model-tree nodes. Recipe-, schema-, and reference-backed records retain their
+  modeling-operation precedence.
 - Every decoded section-dimension row transfers as a definition-scoped design
   parameter; table completeness gates ordinal relation joins, not row
   preservation.
