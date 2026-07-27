@@ -9127,6 +9127,74 @@ fn section_skamp_endpoint(
         .flatten()
 }
 
+fn section_skamp_shared_endpoint(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    entity: &crate::feature::FeatureSkampItem,
+    selected: &crate::feature::FeatureSkampItem,
+) -> Option<SketchLocus> {
+    (entity.sense == 0).then_some(())?;
+    let segment = unique_section_skamp_segment(definition, entity.entity_id)?;
+    matches!(
+        segment.kind,
+        crate::feature::FeatureSegmentKind::Line | crate::feature::FeatureSegmentKind::Arc
+    )
+    .then_some(())?;
+    let selected_point = section_skamp_selected_point_id(definition, selected)?;
+    let mut endpoints = segment
+        .point_ids
+        .iter()
+        .enumerate()
+        .filter(|(_, point_id)| **point_id == selected_point);
+    let (endpoint, _) = endpoints.next()?;
+    endpoints.next().is_none().then_some(())?;
+    section_skamp_locus(
+        definition,
+        sketch,
+        &crate::feature::FeatureSkampItem {
+            entity_id: entity.entity_id,
+            sense: if endpoint == 0 { 2 } else { 3 },
+        },
+    )
+}
+
+fn section_skamp_tangent_loci(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    first: &crate::feature::FeatureSkampItem,
+    second: &crate::feature::FeatureSkampItem,
+    active: bool,
+    geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
+) -> Option<[SketchLocus; 2]> {
+    let selected_locus = |item| {
+        if active {
+            section_skamp_endpoint(definition, sketch, item)
+        } else if matches!(item.sense, 2 | 3) {
+            section_skamp_incidence_locus(definition, sketch, item, geometry)
+        } else {
+            None
+        }
+    };
+    if let (Some(first), Some(second)) = (selected_locus(first), selected_locus(second)) {
+        return Some([first, second]);
+    }
+    [(first, second), (second, first)]
+        .into_iter()
+        .find_map(|(entity, selected)| {
+            Some([
+                section_skamp_shared_endpoint(definition, sketch, entity, selected)?,
+                selected_locus(selected)?,
+            ])
+        })
+        .map(|loci| {
+            if first.sense == 0 {
+                loci
+            } else {
+                [loci[1].clone(), loci[0].clone()]
+            }
+        })
+}
+
 fn section_skamp_point_locus(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -9571,15 +9639,6 @@ fn section_skamp_constraints_for_geometry(
                     operands,
                 })
             };
-            let tangent_locus = |item| {
-                if active {
-                    section_skamp_endpoint(definition, sketch, item)
-                } else if matches!(item.sense, 2 | 3) {
-                    section_skamp_incidence_locus(definition, sketch, item, geometry)
-                } else {
-                    None
-                }
-            };
             let item_geometry = |item: &crate::feature::FeatureSkampItem| {
                 let entity = sketch_entity_id(sketch, item.entity_id);
                 geometry?.get(&entity)
@@ -9713,21 +9772,20 @@ fn section_skamp_constraints_for_geometry(
                             None => native_constraint()?,
                         }
                     }
-                    (4, [first, second])
-                        if tangent_locus(first).is_some() && tangent_locus(second).is_some() =>
-                    {
-                        SketchConstraintDefinition::TangentLoci {
-                            first: tangent_locus(first)?,
-                            second: tangent_locus(second)?,
-                        }
-                    }
-                    (4, [first, second])
-                        if section_skamp_curve_entity(definition, sketch, first).is_some()
-                            && section_skamp_curve_entity(definition, sketch, second).is_some() =>
-                    {
-                        SketchConstraintDefinition::Tangent {
-                            first: section_skamp_curve_entity(definition, sketch, first)?,
-                            second: section_skamp_curve_entity(definition, sketch, second)?,
+                    (4, [first, second]) => {
+                        if let Some([first, second]) = section_skamp_tangent_loci(
+                            definition, sketch, first, second, active, geometry,
+                        ) {
+                            SketchConstraintDefinition::TangentLoci { first, second }
+                        } else if section_skamp_curve_entity(definition, sketch, first).is_some()
+                            && section_skamp_curve_entity(definition, sketch, second).is_some()
+                        {
+                            SketchConstraintDefinition::Tangent {
+                                first: section_skamp_curve_entity(definition, sketch, first)?,
+                                second: section_skamp_curve_entity(definition, sketch, second)?,
+                            }
+                        } else {
+                            native_constraint()?
                         }
                     }
                     (5, [first, second])

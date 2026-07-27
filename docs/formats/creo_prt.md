@@ -1413,9 +1413,14 @@ coincident-loci constraint. The separate sense-zero-curve form maps to
 point-on-object as defined above.
 A two-item type-four incidence with sense zero on both curve entities maps to
 an entity-level tangent constraint. Endpoint-selected operands map to the
-explicit tangent-loci form. A disabled endpoint-selected incidence retains
-that tangent-loci form when the endpoint carriers remain native geometry;
-carrier evaluation is not required to satisfy the disabled tangent equation.
+explicit tangent-loci form. When exactly one operand has sense zero and the
+other selects an endpoint, the selected endpoint's section-point identifier
+selects the unique matching endpoint of the sense-zero line or arc. The two
+matched endpoints map to the explicit tangent-loci form. No match or two
+matches retain the native incidence. A disabled endpoint-selected incidence
+retains the tangent-loci form when the endpoint carriers remain native
+geometry; carrier evaluation is not required to satisfy the disabled tangent
+equation.
 A two-item type-nine incidence with sense zero on two lines makes the lines
 collinear. The line-and-point form maps to point-on-object as defined above.
 A one-item type-one incidence with sense zero makes the referenced line

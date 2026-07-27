@@ -88,6 +88,11 @@ fixtures, claims above L1 remain unproven.
   constraint on that native line without activating the corroborating equation.
   The type-35 incidence itself transfers as a neutral midpoint constraint when
   that native line and point locus are both emitted.
+- A type-four incidence with one sense-zero line or arc and one
+  endpoint-selected operand transfers as an explicit tangent-loci constraint
+  when the selected section-point identifier matches exactly one endpoint of
+  the sense-zero entity. This structural join is independent of solver
+  activity and does not require evaluated tangent vectors.
 - A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`

@@ -5567,6 +5567,70 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         entity_id: 14,
         sense: 0,
     };
+    let mut mixed_tangent = definition.clone();
+    let mixed_tangent_relations = mixed_tangent.relations.as_mut().expect("relations");
+    mixed_tangent_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 18,
+        kind: 4,
+        flags: 0,
+        status: 34,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 3,
+            },
+        ],
+        offset: 83,
+    }];
+    mixed_tangent_relations
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 1;
+    assert_eq!(
+        section_skamp_constraints(&mixed_tangent, &SketchId("creo:model:sketch#917".into()))[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::TangentLoci {
+            first: SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:13".to_string()
+            )),
+            second: SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:12".to_string()
+            )),
+        }
+    );
+    mixed_tangent.relations.as_mut().expect("relations").skamps[0]
+        .items
+        .reverse();
+    assert_eq!(
+        section_skamp_constraints(&mixed_tangent, &SketchId("creo:model:sketch#917".into()))[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::TangentLoci {
+            first: SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:12".to_string()
+            )),
+            second: SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:13".to_string()
+            )),
+        }
+    );
+    mixed_tangent.relations.as_mut().expect("relations").skamps[0].items[0] =
+        crate::feature::FeatureSkampItem {
+            entity_id: 15,
+            sense: 2,
+        };
+    assert!(matches!(
+        section_skamp_constraints(&mixed_tangent, &SketchId("creo:model:sketch#917".into()))[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
     let mut point_coincidence_definition = definition.clone();
     let point_coincidence_relations = point_coincidence_definition
         .relations
