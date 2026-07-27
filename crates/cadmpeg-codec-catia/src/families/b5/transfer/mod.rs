@@ -19,7 +19,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use super::graph::{loop_chain_senses, B5Graph, B5OffsetSurface, B5SupportedSurface, B5Surface};
+use super::graph::{
+    loop_chain_senses, B5ExtrusionSurface, B5Graph, B5OffsetSurface, B5SupportedSurface, B5Surface,
+};
 
 mod edges;
 mod faces;
@@ -55,6 +57,7 @@ struct RevolutionPlan {
 
 #[allow(clippy::large_enum_variant)]
 enum SurfaceProcedure {
+    Extrusion(Box<ResolvedExtrusionSurface>),
     Revolution(RevolutionPlan),
     RollingBall {
         carrier_object_id: u32,
@@ -211,6 +214,7 @@ fn referenced_surface_ids(
     roots: impl IntoIterator<Item = u32>,
     offsets: &BTreeMap<u32, B5OffsetSurface>,
     supported: &BTreeMap<u32, B5SupportedSurface>,
+    extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
 ) -> HashSet<u32> {
     let mut referenced = roots.into_iter().collect::<HashSet<_>>();
     let mut pending = referenced.iter().copied().collect::<Vec<_>>();
@@ -223,6 +227,15 @@ fn referenced_surface_ids(
                     let mut dependencies = construction.support_surfaces.to_vec();
                     dependencies.push(construction.carrier_surface);
                     dependencies
+                })
+            })
+            .or_else(|| {
+                extrusions.get(&surface_id).map(|extrusion| {
+                    extrusion
+                        .directrix
+                        .supports
+                        .map(|(support, _, _)| support)
+                        .to_vec()
                 })
             })
             .unwrap_or_default();
@@ -251,6 +264,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         graph.faces.iter().map(|face| face.surface),
         &graph.offset_surfaces,
         &graph.supported_surfaces,
+        &graph.extrusion_surfaces,
     );
     let mut surface_plan = BTreeMap::new();
     for surface_id in referenced_surfaces {
@@ -645,7 +659,7 @@ pub(crate) fn resolved_surface_procedural_definition(
             carrier_object_id,
             definition,
         } => Some((carrier_object_id, definition)),
-        SurfaceProcedure::Revolution(_) => None,
+        SurfaceProcedure::Extrusion(_) | SurfaceProcedure::Revolution(_) => None,
     }
 }
 
@@ -675,6 +689,8 @@ pub(crate) struct ResolvedExtrusionSurface {
     pub(crate) cache_fit_tolerance: f64,
     /// Unit world-space extrusion direction.
     pub(crate) direction: Vector3,
+    /// Ordered native U and V chart bounds.
+    pub(crate) parameter_bounds: [[f64; 2]; 2],
     /// Ordered exact support sides.
     pub(crate) supports: [ResolvedExtrusionSupport; 2],
 }
@@ -751,6 +767,7 @@ pub(crate) fn resolved_extrusion_surface(
         directrix_parameter_range: extrusion.directrix.parameter_range,
         cache_fit_tolerance: extrusion.directrix.cache_fit_tolerance,
         direction: vector(extrusion.direction),
+        parameter_bounds: extrusion.parameter_bounds,
         supports,
     })
 }
@@ -863,9 +880,9 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::super::graph::{
-        loop_chain_senses, B5Face, B5Graph, B5Loop, B5OffsetSurface, B5ParameterIncidence,
-        B5Pcurve, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
-        B5SupportedSurfaceParameters, B5Surface,
+        loop_chain_senses, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop,
+        B5OffsetSurface, B5ParameterIncidence, B5Pcurve, B5Profile, B5SphereGreatCirclePcurve,
+        B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
     };
     use super::edges::{
         b5_edge_support_definition, b5_supports_follow_edge, bounded_occurrence_range,
@@ -919,10 +936,24 @@ mod tests {
                 },
             },
         )]);
+        let extrusions = BTreeMap::from([(
+            50,
+            B5ExtrusionSurface {
+                object_id: 50,
+                direction: [0.0, 0.0, 1.0],
+                parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
+                directrix: B5ExtrusionDirectrix {
+                    object_id: 80,
+                    supports: [(90, 91, [0.0, 1.0]), (100, 101, [0.0, 1.0])],
+                    parameter_range: [0.0, 1.0],
+                    cache_fit_tolerance: 1e-6,
+                },
+            },
+        )]);
 
         assert_eq!(
-            referenced_surface_ids([10], &offsets, &supported),
-            HashSet::from([10, 20, 30, 31, 40, 50])
+            referenced_surface_ids([10], &offsets, &supported, &extrusions),
+            HashSet::from([10, 20, 30, 31, 40, 50, 90, 100])
         );
     }
 

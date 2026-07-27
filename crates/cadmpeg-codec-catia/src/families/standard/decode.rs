@@ -107,7 +107,7 @@ pub(crate) fn emit_standard_extrusion_definition(
         "object_stream_a8_03_25",
         0,
         "two_surface_pcurve_intersection",
-        Exactness::Derived,
+        Exactness::ByteExact,
     );
     ir.model.procedural_curves.push(ProceduralCurve {
         id: directrix_procedure,
@@ -130,6 +130,17 @@ pub(crate) fn emit_standard_extrusion_definition(
     };
     extrusion_definitions.insert(surface_object_id, definition.clone());
     definition
+}
+
+fn extrusion_record_bounds(
+    extrusion: &crate::families::b5::transfer::ResolvedExtrusionSurface,
+) -> [Option<f64>; 4] {
+    [
+        Some(extrusion.parameter_bounds[0][0]),
+        Some(extrusion.parameter_bounds[0][1]),
+        Some(extrusion.parameter_bounds[1][0]),
+        Some(extrusion.parameter_bounds[1][1]),
+    ]
 }
 
 pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> {
@@ -377,6 +388,13 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
     let mut extrusion_definitions = HashMap::<u32, ProceduralSurfaceDefinition>::new();
     for (index, surface, tag, procedure) in procedural_surface_plans {
         let procedural_id = ProceduralSurfaceId(format!("catia:standard:procedural-surf#{index}"));
+        let record_bounds = match &procedure {
+            StandardSurfaceProcedure::Extrusion(extrusion) => {
+                Some(extrusion_record_bounds(extrusion))
+            }
+            StandardSurfaceProcedure::RollingBall { .. }
+            | StandardSurfaceProcedure::Offset { .. } => None,
+        };
         let (source, carrier, definition, exactness) = match procedure {
             StandardSurfaceProcedure::RollingBall {
                 carrier_object_id,
@@ -419,6 +437,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                             .clone()
                     }
                     crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
+                        let record_bounds = extrusion_record_bounds(&extrusion);
                         let support_id = SurfaceId(format!(
                             "catia:standard:procedural-support#{support_object_id}"
                         ));
@@ -428,7 +447,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                             "object_stream_b5_03_2c",
                             0,
                             format!("surface:{support_object_id:08x}"),
-                            Exactness::Derived,
+                            Exactness::ByteExact,
                         );
                         surfaces.push(Surface {
                             id: support_id.clone(),
@@ -450,7 +469,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                             surface: support_id.clone(),
                             definition,
                             cache_fit_tolerance: None,
-                            record_bounds: None,
+                            record_bounds: Some(record_bounds),
                         });
                         procedural_supports.insert(support_object_id, support_id.clone());
                         support_id
@@ -486,7 +505,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                     "object_stream_b5_03_2c",
                     carrier,
                     definition,
-                    Exactness::Derived,
+                    Exactness::ByteExact,
                 )
             }
         };
@@ -503,7 +522,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             surface,
             definition,
             cache_fit_tolerance: None,
-            record_bounds: None,
+            record_bounds,
         });
     }
 

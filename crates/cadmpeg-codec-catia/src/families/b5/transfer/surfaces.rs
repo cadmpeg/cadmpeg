@@ -6,10 +6,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
+    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
     Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{B5Graph, B5Profile, B5Surface};
@@ -100,6 +101,14 @@ pub(super) fn neutral_surface(
         return SurfacePlan {
             geometry,
             procedure: None,
+        };
+    }
+    if let Some(extrusion) = super::resolved_extrusion_surface(graph, surface_id) {
+        return SurfacePlan {
+            geometry: SurfaceGeometry::Unknown {
+                record: Some(payload.clone()),
+            },
+            procedure: Some(SurfaceProcedure::Extrusion(Box::new(extrusion))),
         };
     }
     let mut procedure = None;
@@ -448,14 +457,22 @@ pub(super) fn emit_surfaces(
     plan: &mut TransferPlan,
 ) -> HashMap<u32, SurfaceId> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
-    let mut surface_ids = HashMap::new();
+    let surface_ids = surface_plan
+        .keys()
+        .map(|object_id| {
+            (
+                *object_id,
+                SurfaceId(format!("catia:b5:surface#{object_id}")),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let face_surfaces = graph
         .faces
         .iter()
         .map(|face| face.surface)
         .collect::<HashSet<_>>();
     for (object_id, plan) in surface_plan {
-        let id = SurfaceId(format!("catia:b5:surface#{object_id}"));
+        let id = surface_ids[&object_id].clone();
         let revolution_cache = matches!(
             plan.procedure.as_ref(),
             Some(SurfaceProcedure::Revolution(_))
@@ -464,6 +481,11 @@ pub(super) fn emit_surfaces(
             plan.procedure.as_ref(),
             Some(SurfaceProcedure::RollingBall { .. })
         );
+        let exact_procedural_carrier = rolling_ball_carrier
+            || matches!(
+                plan.procedure.as_ref(),
+                Some(SurfaceProcedure::Extrusion(_))
+            );
         annotate(
             annotations,
             &id,
@@ -473,7 +495,7 @@ pub(super) fn emit_surfaces(
             } else {
                 "construction_surface"
             },
-            if rolling_ball_carrier {
+            if exact_procedural_carrier {
                 Exactness::ByteExact
             } else if matches!(plan.geometry, SurfaceGeometry::Unknown { .. }) {
                 Exactness::Unknown
@@ -486,13 +508,15 @@ pub(super) fn emit_surfaces(
         if revolution_cache {
             annotations.derived(&id, "geometry");
         }
-        surface_ids.insert(object_id, id.clone());
         ir.model.surfaces.push(Surface {
             id: id.clone(),
             geometry: plan.geometry,
             source_object: Some(cgm_source("surface", object_id)),
         });
         match plan.procedure {
+            Some(SurfaceProcedure::Extrusion(extrusion)) => {
+                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion);
+            }
             Some(SurfaceProcedure::Revolution(revolution)) => {
                 let directrix_id = CurveId(format!("catia:b5:profile#{object_id}"));
                 annotate(
@@ -591,4 +615,183 @@ pub(super) fn emit_surfaces(
         });
     }
     surface_ids
+}
+
+fn emit_extrusion_procedure(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    surface_ids: &HashMap<u32, SurfaceId>,
+    surface_id: SurfaceId,
+    surface_object_id: u32,
+    extrusion: super::ResolvedExtrusionSurface,
+) {
+    let sides = extrusion.supports.map(|side| IntcurveSupportSide {
+        surface: Some(surface_ids[&side.surface_object_id].clone()),
+        pcurve: Some(side.pcurve),
+        pcurve_parameter_range: (side.pcurve_parameter_range
+            != extrusion.directrix_parameter_range)
+            .then_some(side.pcurve_parameter_range),
+    });
+    let directrix_id = CurveId(format!(
+        "catia:b5:extrusion-directrix#{}",
+        extrusion.directrix_object_id
+    ));
+    annotate(
+        annotations,
+        &directrix_id,
+        "object_stream_a8_03_25",
+        "two_support_directrix",
+        Exactness::Unknown,
+    );
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Unknown { record: None },
+        source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+    });
+    let directrix_procedure = ProceduralCurveId(format!(
+        "catia:b5:extrusion-directrix-procedure#{}",
+        extrusion.directrix_object_id
+    ));
+    annotate(
+        annotations,
+        &directrix_procedure,
+        "object_stream_a8_03_25",
+        "two_surface_pcurve_intersection",
+        Exactness::ByteExact,
+    );
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: directrix_procedure,
+        curve: directrix_id.clone(),
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides,
+                parameter_range: extrusion.directrix_parameter_range,
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: Some(extrusion.cache_fit_tolerance),
+    });
+    let procedure_id = ProceduralSurfaceId(format!("catia:b5:extrusion#{surface_object_id}"));
+    annotate(
+        annotations,
+        &procedure_id,
+        "object_stream_b5_03",
+        "2c_extrusion_surface",
+        Exactness::ByteExact,
+    );
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: procedure_id,
+        surface: surface_id,
+        definition: ProceduralSurfaceDefinition::Extrusion {
+            directrix: directrix_id,
+            parameter_interval: Some(extrusion.directrix_parameter_range),
+            direction: extrusion.direction,
+            native_position: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: Some([
+            Some(extrusion.parameter_bounds[0][0]),
+            Some(extrusion.parameter_bounds[0][1]),
+            Some(extrusion.parameter_bounds[1][0]),
+            Some(extrusion.parameter_bounds[1][1]),
+        ]),
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::units::Units;
+
+    use crate::families::b5::transfer::{ResolvedExtrusionSupport, ResolvedExtrusionSurface};
+
+    #[test]
+    fn extrusion_emits_exact_two_support_intersection() {
+        let support_ids = HashMap::from([
+            (10, SurfaceId("support-10".to_string())),
+            (20, SurfaceId("support-20".to_string())),
+        ]);
+        let pcurve = |x| PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
+            weights: None,
+            periodic: false,
+        };
+        let extrusion = ResolvedExtrusionSurface {
+            surface_object_id: 30,
+            directrix_object_id: 40,
+            directrix_parameter_range: [0.0, 1.0],
+            cache_fit_tolerance: 1e-5,
+            direction: Vector3::new(0.0, 0.0, 1.0),
+            parameter_bounds: [[-2.0, 3.0], [0.0, 1.0]],
+            supports: [
+                ResolvedExtrusionSupport {
+                    surface_object_id: 10,
+                    surface: SurfaceGeometry::Plane {
+                        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        normal: Vector3::new(1.0, 0.0, 0.0),
+                        u_axis: Vector3::new(0.0, 1.0, 0.0),
+                    },
+                    pcurve: pcurve(0.0),
+                    pcurve_parameter_range: [0.0, 1.0],
+                },
+                ResolvedExtrusionSupport {
+                    surface_object_id: 20,
+                    surface: SurfaceGeometry::Plane {
+                        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        normal: Vector3::new(0.0, 1.0, 0.0),
+                        u_axis: Vector3::new(1.0, 0.0, 0.0),
+                    },
+                    pcurve: pcurve(1.0),
+                    pcurve_parameter_range: [0.25, 0.75],
+                },
+            ],
+        };
+        let mut ir = CadIr::empty(Units::default());
+
+        emit_extrusion_procedure(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &support_ids,
+            SurfaceId("result-30".to_string()),
+            30,
+            extrusion,
+        );
+
+        assert!(matches!(
+            ir.model.curves[0].geometry,
+            CurveGeometry::Unknown { record: None }
+        ));
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &ir.model.procedural_curves[0].definition
+        else {
+            panic!("expected intersection directrix");
+        };
+        assert_eq!(context.parameter_range, [0.0, 1.0]);
+        assert_eq!(context.sides[0].surface, Some(support_ids[&10].clone()));
+        assert_eq!(context.sides[0].pcurve_parameter_range, None);
+        assert_eq!(context.sides[1].surface, Some(support_ids[&20].clone()));
+        assert_eq!(context.sides[1].pcurve_parameter_range, Some([0.25, 0.75]));
+        assert_eq!(
+            ir.model.procedural_curves[0].cache_fit_tolerance,
+            Some(1e-5)
+        );
+        assert!(matches!(
+            ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::Extrusion {
+                parameter_interval: Some([0.0, 1.0]),
+                direction,
+                native_position: None,
+                ..
+            } if direction == Vector3::new(0.0, 0.0, 1.0)
+        ));
+        assert_eq!(
+            ir.model.procedural_surfaces[0].record_bounds,
+            Some([Some(-2.0), Some(3.0), Some(0.0), Some(1.0)])
+        );
+    }
 }
