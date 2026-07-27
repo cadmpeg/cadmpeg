@@ -6274,6 +6274,22 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
 }
 
 #[test]
+fn deltas_fixed_record_boundary_accepts_known_auxiliary_tag() {
+    let mut stream = deltas_bspline_curve_wrapper_stream();
+    let wrapper_len = stream.len();
+    stream.extend_from_slice(&[0, 141, 0xfe]);
+
+    let census = crate::deltas::walk(&stream);
+    let wrapper = census
+        .records
+        .iter()
+        .find(|record| record.kind == 134)
+        .expect("B_CURVE wrapper");
+    assert_eq!(wrapper.end, wrapper_len);
+    assert_eq!(wrapper.canonical_bytes.len(), 23);
+}
+
+#[test]
 fn merged_deltas_full_record_replaces_partition_node() {
     let partition = topology_partition_stream();
     let mut deltas = status_framed_deltas_point_stream();
