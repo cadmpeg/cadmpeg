@@ -288,7 +288,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} closed formula parameter(s) transferred, while neutral features, other parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s) transferred, while neutral features, other parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
                 transferred_formula_parameter_count,
             ),
@@ -337,13 +337,6 @@ fn transfer_formula_parameters(
         let Some(signature) = &expression.signature else {
             continue;
         };
-        let Some(output) = formula.parameter.as_deref().and_then(|id| entities.get(id)) else {
-            continue;
-        };
-        let Some(output_value) = &output.parameter_value else {
-            continue;
-        };
-
         let mut transferred = Vec::with_capacity(formula.parameter_dependencies.len() + 1);
         let mut dependencies = Vec::with_capacity(formula.parameter_dependencies.len());
         let mut used_inputs = BTreeSet::new();
@@ -374,10 +367,6 @@ fn transfer_formula_parameters(
             };
             used_inputs.insert(input.parameter.as_str());
             let id = neutral_parameter_id(&entity.id);
-            if entity.id == output.id {
-                complete = false;
-                break;
-            }
             if dependencies.contains(&id) {
                 continue;
             }
@@ -415,33 +404,40 @@ fn transfer_formula_parameters(
         {
             continue;
         }
-        let Ok(ordinal) = u32::try_from(output.ordinal) else {
-            continue;
-        };
-        let Some(value) =
-            typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
-        else {
-            continue;
-        };
-        transferred.push(FormulaParameterCandidate {
-            parameter: DesignParameter {
-                id: neutral_parameter_id(&output.id),
-                owner: None,
-                ordinal,
-                name: output_value.name.value.clone(),
-                expression: expression.expression.value.clone(),
-                display: None,
-                value: match value {
-                    TypedParameterEvaluation::Unset => None,
-                    TypedParameterEvaluation::Value(value) => Some(value),
-                },
-                dependencies,
-                properties: BTreeMap::new(),
-                pmi: None,
-                native_ref: Some(output.id.clone()),
-            },
-            formula_output: true,
-        });
+        if let Some(output) = formula.parameter.as_deref().and_then(|id| entities.get(id)) {
+            if let Some(output_value) = &output.parameter_value {
+                let output_id = neutral_parameter_id(&output.id);
+                if !dependencies.contains(&output_id) {
+                    if let (Ok(ordinal), Some(value)) = (
+                        u32::try_from(output.ordinal),
+                        typed_parameter_evaluation(
+                            &signature.result_type,
+                            &output_value.evaluation,
+                        ),
+                    ) {
+                        transferred.push(FormulaParameterCandidate {
+                            parameter: DesignParameter {
+                                id: output_id,
+                                owner: None,
+                                ordinal,
+                                name: output_value.name.value.clone(),
+                                expression: expression.expression.value.clone(),
+                                display: None,
+                                value: match value {
+                                    TypedParameterEvaluation::Unset => None,
+                                    TypedParameterEvaluation::Value(value) => Some(value),
+                                },
+                                dependencies,
+                                properties: BTreeMap::new(),
+                                pmi: None,
+                                native_ref: Some(output.id.clone()),
+                            },
+                            formula_output: true,
+                        });
+                    }
+                }
+            }
+        }
 
         for candidate in transferred {
             match candidates.get(&candidate.parameter.id) {

@@ -6255,6 +6255,30 @@ fn formula_parameter_dependency_requires_a_unique_binding() {
 }
 
 #[test]
+fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_relation(0x63, false)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode formula with unresolved output");
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("independently typed formula input")
+    };
+
+    assert_eq!(input.name, "Thickness");
+    assert_eq!(input.expression, "35 mm");
+    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert!(input.dependencies.is_empty());
+    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 1);
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+        .findings
+        .is_empty());
+}
+
+#[test]
 fn decode_transfers_a_closed_length_formula_and_its_input() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 
