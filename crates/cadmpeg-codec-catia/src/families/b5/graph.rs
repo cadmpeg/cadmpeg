@@ -978,11 +978,13 @@ fn resolve_targeted_surface(
         if !visited.insert(object_id) || records.get(&object_id).is_some_and(Option::is_none) {
             return None;
         }
-        if let Some(surface) = rolling.get(&object_id) {
-            return surface.clone();
-        }
-        if let Some(surface) = resolved.get(&object_id) {
-            return surface.clone();
+        match (
+            rolling.get(&object_id).cloned().flatten(),
+            resolved.get(&object_id).cloned().flatten(),
+        ) {
+            (Some(left), Some(right)) if left != right => return None,
+            (Some(surface), _) | (_, Some(surface)) => return Some(surface),
+            (None, None) => {}
         }
         let record = records.get(&object_id)?.as_ref()?;
         if let Some(target) = surface_alias_target(record) {
@@ -3162,6 +3164,36 @@ mod tests {
             &HashMap::new(),
         )
         .is_none());
+    }
+
+    #[test]
+    fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
+        let rolling = HashMap::from([(
+            1,
+            Some(B5Surface::RollingBall {
+                carrier_object_id: 1,
+                definition: ProceduralSurfaceDefinition::Unknown { record: None },
+            }),
+        )]);
+        let resolved = HashMap::from([(
+            1,
+            Some(B5Surface::Nurbs(NurbsSurface {
+                u_degree: 1,
+                v_degree: 1,
+                u_count: 2,
+                v_count: 2,
+                u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
+                weights: None,
+                u_periodic: false,
+                v_periodic: false,
+            })),
+        )]);
+        assert!(
+            resolve_targeted_surface(1, &HashMap::new(), &HashMap::new(), &resolved, &rolling,)
+                .is_none()
+        );
     }
 
     #[test]
