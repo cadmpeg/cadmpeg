@@ -458,7 +458,7 @@ Direct and escaped type-40 `CHART_s`, type-41 `term_use`, type-59 blend-bound, a
 
 Direct and escaped type-125 through type-128 and type-135 through type-136 NURBS records use the layouts in section 9.3. Counted payload, multiplicity, and knot records end after their declared value lanes. Surface descriptors end after the control-payload reference following the type-125 payload-family marker in their selected short or extended-reference layout. Curve descriptors end after their knot reference. These records participate in the deltas byte ledger and remain in the semantic lane.
 
-Type 141 has the complete deltas record `008d [ff], xmt, ref status, ref 00, ref 00, ref 01`, where the first status is binary. Each XMT field uses the compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity. The record ends after the fourth status byte, participates in the deltas byte ledger, and remains in the semantic lane.
+Type 141 has the complete deltas record `008d [ff], xmt, ref status, ref 00, ref 00, ref status`, where the first and fourth statuses are binary. Each XMT field uses the compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity. The record ends after the fourth status byte, participates in the deltas byte ledger, and remains in the semantic lane.
 
 Type 45 has the complete deltas record `002d [ff], count:u32 BE, xmt, value[count + 1]:f64 BE`. The count is nonzero, the XMT identity is non-null, and every value is finite. The optional `ff` envelope byte precedes the count. The record ends after its declared value lane, participates in the deltas byte ledger, and remains in the semantic lane.
 

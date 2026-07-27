@@ -1070,7 +1070,7 @@ fn type_141_layout(
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
     let mut references = Vec::new();
-    for required_status in [None, Some(0), Some(0), Some(1)] {
+    for required_status in [None, Some(0), Some(0), None] {
         let (reference, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
         let status = *stream.get(at)?;
