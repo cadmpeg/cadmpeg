@@ -176,6 +176,10 @@ fn finish_decode(
         .sum();
     report.coverage.extend([
         (
+            "decoded_consolidated_class61_record_count".to_string(),
+            native.consolidated_class61_records.len(),
+        ),
+        (
             "decoded_object_graph_count".to_string(),
             native.object_graphs.len(),
         ),

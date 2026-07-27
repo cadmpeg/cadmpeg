@@ -3397,6 +3397,58 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
 }
 
 #[test]
+fn native_namespace_retains_consolidated_class61_records() {
+    let mut stream = b2_counted_61_stream();
+    stream.extend_from_slice(&b2_long_61_stream());
+    let native = crate::native::CatiaNative::decode(&stream);
+    let [counted, long] = native.consolidated_class61_records.as_slice() else {
+        panic!("two consolidated class-0x61 records")
+    };
+    let crate::native::CatiaConsolidatedClass61Payload::Counted { references, tail } =
+        &counted.payload
+    else {
+        panic!("counted class-0x61 record")
+    };
+    assert_eq!(references, &[1300, 1294, 30, 74]);
+    assert_eq!(tail, &[0x41, 0x03]);
+    let crate::native::CatiaConsolidatedClass61Payload::Long {
+        prefix,
+        members,
+        references,
+        scalar,
+    } = &long.payload
+    else {
+        panic!("long class-0x61 record")
+    };
+    assert_eq!(prefix, &[0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb]);
+    assert_eq!(members, &[0x064a, 0x0650, 0x0656]);
+    assert_eq!(references, &[0x0100, 0x0103, 0x0106, 0x0109, 0x010c]);
+    assert_eq!(*scalar, 42.5);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA class-0x61 records");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA class-0x61 records"),
+        native
+    );
+
+    let mut invalid = native;
+    let crate::native::CatiaConsolidatedClass61Payload::Long { members, .. } =
+        &mut invalid.consolidated_class61_records[1].payload
+    else {
+        panic!("long class-0x61 record")
+    };
+    members.swap(0, 1);
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA class-0x61 record for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_unbound_consolidated_revolution_carriers() {
     let native = crate::native::CatiaNative::decode(&b2_revolution_stream());
     let [revolution] = native.consolidated_revolutions.as_slice() else {

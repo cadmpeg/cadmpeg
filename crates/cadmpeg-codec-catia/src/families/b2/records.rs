@@ -126,7 +126,6 @@ pub enum B2OwnerReferenceEncoding {
 
 /// Count-prefixed class-`0x61` reference record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2Counted61 {
     /// Record byte offset.
     pub pos: usize,
@@ -140,7 +139,6 @@ pub struct B2Counted61 {
 
 /// Long-form class-`0x61` record with a monotone u16 member lane.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg(test)]
 pub struct B2Long61 {
     /// Record byte offset.
     pub pos: usize,
@@ -517,7 +515,6 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
 /// records without a leading count belong to a separate grammar and are not
 /// returned.
 #[must_use]
-#[cfg(test)]
 pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
     b_family_frames(data, 0x61)
         .into_iter()
@@ -547,7 +544,6 @@ pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
 /// Decode the long class-`0x61` form. Its fixed 25-byte suffix determines the
 /// monotone member-list boundary without searching for delimiter bytes.
 #[must_use]
-#[cfg(test)]
 pub fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
     b_family_frames(data, 0x61)
         .into_iter()

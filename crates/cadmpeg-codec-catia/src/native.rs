@@ -17,12 +17,13 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 111;
+pub const CATIA_NATIVE_VERSION: u32 = 112;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
+    "consolidated_class61_records",
     "consolidated_edge_nodes",
     "consolidated_edge_runs",
     "consolidated_owner_packets",
@@ -193,6 +194,45 @@ pub struct CatiaConsolidatedRevolution {
     pub profile_range: [f64; 2],
     /// Positive scale from revolution angle to stored angular parameter.
     pub angular_scale: f64,
+}
+
+/// One structurally complete consolidated class-`0x61` record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedClass61Record {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Counted or long-form record payload.
+    pub payload: CatiaConsolidatedClass61Payload,
+}
+
+/// Structurally decoded payload of a consolidated class-`0x61` record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CatiaConsolidatedClass61Payload {
+    /// Count-selected compact reference lane followed by a class-specific tail.
+    Counted {
+        /// Compact identities in serialization order.
+        references: Vec<u32>,
+        /// Complete nonempty tail, including terminal byte `0x03`.
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[schemars(with = "String")]
+        tail: Vec<u8>,
+    },
+    /// Long form with a monotone member lane and five persistent references.
+    Long {
+        /// Complete eight-byte prefix preceding the member-list marker.
+        prefix: [u8; 8],
+        /// Strictly increasing allocation members.
+        members: Vec<u16>,
+        /// Five persistent identities following the list delimiter.
+        references: [u16; 5],
+        /// Finite class-specific scalar preceding the terminal byte.
+        scalar: f64,
+    },
 }
 
 /// One complete consolidated historical edge run referencing two retained
@@ -1554,6 +1594,9 @@ pub struct CatiaNative {
     /// Framed source-schema name catalogs.
     #[serde(default)]
     pub catalogs: Vec<CatiaCatalog>,
+    /// Complete consolidated class-`0x61` records.
+    #[serde(default)]
+    pub consolidated_class61_records: Vec<CatiaConsolidatedClass61Record>,
     /// Structurally complete consolidated edge nodes.
     #[serde(default)]
     pub consolidated_edge_nodes: Vec<CatiaConsolidatedEdgeNode>,
@@ -1601,6 +1644,7 @@ impl Default for CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
+            consolidated_class61_records: Vec::new(),
             consolidated_edge_nodes: Vec::new(),
             consolidated_edge_runs: Vec::new(),
             consolidated_owner_packets: Vec::new(),
@@ -1616,6 +1660,51 @@ impl Default for CatiaNative {
             value_blocks: Vec::new(),
         }
     }
+}
+
+fn consolidated_class61_records(bytes: &[u8]) -> Vec<CatiaConsolidatedClass61Record> {
+    let mut records = crate::families::b2::records::b2_counted_61(bytes)
+        .into_iter()
+        .map(|record| {
+            (
+                record.pos,
+                record.header_token,
+                CatiaConsolidatedClass61Payload::Counted {
+                    references: record.references,
+                    tail: record.tail,
+                },
+            )
+        })
+        .chain(
+            crate::families::b2::records::b2_long_61(bytes)
+                .into_iter()
+                .map(|record| {
+                    (
+                        record.pos,
+                        record.header_token,
+                        CatiaConsolidatedClass61Payload::Long {
+                            prefix: record.prefix,
+                            members: record.members,
+                            references: record.references,
+                            scalar: record.scalar,
+                        },
+                    )
+                }),
+        )
+        .collect::<Vec<_>>();
+    records.sort_by_key(|(pos, _, _)| *pos);
+    records
+        .into_iter()
+        .enumerate()
+        .map(
+            |(index, (pos, header_token, payload))| CatiaConsolidatedClass61Record {
+                id: format!("catia:consolidated:class61-record#{index}"),
+                byte_offset: pos as u64,
+                header_token,
+                payload,
+            },
+        )
+        .collect()
 }
 
 fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
@@ -2000,6 +2089,37 @@ fn native_consolidated_support_binding(
             offset: *offset,
         },
     }
+}
+
+#[cfg(test)]
+fn validate_consolidated_class61_records(
+    records: &[CatiaConsolidatedClass61Record],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, record) in records.iter().enumerate() {
+        let expected_id = format!("catia:consolidated:class61-record#{index}");
+        let valid_payload = match &record.payload {
+            CatiaConsolidatedClass61Payload::Counted { references, tail } => {
+                !references.is_empty() && !tail.is_empty() && tail.last() == Some(&0x03)
+            }
+            CatiaConsolidatedClass61Payload::Long {
+                members, scalar, ..
+            } => {
+                scalar.is_finite()
+                    && !members.is_empty()
+                    && members.windows(2).all(|pair| pair[0] < pair[1])
+            }
+        };
+        if record.id != expected_id
+            || !valid_payload
+            || index > 0 && records[index - 1].byte_offset >= record.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated class-0x61 record `{}` is structurally invalid",
+                record.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2848,6 +2968,7 @@ impl CatiaNative {
             .collect::<Vec<_>>();
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
+        let consolidated_class61_records = consolidated_class61_records(bytes);
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
         let consolidated_revolutions = consolidated_revolutions(bytes);
@@ -2860,6 +2981,7 @@ impl CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
+            consolidated_class61_records,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_owner_packets,
@@ -3204,6 +3326,10 @@ impl CatiaNative {
         }
         let preview_images = expected_preview_images;
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
+        let mut consolidated_class61_records: Vec<CatiaConsolidatedClass61Record> =
+            namespace.arena_as("consolidated_class61_records")?;
+        consolidated_class61_records.sort_by_key(|record| record.byte_offset);
+        validate_consolidated_class61_records(&consolidated_class61_records)?;
         let mut consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket> =
             namespace.arena_as("consolidated_owner_packets")?;
         consolidated_owner_packets.sort_by_key(|packet| packet.byte_offset);
@@ -3241,6 +3367,7 @@ impl CatiaNative {
             version: namespace.version,
             alias_rows,
             catalogs,
+            consolidated_class61_records,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_owner_packets,
@@ -3307,6 +3434,10 @@ impl CatiaNative {
             .flat_map(|block| block.schema_selections.iter().cloned())
             .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena(
+            "consolidated_class61_records",
+            &self.consolidated_class61_records,
+        )?;
         namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
         namespace.set_arena(
@@ -3348,6 +3479,7 @@ impl CatiaNative {
             version: _,
             alias_rows,
             mut catalogs,
+            consolidated_class61_records,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_owner_packets,
@@ -3377,6 +3509,10 @@ impl CatiaNative {
 
         namespace.version = CATIA_NATIVE_VERSION;
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena(
+            "consolidated_class61_records",
+            &consolidated_class61_records,
+        )?;
         namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
         namespace.set_arena("consolidated_owner_packets", &consolidated_owner_packets)?;
