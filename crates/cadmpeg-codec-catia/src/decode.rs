@@ -348,7 +348,7 @@ fn transfer_formula_parameters(
         let mut transferred = Vec::with_capacity(formula.parameter_dependencies.len() + 1);
         let mut dependencies = Vec::with_capacity(formula.parameter_dependencies.len());
         let mut used_inputs = BTreeSet::new();
-        let mut complete = !formula.parameter_dependencies.is_empty();
+        let mut all_inputs_complete = !formula.parameter_dependencies.is_empty();
         for dependency in &formula.parameter_dependencies {
             let Some(input) = signature.inputs.iter().find(|input| {
                 dependency
@@ -356,22 +356,22 @@ fn transfer_formula_parameters(
                     .strip_prefix(&input.parameter)
                     .is_some_and(|suffix| suffix.starts_with(char::is_whitespace))
             }) else {
-                complete = false;
-                break;
+                all_inputs_complete = false;
+                continue;
             };
             let Some(entity) = entities.get(dependency.parameter.as_str()) else {
-                complete = false;
-                break;
+                all_inputs_complete = false;
+                continue;
             };
             let Some(parameter) = &entity.parameter_value else {
-                complete = false;
-                break;
+                all_inputs_complete = false;
+                continue;
             };
             let Some(TypedParameterEvaluation::Value(value)) =
                 typed_parameter_evaluation(&input.input_type, &parameter.evaluation)
             else {
-                complete = false;
-                break;
+                all_inputs_complete = false;
+                continue;
             };
             used_inputs.insert(input.parameter.as_str());
             let id = neutral_parameter_id(&entity.id);
@@ -379,8 +379,8 @@ fn transfer_formula_parameters(
                 continue;
             }
             let Ok(ordinal) = u32::try_from(entity.ordinal) else {
-                complete = false;
-                break;
+                all_inputs_complete = false;
+                continue;
             };
             dependencies.push(id.clone());
             transferred.push(FormulaParameterCandidate {
@@ -406,13 +406,15 @@ fn transfer_formula_parameters(
                 formula_output: false,
             });
         }
-        if !complete
-            || used_inputs.len() != signature.inputs.len()
-            || dependencies.len() != signature.inputs.len()
+        let formula_complete = all_inputs_complete
+            && used_inputs.len() == signature.inputs.len()
+            && dependencies.len() == signature.inputs.len();
+        if let Some(output) = formula
+            .parameter
+            .as_deref()
+            .filter(|_| formula_complete)
+            .and_then(|id| entities.get(id))
         {
-            continue;
-        }
-        if let Some(output) = formula.parameter.as_deref().and_then(|id| entities.get(id)) {
             if let Some(output_value) = &output.parameter_value {
                 let output_id = neutral_parameter_id(&output.id);
                 if !dependencies.contains(&output_id) {

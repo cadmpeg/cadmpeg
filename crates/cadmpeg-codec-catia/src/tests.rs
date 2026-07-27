@@ -6585,25 +6585,42 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
 }
 
 #[test]
-fn decode_rejects_a_multi_input_formula_missing_a_declared_input() {
+fn decode_transfers_each_supported_formula_input_independently() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
-                5,
+                6,
                 false,
                 &[
                     ("#1_", "LENGTH", "Width", "#1_ /2", 12.0),
-                    ("#2_", "ANGLE", "Draft", "#2_ /3", 0.25),
+                    ("#2_", "String", "Label", "#2_ /3", 0.25),
+                    ("#3_", "Real", "Depth", "#3_ /4", 6.5),
                 ],
                 "Real",
                 Some(3.0),
-                "#1_ /2",
+                "#1_ /2+#2_ /3+#3_ /4",
             )),
             &DecodeOptions::default(),
         )
         .expect("decode incomplete multi-input formula");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    let [width, depth] = decoded.ir.model.parameters.as_slice() else {
+        panic!("independently bound formula inputs")
+    };
+    assert_eq!(width.name, "Width");
+    assert_eq!(
+        width.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(12.0)
+        ))
+    );
+    assert!(width.dependencies.is_empty());
+    assert_eq!(depth.name, "Depth");
+    assert_eq!(
+        depth.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(6.5))
+    );
+    assert!(depth.dependencies.is_empty());
 }
 
 #[test]
