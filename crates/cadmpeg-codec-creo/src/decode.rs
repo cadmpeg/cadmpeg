@@ -8076,17 +8076,48 @@ fn unique_feature_revolution_extent_kind(
     kinds.all(|candidate| candidate == kind).then_some(kind)
 }
 
-fn line_orientation_definition(
+fn section_segment_verhor_definition(
     segment: &crate::feature::FeatureSegment,
+    sketch: &SketchId,
     entity: SketchEntityId,
 ) -> Option<SketchConstraintDefinition> {
-    if segment.kind != crate::feature::FeatureSegmentKind::Line {
-        return None;
+    let verhor = segment.vertical_horizontal?;
+    match (segment.kind, verhor) {
+        (crate::feature::FeatureSegmentKind::Line, 0) => {
+            Some(SketchConstraintDefinition::Vertical { entity })
+        }
+        (crate::feature::FeatureSegmentKind::Line, 1) => {
+            Some(SketchConstraintDefinition::Horizontal { entity })
+        }
+        _ => Some(native_section_segment_verhor_definition(
+            sketch,
+            entity,
+            segment.external_id,
+            verhor,
+        )),
     }
-    match segment.vertical_horizontal {
-        Some(0) => Some(SketchConstraintDefinition::Vertical { entity }),
-        Some(1) => Some(SketchConstraintDefinition::Horizontal { entity }),
-        _ => None,
+}
+
+fn native_section_segment_verhor_definition(
+    sketch: &SketchId,
+    entity: SketchEntityId,
+    external_id: u32,
+    verhor: u32,
+) -> SketchConstraintDefinition {
+    SketchConstraintDefinition::Native {
+        native_kind: "creo:segtab:verhor".to_string(),
+        native_state: None,
+        native_flags: None,
+        native_properties: BTreeMap::from([("verhor".to_string(), verhor.to_string())]),
+        entities: vec![entity],
+        parameter: None,
+        operands: vec![SketchNativeOperand {
+            native_kind: "segtab_ptr".to_string(),
+            native_field: Some("ext_id".to_string()),
+            native_role: None,
+            object_index: external_id,
+            native_ref: Some(sketch_native_ref(sketch)),
+        }],
     }
 }
 
@@ -10045,6 +10076,17 @@ fn section_segment_identity_suffix(
     }
 }
 
+fn opaque_section_segment_identity_suffix(
+    unique_external_ids: &BTreeSet<u32>,
+    segment: &crate::feature::FeatureOpaqueSegment,
+) -> String {
+    if unique_external_ids.contains(&segment.external_id) {
+        segment.external_id.to_string()
+    } else {
+        format!("opaque:offset:{}", segment.offset)
+    }
+}
+
 fn resolved_profile_chains(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -10741,11 +10783,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             {
                 continue;
             }
-            let suffix = if unique_external_id {
-                segment.external_id.to_string()
-            } else {
-                format!("opaque:offset:{}", segment.offset)
-            };
+            let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
             let id = sketch_entity_id(&sketch_id, suffix);
             let geometry = if matches!(segment.kind, 1 | 10 | 47) {
                 opaque_geometries
@@ -11190,12 +11228,41 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .iter()
             .map(|entity| (entity.id.clone(), entity.geometry.clone()))
             .collect::<BTreeMap<_, _>>();
-        let mut constraints = segments
+        let verhor_definitions = segments
             .iter()
             .filter_map(|segment| {
                 let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
                 let entity = sketch_entity_id(&sketch_id, &suffix);
-                let mut constraint_definition = line_orientation_definition(segment, entity)?;
+                Some((
+                    suffix,
+                    section_segment_verhor_definition(segment, &sketch_id, entity)?,
+                    segment.offset,
+                ))
+            })
+            .chain(
+                definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| &table.opaque_rows)
+                    .filter_map(|segment| {
+                        let verhor = segment.vertical_horizontal?;
+                        let suffix =
+                            opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
+                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        Some((
+                            suffix,
+                            native_section_segment_verhor_definition(
+                                &sketch_id,
+                                entity,
+                                segment.external_id,
+                                verhor,
+                            ),
+                            segment.offset,
+                        ))
+                    }),
+            );
+        let mut constraints = verhor_definitions
+            .filter_map(|(suffix, mut constraint_definition, offset)| {
                 reconcile_constraint_entity_references(
                     &mut constraint_definition,
                     &emitted_entity_ids,
@@ -11206,8 +11273,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     annotations,
                     &id.0,
                     "FeatDefs",
-                    segment.offset as u64,
-                    "section_line_orientation_constraint",
+                    offset as u64,
+                    "section_verhor_constraint",
                     Exactness::ByteExact,
                 );
                 Some(SketchConstraint {

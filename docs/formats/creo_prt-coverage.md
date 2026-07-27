@@ -72,6 +72,10 @@ fixtures, claims above L1 remain unproven.
 - Every decoded section-dimension row transfers as a definition-scoped design
   parameter; table completeness gates ordinal relation joins, not row
   preservation.
+- Every decoded non-null `segtab.verhor` field transfers as a distinct source
+  constraint. Values zero and one on a line use the defined neutral vertical
+  and horizontal forms; other segment families and selector values retain the
+  exact scalar and segment identity in a native constraint.
 - A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`

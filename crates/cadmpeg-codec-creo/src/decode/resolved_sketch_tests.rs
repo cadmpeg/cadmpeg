@@ -4734,7 +4734,7 @@ fn placed_extrusion_arc_defines_cylinder() {
 }
 
 #[test]
-fn line_orientation_selectors_are_closed() {
+fn segment_verhor_projection_is_closed_and_lossless() {
     let mut segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,
         directions: [None; 3],
@@ -4748,24 +4748,46 @@ fn line_orientation_selectors_are_closed() {
         offset: 40,
     };
     let entity = SketchEntityId("entity".into());
+    let sketch = SketchId("sketch".into());
     assert_eq!(
-        line_orientation_definition(&segment, entity.clone()),
+        section_segment_verhor_definition(&segment, &sketch, entity.clone()),
         Some(SketchConstraintDefinition::Vertical {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(1);
     assert_eq!(
-        line_orientation_definition(&segment, entity.clone()),
+        section_segment_verhor_definition(&segment, &sketch, entity.clone()),
         Some(SketchConstraintDefinition::Horizontal {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(2);
-    assert_eq!(line_orientation_definition(&segment, entity.clone()), None);
+    let Some(SketchConstraintDefinition::Native {
+        native_properties,
+        entities,
+        operands,
+        ..
+    }) = section_segment_verhor_definition(&segment, &sketch, entity.clone())
+    else {
+        panic!("an undefined line selector must remain native");
+    };
+    assert_eq!(native_properties["verhor"], "2");
+    assert_eq!(entities, [entity.clone()]);
+    assert_eq!(operands[0].native_kind, "segtab_ptr");
+    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(operands[0].object_index, 12);
     segment.kind = crate::feature::FeatureSegmentKind::Arc;
     segment.vertical_horizontal = Some(0);
-    assert_eq!(line_orientation_definition(&segment, entity), None);
+    assert!(matches!(
+        section_segment_verhor_definition(&segment, &sketch, entity),
+        Some(SketchConstraintDefinition::Native { .. })
+    ));
+    segment.vertical_horizontal = None;
+    assert_eq!(
+        section_segment_verhor_definition(&segment, &sketch, SketchEntityId("entity".into())),
+        None
+    );
 }
 
 #[test]

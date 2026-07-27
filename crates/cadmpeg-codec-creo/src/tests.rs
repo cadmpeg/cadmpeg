@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
@@ -3770,6 +3771,36 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
             .count(),
         5
     );
+    let constraints = result
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| constraint.sketch == sketch.id)
+        .collect::<Vec<_>>();
+    assert_eq!(constraints.len(), 5);
+    let point_verhor = constraints
+        .iter()
+        .find(|constraint| constraint.id.0 == "creo:featdefs:sketch_constraint#40:verhor:4")
+        .expect("point verhor constraint");
+    let SketchConstraintDefinition::Native {
+        native_kind,
+        native_properties,
+        entities,
+        operands,
+        ..
+    } = &point_verhor.definition
+    else {
+        panic!("point verhor must remain native");
+    };
+    assert_eq!(native_kind, "creo:segtab:verhor");
+    assert_eq!(native_properties["verhor"], "2");
+    assert_eq!(
+        entities,
+        &[SketchEntityId("creo:featdefs:sketch_entity#40:4".into())]
+    );
+    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(operands[0].object_index, 4);
 }
 
 #[test]
@@ -3777,7 +3808,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
     let mut definition =
         b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
     definition.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
-    definition.extend_from_slice(&[25, 0, 0, 0, 8, 9, 0xf6, 0, 0, 0xf6, 0xf6, 43, 0xe2, 0xe3]);
+    definition.extend_from_slice(&[25, 0, 0, 0, 8, 9, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     definition.extend_from_slice(
         b"dimtab_ptr\0\xf8\x01\xf7\x58\xfb\xe2\
           \xe0\x01type\0\x02\xe0\x01value\0\xe4\
@@ -3846,6 +3877,40 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             )))
         );
         assert!(parameters[0].id.0.contains(&format!("#{identity_scope}:")));
+        let constraints = result
+            .ir
+            .model
+            .sketch_constraints
+            .iter()
+            .filter(|constraint| constraint.sketch == sketch.id)
+            .collect::<Vec<_>>();
+        assert_eq!(constraints.len(), 2);
+        let opaque_verhor = constraints
+            .iter()
+            .find(|constraint| {
+                matches!(
+                    &constraint.definition,
+                    SketchConstraintDefinition::Native { .. }
+                )
+            })
+            .expect("opaque segment verhor");
+        assert!(opaque_verhor.id.0.starts_with(&format!(
+            "creo:featdefs:sketch_constraint#{identity_scope}:verhor:opaque:offset:"
+        )));
+        let SketchConstraintDefinition::Native {
+            native_properties,
+            operands,
+            ..
+        } = &opaque_verhor.definition
+        else {
+            panic!("opaque segment verhor must remain native");
+        };
+        assert_eq!(native_properties["verhor"], "0");
+        assert_eq!(operands[0].object_index, 42);
+        assert_eq!(
+            operands[0].native_ref.as_deref(),
+            sketch.native_ref.as_deref()
+        );
     }
     assert_eq!(
         result
