@@ -1126,6 +1126,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     SketchGeometry::Circle { .. }
                         | SketchGeometry::Arc { .. }
                         | SketchGeometry::Ellipse { .. }
+                        | SketchGeometry::Native { .. }
                 ),
             };
             if !valid {

@@ -3674,6 +3674,24 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("relations")
         .skamps[0]
+        .items[0]
+        .sense = 4;
+    assert_eq!(
+        solver_only_section_entity_family(&solver_families, 99),
+        Some(SectionEntityIncidenceFamily::Circular)
+    );
+    solver_families
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[0]
+        .sense = 2;
+    solver_families
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
         .status = 1;
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
@@ -5629,6 +5647,73 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         section_skamp_constraints(&mixed_tangent, &SketchId("creo:model:sketch#917".into()))[0]
             .0
             .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
+    let mut point_pair = definition.clone();
+    let point_pair_relations = point_pair.relations.as_mut().expect("relations");
+    point_pair_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 19,
+        kind: 3,
+        flags: 0,
+        status: 34,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 14,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 0,
+            },
+        ],
+        offset: 84,
+    }];
+    point_pair_relations
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 1;
+    let sketch = SketchId("creo:model:sketch#917".into());
+    let point_pair_geometry = BTreeMap::from([
+        (
+            SketchEntityId("creo:featdefs:sketch_entity#917:14".to_string()),
+            SketchGeometry::Native {
+                native_kind: "point".to_string(),
+            },
+        ),
+        (
+            SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
+            SketchGeometry::Native {
+                native_kind: "point".to_string(),
+            },
+        ),
+    ]);
+    assert_eq!(
+        section_skamp_constraints_for_geometry(&point_pair, &sketch, Some(&point_pair_geometry))[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::CoincidentLoci {
+            loci: vec![
+                SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:14".to_string()
+                )),
+                SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:99".to_string()
+                )),
+            ],
+        }
+    );
+    let missing_point_geometry = BTreeMap::from([(
+        SketchEntityId("creo:featdefs:sketch_entity#917:14".to_string()),
+        SketchGeometry::Native {
+            native_kind: "point".to_string(),
+        },
+    )]);
+    assert!(matches!(
+        section_skamp_constraints_for_geometry(&point_pair, &sketch, Some(&missing_point_geometry))
+            [0]
+        .0
+        .definition,
         SketchConstraintDefinition::Native { .. }
     ));
     let mut point_coincidence_definition = definition.clone();

@@ -1409,8 +1409,9 @@ type-four incidence makes the referenced entities tangent at their selected
 endpoint loci.
 A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci map to a neutral
-coincident-loci constraint. The separate sense-zero-curve form maps to
-point-on-object as defined above.
+coincident-loci constraint. Two sense-zero point entities also map to neutral
+coincident loci. The separate sense-zero-curve form maps to point-on-object as
+defined above.
 A two-item type-four incidence with sense zero on both curve entities maps to
 an entity-level tangent constraint. Endpoint-selected operands map to the
 explicit tangent-loci form. When exactly one operand has sense zero and the
@@ -1495,9 +1496,10 @@ saved-section definition is a solver-only section entity. It retains one
 construction-entity identity shared by every incidence in the sketch; its
 geometry remains native. A unique non-conflicting line role from a two-line
 type five, seven, or eight incidence retains the native line family. Sense `4`
-or a two-circle type-six incidence retains the native circular family. Sense
-`2` or `3` retains the native endpoint-bearing curve family; independent line
-evidence narrows that family to line, while circular evidence narrows it to arc.
+retains the native circular family independently of solver activity; a
+two-circle type-six incidence supplies the same role while active. Sense `2` or
+`3` retains the native endpoint-bearing curve family; independent line evidence
+narrows that family to line, while circular evidence narrows it to arc.
 In a type-zero coincidence, a sense-zero solver-only entity paired with an
 endpoint or center locus of a uniquely established carrier family retains the
 native point family.

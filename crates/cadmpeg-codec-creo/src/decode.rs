@@ -9677,9 +9677,12 @@ fn section_skamp_constraints_for_geometry(
                     .then(|| SketchLocus::Center(sketch_entity_id(sketch, item.entity_id)))
                 })
             };
-            let inactive_point_entity = |item: &crate::feature::FeatureSkampItem| {
+            let point_entity = |item: &crate::feature::FeatureSkampItem| {
+                (item.sense == 0).then_some(())?;
+                if section_skamp_is_point(definition, item) {
+                    return Some(sketch_entity_id(sketch, item.entity_id));
+                }
                 (!active
-                    && item.sense == 0
                     && item_geometry(item).is_some_and(|geometry| {
                         matches!(geometry, SketchGeometry::Point { .. })
                             || matches!(
@@ -9691,7 +9694,7 @@ fn section_skamp_constraints_for_geometry(
             };
             let inactive_point_locus = |item: &crate::feature::FeatureSkampItem| {
                 section_skamp_point_locus(definition, sketch, item)
-                    .or_else(|| inactive_point_entity(item).map(SketchLocus::Entity))
+                    .or_else(|| point_entity(item).map(SketchLocus::Entity))
                     .or_else(|| inactive_incidence_locus(item))
             };
             let mut constraint_definition = if unique_skamp_id {
@@ -9724,42 +9727,46 @@ fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (3, [first, second]) => {
-                        let directed = [(first, second), (second, first)];
-                        let point_on_curve = directed
-                            .into_iter()
-                            .filter_map(|(curve, point)| {
-                                Some((
-                                    section_skamp_curve_entity(definition, sketch, curve)
-                                        .or_else(|| inactive_curve_entity(curve))?,
-                                    inactive_incidence_locus(point)?,
-                                ))
-                            })
-                            .collect::<Vec<_>>();
-                        if let [(entity, point)] = point_on_curve.as_slice() {
-                            SketchConstraintDefinition::PointOnObject {
-                                point: point.clone(),
-                                entity: entity.clone(),
+                        if let (Some(first), Some(second)) =
+                            (point_entity(first), point_entity(second))
+                        {
+                            SketchConstraintDefinition::CoincidentLoci {
+                                loci: vec![SketchLocus::Entity(first), SketchLocus::Entity(second)],
                             }
                         } else {
-                            let point_coincidence = directed
+                            let directed = [(first, second), (second, first)];
+                            let point_on_curve = directed
                                 .into_iter()
-                                .filter_map(|(point, locus)| {
-                                    (point.sense == 0 && section_skamp_is_point(definition, point))
-                                        .then(|| {
-                                            Some([
-                                                section_skamp_locus(definition, sketch, point)?,
-                                                inactive_incidence_locus(locus)?,
-                                            ])
-                                        })
-                                        .flatten()
+                                .filter_map(|(curve, point)| {
+                                    Some((
+                                        section_skamp_curve_entity(definition, sketch, curve)
+                                            .or_else(|| inactive_curve_entity(curve))?,
+                                        inactive_incidence_locus(point)?,
+                                    ))
                                 })
                                 .collect::<Vec<_>>();
-                            if let [loci] = point_coincidence.as_slice() {
-                                SketchConstraintDefinition::CoincidentLoci {
-                                    loci: loci.to_vec(),
+                            if let [(entity, point)] = point_on_curve.as_slice() {
+                                SketchConstraintDefinition::PointOnObject {
+                                    point: point.clone(),
+                                    entity: entity.clone(),
                                 }
                             } else {
-                                native_constraint()?
+                                let point_coincidence = directed
+                                    .into_iter()
+                                    .filter_map(|(point, locus)| {
+                                        Some([
+                                            SketchLocus::Entity(point_entity(point)?),
+                                            inactive_incidence_locus(locus)?,
+                                        ])
+                                    })
+                                    .collect::<Vec<_>>();
+                                if let [loci] = point_coincidence.as_slice() {
+                                    SketchConstraintDefinition::CoincidentLoci {
+                                        loci: loci.to_vec(),
+                                    }
+                                } else {
+                                    native_constraint()?
+                                }
                             }
                         }
                     }
@@ -9857,17 +9864,14 @@ fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (14, [center, first, second])
-                        if (center.sense == 0 && section_skamp_is_point(definition, center)
-                            || inactive_point_entity(center).is_some())
+                        if point_entity(center).is_some()
                             && inactive_point_locus(first).is_some()
                             && inactive_point_locus(second).is_some() =>
                     {
                         SketchConstraintDefinition::PointSymmetric {
                             first: inactive_point_locus(first)?,
                             second: inactive_point_locus(second)?,
-                            center: section_skamp_locus(definition, sketch, center).or_else(
-                                || inactive_point_entity(center).map(SketchLocus::Entity),
-                            )?,
+                            center: SketchLocus::Entity(point_entity(center)?),
                         }
                     }
                     (17 | 30 | 31, [_, _]) => {
@@ -10678,6 +10682,14 @@ fn solver_only_section_entity_family(
         .contains_key(&entity_id)
         .then_some(())?;
     let mut evidence = section_incidence_curve_family_evidence(definition, entity_id);
+    if complete_section_skamps(definition).any(|skamp| {
+        skamp
+            .items
+            .iter()
+            .any(|item| item.entity_id == entity_id && item.sense == 4)
+    }) {
+        evidence.insert(SectionEntityIncidenceFamily::Circular);
+    }
     for skamp in definition
         .relations
         .iter()

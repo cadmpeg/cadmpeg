@@ -93,6 +93,11 @@ fixtures, claims above L1 remain unproven.
   when the selected section-point identifier matches exactly one endpoint of
   the sense-zero entity. This structural join is independent of solver
   activity and does not require evaluated tangent vectors.
+- A sense-four incidence item establishes a solver-only entity's circular
+  family independently of solver activity. A disabled type-three incidence can
+  therefore transfer its selected center onto a sense-zero curve. A disabled
+  type-three incidence between two emitted sense-zero point entities transfers
+  as coincident loci.
 - A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`

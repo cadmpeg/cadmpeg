@@ -744,6 +744,14 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
     }));
+    ir.model.sketch_entities[0].geometry = SketchGeometry::Native {
+        native_kind: "center-bearing-curve".into(),
+    };
+    let report = validate(&ir, Vec::new());
+    assert!(!report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(constraint_id.0.as_str())
+            && finding.check == Check::GeometricConsistency
+    }));
 }
 
 #[test]
