@@ -9346,6 +9346,23 @@ mod marker_tests {
         payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         assert!(indexed_arc_uses_coordinate_center(&payload, 0));
 
+        let mut compact_84 = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        compact_84[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        compact_84[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        compact_84[29..31].copy_from_slice(&1u16.to_le_bytes());
+        compact_84[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        compact_84[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        compact_84[56..60].copy_from_slice(&[15, 0, 16, 0]);
+        compact_84[60..64].copy_from_slice(&1u32.to_le_bytes());
+        compact_84[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        compact_84[72..76].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+        compact_84[80..84].copy_from_slice(&8u32.to_le_bytes());
+        compact_84[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert!(indexed_arc_uses_coordinate_center(&compact_84, 0));
+        compact_84[58..60].copy_from_slice(&15u16.to_le_bytes());
+        assert!(!indexed_arc_uses_coordinate_center(&compact_84, 0));
+
         let mut current = vec![0; 92 + SKETCH_MARKER.len()];
         current[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         current[5..13].fill(0xff);
@@ -37240,6 +37257,30 @@ fn legacy_undetailed_profile_line(payload: &[u8], offset: usize) -> bool {
 }
 
 fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) -> bool {
+    let extended_compact_84 = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && payload.get(offset + 17..offset + 21) == Some(&0u32.to_le_bytes())
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload
+            .get(offset + 56..offset + 58)
+            .is_some_and(|first| first != [0, 0] && first != [0xff, 0xff])
+        && payload
+            .get(offset + 58..offset + 60)
+            .is_some_and(|second| second != [0, 0] && second != [0xff, 0xff])
+        && payload.get(offset + 56..offset + 58) != payload.get(offset + 58..offset + 60)
+        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x01, 0x00])
+        && payload.get(offset + 76..offset + 80) == Some(&[0; 4])
+        && payload
+            .get(offset + 80..offset + 84)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(84));
     let extended_compact = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && payload.get(offset + 17..offset + 21) == Some(&0u32.to_le_bytes())
@@ -37269,7 +37310,8 @@ fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) -> bool {
         && marker_native_code(payload, offset) == Some(2)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92));
-    extended_compact
+    extended_compact_84
+        || extended_compact
         || current_wide
         || legacy_referenced_wide_arc_endpoint_indices(payload, offset).is_some()
 }
