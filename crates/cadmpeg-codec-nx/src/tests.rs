@@ -6237,6 +6237,45 @@ fn deltas_walks_complete_nurbs_auxiliary_records() {
 }
 
 #[test]
+fn deltas_walks_complete_type_141_records() {
+    fn record(escape: bool, xmt: u32, references: [u32; 4], first_status: u8) -> Vec<u8> {
+        let mut bytes = 141u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        for (reference, status) in references.into_iter().zip([first_status, 0, 0, 1]) {
+            bytes.extend(encoded_xmt(reference));
+            bytes.push(status);
+        }
+        bytes
+    }
+
+    let direct = record(false, 3158, [646, 3943, 3165, 131], 0);
+    let direct_extended = record(false, 33_000, [646, 3943, 3165, 131], 1);
+    let escaped = record(true, 40_000, [40_001, 1, 0, 40_002], 1);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&direct_extended);
+    stream.extend_from_slice(&escaped);
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.full_counts["TYPE_141"], 3);
+    assert_eq!(census.bytes_decoded, decoded_len);
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[1].canonical_bytes, direct_extended);
+    assert_eq!(census.records[1].xmt, 33_000);
+    assert_eq!(census.records[2].canonical_bytes, escaped);
+    assert_eq!(census.records[2].xmt, 40_000);
+    assert_eq!(census.records[2].references, [40_001, 1, 0, 40_002]);
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
+    assert!(residual.ends_with(&[direct, direct_extended, escaped].concat()));
+}
+
+#[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
     let record = crate::deltas::walk(&stream).records.remove(0);
