@@ -911,6 +911,9 @@ pub(crate) fn exact_work_plane_frame(
         for (start, paired) in indexed_record_pairs(bytes, *record_index) {
             let frame_length = paired.checked_sub(start)?;
             let (matrix_at, reference) = match frame_length {
+                321 if bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) => {
+                    (start + 49, None)
+                }
                 352 if bytes.get(start + 55) == Some(&1)
                     && bytes.get(start + 56..start + 66) == Some(&[0u8; 10][..]) =>
                 {

@@ -3252,6 +3252,27 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (direct_at + 66) as u64);
     assert_eq!(decoded.reference, None);
 
+    let compact_at = bytes.len();
+    let mut compact = vec![0; 321];
+    compact[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact[4..7].copy_from_slice(b"293");
+    compact[7..11].copy_from_slice(&58u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        compact[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact.extend_from_slice(&3u32.to_le_bytes());
+    compact.extend_from_slice(b"261");
+    compact.extend_from_slice(&58u32.to_le_bytes());
+    bytes.extend_from_slice(&compact);
+    let mut compact_scope = scope.clone();
+    compact_scope.reference_members = vec![58];
+    let decoded =
+        exact_work_plane_frame(&bytes, &compact_scope).expect("compact direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (compact_at + 49) as u64);
+    assert_eq!(decoded.reference, None);
+
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
     move_frame[0..4].copy_from_slice(&3u32.to_le_bytes());
