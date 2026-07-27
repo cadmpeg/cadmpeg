@@ -1704,9 +1704,9 @@ mod marker_tests {
         current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
         current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, extended_compact_endpoint_markers,
-        extended_compact_linked_profile_point_coordinates, extended_geometry_locus_profile_vertex,
-        extended_profile_point_coordinates,
+        explicit_reference_plane_frame, extended_compact_84_construction_line_endpoint_indices,
+        extended_compact_endpoint_markers, extended_compact_linked_profile_point_coordinates,
+        extended_geometry_locus_profile_vertex, extended_profile_point_coordinates,
         extended_profile_roster_construction_line_endpoint_indices, extended_radial_circle_index,
         extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
         extended_terminal_repeated_radial_circle_index,
@@ -6138,6 +6138,15 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             ["explicit-fourteen", "explicit"]
         );
+        payload[17..21].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["explicit-fourteen", "explicit"]
+        );
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
 
         let mut roster_indexed = entities.clone();
         roster_indexed[1].object_index = None;
@@ -7589,6 +7598,35 @@ mod marker_tests {
         payload[88..92].copy_from_slice(&8u32.to_le_bytes());
         assert_eq!(
             extended_profile_roster_construction_line_endpoint_indices(&payload, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn extended_compact_construction_line_carries_direct_endpoint_ids() {
+        let mut payload = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..64].copy_from_slice(&[0x00, 0x00, 0x01, 0x00, 0, 0, 0, 0]);
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+        payload[76..80].copy_from_slice(&8u32.to_le_bytes());
+        payload[80..84].copy_from_slice(&2u32.to_le_bytes());
+        payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+        assert_eq!(
+            extended_compact_84_construction_line_endpoint_indices(&payload, 0),
+            Some([8, 2])
+        );
+        payload[80..84].copy_from_slice(&8u32.to_le_bytes());
+        assert_eq!(
+            extended_compact_84_construction_line_endpoint_indices(&payload, 0),
             None
         );
     }
@@ -34954,6 +34992,7 @@ const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     wide_indexed_curve_endpoint_indices,
     compact_indexed_curve_endpoint_indices,
     direct_indexed_curve_endpoint_indices,
+    extended_compact_84_construction_line_endpoint_indices,
     extended_compact_indexed_curve_endpoint_indices,
     compact_legacy_curve_endpoint_indices,
     alternate_current_indexed_curve_endpoint_indices,
@@ -35381,7 +35420,7 @@ fn extended_compact_endpoint_markers<'a>(
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
-        || !matches!(marker_native_code(payload, offset), Some(1 | 2))
+        || !matches!(marker_native_code(payload, offset), Some(0..=2))
         || !matches!(
             (
                 marker_profile_curve_role(payload, offset),
@@ -36926,6 +36965,41 @@ fn extended_profile_roster_construction_line_endpoint_indices(
     }
     one_based_u16_endpoint_pair(payload, offset, 64)
         .filter(|endpoints| endpoints[0] != endpoints[1])
+}
+
+fn extended_compact_84_construction_line_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(2)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 64) != Some(&[0x00, 0x00, 0x01, 0x00, 0, 0, 0, 0])
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 72..offset + 76) != Some(&[0x00, 0x00, 0x01, 0x00])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(84)?)
+    {
+        return None;
+    }
+    let endpoint = |relative| {
+        let id = u32::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 4)?
+                .try_into()
+                .ok()?,
+        );
+        (!matches!(id, 0 | u32::MAX)).then_some(id)
+    };
+    let endpoints = [endpoint(76)?, endpoint(80)?];
+    (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
 fn current_compact_104_indexed_line_endpoint_indices(
