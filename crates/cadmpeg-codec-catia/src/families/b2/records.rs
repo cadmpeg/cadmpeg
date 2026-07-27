@@ -1161,12 +1161,39 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
         let Some(mean_angle_parameter) = f64_le(data, p + 166) else {
             continue;
         };
+        let direction_x: [f64; 3] = axis_frame[3..6]
+            .try_into()
+            .expect("three first-direction values");
+        let direction_y: [f64; 3] = axis_frame[6..9]
+            .try_into()
+            .expect("three second-direction values");
+        let axis: [f64; 3] = axis_frame[9..12].try_into().expect("three axis values");
+        let squared_length = |direction: [f64; 3]| {
+            direction
+                .iter()
+                .map(|component| component * component)
+                .sum::<f64>()
+        };
+        let cross = [
+            direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+            direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+            direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
+        ];
         if axis_frame
             .iter()
             .chain(&bounds)
             .chain(&[angular_scale, mean_angle_parameter])
             .any(|value| !value.is_finite())
+            || profile_curve_id == 0
             || angular_scale <= 0.0
+            || bounds[2] >= bounds[3]
+            || [direction_x, direction_y, axis]
+                .into_iter()
+                .any(|direction| (squared_length(direction) - 1.0).abs() > 1e-12)
+            || cross
+                .iter()
+                .zip(axis)
+                .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
             || bounds[0] / angular_scale != 0.5
             || (bounds[1] - bounds[0]) / angular_scale != std::f64::consts::TAU
             || mean_angle_parameter / angular_scale != std::f64::consts::PI + 0.5
@@ -1178,13 +1205,9 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
             reference_token: data[p],
             profile_curve_id,
             origin: axis_frame[0..3].try_into().expect("three origin values"),
-            direction_x: axis_frame[3..6]
-                .try_into()
-                .expect("three first-direction values"),
-            direction_y: axis_frame[6..9]
-                .try_into()
-                .expect("three second-direction values"),
-            axis: axis_frame[9..12].try_into().expect("three axis values"),
+            direction_x,
+            direction_y,
+            axis,
             angular_range: [bounds[0], bounds[1]],
             profile_range: [bounds[2], bounds[3]],
             angular_scale,

@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 110;
+pub const CATIA_NATIVE_VERSION: u32 = 111;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -27,6 +27,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_edge_runs",
     "consolidated_owner_packets",
     "consolidated_pcurves",
+    "consolidated_revolutions",
     "consolidated_vertex_identities",
     "design_objects",
     "entity_records",
@@ -165,6 +166,33 @@ pub struct CatiaConsolidatedPcurve {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub tail: Vec<u8>,
+}
+
+/// One structurally complete consolidated `B:2d` surface-of-revolution record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedRevolution {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Reference-token dialect (`0x08` or `0x0a`).
+    pub reference_token: u8,
+    /// Unresolved consolidated allocation identity of the profile curve.
+    pub profile_curve_id: u16,
+    /// Axis-frame origin.
+    pub origin: [f64; 3],
+    /// First transverse unit direction.
+    pub direction_x: [f64; 3],
+    /// Second transverse unit direction.
+    pub direction_y: [f64; 3],
+    /// Revolution-axis unit direction.
+    pub axis: [f64; 3],
+    /// Stored full-turn angular parameter interval.
+    pub angular_range: [f64; 2],
+    /// Stored profile parameter interval.
+    pub profile_range: [f64; 2],
+    /// Positive scale from revolution angle to stored angular parameter.
+    pub angular_scale: f64,
 }
 
 /// One complete consolidated historical edge run referencing two retained
@@ -1538,6 +1566,9 @@ pub struct CatiaNative {
     /// Consolidated pcurve jets retained before support resolution.
     #[serde(default)]
     pub consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
+    /// Consolidated revolution carriers retained before profile resolution.
+    #[serde(default)]
+    pub consolidated_revolutions: Vec<CatiaConsolidatedRevolution>,
     /// Global endpoint identities and their consolidated edge incidence.
     #[serde(default)]
     pub consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity>,
@@ -1574,6 +1605,7 @@ impl Default for CatiaNative {
             consolidated_edge_runs: Vec::new(),
             consolidated_owner_packets: Vec::new(),
             consolidated_pcurves: Vec::new(),
+            consolidated_revolutions: Vec::new(),
             consolidated_vertex_identities: Vec::new(),
             design_objects: Vec::new(),
             entity_records: Vec::new(),
@@ -1613,6 +1645,26 @@ fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
             second_derivatives: pcurve.second_derivatives,
             range: pcurve.range,
             tail: pcurve.tail,
+        })
+        .collect()
+}
+
+fn consolidated_revolutions(bytes: &[u8]) -> Vec<CatiaConsolidatedRevolution> {
+    crate::families::b2::records::b2_revolutions(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, revolution)| CatiaConsolidatedRevolution {
+            id: format!("catia:consolidated:revolution#{index}"),
+            byte_offset: revolution.pos as u64,
+            reference_token: revolution.reference_token,
+            profile_curve_id: revolution.profile_curve_id,
+            origin: revolution.origin,
+            direction_x: revolution.direction_x,
+            direction_y: revolution.direction_y,
+            axis: revolution.axis,
+            angular_range: revolution.angular_range,
+            profile_range: revolution.profile_range,
+            angular_scale: revolution.angular_scale,
         })
         .collect()
 }
@@ -1979,6 +2031,68 @@ fn validate_consolidated_pcurves(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated pcurve `{}` is structurally invalid",
                 pcurve.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_revolutions(
+    revolutions: &[CatiaConsolidatedRevolution],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, revolution) in revolutions.iter().enumerate() {
+        let expected_id = format!("catia:consolidated:revolution#{index}");
+        let squared_length = |direction: [f64; 3]| {
+            direction
+                .iter()
+                .map(|component| component * component)
+                .sum::<f64>()
+        };
+        let cross = [
+            revolution.direction_x[1] * revolution.direction_y[2]
+                - revolution.direction_x[2] * revolution.direction_y[1],
+            revolution.direction_x[2] * revolution.direction_y[0]
+                - revolution.direction_x[0] * revolution.direction_y[2],
+            revolution.direction_x[0] * revolution.direction_y[1]
+                - revolution.direction_x[1] * revolution.direction_y[0],
+        ];
+        if revolution.id != expected_id
+            || !matches!(revolution.reference_token, 0x08 | 0x0a)
+            || revolution.profile_curve_id == 0
+            || revolution
+                .origin
+                .iter()
+                .chain(&revolution.direction_x)
+                .chain(&revolution.direction_y)
+                .chain(&revolution.axis)
+                .chain(&revolution.angular_range)
+                .chain(&revolution.profile_range)
+                .chain(&[revolution.angular_scale])
+                .any(|value| !value.is_finite())
+            || revolution.angular_scale <= 0.0
+            || revolution.angular_range[0] >= revolution.angular_range[1]
+            || revolution.profile_range[0] >= revolution.profile_range[1]
+            || [
+                revolution.direction_x,
+                revolution.direction_y,
+                revolution.axis,
+            ]
+            .into_iter()
+            .any(|direction| (squared_length(direction) - 1.0).abs() > 1e-12)
+            || cross
+                .iter()
+                .zip(revolution.axis)
+                .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
+            || revolution.angular_range[0] / revolution.angular_scale != 0.5
+            || (revolution.angular_range[1] - revolution.angular_range[0])
+                / revolution.angular_scale
+                != std::f64::consts::TAU
+            || index > 0 && revolutions[index - 1].byte_offset >= revolution.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated revolution `{}` is structurally invalid",
+                revolution.id
             )));
         }
     }
@@ -2736,6 +2850,7 @@ impl CatiaNative {
         let external_references = external_reference_views(&finjpl_segments);
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
+        let consolidated_revolutions = consolidated_revolutions(bytes);
         let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes);
         let consolidated_edge_runs =
             consolidated_edge_runs(bytes, &consolidated_pcurves, &consolidated_edge_nodes);
@@ -2749,6 +2864,7 @@ impl CatiaNative {
             consolidated_edge_runs,
             consolidated_owner_packets,
             consolidated_pcurves,
+            consolidated_revolutions,
             consolidated_vertex_identities,
             design_objects,
             entity_records,
@@ -3096,6 +3212,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_pcurves")?;
         consolidated_pcurves.sort_by_key(|pcurve| pcurve.byte_offset);
         validate_consolidated_pcurves(&consolidated_pcurves)?;
+        let mut consolidated_revolutions: Vec<CatiaConsolidatedRevolution> =
+            namespace.arena_as("consolidated_revolutions")?;
+        consolidated_revolutions.sort_by_key(|revolution| revolution.byte_offset);
+        validate_consolidated_revolutions(&consolidated_revolutions)?;
         let mut consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun> =
             namespace.arena_as("consolidated_edge_runs")?;
         consolidated_edge_runs.sort_by_key(|run| run.byte_offset);
@@ -3125,6 +3245,7 @@ impl CatiaNative {
             consolidated_edge_runs,
             consolidated_owner_packets,
             consolidated_pcurves,
+            consolidated_revolutions,
             consolidated_vertex_identities,
             design_objects,
             entity_records,
@@ -3193,6 +3314,7 @@ impl CatiaNative {
             &self.consolidated_owner_packets,
         )?;
         namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
+        namespace.set_arena("consolidated_revolutions", &self.consolidated_revolutions)?;
         namespace.set_arena(
             "consolidated_vertex_identities",
             &self.consolidated_vertex_identities,
@@ -3230,6 +3352,7 @@ impl CatiaNative {
             consolidated_edge_runs,
             consolidated_owner_packets,
             consolidated_pcurves,
+            consolidated_revolutions,
             consolidated_vertex_identities,
             design_objects,
             entity_records,
@@ -3258,6 +3381,7 @@ impl CatiaNative {
         namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
         namespace.set_arena("consolidated_owner_packets", &consolidated_owner_packets)?;
         namespace.set_arena("consolidated_pcurves", &consolidated_pcurves)?;
+        namespace.set_arena("consolidated_revolutions", &consolidated_revolutions)?;
         namespace.set_arena(
             "consolidated_vertex_identities",
             &consolidated_vertex_identities,

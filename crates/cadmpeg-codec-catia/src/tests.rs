@@ -3397,6 +3397,38 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
 }
 
 #[test]
+fn native_namespace_retains_unbound_consolidated_revolution_carriers() {
+    let native = crate::native::CatiaNative::decode(&b2_revolution_stream());
+    let [revolution] = native.consolidated_revolutions.as_slice() else {
+        panic!("one consolidated revolution carrier")
+    };
+    assert_eq!(revolution.reference_token, 0x0a);
+    assert_eq!(revolution.profile_curve_id, 0x1234);
+    assert_eq!(revolution.origin, [1.0, 2.0, 3.0]);
+    assert_eq!(revolution.direction_x, [1.0, 0.0, 0.0]);
+    assert_eq!(revolution.direction_y, [0.0, 1.0, 0.0]);
+    assert_eq!(revolution.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(revolution.profile_range, [-4.0, 9.0]);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA revolution");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA revolution"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_revolutions[0].axis = [0.0, 0.0, -1.0];
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA revolution for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
     let native = crate::native::CatiaNative::decode(&b2_linked_owner_stream());
     let [packet] = native.consolidated_owner_packets.as_slice() else {

@@ -278,6 +278,29 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
 }
 
 #[test]
+fn b2_revolution_parser_requires_an_ordered_profile_and_right_handed_unit_frame() {
+    let mut stream = b2_revolution_stream();
+    stream[6..8].fill(0);
+    assert!(crate::families::b2::records::b2_revolutions(&stream).is_empty());
+
+    let mut stream = b2_revolution_stream();
+    stream[5 + 3 + 8 * 3..5 + 3 + 8 * 3 + 8].copy_from_slice(&2.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_revolutions(&stream).is_empty());
+
+    let mut stream = b2_revolution_stream();
+    stream[5 + 3 + 8 * 6..5 + 3 + 8 * 6 + 8].copy_from_slice(&(-1.0f64).to_le_bytes());
+    assert!(crate::families::b2::records::b2_revolutions(&stream).is_empty());
+
+    let mut stream = b2_revolution_stream();
+    let start = 5 + 99 + 2 * 8;
+    let bounds = [9.0f64, -4.0];
+    for (index, value) in bounds.into_iter().enumerate() {
+        stream[start + 8 * index..start + 8 * (index + 1)].copy_from_slice(&value.to_le_bytes());
+    }
+    assert!(crate::families::b2::records::b2_revolutions(&stream).is_empty());
+}
+
+#[test]
 fn b2_group_parser_reads_separator_and_typed_opener() {
     let bytes = b2_group_stream();
     let separators = crate::families::b2::records::b2_group_separators(&bytes);
