@@ -7405,6 +7405,23 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         duplicate_constraints[1].0.id.0,
         "creo:featdefs:sketch_constraint#917:relation:offset:500"
     );
+    for (constraint, _) in &duplicate_constraints {
+        let SketchConstraintDefinition::Native {
+            native_properties,
+            operands,
+            ..
+        } = &constraint.definition
+        else {
+            panic!("duplicate relation must remain native");
+        };
+        assert_eq!(
+            native_properties.get("relation_id").map(String::as_str),
+            Some("8")
+        );
+        assert!(operands
+            .iter()
+            .all(|operand| operand.native_field.is_some()));
+    }
     let mut duplicate_measured_segment = distance_definition.clone();
     let duplicate = duplicate_measured_segment
         .segments

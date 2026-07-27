@@ -85,7 +85,9 @@ fixtures, claims above L1 remain unproven.
   retains its
   `triples_ptr.skamp_id` incidence link when the relation, join, and incidence
   identities are complete and unique. The same unique join retains its
-  non-null equation identity without assigning semantics to that namespace.
+  non-null equation identity without assigning semantics to that namespace. An
+  incomplete or duplicate relation identity remains a scalar property and does
+  not become an ambiguous relation-record operand.
 
 ## Evidence required to raise the score
 

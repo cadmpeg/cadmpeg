@@ -8698,24 +8698,36 @@ fn section_dimension_constraints(
                     native_kind: format!("creo:relation:{}", relation.relation_type),
                     native_state: Some(u64::from(relation.used)),
                     native_flags: None,
-                    native_properties: BTreeMap::from([
-                        (
-                            "dimension_id".to_string(),
-                            relation.dimension_id.to_string(),
-                        ),
-                        ("sign".to_string(), relation.sign.to_string()),
-                    ]),
+                    native_properties: {
+                        let mut properties = BTreeMap::from([
+                            (
+                                "dimension_id".to_string(),
+                                relation.dimension_id.to_string(),
+                            ),
+                            ("sign".to_string(), relation.sign.to_string()),
+                        ]);
+                        if !unique_relation_id {
+                            properties.insert(
+                                "relation_id".to_string(),
+                                relation.relation_id.to_string(),
+                            );
+                        }
+                        properties
+                    },
                     entities: incidence_entities,
                     parameter,
                     operands: {
                         let native_ref = sketch_native_ref(sketch);
-                        let mut operands = vec![SketchNativeOperand {
-                            native_kind: "relat_ptr".to_string(),
-                            native_field: None,
-                            native_role: None,
-                            object_index: relation.relation_id,
-                            native_ref: Some(native_ref.clone()),
-                        }];
+                        let mut operands = Vec::new();
+                        if unique_relation_id {
+                            operands.push(SketchNativeOperand {
+                                native_kind: "relat_ptr".to_string(),
+                                native_field: None,
+                                native_role: None,
+                                object_index: relation.relation_id,
+                                native_ref: Some(native_ref.clone()),
+                            });
+                        }
                         if let Some(incidence) = joined_incidence {
                             operands.push(SketchNativeOperand {
                                 native_kind: "skamp_ptr".to_string(),
