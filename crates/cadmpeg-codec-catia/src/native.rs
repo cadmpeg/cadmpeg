@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 105;
+pub const CATIA_NATIVE_VERSION: u32 = 106;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -611,6 +611,29 @@ pub struct CatiaRelationExpression {
     pub function_role: CatiaEntitySchemaValue,
 }
 
+/// Evaluation state of one named parameter value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaParameterEvaluation {
+    /// The `E7` form carries no evaluated scalar.
+    Unset,
+    /// The `E6` form carries one finite IEEE-754 binary64 scalar.
+    Scalar {
+        /// Exact stored binary64 bits.
+        bits: u64,
+    },
+}
+
+/// One complete named parameter-value record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaParameterValue {
+    /// Stored parameter name.
+    pub name: CatiaEntitySchemaValue,
+    /// Stored scope, expression, or presentation binding.
+    pub binding: CatiaEntitySchemaValue,
+    /// Stored evaluation state.
+    pub evaluation: CatiaParameterEvaluation,
+}
+
 /// Field order used by a repeated-reference schema preamble.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum CatiaRepeatedReferenceSchemaOrder {
@@ -667,6 +690,9 @@ pub struct CatiaEntityRecord {
     /// Complete relation-expression program carried by the value selectors.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_expression: Option<CatiaRelationExpression>,
+    /// Complete named parameter-value production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_value: Option<CatiaParameterValue>,
     /// Exact packets in the value program, in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_packets: Vec<entity_table::EntityValuePacket>,
@@ -1175,6 +1201,37 @@ fn relation_expression(
         type_signature: schema_value(type_signature),
         state_role: schema_value(state_role),
         function_role: schema_value(function_role),
+    })
+}
+
+fn parameter_value(
+    lead: u8,
+    values: &[CatiaEntityValueSchemaSelection],
+    suffix: &[u8],
+) -> Option<CatiaParameterValue> {
+    if lead != 2 {
+        return None;
+    }
+    let [name, binding] = values else {
+        return None;
+    };
+    let evaluation = match suffix {
+        [0x85, 0x96, 0x82, 0x6a, 0xe7, 0x81, 0x52] => CatiaParameterEvaluation::Unset,
+        [0x85, 0x96, 0x82, 0x6a, 0xe6, b0, b1, b2, b3, b4, b5, b6, b7, 0x81, 0x52] => {
+            let bits = u64::from_le_bytes([*b0, *b1, *b2, *b3, *b4, *b5, *b6, *b7]);
+            f64::from_bits(bits).is_finite().then_some(())?;
+            CatiaParameterEvaluation::Scalar { bits }
+        }
+        _ => return None,
+    };
+    let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
+        entry: selection.entry.clone(),
+        value: selection.name.clone(),
+    };
+    Some(CatiaParameterValue {
+        name: schema_value(name),
+        binding: schema_value(binding),
+        evaluation,
     })
 }
 
@@ -2342,6 +2399,11 @@ impl CatiaNative {
                     &entity.definition_schema_selections,
                     &entity.value_schema_selections,
                 );
+                entity.parameter_value = parameter_value(
+                    entity.lead,
+                    &entity.value_schema_selections,
+                    &entity.record_suffix,
+                );
             }
         }
         alias_rows.retain(|row| {
@@ -2576,6 +2638,14 @@ impl CatiaNative {
                             != relation_expression(
                                 &entity.definition_schema_selections,
                                 &entity.value_schema_selections,
+                            )
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        entity.parameter_value
+                            != parameter_value(
+                                entity.lead,
+                                &entity.value_schema_selections,
+                                &entity.record_suffix,
                             )
                     })
                     || graph_entities.windows(2).any(|pair| {
@@ -3142,6 +3212,7 @@ fn native_object_graph(
                 value_fields,
                 value_schema_selections: Vec::new(),
                 relation_expression: None,
+                parameter_value: None,
                 value_packets,
                 numeric_tuple: entity.numeric_tuple,
                 reference_signature: entity.reference_signature,

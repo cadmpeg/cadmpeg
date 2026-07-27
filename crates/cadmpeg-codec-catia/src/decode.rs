@@ -138,6 +138,11 @@ fn finish_decode(
         .iter()
         .filter(|record| record.relation_expression.is_some())
         .count();
+    let parameter_value_count = native
+        .entity_records
+        .iter()
+        .filter(|record| record.parameter_value.is_some())
+        .count();
     let unresolved_design_owner_count = native
         .design_objects
         .iter()
@@ -216,6 +221,10 @@ fn finish_decode(
             relation_expression_count,
         ),
         (
+            "decoded_parameter_value_count".to_string(),
+            parameter_value_count,
+        ),
+        (
             "unresolved_design_owner_count".to_string(),
             unresolved_design_owner_count,
         ),
@@ -255,7 +264,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {relation_expression_count} complete relation expression(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
             ),
             provenance: None,

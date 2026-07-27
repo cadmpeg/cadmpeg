@@ -1771,6 +1771,32 @@ fn standard_catpart_with_relation_expression(parameter_role: &str) -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
+    let value = [0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0xfe];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
+    let mut entity = entity_table_record_with_definition_and_value(1, &[0x01], &value);
+    entity[6] = 2;
+    entity.extend_from_slice(suffix);
+    let entity_len = u32::try_from(entity.len()).expect("bounded entity record");
+    entity[2..6].copy_from_slice(&entity_len.to_le_bytes());
+    let mut stream = entity;
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Thickness",
+        "#1_ /2",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_crossing_entity_value_packet() -> Vec<u8> {
     let value = [
         0x32, 4, 0, 0, 0, 0x81, 0x82, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6, 0x32, 4, 0, 0, 0,
@@ -5692,6 +5718,68 @@ fn relation_expression_requires_every_exact_role() {
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression("parameter"));
 
     assert!(native.entity_records[0].relation_expression.is_none());
+}
+
+#[test]
+fn native_namespace_types_and_validates_named_parameter_values() {
+    use crate::native::CatiaParameterEvaluation;
+
+    let scalar = 35.0_f64.to_bits();
+    let mut scalar_suffix = vec![0x85, 0x96, 0x82, 0x6a, 0xe6];
+    scalar_suffix.extend_from_slice(&scalar.to_le_bytes());
+    scalar_suffix.extend_from_slice(&[0x81, 0x52]);
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&scalar_suffix));
+    let parameter = native.entity_records[0]
+        .parameter_value
+        .as_ref()
+        .expect("complete named parameter value");
+    assert_eq!(parameter.name.value, "Thickness");
+    assert_eq!(parameter.binding.value, "#1_ /2");
+    assert_eq!(
+        parameter.evaluation,
+        CatiaParameterEvaluation::Scalar { bits: scalar }
+    );
+
+    let unset = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x85, 0x96, 0x82, 0x6a, 0xe7, 0x81, 0x52,
+    ]));
+    assert_eq!(
+        unset.entity_records[0]
+            .parameter_value
+            .as_ref()
+            .expect("complete unset parameter")
+            .evaluation,
+        CatiaParameterEvaluation::Unset
+    );
+
+    let mut malformed = native;
+    malformed.entity_records[0]
+        .parameter_value
+        .as_mut()
+        .expect("complete named parameter value")
+        .name
+        .value = "changed".to_string();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed parameter value");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn named_parameter_value_requires_the_complete_finite_suffix() {
+    let nonfinite = f64::NAN.to_bits();
+    let mut suffix = vec![0x85, 0x96, 0x82, 0x6a, 0xe6];
+    suffix.extend_from_slice(&nonfinite.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0x52]);
+
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&suffix));
+    assert!(native.entity_records[0].parameter_value.is_none());
 }
 
 #[test]
