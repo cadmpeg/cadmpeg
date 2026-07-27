@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 109;
+pub const CATIA_NATIVE_VERSION: u32 = 110;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -617,12 +617,19 @@ pub struct CatiaRelationExpression {
 /// Typed roles in a relation-expression source signature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaRelationTypeSignature {
+    /// Ordered expression-local inputs named inside the signature.
+    pub inputs: Vec<CatiaRelationTypeInput>,
+    /// Source result type named after the closing parenthesis.
+    pub result_type: String,
+}
+
+/// One typed input clause in a relation-expression source signature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaRelationTypeInput {
     /// Expression-local parameter named before `#In`.
     pub parameter: String,
     /// Source input type named after `#In`.
     pub input_type: String,
-    /// Source result type named after the closing parenthesis.
-    pub result_type: String,
 }
 
 /// Evaluation state of one named parameter value.
@@ -1251,20 +1258,35 @@ fn relation_type_signature(placeholder: &str, source: &str) -> Option<CatiaRelat
     let source = source.strip_suffix('\n').unwrap_or(source);
     let (input_clause, result_type) = source.rsplit_once(") : ")?;
     let input_clause = input_clause.strip_prefix('(')?;
-    let (parameter, input_type) = input_clause.split_once(':')?;
-    let parameter = parameter.trim();
-    let input_type = input_type.trim().strip_prefix("#In")?.trim();
     let result_type = result_type.trim();
-    if parameter.is_empty()
-        || input_type.is_empty()
-        || result_type.is_empty()
-        || parameter != placeholder.trim()
+    if result_type.is_empty() {
+        return None;
+    }
+    let inputs = input_clause
+        .split(',')
+        .map(|clause| {
+            let (parameter, input_type) = clause.split_once(':')?;
+            let parameter = parameter.trim();
+            let input_type = input_type.trim().strip_prefix("#In")?.trim();
+            (!parameter.is_empty() && !input_type.is_empty()).then(|| CatiaRelationTypeInput {
+                parameter: parameter.to_string(),
+                input_type: input_type.to_string(),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if inputs.is_empty()
+        || inputs[0].parameter != placeholder.trim()
+        || inputs
+            .iter()
+            .map(|input| input.parameter.as_str())
+            .collect::<HashSet<_>>()
+            .len()
+            != inputs.len()
     {
         return None;
     }
     Some(CatiaRelationTypeSignature {
-        parameter: parameter.to_string(),
-        input_type: input_type.to_string(),
+        inputs,
         result_type: result_type.to_string(),
     })
 }

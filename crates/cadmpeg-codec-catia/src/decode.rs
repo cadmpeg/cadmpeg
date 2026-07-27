@@ -346,8 +346,18 @@ fn transfer_formula_parameters(
 
         let mut transferred = Vec::with_capacity(formula.parameter_dependencies.len() + 1);
         let mut dependencies = Vec::with_capacity(formula.parameter_dependencies.len());
+        let mut used_inputs = BTreeSet::new();
         let mut complete = !formula.parameter_dependencies.is_empty();
         for dependency in &formula.parameter_dependencies {
+            let Some(input) = signature.inputs.iter().find(|input| {
+                dependency
+                    .symbol
+                    .strip_prefix(&input.parameter)
+                    .is_some_and(|suffix| suffix.starts_with(char::is_whitespace))
+            }) else {
+                complete = false;
+                break;
+            };
             let Some(entity) = entities.get(dependency.parameter.as_str()) else {
                 complete = false;
                 break;
@@ -357,11 +367,12 @@ fn transfer_formula_parameters(
                 break;
             };
             let Some(TypedParameterEvaluation::Value(value)) =
-                typed_parameter_evaluation(&signature.input_type, &parameter.evaluation)
+                typed_parameter_evaluation(&input.input_type, &parameter.evaluation)
             else {
                 complete = false;
                 break;
             };
+            used_inputs.insert(input.parameter.as_str());
             let id = neutral_parameter_id(&entity.id);
             if entity.id == output.id {
                 complete = false;
@@ -395,7 +406,10 @@ fn transfer_formula_parameters(
                 native_ref: Some(entity.id.clone()),
             });
         }
-        if !complete || dependencies.len() != 1 {
+        if !complete
+            || used_inputs.len() != signature.inputs.len()
+            || dependencies.len() != signature.inputs.len()
+        {
             continue;
         }
         let Ok(ordinal) = u32::try_from(output.ordinal) else {

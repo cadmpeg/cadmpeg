@@ -1740,6 +1740,18 @@ fn standard_catpart_with_entity_value_schema_selection() -> Vec<u8> {
 }
 
 fn standard_catpart_with_relation_expression(parameter_role: &str) -> Vec<u8> {
+    standard_catpart_with_relation_expression_signature(
+        parameter_role,
+        "#1_ ",
+        "(#1_ : #In LENGTH) : LENGTH",
+    )
+}
+
+fn standard_catpart_with_relation_expression_signature(
+    parameter_role: &str,
+    placeholder: &str,
+    signature: &str,
+) -> Vec<u8> {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
     let mut value = Vec::new();
     for ordinal in 5u32..=10 {
@@ -1757,10 +1769,10 @@ fn standard_catpart_with_relation_expression(parameter_role: &str) -> Vec<u8> {
         "catalogLinks",
         "",
         "body",
-        "#1_ ",
+        placeholder,
         "#1_ /2-2mm",
         parameter_role,
-        "(#1_ : #In LENGTH) : LENGTH",
+        signature,
         "opened",
         "RelationExpFct",
     ]));
@@ -1821,6 +1833,25 @@ fn standard_catpart_with_typed_formula_relation(
     output_value: f64,
     source_expression: &str,
 ) -> Vec<u8> {
+    standard_catpart_with_typed_formula_inputs(
+        parameter_entity_id,
+        duplicate_binding,
+        &[("#1_", input_type, "Thickness", "#1_ /2", input_value)],
+        result_type,
+        output_value,
+        source_expression,
+    )
+}
+
+fn standard_catpart_with_typed_formula_inputs(
+    parameter_entity_id: u8,
+    duplicate_binding: bool,
+    inputs: &[(&str, &str, &str, &str, f64)],
+    result_type: &str,
+    output_value: f64,
+    source_expression: &str,
+) -> Vec<u8> {
+    assert!(!inputs.is_empty());
     let formula_definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
     let expression_definition = [0x00, 0x08, 0x32, 5, 0, 0, 0, 0x32, 5, 0, 0, 0];
     let mut expression_value = Vec::new();
@@ -1852,12 +1883,29 @@ fn standard_catpart_with_typed_formula_relation(
         parameter[2..6].copy_from_slice(&parameter_len.to_le_bytes());
         parameter
     };
-    stream.extend(parameter(3, 12_u32, 13_u32, input_value));
-    if duplicate_binding {
-        stream.extend(parameter(4, 12_u32, 13_u32, input_value));
+    for (index, (_, _, _, _, value)) in inputs.iter().enumerate() {
+        let entity_id = 3 + u8::try_from(index).expect("bounded input count");
+        let name_ordinal = 12 + 2 * u32::try_from(index).expect("bounded input count");
+        stream.extend(parameter(
+            entity_id.into(),
+            name_ordinal,
+            name_ordinal + 1,
+            *value,
+        ));
     }
-    let output_entity_id = if duplicate_binding { 5 } else { 4 };
-    stream.extend(parameter(output_entity_id, 14_u32, 15_u32, output_value));
+    if duplicate_binding {
+        let entity_id = 3 + u8::try_from(inputs.len()).expect("bounded input count");
+        stream.extend(parameter(entity_id.into(), 12_u32, 13_u32, inputs[0].4));
+    }
+    let output_entity_id =
+        3 + u8::try_from(inputs.len()).expect("bounded input count") + u8::from(duplicate_binding);
+    let output_name_ordinal = 12 + 2 * u32::try_from(inputs.len()).expect("bounded input count");
+    stream.extend(parameter(
+        output_entity_id.into(),
+        output_name_ordinal,
+        output_name_ordinal + 1,
+        output_value,
+    ));
     stream.push(0xde);
     let mut records = vec![
         object_graph_record(
@@ -1877,32 +1925,46 @@ fn standard_catpart_with_typed_formula_relation(
             ],
         ),
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
-        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
     ];
+    records.extend(
+        inputs
+            .iter()
+            .map(|_| object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])),
+    );
     if duplicate_binding {
         records.push(object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]));
     }
     records.push(object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]));
     stream.extend(object_graph_from_records(&records));
-    let type_signature = format!("(#1_ : #In {input_type}) : {result_type}");
-    stream.extend(catalog_stream(&[
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "Formula",
-        "body",
-        "#1_ ",
-        source_expression,
-        "param",
-        &type_signature,
-        "opened",
-        "RelationExpFct",
-        "Thickness",
-        "#1_ /2",
-        "Result",
-        "#1_ /3",
-    ]));
+    let input_signature = inputs
+        .iter()
+        .map(|(symbol, input_type, _, _, _)| format!("{symbol} : #In {input_type}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let type_signature = format!("({input_signature}) : {result_type}");
+    let mut catalog = vec![
+        "CATCatalogManager".to_string(),
+        "catalogManager".to_string(),
+        "catalogLinks".to_string(),
+        String::new(),
+        "Formula".to_string(),
+        "body".to_string(),
+        format!("{} ", inputs[0].0),
+        source_expression.to_string(),
+        "param".to_string(),
+        type_signature,
+        "opened".to_string(),
+        "RelationExpFct".to_string(),
+    ];
+    for (_, _, name, binding, _) in inputs {
+        catalog.push((*name).to_string());
+        catalog.push((*binding).to_string());
+    }
+    catalog.push("Result".to_string());
+    catalog.push("#result_ /1".to_string());
+    stream.extend(catalog_stream(
+        &catalog.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
@@ -5836,8 +5898,13 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         "(#1_ : #In LENGTH) : LENGTH"
     );
     let signature = expression.signature.as_ref().expect("typed signature");
-    assert_eq!(signature.parameter, "#1_");
-    assert_eq!(signature.input_type, "LENGTH");
+    assert_eq!(
+        signature.inputs,
+        [crate::native::CatiaRelationTypeInput {
+            parameter: "#1_".to_string(),
+            input_type: "LENGTH".to_string(),
+        }]
+    );
     assert_eq!(signature.result_type, "LENGTH");
     assert_eq!(expression.state_role.value, "opened");
     assert_eq!(expression.function_role.value, "RelationExpFct");
@@ -5857,6 +5924,53 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn relation_expression_signature_preserves_ordered_typed_inputs() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression_signature(
+            "param",
+            "#1_ ",
+            "(#1_ :  #In LENGTH,#2_ :  #In ANGLE) : Real",
+        ));
+    let signature = native.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .and_then(|expression| expression.signature.as_ref())
+        .expect("multi-input signature");
+
+    assert_eq!(
+        signature.inputs,
+        [
+            crate::native::CatiaRelationTypeInput {
+                parameter: "#1_".to_string(),
+                input_type: "LENGTH".to_string(),
+            },
+            crate::native::CatiaRelationTypeInput {
+                parameter: "#2_".to_string(),
+                input_type: "ANGLE".to_string(),
+            },
+        ]
+    );
+    assert_eq!(signature.result_type, "Real");
+}
+
+#[test]
+fn relation_expression_signature_rejects_duplicate_inputs() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression_signature(
+            "param",
+            "#1_ ",
+            "(#1_ : #In LENGTH,#1_ : #In ANGLE) : Real",
+        ));
+
+    assert!(native.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .expect("relation expression")
+        .signature
+        .is_none());
 }
 
 #[test]
@@ -6141,6 +6255,64 @@ fn decode_deduplicates_repeated_single_input_formula_symbols() {
 
     assert_eq!(input.expression, "0.25 rad");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+}
+
+#[test]
+fn decode_transfers_ordered_multi_input_formula_dependencies() {
+    use cadmpeg_ir::features::{Angle, Length, ParameterValue};
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                5,
+                false,
+                &[
+                    ("#1_", "LENGTH", "Width", "#1_ /2", 12.0),
+                    ("#2_", "ANGLE", "Draft", "#2_ /3", 0.25),
+                ],
+                "Real",
+                3.0,
+                "#1_ /2+#2_ /3",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode multi-input formula");
+    let [width, draft, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("multi-input formula parameters")
+    };
+
+    assert_eq!(width.value, Some(ParameterValue::Length(Length(12.0))));
+    assert_eq!(draft.value, Some(ParameterValue::Angle(Angle(0.25))));
+    assert_eq!(
+        output.dependencies,
+        [width.id.clone(), draft.id.clone()].as_slice()
+    );
+    assert_eq!(output.value, Some(ParameterValue::Real(3.0)));
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+        .findings
+        .is_empty());
+}
+
+#[test]
+fn decode_rejects_a_multi_input_formula_missing_a_declared_input() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                5,
+                false,
+                &[
+                    ("#1_", "LENGTH", "Width", "#1_ /2", 12.0),
+                    ("#2_", "ANGLE", "Draft", "#2_ /3", 0.25),
+                ],
+                "Real",
+                3.0,
+                "#1_ /2",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode incomplete multi-input formula");
+
+    assert!(decoded.ir.model.parameters.is_empty());
 }
 
 #[test]
