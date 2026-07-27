@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 122;
+pub const CATIA_NATIVE_VERSION: u32 = 123;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -774,6 +774,19 @@ pub struct CatiaEntitySuffixValue {
     pub trailer: Vec<u8>,
 }
 
+/// One suffix selector resolved through its graph's source-schema catalog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaEntitySuffixSchemaSelection {
+    /// Stored zero-based source-schema ordinal.
+    pub ordinal: u32,
+    /// Selected catalog entry.
+    pub entry: String,
+    /// UTF-8 source-schema name stored by the selected entry.
+    pub name: String,
+    /// Decoded compact value following the selector.
+    pub value: u32,
+}
+
 /// One complete named parameter-value record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaParameterValue {
@@ -884,9 +897,12 @@ pub struct CatiaEntityRecord {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub record_suffix: Vec<u8>,
-    /// Complete scalar or unset production occupying the record suffix.
+    /// Complete typed value production occupying the record suffix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suffix_value: Option<CatiaEntitySuffixValue>,
+    /// Fixed-width suffix selector resolved through the containing graph's catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
 }
 
 /// One outer `7C08` ownership graph in source order.
@@ -1346,6 +1362,25 @@ fn entity_value_schema_selections(
             })
         })
         .collect()
+}
+
+fn entity_suffix_schema_selection(
+    suffix_value: Option<&CatiaEntitySuffixValue>,
+    catalog: Option<&CatiaCatalog>,
+) -> Option<CatiaEntitySuffixSchemaSelection> {
+    let CatiaEntitySuffixPayload::FixedWidthAtom { selector, value } = &suffix_value?.payload
+    else {
+        return None;
+    };
+    let entry = usize::try_from(*selector)
+        .ok()
+        .and_then(|ordinal| catalog?.entries.get(ordinal))?;
+    Some(CatiaEntitySuffixSchemaSelection {
+        ordinal: *selector,
+        entry: entry.id.clone(),
+        name: entry.value.clone(),
+        value: *value,
+    })
 }
 
 fn relation_expression(
@@ -3048,6 +3083,8 @@ impl CatiaNative {
                     &entity.value_schema_selections,
                 );
                 entity.suffix_value = entity_suffix_value(&entity.record_suffix);
+                entity.suffix_schema_selection =
+                    entity_suffix_schema_selection(entity.suffix_value.as_ref(), catalog);
                 entity.parameter_value = parameter_value(
                     entity.lead,
                     &entity.value_schema_selections,
@@ -3324,6 +3361,10 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_value != entity_suffix_value(&entity.record_suffix)
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        entity.suffix_schema_selection
+                            != entity_suffix_schema_selection(entity.suffix_value.as_ref(), catalog)
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.parameter_value
@@ -3952,6 +3993,7 @@ fn native_object_graph(
                 reference_signature: entity.reference_signature,
                 record_suffix: entity.record_suffix,
                 suffix_value: None,
+                suffix_schema_selection: None,
             })
         })
         .collect();

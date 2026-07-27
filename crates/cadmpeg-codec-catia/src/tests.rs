@@ -6441,6 +6441,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         decoded.report.coverage["decoded_fixed_width_atom_entity_suffix_value_count"],
         0
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
+        0
+    );
     let native =
         crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
             .expect("load generic entity suffix");
@@ -6564,13 +6568,17 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     let fixed_width_atom = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_parameter_value(&[
-                0x81, 0x92, 0x82, 0x32, 0xcf, 0, 0, 0, 0x81, 0x81, 0x49,
+                0x81, 0x92, 0x82, 0x32, 4, 0, 0, 0, 0x81, 0x81, 0x49,
             ])),
             &DecodeOptions::default(),
         )
         .expect("decode fixed-width atom entity suffix");
     assert_eq!(
         fixed_width_atom.report.coverage["decoded_fixed_width_atom_entity_suffix_value_count"],
+        1
+    );
+    assert_eq!(
+        fixed_width_atom.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
         1
     );
     let fixed_width_atom = crate::native::CatiaNative::load(
@@ -6588,21 +6596,28 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .expect("complete fixed-width atom suffix")
             .payload,
         CatiaEntitySuffixPayload::FixedWidthAtom {
-            selector: 0xcf,
+            selector: 4,
             value: 1
         }
     ));
+    assert_eq!(
+        fixed_width_atom.entity_records[0]
+            .suffix_schema_selection
+            .as_ref()
+            .expect("resolved fixed-width suffix selector"),
+        &crate::native::CatiaEntitySuffixSchemaSelection {
+            ordinal: 4,
+            entry: fixed_width_atom.catalogs[0].entries[4].id.clone(),
+            name: "Thickness".to_string(),
+            value: 1,
+        }
+    );
     let mut malformed_fixed_width_atom = fixed_width_atom.clone();
-    let CatiaEntitySuffixPayload::FixedWidthAtom { selector, .. } = &mut malformed_fixed_width_atom
-        .entity_records[0]
-        .suffix_value
+    malformed_fixed_width_atom.entity_records[0]
+        .suffix_schema_selection
         .as_mut()
-        .expect("complete fixed-width atom suffix")
-        .payload
-    else {
-        panic!("fixed-width atom payload");
-    };
-    *selector = 0xce;
+        .expect("resolved fixed-width suffix selector")
+        .name = "Width".to_string();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_fixed_width_atom
         .store(&mut namespace)
@@ -6611,6 +6626,14 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let out_of_range_fixed_width_atom =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x81, 0x92, 0x82, 0x32, 0xcf, 0, 0, 0, 0x81, 0x81, 0x49,
+        ]));
+    assert!(out_of_range_fixed_width_atom.entity_records[0]
+        .suffix_schema_selection
+        .is_none());
 
     let longer_fixed_width =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
