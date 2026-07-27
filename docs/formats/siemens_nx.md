@@ -1218,6 +1218,11 @@ individually binary-status-prefixed XMT values followed by `00`; the two forms a
 atomic. A topology attribute-list identity resolves only when exactly one
 type-81 record in the same stream has that xmt.
 
+The terminal `00` of a status-prefixed type-81 or printable type-84 record may
+also be the leading `00` of the immediately following two-byte record tag. The
+shared byte belongs to both record frames and is counted once in the deltas byte
+ledger.
+
 The type-81 discriminator selects an attribute class when its value plus one
 equals the XMT of exactly one type-79 attribute definition in the same stream.
 Every matched instance retains the serialized discriminator, matched

@@ -6011,6 +6011,93 @@ fn deltas_walks_complete_status_prefixed_entity_51_records() {
 }
 
 #[test]
+fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
+    let mut stream = vec![0, 84];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&9u16.to_be_bytes());
+    stream.extend_from_slice(b"a\0");
+    stream.push(81);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&0x21u16.to_be_bytes());
+    for (status, reference) in [1, 1, 0, 1, 0, 1].into_iter().zip(3..=8u16) {
+        stream.push(status);
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(0);
+    stream.push(82);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&11u16.to_be_bytes());
+    stream.extend_from_slice(&12u32.to_be_bytes());
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [84, 81, 82]
+    );
+    assert_eq!(census.records[1].offset, census.records[0].end - 1);
+    assert_eq!(census.records[2].offset, census.records[1].end - 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert!(crate::deltas::semantic_residual(&stream)[..stream.len()]
+        .iter()
+        .all(|byte| *byte == 0xff));
+}
+
+#[test]
+fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
+    let mut stream = vec![0, 84];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&9u16.to_be_bytes());
+    stream.extend_from_slice(b"a\0");
+    let point = status_framed_deltas_point_stream();
+    stream.extend_from_slice(&point[1..]);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [84, 29]
+    );
+    assert_eq!(census.records[1].offset, census.records[0].end - 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+}
+
+#[test]
+fn deltas_does_not_share_a_consecutive_reference_byte() {
+    let mut stream = vec![0, 81];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&0x21u16.to_be_bytes());
+    for reference in [3u16, 4, 5, 6, 7, 256] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    let point = status_framed_deltas_point_stream();
+    stream.extend_from_slice(&point[1..]);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [81]
+    );
+}
+
+#[test]
 fn deltas_walks_complete_entity_value_records() {
     let mut stream = vec![0, 82];
     stream.extend_from_slice(&1u32.to_be_bytes());

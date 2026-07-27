@@ -323,6 +323,15 @@ pub fn walk(stream: &[u8]) -> Census {
     let mut census = Census::default();
     let mut offset = 0;
     while offset + 4 <= stream.len() {
+        if let Some(record) = consume_shared_record(stream, offset, &census.records) {
+            census.bytes_decoded += record.end - offset;
+            let name =
+                family_name(record.kind).expect("shared records have admitted deltas families");
+            *census.full_counts.entry(name).or_default() += 1;
+            offset = record.end;
+            census.records.push(record);
+            continue;
+        }
         if let Some(record) = consume_intersection_auxiliary(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
             let family = match record.kind {
@@ -425,6 +434,43 @@ pub fn walk(stream: &[u8]) -> Census {
         offset += 1;
     }
     census
+}
+
+fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Option<Record> {
+    let previous = records.last()?;
+    (previous.end == offset && has_shareable_terminal(previous)).then_some(())?;
+    let record_offset = offset.checked_sub(1)?;
+    if let Some(record) = consume_intersection_auxiliary(stream, record_offset)
+        .or_else(|| consume_nurbs_auxiliary(stream, record_offset))
+        .or_else(|| consume_type_141(stream, record_offset))
+        .or_else(|| consume_type_45(stream, record_offset))
+        .or_else(|| consume_attdef_list(stream, record_offset))
+        .or_else(|| consume_type_101(stream, record_offset))
+        .or_else(|| consume_intersection_data(stream, record_offset))
+    {
+        return Some(record);
+    }
+    let kind = u16::from(*stream.get(offset)?);
+    family_name(kind)?;
+    fixed_signature(kind)
+        .and_then(|signature| consume_fixed(stream, record_offset, kind, signature))
+        .or_else(|| consume_variable(stream, record_offset, kind))
+}
+
+fn has_shareable_terminal(record: &Record) -> bool {
+    if record.kind == 84 {
+        return true;
+    }
+    if record.kind != 81 || record.canonical_bytes.last() != Some(&0) {
+        return false;
+    }
+    let bytes = &record.canonical_bytes;
+    let mut at = 2 + usize::from(bytes.get(2) == Some(&0xff)) + 4;
+    let Some((_, consumed)) = read_xmt(bytes, at) else {
+        return false;
+    };
+    at += consumed + 6;
+    bytes.get(at) == Some(&1)
 }
 
 fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
