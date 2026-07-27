@@ -9351,6 +9351,7 @@ fn section_skamp_constraints_for_geometry(
             let unique_skamp_id = complete_skamps && skamp_id_counts.get(&skamp.id) == Some(&1);
             let active = section_skamp_active(skamp.status);
             let native_constraint = || {
+                let native_ref = sketch_native_ref(sketch);
                 let entities = skamp
                     .items
                     .iter()
@@ -9371,7 +9372,7 @@ fn section_skamp_constraints_for_geometry(
                             native_field: None,
                             native_role: None,
                             object_index: item.entity_id,
-                            native_ref: None,
+                            native_ref: Some(native_ref.clone()),
                         })
                         .collect(),
                 })

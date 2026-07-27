@@ -6636,10 +6636,37 @@ fn section_solver_constraints_require_complete_unique_semantics() {
                 native_field: None,
                 native_role: None,
                 object_index: 12,
-                native_ref: None,
+                native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
         }
     );
+    let mut unavailable_skamp_entity = definition.clone();
+    unavailable_skamp_entity
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[2]
+        .items[0]
+        .entity_id = 999;
+    let unavailable_skamp_constraints = section_skamp_constraints(
+        &unavailable_skamp_entity,
+        &SketchId("creo:model:sketch#917".into()),
+    );
+    assert!(matches!(
+        &unavailable_skamp_constraints[2].0.definition,
+        SketchConstraintDefinition::Native {
+            entities,
+            operands,
+            ..
+        } if entities.is_empty()
+            && operands == &[SketchNativeOperand {
+                native_kind: "sense:4".to_string(),
+                native_field: None,
+                native_role: None,
+                object_index: 999,
+                native_ref: Some("creo:featdefs:sketch#917".to_string()),
+            }]
+    ));
     let mut stored_skamp_state = definition.clone();
     stored_skamp_state
         .relations
