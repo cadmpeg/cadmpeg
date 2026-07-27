@@ -12,6 +12,7 @@ This document records unresolved NX `.prt` byte semantics.
 - The status-framed state tail following the eight-reference deltas BODY revision prefix is unspecified.
 - Status-byte placement and complete-record boundaries for deltas-stream NURBS support records types 125–128 and 135–136 are unspecified.
 - Delta tag `0x5a` uses the `intersection_data` layout shared with type 38; its canonical later-schema node-type name is unspecified.
+- The canonical node-type name and field roles of deltas type 91 (`005b`) are unspecified.
 
 ## Object model and body composition
 

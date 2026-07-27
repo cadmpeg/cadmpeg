@@ -340,8 +340,8 @@ pub fn walk(stream: &[u8]) -> Census {
         }
         let decoded = fixed_signature(kind)
             .and_then(|signature| consume_fixed(stream, offset, kind, signature))
-            .or_else(|| consume_variable(stream, offset, kind))
-            .filter(|record| plausible_next(stream, record.end));
+            .filter(|record| plausible_next(stream, record.end))
+            .or_else(|| consume_variable(stream, offset, kind));
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry(name).or_default() += 1;
@@ -584,7 +584,9 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
     let canonical_residual_records = census
         .records
         .iter()
-        .filter(|record| record.offset >= revision_start && matches!(record.kind, 38 | 81..=84))
+        .filter(|record| {
+            record.offset >= revision_start && matches!(record.kind, 38 | 81..=84 | 91)
+        })
         .map(|record| record.canonical_bytes.clone())
         .collect::<Vec<_>>();
     for record in census.records {
@@ -703,6 +705,7 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
             let record = crate::parasolid::entity_54_string_record_at(stream, offset)?;
             (record.xmt, record.byte_len, Vec::new())
         }
+        91 => return consume_type_91(stream, offset),
         _ => return None,
     };
     let end = offset.checked_add(byte_len)?;
@@ -718,6 +721,33 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
             .to_vec(),
         offset,
         end,
+    })
+}
+
+fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
+    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2)?)?;
+    (xmt > 1).then_some(())?;
+    let mut at = offset.checked_add(2 + consumed)?;
+    (be::u32_at(stream, at) == Some(0)).then_some(())?;
+    at += 4;
+    let mut references = Vec::new();
+    for _ in 0..6 {
+        let (reference, consumed) = read_xmt(stream, at)?;
+        (reference > 0).then_some(())?;
+        at += consumed;
+        matches!(stream.get(at), Some(0 | 1)).then_some(())?;
+        at += 1;
+        references.push(reference);
+    }
+    Some(Record {
+        kind: 91,
+        xmt,
+        node_id: None,
+        references,
+        position: None,
+        canonical_bytes: stream.get(offset..at)?.to_vec(),
+        offset,
+        end: at,
     })
 }
 
@@ -787,6 +817,7 @@ fn family_name(kind: u16) -> Option<&'static str> {
         82 => "ENTITY_52",
         83 => "ENTITY_53",
         84 => "ENTITY_54",
+        91 => "TYPE_91",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",

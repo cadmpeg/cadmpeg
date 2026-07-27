@@ -318,24 +318,18 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
 }
 
 fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
-    let start = *at;
     if bytes.get(*at) == Some(&1) {
         let mut prefixed_at = *at;
         let mut references = Vec::new();
         for _ in 0..count {
-            if bytes.get(prefixed_at) != Some(&1) {
-                references.clear();
-                break;
-            }
+            (bytes.get(prefixed_at) == Some(&1)).then_some(())?;
             prefixed_at += 1;
             references.push(read_xmt(bytes, &mut prefixed_at)?);
         }
-        if references.len() == count && bytes.get(prefixed_at) == Some(&0) {
-            *at = prefixed_at + 1;
-            return Some(references);
-        }
+        (bytes.get(prefixed_at) == Some(&0)).then_some(())?;
+        *at = prefixed_at + 1;
+        return Some(references);
     }
-    *at = start;
     (0..count).map(|_| read_xmt(bytes, at)).collect()
 }
 

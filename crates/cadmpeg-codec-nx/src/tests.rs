@@ -6024,7 +6024,8 @@ fn deltas_walks_complete_entity_value_records() {
     stream.extend_from_slice(&3u32.to_be_bytes());
     stream.extend_from_slice(&22u16.to_be_bytes());
     stream.extend_from_slice(b"abc\0");
-    stream.extend(status_framed_deltas_point_stream());
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc, 0xba]);
 
     let census = crate::deltas::walk(&stream);
     assert_eq!(
@@ -6033,15 +6034,16 @@ fn deltas_walks_complete_entity_value_records() {
             .iter()
             .map(|record| record.kind)
             .collect::<Vec<_>>(),
-        [82, 83, 84, 29]
+        [82, 83, 84]
     );
     assert_eq!(census.full_counts["ENTITY_52"], 1);
     assert_eq!(census.full_counts["ENTITY_53"], 1);
     assert_eq!(census.full_counts["ENTITY_54"], 1);
-    assert_eq!(census.bytes_decoded, stream.len());
+    assert_eq!(census.bytes_decoded, decoded_len);
 
     let residual = crate::deltas::semantic_residual(&stream);
-    assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));
+    assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[decoded_len..stream.len()], &[0xfe, 0xdc, 0xba]);
     assert_eq!(
         crate::parasolid::entity_52_integer_records(&residual)[0].values,
         [u32::MAX]
@@ -6054,6 +6056,40 @@ fn deltas_walks_complete_entity_value_records() {
         crate::parasolid::entity_54_string_records(&residual)[0].value,
         "abc"
     );
+}
+
+#[test]
+fn deltas_walks_complete_type_91_records() {
+    let mut stream = vec![0, 91];
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&0u32.to_be_bytes());
+    for (reference, status) in [(3u16, 1u8), (4, 1), (5, 0), (6, 1), (7, 0), (8, 0)] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(status);
+    }
+    let record_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 91);
+    assert_eq!(census.records[0].xmt, 10);
+    assert_eq!(census.records[0].node_id, None);
+    assert_eq!(census.records[0].references, [3, 4, 5, 6, 7, 8]);
+    assert_eq!(census.records[0].canonical_bytes, stream[..record_len]);
+    assert_eq!(census.full_counts["TYPE_91"], 1);
+    assert_eq!(census.bytes_decoded, record_len);
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..record_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[record_len..stream.len()], &[0xfe, 0xdc]);
+    assert!(residual.ends_with(&stream[..record_len]));
+
+    stream[4..8].copy_from_slice(&1u32.to_be_bytes());
+    assert!(crate::deltas::walk(&stream).records.is_empty());
+    stream[4..8].copy_from_slice(&0u32.to_be_bytes());
+    stream[10] = 2;
+    assert!(crate::deltas::walk(&stream).records.is_empty());
 }
 
 #[test]

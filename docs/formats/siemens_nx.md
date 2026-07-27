@@ -450,6 +450,8 @@ Status-framed fixed records are normalized by removing each reference status byt
 
 Type-81 entity/attribute-list records and type-82, type-83, and type-84 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted type-82 integer and type-83 finite-binary64 records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
 
+Type-91 records are `type:005b, xmt, zero:u32 BE, reference_status[6]`. The record XMT is non-null. Each `reference_status` entry is a nonzero encoded XMT followed by a status byte in `0..=1`. The record ends after the sixth status byte. Type-91 records participate in the deltas byte ledger, retain exact serialized bytes in the semantic lane, and do not replace topology or geometry records.
+
 **Full record:**
 
 ```text
