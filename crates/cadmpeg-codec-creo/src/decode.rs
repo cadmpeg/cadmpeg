@@ -25970,6 +25970,19 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .iter()
         .filter(|feature| matches!(feature.definition, IrFeatureDefinition::Native { .. }))
         .count();
+    let explicitly_unresolved_feature_count = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition,
+                IrFeatureDefinition::DatumPlaneUnresolved
+                    | IrFeatureDefinition::DatumCoordinateSystemUnresolved
+                    | IrFeatureDefinition::BoundarySurfaceUnresolved
+            )
+        })
+        .count();
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
@@ -25981,6 +25994,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_native_feature_count".to_string(),
         native_feature_count,
+    );
+    coverage.insert(
+        "transferred_explicitly_unresolved_feature_count".to_string(),
+        explicitly_unresolved_feature_count,
     );
     Ok((ir, annotations.build(), unknowns, coverage))
 }
@@ -27029,6 +27046,19 @@ fn build_report(
                 "{active_native_relations} active section dimension relation(s) retain native \
                  operands because their neutral semantics, incidence join, or referenced geometry \
                  remain unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let explicitly_unresolved_features = count("transferred_explicitly_unresolved_feature_count");
+    if explicitly_unresolved_features != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{explicitly_unresolved_features} typed history feature definition(s) retain an \
+                 explicitly unresolved model-space construction."
             ),
             provenance: None,
         });

@@ -2215,6 +2215,14 @@ fn decode_types_default_part_coordinate_system() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
     ));
+    assert_eq!(
+        result.report.coverage["transferred_explicitly_unresolved_feature_count"],
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("1 typed history feature definition(s)")
+    }));
 }
 
 #[test]
