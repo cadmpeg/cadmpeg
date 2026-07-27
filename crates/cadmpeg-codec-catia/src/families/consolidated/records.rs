@@ -690,13 +690,23 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                     }
                 }
                 if winners.is_empty() {
-                    let mut circle_winners: Vec<_> = circles
+                    let identity_circles: Vec<_> = circles
                         .iter()
-                        .filter(|circle| pcurve_matches_circle(pcurve, circle))
-                        .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos })
+                        .filter(|circle| circle.record_id == pcurve.support_id)
                         .collect();
-                    if circle_winners.len() == 1 {
-                        winners.append(&mut circle_winners);
+                    if let [circle] = identity_circles.as_slice() {
+                        if pcurve_matches_circle(pcurve, circle) {
+                            winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
+                        }
+                    } else if identity_circles.is_empty() {
+                        let geometric_circle_winners: Vec<_> = circles
+                            .iter()
+                            .filter(|circle| pcurve_matches_circle(pcurve, circle))
+                            .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos })
+                            .collect();
+                        if let [winner] = geometric_circle_winners.as_slice() {
+                            winners.push(winner.clone());
+                        }
                     }
                 }
                 if winners.is_empty() {

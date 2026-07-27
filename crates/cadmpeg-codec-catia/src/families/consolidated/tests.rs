@@ -6,8 +6,8 @@
 use crate::tests::{
     a5_circle_bound_edge_stream, a5_cone_bound_edge_stream, a5_cylinder_bound_edge_stream,
     a5_edge_block_stream, a5_native_edge_run_stream, a5_nurbs_bound_edge_stream, a5_pcurve_stream,
-    a6_pcurve_stream, append_b5_record, b2_edge_block_stream, b2_edge_parameter_stream_for,
-    b2_topology_edge_run_stream, b3_cylinder_stream, le_f32,
+    a6_pcurve_stream, append_b5_record, b2_circle_stream, b2_edge_block_stream,
+    b2_edge_parameter_stream_for, b2_topology_edge_run_stream, b3_cylinder_stream, le_f32,
 };
 
 #[test]
@@ -216,6 +216,46 @@ fn a5_edge_binding_resolves_circle_by_constant_v_and_arc_range() {
         blocks[0].supports[0],
         Some(ConsolidatedSupportBinding::Circle { .. })
     ));
+}
+
+#[test]
+fn a5_edge_binding_uses_circle_identity_to_break_geometric_ties() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let mut bytes = a5_circle_bound_edge_stream();
+    let original_circle_offset = bytes.len() - b2_circle_stream().len();
+    let mut duplicate = b2_circle_stream();
+    duplicate[6..8].copy_from_slice(&0x1235_u16.to_le_bytes());
+    bytes.extend_from_slice(&duplicate);
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert!(matches!(
+        blocks[0].supports[0],
+        Some(ConsolidatedSupportBinding::Circle { pos }) if pos == original_circle_offset
+    ));
+}
+
+#[test]
+fn a5_edge_binding_rejects_duplicate_circle_identities() {
+    let mut bytes = a5_circle_bound_edge_stream();
+    bytes.extend_from_slice(&b2_circle_stream());
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert!(blocks[0].supports[0].is_none());
+}
+
+#[test]
+fn a5_edge_binding_rejects_an_identity_with_a_conflicting_circle_chart() {
+    let mut bytes = a5_circle_bound_edge_stream();
+    let original_circle_offset = bytes.len() - b2_circle_stream().len();
+    bytes[original_circle_offset + 6..original_circle_offset + 8]
+        .copy_from_slice(&0x1235_u16.to_le_bytes());
+    let mut conflicting = b2_circle_stream();
+    conflicting[40..48].copy_from_slice(&1.0_f64.to_le_bytes());
+    bytes.extend_from_slice(&conflicting);
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert!(blocks[0].supports[0].is_none());
 }
 
 #[test]

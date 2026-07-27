@@ -24,7 +24,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
 - Standard 3D spline cache poles and knots. Exact two-surface constructions use their native class-`20` pcurve jets and shared parameter interval when the standard tag closes through a class-`5e`/`23` dependency chain; the separate serialized 3D cache remains unresolved.
-- `op1` and persistent-tag resolution. The mapping from absolute persistent CGM tags to serialized records remains unresolved for the consolidated `a5` family.
+- `op1` and persistent-tag resolution outside the exact class-`19` analytic-circle identity binding. The mapping from absolute persistent CGM tags to other serialized records remains unresolved for the consolidated `a5` family.
 - The mapping from a standard `0x60` row's local allocation tag to its native edge record remains unresolved when no edge node carries the same curve identity.
 - Standard-path topology membership across multiple separate FBB face groups.
 - The standard-path arc branch is unspecified for arcs with no witnessed adjacent face.
