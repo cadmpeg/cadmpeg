@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 112;
+pub const CATIA_NATIVE_VERSION: u32 = 113;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -26,6 +26,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_class61_records",
     "consolidated_edge_nodes",
     "consolidated_edge_runs",
+    "consolidated_groups",
     "consolidated_owner_packets",
     "consolidated_pcurves",
     "consolidated_revolutions",
@@ -233,6 +234,17 @@ pub enum CatiaConsolidatedClass61Payload {
         /// Finite class-specific scalar preceding the terminal byte.
         scalar: f64,
     },
+}
+
+/// One typed consolidated class-`0x60` group opener.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedGroup {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Compact group-type code.
+    pub group_type: u32,
 }
 
 /// One complete consolidated historical edge run referencing two retained
@@ -1603,6 +1615,9 @@ pub struct CatiaNative {
     /// Complete consolidated historical edge runs.
     #[serde(default)]
     pub consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun>,
+    /// Typed consolidated class-`0x60` group openers.
+    #[serde(default)]
+    pub consolidated_groups: Vec<CatiaConsolidatedGroup>,
     /// Exact consolidated owner packets and their allocation links.
     #[serde(default)]
     pub consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket>,
@@ -1647,6 +1662,7 @@ impl Default for CatiaNative {
             consolidated_class61_records: Vec::new(),
             consolidated_edge_nodes: Vec::new(),
             consolidated_edge_runs: Vec::new(),
+            consolidated_groups: Vec::new(),
             consolidated_owner_packets: Vec::new(),
             consolidated_pcurves: Vec::new(),
             consolidated_revolutions: Vec::new(),
@@ -1704,6 +1720,18 @@ fn consolidated_class61_records(bytes: &[u8]) -> Vec<CatiaConsolidatedClass61Rec
                 payload,
             },
         )
+        .collect()
+}
+
+fn consolidated_groups(bytes: &[u8]) -> Vec<CatiaConsolidatedGroup> {
+    crate::families::b2::records::b2_groups(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, group)| CatiaConsolidatedGroup {
+            id: format!("catia:consolidated:group#{index}"),
+            byte_offset: group.pos as u64,
+            group_type: group.group_type,
+        })
         .collect()
 }
 
@@ -2116,6 +2144,24 @@ fn validate_consolidated_class61_records(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated class-0x61 record `{}` is structurally invalid",
                 record.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_groups(
+    groups: &[CatiaConsolidatedGroup],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, group) in groups.iter().enumerate() {
+        let expected_id = format!("catia:consolidated:group#{index}");
+        if group.id != expected_id
+            || index > 0 && groups[index - 1].byte_offset >= group.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated group `{}` is structurally invalid",
+                group.id
             )));
         }
     }
@@ -2969,6 +3015,7 @@ impl CatiaNative {
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
         let consolidated_class61_records = consolidated_class61_records(bytes);
+        let consolidated_groups = consolidated_groups(bytes);
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
         let consolidated_revolutions = consolidated_revolutions(bytes);
@@ -2984,6 +3031,7 @@ impl CatiaNative {
             consolidated_class61_records,
             consolidated_edge_nodes,
             consolidated_edge_runs,
+            consolidated_groups,
             consolidated_owner_packets,
             consolidated_pcurves,
             consolidated_revolutions,
@@ -3330,6 +3378,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_class61_records")?;
         consolidated_class61_records.sort_by_key(|record| record.byte_offset);
         validate_consolidated_class61_records(&consolidated_class61_records)?;
+        let mut consolidated_groups: Vec<CatiaConsolidatedGroup> =
+            namespace.arena_as("consolidated_groups")?;
+        consolidated_groups.sort_by_key(|group| group.byte_offset);
+        validate_consolidated_groups(&consolidated_groups)?;
         let mut consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket> =
             namespace.arena_as("consolidated_owner_packets")?;
         consolidated_owner_packets.sort_by_key(|packet| packet.byte_offset);
@@ -3370,6 +3422,7 @@ impl CatiaNative {
             consolidated_class61_records,
             consolidated_edge_nodes,
             consolidated_edge_runs,
+            consolidated_groups,
             consolidated_owner_packets,
             consolidated_pcurves,
             consolidated_revolutions,
@@ -3440,6 +3493,7 @@ impl CatiaNative {
         )?;
         namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
+        namespace.set_arena("consolidated_groups", &self.consolidated_groups)?;
         namespace.set_arena(
             "consolidated_owner_packets",
             &self.consolidated_owner_packets,
@@ -3482,6 +3536,7 @@ impl CatiaNative {
             consolidated_class61_records,
             consolidated_edge_nodes,
             consolidated_edge_runs,
+            consolidated_groups,
             consolidated_owner_packets,
             consolidated_pcurves,
             consolidated_revolutions,
@@ -3515,6 +3570,7 @@ impl CatiaNative {
         )?;
         namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
+        namespace.set_arena("consolidated_groups", &consolidated_groups)?;
         namespace.set_arena("consolidated_owner_packets", &consolidated_owner_packets)?;
         namespace.set_arena("consolidated_pcurves", &consolidated_pcurves)?;
         namespace.set_arena("consolidated_revolutions", &consolidated_revolutions)?;

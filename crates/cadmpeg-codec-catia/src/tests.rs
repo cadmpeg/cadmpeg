@@ -3397,6 +3397,33 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
 }
 
 #[test]
+fn native_namespace_retains_typed_consolidated_groups() {
+    let native = crate::native::CatiaNative::decode(&b2_group_stream());
+    let [group] = native.consolidated_groups.as_slice() else {
+        panic!("one consolidated group")
+    };
+    assert_eq!(group.byte_offset, 9);
+    assert_eq!(group.group_type, 3);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA consolidated groups");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA consolidated groups"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_groups[0].id.push_str("-changed");
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA consolidated group for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_consolidated_class61_records() {
     let mut stream = b2_counted_61_stream();
     stream.extend_from_slice(&b2_long_61_stream());

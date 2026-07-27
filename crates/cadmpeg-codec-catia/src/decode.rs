@@ -180,6 +180,10 @@ fn finish_decode(
             native.consolidated_class61_records.len(),
         ),
         (
+            "decoded_consolidated_group_count".to_string(),
+            native.consolidated_groups.len(),
+        ),
+        (
             "decoded_object_graph_count".to_string(),
             native.object_graphs.len(),
         ),

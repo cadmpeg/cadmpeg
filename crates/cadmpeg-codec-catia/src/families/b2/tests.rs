@@ -308,8 +308,11 @@ fn b2_group_parser_reads_separator_and_typed_opener() {
     assert_eq!(separators.len(), 1);
     assert_eq!(separators[0].token, 0x05);
     assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].group_id, 32);
     assert_eq!(groups[0].group_type, 3);
+
+    let mut invalid = bytes;
+    invalid[14] = 0x85;
+    assert!(crate::families::b2::records::b2_groups(&invalid).is_empty());
 }
 
 #[test]

@@ -921,9 +921,6 @@ pub struct B2GroupSeparator {
 pub struct B2Group {
     /// Record byte offset.
     pub pos: usize,
-    /// Compact group identifier.
-    #[cfg(test)]
-    pub group_id: u32,
     /// Compact group-type code; type `3` opens a cylinder chain.
     pub group_type: u32,
 }
@@ -1232,16 +1229,12 @@ pub fn b2_groups(data: &[u8]) -> Vec<B2Group> {
         .into_iter()
         .filter_map(|frame| {
             let mut at = frame.payload;
-            // Advances `at` past the compact group id; the value is retained
-            // only for test inspection.
-            let group_id = compact_int(data, &mut at)?;
-            #[cfg(not(test))]
-            let _ = group_id;
+            if compact_int(data, &mut at)? != 32 {
+                return None;
+            }
             let group_type = compact_int(data, &mut at)?;
             (at == frame.end).then_some(B2Group {
                 pos: frame.pos,
-                #[cfg(test)]
-                group_id,
                 group_type,
             })
         })
