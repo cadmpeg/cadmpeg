@@ -2043,6 +2043,10 @@ endpoint deltas, under exactly one coordinate ordering, must equal
 same two-delta rule to its leading and trailing coordinate pairs. Every
 generated row must satisfy one of these envelope forms against the same
 prototype radii.
+An owned round set may mix type-24 cylinder rows and type-26 torus rows. When
+every row carries its complete family-specific radius form, the type-24 rolling
+radius and type-26 `radius2` values form one common radius set. The round is
+constant-radius only when every value is positive and equal.
 Two linearly independent parallel support pairs with the same gap locate the
 cylinder axis at the intersection of their midplanes. Intersecting those
 midplanes with either axial cap plane fixes the carrier origin. Every support

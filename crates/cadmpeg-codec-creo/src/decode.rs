@@ -13891,27 +13891,22 @@ fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>>
         .iter()
         .filter(|row| row.feature_id == feature_id)
         .collect::<Vec<_>>();
-    let first_kind = generated_rows.first()?.kind;
-    if generated_rows.iter().any(|row| row.kind != first_kind) {
-        return None;
-    }
-    match first_kind {
-        crate::surface::SurfaceKind::Cylinder => generated_rows
-            .iter()
-            .map(|row| {
-                unique_surface_parameter_record(scan, row)?.type24_round_radius(row.type_byte)
-            })
-            .collect(),
-        crate::surface::SurfaceKind::TorusOrSphere => generated_rows
-            .iter()
-            .map(|row| {
-                unique_surface_parameter_record(scan, row)?
+    (!generated_rows.is_empty()).then_some(())?;
+    generated_rows
+        .iter()
+        .map(|row| {
+            let parameters = unique_surface_parameter_record(scan, row)?;
+            match row.kind {
+                crate::surface::SurfaceKind::Cylinder => {
+                    parameters.type24_round_radius(row.type_byte)
+                }
+                crate::surface::SurfaceKind::TorusOrSphere => parameters
                     .torus_radius_overrides(row.type_byte)
-                    .map(|overrides| overrides.radius2)
-            })
-            .collect(),
-        _ => None,
-    }
+                    .map(|overrides| overrides.radius2),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 fn differing_positive_lengths(values: &[f64]) -> bool {

@@ -2774,7 +2774,7 @@ fn decode_types_class_913_without_an_edge_array() {
 }
 
 #[test]
-fn torus_only_round_uses_agreeing_tagged_minor_radii() {
+fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
     let direct_quarter = [
         0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff, 0xe3,
     ];
@@ -2810,6 +2810,43 @@ fn torus_only_round_uses_agreeing_tagged_minor_radii() {
                 radius: cadmpeg_ir::features::Length(radius),
             }, ..
         }] if (radius - 0.249_999_999_951_747_04).abs() < 1e-12)
+    ));
+
+    let cylinder_panel = [
+        0x15, 0x2d, 0x2b, 0x4d, 0xd8, 0x2f, 0xd7, 0x5e, 0x1f, 0x18, 0x2d, 0x2c, 0x1a, 0xa4, 0xfc,
+        0xa4, 0x2a, 0xec, 0x2f, 0x00, 0x00, 0x2d, 0x36, 0x59, 0x99, 0x99, 0x99, 0x99, 0x9a, 0x42,
+        0xf7, 0x33, 0x2e, 0x03, 0x33, 0x2e, 0x37, 0xcc, 0x29, 0xf7, 0x33,
+    ];
+    let mut mixed_geometry = visibgeom_payload(2, 0);
+    mixed_geometry.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 8]);
+    mixed_geometry.extend_from_slice(&cylinder_panel);
+    mixed_geometry.extend_from_slice(&[0xe3, 8, 0x26, 4, 0x01, 0, 0]);
+    mixed_geometry.extend_from_slice(&direct_quarter);
+    let mixed = build_prt(
+        "c",
+        &[
+            ("VisibGeom", mixed_geometry),
+            (
+                "AllFeatur",
+                vec![
+                    4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+                ],
+            ),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+    let result = CreoCodec
+        .decode(&mut Cursor::new(mixed), &DecodeOptions::default())
+        .expect("decode");
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+            }, ..
+        }])
     ));
 
     let conflicting = round(&[
