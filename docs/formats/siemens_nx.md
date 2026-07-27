@@ -456,7 +456,7 @@ Status-framed type-38 `INTERSECTION` records end after their six construction re
 
 Direct and escaped type-40 `CHART_s`, type-41 `term_use`, type-59 blend-bound, and type-204 support-UV records use the layouts in section 6.3. A `CHART_s` record ends after its declared `xyz3` or `ext11` point lane. A `term_use` record ends after its model-space point. A blend-bound record ends after its blend-surface reference. A support-UV record ends after its declared finite-scalar lane. These records participate in the deltas byte ledger and remain in the semantic lane.
 
-Direct and escaped type-125 through type-128 and type-135 through type-136 NURBS records use the layouts in section 9.3. Counted payload, multiplicity, and knot records end after their declared value lanes. Surface descriptors end after the control-payload reference following the type-125 payload-family marker in their selected short or extended-reference layout. Curve descriptors end after their knot reference. These records participate in the deltas byte ledger and remain in the semantic lane.
+Direct and escaped type-125 through type-128 and type-135 through type-136 NURBS records use the layouts in section 9.3. Counted payload, multiplicity, and knot records end after their declared value lanes. A type-125 surface-data header ends after its four trailing status-framed references. Surface descriptors end after the control-payload reference following the type-125 payload-family marker in their selected short or extended-reference layout. Curve descriptors end after their knot reference. These records participate in the deltas byte ledger and remain in the semantic lane.
 
 Type 141 has the complete deltas record `008d [ff], xmt, ref status, ref 00, ref 00, ref status`, where the first and fourth statuses are binary. Each XMT field uses the compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity. The record ends after the fourth status byte, participates in the deltas byte ledger, and remains in the semantic lane.
 
@@ -1191,7 +1191,7 @@ A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body snapsh
 
 ### 9.3 B-spline payloads
 
-A type-125 B-surface control payload stores a parameter-range block, a marker byte, a sense byte, `double_count:u32`, a large-index-capable `first_index`, and `double_count` doubles. An optional envelope escape before `double_count` shifts the remaining fields by one byte.
+A type-125 B-surface control payload stores a parameter-range block, a marker byte, a sense byte, `double_count:u32`, a large-index-capable `first_index`, and `double_count` doubles. An optional envelope escape before `double_count` shifts the remaining fields by one byte. A type-125 surface-data header is `007d [ff], xmt, value[8]:f64 BE, marker, marker_lane[12], ref 01, ref 01, ref 01, ref 01`. The XMT is non-null, every value is finite, and `marker` is `01` or `02`. `marker_lane` contains `marker * 4` bytes `42` followed by `(3 - marker) * 4` bytes `3f`.
 
 A type-126 B-surface descriptor stores U and V degrees, pole counts, form codes, distinct-knot counts, multiplicity references, knot references, and a control-payload reference. It has short and large-index layouts.
 

@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::topology::Graph;
-use cadmpeg_ir::be::{u16_at as be_u16, u32_at as be_u32};
+use cadmpeg_ir::be::{f64_at as be_f64, u16_at as be_u16, u32_at as be_u32};
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
@@ -336,6 +336,42 @@ fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)>
     Some((xmt, Payload { values }, end))
 }
 
+fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
+    (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
+    let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+    let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+    (xmt > 10).then_some(())?;
+    let mut at = pos.checked_add(2 + escape + xmt_len)?;
+    for _ in 0..8 {
+        be_f64(bytes, at)?.is_finite().then_some(())?;
+        at += 8;
+    }
+    let marker = usize::from(*bytes.get(at)?);
+    matches!(marker, 1 | 2).then_some(())?;
+    at += 1;
+    let b_count = marker * 4;
+    bytes
+        .get(at..at + b_count)?
+        .iter()
+        .all(|byte| *byte == b'B')
+        .then_some(())?;
+    at += b_count;
+    let question_count = 12 - b_count;
+    bytes
+        .get(at..at + question_count)?
+        .iter()
+        .all(|byte| *byte == b'?')
+        .then_some(())?;
+    at += question_count;
+    for _ in 0..4 {
+        let (_, reference_len) = read_xmt(bytes, at)?;
+        at += reference_len;
+        (bytes.get(at) == Some(&1)).then_some(())?;
+        at += 1;
+    }
+    Some((xmt, at))
+}
+
 fn curve_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
     let records = (0..bytes.len().saturating_sub(14))
         .filter_map(|pos| curve_payload_at(bytes, pos).map(|(xmt, payload, _)| (xmt, payload)));
@@ -532,10 +568,9 @@ pub(crate) struct AuxiliaryRecord {
 pub(crate) fn auxiliary_record_at(bytes: &[u8], pos: usize) -> Option<AuxiliaryRecord> {
     let kind = be_u16(bytes, pos)?;
     let (xmt, end) = match kind {
-        125 => {
-            let (xmt, _, end) = surface_payload_at(bytes, pos)?;
-            (xmt, end)
-        }
+        125 => surface_payload_at(bytes, pos)
+            .map(|(xmt, _, end)| (xmt, end))
+            .or_else(|| surface_data_header_at(bytes, pos))?,
         126 => {
             let (xmt, _, end) = surface_descriptor_at(bytes, pos)?;
             (xmt, end)

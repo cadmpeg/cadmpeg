@@ -6431,6 +6431,49 @@ fn deltas_walks_complete_nurbs_auxiliary_records() {
 }
 
 #[test]
+fn deltas_walks_complete_surface_data_headers() {
+    fn record(escape: bool, xmt: u32, marker: u8) -> Vec<u8> {
+        let mut bytes = 125u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        for value in [0.0f64, 1.0, -0.25, 0.5, 0.0, 1.0, -0.25, 0.5] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.push(marker);
+        bytes.extend(std::iter::repeat_n(b'B', usize::from(marker) * 4));
+        bytes.extend(std::iter::repeat_n(b'?', 12 - usize::from(marker) * 4));
+        for reference in [1u32, 20, 21, 1] {
+            bytes.extend(encoded_xmt(reference));
+            bytes.push(1);
+        }
+        bytes
+    }
+
+    let direct = record(false, 20, 1);
+    let escaped = record(true, 40_000, 2);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.full_counts["B_SURFACE_DATA"], 2);
+    assert_eq!(census.bytes_decoded, decoded_len);
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+
+    let mut invalid_marker = record(false, 20, 2);
+    invalid_marker[68] = 3;
+    assert!(crate::deltas::walk(&invalid_marker).records.is_empty());
+
+    let mut invalid_status = record(false, 20, 1);
+    *invalid_status.last_mut().expect("final status") = 0;
+    assert!(crate::deltas::walk(&invalid_status).records.is_empty());
+}
+
+#[test]
 fn deltas_walks_complete_type_141_records() {
     fn record(escape: bool, xmt: u32, references: [u32; 4], boundary_statuses: [u8; 2]) -> Vec<u8> {
         let mut bytes = 141u16.to_be_bytes().to_vec();
