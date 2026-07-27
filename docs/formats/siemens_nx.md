@@ -466,6 +466,8 @@ Type 74 `ATTDEF_LIST` has the complete deltas record `004a [ff], slot_count:u32 
 
 Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, ref 01, ref 01, ref 01, ref 01, mode, ref status`. The XMT identity is non-null, `mode` is `02` or `04`, and the final status is binary. The optional `ff` envelope byte precedes the XMT identity. The record ends after the final status byte, participates in the deltas byte ledger, and does not enter the procedural-intersection semantic lane. This two-byte type tag is distinct from the single-byte `5a` intersection record.
 
+Type 101 has the complete deltas record `0065 [ff], xmt(2), ref_status[12], flag:01, zero[12], ref_status[3]`. Every reference status is `01`. The optional `ff` envelope byte precedes the fixed XMT identity. The record ends after the fifteenth reference status, participates in the deltas byte ledger, and does not replace topology or geometry records. An inline type-101 schema declaration has a printable signature after `0065` and is not an instance of this grammar.
+
 **Full record:**
 
 ```text

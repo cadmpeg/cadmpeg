@@ -6189,6 +6189,58 @@ fn deltas_walks_complete_attdef_lists() {
 }
 
 #[test]
+fn deltas_walks_complete_type_101_records() {
+    let mut direct = vec![0, 101];
+    direct.extend_from_slice(&2u16.to_be_bytes());
+    for reference in 3u16..15 {
+        direct.extend_from_slice(&reference.to_be_bytes());
+        direct.push(1);
+    }
+    direct.push(1);
+    direct.extend_from_slice(&[0; 12]);
+    for reference in 15u16..18 {
+        direct.extend_from_slice(&reference.to_be_bytes());
+        direct.push(1);
+    }
+    let direct_len = direct.len();
+    direct.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&direct);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 101);
+    assert_eq!(census.records[0].xmt, 2);
+    assert_eq!(census.records[0].node_id, None);
+    assert_eq!(census.records[0].references, (3u32..18).collect::<Vec<_>>());
+    assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
+    assert_eq!(census.full_counts["TYPE_101"], 1);
+    assert_eq!(census.bytes_decoded, direct_len);
+
+    let residual = crate::deltas::semantic_residual(&direct);
+    assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
+
+    let mut escaped = vec![0, 101, 0xff];
+    escaped.extend_from_slice(&2u16.to_be_bytes());
+    for reference in 3u16..15 {
+        escaped.extend_from_slice(&reference.to_be_bytes());
+        escaped.push(1);
+    }
+    escaped.push(1);
+    escaped.extend_from_slice(&[0; 12]);
+    for reference in 15u16..18 {
+        escaped.extend_from_slice(&reference.to_be_bytes());
+        escaped.push(1);
+    }
+    assert_eq!(crate::deltas::walk(&escaped).records[0].xmt, 2);
+
+    escaped[41] = 0;
+    assert!(crate::deltas::walk(&escaped).records.is_empty());
+    escaped[41] = 1;
+    escaped[42] = 1;
+    assert!(crate::deltas::walk(&escaped).records.is_empty());
+}
+
+#[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
         .records

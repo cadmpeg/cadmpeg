@@ -374,6 +374,13 @@ pub fn walk(stream: &[u8]) -> Census {
             census.records.push(record);
             continue;
         }
+        if let Some(record) = consume_type_101(stream, offset) {
+            census.bytes_decoded += record.end - record.offset;
+            *census.full_counts.entry("TYPE_101").or_default() += 1;
+            offset = record.end;
+            census.records.push(record);
+            continue;
+        }
         if let Some(record) = consume_intersection_data(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
@@ -834,6 +841,51 @@ fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
     })
 }
 
+fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
+    (be::u16_at(stream, offset) == Some(101)).then_some(())?;
+    let direct = type_101_layout(stream, offset, 0);
+    let escaped = (stream.get(offset + 2) == Some(&0xff))
+        .then(|| type_101_layout(stream, offset, 1))
+        .flatten();
+    let (references, end) = unique_layout(direct, escaped)?;
+    Some(Record {
+        kind: 101,
+        xmt: 2,
+        node_id: None,
+        references,
+        position: None,
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        offset,
+        end,
+    })
+}
+
+fn type_101_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(Vec<u32>, usize)> {
+    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
+    (xmt == 2).then_some(())?;
+    let mut at = offset.checked_add(2 + envelope_len + consumed)?;
+    let mut references = Vec::new();
+    for _ in 0..12 {
+        references.push(read_status_one_reference(stream, &mut at)?);
+    }
+    (stream.get(at) == Some(&1)).then_some(())?;
+    at += 1;
+    (stream.get(at..at + 12)? == [0; 12]).then_some(())?;
+    at += 12;
+    for _ in 0..3 {
+        references.push(read_status_one_reference(stream, &mut at)?);
+    }
+    Some((references, at))
+}
+
+fn read_status_one_reference(stream: &[u8], at: &mut usize) -> Option<u32> {
+    let (reference, consumed) = read_xmt(stream, *at)?;
+    *at = at.checked_add(consumed)?;
+    (stream.get(*at) == Some(&1)).then_some(())?;
+    *at += 1;
+    Some(reference)
+}
+
 fn attdef_list_layout(
     stream: &[u8],
     offset: usize,
@@ -1142,6 +1194,7 @@ fn family_name(kind: u16) -> Option<&'static str> {
         84 => "ENTITY_54",
         90 => "GROUP",
         91 => "TYPE_91",
+        101 => "TYPE_101",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",

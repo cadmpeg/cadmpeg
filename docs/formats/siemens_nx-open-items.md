@@ -15,6 +15,7 @@ This document records unresolved NX `.prt` byte semantics.
 - The semantic role of the leading sentinel reference in deltas type 74 `ATTDEF_LIST` is unspecified.
 - The field roles of the five references and `02|04` mode in deltas type 90 `GROUP` are unspecified.
 - The canonical node-type name and field roles of deltas type 91 (`005b`) are unspecified.
+- The canonical node-type name and field roles of deltas type 101 (`0065`) are unspecified.
 - The canonical node-type name and four reference-field roles of deltas type 141 (`008d`) are unspecified.
 
 ## Object model and body composition
