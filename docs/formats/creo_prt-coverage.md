@@ -87,6 +87,9 @@ fixtures, claims above L1 remain unproven.
   `triples_ptr.skamp_id` incidence link when the relation, join, and incidence
   identities are complete and unique. The same unique join retains its
   non-null equation identity without assigning semantics to that namespace. An
+  equation-bearing join whose incidence identity and equation-bearing rows are
+  complete and unique also retains the equation identity on a native
+  `skamp_ptr` constraint, including when the join has no relation identifier. An
   incomplete or duplicate relation identity remains a scalar property and does
   not become an ambiguous relation-record operand.
 

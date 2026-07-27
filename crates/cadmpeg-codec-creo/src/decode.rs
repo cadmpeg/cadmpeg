@@ -9368,6 +9368,21 @@ fn section_skamp_constraints_for_geometry(
         .iter()
         .filter_map(|skamp| {
             let unique_skamp_id = complete_skamps && skamp_id_counts.get(&skamp.id) == Some(&1);
+            let joined_equation_id = if unique_skamp_id
+                && feature_solver_table_complete(
+                    relations.triples_header.as_ref(),
+                    relations.triples.len(),
+                ) {
+                let mut equation_ids = relations
+                    .triples
+                    .iter()
+                    .filter(|triple| triple.skamp_id == Some(skamp.id))
+                    .filter_map(|triple| triple.equation_id);
+                let equation_id = equation_ids.next();
+                equation_id.filter(|_| equation_ids.next().is_none())
+            } else {
+                None
+            };
             let active = section_skamp_active(skamp.status);
             let native_constraint = || {
                 let native_ref = sketch_native_ref(sketch);
@@ -9377,6 +9392,26 @@ fn section_skamp_constraints_for_geometry(
                     .filter(|item| available_entities.contains(&item.entity_id))
                     .map(|item| sketch_entity_id(sketch, item.entity_id))
                     .collect::<Vec<_>>();
+                let mut operands = skamp
+                    .items
+                    .iter()
+                    .map(|item| SketchNativeOperand {
+                        native_kind: "skamp_ptr".to_string(),
+                        native_field: Some("items.entity_id".to_string()),
+                        native_role: Some(item.sense),
+                        object_index: item.entity_id,
+                        native_ref: Some(native_ref.clone()),
+                    })
+                    .collect::<Vec<_>>();
+                if let Some(equation_id) = joined_equation_id {
+                    operands.push(SketchNativeOperand {
+                        native_kind: "triples_ptr".to_string(),
+                        native_field: Some("equation_id".to_string()),
+                        native_role: None,
+                        object_index: equation_id,
+                        native_ref: Some(native_ref),
+                    });
+                }
                 Some(SketchConstraintDefinition::Native {
                     native_kind: format!("creo:skamp:{}", skamp.kind),
                     native_state: Some(u64::from(skamp.status)),
@@ -9388,17 +9423,7 @@ fn section_skamp_constraints_for_geometry(
                     },
                     entities,
                     parameter: None,
-                    operands: skamp
-                        .items
-                        .iter()
-                        .map(|item| SketchNativeOperand {
-                            native_kind: "skamp_ptr".to_string(),
-                            native_field: Some("items.entity_id".to_string()),
-                            native_role: Some(item.sense),
-                            object_index: item.entity_id,
-                            native_ref: Some(native_ref.clone()),
-                        })
-                        .collect(),
+                    operands,
                 })
             };
             let tangent_locus = |item| {

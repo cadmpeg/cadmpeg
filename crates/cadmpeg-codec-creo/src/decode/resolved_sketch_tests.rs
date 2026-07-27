@@ -3496,6 +3496,80 @@ fn saved_line_joins_through_order_table() {
                 "creo:featdefs:sketch_entity#5:42".to_string()
             )]
     ));
+    let SketchConstraintDefinition::Native { operands, .. } = &constraints[0].0.definition else {
+        unreachable!();
+    };
+    assert!(operands.iter().any(|operand| {
+        operand.native_kind == "triples_ptr"
+            && operand.native_field.as_deref() == Some("equation_id")
+            && operand.native_role.is_none()
+            && operand.object_index == 11
+    }));
+    let mut equation_only_incidence = constrained.clone();
+    equation_only_incidence
+        .relations
+        .as_mut()
+        .expect("relations")
+        .triples[0]
+        .relation_id = None;
+    let equation_only_constraints = section_skamp_constraints(
+        &equation_only_incidence,
+        &SketchId("creo:model:sketch#5".to_string()),
+    );
+    let SketchConstraintDefinition::Native { operands, .. } =
+        &equation_only_constraints[0].0.definition
+    else {
+        unreachable!();
+    };
+    assert!(operands.iter().any(|operand| {
+        operand.native_field.as_deref() == Some("equation_id") && operand.object_index == 11
+    }));
+    let mut missing_equation = equation_only_incidence.clone();
+    missing_equation
+        .relations
+        .as_mut()
+        .expect("relations")
+        .triples[0]
+        .equation_id = None;
+    let missing_equation_constraints = section_skamp_constraints(
+        &missing_equation,
+        &SketchId("creo:model:sketch#5".to_string()),
+    );
+    let SketchConstraintDefinition::Native { operands, .. } =
+        &missing_equation_constraints[0].0.definition
+    else {
+        unreachable!();
+    };
+    assert!(!operands
+        .iter()
+        .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
+    let mut duplicate_equation = equation_only_incidence.clone();
+    let duplicate_equation_relations = duplicate_equation.relations.as_mut().expect("relations");
+    duplicate_equation_relations
+        .triples
+        .push(crate::feature::FeatureRelationTriple {
+            relation_id: None,
+            equation_id: Some(11),
+            skamp_id: Some(5),
+            offset: 32,
+        });
+    duplicate_equation_relations
+        .triples_header
+        .as_mut()
+        .expect("triples header")
+        .declared_count = 2;
+    let duplicate_equation_constraints = section_skamp_constraints(
+        &duplicate_equation,
+        &SketchId("creo:model:sketch#5".to_string()),
+    );
+    let SketchConstraintDefinition::Native { operands, .. } =
+        &duplicate_equation_constraints[0].0.definition
+    else {
+        unreachable!();
+    };
+    assert!(!operands
+        .iter()
+        .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
     assert_eq!(
         relation_incidence_entities(
             &constrained,
