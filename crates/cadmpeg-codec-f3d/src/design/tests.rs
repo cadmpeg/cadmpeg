@@ -5010,6 +5010,14 @@ fn body_recipe_operand_decodes_counted_reference_table() {
     assert_eq!(operand.nested_record_index, 103);
     assert_eq!(operand.recipe_id, recipe.id);
     assert_eq!(operand.next_byte_offset, next_at as u64);
+
+    let mut nested = Vec::new();
+    header(&mut nested, *b"302", 1);
+    header(&mut nested, *b"305", 11);
+    bytes.splice(next_at..next_at, nested.iter().copied());
+    let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+        .expect("body recipe operand with nested recipe records");
+    assert_eq!(operand.next_byte_offset, (next_at + nested.len()) as u64);
 }
 
 #[test]

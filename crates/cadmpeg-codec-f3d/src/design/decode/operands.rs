@@ -552,6 +552,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)
             || scope.kind == "RemoveBody"
             || scope.kind == "SurfaceStitch"
+            || scope.kind == "Decal"
             || matches!(scope.kind.as_str(), "BaseFlange" | "EdgeFlange" | "Hem")
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
@@ -1378,16 +1379,17 @@ pub fn decode_body_recipe_operands(
             let Some(start) = usize::try_from(header.byte_offset).ok() else {
                 continue;
             };
-            let Some(next_at) = body_recipe_operand_end(bytes, start, header.record_index) else {
-                continue;
-            };
             let matching_recipes = recipes
                 .iter()
                 .filter(|recipe| {
                     native_stream(&recipe.id) == Some(stream)
                         && recipe.kind == ConstructionRecipeKind::Body
                         && recipe.byte_offset > header.byte_offset
-                        && recipe.byte_offset < next_at as u64
+                })
+                .filter_map(|recipe| {
+                    let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
+                    body_recipe_operand_end(bytes, start, header.record_index, recipe_at)?;
+                    Some(recipe)
                 })
                 .collect::<Vec<_>>();
             let [recipe] = matching_recipes.as_slice() else {
@@ -1406,27 +1408,38 @@ pub fn decode_body_recipe_operands(
     Ok(out)
 }
 
-fn body_recipe_operand_end(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
+fn body_recipe_operand_end(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+    recipe_at: usize,
+) -> Option<usize> {
     let mut search = start.checked_add(11)?;
-    for (ordinal, expected) in [
+    for expected in [
         record_index,
         record_index.checked_add(1)?,
         record_index.checked_add(2)?,
         record_index.checked_add(3)?,
-        record_index.checked_add(4)?,
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         let at = next_indexed_record_offset(bytes, search)?;
         let (_, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, after_tag)? != expected {
             return None;
         }
-        if ordinal == 4 {
+        search = at.checked_add(11)?;
+    }
+    if recipe_at < search {
+        return None;
+    }
+    let expected = record_index.checked_add(4)?;
+    let search_limit = recipe_at.checked_add(1 << 16)?.min(bytes.len());
+    search = recipe_at;
+    while let Some(at) = next_indexed_record_offset(bytes.get(..search_limit)?, search) {
+        let (_, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+        if u32_at(bytes, after_tag) == Some(expected) {
             return Some(at);
         }
-        search = at.checked_add(11)?;
+        search = at.checked_add(1)?;
     }
     None
 }
@@ -1439,7 +1452,20 @@ pub(crate) fn parse_body_recipe_operand(
     recipe: &ConstructionRecipe,
 ) -> Option<DesignBodyRecipeOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let next_at = body_recipe_operand_end(bytes, start, header.record_index)?;
+    let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
+    let next_at = body_recipe_operand_end(bytes, start, header.record_index, recipe_at)?;
+    parse_body_recipe_operand_frame(bytes, group, group_member_ordinal, header, recipe, next_at)
+}
+
+fn parse_body_recipe_operand_frame(
+    bytes: &[u8],
+    group: &DesignConstructionOperandGroup,
+    group_member_ordinal: u32,
+    header: &DesignRecordHeader,
+    recipe: &ConstructionRecipe,
+    next_at: usize,
+) -> Option<DesignBodyRecipeOperand> {
+    let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
     let reference_count = usize::try_from(u32_at(bytes, start + 21)?).ok()?;
     if start >= recipe_at
