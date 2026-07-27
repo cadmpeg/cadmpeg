@@ -367,6 +367,13 @@ pub fn walk(stream: &[u8]) -> Census {
             census.records.push(record);
             continue;
         }
+        if let Some(record) = consume_attdef_list(stream, offset) {
+            census.bytes_decoded += record.end - record.offset;
+            *census.full_counts.entry("ATTDEF_LIST").or_default() += 1;
+            offset = record.end;
+            census.records.push(record);
+            continue;
+        }
         if let Some(record) = consume_intersection_data(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
@@ -808,6 +815,64 @@ fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
     })
 }
 
+fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
+    (be::u16_at(stream, offset) == Some(74)).then_some(())?;
+    let direct = attdef_list_layout(stream, offset, 0);
+    let escaped = (stream.get(offset + 2) == Some(&0xff))
+        .then(|| attdef_list_layout(stream, offset, 1))
+        .flatten();
+    let (xmt, references, end) = unique_layout(direct, escaped)?;
+    Some(Record {
+        kind: 74,
+        xmt,
+        node_id: None,
+        references,
+        position: None,
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        offset,
+        end,
+    })
+}
+
+fn attdef_list_layout(
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Option<(u32, Vec<u32>, usize)> {
+    let count_at = offset.checked_add(2 + envelope_len)?;
+    let slot_count = usize::try_from(be::u32_at(stream, count_at)?).ok()?;
+    (slot_count > 0).then_some(())?;
+    let (xmt, consumed) = read_xmt(stream, count_at.checked_add(4)?)?;
+    (xmt > 1).then_some(())?;
+    let mut at = count_at.checked_add(4 + consumed)?;
+    let active_count = usize::try_from(be::u32_at(stream, at)?).ok()?;
+    (active_count <= slot_count).then_some(())?;
+    at += 4;
+    (be::u32_at(stream, at) == Some(0)).then_some(())?;
+    at += 4;
+    (slot_count <= stream.len().saturating_sub(at) / 3).then_some(())?;
+    let mut references = Vec::new();
+    let (sentinel, consumed) = read_xmt(stream, at)?;
+    (sentinel == 1).then_some(())?;
+    at = at.checked_add(consumed)?;
+    (stream.get(at) == Some(&1)).then_some(())?;
+    at += 1;
+    references.push(sentinel);
+    for index in 0..slot_count {
+        let (reference, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        if index < active_count {
+            (reference > 1).then_some(())?;
+        } else {
+            (reference == 1).then_some(())?;
+        }
+        (stream.get(at) == Some(&1)).then_some(())?;
+        at += 1;
+        references.push(reference);
+    }
+    Some((xmt, references, at))
+}
+
 fn group_layout(
     stream: &[u8],
     offset: usize,
@@ -1073,6 +1138,7 @@ fn family_name(kind: u16) -> Option<&'static str> {
         81 => "ENTITY_51",
         82 => "ENTITY_52",
         83 => "ENTITY_53",
+        74 => "ATTDEF_LIST",
         84 => "ENTITY_54",
         90 => "GROUP",
         91 => "TYPE_91",

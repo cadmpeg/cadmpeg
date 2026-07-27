@@ -12,6 +12,7 @@ This document records unresolved NX `.prt` byte semantics.
 - The status-framed state tail following the eight-reference deltas BODY revision prefix is unspecified.
 - Delta tag `0x5a` uses the `intersection_data` layout shared with type 38; its canonical later-schema node-type name is unspecified.
 - The canonical node-type name and value roles of deltas type 45 (`002d`) are unspecified.
+- The semantic role of the leading sentinel reference in deltas type 74 `ATTDEF_LIST` is unspecified.
 - The field roles of the five references and `02|04` mode in deltas type 90 `GROUP` are unspecified.
 - The canonical node-type name and field roles of deltas type 91 (`005b`) are unspecified.
 - The canonical node-type name and four reference-field roles of deltas type 141 (`008d`) are unspecified.

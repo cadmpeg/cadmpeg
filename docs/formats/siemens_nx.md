@@ -462,6 +462,8 @@ Type 141 has the complete deltas record `008d [ff], xmt, ref status, ref 00, ref
 
 Type 45 has the complete deltas record `002d [ff], count:u32 BE, xmt, value[count + 1]:f64 BE`. The count is nonzero, the XMT identity is non-null, and every value is finite. The optional `ff` envelope byte precedes the count. The record ends after its declared value lane, participates in the deltas byte ledger, and remains in the semantic lane.
 
+Type 74 `ATTDEF_LIST` has the complete deltas record `004a [ff], slot_count:u32 BE, xmt, active_count:u32 BE, zero:u32 BE, ref(1) 01, slot[slot_count]`. Each slot is an encoded XMT followed by status `01`. The first `active_count` slots are non-null references and the remaining slots are null reference `1`; `active_count <= slot_count`. The XMT identity and slot count are non-null. The optional `ff` envelope byte precedes the slot count. The record ends after the declared slot lane, participates in the deltas byte ledger, and does not replace topology or geometry records.
+
 Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, ref 01, ref 01, ref 01, ref 01, mode, ref status`. The XMT identity is non-null, `mode` is `02` or `04`, and the final status is binary. The optional `ff` envelope byte precedes the XMT identity. The record ends after the final status byte, participates in the deltas byte ledger, and does not enter the procedural-intersection semantic lane. This two-byte type tag is distinct from the single-byte `5a` intersection record.
 
 **Full record:**
