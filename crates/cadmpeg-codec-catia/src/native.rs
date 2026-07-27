@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 108;
+pub const CATIA_NATIVE_VERSION: u32 = 109;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -658,6 +658,18 @@ pub struct CatiaFormulaRelation {
     /// Parameter entity when the stored identity resolves inside the same graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter: Option<String>,
+    /// Named parameter records selected by expression-local symbols, in occurrence order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parameter_dependencies: Vec<CatiaFormulaParameterDependency>,
+}
+
+/// One unambiguous named parameter selected by a formula expression symbol.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaFormulaParameterDependency {
+    /// Exact expression-local symbol occurrence.
+    pub symbol: String,
+    /// Entity record carrying the uniquely matching named parameter binding.
+    pub parameter: String,
 }
 
 /// Field order used by a repeated-reference schema preamble.
@@ -1290,10 +1302,12 @@ fn parameter_value(
 
 fn formula_relation(
     definitions: &[CatiaDefinitionSchemaSelection],
+    graph_id: &str,
     entity_id: u32,
     object: &CatiaObjectRecord,
-    relation_expressions: &HashMap<String, String>,
+    relation_expressions: &HashMap<String, (String, String)>,
     entities_by_object: &HashMap<String, String>,
+    parameter_bindings: &HashMap<String, HashMap<String, Vec<String>>>,
 ) -> Option<CatiaFormulaRelation> {
     let [definition0, definition1] = definitions else {
         return None;
@@ -1330,16 +1344,111 @@ fn formula_relation(
         return None;
     }
     let expression_object = expression_reference.target.as_ref()?;
-    let expression = relation_expressions.get(expression_object)?.clone();
+    let (expression, source) = relation_expressions.get(expression_object)?;
+    let parameter_dependencies = relation_symbols(source)
+        .into_iter()
+        .filter_map(|symbol| {
+            let parameters = parameter_bindings.get(graph_id)?.get(&symbol)?;
+            let [parameter] = parameters.as_slice() else {
+                return None;
+            };
+            Some(CatiaFormulaParameterDependency {
+                symbol,
+                parameter: parameter.clone(),
+            })
+        })
+        .collect();
     Some(CatiaFormulaRelation {
-        expression,
+        expression: expression.clone(),
         parameter_entity_id: *parameter_entity_id,
         parameter: parameter_reference
             .target
             .as_ref()
             .and_then(|object| entities_by_object.get(object))
             .cloned(),
+        parameter_dependencies,
     })
+}
+
+type CatiaRelationExpressionIndex = HashMap<String, (String, String)>;
+type CatiaEntityByObjectIndex = HashMap<String, String>;
+type CatiaParameterBindingIndex = HashMap<String, HashMap<String, Vec<String>>>;
+
+fn semantic_entity_indices(
+    entities: &[CatiaEntityRecord],
+) -> (
+    CatiaRelationExpressionIndex,
+    CatiaEntityByObjectIndex,
+    CatiaParameterBindingIndex,
+) {
+    let relation_expressions = entities
+        .iter()
+        .filter_map(|entity| {
+            let expression = entity.relation_expression.as_ref()?;
+            Some((
+                entity.object_record.clone(),
+                (entity.id.clone(), expression.expression.value.clone()),
+            ))
+        })
+        .collect();
+    let entities_by_object = entities
+        .iter()
+        .map(|entity| (entity.object_record.clone(), entity.id.clone()))
+        .collect();
+    let mut parameter_bindings = CatiaParameterBindingIndex::new();
+    for entity in entities {
+        let Some(parameter) = &entity.parameter_value else {
+            continue;
+        };
+        parameter_bindings
+            .entry(entity.object_graph.clone())
+            .or_default()
+            .entry(parameter.binding.value.clone())
+            .or_default()
+            .push(entity.id.clone());
+    }
+    (relation_expressions, entities_by_object, parameter_bindings)
+}
+
+fn relation_symbols(source: &str) -> Vec<String> {
+    let bytes = source.as_bytes();
+    let mut symbols = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] != b'#' {
+            at += 1;
+            continue;
+        }
+        let start = at;
+        at += 1;
+        let digits_start = at;
+        while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+            at += 1;
+        }
+        if at == digits_start || bytes.get(at) != Some(&b'_') {
+            at = start + 1;
+            continue;
+        }
+        at += 1;
+        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        if bytes.get(at) != Some(&b'/') {
+            at = start + 1;
+            continue;
+        }
+        at += 1;
+        let ordinal_start = at;
+        while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+            at += 1;
+        }
+        if at == ordinal_start {
+            at = start + 1;
+            continue;
+        }
+        symbols.push(source[start..at].to_string());
+    }
+    symbols
 }
 
 fn value_field_offset(field: &value_block::ValueField) -> usize {
@@ -2513,15 +2622,8 @@ impl CatiaNative {
                 );
             }
         }
-        let relation_expressions = entity_records
-            .iter()
-            .filter(|entity| entity.relation_expression.is_some())
-            .map(|entity| (entity.object_record.clone(), entity.id.clone()))
-            .collect::<HashMap<_, _>>();
-        let entities_by_object = entity_records
-            .iter()
-            .map(|entity| (entity.object_record.clone(), entity.id.clone()))
-            .collect::<HashMap<_, _>>();
+        let (relation_expressions, entities_by_object, parameter_bindings) =
+            semantic_entity_indices(&entity_records);
         for entity in &mut entity_records {
             let Some(object) = object_graphs
                 .iter()
@@ -2537,10 +2639,12 @@ impl CatiaNative {
             };
             entity.formula_relation = formula_relation(
                 &entity.definition_schema_selections,
+                &entity.object_graph,
                 entity.entity_id,
                 object,
                 &relation_expressions,
                 &entities_by_object,
+                &parameter_bindings,
             );
         }
         alias_rows.retain(|row| {
@@ -2725,15 +2829,8 @@ impl CatiaNative {
                 entity.id
             )));
         }
-        let relation_expressions = entity_records
-            .iter()
-            .filter(|entity| entity.relation_expression.is_some())
-            .map(|entity| (entity.object_record.clone(), entity.id.clone()))
-            .collect::<HashMap<_, _>>();
-        let entities_by_object = entity_records
-            .iter()
-            .map(|entity| (entity.object_record.clone(), entity.id.clone()))
-            .collect::<HashMap<_, _>>();
+        let (relation_expressions, entities_by_object, parameter_bindings) =
+            semantic_entity_indices(&entity_records);
         for graph in &mut graphs {
             graph.records = records
                 .iter()
@@ -2803,10 +2900,12 @@ impl CatiaNative {
                             != object.and_then(|object| {
                                 formula_relation(
                                     &entity.definition_schema_selections,
+                                    &entity.object_graph,
                                     entity.entity_id,
                                     object,
                                     &relation_expressions,
                                     &entities_by_object,
+                                    &parameter_bindings,
                                 )
                             })
                     })

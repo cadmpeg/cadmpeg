@@ -1797,7 +1797,10 @@ fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
     file
 }
 
-fn standard_catpart_with_formula_relation(parameter_entity_id: u8) -> Vec<u8> {
+fn standard_catpart_with_formula_relation(
+    parameter_entity_id: u8,
+    duplicate_binding: bool,
+) -> Vec<u8> {
     let formula_definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
     let expression_definition = [0x00, 0x08, 0x32, 5, 0, 0, 0, 0x32, 5, 0, 0, 0];
     let mut expression_value = Vec::new();
@@ -1813,8 +1816,24 @@ fn standard_catpart_with_formula_relation(parameter_entity_id: u8) -> Vec<u8> {
         &expression_definition,
         &expression_value,
     ));
+    let parameter = |entity_id| {
+        let parameter_value = [0x32, 12, 0, 0, 0, 0x32, 13, 0, 0, 0, 0xfe];
+        let mut parameter =
+            entity_table_record_with_definition_and_value(entity_id, &[0x01], &parameter_value);
+        parameter[6] = 2;
+        parameter.extend_from_slice(&[
+            0x85, 0x96, 0x82, 0x6a, 0xe6, 0, 0, 0, 0, 0, 0x80, 0x41, 0x40, 0x81, 0x52,
+        ]);
+        let parameter_len = u32::try_from(parameter.len()).expect("bounded parameter entity");
+        parameter[2..6].copy_from_slice(&parameter_len.to_le_bytes());
+        parameter
+    };
+    stream.extend(parameter(3));
+    if duplicate_binding {
+        stream.extend(parameter(4));
+    }
     stream.push(0xde);
-    stream.extend(object_graph_from_records(&[
+    let mut records = vec![
         object_graph_record(
             &[0x04, 0x01, 0x81, 0x84],
             &[
@@ -1832,7 +1851,12 @@ fn standard_catpart_with_formula_relation(parameter_entity_id: u8) -> Vec<u8> {
             ],
         ),
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
-    ]));
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
+    ];
+    if duplicate_binding {
+        records.push(object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]));
+    }
+    stream.extend(object_graph_from_records(&records));
     stream.extend(catalog_stream(&[
         "CATCatalogManager",
         "catalogManager",
@@ -1846,6 +1870,8 @@ fn standard_catpart_with_formula_relation(parameter_entity_id: u8) -> Vec<u8> {
         "(#1_ : #In LENGTH) : LENGTH",
         "opened",
         "RelationExpFct",
+        "Thickness",
+        "#1_ /2",
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -5863,7 +5889,8 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
 
 #[test]
 fn native_namespace_types_and_validates_formula_relations() {
-    let native = crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63));
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
     let formula = native.entity_records[0]
         .formula_relation
         .as_ref()
@@ -5871,6 +5898,13 @@ fn native_namespace_types_and_validates_formula_relations() {
     assert_eq!(formula.expression, native.entity_records[1].id);
     assert_eq!(formula.parameter_entity_id, 99);
     assert_eq!(formula.parameter, None);
+    assert_eq!(
+        formula.parameter_dependencies,
+        [crate::native::CatiaFormulaParameterDependency {
+            symbol: "#1_ /2".to_string(),
+            parameter: native.entity_records[2].id.clone(),
+        }]
+    );
 
     let mut malformed = native;
     malformed.entity_records[0]
@@ -5890,7 +5924,7 @@ fn native_namespace_types_and_validates_formula_relations() {
 
 #[test]
 fn formula_relation_requires_a_complete_relation_expression_target() {
-    let mut file = standard_catpart_with_formula_relation(0x63);
+    let mut file = standard_catpart_with_formula_relation(0x63, false);
     let role = file
         .windows("param".len())
         .position(|bytes| bytes == b"param")
@@ -5899,6 +5933,19 @@ fn formula_relation_requires_a_complete_relation_expression_target() {
 
     let native = crate::native::CatiaNative::decode(&file);
     assert!(native.entity_records[0].formula_relation.is_none());
+}
+
+#[test]
+fn formula_parameter_dependency_requires_a_unique_binding() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, true));
+
+    assert!(native.entity_records[0]
+        .formula_relation
+        .as_ref()
+        .expect("complete formula relation")
+        .parameter_dependencies
+        .is_empty());
 }
 
 #[test]
