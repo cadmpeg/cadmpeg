@@ -2171,21 +2171,19 @@ fn standard_catpart_with_sketch_point(ambiguous_sketch: bool) -> Vec<u8> {
     coordinate_value.extend_from_slice(&(-3.25_f64).to_bits().to_le_bytes());
     coordinate_value.extend_from_slice(&[0xfe, 0xfe]);
 
-    let mut records = vec![
+    let records = vec![
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
         object_graph_record(&[0x04, 0x01, 0x82, 0x85], &[0x32, 1, 0, 0, 0, 0xfe]),
+        object_graph_record(
+            &[0x04, 0x01, 0x83, if ambiguous_sketch { 0x84 } else { 0x86 }],
+            &[0xfe],
+        ),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x85], &[0x32, 3, 0, 0, 0, 0xfe]),
     ];
     let mut stream = entity_table_record(1);
     stream.extend(entity_table_record_with_value(2, &coordinate_value));
-    if ambiguous_sketch {
-        records.push(object_graph_record(&[0x04, 0x01, 0x83, 0x84], &[0xfe]));
-        records.push(object_graph_record(
-            &[0x04, 0x01, 0x82, 0x85],
-            &[0x32, 3, 0, 0, 0, 0xfe],
-        ));
-        stream.extend(entity_table_record(3));
-        stream.extend(entity_table_record(4));
-    }
+    stream.extend(entity_table_record(3));
+    stream.extend(entity_table_record(4));
     stream.push(0xde);
     stream.extend(object_graph_from_records(&records));
     stream.extend(catalog_stream(&[
@@ -2195,6 +2193,7 @@ fn standard_catpart_with_sketch_point(ambiguous_sketch: bool) -> Vec<u8> {
         "",
         "PRTSketch",
         "2DPoint",
+        "Other",
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -5601,7 +5600,7 @@ fn decode_links_design_objects_through_their_owner_record_group() {
 }
 
 #[test]
-fn decode_transfers_an_exact_point_owned_by_one_sketch() {
+fn decode_transfers_an_exact_point_with_one_sketch_target() {
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{SketchGeometry, SketchPlacement};
 
@@ -5631,7 +5630,7 @@ fn decode_transfers_an_exact_point_owned_by_one_sketch() {
         decoded.report.coverage["transferred_sketch_entity_count"],
         1
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 2);
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 4);
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking

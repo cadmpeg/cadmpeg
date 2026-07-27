@@ -403,7 +403,14 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) {
                     .as_ref()
                     .is_some_and(|class| class.name == "2DPoint")
             })
-            .map(|relation| relation.target_design_object.as_str())
+            .filter_map(|relation| {
+                let target = design_objects.get(relation.target_design_object.as_str())?;
+                target
+                    .field_classes
+                    .iter()
+                    .any(|class| class.name == "PRTSketch")
+                    .then_some(target.id.as_str())
+            })
             .collect::<BTreeSet<_>>();
         let mut sketch_targets = sketch_targets.into_iter();
         let Some(sketch_target) = sketch_targets.next() else {
@@ -412,16 +419,9 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) {
         if sketch_targets.next().is_some() {
             continue;
         }
-        let Some(sketch_object) = design_objects.get(sketch_target) else {
-            continue;
-        };
-        if !sketch_object
-            .field_classes
-            .iter()
-            .any(|class| class.name == "PRTSketch")
-        {
-            continue;
-        }
+        let sketch_object = design_objects
+            .get(sketch_target)
+            .expect("sketch target was selected from the design-object map");
         points_by_sketch
             .entry(sketch_object.id.clone())
             .or_insert_with(|| (sketch_object.first_field_byte_offset, Vec::new()))
