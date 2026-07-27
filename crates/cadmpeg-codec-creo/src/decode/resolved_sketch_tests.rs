@@ -6061,6 +6061,44 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         }
     );
     assert_eq!(inactive[0].0.active, Some(false));
+    point_coincidence_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .kind = 15;
+    let inactive_type_fifteen = section_skamp_constraints_for_geometry(
+        &point_coincidence_definition,
+        &SketchId("creo:model:sketch#917".into()),
+        Some(&unresolved_arc_geometry),
+    );
+    assert_eq!(
+        inactive_type_fifteen[0].0.definition,
+        inactive[0].0.definition
+    );
+    point_coincidence_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .flags = 3;
+    assert!(matches!(
+        section_skamp_constraints_for_geometry(
+            &point_coincidence_definition,
+            &SketchId("creo:model:sketch#917".into()),
+            Some(&unresolved_arc_geometry),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
+    let type_fifteen = &mut point_coincidence_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0];
+    type_fifteen.kind = 17;
+    type_fifteen.flags = 1;
     let mut inactive_tangent_definition = point_coincidence_definition.clone();
     let inactive_tangent = &mut inactive_tangent_definition
         .relations

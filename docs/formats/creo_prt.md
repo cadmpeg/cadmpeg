@@ -1480,12 +1480,13 @@ locus ordinates sum to twice the point entity ordinate.
 A disabled point-symmetry incidence retains that neutral form when the point
 center and both selected loci have defined native geometry families. Solved
 coordinates are not required to satisfy the disabled symmetry equation.
-A two-item type-seventeen incidence stores two endpoint or center loci that
-share one sketch coordinate. Flag `1` selects the section `u` coordinate and
-flag `2` selects the section `v` coordinate. This discriminator defines the
-neutral same-coordinate axis without requiring solved locus coordinates. When
-both loci are solved, their selected coordinates must agree. Other flag values
-and contradictory solved coordinates retain the native incidence.
+A two-item type-fifteen or type-seventeen incidence stores two endpoint or
+center loci that share one sketch coordinate. Flag `1` selects the section `u`
+coordinate and flag `2` selects the section `v` coordinate. This discriminator
+defines the neutral same-coordinate axis without requiring solved locus
+coordinates. When both loci are solved, their selected coordinates must agree.
+Other flag values and contradictory solved coordinates retain the native
+incidence.
 Types 30 and 31 store the same two-locus relation with a fixed coordinate:
 type 30 selects section `v`, and type 31 selects section `u`. Their `flags`
 field does not select the coordinate.

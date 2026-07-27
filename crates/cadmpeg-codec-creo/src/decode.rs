@@ -9342,8 +9342,8 @@ fn section_skamp_same_coordinate_sources(
 
 fn section_skamp_same_coordinate_axis(skamp: &crate::feature::FeatureSkamp) -> Option<usize> {
     Some(match (skamp.kind, skamp.flags) {
-        (17, 1) => 0,
-        (17, 2) => 1,
+        (15 | 17, 1) => 0,
+        (15 | 17, 2) => 1,
         (30, _) => 1,
         (31, _) => 0,
         _ => return None,
@@ -9900,7 +9900,7 @@ fn section_skamp_constraints_for_geometry(
                             center: SketchLocus::Entity(point_entity(center)?),
                         }
                     }
-                    (17 | 30 | 31, [_, _]) => {
+                    (15 | 17 | 30 | 31, [_, _]) => {
                         if let Some((first, second, axis)) =
                             section_skamp_same_coordinate(definition, sketch, skamp, active)
                         {
