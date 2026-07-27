@@ -514,19 +514,6 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             );
         }
     }
-    for record in &records {
-        let Some(target) = surface_alias_target(record) else {
-            continue;
-        };
-        if let Some(surface) = surfaces.get(&target).cloned() {
-            merge_surface_candidate(
-                &mut surfaces,
-                &mut conflicting_surfaces,
-                record.object_id,
-                surface,
-            );
-        }
-    }
     let object_stream_pcurves = object_stream_pcurve_candidates
         .iter()
         .filter_map(|(&object_id, pcurve)| {
@@ -540,39 +527,6 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 .map(|extrusion| (record.object_id, extrusion))
         })
         .collect();
-    let mut offset_surfaces = BTreeMap::new();
-    for record in &records {
-        let Some(offset) = parse_offset_surface(record, &surfaces, &extrusion_surfaces, &by_id)
-        else {
-            continue;
-        };
-        let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned() {
-            carrier
-        } else {
-            let Some(record) = by_id.get(&offset.carrier_surface) else {
-                continue;
-            };
-            B5Surface::Unknown {
-                family: record.family,
-                class: record.class,
-                payload: record.payload.clone(),
-            }
-        };
-        if !merge_surface_candidate(
-            &mut surfaces,
-            &mut conflicting_surfaces,
-            offset.carrier_surface,
-            carrier.clone(),
-        ) || !merge_surface_candidate(
-            &mut surfaces,
-            &mut conflicting_surfaces,
-            record.object_id,
-            carrier,
-        ) {
-            continue;
-        }
-        offset_surfaces.insert(record.object_id, offset);
-    }
     let extrusion_pcurves = extrusion_surfaces
         .values()
         .flat_map(|extrusion| {
@@ -583,31 +537,88 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 .map(|(_, pcurve, _)| *pcurve)
         })
         .collect::<HashSet<_>>();
+    let mut offset_surfaces = BTreeMap::new();
     let mut supported_surfaces = BTreeMap::new();
-    for record in &records {
-        let Some(construction) = parse_supported_surface(record) else {
-            continue;
-        };
-        let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
-            continue;
-        };
-        let parameters_match_carrier =
-            supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
-        if merge_surface_candidate(
-            &mut surfaces,
-            &mut conflicting_surfaces,
-            record.object_id,
-            carrier,
-        ) && parameters_match_carrier
-            && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
-            && construction
-                .support_surfaces
-                .iter()
-                .all(|surface| surfaces.contains_key(surface))
-        {
-            supported_surfaces.insert(record.object_id, construction);
+    loop {
+        let mut changed =
+            resolve_surface_aliases(&records, &by_id, &mut surfaces, &mut conflicting_surfaces);
+        for record in &records {
+            let Some(offset) = parse_offset_surface(record, &surfaces, &extrusion_surfaces, &by_id)
+            else {
+                continue;
+            };
+            let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned() {
+                carrier
+            } else {
+                let Some(record) = by_id.get(&offset.carrier_surface) else {
+                    continue;
+                };
+                B5Surface::Unknown {
+                    family: record.family,
+                    class: record.class,
+                    payload: record.payload.clone(),
+                }
+            };
+            let before = surfaces.get(&record.object_id).cloned();
+            if !merge_surface_candidate(
+                &mut surfaces,
+                &mut conflicting_surfaces,
+                offset.carrier_surface,
+                carrier.clone(),
+            ) || !merge_surface_candidate(
+                &mut surfaces,
+                &mut conflicting_surfaces,
+                record.object_id,
+                carrier,
+            ) {
+                continue;
+            }
+            let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
+            let metadata_changed = offset_surfaces.get(&record.object_id) != Some(&offset);
+            offset_surfaces.insert(record.object_id, offset);
+            changed |= surface_changed || metadata_changed;
+        }
+        for record in &records {
+            let Some(construction) = parse_supported_surface(record) else {
+                continue;
+            };
+            let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
+                continue;
+            };
+            let parameters_match_carrier =
+                supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
+            let before = surfaces.get(&record.object_id).cloned();
+            if merge_surface_candidate(
+                &mut surfaces,
+                &mut conflicting_surfaces,
+                record.object_id,
+                carrier,
+            ) && parameters_match_carrier
+                && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
+                && construction
+                    .support_surfaces
+                    .iter()
+                    .all(|surface| surfaces.contains_key(surface))
+            {
+                let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
+                let metadata_changed =
+                    supported_surfaces.get(&record.object_id) != Some(&construction);
+                supported_surfaces.insert(record.object_id, construction);
+                changed |= surface_changed || metadata_changed;
+            }
+        }
+        changed |=
+            resolve_surface_aliases(&records, &by_id, &mut surfaces, &mut conflicting_surfaces);
+        if !changed {
+            break;
         }
     }
+    offset_surfaces.retain(|object_id, offset| {
+        surfaces.get(object_id) == surfaces.get(&offset.carrier_surface)
+    });
+    supported_surfaces.retain(|object_id, construction| {
+        surfaces.get(object_id) == surfaces.get(&construction.carrier_surface)
+    });
     let profiles: BTreeMap<u32, B5Profile> = records
         .iter()
         .filter_map(|record| parse_profile(record).map(|profile| (record.object_id, profile)))
@@ -876,6 +887,56 @@ fn unresolved_surface_candidate(surface: &B5Surface) -> bool {
         surface,
         B5Surface::Unknown { .. } | B5Surface::UnresolvedNurbs { .. }
     )
+}
+
+fn resolve_surface_aliases(
+    records: &[B5Record],
+    by_id: &HashMap<u32, &B5Record>,
+    surfaces: &mut BTreeMap<u32, B5Surface>,
+    conflicts: &mut HashSet<u32>,
+) -> bool {
+    let mut changed = false;
+    for record in records {
+        if surface_alias_target(record).is_none() {
+            continue;
+        }
+        let Some(candidate) = surface_alias_carrier(record.object_id, by_id, surfaces) else {
+            continue;
+        };
+        let before = surfaces.get(&record.object_id).cloned();
+        if merge_surface_candidate(surfaces, conflicts, record.object_id, candidate)
+            && surfaces.get(&record.object_id) != before.as_ref()
+        {
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn surface_alias_carrier(
+    mut object_id: u32,
+    by_id: &HashMap<u32, &B5Record>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+) -> Option<B5Surface> {
+    let mut visited = HashSet::new();
+    loop {
+        if !visited.insert(object_id) {
+            return None;
+        }
+        let Some(record) = by_id.get(&object_id) else {
+            return surfaces
+                .get(&object_id)
+                .filter(|surface| !unresolved_surface_candidate(surface))
+                .cloned();
+        };
+        let Some(target) = surface_alias_target(record) else {
+            return surfaces
+                .get(&object_id)
+                .filter(|surface| !unresolved_surface_candidate(surface))
+                .cloned();
+        };
+        object_id = target;
+    }
 }
 
 fn object_stream_pcurve_candidate(
@@ -3260,6 +3321,83 @@ mod tests {
         ));
         assert!(!surfaces.contains_key(&1));
         assert!(conflicts.contains(&1));
+    }
+
+    #[test]
+    fn full_surface_alias_closure_is_order_independent_unbounded_and_cycle_safe() {
+        let alias = |object_id: u32, target: u32| B5Record {
+            offset: usize::try_from(object_id).expect("small object id"),
+            family: 0xb5,
+            class: 0x2e,
+            object_id,
+            payload: vec![0x81, 0x80 + u8::try_from(target).expect("compact target")],
+        };
+        let mut records = (1..30)
+            .rev()
+            .map(|object_id| alias(object_id, object_id + 1))
+            .collect::<Vec<_>>();
+        let cycle_start = records.len();
+        records.push(alias(40, 41));
+        records.push(alias(41, 40));
+        let by_id = records
+            .iter()
+            .map(|record| (record.object_id, record))
+            .collect::<HashMap<_, _>>();
+        let plane = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        let mut surfaces = BTreeMap::from([(30, plane.clone())]);
+        let mut conflicts = HashSet::new();
+        assert!(resolve_surface_aliases(
+            &records,
+            &by_id,
+            &mut surfaces,
+            &mut conflicts,
+        ));
+        assert_eq!(surfaces.get(&1), Some(&plane));
+        assert_eq!(surfaces.get(&29), Some(&plane));
+        assert_eq!(
+            surface_alias_carrier(records[cycle_start].object_id, &by_id, &surfaces),
+            None
+        );
+        assert!(!surfaces.contains_key(&40));
+        assert!(!surfaces.contains_key(&41));
+    }
+
+    #[test]
+    fn surface_alias_closes_after_its_terminal_construction_resolves() {
+        let records = vec![B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x2e,
+            object_id: 1,
+            payload: vec![0x81, 0x82],
+        }];
+        let by_id = HashMap::from([(1, &records[0])]);
+        let mut surfaces = BTreeMap::new();
+        let mut conflicts = HashSet::new();
+        assert!(!resolve_surface_aliases(
+            &records,
+            &by_id,
+            &mut surfaces,
+            &mut conflicts,
+        ));
+
+        let plane = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        surfaces.insert(2, plane.clone());
+        assert!(resolve_surface_aliases(
+            &records,
+            &by_id,
+            &mut surfaces,
+            &mut conflicts,
+        ));
+        assert_eq!(surfaces.get(&1), Some(&plane));
     }
 
     #[test]
