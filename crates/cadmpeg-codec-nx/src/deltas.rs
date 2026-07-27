@@ -360,6 +360,13 @@ pub fn walk(stream: &[u8]) -> Census {
             census.records.push(record);
             continue;
         }
+        if let Some(record) = consume_type_45(stream, offset) {
+            census.bytes_decoded += record.end - record.offset;
+            *census.full_counts.entry("TYPE_45").or_default() += 1;
+            offset = record.end;
+            census.records.push(record);
+            continue;
+        }
         if let Some(record) = consume_intersection_data(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
@@ -635,6 +642,7 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
                     38
                         | 40
                         | 41
+                        | 45
                         | 59
                         | 81..=84
                         | 90
@@ -813,11 +821,7 @@ fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
     let escaped = (stream.get(offset + 2) == Some(&0xff))
         .then(|| type_141_layout(stream, offset, 1))
         .flatten();
-    let ((Some((xmt, references, at)), None) | (None, Some((xmt, references, at)))) =
-        (direct, escaped)
-    else {
-        return None;
-    };
+    let (xmt, references, at) = unique_layout(direct, escaped)?;
     Some(Record {
         kind: 141,
         xmt,
@@ -828,6 +832,47 @@ fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
         offset,
         end: at,
     })
+}
+
+fn consume_type_45(stream: &[u8], offset: usize) -> Option<Record> {
+    (be::u16_at(stream, offset) == Some(45)).then_some(())?;
+    let direct = type_45_layout(stream, offset, 0);
+    let escaped = (stream.get(offset + 2) == Some(&0xff))
+        .then(|| type_45_layout(stream, offset, 1))
+        .flatten();
+    let (xmt, end) = unique_layout(direct, escaped)?;
+    Some(Record {
+        kind: 45,
+        xmt,
+        node_id: None,
+        references: Vec::new(),
+        position: None,
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        offset,
+        end,
+    })
+}
+
+fn type_45_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(u32, usize)> {
+    let count_at = offset.checked_add(2 + envelope_len)?;
+    let count = usize::try_from(be::u32_at(stream, count_at)?).ok()?;
+    (count > 0).then_some(())?;
+    let (xmt, xmt_len) = read_xmt(stream, count_at.checked_add(4)?)?;
+    (xmt > 1).then_some(())?;
+    let data_at = count_at.checked_add(4 + xmt_len)?;
+    let value_count = count.checked_add(1)?;
+    let end = data_at.checked_add(value_count.checked_mul(8)?)?;
+    stream
+        .get(data_at..end)?
+        .chunks_exact(8)
+        .all(|raw| {
+            f64::from_be_bytes(
+                raw.try_into()
+                    .expect("chunks_exact(8) yields eight-byte slices"),
+            )
+            .is_finite()
+        })
+        .then_some((xmt, end))
 }
 
 fn type_141_layout(
@@ -850,6 +895,13 @@ fn type_141_layout(
         references.push(reference);
     }
     Some((xmt, references, at))
+}
+
+fn unique_layout<T>(direct: Option<T>, escaped: Option<T>) -> Option<T> {
+    match (direct, escaped) {
+        (Some(record), None) | (None, Some(record)) => Some(record),
+        _ => None,
+    }
 }
 
 fn consume_intersection_data(stream: &[u8], offset: usize) -> Option<Record> {

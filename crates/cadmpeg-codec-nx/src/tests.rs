@@ -6276,6 +6276,49 @@ fn deltas_walks_complete_type_141_records() {
 }
 
 #[test]
+fn deltas_walks_complete_type_45_records() {
+    fn record(escape: bool, xmt: u32, values: &[f64]) -> Vec<u8> {
+        let mut bytes = 45u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend_from_slice(
+            &u32::try_from(values.len() - 1)
+                .expect("test value count")
+                .to_be_bytes(),
+        );
+        bytes.extend(encoded_xmt(xmt));
+        for value in values {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes
+    }
+
+    let direct = record(false, 33_000, &[1.0, -2.0, 3.0, 4.0, 5.0]);
+    let escaped = record(true, 40_000, &[0.0, 0.25, -0.5, 0.75, 1.0]);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.full_counts["TYPE_45"], 2);
+    assert_eq!(census.bytes_decoded, decoded_len);
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[0].xmt, 33_000);
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+    assert_eq!(census.records[1].xmt, 40_000);
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
+    assert!(residual.ends_with(&[direct, escaped].concat()));
+
+    let mut nonfinite = record(false, 12, &[1.0, 2.0, 3.0, 4.0, f64::NAN]);
+    nonfinite.extend_from_slice(&[0xfe, 0xdc]);
+    assert!(crate::deltas::walk(&nonfinite).records.is_empty());
+}
+
+#[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
     let record = crate::deltas::walk(&stream).records.remove(0);

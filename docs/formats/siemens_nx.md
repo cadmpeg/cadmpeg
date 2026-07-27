@@ -460,6 +460,8 @@ Direct and escaped type-125 through type-128 and type-135 through type-136 NURBS
 
 Type 141 has the complete deltas record `008d [ff], xmt, ref status, ref 00, ref 00, ref 01`, where the first status is binary. Each XMT field uses the compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity. The record ends after the fourth status byte, participates in the deltas byte ledger, and remains in the semantic lane.
 
+Type 45 has the complete deltas record `002d [ff], count:u32 BE, xmt, value[count + 1]:f64 BE`. The count is nonzero, the XMT identity is non-null, and every value is finite. The optional `ff` envelope byte precedes the count. The record ends after its declared value lane, participates in the deltas byte ledger, and remains in the semantic lane.
+
 **Full record:**
 
 ```text
