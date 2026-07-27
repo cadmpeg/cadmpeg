@@ -19,6 +19,8 @@ use crate::solve::missing_edge::{
 use crate::solve::UnionFind;
 use std::collections::{HashMap, HashSet};
 
+pub(crate) const MAX_INCIDENCE_BRANCH_STATES: usize = 256;
+
 pub(crate) fn prune_incidence_choices(
     choices: &mut [Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
@@ -462,12 +464,10 @@ pub(crate) fn compact_boundary_domains_jointly_viable<'a>(
 
 impl IncidenceComponentSearch<'_> {
     fn charge_branch(&mut self, option_count: usize) -> bool {
-        const MAX_STATES: usize = 4_096;
-
         if option_count <= 1 {
             return true;
         }
-        if self.states >= MAX_STATES {
+        if self.states >= MAX_INCIDENCE_BRANCH_STATES {
             self.exhausted = true;
             return false;
         }

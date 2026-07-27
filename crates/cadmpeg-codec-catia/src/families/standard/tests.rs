@@ -411,6 +411,39 @@ fn incidence_component_does_not_charge_a_forced_viable_pair() {
 }
 
 #[test]
+fn incidence_component_bounds_ambiguous_recursive_states() {
+    let choices = vec![vec![[0, 0], [1, 1]]];
+    let edge_faces = [[0, 0]];
+    let face_edges = vec![vec![0]];
+    let edges = [0];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        mesh_quotient: None,
+        active: vec![true],
+        edges: &edges,
+        constraints: Vec::new(),
+        assignment: vec![None],
+        degrees: vec![vec![0; 2]],
+        solutions: Vec::new(),
+        solution_filter: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        states: crate::solve::incidence::MAX_INCIDENCE_BRANCH_STATES,
+        exhausted: false,
+    };
+
+    search.search();
+
+    assert!(search.exhausted);
+    assert!(search.solutions.is_empty());
+}
+
+#[test]
 fn incidence_component_schedules_partial_constraint_variables_first() {
     let choices = vec![vec![[0, 1], [0, 2]], vec![[3, 4], [3, 5], [4, 5]]];
     let edge_faces = [[0, 0], [0, 0]];
