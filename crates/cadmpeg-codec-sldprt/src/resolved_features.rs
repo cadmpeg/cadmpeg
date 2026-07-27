@@ -1213,7 +1213,11 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
             .is_some_and(|identifier| identifier != [0; 2] && identifier != [0xff; 2])
         && payload.get(offset + 106..offset + 110) == Some(&[0xff; 4])
         && payload.get(offset + 110..offset + 116) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
-        && payload.get(offset + 116..offset + 158) == Some(&[0; 42])
+        && payload.get(offset + 116..offset + 154) == Some(&[0; 38])
+        && matches!(
+            payload.get(offset + 154..offset + 158),
+            Some([0 | 1, 0, 0, 0])
+        )
         && payload
             .get(offset + 158..offset + 162)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
@@ -7267,6 +7271,17 @@ mod marker_tests {
             sketch_input_entities(&compact_declaration, "lane")[0].kind,
             SketchInputKind::Point
         );
+        compact_declaration[154..158].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            extended_profile_point_coordinates(&compact_declaration, 0),
+            Some([0.435, 0.0075])
+        );
+        compact_declaration[154..158].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            extended_profile_point_coordinates(&compact_declaration, 0),
+            None
+        );
+        compact_declaration[154..158].fill(0);
         compact_declaration[74..78].copy_from_slice(&[0x00, 0x00, 0x03, 0x00]);
         compact_declaration[96..98].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(
