@@ -2541,7 +2541,8 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
 
     let xmt = encoded_xmt(descriptor_ref);
     let shift = xmt.len() - 2;
-    let mut descriptor = vec![0u8; 58 + shift];
+    let encoded_payload_ref = encoded_xmt(payload_ref);
+    let mut descriptor = vec![0u8; 56 + shift + encoded_payload_ref.len()];
     descriptor[..2].copy_from_slice(&126u16.to_be_bytes());
     descriptor[2..2 + xmt.len()].copy_from_slice(&xmt);
     put_ref(&mut descriptor, 6 + shift, 1);
@@ -2566,6 +2567,7 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
     }
     assert_eq!(at, 54 + shift);
     put_ref(&mut descriptor, 54 + shift, 125);
+    descriptor[56 + shift..].copy_from_slice(&encoded_payload_ref);
     stream.extend(descriptor);
 
     let xmt = encoded_xmt(payload_ref);

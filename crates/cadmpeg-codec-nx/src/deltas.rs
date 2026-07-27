@@ -337,6 +337,22 @@ pub fn walk(stream: &[u8]) -> Census {
             census.records.push(record);
             continue;
         }
+        if let Some(record) = consume_nurbs_auxiliary(stream, offset) {
+            census.bytes_decoded += record.end - record.offset;
+            let family = match record.kind {
+                125 => "B_SURFACE_DATA",
+                126 => "B_SURFACE_DESCRIPTOR",
+                127 => "MULTIPLICITIES",
+                128 => "KNOTS",
+                135 => "B_CURVE_DATA",
+                136 => "B_CURVE_DESCRIPTOR",
+                _ => unreachable!("NURBS auxiliary parser returns owned auxiliary types"),
+            };
+            *census.full_counts.entry(family).or_default() += 1;
+            offset = record.end;
+            census.records.push(record);
+            continue;
+        }
         if let Some(record) = consume_intersection_data(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
@@ -607,7 +623,10 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
         .iter()
         .filter(|record| {
             record.offset >= revision_start
-                && matches!(record.kind, 38 | 40 | 41 | 59 | 81..=84 | 90 | 91 | 204)
+                && matches!(
+                    record.kind,
+                    38 | 40 | 41 | 59 | 81..=84 | 90 | 91 | 125..=128 | 135..=136 | 204
+                )
         })
         .map(|record| record.canonical_bytes.clone())
         .collect::<Vec<_>>();
@@ -813,6 +832,20 @@ fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record
     })
 }
 
+fn consume_nurbs_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
+    let auxiliary = crate::nurbs::auxiliary_record_at(stream, offset)?;
+    Some(Record {
+        kind: auxiliary.kind,
+        xmt: auxiliary.xmt,
+        node_id: None,
+        references: Vec::new(),
+        position: None,
+        canonical_bytes: stream.get(offset..auxiliary.end)?.to_vec(),
+        offset,
+        end: auxiliary.end,
+    })
+}
+
 fn compact_tombstone(stream: &[u8], offset: usize) -> Option<u32> {
     let first = i16::from_be_bytes([*stream.get(offset + 2)?, *stream.get(offset + 3)?]);
     if first < 0 {
@@ -845,7 +878,7 @@ fn is_next_kind(kind: u16) -> bool {
             | 90
             | 91
             | 101
-            | 124..=126
+            | 124..=128
             | 133..=137
             | 141
             | 204

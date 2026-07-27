@@ -6203,6 +6203,40 @@ fn deltas_walks_complete_intersection_auxiliary_records() {
 }
 
 #[test]
+fn deltas_walks_complete_nurbs_auxiliary_records() {
+    let source = bspline_partition_stream();
+    for (kind, family) in [
+        (125u16, "B_SURFACE_DATA"),
+        (126, "B_SURFACE_DESCRIPTOR"),
+        (127, "MULTIPLICITIES"),
+        (128, "KNOTS"),
+        (135, "B_CURVE_DATA"),
+        (136, "B_CURVE_DESCRIPTOR"),
+    ] {
+        let (pos, auxiliary) = (0..source.len())
+            .find_map(|pos| {
+                let auxiliary = crate::nurbs::auxiliary_record_at(&source, pos)?;
+                (auxiliary.kind == kind).then_some((pos, auxiliary))
+            })
+            .expect("complete NURBS auxiliary record");
+        let bytes = &source[pos..auxiliary.end];
+        let mut stream = bytes.to_vec();
+        stream.extend_from_slice(&[0xfe, 0xdc]);
+
+        let census = crate::deltas::walk(&stream);
+        assert_eq!(census.records.len(), 1);
+        assert_eq!(census.records[0].kind, kind);
+        assert_eq!(census.records[0].canonical_bytes, bytes);
+        assert_eq!(census.full_counts[family], 1);
+        assert_eq!(census.bytes_decoded, bytes.len());
+
+        let residual = crate::deltas::semantic_residual(&stream);
+        assert!(residual[..bytes.len()].iter().all(|byte| *byte == 0xff));
+        assert!(residual.ends_with(bytes));
+    }
+}
+
+#[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
     let record = crate::deltas::walk(&stream).records.remove(0);
@@ -7095,6 +7129,17 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
         .expect("curve multiplicities");
     put_ref(&mut short_knots, multiplicities + 10, 1);
     assert!(crate::nurbs::curves(&short_knots).is_empty());
+}
+
+#[test]
+fn nurbs_surface_rejects_mismatched_descriptor_payload_reference() {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    put_ref(&mut stream, descriptor + 46, 22);
+    assert!(crate::nurbs::surfaces(&stream).is_empty());
 }
 
 #[test]
