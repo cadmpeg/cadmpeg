@@ -378,16 +378,12 @@ fn transfer_formula_parameters(
             if dependencies.contains(&id) {
                 continue;
             }
-            let Ok(ordinal) = u32::try_from(entity.ordinal) else {
-                all_inputs_complete = false;
-                continue;
-            };
             dependencies.push(id.clone());
             transferred.push(FormulaParameterCandidate {
                 parameter: DesignParameter {
                     id,
                     owner: None,
-                    ordinal,
+                    ordinal: 0,
                     name: parameter.name.value.clone(),
                     expression: match &value {
                         ParameterValue::Length(Length(value)) => format!("{value} mm"),
@@ -404,6 +400,7 @@ fn transfer_formula_parameters(
                     native_ref: Some(entity.id.clone()),
                 },
                 formula_output: false,
+                source_order: entity.byte_offset,
             });
         }
         let formula_complete = all_inputs_complete
@@ -418,18 +415,14 @@ fn transfer_formula_parameters(
             if let Some(output_value) = &output.parameter_value {
                 let output_id = neutral_parameter_id(&output.id);
                 if !dependencies.contains(&output_id) {
-                    if let (Ok(ordinal), Some(value)) = (
-                        u32::try_from(output.ordinal),
-                        typed_parameter_evaluation(
-                            &signature.result_type,
-                            &output_value.evaluation,
-                        ),
-                    ) {
+                    if let Some(value) =
+                        typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
+                    {
                         transferred.push(FormulaParameterCandidate {
                             parameter: DesignParameter {
                                 id: output_id,
                                 owner: None,
-                                ordinal,
+                                ordinal: 0,
                                 name: output_value.name.value.clone(),
                                 expression: expression.expression.value.clone(),
                                 display: None,
@@ -443,6 +436,7 @@ fn transfer_formula_parameters(
                                 native_ref: Some(output.id.clone()),
                             },
                             formula_output: true,
+                            source_order: output.byte_offset,
                         });
                     }
                 }
@@ -505,11 +499,19 @@ fn transfer_formula_parameters(
         }
     }
     candidates.retain(|id, _| derivable.contains(id));
-    let mut parameters = candidates
-        .into_values()
-        .map(|candidate| candidate.parameter)
-        .collect::<Vec<_>>();
-    parameters.sort_by_key(|parameter| parameter.ordinal);
+    let mut parameters = candidates.into_values().collect::<Vec<_>>();
+    parameters.sort_by_key(|candidate| candidate.source_order);
+    let Some(parameters) = parameters
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, mut candidate)| {
+            candidate.parameter.ordinal = u32::try_from(ordinal).ok()?;
+            Some(candidate.parameter)
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return 0;
+    };
     for parameter in &parameters {
         if parameter.dependencies.is_empty() {
             annotations
@@ -528,12 +530,16 @@ fn transfer_formula_parameters(
 struct FormulaParameterCandidate {
     parameter: DesignParameter,
     formula_output: bool,
+    source_order: u64,
 }
 
 fn formula_parameter_candidates_agree(
     existing: &FormulaParameterCandidate,
     candidate: &FormulaParameterCandidate,
 ) -> bool {
+    if existing.source_order != candidate.source_order {
+        return false;
+    }
     match (existing.formula_output, candidate.formula_output) {
         (true, true) | (false, false) => existing.parameter == candidate.parameter,
         (true, false) => formula_parameter_matches_input(&existing.parameter, &candidate.parameter),

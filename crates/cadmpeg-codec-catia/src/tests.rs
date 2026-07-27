@@ -6380,6 +6380,7 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     };
 
     assert_eq!(input.name, "Thickness");
+    assert_eq!(input.ordinal, 0);
     assert_eq!(input.expression, "35 mm");
     assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
     assert!(input.dependencies.is_empty());
@@ -6408,6 +6409,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
     assert!(input.dependencies.is_empty());
     assert_eq!(output.name, "Result");
+    assert_eq!(output.ordinal, 1);
     assert_eq!(output.expression, "#1_ /2-2mm");
     assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
@@ -6573,6 +6575,7 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
     };
 
     assert_eq!(width.value, Some(ParameterValue::Length(Length(12.0))));
+    assert_eq!([width.ordinal, draft.ordinal, output.ordinal], [0, 1, 2]);
     assert_eq!(draft.value, Some(ParameterValue::Angle(Angle(0.25))));
     assert_eq!(
         output.dependencies,
