@@ -9,7 +9,7 @@ use cadmpeg_ir::le::u16_at as u16_le;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeMap;
 
-use crate::families::a5a8::records::A8Surface;
+use crate::families::a5a8::records::FreeformSurface;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
     allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
@@ -1484,7 +1484,7 @@ pub fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
 #[must_use]
 pub fn offset_support_carriers(
     offsets: &[B2OffsetSupport],
-    carriers: &[A8Surface],
+    carriers: &[FreeformSurface],
 ) -> Vec<Option<usize>> {
     const PARAMETER_TOLERANCE: f64 = 1e-3;
     offsets

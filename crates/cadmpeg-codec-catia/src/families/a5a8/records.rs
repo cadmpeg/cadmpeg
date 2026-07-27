@@ -15,15 +15,35 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-/// A decoded common-form object-stream NURBS surface (`a8 03 34`).
+/// Native identity form of one decoded freeform surface carrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FreeformSurfaceIdentity {
+    /// Common-form `a8 03 34` carrier with an inline persistent object id.
+    Object(u32),
+    /// Consolidated `a5 03 34` carrier identified by its framed source offset.
+    FrameOffset(usize),
+}
+
+/// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]
-pub struct A8Surface {
+pub struct FreeformSurface {
     /// Source offset of the framed record.
     pub pos: usize,
-    /// The inline persistent object id.
-    pub object_id: u32,
+    /// Identity form carried by this storage family.
+    pub identity: FreeformSurfaceIdentity,
     /// The decoded NURBS carrier.
     pub geometry: SurfaceGeometry,
+}
+
+impl FreeformSurface {
+    /// Return the inline persistent object id when this is an A8 carrier.
+    #[must_use]
+    pub fn object_id(&self) -> Option<u32> {
+        match self.identity {
+            FreeformSurfaceIdentity::Object(object_id) => Some(object_id),
+            FreeformSurfaceIdentity::FrameOffset(_) => None,
+        }
+    }
 }
 
 /// Parameter lattice decoded from an `a8 03 34` surface record independently
@@ -602,7 +622,7 @@ fn parse_object_stream_pcurve(
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
 #[cfg(any(test, feature = "fuzz"))]
-pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
+pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
 }
 
@@ -610,7 +630,7 @@ pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
 /// parameter records whose pole grids occupy a uniquely bounded external
 /// allocation.
 #[must_use]
-pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
+pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     let mut surfaces = Vec::new();
     let mut search = 0usize;
     while let Some(relative) = data[search..]
@@ -653,7 +673,10 @@ pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
 /// grid allocation. The allocation occupies the complete unframed gap between
 /// a length-closed `b5 03 21` pcurve and the following A/B-family frame.
 #[must_use]
-pub fn a8_surface_from_external_grid(data: &[u8], header: &A8SurfaceHeader) -> Option<A8Surface> {
+pub fn a8_surface_from_external_grid(
+    data: &[u8],
+    header: &A8SurfaceHeader,
+) -> Option<FreeformSurface> {
     if !header.poles_elided {
         return None;
     }
@@ -727,9 +750,9 @@ pub fn a8_surface_from_external_grid(data: &[u8], header: &A8SurfaceHeader) -> O
     let [(control_points, weights)] = candidates.as_slice() else {
         return None;
     };
-    Some(A8Surface {
+    Some(FreeformSurface {
         pos: header.pos,
-        object_id: header.object_id,
+        identity: FreeformSurfaceIdentity::Object(header.object_id),
         geometry: SurfaceGeometry::Nurbs(NurbsSurface {
             u_degree: header.u_degree,
             v_degree: header.v_degree,
@@ -747,7 +770,7 @@ pub fn a8_surface_from_external_grid(data: &[u8], header: &A8SurfaceHeader) -> O
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
-pub fn a5_surfaces(data: &[u8]) -> Vec<A8Surface> {
+pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     a_family_frames(data, 0x34)
         .into_iter()
         .filter_map(|frame| a5_surface(data, frame))
@@ -759,8 +782,8 @@ fn scan_surfaces(
     data: &[u8],
     marker: [u8; 3],
     advance: usize,
-    decode: fn(&[u8], usize) -> Option<A8Surface>,
-) -> Vec<A8Surface> {
+    decode: fn(&[u8], usize) -> Option<FreeformSurface>,
+) -> Vec<FreeformSurface> {
     let mut out = Vec::new();
     let mut start = 0usize;
     while let Some(relative) = data[start..]
@@ -777,7 +800,7 @@ fn scan_surfaces(
     out
 }
 
-fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<A8Surface> {
+fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> {
     let ConsolidatedFrame {
         pos, payload, end, ..
     } = frame;
@@ -831,9 +854,9 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<A8Surface> {
     {
         return None;
     }
-    Some(A8Surface {
+    Some(FreeformSurface {
         pos,
-        object_id: 0,
+        identity: FreeformSurfaceIdentity::FrameOffset(pos),
         geometry: SurfaceGeometry::Nurbs(NurbsSurface {
             u_degree,
             v_degree,
@@ -925,11 +948,11 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
 }
 
 #[cfg(any(test, feature = "fuzz"))]
-fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
+fn a8_surface(data: &[u8], pos: usize) -> Option<FreeformSurface> {
     a8_surface_from_parsed(data, parse_a8_surface_header(data, pos)?)
 }
 
-fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<A8Surface> {
+fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<FreeformSurface> {
     let ParsedA8SurfaceHeader {
         header,
         mut pole_start,
@@ -982,9 +1005,9 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     if pole_start > end {
         return None;
     }
-    Some(A8Surface {
+    Some(FreeformSurface {
         pos,
-        object_id,
+        identity: FreeformSurfaceIdentity::Object(object_id),
         geometry: SurfaceGeometry::Nurbs(NurbsSurface {
             u_degree,
             v_degree,

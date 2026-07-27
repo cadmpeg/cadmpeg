@@ -16,7 +16,7 @@ use cadmpeg_ir::math::Point3;
 fn a8_surface_parser_reads_common_form_nurbs() {
     let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_surface_stream());
     assert_eq!(surfaces.len(), 1);
-    assert_eq!(surfaces[0].object_id, 0xdeca_fbad);
+    assert_eq!(surfaces[0].object_id(), Some(0xdeca_fbad));
     match &surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
             assert_eq!((surface.u_degree, surface.v_degree), (2, 2));
@@ -76,7 +76,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes)
         .try_into()
         .expect("one resolved surface");
-    assert_eq!(resolved.object_id, 0xdeca_fbad);
+    assert_eq!(resolved.object_id(), Some(0xdeca_fbad));
     let SurfaceGeometry::Nurbs(resolved) = resolved.geometry else {
         panic!("NURBS surface");
     };
@@ -201,8 +201,15 @@ fn a8_surface_parser_reads_rational_weight_grid() {
 
 #[test]
 fn a5_surface_parser_reads_consolidated_nurbs() {
+    use crate::families::a5a8::records::FreeformSurfaceIdentity;
+
     let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
     assert_eq!(surfaces.len(), 1);
+    assert_eq!(
+        surfaces[0].identity,
+        FreeformSurfaceIdentity::FrameOffset(surfaces[0].pos)
+    );
+    assert_eq!(surfaces[0].object_id(), None);
     match &surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
             assert_eq!((surface.u_degree, surface.v_degree), (1, 1));

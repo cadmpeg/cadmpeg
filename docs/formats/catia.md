@@ -365,6 +365,8 @@ Object-stream `05 08 01` coordinate rows are unframed allocations outside the co
 
 Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c` or `0x08 0x09`), `K_U` distinct U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight program, and a limit/parameterization tail. **Only distinct knots are stored; multiplicities are an implicit clamped quintic-C2 policy** (`[6,3,…,3,6]` for degree 5), so `n_control = Σmult − degree − 1 = 3·K` (degree 5) or 2 (degree-1). Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are a separate compact `02`-run program after the poles (`02` = copy-previous-row; expands a palindromic seed to the full grid). The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
 
+The frame carries no inline persistent object id. Its byte offset in the object stream identifies the consolidated surface carrier.
+
 The 6-byte `b2 03 2e 01 05 05` record following an `a5 03 34` core is a standalone object.
 
 ### 6.2 `a5 03 32` freeform 3D curve / rolling-ball fillet

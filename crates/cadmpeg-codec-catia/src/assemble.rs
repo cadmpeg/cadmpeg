@@ -25,9 +25,13 @@ use std::collections::{BTreeMap, HashSet};
 use crate::container::{self, ContainerScan};
 
 pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
+    cgm_source_key(kind, format!("{tag:06x}"))
+}
+
+pub(crate) fn cgm_source_key(kind: &str, key: impl std::fmt::Display) -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: "catia".to_string(),
-        object_id: format!("cgm-{kind}:{tag:06x}"),
+        object_id: format!("cgm-{kind}:{key}"),
         name: None,
         color: None,
         visible: None,

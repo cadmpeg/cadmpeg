@@ -2489,6 +2489,36 @@ fn standard_decode_retains_native_surface_carrier_tags() {
 }
 
 #[test]
+fn standard_decode_distinguishes_consolidated_surface_frames() {
+    let mut payload = a5_surface_stream();
+    payload.extend_from_slice(&a5_surface_stream());
+    let mut file = standard_catpart();
+    file.splice(16..16, payload);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("standard decode");
+    let identities = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .filter_map(|surface| surface.source_object.as_ref())
+        .map(|source| source.object_id.as_str())
+        .collect::<Vec<_>>();
+    let frame_identities = identities
+        .iter()
+        .copied()
+        .filter(|identity| identity.starts_with("cgm-a5-surface-frame:"))
+        .collect::<std::collections::HashSet<_>>();
+
+    assert_eq!(frame_identities.len(), 2);
+    assert!(!identities.contains(&"cgm-surface:000000"));
+}
+
+#[test]
 fn standard_decode_retains_vertex_allocation_tags() {
     let mut surf = surf_stream();
     for identity in [0x01_0203u32, 0x01_0206, 0x01_0209] {

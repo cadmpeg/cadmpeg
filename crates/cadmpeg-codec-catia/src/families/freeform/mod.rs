@@ -15,13 +15,21 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::HashMap;
 
-use crate::assemble::cgm_source;
 use crate::assemble::{
     annotate, insert_unresolved_carrier_loss, link_payload_carriers, neutral_model_is_admissible,
     preserve_raw_payload, quintic_jet_pcurve, source_meta,
 };
+use crate::assemble::{cgm_source, cgm_source_key};
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
+
+#[derive(Clone)]
+struct FreeformSurfaceCarrier {
+    pos: usize,
+    geometry: SurfaceGeometry,
+    source_object: cadmpeg_ir::SourceObjectAssociation,
+    source_tag: String,
+}
 
 pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<FamilyOutput> {
     let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
@@ -58,20 +66,20 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         let surfaces = fallback_surfaces
             .take()
             .unwrap_or_else(|| freeform_surface_carriers(&scan.data));
-        for (index, (pos, object_id, geometry, kind)) in surfaces.iter().enumerate() {
+        for (index, surface) in surfaces.iter().enumerate() {
             let id = SurfaceId(format!("catia:a8:surf#{index}"));
             annotate(
                 &mut annotations,
                 &id,
                 "object_stream_a8_03",
-                *pos as u64,
-                format!("{kind}:object_id:{object_id:08x}"),
+                surface.pos as u64,
+                &surface.source_tag,
                 Exactness::ByteExact,
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: geometry.clone(),
-                source_object: (*object_id != 0).then(|| cgm_source("surface", *object_id)),
+                geometry: surface.geometry.clone(),
+                source_object: Some(surface.source_object.clone()),
             });
         }
     }
@@ -122,22 +130,30 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     })
 }
 
-pub(crate) fn freeform_surface_carriers(
-    data: &[u8],
-) -> Vec<(usize, u32, SurfaceGeometry, &'static str)> {
-    let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> =
-        crate::families::a5a8::records::resolved_a8_surfaces(data)
-            .into_iter()
-            .chain(crate::families::a5a8::records::a5_surfaces(data))
-            .map(|surface| (surface.pos, surface.object_id, surface.geometry, "freeform"))
-            .collect();
+fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
+    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data)
+        .into_iter()
+        .chain(crate::families::a5a8::records::a5_surfaces(data))
+        .map(|surface| {
+            let (source_object, source_tag) = freeform_surface_source(&surface);
+            FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: surface.geometry,
+                source_object,
+                source_tag: format!("freeform:{source_tag}"),
+            }
+        })
+        .collect::<Vec<_>>();
     surfaces.extend(
         crate::families::b2::records::b2_cylinders(data)
             .into_iter()
             .filter_map(|surface| {
-                surface
-                    .geometry
-                    .map(|geometry| (surface.pos, 0, geometry, "b2_03_28"))
+                surface.geometry.map(|geometry| FreeformSurfaceCarrier {
+                    pos: surface.pos,
+                    geometry,
+                    source_object: cgm_source_key("b2-03-28-frame", format!("{:010}", surface.pos)),
+                    source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
+                })
             }),
     );
     surfaces.extend(
@@ -147,22 +163,40 @@ pub(crate) fn freeform_surface_carriers(
                 surface
                     .cylinder
                     .geometry
-                    .map(|geometry| (surface.pos, surface.object_id, geometry, "b2_03_60"))
+                    .map(|geometry| FreeformSurfaceCarrier {
+                        pos: surface.pos,
+                        geometry,
+                        source_object: cgm_source("surface", surface.object_id),
+                        source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
+                    })
             }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_cones(data)
             .into_iter()
-            .map(|surface| {
-                (
-                    surface.pos,
-                    0,
-                    crate::families::b2::records::b2_cone_geometry(&surface),
-                    "b2_03_29",
-                )
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: crate::families::b2::records::b2_cone_geometry(&surface),
+                source_object: cgm_source_key("b2-03-29-frame", format!("{:010}", surface.pos)),
+                source_tag: format!("b2_03_29:frame_offset:{:010}", surface.pos),
             }),
     );
     surfaces
+}
+
+fn freeform_surface_source(
+    surface: &crate::families::a5a8::records::FreeformSurface,
+) -> (cadmpeg_ir::SourceObjectAssociation, String) {
+    match surface.identity {
+        crate::families::a5a8::records::FreeformSurfaceIdentity::Object(object_id) => (
+            cgm_source("surface", object_id),
+            format!("object_id:{object_id:08x}"),
+        ),
+        crate::families::a5a8::records::FreeformSurfaceIdentity::FrameOffset(offset) => (
+            cgm_source_key("a5-surface-frame", format!("{offset:010}")),
+            format!("frame_offset:{offset:010}"),
+        ),
+    }
 }
 
 pub(crate) fn append_freeform_surface_pools(
@@ -174,6 +208,7 @@ pub(crate) fn append_freeform_surface_pools(
     surfaces.extend(crate::families::a5a8::records::a5_surfaces(data));
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
     for surface in &surfaces {
+        let (source_object, source_tag) = freeform_surface_source(surface);
         let index = ir.model.surfaces.len();
         let id = SurfaceId(format!("catia:freeform:surf#{index}"));
         carrier_ids.push(id.clone());
@@ -182,13 +217,13 @@ pub(crate) fn append_freeform_surface_pools(
             &id,
             "object_stream_a8_03_or_consolidated_a5_03",
             surface.pos as u64,
-            format!("object_id:{:08x}", surface.object_id),
+            source_tag,
             Exactness::ByteExact,
         );
         ir.model.surfaces.push(Surface {
             id,
             geometry: surface.geometry.clone(),
-            source_object: Some(cgm_source("surface", surface.object_id)),
+            source_object: Some(source_object),
         });
     }
 
@@ -425,7 +460,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
-    freeform_surfaces: &[crate::families::a5a8::records::A8Surface],
+    freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
 ) {
     let standalone = crate::families::b2::records::b2_cylinders(data)

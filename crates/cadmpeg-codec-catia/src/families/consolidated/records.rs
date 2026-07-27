@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::HashMap;
 
-use crate::families::a5a8::records::{a5_pcurves, a5_surfaces, A8Surface};
+use crate::families::a5a8::records::{a5_pcurves, a5_surfaces, FreeformSurface};
 use crate::families::b2::records::{
     b2_circles, b2_class25_descriptors, b2_cone_point, b2_cones, b2_cylinder_point, b2_cylinders,
     b2_edge_nodes, b2_edge_parameters, b2_embedded_cylinders, b2_pcurves, b2_use_metadata,
@@ -769,7 +769,7 @@ fn resolved_support_loci(
     cylinders: &[B2Cylinder],
     embedded: &[B2EmbeddedCylinder],
     cones: &[B2Cone],
-    surfaces: &[A8Surface],
+    surfaces: &[FreeformSurface],
 ) -> Option<Vec<Point3>> {
     let candidates = supports
         .iter()
@@ -805,7 +805,7 @@ fn support_points(
     cylinders: &[B2Cylinder],
     embedded: &[B2EmbeddedCylinder],
     cones: &[B2Cone],
-    surfaces: &[A8Surface],
+    surfaces: &[FreeformSurface],
 ) -> Option<Vec<Point3>> {
     match binding {
         ConsolidatedSupportBinding::Cylinder { pos } => {

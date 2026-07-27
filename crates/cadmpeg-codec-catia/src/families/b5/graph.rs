@@ -474,8 +474,10 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         );
     }
     for surface in crate::families::a5a8::records::resolved_a8_surfaces(bytes) {
-        if let SurfaceGeometry::Nurbs(nurbs) = surface.geometry {
-            surfaces.insert(surface.object_id, B5Surface::Nurbs(nurbs));
+        if let (Some(object_id), SurfaceGeometry::Nurbs(nurbs)) =
+            (surface.object_id(), surface.geometry)
+        {
+            surfaces.insert(object_id, B5Surface::Nurbs(nurbs));
         }
     }
     for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
