@@ -6438,7 +6438,19 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_fixed_width_atom_entity_suffix_value_count"],
+        decoded.report.coverage["decoded_schema_selected_atom_entity_suffix_value_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_schema_selected_evaluation_entity_suffix_value_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_schema_selected_separator_entity_suffix_value_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_schema_selected_schema_entity_suffix_value_count"],
         0
     );
     assert_eq!(
@@ -6565,81 +6577,182 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ]));
     assert_eq!(truncated_compact_atom.entity_records[0].suffix_value, None);
 
-    let fixed_width_atom = CatiaCodec
+    let schema_selected_atom = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_parameter_value(&[
                 0x81, 0x92, 0x82, 0x32, 4, 0, 0, 0, 0x81, 0x81, 0x49,
             ])),
             &DecodeOptions::default(),
         )
-        .expect("decode fixed-width atom entity suffix");
+        .expect("decode schema-selected atom entity suffix");
     assert_eq!(
-        fixed_width_atom.report.coverage["decoded_fixed_width_atom_entity_suffix_value_count"],
+        schema_selected_atom.report.coverage
+            ["decoded_schema_selected_atom_entity_suffix_value_count"],
         1
     );
     assert_eq!(
-        fixed_width_atom.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
+        schema_selected_atom.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
         1
     );
-    let fixed_width_atom = crate::native::CatiaNative::load(
-        fixed_width_atom
+    let schema_selected_atom = crate::native::CatiaNative::load(
+        schema_selected_atom
             .ir
             .native
             .namespace("catia")
             .expect("namespace"),
     )
-    .expect("load fixed-width atom suffix");
+    .expect("load schema-selected atom suffix");
     assert!(matches!(
-        fixed_width_atom.entity_records[0]
+        schema_selected_atom.entity_records[0]
             .suffix_value
             .as_ref()
-            .expect("complete fixed-width atom suffix")
+            .expect("complete schema-selected atom suffix")
             .payload,
-        CatiaEntitySuffixPayload::FixedWidthAtom {
+        CatiaEntitySuffixPayload::SchemaSelected {
             selector: 4,
-            value: 1
+            value: crate::native::CatiaEntitySuffixSelectedValue::Atom { value: 1 }
         }
     ));
     assert_eq!(
-        fixed_width_atom.entity_records[0]
+        schema_selected_atom.entity_records[0]
             .suffix_schema_selection
             .as_ref()
-            .expect("resolved fixed-width suffix selector"),
+            .expect("resolved suffix selector"),
         &crate::native::CatiaEntitySuffixSchemaSelection {
             ordinal: 4,
-            entry: fixed_width_atom.catalogs[0].entries[4].id.clone(),
+            entry: schema_selected_atom.catalogs[0].entries[4].id.clone(),
             name: "Thickness".to_string(),
-            value: 1,
+            value: crate::native::CatiaEntitySuffixSchemaValue::Atom { value: 1 },
         }
     );
-    let mut malformed_fixed_width_atom = fixed_width_atom.clone();
-    malformed_fixed_width_atom.entity_records[0]
+    let mut malformed_schema_selected_atom = schema_selected_atom.clone();
+    malformed_schema_selected_atom.entity_records[0]
         .suffix_schema_selection
         .as_mut()
-        .expect("resolved fixed-width suffix selector")
+        .expect("resolved suffix selector")
         .name = "Width".to_string();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed_fixed_width_atom
+    malformed_schema_selected_atom
         .store(&mut namespace)
-        .expect("store malformed fixed-width atom suffix");
+        .expect("store malformed schema-selected atom suffix");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    let out_of_range_fixed_width_atom =
+    let out_of_range_schema_selected_atom =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x81, 0x92, 0x82, 0x32, 0xcf, 0, 0, 0, 0x81, 0x81, 0x49,
         ]));
-    assert!(out_of_range_fixed_width_atom.entity_records[0]
+    assert!(out_of_range_schema_selected_atom.entity_records[0]
         .suffix_schema_selection
         .is_none());
 
-    let longer_fixed_width =
+    let selected_scalar_bits = 17.25_f64.to_bits();
+    let mut selected_scalar_suffix = vec![0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6];
+    selected_scalar_suffix.extend_from_slice(&selected_scalar_bits.to_le_bytes());
+    selected_scalar_suffix.extend_from_slice(&[0x81, 0x4a]);
+    let selected_scalar = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parameter_value(
+                &selected_scalar_suffix,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode schema-selected scalar suffix");
+    assert_eq!(
+        selected_scalar.report.coverage
+            ["decoded_schema_selected_evaluation_entity_suffix_value_count"],
+        1
+    );
+    let selected_scalar = crate::native::CatiaNative::load(
+        selected_scalar
+            .ir
+            .native
+            .namespace("catia")
+            .expect("namespace"),
+    )
+    .expect("load schema-selected scalar suffix");
+    assert!(matches!(
+        selected_scalar.entity_records[0]
+            .suffix_schema_selection
+            .as_ref()
+            .expect("resolved schema-selected scalar"),
+        crate::native::CatiaEntitySuffixSchemaSelection {
+            ordinal: 4,
+            name,
+            value: crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
+                evaluation: CatiaEntityEvaluation::Scalar { bits }
+            },
+            ..
+        } if name == "Thickness" && *bits == selected_scalar_bits
+    ));
+
+    let selected_unset =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe7,
+        ]));
+    assert!(matches!(
+        selected_unset.entity_records[0]
+            .suffix_schema_selection
+            .as_ref()
+            .expect("resolved schema-selected unset"),
+        crate::native::CatiaEntitySuffixSchemaSelection {
+            value: crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
+                evaluation: CatiaEntityEvaluation::Unset
+            },
+            ..
+        }
+    ));
+
+    let selected_separator =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x82, 0x93, 0x81, 0x32, 4, 0, 0, 0, 0x37, 0x81, 0x52,
+        ]));
+    assert!(matches!(
+        &selected_separator.entity_records[0]
+            .suffix_schema_selection
+            .as_ref()
+            .expect("resolved schema-selected separator")
+            .value,
+        crate::native::CatiaEntitySuffixSchemaValue::Separator37
+    ));
+
+    let selected_schema =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x84, 0x93, 0x82, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0x81, 0x49,
+        ]));
+    assert!(matches!(
+        &selected_schema.entity_records[0]
+            .suffix_schema_selection
+            .as_ref()
+            .expect("resolved nested suffix selector")
+            .value,
+        crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector {
+            ordinal: 5,
+            ref name,
+            ..
+        } if name.as_deref() == Some("#1_ /2")
+    ));
+
+    let mut nonfinite_selected_scalar = vec![0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6];
+    nonfinite_selected_scalar.extend_from_slice(&f64::NAN.to_bits().to_le_bytes());
+    let nonfinite_selected_scalar = crate::native::CatiaNative::decode(
+        &standard_catpart_with_parameter_value(&nonfinite_selected_scalar),
+    );
+    assert_eq!(
+        nonfinite_selected_scalar.entity_records[0].suffix_value,
+        None
+    );
+
+    let malformed_schema_selected_atom =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x81, 0x92, 0x82, 0x32, 0xcf, 0, 0, 0, 0x81, 0, 0, 0,
         ]));
-    assert_eq!(longer_fixed_width.entity_records[0].suffix_value, None);
+    assert_eq!(
+        malformed_schema_selected_atom.entity_records[0].suffix_value,
+        None
+    );
 
     let mut bare_scalar = vec![0x84, 0x96, 0x82, 0xb1, 0xe6];
     bare_scalar.extend_from_slice(&6.75_f64.to_bits().to_le_bytes());

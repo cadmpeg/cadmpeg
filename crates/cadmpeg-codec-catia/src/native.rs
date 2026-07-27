@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 123;
+pub const CATIA_NATIVE_VERSION: u32 = 124;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -748,15 +748,37 @@ pub enum CatiaEntitySuffixPayload {
         /// Decoded atom value.
         value: u32,
     },
-    /// One fixed-width selector followed by one canonical atom.
-    FixedWidthAtom {
-        /// Stored little-endian selector.
+    /// One source-schema selector followed by one typed value.
+    SchemaSelected {
+        /// Stored zero-based source-schema ordinal.
         selector: u32,
-        /// Decoded atom value.
-        value: u32,
+        /// Typed value following the selector.
+        value: CatiaEntitySuffixSelectedValue,
     },
     /// One zero-payload `E8` control state.
     ControlE8,
+}
+
+/// Typed value following a source-schema selector in an entity-record suffix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaEntitySuffixSelectedValue {
+    /// One canonical one-byte atom.
+    Atom {
+        /// Decoded atom value.
+        value: u32,
+    },
+    /// One direct unset or finite scalar evaluation.
+    Evaluation {
+        /// Decoded evaluation.
+        evaluation: CatiaEntityEvaluation,
+    },
+    /// One zero-payload `37` separator.
+    Separator37,
+    /// One further source-schema selector.
+    SchemaSelector {
+        /// Stored zero-based source-schema ordinal.
+        ordinal: u32,
+    },
 }
 
 /// One complete typed value in an entity-record suffix.
@@ -783,8 +805,36 @@ pub struct CatiaEntitySuffixSchemaSelection {
     pub entry: String,
     /// UTF-8 source-schema name stored by the selected entry.
     pub name: String,
-    /// Decoded compact value following the selector.
-    pub value: u32,
+    /// Typed value following the selector, with nested schema resolution.
+    pub value: CatiaEntitySuffixSchemaValue,
+}
+
+/// Catalog-resolved value following an entity-suffix schema selector.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaEntitySuffixSchemaValue {
+    /// One canonical compact atom.
+    Atom {
+        /// Decoded atom value.
+        value: u32,
+    },
+    /// One direct unset or finite scalar evaluation.
+    Evaluation {
+        /// Decoded evaluation.
+        evaluation: CatiaEntityEvaluation,
+    },
+    /// One zero-payload `37` separator.
+    Separator37,
+    /// One nested source-schema selector.
+    SchemaSelector {
+        /// Stored zero-based source-schema ordinal.
+        ordinal: u32,
+        /// Selected catalog entry when the ordinal is in range.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry: Option<String>,
+        /// UTF-8 source-schema name stored by the selected entry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
 }
 
 /// One complete named parameter-value record.
@@ -1368,18 +1418,39 @@ fn entity_suffix_schema_selection(
     suffix_value: Option<&CatiaEntitySuffixValue>,
     catalog: Option<&CatiaCatalog>,
 ) -> Option<CatiaEntitySuffixSchemaSelection> {
-    let CatiaEntitySuffixPayload::FixedWidthAtom { selector, value } = &suffix_value?.payload
+    let CatiaEntitySuffixPayload::SchemaSelected { selector, value } = &suffix_value?.payload
     else {
         return None;
     };
     let entry = usize::try_from(*selector)
         .ok()
         .and_then(|ordinal| catalog?.entries.get(ordinal))?;
+    let value = match value {
+        CatiaEntitySuffixSelectedValue::Atom { value } => {
+            CatiaEntitySuffixSchemaValue::Atom { value: *value }
+        }
+        CatiaEntitySuffixSelectedValue::Evaluation { evaluation } => {
+            CatiaEntitySuffixSchemaValue::Evaluation {
+                evaluation: evaluation.clone(),
+            }
+        }
+        CatiaEntitySuffixSelectedValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
+        CatiaEntitySuffixSelectedValue::SchemaSelector { ordinal } => {
+            let selected = usize::try_from(*ordinal)
+                .ok()
+                .and_then(|ordinal| catalog?.entries.get(ordinal));
+            CatiaEntitySuffixSchemaValue::SchemaSelector {
+                ordinal: *ordinal,
+                entry: selected.map(|entry| entry.id.clone()),
+                name: selected.map(|entry| entry.value.clone()),
+            }
+        }
+    };
     Some(CatiaEntitySuffixSchemaSelection {
         ordinal: *selector,
         entry: entry.id.clone(),
         name: entry.value.clone(),
-        value: *value,
+        value,
     })
 }
 
@@ -1515,14 +1586,41 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         )
     } else if prefix_code == 0x32 {
         let selector = u32::from_le_bytes(suffix.get(4..8)?.try_into().ok()?);
-        let encoded_value = *suffix.get(8)?;
-        (0x80..=0xd0).contains(&encoded_value).then_some(())?;
+        let (value, trailer_offset) = match *suffix.get(8)? {
+            0xe6 => {
+                let bits = u64::from_le_bytes(suffix.get(9..17)?.try_into().ok()?);
+                f64::from_bits(bits).is_finite().then_some(())?;
+                (
+                    CatiaEntitySuffixSelectedValue::Evaluation {
+                        evaluation: CatiaEntityEvaluation::Scalar { bits },
+                    },
+                    17,
+                )
+            }
+            0xe7 => (
+                CatiaEntitySuffixSelectedValue::Evaluation {
+                    evaluation: CatiaEntityEvaluation::Unset,
+                },
+                9,
+            ),
+            0x37 => (CatiaEntitySuffixSelectedValue::Separator37, 9),
+            0x32 => (
+                CatiaEntitySuffixSelectedValue::SchemaSelector {
+                    ordinal: u32::from_le_bytes(suffix.get(9..13)?.try_into().ok()?),
+                },
+                13,
+            ),
+            atom @ 0x80..=0xd0 => (
+                CatiaEntitySuffixSelectedValue::Atom {
+                    value: u32::from(atom - 0x80),
+                },
+                9,
+            ),
+            _ => return None,
+        };
         (
-            CatiaEntitySuffixPayload::FixedWidthAtom {
-                selector,
-                value: u32::from(encoded_value - 0x80),
-            },
-            9,
+            CatiaEntitySuffixPayload::SchemaSelected { selector, value },
+            trailer_offset,
         )
     } else {
         match *suffix.get(4)? {
