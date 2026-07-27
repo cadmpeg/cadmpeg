@@ -529,6 +529,9 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 payload: record.payload.clone(),
             }
         };
+        surfaces
+            .entry(offset.carrier_surface)
+            .or_insert_with(|| carrier.clone());
         surfaces.insert(record.object_id, carrier);
         offset_surfaces.insert(record.object_id, offset);
     }
@@ -555,6 +558,10 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         surfaces.insert(record.object_id, carrier);
         if parameters_match_carrier
             && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
+            && construction
+                .support_surfaces
+                .iter()
+                .all(|surface| surfaces.contains_key(surface))
         {
             supported_surfaces.insert(record.object_id, construction);
         }

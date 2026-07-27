@@ -19,7 +19,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use super::graph::{loop_chain_senses, B5Graph, B5Surface};
+use super::graph::{loop_chain_senses, B5Graph, B5OffsetSurface, B5SupportedSurface, B5Surface};
 
 mod edges;
 mod faces;
@@ -207,6 +207,34 @@ fn transfer_complete(
     true
 }
 
+fn referenced_surface_ids(
+    roots: impl IntoIterator<Item = u32>,
+    offsets: &BTreeMap<u32, B5OffsetSurface>,
+    supported: &BTreeMap<u32, B5SupportedSurface>,
+) -> HashSet<u32> {
+    let mut referenced = roots.into_iter().collect::<HashSet<_>>();
+    let mut pending = referenced.iter().copied().collect::<Vec<_>>();
+    while let Some(surface_id) = pending.pop() {
+        let dependencies = offsets
+            .get(&surface_id)
+            .map(|offset| vec![offset.source_surface, offset.carrier_surface])
+            .or_else(|| {
+                supported.get(&surface_id).map(|construction| {
+                    let mut dependencies = construction.support_surfaces.to_vec();
+                    dependencies.push(construction.carrier_surface);
+                    dependencies
+                })
+            })
+            .unwrap_or_default();
+        for dependency in dependencies {
+            if referenced.insert(dependency) {
+                pending.push(dependency);
+            }
+        }
+    }
+    referenced
+}
+
 /// Resolve the whole graph into the cross-pass [`TransferPlan`]. Returns `None`
 /// when any referenced surface, pcurve, edge endpoint, or loop chain fails to
 /// close so the caller leaves the model untouched.
@@ -219,17 +247,11 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
 
     let ownership = ownership_plan(graph)?;
 
-    let mut referenced_surfaces: HashSet<u32> =
-        graph.faces.iter().map(|face| face.surface).collect();
-    let mut pending_surfaces: Vec<u32> = referenced_surfaces.iter().copied().collect();
-    while let Some(surface_id) = pending_surfaces.pop() {
-        let Some(offset) = graph.offset_surfaces.get(&surface_id) else {
-            continue;
-        };
-        if referenced_surfaces.insert(offset.source_surface) {
-            pending_surfaces.push(offset.source_surface);
-        }
-    }
+    let referenced_surfaces = referenced_surface_ids(
+        graph.faces.iter().map(|face| face.surface),
+        &graph.offset_surfaces,
+        &graph.supported_surfaces,
+    );
     let mut surface_plan = BTreeMap::new();
     for surface_id in referenced_surfaces {
         let surface = graph.surfaces.get(&surface_id)?;
@@ -841,8 +863,9 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::super::graph::{
-        loop_chain_senses, B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile,
-        B5SphereGreatCirclePcurve, B5Surface,
+        loop_chain_senses, B5Face, B5Graph, B5Loop, B5OffsetSurface, B5ParameterIncidence,
+        B5Pcurve, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
+        B5SupportedSurfaceParameters, B5Surface,
     };
     use super::edges::{
         b5_edge_support_definition, b5_supports_follow_edge, bounded_occurrence_range,
@@ -857,7 +880,7 @@ mod tests {
     };
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
-    use super::{transfer, CurvePlan, SurfacePlan};
+    use super::{referenced_surface_ids, transfer, CurvePlan, SurfacePlan};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
@@ -869,6 +892,39 @@ mod tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
+        let offsets = BTreeMap::from([(
+            30,
+            B5OffsetSurface {
+                object_id: 30,
+                carrier_surface: 31,
+                source_surface: 50,
+                distance: 1.0,
+                carrier_kind: 2,
+                parameter_bounds: [[0.0, 1.0], [0.0, 1.0]],
+            },
+        )]);
+        let supported = BTreeMap::from([(
+            10,
+            B5SupportedSurface {
+                object_id: 10,
+                carrier_surface: 20,
+                support_surfaces: [30, 40],
+                support_pcurves: [60, 70],
+                parameters: B5SupportedSurfaceParameters::Radius {
+                    controls: [1; 6],
+                    construction_radius: 2.0,
+                },
+            },
+        )]);
+
+        assert_eq!(
+            referenced_surface_ids([10], &offsets, &supported),
+            HashSet::from([10, 20, 30, 31, 40, 50])
+        );
+    }
 
     #[test]
     fn occurrence_interval_orders_and_bounds_native_stations() {

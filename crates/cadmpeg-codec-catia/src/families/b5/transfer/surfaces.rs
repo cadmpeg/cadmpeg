@@ -2,7 +2,7 @@
 //! Surface-layer transfer: neutral surface lowering and the surface/procedural
 //! emit pass.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -449,6 +449,11 @@ pub(super) fn emit_surfaces(
 ) -> HashMap<u32, SurfaceId> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let mut surface_ids = HashMap::new();
+    let face_surfaces = graph
+        .faces
+        .iter()
+        .map(|face| face.surface)
+        .collect::<HashSet<_>>();
     for (object_id, plan) in surface_plan {
         let id = SurfaceId(format!("catia:b5:surface#{object_id}"));
         let revolution_cache = matches!(
@@ -463,7 +468,11 @@ pub(super) fn emit_surfaces(
             annotations,
             &id,
             "object_stream_b5_03",
-            "face_surface",
+            if face_surfaces.contains(&object_id) {
+                "face_surface"
+            } else {
+                "construction_surface"
+            },
             if rolling_ball_carrier {
                 Exactness::ByteExact
             } else if matches!(plan.geometry, SurfaceGeometry::Unknown { .. }) {
