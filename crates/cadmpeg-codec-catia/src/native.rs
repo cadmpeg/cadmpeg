@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 115;
+pub const CATIA_NATIVE_VERSION: u32 = 116;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -731,8 +731,10 @@ pub struct CatiaEntitySuffixValue {
     pub prefix: [u8; 4],
     /// Stored scalar or unset evaluation.
     pub evaluation: CatiaEntityEvaluation,
-    /// Two exact bytes closing the suffix production.
-    pub trailer: [u8; 2],
+    /// Zero or two exact bytes closing the suffix production.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub trailer: Vec<u8>,
 }
 
 /// One complete named parameter-value record.
@@ -1422,11 +1424,12 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         }
         _ => return None,
     };
-    let trailer = suffix.get(trailer_offset..)?.try_into().ok()?;
+    let trailer = suffix.get(trailer_offset..)?;
+    matches!(trailer.len(), 0 | 2).then_some(())?;
     Some(CatiaEntitySuffixValue {
         prefix,
         evaluation,
-        trailer,
+        trailer: trailer.to_vec(),
     })
 }
 

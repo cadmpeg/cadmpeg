@@ -6364,7 +6364,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         Some(CatiaEntitySuffixValue {
             prefix: [0x85, 0x96, 0x82, 0x6a],
             evaluation: CatiaEntityEvaluation::Scalar { bits: scalar },
-            trailer: [0x81, 0x52],
+            trailer: vec![0x81, 0x52],
         })
     );
 
@@ -6429,7 +6429,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         Some(CatiaEntitySuffixValue {
             prefix: [0x84, 0x96, 0x82, 0xad],
             evaluation: CatiaEntityEvaluation::Scalar { bits },
-            trailer: [0x81, 0x49],
+            trailer: vec![0x81, 0x49],
         })
     );
 
@@ -6454,6 +6454,31 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         0x84, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x49, 0x00,
     ]));
     assert_eq!(incomplete.entity_records[0].suffix_value, None);
+
+    let mut bare_scalar = vec![0x84, 0x96, 0x82, 0xb1, 0xe6];
+    bare_scalar.extend_from_slice(&6.75_f64.to_bits().to_le_bytes());
+    let bare_scalar =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&bare_scalar));
+    assert_eq!(
+        bare_scalar.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete bare scalar suffix")
+            .trailer,
+        Vec::<u8>::new()
+    );
+
+    let bare_unset = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x84, 0x96, 0x82, 0xb1, 0xe7,
+    ]));
+    assert!(matches!(
+        bare_unset.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete bare unset suffix")
+            .evaluation,
+        CatiaEntityEvaluation::Unset
+    ));
 
     let mut malformed = native;
     malformed.entity_records[0]
