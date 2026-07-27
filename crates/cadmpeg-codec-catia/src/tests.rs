@@ -1838,7 +1838,7 @@ fn standard_catpart_with_typed_formula_relation(
         duplicate_binding,
         &[("#1_", input_type, "Thickness", "#1_ /2", input_value)],
         result_type,
-        output_value,
+        Some(output_value),
         source_expression,
     )
 }
@@ -1848,7 +1848,7 @@ fn standard_catpart_with_typed_formula_inputs(
     duplicate_binding: bool,
     inputs: &[(&str, &str, &str, &str, f64)],
     result_type: &str,
-    output_value: f64,
+    output_value: Option<f64>,
     source_expression: &str,
 ) -> Vec<u8> {
     assert!(!inputs.is_empty());
@@ -1867,7 +1867,7 @@ fn standard_catpart_with_typed_formula_inputs(
         &expression_definition,
         &expression_value,
     ));
-    let parameter = |entity_id, name_ordinal: u32, binding_ordinal: u32, value: f64| {
+    let parameter = |entity_id, name_ordinal: u32, binding_ordinal: u32, value: Option<f64>| {
         let mut parameter_value = vec![0x32];
         parameter_value.extend_from_slice(&name_ordinal.to_le_bytes());
         parameter_value.push(0x32);
@@ -1876,8 +1876,14 @@ fn standard_catpart_with_typed_formula_inputs(
         let mut parameter =
             entity_table_record_with_definition_and_value(entity_id, &[0x01], &parameter_value);
         parameter[6] = 2;
-        parameter.extend_from_slice(&[0x85, 0x96, 0x82, 0x6a, 0xe6]);
-        parameter.extend_from_slice(&value.to_bits().to_le_bytes());
+        parameter.extend_from_slice(&[0x85, 0x96, 0x82, 0x6a]);
+        match value {
+            Some(value) => {
+                parameter.push(0xe6);
+                parameter.extend_from_slice(&value.to_bits().to_le_bytes());
+            }
+            None => parameter.push(0xe7),
+        }
         parameter.extend_from_slice(&[0x81, 0x52]);
         let parameter_len = u32::try_from(parameter.len()).expect("bounded parameter entity");
         parameter[2..6].copy_from_slice(&parameter_len.to_le_bytes());
@@ -1890,12 +1896,17 @@ fn standard_catpart_with_typed_formula_inputs(
             entity_id.into(),
             name_ordinal,
             name_ordinal + 1,
-            *value,
+            Some(*value),
         ));
     }
     if duplicate_binding {
         let entity_id = 3 + u8::try_from(inputs.len()).expect("bounded input count");
-        stream.extend(parameter(entity_id.into(), 12_u32, 13_u32, inputs[0].4));
+        stream.extend(parameter(
+            entity_id.into(),
+            12_u32,
+            13_u32,
+            Some(inputs[0].4),
+        ));
     }
     let output_entity_id =
         3 + u8::try_from(inputs.len()).expect("bounded input count") + u8::from(duplicate_binding);
@@ -6335,6 +6346,30 @@ fn decode_transfers_dimensionless_real_formula() {
 }
 
 #[test]
+fn decode_transfers_an_unset_typed_formula_result() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
+                "LENGTH",
+                None,
+                "#1_ /2+1mm",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset formula result");
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("unset formula parameters")
+    };
+
+    assert_eq!(output.value, None);
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(output.expression, "#1_ /2+1mm");
+}
+
+#[test]
 fn decode_rejects_nonintegral_integer_formula_input() {
     let decoded = CatiaCodec
         .decode(
@@ -6392,7 +6427,7 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
                     ("#2_", "ANGLE", "Draft", "#2_ /3", 0.25),
                 ],
                 "Real",
-                3.0,
+                Some(3.0),
                 "#1_ /2+#2_ /3",
             )),
             &DecodeOptions::default(),
@@ -6426,7 +6461,7 @@ fn decode_rejects_a_multi_input_formula_missing_a_declared_input() {
                     ("#2_", "ANGLE", "Draft", "#2_ /3", 0.25),
                 ],
                 "Real",
-                3.0,
+                Some(3.0),
                 "#1_ /2",
             )),
             &DecodeOptions::default(),

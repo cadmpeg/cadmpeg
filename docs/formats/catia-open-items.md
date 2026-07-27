@@ -10,6 +10,10 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 - The extent-struct `flags` word is carried raw; its bit assignments are unresolved.
 
+## Design intent
+
+- The value production and entity binding for typed `String` relation inputs and results are unresolved. Schema-catalog type signatures alone do not carry a named parameter value.
+
 ## Standard nested `V5_CFV2`
 
 - The `a5 03 32` header token byte at `record + 7` is a small repeating type code; its value space and semantics are unresolved.
