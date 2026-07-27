@@ -376,6 +376,13 @@ pub fn walk(stream: &[u8]) -> Census {
             census.records.push(record);
             continue;
         }
+        if let Some(record) = consume_type_70(stream, offset) {
+            census.bytes_decoded += record.end - record.offset;
+            *census.full_counts.entry("TYPE_70").or_default() += 1;
+            offset = record.end;
+            census.records.push(record);
+            continue;
+        }
         if let Some(record) = consume_attdef_list(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("ATTDEF_LIST").or_default() += 1;
@@ -444,6 +451,7 @@ fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Op
         .or_else(|| consume_nurbs_auxiliary(stream, record_offset))
         .or_else(|| consume_type_141(stream, record_offset))
         .or_else(|| consume_type_45(stream, record_offset))
+        .or_else(|| consume_type_70(stream, record_offset))
         .or_else(|| consume_attdef_list(stream, record_offset))
         .or_else(|| consume_type_101(stream, record_offset))
         .or_else(|| consume_intersection_data(stream, record_offset))
@@ -908,6 +916,64 @@ fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
     })
 }
 
+fn consume_type_70(stream: &[u8], offset: usize) -> Option<Record> {
+    (be::u16_at(stream, offset) == Some(70)).then_some(())?;
+    let direct = type_70_layout(stream, offset, 0);
+    let escaped = (stream.get(offset + 2) == Some(&0xff))
+        .then(|| type_70_layout(stream, offset, 1))
+        .flatten();
+    let (xmt, node_id, references, end) = unique_layout(direct, escaped)?;
+    Some(Record {
+        kind: 70,
+        xmt,
+        node_id: Some(node_id),
+        references,
+        position: None,
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        offset,
+        end,
+    })
+}
+
+fn type_70_layout(
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Option<(u32, u32, Vec<u32>, usize)> {
+    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
+    (xmt > 1).then_some(())?;
+    let mut at = offset.checked_add(2 + envelope_len + consumed)?;
+    let node_id = be::u32_at(stream, at)?;
+    at += 4;
+    (stream.get(at) == Some(&4)).then_some(())?;
+    at += 1;
+    let mut references = Vec::new();
+    for _ in 0..4 {
+        (stream.get(at) == Some(&1)).then_some(())?;
+        at += 1;
+        let (reference, consumed) = read_xmt(stream, at)?;
+        at += consumed;
+        references.push(reference);
+    }
+    let count = be::u16_at(stream, at)?;
+    (count > 0).then_some(())?;
+    at += 2;
+    (be::u32_at(stream, at) == Some(20)).then_some(())?;
+    at += 4;
+    (be::u32_at(stream, at) == Some(1)).then_some(())?;
+    at += 4;
+    for _ in 0..2 {
+        let (reference, consumed) = read_xmt(stream, at)?;
+        (reference > 1).then_some(())?;
+        at += consumed;
+        (stream.get(at) == Some(&0)).then_some(())?;
+        at += 1;
+        references.push(reference);
+    }
+    (references[4] == references[5]).then_some(())?;
+    Some((xmt, node_id, references, at))
+}
+
 fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
     (be::u16_at(stream, offset) == Some(101)).then_some(())?;
     let direct = type_101_layout(stream, offset, 0);
@@ -1253,6 +1319,7 @@ fn family_name(kind: u16) -> Option<&'static str> {
         56 => "BLEND_SURF",
         59 => "BLEND_BOUND",
         60 => "OFFSET_SURF",
+        70 => "TYPE_70",
         74 => "ATTDEF_LIST",
         81 => "ENTITY_51",
         82 => "ENTITY_52",

@@ -6683,6 +6683,51 @@ fn deltas_walks_complete_type_45_records() {
 }
 
 #[test]
+fn deltas_walks_complete_type_70_records() {
+    fn record(escape: bool, xmt: u32, count: u16, trailing_reference: u32) -> Vec<u8> {
+        let mut bytes = 70u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.push(4);
+        for reference in [3u32, 1, 1, 0] {
+            bytes.push(1);
+            bytes.extend(encoded_xmt(reference));
+        }
+        bytes.extend_from_slice(&count.to_be_bytes());
+        bytes.extend_from_slice(&20u32.to_be_bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        for _ in 0..2 {
+            bytes.extend(encoded_xmt(trailing_reference));
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    let direct = record(false, 7, 11, 52);
+    let escaped = record(true, 40_000, 14, 40_001);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(census.full_counts["TYPE_70"], 2);
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[0].node_id, Some(0));
+    assert_eq!(census.records[0].references, [3, 1, 1, 0, 52, 52]);
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+    assert_eq!(census.records[1].xmt, 40_000);
+
+    let mut mismatched = record(false, 7, 11, 52);
+    let end = mismatched.len();
+    mismatched[end - 2] = 53;
+    assert!(crate::deltas::walk(&mismatched).records.is_empty());
+}
+
+#[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
     let record = crate::deltas::walk(&stream).records.remove(0);
