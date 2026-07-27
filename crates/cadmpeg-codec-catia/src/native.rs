@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 117;
+pub const CATIA_NATIVE_VERSION: u32 = 118;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -727,8 +727,10 @@ pub enum CatiaEntityEvaluation {
 /// One complete scalar or unset value in an entity-record suffix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntitySuffixValue {
-    /// Four exact bytes preceding the evaluation opcode.
-    pub prefix: [u8; 4],
+    /// Three canonical one-byte atoms preceding the field code.
+    pub prefix_atoms: [u32; 3],
+    /// Exact field code preceding the evaluation opcode.
+    pub prefix_code: u8,
     /// Stored scalar or unset evaluation.
     pub evaluation: CatiaEntityEvaluation,
     /// Exact bytes closing the suffix production.
@@ -1400,8 +1402,10 @@ fn parameter_value(
         return None;
     };
     let suffix_value = suffix_value?;
-    (suffix_value.prefix == [0x85, 0x96, 0x82, 0x6a] && suffix_value.trailer == [0x81, 0x52])
-        .then_some(())?;
+    (suffix_value.prefix_atoms == [5, 22, 2]
+        && suffix_value.prefix_code == 0x6a
+        && suffix_value.trailer == [0x81, 0x52])
+    .then_some(())?;
     let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
         entry: selection.entry.clone(),
         value: selection.name.clone(),
@@ -1414,7 +1418,14 @@ fn parameter_value(
 }
 
 fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
-    let prefix = suffix.get(..4)?.try_into().ok()?;
+    let prefix = suffix.get(..4)?;
+    let atom = |byte: u8| {
+        (0x80..=0xd0)
+            .contains(&byte)
+            .then(|| u32::from(byte - 0x80))
+    };
+    let prefix_atoms = [atom(prefix[0])?, atom(prefix[1])?, atom(prefix[2])?];
+    let prefix_code = prefix[3];
     let (evaluation, trailer_offset) = match *suffix.get(4)? {
         0xe7 => (CatiaEntityEvaluation::Unset, 5),
         0xe6 => {
@@ -1430,7 +1441,8 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         && trailer[2..].iter().all(|byte| *byte == 0);
     (matches!(trailer.len(), 0 | 2) || fixed_zero_frame).then_some(())?;
     Some(CatiaEntitySuffixValue {
-        prefix,
+        prefix_atoms,
+        prefix_code,
         evaluation,
         trailer: trailer.to_vec(),
     })

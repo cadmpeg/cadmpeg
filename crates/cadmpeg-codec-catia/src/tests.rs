@@ -6362,7 +6362,8 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     assert_eq!(
         native.entity_records[0].suffix_value,
         Some(CatiaEntitySuffixValue {
-            prefix: [0x85, 0x96, 0x82, 0x6a],
+            prefix_atoms: [5, 22, 2],
+            prefix_code: 0x6a,
             evaluation: CatiaEntityEvaluation::Scalar { bits: scalar },
             trailer: vec![0x81, 0x52],
         })
@@ -6427,7 +6428,8 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     assert_eq!(
         native.entity_records[0].suffix_value,
         Some(CatiaEntitySuffixValue {
-            prefix: [0x84, 0x96, 0x82, 0xad],
+            prefix_atoms: [4, 22, 2],
+            prefix_code: 0xad,
             evaluation: CatiaEntityEvaluation::Scalar { bits },
             trailer: vec![0x81, 0x49],
         })
@@ -6454,6 +6456,12 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         0x84, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x49, 0x00,
     ]));
     assert_eq!(incomplete.entity_records[0].suffix_value, None);
+
+    let invalid_prefix =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x7f, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x49,
+        ]));
+    assert_eq!(invalid_prefix.entity_records[0].suffix_value, None);
 
     let mut bare_scalar = vec![0x84, 0x96, 0x82, 0xb1, 0xe6];
     bare_scalar.extend_from_slice(&6.75_f64.to_bits().to_le_bytes());
