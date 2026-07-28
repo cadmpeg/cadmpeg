@@ -9,7 +9,7 @@ use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 use crate::native::{CatiaNative, CatiaObjectRecord};
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
-/// Transfer identity-complete `PRTSketch` declarations.
+/// Transfer identity-complete sketch declarations.
 pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> HashSet<String> {
     let records = native
         .object_graphs
@@ -27,12 +27,23 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> HashSet
             .fields
             .iter()
             .filter_map(|field| records.get(field.as_str()).copied())
-            .filter(|record| record.class_name.as_deref() == Some("PRTSketch"))
+            .filter(|record| matches!(record.class_name.as_deref(), Some("PRTSketch" | "Sketch")))
             .collect::<Vec<_>>();
-        let [declaration] = declarations.as_slice() else {
+        let Some((declaration_class, declaration_entry)) =
+            declarations.first().and_then(|record| {
+                record
+                    .class_name
+                    .as_deref()
+                    .zip(record.class_entry.as_deref())
+            })
+        else {
             continue;
         };
-        if !complete_sketch_declaration(declaration, &object.id, object.owner_entity_id) {
+        if declarations.iter().any(|record| {
+            record.class_name.as_deref() != Some(declaration_class)
+                || record.class_entry.as_deref() != Some(declaration_entry)
+                || !complete_sketch_declaration(record, &object.id, object.owner_entity_id)
+        }) {
             continue;
         }
 
@@ -44,7 +55,11 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> HashSet
             profiles: Vec::new(),
             native_ref: Some(object.id.clone()),
         });
-        consumed_object_records.insert(declaration.id.clone());
+        consumed_object_records.extend(
+            declarations
+                .into_iter()
+                .map(|declaration| declaration.id.clone()),
+        );
     }
 
     consumed_object_records
