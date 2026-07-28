@@ -9820,6 +9820,9 @@ fn native_round_trips_legacy_entity_identity_runs() {
         bytes.push(0xea);
         bytes.extend(entity_id.to_le_bytes());
         bytes.extend([0x81, 0xfd, 0x8c]);
+        if entity_id == 4 {
+            bytes.extend(b"\xe8\x00\x12\x01\x05name\xfe");
+        }
     }
     let catalog_offset = bytes.len();
     bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
@@ -9838,6 +9841,9 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].catalog_offset,
         catalog_offset as u64
     );
+    assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 1);
+    assert_eq!(native.legacy_entity_runs[0].text_fields[0].entity_id, 4);
+    assert_eq!(native.legacy_entity_runs[0].text_fields[0].value, "name");
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

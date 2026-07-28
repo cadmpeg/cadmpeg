@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 141;
+pub const CATIA_NATIVE_VERSION: u32 = 142;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2241,6 +2241,29 @@ pub struct CatiaLegacyEntityIdentity {
     pub entity_id: u32,
 }
 
+/// Framing production used by a legacy schema text field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaLegacyTextEncoding {
+    /// Nonzero one-byte inclusive length.
+    U8InclusiveLength,
+    /// Zero selector and little-endian `u32` byte length.
+    ZeroU32Length,
+}
+
+/// One complete legacy schema text field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyTextField {
+    /// Offset of the field opener.
+    pub byte_offset: u64,
+    /// Stored identity whose interval contains the field.
+    pub entity_id: u32,
+    /// Text framing production.
+    pub encoding: CatiaLegacyTextEncoding,
+    /// Decoded UTF-8 value.
+    pub value: String,
+}
+
 /// A monotonically identified pre-`7C05` run and its terminating catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaLegacyEntityRun {
@@ -2254,6 +2277,8 @@ pub struct CatiaLegacyEntityRun {
     pub catalog_offset: u64,
     /// Stored identities in source order.
     pub identities: Vec<CatiaLegacyEntityIdentity>,
+    /// Complete schema text fields in identity-interval order.
+    pub text_fields: Vec<CatiaLegacyTextField>,
 }
 
 /// CATIA-native records retained outside the format-neutral model.
@@ -2413,6 +2438,23 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         entity_id: identity.entity_id,
                     })
                     .collect(),
+                text_fields: run
+                    .text_fields
+                    .into_iter()
+                    .map(|field| CatiaLegacyTextField {
+                        byte_offset: field.offset as u64,
+                        entity_id: field.entity_id,
+                        encoding: match field.encoding {
+                            legacy_entity::LegacyTextEncoding::U8InclusiveLength => {
+                                CatiaLegacyTextEncoding::U8InclusiveLength
+                            }
+                            legacy_entity::LegacyTextEncoding::ZeroU32Length => {
+                                CatiaLegacyTextEncoding::ZeroU32Length
+                            }
+                        },
+                        value: field.value,
+                    })
+                    .collect(),
             }
         })
         .collect()
@@ -2439,6 +2481,23 @@ fn validate_legacy_entity_runs(
                     .byte_offset
                     .checked_add(6)
                     .is_some_and(|end| end <= run.catalog_offset)
+            })
+            && run
+                .text_fields
+                .windows(2)
+                .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
+            && run.text_fields.iter().all(|field| {
+                !field.value.is_empty()
+                    && field.value.chars().all(|character| {
+                        !character.is_control() || matches!(character, '\t' | '\n' | '\r')
+                    })
+                    && field.byte_offset >= run.byte_offset
+                    && field.byte_offset < run.catalog_offset
+                    && run
+                        .identities
+                        .iter()
+                        .rfind(|identity| identity.byte_offset < field.byte_offset)
+                        .is_some_and(|identity| identity.entity_id == field.entity_id)
             });
         if !valid {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
