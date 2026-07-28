@@ -84,6 +84,16 @@ pub fn decode_parameter_scopes(
                     }
                 }
             }
+            if scope.kind == "JointOrigin" {
+                if let Some(frame) = exact_joint_origin_frame(bytes, &scope) {
+                    scope.joint_origin_transform = Some(frame.transform);
+                    scope.joint_origin_transform_offset = Some(frame.transform_offset);
+                    if let Some((reference, reference_offset)) = frame.reference {
+                        scope.joint_origin_reference = Some(reference);
+                        scope.joint_origin_reference_offset = Some(reference_offset);
+                    }
+                }
+            }
             if let Some((position, offset)) = exact_work_point_position(bytes, &scope) {
                 scope.work_point_position = Some(position);
                 scope.work_point_position_offset = Some(offset);
@@ -1138,7 +1148,7 @@ pub(crate) fn exact_path_feature_construction(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct WorkPlaneFrame {
+pub(crate) struct ScopePlacementFrame {
     pub(crate) transform: [[f64; 4]; 4],
     pub(crate) transform_offset: u64,
     pub(crate) reference: Option<(u32, u64)>,
@@ -1147,7 +1157,7 @@ pub(crate) struct WorkPlaneFrame {
 pub(crate) fn exact_work_plane_frame(
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Option<WorkPlaneFrame> {
+) -> Option<ScopePlacementFrame> {
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
         for (start, paired) in indexed_record_pairs(bytes, *record_index) {
@@ -1183,10 +1193,48 @@ pub(crate) fn exact_work_plane_frame(
             if !valid_sketch_transform(&transform) {
                 continue;
             }
-            candidates.push(WorkPlaneFrame {
+            candidates.push(ScopePlacementFrame {
                 transform,
                 transform_offset: matrix_at as u64,
                 reference,
+            });
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
+}
+
+pub(crate) fn exact_joint_origin_frame(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<ScopePlacementFrame> {
+    if scope.kind != "JointOrigin" {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for record_index in &scope.reference_members {
+        for (start, paired) in indexed_record_pairs(bytes, *record_index) {
+            if !matches!(paired.checked_sub(start)?, 336 | 347)
+                || bytes.get(start + 11..start + 45)? != [0; 34]
+                || bytes.get(start + 50..start + 60)? != [0; 10]
+            {
+                continue;
+            }
+            let reference = marked_record_reference(bytes, start + 45)?;
+            let values = f64s_at(bytes, start + 60, 16)?;
+            let mut transform = [[0.0; 4]; 4];
+            for (ordinal, value) in values.into_iter().enumerate() {
+                transform[ordinal / 4][ordinal % 4] = value;
+            }
+            if !valid_sketch_transform(&transform) {
+                continue;
+            }
+            candidates.push(ScopePlacementFrame {
+                transform,
+                transform_offset: (start + 60) as u64,
+                reference: Some((reference, (start + 46) as u64)),
             });
         }
     }
@@ -1587,6 +1635,10 @@ pub(crate) fn parse_parameter_scope(
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,

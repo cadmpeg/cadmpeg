@@ -1152,6 +1152,18 @@ pub struct DesignParameterScope {
     /// Byte offset of the `WorkPlane` construction reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_reference_offset: Option<u64>,
+    /// Exact row-major local-to-model frame carried by a `JointOrigin` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint_origin_transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the `JointOrigin` frame's explicit 16-f64 matrix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint_origin_transform_offset: Option<u64>,
+    /// Construction record referenced by the `JointOrigin` frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint_origin_reference: Option<u32>,
+    /// Byte offset of the `JointOrigin` construction reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint_origin_reference_offset: Option<u64>,
     /// Explicit model-space position carried by a `WorkPoint` construction record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_point_position: Option<[f64; 3]>,

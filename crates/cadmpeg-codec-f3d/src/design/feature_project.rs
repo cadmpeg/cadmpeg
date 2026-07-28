@@ -412,6 +412,41 @@ pub fn project_parameter_design_with_edge_identities(
                                 op: operation(*result),
                             },
                         }
+                    } else if scope.kind == "JointOrigin" {
+                        scope.joint_origin_transform.map_or_else(
+                            || FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: parameters
+                                    .iter()
+                                    .map(|(_, parameter)| {
+                                        (parameter.name.clone(), parameter.expression.clone())
+                                    })
+                                    .collect(),
+                                properties: native_scope_properties(scope, native_scope),
+                            },
+                            |transform| FeatureDefinition::DatumCoordinateSystem {
+                                origin: Point3::new(
+                                    transform[0][3] * 10.0,
+                                    transform[1][3] * 10.0,
+                                    transform[2][3] * 10.0,
+                                ),
+                                x_axis: Vector3::new(
+                                    transform[0][0],
+                                    transform[1][0],
+                                    transform[2][0],
+                                ),
+                                y_axis: Vector3::new(
+                                    transform[0][1],
+                                    transform[1][1],
+                                    transform[2][1],
+                                ),
+                                z_axis: Vector3::new(
+                                    transform[0][2],
+                                    transform[1][2],
+                                    transform[2][2],
+                                ),
+                            },
+                        )
                     } else if scope.kind == "WorkPlane" {
                         scope.work_plane_transform.map_or_else(
                             || FeatureDefinition::Native {

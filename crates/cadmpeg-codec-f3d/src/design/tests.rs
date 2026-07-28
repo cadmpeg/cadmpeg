@@ -31,9 +31,9 @@ use crate::design::decode::parameters::{
 use crate::design::decode::scopes::{
     exact_base_feature_construction, exact_circular_pattern_construction,
     exact_direct_face_operation, exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
-    exact_fixed_fillet_parameters, exact_path_feature_construction, exact_scale_operation,
-    exact_solid_primitive, exact_surface_stitch_operation, exact_work_plane_frame,
-    exact_work_point_position, parse_parameter_scope,
+    exact_fixed_fillet_parameters, exact_joint_origin_frame, exact_path_feature_construction,
+    exact_scale_operation, exact_solid_primitive, exact_surface_stitch_operation,
+    exact_work_plane_frame, exact_work_point_position, parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -3316,6 +3316,30 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (compact_450_at + 50) as u64);
     assert_eq!(decoded.reference, None);
 
+    let joint_origin_at = bytes.len();
+    let mut joint_origin = vec![0; 336];
+    joint_origin[0..4].copy_from_slice(&3u32.to_le_bytes());
+    joint_origin[4..7].copy_from_slice(b"450");
+    joint_origin[7..11].copy_from_slice(&60u32.to_le_bytes());
+    joint_origin[45] = 1;
+    joint_origin[46..50].copy_from_slice(&61u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 60 + ordinal * 8;
+        joint_origin[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    joint_origin.extend_from_slice(&3u32.to_le_bytes());
+    joint_origin.extend_from_slice(b"259");
+    joint_origin.extend_from_slice(&60u32.to_le_bytes());
+    bytes.extend_from_slice(&joint_origin);
+    let mut joint_origin_scope = scope.clone();
+    joint_origin_scope.kind = "JointOrigin".into();
+    joint_origin_scope.reference_members = vec![60];
+    let decoded =
+        exact_joint_origin_frame(&bytes, &joint_origin_scope).expect("exact JointOrigin frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (joint_origin_at + 60) as u64);
+    assert_eq!(decoded.reference, Some((61, (joint_origin_at + 46) as u64)));
+
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
     move_frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -4641,6 +4665,10 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -5129,6 +5157,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -5551,6 +5583,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -10134,6 +10170,10 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -10259,6 +10299,10 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -10430,6 +10474,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: Some(DesignSketchProfileOperand {
@@ -11055,6 +11103,10 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -11828,6 +11880,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -12223,6 +12279,10 @@ fn parameter_expressions_project_feature_dependencies() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -12339,6 +12399,10 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -12990,6 +13054,10 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
@@ -13157,6 +13225,10 @@ fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
