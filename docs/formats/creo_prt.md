@@ -1301,6 +1301,10 @@ The `var_arr` header retains its declared count and table-class reference when
 no variable row body validates; its derived point set is then empty.
 The `segtab_ptr` header retains its declared count and table-class reference
 when no segment row body validates.
+After the positional table prototype closes, each replay row begins either
+immediately or after a compound-close-terminated structural trailer. A replay
+row is admitted only when its complete fixed field sequence and final
+compound-close decode within the table extent.
 A type-10 `segtab` row is a full circle. It has no endpoint identifiers;
 the second point slot is the structural value one, `cntrid` selects the center
 point, and `radius` selects the ordinal radius or diameter dimension. A

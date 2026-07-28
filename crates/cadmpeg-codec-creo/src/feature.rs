@@ -2325,9 +2325,8 @@ fn segment_table_body(
         };
         if payload.get(kind_offset).is_none_or(|kind| *kind > 0x7f)
             || (row_start != first_row
-                && payload.get(row_start.saturating_sub(1)) != Some(&0xe3)
-                && payload.get(row_start.saturating_sub(4)..row_start)
-                    != Some(&[0xe2, 0x00, 0xf6, 0xe2]))
+                && payload.get(row_start.saturating_sub(1)) != Some(&0xe2)
+                && payload.get(row_start.saturating_sub(1)) != Some(&0xe3))
         {
             cursor += 1;
             continue;
@@ -8051,6 +8050,22 @@ mod tests {
         assert!(segments.has_elided_prototype);
         assert_eq!(segments.rows.len(), 2);
         assert!(!segments.is_complete());
+    }
+
+    #[test]
+    fn positional_segment_rows_follow_variable_structural_trailers() {
+        let mut payload = b"\xe3S2D0004\0\xf8\x03\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2".to_vec();
+        payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]);
+        payload.extend_from_slice(&[0xe3, 0xe2, 0x81, 0x18, 0x07, 0xe2]);
+        payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
+
+        let segments =
+            positional_segment_table(&payload, 0, payload.len()).expect("positional segtab");
+
+        assert!(segments.is_complete());
+        assert_eq!(segments.rows.len(), 2);
+        assert_eq!(segments.rows[1].kind, FeatureSegmentKind::Arc);
+        assert_eq!(segments.rows[1].external_id, 43);
     }
 
     #[test]
