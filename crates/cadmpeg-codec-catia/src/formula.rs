@@ -359,6 +359,12 @@ pub(crate) fn transfer_parameters(
         return FormulaTransfer::default();
     };
     for candidate in &parameters {
+        annotations
+            .exactness
+            .entry(candidate.parameter.id.0.clone())
+            .or_default()
+            .fields
+            .insert("properties".to_string(), Exactness::Derived);
         if !candidate.formula_output && candidate.parameter.dependencies.is_empty() {
             annotations
                 .exactness

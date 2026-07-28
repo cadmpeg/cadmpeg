@@ -10547,6 +10547,14 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         decoded.source_fidelity.annotations.exactness[&input.id.0].fields["expression"],
         cadmpeg_ir::Exactness::Derived
     );
+    assert_eq!(
+        decoded.source_fidelity.annotations.exactness[&input.id.0].fields["properties"],
+        cadmpeg_ir::Exactness::Derived
+    );
+    assert_eq!(
+        decoded.source_fidelity.annotations.exactness[&output.id.0].fields["properties"],
+        cadmpeg_ir::Exactness::Derived
+    );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .is_empty());
@@ -11589,6 +11597,12 @@ fn decode_transfers_dimensionless_real_formula() {
     assert_eq!(output.value, Some(ParameterValue::Real(1.25)));
     assert_eq!(output.properties["value_type"], "Real");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    for parameter in [input, output] {
+        assert_eq!(
+            decoded.source_fidelity.annotations.exactness[&parameter.id.0].fields["properties"],
+            cadmpeg_ir::Exactness::Derived
+        );
+    }
 }
 
 #[test]
