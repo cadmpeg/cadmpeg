@@ -8723,6 +8723,87 @@ fn decode_evaluates_a_square_root_of_a_dimensioned_product() {
 }
 
 #[test]
+fn decode_evaluates_right_associative_exponentiation_above_unary_signs() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "Real",
+                Some(-512.0),
+                "-2**3**2",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode exponent formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("exponent formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(-512.0))
+    );
+}
+
+#[test]
+fn decode_evaluates_an_integral_power_of_a_dimensioned_value() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Width", "#1_ /2", 3.0)],
+                "LENGTH",
+                Some(3.0),
+                "sqrt((#1_ /2)**2)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensioned exponent formula");
+
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("dimensioned exponent formula parameters")
+    };
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(3.0)
+        ))
+    );
+}
+
+#[test]
+fn decode_evaluates_inverse_trigonometric_calls_as_angles() {
+    let output_value = 0.5_f64.asin() + 0.5_f64.acos() + 1.0_f64.atan();
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "ANGLE",
+                Some(output_value),
+                "asin(0.5)+acos(0.5)+atan(1)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode inverse trigonometric formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("inverse trigonometric formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::features::Angle(output_value)
+        ))
+    );
+}
+
+#[test]
 fn decode_evaluates_dimension_safe_absolute_and_tangent_calls() {
     let decoded = CatiaCodec
         .decode(
@@ -8773,6 +8854,91 @@ fn decode_rejects_a_square_root_with_an_odd_dimension_exponent() {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "AreaLike");
+}
+
+#[test]
+fn decode_rejects_a_fractional_power_of_a_dimensioned_value() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Width", "#1_ /2", 4.0)],
+                "LENGTH",
+                Some(2.0),
+                "(#1_ /2)**0.5",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensionally invalid exponent formula");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Width");
+}
+
+#[test]
+fn decode_rejects_dimension_exponent_overflow() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Width", "#1_ /2", 1.0)],
+                "LENGTH",
+                Some(1.0),
+                "((#1_ /2)**2147483647)**2",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode exponent-overflow formula");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Width");
+}
+
+#[test]
+fn decode_rejects_inverse_trigonometry_outside_its_scalar_domain() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Width", "#1_ /2", 1.0)],
+                "ANGLE",
+                Some(std::f64::consts::FRAC_PI_4),
+                "atan(#1_ /2)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensionally invalid inverse trigonometric formula");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Width");
+}
+
+#[test]
+fn decode_rejects_inverse_trigonometry_outside_its_numeric_domain() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "ANGLE",
+                Some(0.0),
+                "asin(2)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode out-of-domain inverse trigonometric formula");
+
+    assert!(decoded.ir.model.parameters.is_empty());
 }
 
 #[test]

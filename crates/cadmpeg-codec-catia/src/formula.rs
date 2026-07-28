@@ -343,8 +343,8 @@ enum TypedParameterEvaluation {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct FormulaDimension {
-    length: i8,
-    angle: i8,
+    length: i32,
+    angle: i32,
 }
 
 impl FormulaDimension {
@@ -379,6 +379,13 @@ impl FormulaDimension {
         (self.length % 2 == 0 && self.angle % 2 == 0).then_some(Self {
             length: self.length / 2,
             angle: self.angle / 2,
+        })
+    }
+
+    fn power(self, exponent: i32) -> Option<Self> {
+        Some(Self {
+            length: self.length.checked_mul(exponent)?,
+            angle: self.angle.checked_mul(exponent)?,
         })
     }
 }
@@ -450,6 +457,13 @@ fn finite_scalar(value: f64) -> Option<EvaluatedFormulaScalar> {
     value.is_finite().then_some(EvaluatedFormulaScalar {
         value,
         dimension: FormulaDimension::SCALAR,
+    })
+}
+
+fn finite_angle(value: f64) -> Option<EvaluatedFormulaScalar> {
+    value.is_finite().then_some(EvaluatedFormulaScalar {
+        value,
+        dimension: FormulaDimension::ANGLE,
     })
 }
 
@@ -531,8 +545,37 @@ impl FormulaExpressionParser<'_, '_> {
                 value.value = -value.value;
                 Some(value)
             }
-            _ => self.primary(depth),
+            _ => self.power(depth),
         }
+    }
+
+    fn power(&mut self, depth: usize) -> Option<EvaluatedFormulaScalar> {
+        let base = self.primary(depth)?;
+        self.skip_whitespace();
+        if !self.remaining().starts_with("**") {
+            return Some(base);
+        }
+        self.at += 2;
+        let exponent = self.unary(Self::nested_depth(depth)?)?;
+        if exponent.dimension != FormulaDimension::SCALAR {
+            return None;
+        }
+
+        let dimension = if base.dimension == FormulaDimension::SCALAR {
+            FormulaDimension::SCALAR
+        } else {
+            if exponent.value.fract() != 0.0
+                || exponent.value < f64::from(i32::MIN)
+                || exponent.value > f64::from(i32::MAX)
+            {
+                return None;
+            }
+            base.dimension.power(exponent.value as i32)?
+        };
+        let value = base.value.powf(exponent.value);
+        value
+            .is_finite()
+            .then_some(EvaluatedFormulaScalar { value, dimension })
     }
 
     fn primary(&mut self, depth: usize) -> Option<EvaluatedFormulaScalar> {
@@ -598,6 +641,15 @@ impl FormulaExpressionParser<'_, '_> {
             }
             ("tan", argument, None) if argument.dimension == FormulaDimension::ANGLE => {
                 finite_scalar(argument.value.tan())
+            }
+            ("asin", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_angle(argument.value.asin())
+            }
+            ("acos", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_angle(argument.value.acos())
+            }
+            ("atan", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_angle(argument.value.atan())
             }
             ("log", argument, None)
                 if argument.dimension == FormulaDimension::SCALAR && argument.value > 0.0 =>
