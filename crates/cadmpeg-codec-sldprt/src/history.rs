@@ -6409,6 +6409,7 @@ fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
             .cloned()
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         op,
+        keep_tools: false,
     })
 }
 
@@ -11611,11 +11612,17 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Combine { target, tools, op } => {
+            FeatureDefinition::Combine {
+                target,
+                tools,
+                op,
+                keep_tools,
+            } => {
                 if existing.as_deref().is_some_and(|record| {
                     !feature_family(record, "Combine")
                         && !feature_input_class(record, NativeClassKind::Combine)
                 }) || *op == BooleanOp::NewBody
+                    || *keep_tools
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported combine semantics",

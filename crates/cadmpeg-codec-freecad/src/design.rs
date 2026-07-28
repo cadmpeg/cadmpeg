@@ -3176,7 +3176,12 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
             BodySelection::Native(format!("{}:links:1..{}", shapes.id, shapes.links.len())),
         )
     };
-    Some(FeatureDefinition::Combine { target, tools, op })
+    Some(FeatureDefinition::Combine {
+        target,
+        tools,
+        op,
+        keep_tools: false,
+    })
 }
 
 fn loft_definition(

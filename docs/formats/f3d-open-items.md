@@ -44,6 +44,7 @@ This document records F3D semantics that the format specification does not yet d
 - The construction-group scalar fields and variant byte, and the construction-group role field outside Extrude scopes, remain unresolved.
 - The topology meaning of the root, prelude, and side-clause scalar fields shared by face-recipe nodes remains unresolved.
 - The join from a `Move` or `RemoveBody` role-`0x0000000400000000` construction-group identity to neutral body identities is unresolved; the group identity is retained as the native body selection.
+- The join from each `Combine` body-selection record's GUID pair and remaining native fields to a neutral body identity is unresolved; the ordered record identities are retained as the target and tool selections.
 - The semantic roles of the class-365 whole-body operand fields after its asset and context UUIDs, excluding the bounded nested-record and body-recipe joins, remain unresolved.
 - The semantic roles of the six-byte fields following Base Feature body suffixes and record references are unresolved.
 - The semantic roles of the f64 and two f32 fields between a sketch-text record's nominal height and font family, its two internal record references, and its class-specific tail fields are unresolved.

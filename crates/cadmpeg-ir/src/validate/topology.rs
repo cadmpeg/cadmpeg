@@ -4174,6 +4174,15 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         );
                     }
                 }
+                BodySelection::NativeSet(members) => {
+                    if members.is_empty() || members.iter().any(|member| member.trim().is_empty()) {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "native body selection set is invalid",
+                        );
+                    }
+                }
                 BodySelection::Unresolved | BodySelection::Native(_) => {}
             }
         }

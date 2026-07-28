@@ -197,6 +197,12 @@ pub fn project_parameter_design_with_edge_identities(
                             .collect(),
                         properties: native_scope_properties(scope, native_scope),
                     }),
+                Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
+                    .unwrap_or_else(|| FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }),
                 Some(DesignFeatureFamily::Revolve) => {
                     project_fixed_revolve(scope, construction_groups, edge_operands).unwrap_or_else(
                         || FeatureDefinition::Native {
@@ -835,6 +841,35 @@ pub fn project_parameter_design_with_edge_identities(
     assign_feature_ordinals(&mut features);
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
+}
+
+pub(crate) fn project_combine(
+    scope: &DesignParameterScope,
+    native_scope: &str,
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+
+    let operation = scope.combine_operation.as_ref()?;
+    let (target, tools) = operation.body_selection_record_indexes.split_first()?;
+    if tools.is_empty() {
+        return None;
+    }
+    let selection = |record_index| format!("{native_scope}:design-record#{record_index}");
+    Some(FeatureDefinition::Combine {
+        target: BodySelection::Native(selection(*target)),
+        tools: if let [tool] = tools {
+            BodySelection::Native(selection(*tool))
+        } else {
+            BodySelection::NativeSet(tools.iter().map(|tool| selection(*tool)).collect())
+        },
+        op: match operation.operation {
+            DesignExtrudeOperation::Join => BooleanOp::Join,
+            DesignExtrudeOperation::Cut => BooleanOp::Cut,
+            DesignExtrudeOperation::Intersect => BooleanOp::Intersect,
+            DesignExtrudeOperation::NewBody => return None,
+        },
+        keep_tools: operation.keep_tools,
+    })
 }
 
 fn scope_properties(

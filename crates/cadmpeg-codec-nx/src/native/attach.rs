@@ -3028,6 +3028,7 @@ fn non_boolean_feature_definition_with_parameters(
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             op,
+            keep_tools: false,
         };
     }
     match kind {
@@ -3810,6 +3811,7 @@ fn atomic_disjoint_body_selections(
         BodySelection::Resolved { native, .. } | BodySelection::Native(native) => {
             BodySelection::Native(native)
         }
+        BodySelection::NativeSet(members) => BodySelection::NativeSet(members),
         BodySelection::Bodies(bodies) => BodySelection::Bodies(bodies),
         BodySelection::Generated { .. }
         | BodySelection::Historical { .. }
@@ -3851,6 +3853,7 @@ pub(crate) fn boolean_feature_definition(
             crate::native::features::FeatureBooleanKind::Subtract => BooleanOp::Cut,
             crate::native::features::FeatureBooleanKind::Intersect => BooleanOp::Intersect,
         },
+        keep_tools: false,
     }
 }
 
@@ -4863,6 +4866,7 @@ mod tests {
                     target: BodySelection::Unresolved,
                     tools: BodySelection::Unresolved,
                     op,
+                    keep_tools: false,
                 }
             );
         }

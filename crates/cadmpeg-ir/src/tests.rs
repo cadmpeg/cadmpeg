@@ -4201,12 +4201,27 @@ fn body_selections_round_trip_through_json() {
             native: "body:16".into(),
         },
         BodySelection::Native("body:17,body:18".into()),
+        BodySelection::NativeSet(vec!["body:17".into(), "body:18".into()]),
     ];
     let json = serde_json::to_string(&selections).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<BodySelection>>(&json).unwrap(),
         selections
     );
+}
+
+#[test]
+fn combine_omits_the_default_keep_tools_flag_from_json() {
+    use crate::features::{BodySelection, BooleanOp, FeatureDefinition};
+
+    let definition = FeatureDefinition::Combine {
+        target: BodySelection::Native("body:17".into()),
+        tools: BodySelection::Native("body:18".into()),
+        op: BooleanOp::Join,
+        keep_tools: false,
+    };
+    let json = serde_json::to_value(definition).unwrap();
+    assert_eq!(json.get("keep_tools"), None);
 }
 
 #[test]

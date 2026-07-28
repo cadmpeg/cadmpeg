@@ -802,7 +802,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         BodySelection::Historical { bodies, .. } => bodies.is_empty(),
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
-        BodySelection::Unresolved | BodySelection::Native(_) => true,
+        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
     };
     let incomplete_profile = |profile: &ProfileRef| match profile {
         ProfileRef::Faces(faces) => faces.is_empty(),
@@ -1004,7 +1004,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 neutral_plane,
                 ..
             } => incomplete_face_selection(faces) || incomplete_face_selection(neutral_plane),
-            FeatureDefinition::Combine { target, tools, op } => {
+            FeatureDefinition::Combine {
+                target, tools, op, ..
+            } => {
                 incomplete_body_selection(target)
                     || incomplete_body_selection(tools)
                     || *op == BooleanOp::Unresolved
@@ -2814,6 +2816,7 @@ mod design_loss_tests {
                 target: BodySelection::Native("target".into()),
                 tools: BodySelection::Native("tools".into()),
                 op: BooleanOp::Unresolved,
+                keep_tools: false,
             },
             native_ref: None,
         });
@@ -2872,6 +2875,7 @@ mod design_loss_tests {
                     target: BodySelection::Native("target".into()),
                     tools: BodySelection::Native("tools".into()),
                     op: BooleanOp::Unresolved,
+                    keep_tools: false,
                 },
             ),
             (

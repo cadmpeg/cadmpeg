@@ -3675,6 +3675,7 @@ fn encoder_writes_source_less_native_features() {
             },
             tools: BodySelection::Native("body-b,body-c".into()),
             op: BooleanOp::Join,
+            keep_tools: false,
         },
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Native("face-d".into()),
@@ -12263,11 +12264,13 @@ fn semantic_writer_round_trips_typed_combine() {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             op: BooleanOp::Join,
+            keep_tools: false,
         } if target == "body:1" && tools == "body:2,body:3"
     ));
 
-    let FeatureDefinition::Combine { target, tools, op } =
-        &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Combine {
+        target, tools, op, ..
+    } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed combine");
     };
@@ -12292,6 +12295,7 @@ fn semantic_writer_round_trips_typed_combine() {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             op: BooleanOp::Intersect,
+            keep_tools: false,
         } if target == "body:4" && tools == "body:5,body:6"
     ));
 }
@@ -12320,6 +12324,7 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             op: BooleanOp::Unresolved,
+            keep_tools: false,
         }
     ));
 
@@ -12337,6 +12342,7 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             op: BooleanOp::Unresolved,
+            keep_tools: false,
         }
     ));
 }

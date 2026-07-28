@@ -563,6 +563,15 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         | FaceSelection::Generated { .. }
         | FaceSelection::Historical { .. } => {}
     };
+    let native_body_selection_count = |selection: &BodySelection| match selection {
+        BodySelection::Native(_) | BodySelection::Unresolved => 1,
+        BodySelection::NativeSet(members) => members.len(),
+        BodySelection::Bodies(_)
+        | BodySelection::Resolved { .. }
+        | BodySelection::Historical { .. }
+        | BodySelection::Generated { .. }
+        | BodySelection::Local { .. } => 0,
+    };
     for feature in &ir.model.features {
         gaps.incomplete_features +=
             usize::from(feature_definition_is_incomplete(&feature.definition));
@@ -577,9 +586,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         match &feature.definition {
             FeatureDefinition::BaseFeature { bodies }
             | FeatureDefinition::InsertBodies { bodies } => {
-                if matches!(bodies, BodySelection::Native(_) | BodySelection::Unresolved) {
-                    gaps.body_selections += 1;
-                }
+                gaps.body_selections += native_body_selection_count(bodies);
+            }
+            FeatureDefinition::Combine { target, tools, .. } => {
+                gaps.body_selections +=
+                    native_body_selection_count(target) + native_body_selection_count(tools);
             }
             FeatureDefinition::Extrude {
                 profile,
@@ -661,10 +672,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 removed_faces,
                 ..
             } => {
-                if bodies.as_ref().is_some_and(|bodies| {
-                    matches!(bodies, BodySelection::Native(_) | BodySelection::Unresolved)
-                }) {
-                    gaps.body_selections += 1;
+                if let Some(bodies) = bodies {
+                    gaps.body_selections += native_body_selection_count(bodies);
                 }
                 face_selection(removed_faces);
             }
@@ -3520,6 +3529,7 @@ mod tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            combine_operation: None,
             copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
@@ -3680,6 +3690,7 @@ mod tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            combine_operation: None,
             copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,

@@ -10,7 +10,7 @@ use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
     DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignCircularPatternConstruction,
-    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement,
+    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
     DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignEdgeFlangeOperation,
     DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudeStart,
     DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
@@ -106,6 +106,7 @@ pub fn decode_parameter_scopes(
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &scope);
             scope.fixed_chamfer_parameters = exact_fixed_chamfer_parameters(bytes, &scope);
             scope.path_feature_construction = exact_path_feature_construction(bytes, &scope);
+            scope.combine_operation = exact_combine_operation(bytes, &scope);
             scope.circular_pattern_construction =
                 exact_circular_pattern_construction(bytes, &scope);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
@@ -1328,6 +1329,80 @@ fn indexed_record_pairs(bytes: &[u8], record_index: u32) -> Vec<(usize, usize)> 
     headers.windows(2).map(|pair| (pair[0], pair[1])).collect()
 }
 
+pub(crate) fn exact_combine_operation(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignCombineOperation> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Combine)
+        || scope.reference_members.len() < 4
+        || !scope.reference_members.len().is_multiple_of(2)
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 19)? != [0; 8]
+        || bytes.get(start + 24) != Some(&0)
+        || bytes.get(start + 26..start + 33)? != [0; 7]
+    {
+        return None;
+    }
+    let operation = match u32_at(bytes, start + 20)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        _ => return None,
+    };
+    let keep_tools = match bytes.get(start + 25)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let mut body_selection_record_indexes = Vec::with_capacity(scope.reference_members.len() / 2);
+    for pair in scope.reference_members.chunks_exact(2) {
+        let [operation_record_index, selection_record_index] = pair else {
+            return None;
+        };
+        let operation_frames = indexed_record_pairs(bytes, *operation_record_index);
+        let [(operation_at, operation_end)] = operation_frames.as_slice() else {
+            return None;
+        };
+        let mut selection_reference = [0; 11];
+        selection_reference[0] = 1;
+        selection_reference[1..5].copy_from_slice(&selection_record_index.to_le_bytes());
+        if !bytes
+            .get(*operation_at..*operation_end)?
+            .windows(selection_reference.len())
+            .any(|window| window == selection_reference)
+        {
+            return None;
+        }
+        let selection_frames = indexed_record_pairs(bytes, *selection_record_index);
+        let [(selection_at, selection_end)] = selection_frames.as_slice() else {
+            return None;
+        };
+        if !contains_consecutive_guid_pair(bytes.get(*selection_at..*selection_end)?) {
+            return None;
+        }
+        body_selection_record_indexes.push(*selection_record_index);
+    }
+    Some(DesignCombineOperation {
+        operation,
+        operation_offset: u64::try_from(start + 20).ok()?,
+        keep_tools,
+        keep_tools_offset: u64::try_from(start + 25).ok()?,
+        body_selection_record_indexes,
+    })
+}
+
+fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
+    (0..bytes.len()).any(|at| {
+        lp_utf16_bounded(bytes, at, 1..=256)
+            .filter(|(first, _)| crate::bytes::is_guid_relaxed(first))
+            .and_then(|(_, after_first)| lp_utf16_bounded(bytes, after_first, 1..=256))
+            .is_some_and(|(second, _)| crate::bytes::is_guid_relaxed(&second))
+    })
+}
+
 pub(crate) fn parameter_scope_candidate_headers(bytes: &[u8]) -> Vec<DesignRecordHeader> {
     let mut indexed = HashMap::<u32, Vec<(usize, String)>>::new();
     let mut position = 0;
@@ -1643,6 +1718,7 @@ pub(crate) fn parse_parameter_scope(
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,

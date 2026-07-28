@@ -9333,6 +9333,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,

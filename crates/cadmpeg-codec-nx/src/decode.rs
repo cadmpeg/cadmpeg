@@ -6859,11 +6859,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "pattern"
             }
-            FeatureDefinition::Combine { target, tools, op }
-                if body_selection_is_incomplete(target)
-                    || body_selection_is_incomplete(tools)
-                    || body_selections_overlap(target, tools)
-                    || matches!(op, BooleanOp::Unresolved) =>
+            FeatureDefinition::Combine {
+                target, tools, op, ..
+            } if body_selection_is_incomplete(target)
+                || body_selection_is_incomplete(tools)
+                || body_selections_overlap(target, tools)
+                || matches!(op, BooleanOp::Unresolved) =>
             {
                 "body combine"
             }
@@ -7202,7 +7203,8 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
         | BodySelection::Historical { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
-        | BodySelection::Native(_) => None,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => None,
     }
 }
 

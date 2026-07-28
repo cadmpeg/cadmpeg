@@ -1029,6 +1029,21 @@ pub enum DesignPathFeatureConstruction {
     },
 }
 
+/// Exact Boolean construction carried by a `Combine` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignCombineOperation {
+    /// Join, cut, or intersect operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation u32.
+    pub operation_offset: u64,
+    /// Whether the source operation retains its tool bodies.
+    pub keep_tools: bool,
+    /// Byte offset of the keep-tools Boolean.
+    pub keep_tools_offset: u64,
+    /// Ordered body-selection record indexes: target first, then tools.
+    pub body_selection_record_indexes: Vec<u32>,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -1156,6 +1171,9 @@ pub struct DesignParameterScope {
     /// Exact fixed construction carried by a Loft or Sweep scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_feature_construction: Option<DesignPathFeatureConstruction>,
+    /// Exact Boolean construction carried by a `Combine` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combine_operation: Option<DesignCombineOperation>,
     /// Exact construction carried by a circular-pattern scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub circular_pattern_construction: Option<DesignCircularPatternConstruction>,

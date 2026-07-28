@@ -1543,12 +1543,17 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
             .collect::<Vec<_>>(),
         ["fcstd:design:feature#A", "fcstd:design:feature#B"]
     );
-    let cadmpeg_ir::features::FeatureDefinition::Combine { target, tools, op } =
-        &feature("Fuse").definition
+    let cadmpeg_ir::features::FeatureDefinition::Combine {
+        target,
+        tools,
+        op,
+        keep_tools,
+    } = &feature("Fuse").definition
     else {
         panic!("multi-fuse");
     };
     assert_eq!(*op, cadmpeg_ir::features::BooleanOp::Join);
+    assert!(!keep_tools);
     assert!(matches!(
         target,
         cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":link:0")
@@ -1596,6 +1601,7 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
             op: cadmpeg_ir::features::BooleanOp::Join,
+            keep_tools: false,
         } if target.ends_with(":Group:link:2")
             && tools.ends_with(":Group:links:0..2")
     ));
@@ -1605,6 +1611,7 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
             op: cadmpeg_ir::features::BooleanOp::Cut,
+            keep_tools: false,
         } if target.ends_with(":BaseFeature") && tools.ends_with(":Group")
     ));
     assert!(result.report.losses.is_empty());

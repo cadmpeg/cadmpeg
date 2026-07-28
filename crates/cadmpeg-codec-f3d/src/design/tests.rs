@@ -29,7 +29,7 @@ use crate::design::decode::parameters::{
     parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::decode::scopes::{
-    exact_base_feature_construction, exact_circular_pattern_construction,
+    exact_base_feature_construction, exact_circular_pattern_construction, exact_combine_operation,
     exact_direct_face_operation, exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
     exact_fixed_fillet_parameters, exact_joint_origin_frame, exact_path_feature_construction,
     exact_scale_operation, exact_solid_primitive, exact_surface_stitch_operation,
@@ -57,7 +57,7 @@ use crate::design::edge_resolve::{
 };
 use crate::design::face_resolve::resolved_face_group;
 use crate::design::feature_project::{
-    project_extrude, project_parameter_design, untyped_parameter_unit_count,
+    project_combine, project_extrude, project_parameter_design, untyped_parameter_unit_count,
 };
 use crate::design::geometry::{
     closed_sketch_profiles, point_on_sketch_entity, region_containing_points,
@@ -79,19 +79,20 @@ use crate::ids::{neutral_feature_id_parts, neutral_parameter_id_parts};
 
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignCircularPatternConstruction,
-    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignConfiguration,
-    DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
-    DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeSelectionGroup,
-    DesignExtrudeStart, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-    DesignFixedFilletParameters, DesignObjectKind, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecipeReference, DesignRecordHeader, DesignScaleOperation, DesignSketchPlacement,
-    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceStitchOperation,
-    LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
+    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
+    DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
+    DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFixedChamferParameters,
+    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader, DesignScaleOperation,
+    DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
+    DesignSurfaceStitchOperation, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    SketchSurface,
 };
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::{
@@ -4409,6 +4410,97 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
 }
 
 #[test]
+fn combine_scope_projects_ordered_target_tools_and_retention() {
+    fn indexed_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+    fn operation_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
+        indexed_header(bytes, b"283", record_index);
+        bytes.extend_from_slice(b"DcFeatureOperationIdFlag");
+        bytes.push(1);
+        bytes.extend_from_slice(&selection_record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        indexed_header(bytes, b"259", record_index);
+    }
+    fn selection_record(bytes: &mut Vec<u8>, record_index: u32, suffix: u8) {
+        indexed_header(bytes, b"389", record_index);
+        lp_utf16(
+            bytes,
+            &format!("00000000-0000-0000-0000-0000000000{suffix:02x}"),
+        );
+        lp_utf16(
+            bytes,
+            &format!("10000000-0000-0000-0000-0000000000{suffix:02x}"),
+        );
+        indexed_header(bytes, b"306", record_index);
+    }
+
+    let scope_record_index = 90;
+    let references = [91u32, 92, 93, 94, 95, 96];
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, b"382", scope_record_index);
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(0);
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.resize(64, 0);
+    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    for reference in references {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&17u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Combine");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&2u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    indexed_header(&mut bytes, b"259", scope_record_index);
+    for pair in references.chunks_exact(2) {
+        operation_record(&mut bytes, pair[0], pair[1]);
+        selection_record(&mut bytes, pair[1], u8::try_from(pair[1]).unwrap());
+    }
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: scope_record_index,
+        class_tag: "382".into(),
+        byte_offset: 0,
+    };
+    let mut scope = parse_parameter_scope(&bytes, &header).expect("Combine scope");
+    let operation = exact_combine_operation(&bytes, &scope).expect("Combine construction");
+    assert_eq!(
+        operation,
+        DesignCombineOperation {
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 20,
+            keep_tools: true,
+            keep_tools_offset: 25,
+            body_selection_record_indexes: vec![92, 94, 96],
+        }
+    );
+    scope.combine_operation = Some(operation);
+    assert_eq!(
+        project_combine(&scope, "Design1/BulkStream.dat"),
+        Some(cadmpeg_ir::features::FeatureDefinition::Combine {
+            target: cadmpeg_ir::features::BodySelection::Native(
+                "Design1/BulkStream.dat:design-record#92".into(),
+            ),
+            tools: cadmpeg_ir::features::BodySelection::NativeSet(vec![
+                "Design1/BulkStream.dat:design-record#94".into(),
+                "Design1/BulkStream.dat:design-record#96".into(),
+            ]),
+            op: cadmpeg_ir::features::BooleanOp::Join,
+            keep_tools: true,
+        })
+    );
+}
+
+#[test]
 fn localized_sketch_scope_retains_its_generic_reference_table() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -4841,6 +4933,7 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -5446,6 +5539,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -5872,6 +5966,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -10459,6 +10554,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -10588,6 +10684,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -10763,6 +10860,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -11392,6 +11490,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -12169,6 +12268,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -12570,6 +12670,7 @@ fn parameter_expressions_project_feature_dependencies() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -12690,6 +12791,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -13345,6 +13447,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -13516,6 +13619,7 @@ fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,

@@ -1096,6 +1096,9 @@ pub enum FeatureDefinition {
         tools: BodySelection,
         /// Join, cut, or intersection operation.
         op: BooleanOp,
+        /// Whether tool bodies remain present after the Boolean result is created.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        keep_tools: bool,
     },
     /// Creates solid bodies from selected cells enclosed by boundary bodies.
     BoundaryFill {
@@ -2073,6 +2076,9 @@ pub enum BodySelection {
     },
     /// Format-native selection expression.
     Native(String),
+    /// Ordered format-native selection members that have no enclosing native
+    /// group record.
+    NativeSet(Vec<String>),
 }
 
 /// Persistent identity of a body in one regenerated feature result.
