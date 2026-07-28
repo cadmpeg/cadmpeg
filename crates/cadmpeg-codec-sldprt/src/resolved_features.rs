@@ -5438,7 +5438,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn unrecognized_role_two_profile_record_is_auxiliary() {
+    fn unrecognized_role_two_records_are_auxiliary() {
         let mut payload = vec![0; 112 + LEGACY_SKETCH_MARKER.len()];
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[5..13].fill(0xff);
@@ -5453,7 +5453,14 @@ mod marker_tests {
         payload[112..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
         assert!(auxiliary_profile_record(&payload, 0));
+        payload[17..21].fill(0);
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x0d, 0x00]);
+        assert!(auxiliary_profile_record(&payload, 0));
 
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x0c, 0x00]);
         payload[56..58].copy_from_slice(&2u16.to_le_bytes());
         payload[58..60].copy_from_slice(&3u16.to_le_bytes());
         payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
@@ -38683,10 +38690,23 @@ fn auxiliary_profile_record(payload: &[u8], offset: usize) -> bool {
             if prefix == SKETCH_MARKER
                 || prefix == LEGACY_SKETCH_MARKER
                 || prefix == LEGACY_EXTENDED_SKETCH_MARKER
-    ) && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
-        && marker_profile_curve_role(payload, offset) == Some(2)
-        && payload.get(offset + 31..offset + 39)
-            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+    ) && marker_profile_curve_role(payload, offset) == Some(2)
+        && matches!(
+            (
+                marker_native_code(payload, offset),
+                payload.get(offset + 23..offset + 27),
+                payload.get(offset + 31..offset + 39)
+            ),
+            (
+                _,
+                Some([0x04, 0x00, 0x02, 0x00]),
+                Some([0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+            ) | (
+                Some(0),
+                Some([0x05, 0x00, 0x01, 0x00]),
+                Some([0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0d, 0x00])
+            )
+        )
         && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
         && !marker_is_selected_construction_line(payload, offset)
         && compact_legacy_radial_circle_index(payload, offset).is_none()
