@@ -18,6 +18,7 @@ This document records unresolved NX `.prt` byte semantics.
 - The canonical node-type name and field roles of deltas type 91 (`005b`) are unspecified.
 - The canonical node-type name and field roles of deltas type 101 (`0065`) are unspecified.
 - The canonical node-type name and four reference-field roles of deltas type 141 (`008d`) are unspecified.
+- The field roles of the count-selected binary64 tail following a deltas `term_use` are unspecified.
 
 ## Object model and body composition
 

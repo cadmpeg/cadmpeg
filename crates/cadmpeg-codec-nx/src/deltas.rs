@@ -51,6 +51,21 @@ pub struct BodyRevision {
     pub prefix_end: usize,
 }
 
+/// Count-selected binary64 lane immediately following one deltas `term_use`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TermUseNumericTail {
+    /// XMT identity of the owning `term_use` record.
+    pub term_use_xmt: u32,
+    /// Serialized endpoint count selecting the numeric-tail cardinality.
+    pub term_use_count: u32,
+    /// Ordered finite binary64 values without assigned semantic roles.
+    pub values: Vec<f64>,
+    /// First numeric byte following the complete `term_use` record.
+    pub offset: usize,
+    /// First byte following the numeric lane.
+    pub end: usize,
+}
+
 /// Result of a deterministic deltas record walk.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Census {
@@ -60,11 +75,13 @@ pub struct Census {
     pub tombstones: Vec<Tombstone>,
     /// BODY revision prefixes in source order.
     pub body_revisions: Vec<BodyRevision>,
+    /// Complete count-selected numeric tails following `term_use` records.
+    pub term_use_numeric_tails: Vec<TermUseNumericTail>,
     /// Complete-record counts keyed by Parasolid family name.
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
     pub tombstone_counts: BTreeMap<&'static str, usize>,
-    /// Sum of accepted full-record, tombstone, and revision-prefix byte lengths.
+    /// Sum of accepted full-record, tombstone, revision-prefix, and numeric-tail byte lengths.
     pub bytes_decoded: usize,
 }
 
@@ -317,8 +334,8 @@ const COMPOSITE_CURVE: &[Token] = &[
     Token::Ref,
 ];
 
-/// Walk all accepted full records and compact tombstones in an inflated
-/// deltas stream.
+/// Walk all accepted records, revisions, tombstones, and numeric tails in an
+/// inflated deltas stream.
 pub fn walk(stream: &[u8]) -> Census {
     let mut census = Census::default();
     let mut offset = 0;
@@ -440,7 +457,57 @@ pub fn walk(stream: &[u8]) -> Census {
         }
         offset += 1;
     }
+    census.term_use_numeric_tails = term_use_numeric_tails(stream, &census);
+    census.bytes_decoded += census
+        .term_use_numeric_tails
+        .iter()
+        .map(|tail| tail.end - tail.offset)
+        .sum::<usize>();
     census
+}
+
+fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericTail> {
+    let mut event_starts = census
+        .records
+        .iter()
+        .map(|record| record.offset)
+        .chain(census.tombstones.iter().map(|tombstone| tombstone.offset))
+        .chain(census.body_revisions.iter().map(|revision| revision.offset))
+        .collect::<Vec<_>>();
+    event_starts.sort_unstable();
+    event_starts.dedup();
+
+    census
+        .records
+        .iter()
+        .filter(|record| record.kind == 41)
+        .filter_map(|record| {
+            let (term_use, parsed_end) = crate::intersection::term_use_at(stream, record.offset)?;
+            (parsed_end == record.end && term_use.xmt == record.xmt).then_some(())?;
+            let value_count = match term_use.count {
+                1 => 8,
+                2 => 19,
+                _ => return None,
+            };
+            let end = record.end.checked_add(value_count * 8)?;
+            let bytes = stream.get(record.end..end)?;
+            let values = (0..value_count)
+                .map(|ordinal| be::f64_at(bytes, ordinal * 8))
+                .collect::<Option<Vec<_>>>()?;
+            values.iter().all(|value| value.is_finite()).then_some(())?;
+            let next_event =
+                event_starts.get(event_starts.partition_point(|start| *start <= record.end));
+            next_event
+                .is_none_or(|start| *start >= end)
+                .then_some(TermUseNumericTail {
+                    term_use_xmt: record.xmt,
+                    term_use_count: term_use.count,
+                    values,
+                    offset: record.end,
+                    end,
+                })
+        })
+        .collect()
 }
 
 fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Option<Record> {

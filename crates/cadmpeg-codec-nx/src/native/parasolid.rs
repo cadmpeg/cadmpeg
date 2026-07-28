@@ -67,6 +67,27 @@ pub struct ParasolidDeltasBodyRevision {
     pub inflated_offset: u64,
 }
 
+/// Count-selected numeric lane following one deltas `term_use` endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTermUseNumericTail {
+    /// Globally unique numeric-tail identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// XMT identity of the owning `term_use` record.
+    pub term_use_xmt: u32,
+    /// Serialized endpoint count selecting the numeric-tail cardinality.
+    pub term_use_count: u32,
+    /// Ordered finite binary64 values without assigned semantic roles.
+    pub values: Vec<f64>,
+    /// Exact numeric-tail byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact numeric-tail bytes.
+    pub sha256: String,
+    /// First numeric byte following the complete `term_use` record.
+    pub inflated_offset: u64,
+}
+
 /// Maximal inflated-stream span outside every admitted deltas event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidDeltasResidualSpan {
@@ -86,6 +107,7 @@ pub(crate) struct ParasolidDeltasEvents {
     pub(crate) records: Vec<ParasolidDeltasRecord>,
     pub(crate) tombstones: Vec<ParasolidDeltasTombstone>,
     pub(crate) body_revisions: Vec<ParasolidDeltasBodyRevision>,
+    pub(crate) term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
     pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
 }
 
@@ -95,6 +117,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         records: Vec::new(),
         tombstones: Vec::new(),
         body_revisions: Vec::new(),
+        term_use_numeric_tails: Vec::new(),
         residual_spans: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -117,6 +140,12 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     .body_revisions
                     .iter()
                     .map(|revision| (revision.offset, revision.prefix_end)),
+            )
+            .chain(
+                census
+                    .term_use_numeric_tails
+                    .iter()
+                    .map(|tail| (tail.offset, tail.end)),
             )
             .collect::<Vec<_>>();
         covered.sort_unstable();
@@ -198,6 +227,24 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                 inflated_offset: revision.offset as u64,
             });
         }
+        for tail in census.term_use_numeric_tails {
+            let bytes = &stream.inflated[tail.offset..tail.end];
+            events
+                .term_use_numeric_tails
+                .push(ParasolidDeltasTermUseNumericTail {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-term-use-tail#{}-{}",
+                        tail.offset, tail.term_use_xmt
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    term_use_xmt: tail.term_use_xmt,
+                    term_use_count: tail.term_use_count,
+                    values: tail.values,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: tail.offset as u64,
+                });
+        }
     }
     events.records.sort_by(|left, right| left.id.cmp(&right.id));
     events
@@ -205,6 +252,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .body_revisions
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .term_use_numeric_tails
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .residual_spans
@@ -1546,6 +1596,47 @@ mod tests {
             (type_45_offset + 24) as u64
         );
         assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_subtract_typed_term_use_numeric_tails_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend_from_slice(&41u16.to_be_bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&20u16.to_be_bytes());
+        bytes.extend_from_slice(b"L?");
+        for coordinate in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&coordinate.to_be_bytes());
+        }
+        let tail_offset = bytes.len();
+        for ordinal in 0..8 {
+            bytes.extend_from_slice(&(ordinal as f64 + 0.5).to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0xcc, 0xdd, 0xee]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes,
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.term_use_numeric_tails.len(), 1);
+        let tail = &events.term_use_numeric_tails[0];
+        assert_eq!(tail.term_use_xmt, 20);
+        assert_eq!(tail.term_use_count, 1);
+        assert_eq!(tail.values.len(), 8);
+        assert_eq!(tail.byte_len, 64);
+        assert_eq!(tail.inflated_offset, tail_offset as u64);
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            (tail_offset + 64) as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 3);
     }
 
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};

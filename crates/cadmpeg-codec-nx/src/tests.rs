@@ -6382,6 +6382,46 @@ fn deltas_walks_auxiliary_family_tombstones() {
 }
 
 #[test]
+fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
+    fn term_use(count: u32, xmt: u16, form: [u8; 2], value_count: usize) -> Vec<u8> {
+        let mut bytes = 41u16.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&count.to_be_bytes());
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        bytes.extend_from_slice(&form);
+        for coordinate in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&coordinate.to_be_bytes());
+        }
+        for ordinal in 0..value_count {
+            bytes.extend_from_slice(&(ordinal as f64 + 0.25).to_be_bytes());
+        }
+        bytes
+    }
+
+    let first = term_use(1, 20, *b"L?", 8);
+    let second = term_use(2, 21, *b"TF", 19);
+    let mut stream = first.clone();
+    stream.extend_from_slice(&second);
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(census.records.len(), 2);
+    assert_eq!(census.term_use_numeric_tails.len(), 2);
+    assert_eq!(census.term_use_numeric_tails[0].term_use_xmt, 20);
+    assert_eq!(census.term_use_numeric_tails[0].term_use_count, 1);
+    assert_eq!(census.term_use_numeric_tails[0].values.len(), 8);
+    assert_eq!(census.term_use_numeric_tails[1].term_use_xmt, 21);
+    assert_eq!(census.term_use_numeric_tails[1].term_use_count, 2);
+    assert_eq!(census.term_use_numeric_tails[1].values.len(), 19);
+    assert_eq!(census.bytes_decoded, stream.len());
+
+    let mut nonfinite = term_use(1, 22, *b"L?", 8);
+    nonfinite[34..42].copy_from_slice(&f64::NAN.to_be_bytes());
+    let census = crate::deltas::walk(&nonfinite);
+    assert_eq!(census.records.len(), 1);
+    assert!(census.term_use_numeric_tails.is_empty());
+    assert_eq!(census.bytes_decoded, 34);
+}
+
+#[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
         .records
@@ -10668,6 +10708,7 @@ mod golden {
         "parasolid_deltas_body_revisions",
         "parasolid_deltas_records",
         "parasolid_deltas_residual_spans",
+        "parasolid_deltas_term_use_numeric_tails",
         "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",
         "parasolid_entity_51_records",
@@ -11402,7 +11443,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 185, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 186, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

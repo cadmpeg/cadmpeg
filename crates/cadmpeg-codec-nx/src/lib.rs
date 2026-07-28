@@ -201,6 +201,12 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                         census.body_revisions.len().to_string(),
                     );
                 }
+                if !census.term_use_numeric_tails.is_empty() {
+                    attributes.insert(
+                        "records.delta.term_use_numeric_tails".to_string(),
+                        census.term_use_numeric_tails.len().to_string(),
+                    );
+                }
                 for (family, count) in census.full_counts {
                     attributes.insert(
                         format!("records.delta.full.{}", family.to_ascii_lowercase()),
