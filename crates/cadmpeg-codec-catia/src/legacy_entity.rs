@@ -14,6 +14,17 @@ pub enum LegacyTextEncoding {
     ZeroU32Length,
 }
 
+/// Schema role selecting one legacy text field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyTextRole {
+    /// Offset of the role-name length byte.
+    pub offset: usize,
+    /// Stored UTF-8 role name.
+    pub name: String,
+    /// Stored selector identity following the role name.
+    pub selector: u32,
+}
+
 /// One complete UTF-8 text field in an identity interval.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyTextField {
@@ -23,6 +34,8 @@ pub struct LegacyTextField {
     pub entity_id: u32,
     /// Text framing production.
     pub encoding: LegacyTextEncoding,
+    /// Immediately preceding length-framed role and selector.
+    pub role: Option<LegacyTextRole>,
     /// Decoded UTF-8 value.
     pub value: String,
 }
@@ -295,10 +308,63 @@ fn parse_text_fields(
                 offset,
                 entity_id,
                 encoding,
+                role: parse_text_role(data, start, offset),
                 value,
             })
         })
         .collect()
+}
+
+fn parse_text_role(
+    data: &[u8],
+    interval_start: usize,
+    text_offset: usize,
+) -> Option<LegacyTextRole> {
+    let (selector_start, selector) =
+        if text_offset >= interval_start.checked_add(5)? && data[text_offset - 5] == 0x80 {
+            (
+                text_offset - 5,
+                u32::from_le_bytes(data[text_offset - 4..text_offset].try_into().ok()?),
+            )
+        } else if text_offset >= interval_start.checked_add(2)?
+            && (0xd1..=0xe4).contains(&data[text_offset - 2])
+        {
+            (
+                text_offset - 2,
+                u32::from(data[text_offset - 2] - 0xd1)
+                    .checked_mul(256)?
+                    .checked_add(u32::from(data[text_offset - 1]))?
+                    .checked_add(1)?,
+            )
+        } else {
+            return None;
+        };
+    if selector == 0 {
+        return None;
+    }
+    let (offset, name) = (2usize..=u8::MAX as usize).find_map(|inclusive_length| {
+        let offset = selector_start.checked_sub(inclusive_length)?;
+        if offset < interval_start || usize::from(*data.get(offset)?) != inclusive_length {
+            return None;
+        }
+        let bytes = data.get(offset + 1..selector_start)?;
+        text_value(bytes)
+            .filter(|name| valid_role_name(name))
+            .map(|name| (offset, name))
+    })?;
+    Some(LegacyTextRole {
+        offset,
+        name,
+        selector,
+    })
+}
+
+fn valid_role_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters
+        .next()
+        .is_some_and(|character| character == '_' || character.is_alphabetic())
+        && characters.all(|character| character == '_' || character.is_alphanumeric())
 }
 
 fn parse_text_field(
@@ -411,6 +477,29 @@ mod tests {
             ]
         );
         assert!(fields.iter().all(|field| field.entity_id == 1));
+        assert!(fields.iter().all(|field| field.role.is_none()));
+    }
+
+    #[test]
+    fn binds_immediately_preceding_role_selectors_to_text_fields() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(&[5, b'b', b'o', b'd', b'y', 0xe1, 0x25]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[5, b'r', b'u', b'l', b'e', 0xfe]);
+        bytes.extend_from_slice(&[6, b'p', b'a', b'r', b'a', b'm', 0x80]);
+        bytes.extend_from_slice(&15108_u32.to_le_bytes());
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[5, b't', b'y', b'p', b'e', 0xfe]);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let fields = &parse_runs(&bytes)[0].text_fields;
+        let body = fields[0].role.as_ref().expect("paged role selector");
+        assert_eq!(body.name, "body");
+        assert_eq!(body.selector, 4134);
+        let parameter = fields[1].role.as_ref().expect("fixed role selector");
+        assert_eq!(parameter.name, "param");
+        assert_eq!(parameter.selector, 15108);
     }
 
     #[test]

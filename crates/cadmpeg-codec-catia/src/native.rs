@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 144;
+pub const CATIA_NATIVE_VERSION: u32 = 145;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2251,6 +2251,17 @@ pub enum CatiaLegacyTextEncoding {
     ZeroU32Length,
 }
 
+/// Schema role selecting one legacy text field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyTextRole {
+    /// Offset of the role-name length byte.
+    pub byte_offset: u64,
+    /// Stored UTF-8 role name.
+    pub name: String,
+    /// Stored selector identity following the role name.
+    pub selector: u32,
+}
+
 /// One complete legacy schema text field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaLegacyTextField {
@@ -2260,6 +2271,9 @@ pub struct CatiaLegacyTextField {
     pub entity_id: u32,
     /// Text framing production.
     pub encoding: CatiaLegacyTextEncoding,
+    /// Immediately preceding length-framed role and selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<CatiaLegacyTextRole>,
     /// Decoded UTF-8 value.
     pub value: String,
 }
@@ -2510,6 +2524,11 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                                 CatiaLegacyTextEncoding::ZeroU32Length
                             }
                         },
+                        role: field.role.map(|role| CatiaLegacyTextRole {
+                            byte_offset: role.offset as u64,
+                            name: role.name,
+                            selector: role.selector,
+                        }),
                         value: field.value,
                     })
                     .collect(),
@@ -2599,6 +2618,24 @@ fn validate_legacy_entity_runs(
                         .iter()
                         .rfind(|identity| identity.byte_offset < field.byte_offset)
                         .is_some_and(|identity| identity.entity_id == field.entity_id)
+                    && field.role.as_ref().is_none_or(|role| {
+                        role.byte_offset >= run.byte_offset
+                            && role.byte_offset < field.byte_offset
+                            && role.selector != 0
+                            && {
+                                let mut characters = role.name.chars();
+                                characters.next().is_some_and(|character| {
+                                    character == '_' || character.is_alphabetic()
+                                }) && characters.all(|character| {
+                                    character == '_' || character.is_alphanumeric()
+                                })
+                            }
+                            && run
+                                .identities
+                                .iter()
+                                .rfind(|identity| identity.byte_offset < role.byte_offset)
+                                .is_some_and(|identity| identity.entity_id == field.entity_id)
+                    })
             })
             && run.relations.iter().all(|relation| {
                 let parsed = legacy_entity::parse_relation_signature(&relation.type_signature);
