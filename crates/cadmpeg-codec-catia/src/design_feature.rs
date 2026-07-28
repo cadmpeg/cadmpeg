@@ -57,7 +57,7 @@ pub(crate) fn transfer_design_features(
             )
         })
         .collect::<HashMap<_, _>>();
-    let (candidates, blocked_parent_objects) =
+    let (candidates, cyclic_parent_objects) =
         order_design_feature_candidates(candidates, &sketch_feature_ids);
     let mut transfer = DesignFeatureTransfer::default();
 
@@ -110,7 +110,7 @@ pub(crate) fn transfer_design_features(
                     object.owner_entity_id,
                 );
                 let placement = resolved_placement.unwrap_or(SketchPlacement::Unresolved);
-                let parent = if blocked_parent_objects.contains(object.id.as_str()) {
+                let parent = if cyclic_parent_objects.contains(object.id.as_str()) {
                     None
                 } else {
                     object
@@ -180,16 +180,49 @@ fn order_design_feature_candidates<'a>(
     candidates: Vec<DesignFeatureCandidate<'a>>,
     sketch_feature_ids: &HashMap<&str, FeatureId>,
 ) -> (Vec<DesignFeatureCandidate<'a>>, HashSet<String>) {
+    let sketch_parents = candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.definition, DesignFeatureDefinition::Sketch { .. }))
+        .filter_map(|candidate| {
+            let parent = candidate.object.owner_design_object.as_deref()?;
+            sketch_feature_ids
+                .contains_key(parent)
+                .then_some((candidate.object.id.as_str(), parent))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut cyclic_parent_objects = HashSet::new();
+    for start in sketch_parents.keys().copied() {
+        let mut path = Vec::new();
+        let mut path_indices = HashMap::new();
+        let mut current = start;
+        loop {
+            if let Some(cycle_start) = path_indices.insert(current, path.len()) {
+                cyclic_parent_objects.extend(
+                    path[cycle_start..]
+                        .iter()
+                        .map(|object: &&str| (*object).to_string()),
+                );
+                break;
+            }
+            path.push(current);
+            let Some(parent) = sketch_parents.get(current).copied() else {
+                break;
+            };
+            current = parent;
+        }
+    }
+
     let mut remaining = candidates;
     let mut ordered = Vec::with_capacity(remaining.len());
-    let mut blocked_parent_objects = HashSet::new();
     while !remaining.is_empty() {
         let remaining_ids = remaining
             .iter()
             .map(|candidate| candidate.object.id.as_str())
             .collect::<HashSet<_>>();
         let next = remaining.iter().position(|candidate| {
-            if !matches!(candidate.definition, DesignFeatureDefinition::Sketch { .. }) {
+            if !matches!(candidate.definition, DesignFeatureDefinition::Sketch { .. })
+                || cyclic_parent_objects.contains(candidate.object.id.as_str())
+            {
                 return true;
             }
             candidate
@@ -199,18 +232,10 @@ fn order_design_feature_candidates<'a>(
                 .filter(|owner| sketch_feature_ids.contains_key(owner))
                 .is_none_or(|owner| !remaining_ids.contains(owner))
         });
-        let Some(next) = next else {
-            blocked_parent_objects.extend(
-                remaining
-                    .iter()
-                    .map(|candidate| candidate.object.id.clone()),
-            );
-            ordered.extend(remaining);
-            break;
-        };
+        let next = next.expect("removing every exact cycle leaves an acyclic sketch-owner graph");
         ordered.push(remaining.remove(next));
     }
-    (ordered, blocked_parent_objects)
+    (ordered, cyclic_parent_objects)
 }
 
 /// Project exact design-object membership into ordered feature source content.

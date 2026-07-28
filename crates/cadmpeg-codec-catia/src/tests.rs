@@ -7290,6 +7290,60 @@ fn cyclic_structural_sketch_ownership_does_not_create_feature_parents() {
 }
 
 #[test]
+fn sketch_descendant_of_an_owner_cycle_retains_its_acyclic_parent() {
+    let records = [
+        object_graph_record(&[0x12, 0x84, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x85, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4, 5]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "OwnerAnchor",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let by_owner = native
+        .design_objects
+        .iter()
+        .map(|object| (object.owner_entity_id, object))
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(
+        by_owner[&2].owner_design_object.as_deref(),
+        Some(by_owner[&4].id.as_str())
+    );
+    assert_eq!(
+        by_owner[&4].owner_design_object.as_deref(),
+        Some(by_owner[&5].id.as_str())
+    );
+    assert_eq!(
+        by_owner[&5].owner_design_object.as_deref(),
+        Some(by_owner[&4].id.as_str())
+    );
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    crate::design_feature::transfer_design_features(&mut ir, &native);
+
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.native_ref.as_deref().unwrap(), feature))
+        .collect::<std::collections::HashMap<_, _>>();
+    let cycle_a = features[by_owner[&4].id.as_str()];
+    let cycle_b = features[by_owner[&5].id.as_str()];
+    let descendant = features[by_owner[&2].id.as_str()];
+    assert_eq!(cycle_a.parent, None);
+    assert_eq!(cycle_b.parent, None);
+    assert_eq!(descendant.parent.as_ref(), Some(&cycle_a.id));
+    assert!(cycle_a.ordinal < descendant.ordinal);
+}
+
+#[test]
 fn equal_sketch_names_from_distinct_schema_entries_do_not_merge() {
     let records = [
         object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
