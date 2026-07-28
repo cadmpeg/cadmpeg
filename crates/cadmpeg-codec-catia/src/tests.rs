@@ -2117,7 +2117,7 @@ fn standard_catpart_with_typed_formula_inputs_and_object_payload(
     file
 }
 
-fn standard_catpart_with_formula_chain(cyclic: bool) -> Vec<u8> {
+fn standard_catpart_with_formula_chain(cyclic: bool, duplicate_output: bool) -> Vec<u8> {
     let definition = |ordinal: u32| {
         let mut bytes = vec![0x00, 0x08, 0x32];
         bytes.extend_from_slice(&ordinal.to_le_bytes());
@@ -2186,7 +2186,11 @@ fn standard_catpart_with_formula_chain(cyclic: bool) -> Vec<u8> {
     stream.extend(entity_table_record_with_definition_and_value(
         6,
         &definition(5),
-        &expression_value([16, 17, 8, 18, 10, 11]),
+        &expression_value(if duplicate_output {
+            [6, 7, 8, 9, 10, 11]
+        } else {
+            [16, 17, 8, 18, 10, 11]
+        }),
     ));
     stream.extend(parameter(7, 19, 20, 3.0));
     stream.push(0xde);
@@ -2195,7 +2199,7 @@ fn standard_catpart_with_formula_chain(cyclic: bool) -> Vec<u8> {
         empty_object(),
         empty_object(),
         empty_object(),
-        formula_object(5, 6, 7),
+        formula_object(5, 6, if duplicate_output { 4 } else { 7 }),
         empty_object(),
         empty_object(),
     ]));
@@ -10144,7 +10148,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
 fn decode_transfers_a_chained_formula_definition_once() {
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_formula_chain(false)),
+            &mut Cursor::new(standard_catpart_with_formula_chain(false, false)),
             &DecodeOptions::default(),
         )
         .expect("decode formula chain");
@@ -10162,10 +10166,26 @@ fn decode_transfers_a_chained_formula_definition_once() {
 }
 
 #[test]
+fn decode_rejects_multiple_formula_definitions_for_one_output() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_chain(false, true)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode duplicate formula output");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed formula input")
+    };
+    assert_eq!(input.name, "Input");
+    assert!(input.dependencies.is_empty());
+}
+
+#[test]
 fn decode_rejects_a_cyclic_formula_component() {
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_formula_chain(true)),
+            &mut Cursor::new(standard_catpart_with_formula_chain(true, false)),
             &DecodeOptions::default(),
         )
         .expect("decode cyclic formula component");

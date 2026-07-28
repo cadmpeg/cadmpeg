@@ -31,6 +31,17 @@ pub(crate) fn transfer_parameters(
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting = BTreeSet::<ParameterId>::new();
     let mut programs = Vec::<FormulaProgramCandidate>::new();
+    let formula_definition_counts = native
+        .entity_records
+        .iter()
+        .filter_map(|entity| entity.formula_relation.as_ref()?.parameter.as_deref())
+        .fold(
+            HashMap::<ParameterId, usize>::new(),
+            |mut counts, parameter| {
+                *counts.entry(neutral_parameter_id(parameter)).or_default() += 1;
+                counts
+            },
+        );
     let legacy_transfer = collect_legacy_parameters(native, &mut candidates);
 
     for formula_entity in &native.entity_records {
@@ -195,6 +206,12 @@ pub(crate) fn transfer_parameters(
     for id in &conflicting {
         candidates.remove(id);
     }
+    candidates.retain(|id, candidate| {
+        match (candidate.formula_output, formula_definition_counts.get(id)) {
+            (true, Some(count)) => *count == 1,
+            (false, _) | (true, None) => true,
+        }
+    });
     loop {
         let invalid = candidates
             .iter()
@@ -236,17 +253,7 @@ pub(crate) fn transfer_parameters(
         .values()
         .filter_map(|candidate| candidate.parameter.native_ref.clone())
         .collect::<HashSet<_>>();
-    let mut programs_by_output = BTreeMap::<ParameterId, Vec<FormulaProgramCandidate>>::new();
     for program in programs {
-        programs_by_output
-            .entry(program.output.clone())
-            .or_default()
-            .push(program);
-    }
-    for programs in programs_by_output.into_values() {
-        let [program] = programs.as_slice() else {
-            continue;
-        };
         if candidates
             .get(&program.output)
             .is_some_and(|candidate| candidate.formula_output)
@@ -255,8 +262,8 @@ pub(crate) fn transfer_parameters(
                 .iter()
                 .all(|input| candidates.contains_key(input))
         {
-            consumed_entity_records.insert(program.formula_entity.clone());
-            consumed_entity_records.insert(program.expression_entity.clone());
+            consumed_entity_records.insert(program.formula_entity);
+            consumed_entity_records.insert(program.expression_entity);
         }
     }
     let consumed_object_records = consumed_entity_records
