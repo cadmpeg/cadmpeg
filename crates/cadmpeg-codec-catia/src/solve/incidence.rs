@@ -936,6 +936,32 @@ impl IncidenceComponentSearch<'_> {
                 .map(|&edge| Some((edge, self.assignment[edge]?)))
                 .collect::<Option<Vec<_>>>()
                 .expect("every component edge is assigned");
+            if !quotient_states.is_empty() {
+                let selected_candidates = self
+                    .choices
+                    .iter()
+                    .enumerate()
+                    .map(|(edge, candidates)| {
+                        self.assignment[edge].map_or_else(|| candidates.clone(), |pair| vec![pair])
+                    })
+                    .collect::<Vec<_>>();
+                let point_count = self.degrees.first().map_or(0, Vec::len);
+                let viable = quotient_states.iter().any(|(quotient, _)| {
+                    let mut quotient = quotient.clone();
+                    quotient.point_assignment_exists(
+                        point_count,
+                        &selected_candidates,
+                        Some(self.budget),
+                    )
+                });
+                if self.budget.exhausted.get() {
+                    self.exhausted = true;
+                    return;
+                }
+                if !viable {
+                    return;
+                }
+            }
             if self
                 .solution_filter
                 .is_some_and(|filter| !filter(&solution))
@@ -1440,28 +1466,10 @@ where
                 })
                 .collect();
         }
-        let mut complete = combined
+        combined
             .into_iter()
             .map(|assignment| assignment.into_iter().collect::<Option<Vec<_>>>())
-            .collect::<Option<Vec<_>>>()?;
-        if mesh_assignments.is_none() {
-            if let Some(quotient) = mesh_quotient {
-                complete.retain(|pairs| {
-                    let singleton = pairs
-                        .iter()
-                        .copied()
-                        .map(|pair| vec![pair])
-                        .collect::<Vec<_>>();
-                    let mut quotient = quotient.clone();
-                    quotient.point_assignment_exists(point_count, &singleton, Some(&budget))
-                });
-                if budget.exhausted.get() {
-                    exhausted = true;
-                    return None;
-                }
-            }
-        }
-        Some(complete)
+            .collect()
     })();
     match solution {
         Some(solution) => IncidenceSolve::Solved(solution),

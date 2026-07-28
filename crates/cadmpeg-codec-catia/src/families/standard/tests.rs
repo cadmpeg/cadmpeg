@@ -1501,6 +1501,52 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
 }
 
 #[test]
+fn incidence_components_filter_quotient_impossible_solutions_before_the_solution_limit() {
+    let point_count = 257;
+    let mut choices = vec![(0..point_count)
+        .map(|point| [point, point])
+        .collect::<Vec<_>>()];
+    choices.extend((0..point_count - 1).map(|point| vec![[point, point]]));
+    let edge_faces = (0..point_count)
+        .map(|face| [face, face])
+        .collect::<Vec<_>>();
+
+    let mut union = UnionFind::new(point_count * 2);
+    let mut domains = Vec::with_capacity(point_count * 2);
+    let mut members = Vec::with_capacity(point_count * 2);
+    for edge in 0..point_count {
+        union.union(edge * 2, edge * 2 + 1);
+        let domain = if edge == 0 {
+            Arc::new((0..point_count).collect())
+        } else {
+            Arc::new(HashSet::from([edge - 1]))
+        };
+        domains.extend([domain.clone(), domain]);
+        members.extend([vec![edge * 2, edge * 2 + 1], Vec::new()]);
+    }
+    let quotient = MeshQuotient {
+        union,
+        domains,
+        members,
+    };
+
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        point_count,
+        point_count,
+        None,
+        Some(&quotient),
+        None,
+        &|_| true,
+    )
+    .expect("late quotient-valid component solution");
+
+    assert_eq!(solutions.len(), 1);
+    assert_eq!(solutions[0][0], [point_count - 1, point_count - 1]);
+}
+
+#[test]
 fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
     use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
 
@@ -4257,6 +4303,7 @@ mod record_decoders {
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::{HashMap, HashSet};
 
+    use crate::families::standard::records::FreeformFaceBounds;
     use crate::tests::{
         a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
         le_f32, le_f64, standard_quad_topology_stream,
@@ -4324,6 +4371,12 @@ mod record_decoders {
                 target: 0,
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 0.999_999),
+                bounds: FreeformFaceBounds {
+                    aabb_center: [0.0; 3],
+                    aabb_half_extents: [1.0; 3],
+                    sphere_center: [0.0; 3],
+                    sphere_radius: 1.0,
+                },
             },
         )
         .expect("near-unit plane carrier");
@@ -4338,6 +4391,12 @@ mod record_decoders {
                 target: 0,
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 0.0),
+                bounds: FreeformFaceBounds {
+                    aabb_center: [0.0; 3],
+                    aabb_half_extents: [1.0; 3],
+                    sphere_center: [0.0; 3],
+                    sphere_radius: 1.0,
+                },
             },
         )
         .is_none());
@@ -4854,6 +4913,19 @@ mod record_decoders {
         assert_eq!(
             planes[2].origin,
             Point3::new(f64::from(5.2e-7f32), f64::from(1.6e-7f32), 50.0)
+        );
+        assert_eq!(
+            planes[2].bounds,
+            FreeformFaceBounds {
+                aabb_center: [0.0, 0.0, 50.0],
+                aabb_half_extents: [2.5, 2.5, 0.0],
+                sphere_center: [
+                    f64::from(5.2e-7f32),
+                    f64::from(1.6e-7f32),
+                    50.0,
+                ],
+                sphere_radius: 2.5,
+            }
         );
     }
 
