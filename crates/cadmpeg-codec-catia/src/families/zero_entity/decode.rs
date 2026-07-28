@@ -15,9 +15,7 @@ use crate::families::FamilyOutput;
 
 pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutput> {
     let surfaces = crate::families::zero_entity::records::zero_entity_surfaces(&scan.data);
-    let points = crate::families::zero_entity::graph::unframed_vertices(&scan.data);
-    let topology_records = crate::families::zero_entity::graph::parse(&scan.data).is_some();
-    if surfaces.is_empty() && points.is_empty() && !topology_records {
+    if surfaces.is_empty() {
         return None;
     }
 
@@ -32,7 +30,7 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
         "catia:payload:unknown#zero-entity",
     );
 
-    for (index, surface) in surfaces.iter().enumerate() {
+    for (index, surface) in surfaces.into_iter().enumerate() {
         let id = SurfaceId(format!("catia:zero-entity:surf#{index}"));
         annotate(
             &mut annotations,
@@ -44,30 +42,25 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: surface.geometry.clone(),
+            geometry: surface.geometry,
             source_object: None,
         });
     }
 
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
-    let geometry_transferred = !ir.model.surfaces.is_empty();
-    let message = if topology_records {
-        "Zero-entity coordinate rows and surface carriers were found, but body/shell membership and the support-occurrence registries are unresolved; no neutral topology was transferred."
-    } else {
-        "Zero-entity coordinate rows or surface carriers were found, but no complete face/loop/coedge/edge/vertex graph was present."
-    };
     Some(FamilyOutput {
         ir,
         report: DecodeReport {
             format: "catia".to_string(),
             container_only: false,
-            geometry_transferred,
+            geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
             losses: vec![LossNote {
                 code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
                 category: LossCategory::Topology,
                 severity: Severity::Blocking,
-                message: message.to_string(),
+                message: "Zero-entity surface carriers were decoded, but body/shell membership and the support-occurrence registries are unresolved; no neutral topology was transferred."
+                    .to_string(),
                 provenance: None,
             }],
             notes: container::summarize(scan).notes,

@@ -3310,19 +3310,6 @@ fn e5_torus_topology_stream() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn zero_entity_record(kind: u8, mut tail: Vec<u8>) -> Vec<u8> {
-    let length = 12 + tail.len();
-    let mut record = vec![
-        0xa9,
-        0x03,
-        kind,
-        u8::try_from(length - 12).expect("length code"),
-    ];
-    record.resize(12, 0);
-    record.append(&mut tail);
-    record
-}
-
 pub(crate) fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
     bytes.extend_from_slice(&[0xb5, 0x03, class, payload.len() as u8]);
     bytes.extend_from_slice(&id.to_le_bytes());
