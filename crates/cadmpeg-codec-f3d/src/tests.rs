@@ -20889,6 +20889,54 @@ fn browser_body_appearance_requires_head_and_node_entity_agreement() {
 }
 
 #[test]
+fn browser_body_appearance_joins_through_browser_node_guid() {
+    let mut bytes = vec![0u8; 8];
+    let records = [
+        (
+            "1b5e92d0-eade-40d5-ab4d-35af2eb411b4",
+            "674E6024-4294-4322-B572-A88F64F0DA77_Post2015_Post2015",
+            37_251u64,
+        ),
+        (
+            "a349885b-a9b6-4b79-a9c9-7976717ee6be",
+            "4218E352-E25F-423E-8DCD-527E5148C2F6_Post2015_Post2015",
+            37_441u64,
+        ),
+    ];
+    for (node_guid, visual, entity_suffix) in records {
+        for value in [
+            "e966e81d-2581-4d41-821d-839938974425",
+            node_guid,
+            "DE897CF7-F483-4D31-A2D8-41671FE36D3D",
+            "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+            "PrismMaterial-018",
+            "ba2d3026-32c4-4584-b0e1-a738e387fa35",
+            visual,
+            "BA5EE55E-9982-449B-9D66-9F036540E140",
+            "Prism-090",
+        ] {
+            bytes.extend(lp_utf16_bytes(value));
+        }
+        bytes.extend(lp_utf16_bytes(node_guid));
+        bytes.push(0);
+        bytes.extend([0x01, 0x01]);
+        bytes.extend(entity_suffix.to_le_bytes());
+    }
+
+    assert_eq!(
+        crate::materials::browser_body_appearances(&bytes),
+        [
+            (37_251, "674E6024-4294-4322-B572-A88F64F0DA77".to_string()),
+            (37_441, "4218E352-E25F-423E-8DCD-527E5148C2F6".to_string()),
+        ]
+    );
+    assert!(
+        crate::materials::face_appearance_assignments(&bytes).is_empty(),
+        "a body-owned visual marker is not also a face assignment"
+    );
+}
+
+#[test]
 fn face_appearance_assignment_joins_face_guid_to_visual_guid() {
     let mut bytes = vec![0u8; 8];
     bytes.extend(lp_utf16_bytes("cd92d0f6-5b31-4bbf-84ae-4611f435537e"));

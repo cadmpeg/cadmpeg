@@ -845,9 +845,17 @@ fn decode_face_appearance_assignments(
 pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
     const MARKER: &str = "BA5EE55E-9982-449B-9D66-9F036540E140";
     let strings = lp_utf16_strings(bytes);
+    let browser_nodes = crate::design::decode::body::browser_node_entities(bytes);
     let mut out = Vec::new();
     for (index, (_, value)) in strings.iter().enumerate() {
         if value != MARKER || index < 2 {
+            continue;
+        }
+        // A body-presentation record also terminates at this marker, but its
+        // bounded prefix contains the GUID of a browser node. That relation
+        // assigns the record to a body and excludes the adjacent record GUID
+        // from the face-identity grammar.
+        if body_node_candidate(&strings, index, &browser_nodes).is_some() {
             continue;
         }
         let (_, visual) = &strings[index - 1];
@@ -900,7 +908,61 @@ pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
         };
         out.push(entity_suffix);
     }
+    out.extend(browser_node_body_appearances(bytes));
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|binding| seen.insert(binding.clone()));
     out
+}
+
+/// Decode body-presentation records that identify their body through a
+/// browser-node GUID rather than a class-299 head.
+///
+/// The terminating visual marker is shared with face-presentation records.
+/// A record is body-owned only when exactly one GUID in its bounded prefix
+/// resolves through a browser-node record to one Design entity suffix.
+fn browser_node_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
+    const VISUAL_MARKER: &str = "BA5EE55E-9982-449B-9D66-9F036540E140";
+    let nodes = crate::design::decode::body::browser_node_entities(bytes);
+    if nodes.is_empty() {
+        return Vec::new();
+    }
+    let strings = lp_utf16_strings(bytes);
+    let mut out = Vec::new();
+    for (index, (_, marker)) in strings.iter().enumerate() {
+        if marker != VISUAL_MARKER || index == 0 {
+            continue;
+        }
+        let visual = &strings[index - 1].1;
+        if !is_guid_prefix(visual) {
+            continue;
+        }
+        if let Some(entity_suffix) = body_node_candidate(&strings, index, &nodes) {
+            out.push((entity_suffix, visual[..36].to_string()));
+        }
+    }
+    out
+}
+
+fn body_node_candidate(
+    strings: &[(usize, String)],
+    marker_index: usize,
+    nodes: &std::collections::HashMap<String, u64>,
+) -> Option<u64> {
+    const APPEARANCE_MARKER: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
+    let marker = strings[..marker_index]
+        .iter()
+        .rposition(|(_, value)| value == APPEARANCE_MARKER)?;
+    let start = marker.saturating_sub(3);
+    let candidates = strings[start..marker_index.saturating_sub(1)]
+        .iter()
+        .filter_map(|(_, candidate)| nodes.get(&candidate.to_ascii_lowercase()).copied())
+        .collect::<std::collections::HashSet<_>>();
+    (candidates.len() == 1).then(|| {
+        *candidates
+            .iter()
+            .next()
+            .expect("one browser-node candidate was established")
+    })
 }
 
 /// Parse the appearance fields of one browser body record whose marker GUID

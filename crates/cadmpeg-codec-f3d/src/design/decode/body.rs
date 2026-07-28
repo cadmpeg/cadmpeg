@@ -583,9 +583,52 @@ struct BrowserNodeVisibility {
 }
 
 fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, BrowserNodeVisibility> {
+    browser_node_records(bytes)
+        .into_iter()
+        .map(|record| {
+            (
+                record.entity_suffix,
+                BrowserNodeVisibility {
+                    byte_offset: record.byte_offset,
+                    hidden: record.hidden,
+                },
+            )
+        })
+        .collect()
+}
+
+/// Map each browser-node GUID to its Design entity suffix.
+///
+/// The GUID is the stable join between browser presentation records; the
+/// adjacent entity suffix joins the node back to the Design body map.
+pub(crate) fn browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
+    let mut entities = HashMap::new();
+    let mut ambiguous = std::collections::HashSet::new();
+    for record in browser_node_records(bytes) {
+        let key = record.guid.to_ascii_lowercase();
+        if entities
+            .insert(key.clone(), record.entity_suffix)
+            .is_some_and(|previous| previous != record.entity_suffix)
+        {
+            ambiguous.insert(key);
+        }
+    }
+    entities.retain(|guid, _| !ambiguous.contains(guid));
+    entities
+}
+
+#[derive(Debug, Clone)]
+struct BrowserNodeRecord {
+    guid: String,
+    entity_suffix: u64,
+    byte_offset: u64,
+    hidden: bool,
+}
+
+fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
     const GUID_CHARS: usize = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
-    let mut out = HashMap::new();
+    let mut out = Vec::new();
     let mut at = 0usize;
     while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
         if read_u32(bytes, at) != Some(GUID_CHARS as u32)
@@ -597,13 +640,12 @@ fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, BrowserNodeVisibility
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
             if let (flag @ (0 | 1), Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
-                out.insert(
-                    member,
-                    BrowserNodeVisibility {
-                        byte_offset: flag_at as u64,
-                        hidden: flag == 1,
-                    },
-                );
+                out.push(BrowserNodeRecord {
+                    guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
+                    entity_suffix: member,
+                    byte_offset: flag_at as u64,
+                    hidden: flag == 1,
+                });
             }
         }
         at += 1;
