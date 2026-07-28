@@ -1756,6 +1756,9 @@ fn attach_standard_topology(
         .collect::<Option<Vec<_>>>();
     let vertex_roster =
         crate::families::standard::records::standard_vertex_roster(source, ir.model.points.len());
+    let allocation_endpoint_points = vertex_roster
+        .as_ref()
+        .map(|roster| standard_successor_endpoint_points(&supports, roster));
     let roster_endpoint_pairs = vertex_roster.as_ref().map(|roster| {
         let point_by_identity = roster
             .iter()
@@ -1831,6 +1834,9 @@ fn attach_standard_topology(
                 *options = vec![*pair];
             }
         }
+    }
+    if let (Some(options), Some(points)) = (&mut endpoint_options, &allocation_endpoint_points) {
+        corroborate_successor_endpoint_points(options, points);
     }
     let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
         Some(pairs) => {
@@ -3236,6 +3242,36 @@ pub(crate) fn standard_successor_endpoint_pairs(
         .collect()
 }
 
+pub(crate) fn standard_successor_endpoint_points(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    vertex_roster: &[u32],
+) -> Vec<Option<usize>> {
+    let point_by_identity = vertex_roster
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(point, identity)| (identity, point))
+        .collect::<HashMap<_, _>>();
+    supports
+        .iter()
+        .map(|support| point_by_identity.get(&support.tag.checked_add(1)?).copied())
+        .collect()
+}
+
+pub(crate) fn corroborate_successor_endpoint_points(
+    options: &mut [Vec<[usize; 2]>],
+    points: &[Option<usize>],
+) {
+    for (options, point) in options.iter_mut().zip(points) {
+        let Some(point) = point else {
+            continue;
+        };
+        if options.iter().any(|pair| pair.contains(point)) {
+            options.retain(|pair| pair.contains(point));
+        }
+    }
+}
+
 pub(crate) fn unique_native_identity_points(
     identities: &[u32],
     coordinates: &[[f64; 3]],
@@ -4525,14 +4561,15 @@ mod route_tests {
     use crate::families::standard::decode::{
         bind_ordered_standard_curve_branches, build_standard_edge_curve,
         circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
-        combine_propagated_endpoint_pairs, include_native_endpoint_pairs,
-        intersection_line_direction, merge_native_endpoint_evidence, point_on_known_surface,
-        point_on_standard_face, resolve_standard_endpoint_pairs, retry_rejected_mesh_solution,
-        standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_native_support_endpoint_pair, standard_pcurve_geometry,
-        standard_plane_normal_from_adjacent_circle_carriers,
+        combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
+        include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
+        point_on_known_surface, point_on_standard_face, resolve_standard_endpoint_pairs,
+        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
+        standard_circle_param_range, standard_native_support_endpoint_pair,
+        standard_pcurve_geometry, standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
-        standard_successor_endpoint_pairs, unique_native_identity_points, StandardEdgeSupport,
+        standard_successor_endpoint_pairs, standard_successor_endpoint_points,
+        unique_native_identity_points, StandardEdgeSupport,
     };
 
     use crate::families::standard::records::{
@@ -5411,6 +5448,45 @@ mod route_tests {
         assert_eq!(
             standard_successor_endpoint_pairs(&supports, &[99, 101, 102, 202]),
             [Some([1, 2]), None]
+        );
+    }
+
+    #[test]
+    fn standard_edge_allocation_binds_one_present_successor_vertex() {
+        let supports = [
+            StandardCurveSupport {
+                pos: 8,
+                tag: 100,
+                faces: [1, 2],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+            StandardCurveSupport {
+                pos: 9,
+                tag: u32::MAX,
+                faces: [2, 3],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+        ];
+
+        assert_eq!(
+            standard_successor_endpoint_points(&supports, &[99, 101, 202]),
+            [Some(1), None]
+        );
+    }
+
+    #[test]
+    fn lone_successor_vertex_requires_geometric_corroboration() {
+        let mut options = [
+            vec![[2, 4], [2, 5], [3, 5]],
+            vec![[7, 8], [7, 9]],
+            vec![[10, 11]],
+        ];
+
+        corroborate_successor_endpoint_points(&mut options, &[Some(5), Some(6), None]);
+
+        assert_eq!(
+            options,
+            [vec![[2, 5], [3, 5]], vec![[7, 8], [7, 9]], vec![[10, 11]],]
         );
     }
 
