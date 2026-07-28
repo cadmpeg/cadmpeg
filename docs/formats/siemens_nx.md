@@ -1293,7 +1293,16 @@ live = partition ∪ delta_full − tombstones
 - A full record with `xmt ∉ partition` (high range) adds a new entity.
 - The deltas stream adds entities through explicit high-range records.
 
-BODY (`00 0c`, xmt=3) records delimit body revisions. The record prefix is `type:u16 BE`, XMT `3`, `node_id:u32 BE`, and eight ordered status-framed XMT references. Its bounded state tail extends to the next admitted deltas event or the end of the inflated stream. `node_id` is a monotonic per-body revision counter. The final validated BODY envelope begins the current revision; preceding fixed records, tombstones, and procedural records are historical and do not contribute to the current image. A partition containing a validated body-shape SHELL is the authoritative current topology image. BODY through REGION records in its paired deltas stream do not replace or delete that topology image.
+BODY (`00 0c`) records delimit body revisions. The record prefix is
+`type:u16 BE, xmt, node_id:u32 BE, ref_status[8]`; `xmt` is non-null and all
+reference statuses are `01`. Its bounded state tail extends to the next
+admitted deltas event or the end of the inflated stream. `node_id` is a
+monotonic per-body revision counter. The final validated BODY envelope begins
+the current revision; preceding fixed records, tombstones, and procedural
+records are historical and do not contribute to the current image. A partition
+containing a validated body-shape SHELL is the authoritative current topology
+image. BODY through REGION records in its paired deltas stream do not replace
+or delete that topology image.
 
 `RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table is a little-endian `count:u32` followed by exactly `count` ordered `object_id:u32` words. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 

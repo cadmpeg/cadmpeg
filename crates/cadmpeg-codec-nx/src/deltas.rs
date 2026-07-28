@@ -41,6 +41,8 @@ pub struct Tombstone {
 /// One deltas BODY revision envelope.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BodyRevision {
+    /// Stream-local BODY XMT identity.
+    pub xmt: u32,
     /// Monotonic kernel revision identity.
     pub node_id: u32,
     /// Eight ordered BODY references decoded from status-framed XMT fields.
@@ -1772,7 +1774,7 @@ fn has_shareable_terminal(record: &Record) -> bool {
 
 fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
     let (xmt, consumed) = read_xmt(stream, offset + 2)?;
-    (xmt == 3).then_some(())?;
+    (xmt > 1).then_some(())?;
     let node_id_at = offset + 2 + consumed;
     let node_id = be::u32_at(stream, node_id_at)?;
     let mut at = node_id_at + 4;
@@ -1785,6 +1787,7 @@ fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
         *reference = value;
     }
     Some(BodyRevision {
+        xmt,
         node_id,
         references,
         offset,

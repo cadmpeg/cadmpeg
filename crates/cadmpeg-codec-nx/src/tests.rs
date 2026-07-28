@@ -7215,7 +7215,7 @@ fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
 
 #[test]
 fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
-    let mut bytes = vec![0, 12, 0, 3];
+    let mut bytes = vec![0, 12, 3, 0x10];
     bytes.extend_from_slice(&223u32.to_be_bytes());
     bytes.extend_from_slice(&[0xe3, 0xbf, 0, 1, 1]);
     for reference in [6u16, 1, 1, 1, 1, 1, 1] {
@@ -7228,6 +7228,7 @@ fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
 
     assert!(census.records.is_empty());
     assert_eq!(census.body_revisions.len(), 1);
+    assert_eq!(census.body_revisions[0].xmt, 784);
     assert_eq!(census.body_revisions[0].node_id, 223);
     assert_eq!(
         census.body_revisions[0].references,

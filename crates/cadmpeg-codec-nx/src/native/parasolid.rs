@@ -57,6 +57,8 @@ pub struct ParasolidDeltasBodyRevision {
     pub id: String,
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
+    /// Stream-local BODY XMT identity.
+    pub xmt: u32,
     /// Monotonic kernel revision identity.
     pub node_id: u32,
     /// Eight ordered BODY references.
@@ -460,6 +462,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     revision.offset, revision.node_id
                 ),
                 stream_ordinal: stream_ordinal as u32,
+                xmt: revision.xmt,
                 node_id: revision.node_id,
                 references: revision.references,
                 byte_len: (revision.end - revision.offset) as u64,
@@ -2053,6 +2056,7 @@ mod tests {
         let events = super::parasolid_deltas_events(&streams);
 
         assert_eq!(events.body_revisions.len(), 1);
+        assert_eq!(events.body_revisions[0].xmt, 3);
         assert_eq!(events.body_revisions[0].node_id, 9);
         assert_eq!(
             events.body_revisions[0].references,
