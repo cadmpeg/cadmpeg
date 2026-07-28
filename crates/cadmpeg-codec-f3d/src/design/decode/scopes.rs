@@ -13,10 +13,10 @@ use crate::records::{
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement,
     DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignEdgeFlangeOperation,
     DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudeStart,
-    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletGroup,
-    DesignFixedFilletParameters, DesignHemOperation, DesignMoveOperation, DesignObjectKind,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation,
-    DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
+    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation, DesignMoveOperation,
+    DesignObjectKind, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignScaleOperation, DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -1040,16 +1040,27 @@ pub(crate) fn exact_fixed_chamfer_parameters(
                 .then_some((*record_index, scalar))
         })
         .collect::<Vec<_>>();
-    let [(distance_record_index, distance)] = lanes.as_slice() else {
-        return None;
-    };
-    if distance.ordinal != 0 || distance.value <= 0.0 {
+    if !(1..=2).contains(&lanes.len())
+        || lanes
+            .iter()
+            .enumerate()
+            .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
+        || lanes.iter().any(|(_, scalar)| scalar.value <= 0.0)
+    {
         return None;
     }
-    Some(DesignFixedChamferParameters {
-        distance: distance.value,
-        distance_record_index: *distance_record_index,
-        distance_offset: distance.value_offset,
+    let mut distances =
+        lanes
+            .into_iter()
+            .map(|(record_index, scalar)| DesignFixedChamferDistance {
+                value: scalar.value,
+                record_index,
+                value_offset: scalar.value_offset,
+            });
+    let first = distances.next()?;
+    Some(match distances.next() {
+        Some(second) => DesignFixedChamferParameters::TwoDistances { first, second },
+        None => DesignFixedChamferParameters::EqualDistance { distance: first },
     })
 }
 

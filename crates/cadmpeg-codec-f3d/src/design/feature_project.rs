@@ -2032,6 +2032,19 @@ fn project_fixed_chamfer(
     let [group] = groups.as_slice() else {
         return None;
     };
+    let spec = match fixed {
+        crate::records::DesignFixedChamferParameters::EqualDistance { distance } => {
+            ChamferSpec::Distance {
+                distance: Length(distance.value * 10.0),
+            }
+        }
+        crate::records::DesignFixedChamferParameters::TwoDistances { first, second } => {
+            ChamferSpec::TwoDistances {
+                first: Length(first.value * 10.0),
+                second: Length(second.value * 10.0),
+            }
+        }
+    };
     Some(FeatureDefinition::Chamfer {
         groups: vec![ChamferGroup {
             edges: resolved_edge_group(
@@ -2043,9 +2056,7 @@ fn project_fixed_chamfer(
                 &neutral_feature_id(scope),
                 None,
             ),
-            spec: ChamferSpec::Distance {
-                distance: Length(fixed.distance * 10.0),
-            },
+            spec,
         }],
         flip_direction: false,
     })

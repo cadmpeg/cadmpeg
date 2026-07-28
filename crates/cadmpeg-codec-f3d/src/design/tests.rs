@@ -3932,10 +3932,37 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     chamfer_scope.reference_members = vec![86];
     assert_eq!(
         exact_fixed_chamfer_parameters(&bytes, &chamfer_scope),
-        Some(DesignFixedChamferParameters {
-            distance: 0.04,
-            distance_record_index: 86,
-            distance_offset: (chamfer_scalar_start + 40) as u64,
+        Some(DesignFixedChamferParameters::EqualDistance {
+            distance: crate::records::DesignFixedChamferDistance {
+                value: 0.04,
+                record_index: 86,
+                value_offset: (chamfer_scalar_start + 40) as u64,
+            },
+        })
+    );
+    let second_chamfer_scalar_start = bytes.len();
+    let mut second_chamfer_scalar = chamfer_scalar[..104].to_vec();
+    second_chamfer_scalar[7..11].copy_from_slice(&96u32.to_le_bytes());
+    second_chamfer_scalar[35] = 1;
+    second_chamfer_scalar[40..48].copy_from_slice(&0.08f64.to_le_bytes());
+    second_chamfer_scalar.extend_from_slice(&3u32.to_le_bytes());
+    second_chamfer_scalar.extend_from_slice(b"261");
+    second_chamfer_scalar.extend_from_slice(&96u32.to_le_bytes());
+    bytes.extend_from_slice(&second_chamfer_scalar);
+    chamfer_scope.reference_members = vec![86, 96];
+    assert_eq!(
+        exact_fixed_chamfer_parameters(&bytes, &chamfer_scope),
+        Some(DesignFixedChamferParameters::TwoDistances {
+            first: crate::records::DesignFixedChamferDistance {
+                value: 0.04,
+                record_index: 86,
+                value_offset: (chamfer_scalar_start + 40) as u64,
+            },
+            second: crate::records::DesignFixedChamferDistance {
+                value: 0.08,
+                record_index: 96,
+                value_offset: (second_chamfer_scalar_start + 40) as u64,
+            },
         })
     );
 

@@ -956,15 +956,33 @@ pub struct DesignCircularPatternConstruction {
     pub selection_record_index: u32,
 }
 
-/// Exact fixed scalar lane carried by an equal-distance Chamfer scope.
+/// Exact fixed scalar lanes carried by a Chamfer scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignFixedChamferParameters {
-    /// Positive equal distance in source centimetres.
-    pub distance: f64,
-    /// Referenced distance scalar record.
-    pub distance_record_index: u32,
-    /// Byte offset of the distance scalar.
-    pub distance_offset: u64,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignFixedChamferParameters {
+    /// One equal setback distance applies to both incident faces.
+    EqualDistance {
+        /// Equal setback distance.
+        distance: DesignFixedChamferDistance,
+    },
+    /// The two incident faces have independently oriented setback distances.
+    TwoDistances {
+        /// Setback on the first incident face.
+        first: DesignFixedChamferDistance,
+        /// Setback on the second incident face.
+        second: DesignFixedChamferDistance,
+    },
+}
+
+/// One fixed Chamfer distance lane and its source provenance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedChamferDistance {
+    /// Positive distance in source centimetres.
+    pub value: f64,
+    /// Referenced scalar record.
+    pub record_index: u32,
+    /// Byte offset of the scalar.
+    pub value_offset: u64,
 }
 
 /// Exact fixed construction carried by a Loft or Sweep scope.
