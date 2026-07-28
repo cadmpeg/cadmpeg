@@ -2110,7 +2110,9 @@ fn fixed_layout(
                 references.push(reference);
             }
             Token::Tolerance => {
-                be::f64_at(stream, at)?.is_finite().then_some(())?;
+                let tolerance = be::f64_at(stream, at)?;
+                (tolerance.is_finite() && (kind != 16 || tolerance.abs() >= 1.0e-100))
+                    .then_some(())?;
                 canonical_bytes.extend_from_slice(stream.get(at..at + 8)?);
                 at += 8;
             }

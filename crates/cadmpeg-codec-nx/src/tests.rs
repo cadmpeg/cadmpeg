@@ -6571,6 +6571,32 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
 }
 
 #[test]
+fn deltas_rejects_denormal_edge_tolerance_payload_coincidences() {
+    fn edge(tolerance: f64) -> Vec<u8> {
+        let mut bytes = 16u16.to_be_bytes().to_vec();
+        bytes.extend(encoded_xmt(20));
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend(encoded_xmt(1));
+        bytes.push(1);
+        bytes.extend_from_slice(&tolerance.to_be_bytes());
+        for reference in [2u32, 3, 4, 5, 6, 7, 8] {
+            bytes.extend(encoded_xmt(reference));
+            bytes.push(1);
+        }
+        bytes
+    }
+
+    let valid = edge(1.0e-8);
+    let census = crate::deltas::walk(&valid);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 16);
+    assert_eq!(census.bytes_decoded, valid.len());
+
+    let denormal = edge(1.0e-120);
+    assert!(crate::deltas::walk(&denormal).records.is_empty());
+}
+
+#[test]
 fn deltas_walks_complete_intersection_auxiliary_records() {
     let source = charted_intersection_curve_topology_partition_stream();
     let blend_source = blend_bound_charted_intersection_curve_stream();
