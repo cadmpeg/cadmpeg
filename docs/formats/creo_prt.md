@@ -1466,13 +1466,13 @@ stored endpoint roles. A nonzero sense or a non-arc entity does not satisfy
 either form.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
-line vertical. A separate sense-`2` or sense-`3` solver operand or a sense-zero
-type-35 target whose other operand resolves to a point locus establishes the
-line role when that entity's geometry remains native. Other senses select a
-locus and do not define an entity-level orientation constraint.
-The corroborating incidence establishes this operand role independently of its
-solver activity; disabling its equation does not change the referenced entity
-family.
+line vertical. The unary incidence establishes the referenced entity's line
+family independently of its solver activity. A separate sense-`2` or sense-`3`
+solver operand or a sense-zero type-35 target whose other operand resolves to a
+point locus also establishes the line role when that entity's geometry remains
+native. Other senses select a locus and do not define an entity-level
+orientation constraint. Disabling the unary equation does not change the
+referenced entity family.
 Stored horizontal/vertical selectors and unique type-one/type-two incidences
 define the line's held `v`/`u` coordinate, respectively. For type three or type
 nine, a selected point on such a line inherits that held coordinate from either

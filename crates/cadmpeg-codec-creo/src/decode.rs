@@ -11726,6 +11726,14 @@ fn solver_only_section_entity_family(
         evidence.insert(SectionEntityIncidenceFamily::Circular);
     }
     if complete_section_skamps(definition).any(|skamp| {
+        matches!(
+            (skamp.kind, skamp.items.as_slice()),
+            (1 | 2, [item]) if item.entity_id == entity_id && item.sense == 0
+        )
+    }) {
+        evidence.insert(SectionEntityIncidenceFamily::Line);
+    }
+    if complete_section_skamps(definition).any(|skamp| {
         let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
             return false;
         };

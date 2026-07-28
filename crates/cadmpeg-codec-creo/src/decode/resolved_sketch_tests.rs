@@ -4268,6 +4268,55 @@ fn saved_line_joins_through_order_table() {
     let family_relations = solver_families.relations.as_mut().expect("relations");
     family_relations.skamps = vec![crate::feature::FeatureSkamp {
         id: 6,
+        kind: 1,
+        flags: 0,
+        status: 0,
+        items: vec![crate::feature::FeatureSkampItem {
+            entity_id: 99,
+            sense: 0,
+        }],
+        offset: 32,
+    }];
+    assert_eq!(
+        solver_only_section_entity_family(&solver_families, 99),
+        Some(SectionEntityIncidenceFamily::Line)
+    );
+    let solver_geometry = BTreeMap::from([(
+        SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+        SketchGeometry::Native {
+            native_kind: "solver_only_section_entity".to_string(),
+        },
+    )]);
+    assert!(matches!(
+        section_skamp_constraints_for_geometry(
+            &solver_families,
+            &SketchId("creo:model:sketch#5".to_string()),
+            Some(&solver_geometry),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Horizontal { .. }
+    ));
+    let unary = &mut solver_families
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0];
+    unary.kind = 2;
+    unary.status = 1;
+    assert!(matches!(
+        section_skamp_constraints_for_geometry(
+            &solver_families,
+            &SketchId("creo:model:sketch#5".to_string()),
+            Some(&solver_geometry),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Vertical { .. }
+    ));
+    let family_relations = solver_families.relations.as_mut().expect("relations");
+    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 6,
         kind: 0,
         flags: 0,
         status: 0,
@@ -7015,7 +7064,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::Native { .. }
+        SketchConstraintDefinition::Horizontal { .. }
     ));
     let mut collinear_definition = definition.clone();
     let collinear_relations = collinear_definition.relations.as_mut().expect("relations");
