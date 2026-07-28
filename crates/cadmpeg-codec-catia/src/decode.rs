@@ -614,6 +614,12 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
         .iter()
         .map(|entity| (entity.object_record.as_str(), entity))
         .collect::<HashMap<_, _>>();
+    let records = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .map(|record| (record.id.as_str(), record))
+        .collect::<HashMap<_, _>>();
     let design_objects = native
         .design_objects
         .iter()
@@ -662,7 +668,10 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
         let Some(position) = exact_point2(entity.numeric_tuple.as_ref()) else {
             continue;
         };
-        let mut sketch_targets = BTreeSet::<&str>::new();
+        let Some(coordinate_record) = records.get(owner_record) else {
+            continue;
+        };
+        let mut sketch_targets = BTreeMap::<&str, bool>::new();
         for relation in &object.relations {
             if relation
                 .source_class
@@ -675,11 +684,16 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
                 continue;
             };
             if sketch_declarations.contains_key(target.id.as_str()) {
-                sketch_targets.insert(target.id.as_str());
+                let closes_coordinate_field = relation.source_field == owner_record
+                    && exact_single_field_reference(coordinate_record, relation.target_entity_id);
+                sketch_targets
+                    .entry(target.id.as_str())
+                    .and_modify(|complete| *complete |= closes_coordinate_field)
+                    .or_insert(closes_coordinate_field);
             }
         }
         let mut sketch_targets = sketch_targets.into_iter();
-        let Some(sketch_target) = sketch_targets.next() else {
+        let Some((sketch_target, coordinate_field_complete)) = sketch_targets.next() else {
             continue;
         };
         if sketch_targets.next().is_some() {
@@ -699,7 +713,7 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
             .push(SketchPointCandidate {
                 design_object: object.id.clone(),
                 native_entity: entity.id.clone(),
-                coordinate_field: owner_record.to_string(),
+                coordinate_field: coordinate_field_complete.then(|| owner_record.to_string()),
                 declaration_fields,
                 source_order: object.first_field_byte_offset,
                 position,
@@ -722,7 +736,7 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
             }
             transfer
                 .consumed_object_records
-                .insert(point.coordinate_field);
+                .extend(point.coordinate_field);
             transfer
                 .consumed_object_records
                 .extend(point.declaration_fields);
@@ -765,10 +779,23 @@ fn exact_point2(tuple: Option<&entity_table::NumericTuple>) -> Option<Point2> {
     (x.is_finite() && y.is_finite()).then(|| Point2::new(x, y))
 }
 
+fn exact_single_field_reference(
+    record: &crate::native::CatiaObjectRecord,
+    target_entity_id: u32,
+) -> bool {
+    matches!(
+        record.payload.fields.as_slice(),
+        [
+            crate::object_graph::PayloadField::Reference { value, .. },
+            crate::object_graph::PayloadField::Terminator
+        ] if *value == target_entity_id
+    )
+}
+
 struct SketchPointCandidate {
     design_object: String,
     native_entity: String,
-    coordinate_field: String,
+    coordinate_field: Option<String>,
     declaration_fields: BTreeSet<String>,
     source_order: u64,
     position: Point2,

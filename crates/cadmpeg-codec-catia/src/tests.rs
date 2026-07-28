@@ -2248,6 +2248,13 @@ fn standard_catpart_with_design_class(class: &str) -> Vec<u8> {
 }
 
 fn standard_catpart_with_sketch_point(ambiguous_sketch: bool) -> Vec<u8> {
+    standard_catpart_with_sketch_point_payload(ambiguous_sketch, &[0x32, 1, 0, 0, 0, 0xfe])
+}
+
+fn standard_catpart_with_sketch_point_payload(
+    ambiguous_sketch: bool,
+    point_payload: &[u8],
+) -> Vec<u8> {
     let mut coordinate_value = vec![0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6];
     coordinate_value.extend_from_slice(&12.5_f64.to_bits().to_le_bytes());
     coordinate_value.push(0xe6);
@@ -2256,7 +2263,7 @@ fn standard_catpart_with_sketch_point(ambiguous_sketch: bool) -> Vec<u8> {
 
     let records = vec![
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
-        object_graph_record(&[0x04, 0x01, 0x82, 0x85], &[0x32, 1, 0, 0, 0, 0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x85], point_payload),
         object_graph_record(
             &[0x04, 0x01, 0x83, if ambiguous_sketch { 0x84 } else { 0x86 }],
             &[0xfe],
@@ -6093,6 +6100,27 @@ fn decode_rejects_a_point_related_to_multiple_sketches() {
         decoded.report.coverage["transferred_sketch_design_record_count"],
         0
     );
+}
+
+#[test]
+fn sketch_point_with_additional_membership_payload_remains_unresolved() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_sketch_point_payload(
+                false,
+                &[0x32, 1, 0, 0, 0, 0x81, 0xfe],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode sketch point with additional membership payload");
+
+    assert_eq!(decoded.ir.model.sketches.len(), 1);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 1);
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_design_record_count"],
+        1
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 3);
 }
 
 #[test]
