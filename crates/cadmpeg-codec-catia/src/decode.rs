@@ -925,29 +925,24 @@ fn finish_decode(
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_line_profile_count} non-unit consolidated line-profile record(s) \
-                 retain their exact origin, unit \
-                 direction, metric scalar, and parameter interval, but their owner bindings and \
-                 metric-scalar parameter semantics remain unresolved."
+                 transferred exact line carriers and retain their metric scalars and parameter \
+                 intervals, but their neutral parameter mapping remains unresolved."
             ),
             provenance: None,
         });
     }
-    let unit_line_profile_count = native
+    let untransferred_line_profile_count = native
         .consolidated_line_profiles
-        .iter()
-        .filter(|line| line.metric_scale.to_bits() == 1.0_f64.to_bits())
-        .count();
-    let untransferred_unit_line_profile_count =
-        unit_line_profile_count.saturating_sub(transferred_line_profile_count);
-    if untransferred_unit_line_profile_count > 0 {
+        .len()
+        .saturating_sub(transferred_line_profile_count);
+    if untransferred_line_profile_count > 0 {
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
-                "{untransferred_unit_line_profile_count} unit-metric consolidated line-profile \
-                 record(s) retain exact line geometry but were not transferred by the active \
-                 geometry route."
+                "{untransferred_line_profile_count} consolidated line-profile record(s) retain \
+                 exact line geometry but were not transferred by the active geometry route."
             ),
             provenance: None,
         });

@@ -4539,14 +4539,20 @@ fn decode_reports_exact_consolidated_line_profiles() {
     );
     assert_eq!(
         decoded.report.coverage["transferred_consolidated_line_profile_count"],
-        0
+        1
     );
+    assert!(decoded.ir.model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction }
+            if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
+    )));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::Geometry
             && loss
                 .message
                 .contains("1 non-unit consolidated line-profile record(s)")
-            && loss.message.contains("owner bindings")
+            && loss.message.contains("neutral parameter mapping")
     }));
 }
 
@@ -4592,7 +4598,7 @@ fn decode_transfers_unit_metric_consolidated_line_profiles() {
 }
 
 #[test]
-fn transferred_line_profile_identity_retains_its_native_ordinal() {
+fn transferred_line_profile_identities_retain_their_native_ordinals() {
     let mut unit_profile = b2_line_profile_stream();
     unit_profile[53..61].copy_from_slice(&1.0_f64.to_le_bytes());
     let mut file = standard_catpart();
@@ -4616,7 +4622,13 @@ fn transferred_line_profile_identity_retains_its_native_ordinal() {
         })
         .map(|curve| curve.id.0.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(line_ids, ["catia:consolidated:line-profile-curve#1"]);
+    assert_eq!(
+        line_ids,
+        [
+            "catia:consolidated:line-profile-curve#0",
+            "catia:consolidated:line-profile-curve#1",
+        ]
+    );
 }
 
 #[test]

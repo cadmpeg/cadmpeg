@@ -200,7 +200,7 @@ fn freeform_surface_source(
     }
 }
 
-/// Transfer every consolidated line profile whose metric parameter is signed distance.
+/// Transfer every exact consolidated line carrier independently of its parameter chart.
 fn append_consolidated_line_profiles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -209,7 +209,6 @@ fn append_consolidated_line_profiles(
     for (index, line) in crate::families::b2::records::b2_line_profiles(data)
         .into_iter()
         .enumerate()
-        .filter(|(_, line)| line.metric_scale.to_bits() == 1.0_f64.to_bits())
     {
         let id = CurveId(format!("catia:consolidated:line-profile-curve#{index}"));
         annotate(
@@ -217,7 +216,7 @@ fn append_consolidated_line_profiles(
             &id,
             "consolidated_b2_03_0e",
             line.pos as u64,
-            "unit_metric_line_profile",
+            "line_profile_carrier",
             Exactness::ByteExact,
         );
         ir.model.curves.push(Curve {
