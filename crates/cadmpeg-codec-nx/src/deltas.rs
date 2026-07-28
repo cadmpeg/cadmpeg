@@ -1284,8 +1284,11 @@ fn inline_schema_declaration(
         == Some(TYPE_70_SCHEMA_HEADER)
     {
         let body = offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?;
-        let (xmt, node_id, all_references, count, end) = type_70_body(stream, body)?;
-        (end <= gap_end).then_some(())?;
+        let (xmt, node_id, all_references, count, end) = type_70_body(stream, body, 2)
+            .filter(|(_, _, _, _, end)| *end <= gap_end)
+            .or_else(|| {
+                type_70_body(stream, body, 1).filter(|(_, _, _, _, end)| *end <= gap_end)
+            })?;
         let references = all_references[..4].try_into().ok()?;
         return Some(InlineSchemaDeclaration {
             fields: InlineSchemaFields::Type70 {
@@ -2198,11 +2201,16 @@ fn type_70_layout(
     envelope_len: usize,
 ) -> Option<(u32, u32, Vec<u32>, usize)> {
     let body = offset.checked_add(2 + envelope_len)?;
-    let (xmt, node_id, references, _, end) = type_70_body(stream, body)?;
+    let (xmt, node_id, references, _, end) = type_70_body(stream, body, 2)?;
     Some((xmt, node_id, references, end))
 }
 
-fn type_70_body(stream: &[u8], body: usize) -> Option<(u32, u32, Vec<u32>, u16, usize)> {
+fn type_70_body(
+    stream: &[u8],
+    body: usize,
+    trailing_count: usize,
+) -> Option<(u32, u32, Vec<u32>, u16, usize)> {
+    matches!(trailing_count, 1 | 2).then_some(())?;
     let (xmt, consumed) = read_xmt(stream, body)?;
     (xmt > 1).then_some(())?;
     let mut at = body.checked_add(consumed)?;
@@ -2225,7 +2233,8 @@ fn type_70_body(stream: &[u8], body: usize) -> Option<(u32, u32, Vec<u32>, u16, 
     at += 4;
     (be::u32_at(stream, at) == Some(1)).then_some(())?;
     at += 4;
-    for _ in 0..2 {
+    let first_trailing = references.len();
+    for _ in 0..trailing_count {
         let (reference, consumed) = read_xmt(stream, at)?;
         (reference > 1).then_some(())?;
         at += consumed;
@@ -2233,7 +2242,10 @@ fn type_70_body(stream: &[u8], body: usize) -> Option<(u32, u32, Vec<u32>, u16, 
         at += 1;
         references.push(reference);
     }
-    (references[4] == references[5]).then_some(())?;
+    references[first_trailing..]
+        .windows(2)
+        .all(|pair| pair[0] == pair[1])
+        .then_some(())?;
     Some((xmt, node_id, references, count, at))
 }
 
@@ -3030,6 +3042,46 @@ mod inline_schema_tests {
                     || matches!(second.fields, InlineSchemaFields::Type70 { .. })
             );
         }
+    }
+
+    #[test]
+    fn type_70_inline_declaration_accepts_one_or_two_equal_trailing_references() {
+        let duplicated = type_70_declaration();
+        let mut single = TYPE_70_SCHEMA_HEADER.to_vec();
+        single.extend_from_slice(&6u16.to_be_bytes());
+        single.extend_from_slice(&0u32.to_be_bytes());
+        single.push(4);
+        for reference in [3u16, 1, 1, 0] {
+            single.push(1);
+            single.extend_from_slice(&reference.to_be_bytes());
+        }
+        single.extend_from_slice(&13u16.to_be_bytes());
+        single.extend_from_slice(&20u32.to_be_bytes());
+        single.extend_from_slice(&1u32.to_be_bytes());
+        single.extend_from_slice(&45u16.to_be_bytes());
+        single.push(0);
+
+        let single_declaration = inline_schema_declaration(&single, 0, single.len())
+            .expect("complete single-tail type-70 declaration");
+        assert!(matches!(
+            single_declaration.fields,
+            InlineSchemaFields::Type70 {
+                trailing_reference: 45,
+                ..
+            }
+        ));
+        assert_eq!(single_declaration.end, single.len());
+
+        let duplicated_declaration = inline_schema_declaration(&duplicated, 0, duplicated.len())
+            .expect("complete duplicated-tail type-70 declaration");
+        assert!(matches!(
+            duplicated_declaration.fields,
+            InlineSchemaFields::Type70 {
+                trailing_reference: 11,
+                ..
+            }
+        ));
+        assert_eq!(duplicated_declaration.end, duplicated.len());
     }
 
     #[test]

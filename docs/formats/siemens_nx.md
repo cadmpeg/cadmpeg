@@ -589,8 +589,10 @@ envelope: `slot_count:u32 BE, xmt, active_count:u32 BE, zero:u32 BE,
 ref(1) 01, slot[slot_count]`. The type-70 form begins with
 `00460b4349096c6973745f74797065000000010175490a6e6f7472616e736d697400000001016c43434344434344490c66696e6765725f696e646578000000010164490c66696e6765725f626c6f636b03f40001435a`.
 Its body is the type-70 body without the leading type tag or optional escaped
-envelope. Adjacent inline declarations are independently framed and may occur
-in either order.
+envelope, with either one trailing `ref 00` or two equal trailing `ref 00`
+fields. The full type-70 record requires the duplicated two-reference form.
+Adjacent inline declarations are independently framed and may occur in either
+order.
 
 The union of the transmit header, those events, tagged-reference lanes,
 reference-state packets, schema reference preambles, reference/type maps,
