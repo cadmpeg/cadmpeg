@@ -1867,6 +1867,41 @@ fn standard_catpart_with_relation_expression_signature(
     file
 }
 
+fn standard_catpart_with_parser_version_relation_expression(
+    prefix_role: &str,
+    parser_version_role: &str,
+) -> Vec<u8> {
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
+    let mut value = Vec::new();
+    for ordinal in 5u32..=10 {
+        value.push(0x32);
+        value.extend_from_slice(&ordinal.to_le_bytes());
+    }
+    value.push(0xfe);
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
+    let mut stream = entity_table_record_with_definition_and_value(1, &definition, &value);
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "body",
+        prefix_role,
+        "log(min(100,max(20*#1_,#2_)/#2_))/log(100)/2",
+        parser_version_role,
+        "param",
+        "(#1_ : #In LENGTH,#2_ : #In LENGTH) : Real\n",
+        "RelationExpFct",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
     let value = [0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0xfe];
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
@@ -7880,7 +7915,16 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         .relation_expression
         .as_ref()
         .expect("complete relation expression");
-    assert_eq!(expression.placeholder.value, "#1_ ");
+    assert_eq!(
+        expression
+            .placeholder
+            .as_ref()
+            .expect("placeholder framing")
+            .value,
+        "#1_ "
+    );
+    assert_eq!(expression.prefix_role, None);
+    assert_eq!(expression.parser_version_role, None);
     assert_eq!(expression.expression.value, "#1_ /2-2mm");
     assert_eq!(expression.parameter_role.value, "param");
     assert_eq!(
@@ -7896,7 +7940,10 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         }]
     );
     assert_eq!(signature.result_type, "LENGTH");
-    assert_eq!(expression.state_role.value, "opened");
+    assert_eq!(
+        expression.state_role.as_ref().expect("state framing").value,
+        "opened"
+    );
     assert_eq!(expression.function_role.value, "RelationExpFct");
 
     let mut malformed = native;
@@ -7914,6 +7961,63 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn parser_version_relation_expression_retains_its_distinct_framing() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_parser_version_relation_expression("Boolean", "ParserVersion"),
+    );
+    let expression = native.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .expect("parser-version relation expression");
+
+    assert_eq!(expression.placeholder, None);
+    assert_eq!(
+        expression.prefix_role.as_ref().expect("prefix role").value,
+        "Boolean"
+    );
+    assert_eq!(
+        expression.expression.value,
+        "log(min(100,max(20*#1_,#2_)/#2_))/log(100)/2"
+    );
+    assert_eq!(
+        expression
+            .parser_version_role
+            .as_ref()
+            .expect("parser-version role")
+            .value,
+        "ParserVersion"
+    );
+    assert_eq!(expression.parameter_role.value, "param");
+    assert_eq!(expression.state_role, None);
+    let signature = expression.signature.as_ref().expect("typed signature");
+    assert_eq!(
+        signature
+            .inputs
+            .iter()
+            .map(|input| (input.parameter.as_str(), input.input_type.as_str()))
+            .collect::<Vec<_>>(),
+        [("#1_", "LENGTH"), ("#2_", "LENGTH")]
+    );
+    assert_eq!(signature.result_type, "Real");
+}
+
+#[test]
+fn parser_version_relation_expression_requires_both_exact_framing_roles() {
+    for (prefix_role, parser_version_role) in
+        [("Real", "ParserVersion"), ("Boolean", "ParserRevision")]
+    {
+        let native = crate::native::CatiaNative::decode(
+            &standard_catpart_with_parser_version_relation_expression(
+                prefix_role,
+                parser_version_role,
+            ),
+        );
+
+        assert!(native.entity_records[0].relation_expression.is_none());
+    }
 }
 
 #[test]

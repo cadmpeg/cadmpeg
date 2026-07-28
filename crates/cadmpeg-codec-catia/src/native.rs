@@ -868,10 +868,17 @@ pub struct CatiaEntitySchemaValue {
 /// One complete relation-expression value program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaRelationExpression {
-    /// Expression-local placeholder selected by the first value field.
-    pub placeholder: CatiaEntitySchemaValue,
+    /// Expression-local placeholder in the placeholder-state framing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<CatiaEntitySchemaValue>,
+    /// Exact `Boolean` prefix selector in the parser-version framing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix_role: Option<CatiaEntitySchemaValue>,
     /// Stored source expression selected by the second value field.
     pub expression: CatiaEntitySchemaValue,
+    /// Exact `ParserVersion` selector in the parser-version framing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parser_version_role: Option<CatiaEntitySchemaValue>,
     /// Exact `param` role selector.
     pub parameter_role: CatiaEntitySchemaValue,
     /// Stored source type signature.
@@ -879,8 +886,9 @@ pub struct CatiaRelationExpression {
     /// Parsed parameter and value types when the source signature has the typed form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<CatiaRelationTypeSignature>,
-    /// Exact `opened` state selector.
-    pub state_role: CatiaEntitySchemaValue,
+    /// Exact `opened` selector in the placeholder-state framing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_role: Option<CatiaEntitySchemaValue>,
     /// Exact `RelationExpFct` function selector.
     pub function_role: CatiaEntitySchemaValue,
 }
@@ -1752,34 +1760,62 @@ fn relation_expression(
     {
         return None;
     }
-    let [placeholder, expression, parameter_role, type_signature, state_role, function_role] =
-        values
-    else {
+    let [first, expression, third, fourth, fifth, function_role] = values else {
         return None;
     };
-    if parameter_role.name != "param"
-        || state_role.name != "opened"
-        || function_role.name != "RelationExpFct"
-    {
+    if function_role.name != "RelationExpFct" {
         return None;
     }
     let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
         entry: selection.entry.clone(),
         value: selection.name.clone(),
     };
-    let signature = relation_type_signature(&placeholder.name, &type_signature.name);
+    let (placeholder, prefix_role, parser_version_role, parameter_role, type_signature, state_role) =
+        if third.name == "param" && fifth.name == "opened" {
+            (
+                Some(schema_value(first)),
+                None,
+                None,
+                third,
+                fourth,
+                Some(schema_value(fifth)),
+            )
+        } else if first.name == "Boolean" && third.name == "ParserVersion" && fourth.name == "param"
+        {
+            (
+                None,
+                Some(schema_value(first)),
+                Some(schema_value(third)),
+                fourth,
+                fifth,
+                None,
+            )
+        } else {
+            return None;
+        };
+    let signature = relation_type_signature(
+        placeholder
+            .as_ref()
+            .map(|placeholder| placeholder.value.as_str()),
+        &type_signature.name,
+    );
     Some(CatiaRelationExpression {
-        placeholder: schema_value(placeholder),
+        placeholder,
+        prefix_role,
         expression: schema_value(expression),
+        parser_version_role,
         parameter_role: schema_value(parameter_role),
         type_signature: schema_value(type_signature),
         signature,
-        state_role: schema_value(state_role),
+        state_role,
         function_role: schema_value(function_role),
     })
 }
 
-fn relation_type_signature(placeholder: &str, source: &str) -> Option<CatiaRelationTypeSignature> {
+fn relation_type_signature(
+    placeholder: Option<&str>,
+    source: &str,
+) -> Option<CatiaRelationTypeSignature> {
     let source = source.strip_suffix('\n').unwrap_or(source);
     let (input_clause, result_type) = source.rsplit_once(") : ")?;
     let input_clause = input_clause.strip_prefix('(')?;
@@ -1803,16 +1839,17 @@ fn relation_type_signature(placeholder: &str, source: &str) -> Option<CatiaRelat
             })
             .collect::<Option<Vec<_>>>()?
     };
-    if (inputs.is_empty() && !placeholder.trim().is_empty())
-        || inputs
-            .first()
-            .is_some_and(|input| input.parameter != placeholder.trim())
-        || inputs
-            .iter()
-            .map(|input| input.parameter.as_str())
-            .collect::<HashSet<_>>()
-            .len()
-            != inputs.len()
+    if placeholder.is_some_and(|placeholder| {
+        inputs.is_empty() && !placeholder.trim().is_empty()
+            || inputs
+                .first()
+                .is_some_and(|input| input.parameter != placeholder.trim())
+    }) || inputs
+        .iter()
+        .map(|input| input.parameter.as_str())
+        .collect::<HashSet<_>>()
+        .len()
+        != inputs.len()
     {
         return None;
     }
