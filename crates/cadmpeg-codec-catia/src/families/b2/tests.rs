@@ -7,11 +7,12 @@ use crate::tests::{
     b2_circle_stream, b2_cone_face_stream, b2_cone_stream, b2_construction_use_stream,
     b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
     b2_embedded_cylinder_stream, b2_group_stream, b2_implicit_axis_cylinder_stream,
-    b2_link_5f_stream, b2_linked_counted_owner_stream, b2_linked_owner_stream, b2_long_61_stream,
-    b2_offset_support_stream, b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream,
-    b2_phase_tailed_cylinder_stream, b2_reference_list_stream, b2_revolution_stream,
-    b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
-    b2_width_coded_owner_packet_stream, b3_cylinder_stream, b3_offset_support_stream,
+    b2_line_profile_stream, b2_link_5f_stream, b2_linked_counted_owner_stream,
+    b2_linked_owner_stream, b2_long_61_stream, b2_offset_support_stream, b2_owner_packet_stream,
+    b2_parameter_point_stream, b2_pcurve_stream, b2_phase_tailed_cylinder_stream,
+    b2_reference_list_stream, b2_revolution_stream, b2_sphere_stream, b2_topology_metadata_stream,
+    b2_torus_stream, b2_width_coded_owner_packet_stream, b3_cylinder_stream,
+    b3_offset_support_stream,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -276,6 +277,45 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         );
         assert_eq!(records[0].profile_range, [-4.0, 9.0]);
         assert_eq!(records[0].angular_scale, 2.0);
+    }
+}
+
+#[test]
+fn b2_line_profile_parser_reads_exact_origin_direction_metric_scalar_and_range() {
+    let b2 = b2_line_profile_stream();
+    for (family, header) in [
+        (0xb2, vec![0x05]),
+        (0xb3, vec![0x05, 0x00]),
+        (0xb4, vec![0x05, 0x00, 0x00]),
+    ] {
+        let mut stream = vec![family, 0x03, 0x0e, 0x48];
+        stream.extend(header);
+        stream.extend_from_slice(&b2[5..]);
+        let records = crate::families::b2::records::b2_line_profiles(&stream);
+        let [line] = records.as_slice() else {
+            panic!("one B-family line profile")
+        };
+        assert_eq!(line.pos, 0);
+        assert_eq!(line.origin, [1.0, 2.0, 3.0]);
+        assert_eq!(line.direction, [0.0, 0.6, 0.8]);
+        assert_eq!(line.metric_scale, 2.5);
+        assert_eq!(line.range, [-4.0, 9.0]);
+    }
+}
+
+#[test]
+fn b2_line_profile_parser_requires_its_complete_finite_metric_grammar() {
+    let valid = b2_line_profile_stream();
+    for (offset, bytes) in [
+        (3, vec![0x50]),
+        (5 + 3 * 8, 2.0f64.to_le_bytes().to_vec()),
+        (5 + 6 * 8, 0.0f64.to_le_bytes().to_vec()),
+        (5 + 7 * 8, 10.0f64.to_le_bytes().to_vec()),
+        (5, f64::NAN.to_le_bytes().to_vec()),
+    ] {
+        let mut invalid = valid.clone();
+        invalid.splice(offset..offset + bytes.len(), bytes);
+        assert!(crate::families::b2::records::b2_line_profiles(&invalid).is_empty());
     }
 }
 

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 154;
+pub const CATIA_NATIVE_VERSION: u32 = 155;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -33,6 +33,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_edge_nodes",
     "consolidated_edge_runs",
     "consolidated_groups",
+    "consolidated_line_profiles",
     "consolidated_owner_packets",
     "consolidated_parameter_points",
     "consolidated_pcurves",
@@ -371,6 +372,23 @@ pub struct CatiaConsolidatedTorus {
     pub major_scale: f64,
     /// Scale from minor angle to stored V parameter.
     pub minor_scale: f64,
+}
+
+/// One exact consolidated B-family metric line profile.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedLineProfile {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Stored line origin.
+    pub origin: [f64; 3],
+    /// Unit line direction.
+    pub direction: [f64; 3],
+    /// Positive metric scalar preceding the stored interval.
+    pub metric_scale: f64,
+    /// Increasing stored parameter interval.
+    pub range: [f64; 2],
 }
 
 /// One structurally complete consolidated `B:2d` surface-of-revolution record.
@@ -2601,6 +2619,9 @@ pub struct CatiaNative {
     /// Typed consolidated class-`0x60` group openers.
     #[serde(default)]
     pub consolidated_groups: Vec<CatiaConsolidatedGroup>,
+    /// Exact consolidated B-family metric line profiles.
+    #[serde(default)]
+    pub consolidated_line_profiles: Vec<CatiaConsolidatedLineProfile>,
     /// Exact consolidated owner packets and their allocation links.
     #[serde(default)]
     pub consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket>,
@@ -2664,6 +2685,7 @@ impl Default for CatiaNative {
             consolidated_edge_nodes: Vec::new(),
             consolidated_edge_runs: Vec::new(),
             consolidated_groups: Vec::new(),
+            consolidated_line_profiles: Vec::new(),
             consolidated_owner_packets: Vec::new(),
             consolidated_parameter_points: Vec::new(),
             consolidated_pcurves: Vec::new(),
@@ -3224,6 +3246,21 @@ fn consolidated_revolutions(bytes: &[u8]) -> Vec<CatiaConsolidatedRevolution> {
             angular_range: revolution.angular_range,
             profile_range: revolution.profile_range,
             angular_scale: revolution.angular_scale,
+        })
+        .collect()
+}
+
+fn consolidated_line_profiles(bytes: &[u8]) -> Vec<CatiaConsolidatedLineProfile> {
+    crate::families::b2::records::b2_line_profiles(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, line)| CatiaConsolidatedLineProfile {
+            id: format!("catia:consolidated:line-profile#{index}"),
+            byte_offset: line.pos as u64,
+            origin: line.origin,
+            direction: line.direction,
+            metric_scale: line.metric_scale,
+            range: line.range,
         })
         .collect()
 }
@@ -3951,6 +3988,38 @@ fn validate_consolidated_revolutions(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated revolution `{}` is structurally invalid",
                 revolution.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_line_profiles(
+    lines: &[CatiaConsolidatedLineProfile],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, line) in lines.iter().enumerate() {
+        let squared_length = line
+            .direction
+            .iter()
+            .map(|component| component * component)
+            .sum::<f64>();
+        if line.id != format!("catia:consolidated:line-profile#{index}")
+            || line
+                .origin
+                .iter()
+                .chain(&line.direction)
+                .chain(&[line.metric_scale])
+                .chain(&line.range)
+                .any(|value| !value.is_finite())
+            || (squared_length - 1.0).abs() > 1e-12
+            || line.metric_scale <= 0.0
+            || line.range[0] >= line.range[1]
+            || index > 0 && lines[index - 1].byte_offset >= line.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated line profile `{}` is structurally invalid",
+                line.id
             )));
         }
     }
@@ -4844,6 +4913,7 @@ impl CatiaNative {
         let consolidated_cones = consolidated_cones(bytes);
         let consolidated_cylinders = consolidated_cylinders(bytes);
         let consolidated_groups = consolidated_groups(bytes);
+        let consolidated_line_profiles = consolidated_line_profiles(bytes);
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_parameter_points = consolidated_parameter_points(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
@@ -4867,6 +4937,7 @@ impl CatiaNative {
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
+            consolidated_line_profiles,
             consolidated_owner_packets,
             consolidated_parameter_points,
             consolidated_pcurves,
@@ -5289,6 +5360,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_groups")?;
         consolidated_groups.sort_by_key(|group| group.byte_offset);
         validate_consolidated_groups(&consolidated_groups)?;
+        let mut consolidated_line_profiles: Vec<CatiaConsolidatedLineProfile> =
+            namespace.arena_as("consolidated_line_profiles")?;
+        consolidated_line_profiles.sort_by_key(|line| line.byte_offset);
+        validate_consolidated_line_profiles(&consolidated_line_profiles)?;
         let mut consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket> =
             namespace.arena_as("consolidated_owner_packets")?;
         consolidated_owner_packets.sort_by_key(|packet| packet.byte_offset);
@@ -5350,6 +5425,7 @@ impl CatiaNative {
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
+            consolidated_line_profiles,
             consolidated_owner_packets,
             consolidated_parameter_points,
             consolidated_pcurves,
@@ -5430,6 +5506,10 @@ impl CatiaNative {
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
         namespace.set_arena("consolidated_groups", &self.consolidated_groups)?;
         namespace.set_arena(
+            "consolidated_line_profiles",
+            &self.consolidated_line_profiles,
+        )?;
+        namespace.set_arena(
             "consolidated_owner_packets",
             &self.consolidated_owner_packets,
         )?;
@@ -5486,6 +5566,7 @@ impl CatiaNative {
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
+            consolidated_line_profiles,
             consolidated_owner_packets,
             consolidated_parameter_points,
             consolidated_pcurves,
@@ -5528,6 +5609,7 @@ impl CatiaNative {
         namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
         namespace.set_arena("consolidated_groups", &consolidated_groups)?;
+        namespace.set_arena("consolidated_line_profiles", &consolidated_line_profiles)?;
         namespace.set_arena("consolidated_owner_packets", &consolidated_owner_packets)?;
         namespace.set_arena(
             "consolidated_parameter_points",

@@ -1112,6 +1112,14 @@ pub(crate) fn b2_edge_node_stream() -> Vec<u8> {
     ]
 }
 
+pub(crate) fn b2_line_profile_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x0e, 0x48, 0x05];
+    for value in [1.0f64, 2.0, 3.0, 0.0, 0.6, 0.8, 2.5, -4.0, 9.0] {
+        record.extend_from_slice(&le_f64(value));
+    }
+    record
+}
+
 pub(crate) fn b2_revolution_stream() -> Vec<u8> {
     let scale = 2.0;
     let angular_lo = scale * 0.5;
@@ -4196,6 +4204,57 @@ fn native_namespace_retains_unbound_consolidated_revolution_carriers() {
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA revolution for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_exact_consolidated_line_profiles() {
+    let native = crate::native::CatiaNative::decode(&b2_line_profile_stream());
+    let [line] = native.consolidated_line_profiles.as_slice() else {
+        panic!("one consolidated line profile")
+    };
+    assert_eq!(line.origin, [1.0, 2.0, 3.0]);
+    assert_eq!(line.direction, [0.0, 0.6, 0.8]);
+    assert_eq!(line.metric_scale, 2.5);
+    assert_eq!(line.range, [-4.0, 9.0]);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA line profile");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA line profile"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_line_profiles[0].direction = [0.0, 0.0, 2.0];
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA line profile for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn decode_reports_exact_consolidated_line_profiles() {
+    let mut file = standard_catpart();
+    file.splice(16..16, b2_line_profile_stream());
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode consolidated line profile");
+    assert_eq!(
+        decoded.report.coverage["decoded_consolidated_line_profile_count"],
+        1
+    );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+            && loss
+                .message
+                .contains("1 consolidated line-profile record(s)")
+            && loss.message.contains("owner bindings")
+    }));
 }
 
 #[test]

@@ -474,6 +474,10 @@ fn finish_decode(
             native.consolidated_groups.len(),
         ),
         (
+            "decoded_consolidated_line_profile_count".to_string(),
+            native.consolidated_line_profiles.len(),
+        ),
+        (
             "decoded_consolidated_parameter_point_count".to_string(),
             native.consolidated_parameter_points.len(),
         ),
@@ -768,6 +772,20 @@ fn finish_decode(
             ir.model.configurations.len(),
         ),
     ]);
+    if !native.consolidated_line_profiles.is_empty() {
+        report.losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} consolidated line-profile record(s) retain their exact origin, unit \
+                 direction, metric scalar, and parameter interval, but their owner bindings and \
+                 metric-scalar parameter semantics remain unresolved.",
+                native.consolidated_line_profiles.len(),
+            ),
+            provenance: None,
+        });
+    }
     if unresolved_object_record_count != 0 {
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,

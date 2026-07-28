@@ -926,6 +926,21 @@ pub struct B2Revolution {
     pub angular_scale: f64,
 }
 
+/// Metric line profile stored in a `b2/b3/b4 03 0e` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2LineProfile {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Stored line origin.
+    pub origin: [f64; 3],
+    /// Unit line direction.
+    pub direction: [f64; 3],
+    /// Positive metric scalar preceding the stored interval.
+    pub metric_scale: f64,
+    /// Increasing stored parameter interval.
+    pub range: [f64; 2],
+}
+
 /// Radius-scaled sphere chart stored in a `b2 03 2a` record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B2Sphere {
@@ -1272,6 +1287,33 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
         });
     }
     out
+}
+
+/// Decode exact B-family metric line profiles.
+#[must_use]
+pub fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
+    b_family_frames(data, 0x0e)
+        .into_iter()
+        .filter_map(|frame| {
+            if frame.end - frame.payload != 9 * 8 {
+                return None;
+            }
+            let values = read_f64_array::<9>(data, frame.payload)?;
+            let direction: [f64; 3] = values[3..6].try_into().expect("three direction values");
+            let squared_length = direction
+                .iter()
+                .map(|component| component * component)
+                .sum::<f64>();
+            ((squared_length - 1.0).abs() <= 1e-12 && values[6] > 0.0 && values[7] < values[8])
+                .then_some(B2LineProfile {
+                    pos: frame.pos,
+                    origin: values[0..3].try_into().expect("three origin values"),
+                    direction,
+                    metric_scale: values[6],
+                    range: [values[7], values[8]],
+                })
+        })
+        .collect()
 }
 
 /// Decode `b2 03 2b` doubly periodic torus charts.
