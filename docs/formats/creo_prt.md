@@ -2736,6 +2736,10 @@ class and stores exactly its `f8` count of `rel_id`, `eqn_id`, and `skamp_id`
 triples. Each field independently uses `f6` for null.
 `f1 f7 <table-class> e2` separates the prototype from the following triples;
 bare `e2` separates later triples.
+A positional feature definition may instead retain labelled `skamp_ptr` or
+`triples_ptr` tables alongside its positional `relat_ptr` table. Each labelled
+subtable uses its own named grammar and takes precedence over replay through
+the preceding template class.
 
 A positional `gsec3d_ptr` record begins with `07 S2D<N> 00`, followed by
 `flip`, `own_ref_id`, `first_chain_ptr`, `quilt_id`, `plane_id`, and

@@ -6423,18 +6423,35 @@ fn definitions_in_ranges(
             replay_skamp_class = named_array_class(payload, b"skamp_ptr\0", start, schema_end);
             replay_triples_class = named_array_class(payload, b"triples_ptr\0", start, schema_end);
         } else if let Some(table) = &mut relations {
-            table.skamps = replay_skamp_class.map_or_else(Vec::new, |table_class| {
-                positional_feature_skamps(payload, start, end, table_class)
-            });
-            table.skamp_header = replay_skamp_class.and_then(|table_class| {
-                positional_solver_table_header(payload, start, end, table_class)
-            });
-            table.triples = replay_triples_class.map_or_else(Vec::new, |table_class| {
-                positional_relation_triples(payload, start, end, table_class)
-            });
-            table.triples_header = replay_triples_class.and_then(|table_class| {
-                positional_solver_table_header(payload, start, end, table_class)
-            });
+            if table.skamp_header.is_none() {
+                if let Some(header) = named_solver_table_header(payload, b"skamp_ptr\0", start, end)
+                {
+                    table.skamps = feature_skamps(payload, start, end);
+                    table.skamp_header = Some(header);
+                } else {
+                    table.skamps = replay_skamp_class.map_or_else(Vec::new, |table_class| {
+                        positional_feature_skamps(payload, start, end, table_class)
+                    });
+                    table.skamp_header = replay_skamp_class.and_then(|table_class| {
+                        positional_solver_table_header(payload, start, end, table_class)
+                    });
+                }
+            }
+            if table.triples_header.is_none() {
+                if let Some(header) =
+                    named_solver_table_header(payload, b"triples_ptr\0", start, end)
+                {
+                    table.triples = feature_relation_triples(payload, start, end);
+                    table.triples_header = Some(header);
+                } else {
+                    table.triples = replay_triples_class.map_or_else(Vec::new, |table_class| {
+                        positional_relation_triples(payload, start, end, table_class)
+                    });
+                    table.triples_header = replay_triples_class.and_then(|table_class| {
+                        positional_solver_table_header(payload, start, end, table_class)
+                    });
+                }
+            }
         }
         let saved_section = saved_section(
             payload,
@@ -8630,6 +8647,59 @@ mod tests {
         let rows = feature_relation_triples(triples, 0, triples.len());
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].relation_id, Some(7));
+    }
+
+    #[test]
+    fn positional_definition_preserves_its_named_solver_tables() {
+        let solver_tables = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+            \xf3\xf7\x6b\xe2\
+            triples_ptr\0\xf4\x04\xf8\x01\xf7\x6d\xfb\xe2\
+            \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\
+            \xe0\x01skamp_id\0\x05\xf1\xf7\x6d\xe2";
+        let mut payload =
+            b"relat_ptr\0\xf4\x04\xf8\x02\xf7\x6a\xfb\xe2schema\xf1\xf7\x6a\xe2".to_vec();
+        payload.extend_from_slice(solver_tables);
+        let positional_start = payload.len();
+        payload.extend_from_slice(solver_tables);
+        payload.extend_from_slice(b"\xf8\x02\xf7\x6a\xfb\xe2");
+        let prototype_offset = payload.len() + 3;
+        assert!((128..=16_383).contains(&prototype_offset));
+        payload.extend_from_slice(&[
+            psb::token::ENTITY_REF,
+            0x80 + u8::try_from(prototype_offset >> 8).expect("prototype offset high byte"),
+            u8::try_from(prototype_offset & 0xff).expect("prototype offset low byte"),
+        ]);
+        payload.extend_from_slice(b"\xf1\xf7\x6a\xe2");
+
+        let definitions = definitions_in_ranges(
+            &payload,
+            &[(0, 1, None, false), (positional_start, 2, None, true)],
+        );
+        let relations = definitions[1].relations.as_ref().expect("relations");
+
+        assert_eq!(relations.skamps.len(), 1);
+        assert_eq!(relations.skamps[0].id, 5);
+        assert_eq!(
+            relations
+                .skamp_header
+                .as_ref()
+                .expect("skamp header")
+                .declared_count,
+            1
+        );
+        assert_eq!(relations.triples.len(), 1);
+        assert_eq!(relations.triples[0].relation_id, Some(7));
+        assert_eq!(
+            relations
+                .triples_header
+                .as_ref()
+                .expect("triples header")
+                .declared_count,
+            1
+        );
     }
 
     #[test]

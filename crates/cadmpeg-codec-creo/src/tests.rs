@@ -5309,6 +5309,8 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     let skamp_header = relations.skamp_header.as_ref().expect("skamp header");
     assert_eq!(skamp_header.declared_count, 1);
     assert_eq!(skamp_header.entity_ref, 107);
+    assert!(relations.offset < skamp_header.offset);
+    assert!(skamp_header.offset <= relations.skamps[0].offset);
     assert_eq!(relations.triples.len(), 2);
     assert_eq!(relations.triples[0].relation_id, Some(7));
     assert_eq!(relations.triples[0].equation_id, Some(8));
@@ -5318,6 +5320,8 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     let triples_header = relations.triples_header.as_ref().expect("triples header");
     assert_eq!(triples_header.declared_count, 2);
     assert_eq!(triples_header.entity_ref, 109);
+    assert!(skamp_header.offset < triples_header.offset);
+    assert!(triples_header.offset <= relations.triples[0].offset);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())

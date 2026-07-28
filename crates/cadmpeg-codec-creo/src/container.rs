@@ -1456,6 +1456,18 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut relations.rows {
             row.offset += section_offset;
         }
+        if let Some(header) = &mut relations.skamp_header {
+            header.offset += section_offset;
+        }
+        for row in &mut relations.skamps {
+            row.offset += section_offset;
+        }
+        if let Some(header) = &mut relations.triples_header {
+            header.offset += section_offset;
+        }
+        for row in &mut relations.triples {
+            row.offset += section_offset;
+        }
     }
     if let Some(saved) = &mut definition.saved_section {
         saved.offset += section_offset;
