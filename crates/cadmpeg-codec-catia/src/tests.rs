@@ -3576,6 +3576,37 @@ fn native_namespace_retains_consolidated_class61_records() {
 }
 
 #[test]
+fn native_namespace_retains_exact_consolidated_cone_charts() {
+    let native = crate::native::CatiaNative::decode(&b2_cone_stream());
+    let [cone] = native.consolidated_cones.as_slice() else {
+        panic!("one consolidated cone")
+    };
+    assert_eq!(cone.apex, [1.0, 2.0, 3.0]);
+    assert_eq!(cone.direction_x, [1.0, 0.0, 0.0]);
+    assert_eq!(cone.direction_y, [0.0, 1.0, 0.0]);
+    assert_eq!(cone.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(cone.half_angle, 0.25);
+    assert_eq!(cone.angular_offset, 0.5);
+    assert_eq!(cone.slant_range, [2.0, 8.0]);
+    assert_eq!(cone.angular_scale, 3.0);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store CATIA cone");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA cone"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_cones[0].slant_range.reverse();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA cone for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_unbound_consolidated_revolution_carriers() {
     let native = crate::native::CatiaNative::decode(&b2_revolution_stream());
     let [revolution] = native.consolidated_revolutions.as_slice() else {

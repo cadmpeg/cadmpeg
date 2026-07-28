@@ -17,13 +17,14 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 134;
+pub const CATIA_NATIVE_VERSION: u32 = 135;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
     "consolidated_class61_records",
+    "consolidated_cones",
     "consolidated_edge_nodes",
     "consolidated_edge_runs",
     "consolidated_groups",
@@ -138,6 +139,31 @@ pub struct CatiaConsolidatedOwnerPacket {
     /// Structurally adjacent allocation link, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allocation_link: Option<CatiaOwnerAllocationLink>,
+}
+
+/// One structurally complete consolidated `B:29` cone chart.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedCone {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Cone apex.
+    pub apex: [f64; 3],
+    /// First transverse unit direction.
+    pub direction_x: [f64; 3],
+    /// Second transverse unit direction.
+    pub direction_y: [f64; 3],
+    /// Cone-axis unit direction.
+    pub axis: [f64; 3],
+    /// Cone half-angle in radians.
+    pub half_angle: f64,
+    /// Stored angular chart offset.
+    pub angular_offset: f64,
+    /// Native slant-coordinate interval, including zero at the apex.
+    pub slant_range: [f64; 2],
+    /// Scale from azimuth to stored U parameter.
+    pub angular_scale: f64,
 }
 
 /// One structurally complete consolidated `A/B:20` pcurve jet whose support
@@ -2095,6 +2121,9 @@ pub struct CatiaNative {
     /// Complete consolidated class-`0x61` records.
     #[serde(default)]
     pub consolidated_class61_records: Vec<CatiaConsolidatedClass61Record>,
+    /// Exact consolidated cone charts.
+    #[serde(default)]
+    pub consolidated_cones: Vec<CatiaConsolidatedCone>,
     /// Structurally complete consolidated edge nodes.
     #[serde(default)]
     pub consolidated_edge_nodes: Vec<CatiaConsolidatedEdgeNode>,
@@ -2152,6 +2181,7 @@ impl Default for CatiaNative {
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
             consolidated_class61_records: Vec::new(),
+            consolidated_cones: Vec::new(),
             consolidated_edge_nodes: Vec::new(),
             consolidated_edge_runs: Vec::new(),
             consolidated_groups: Vec::new(),
@@ -2225,6 +2255,25 @@ fn consolidated_groups(bytes: &[u8]) -> Vec<CatiaConsolidatedGroup> {
             id: format!("catia:consolidated:group#{index}"),
             byte_offset: group.pos as u64,
             group_type: group.group_type,
+        })
+        .collect()
+}
+
+fn consolidated_cones(bytes: &[u8]) -> Vec<CatiaConsolidatedCone> {
+    crate::families::b2::records::b2_cones(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, cone)| CatiaConsolidatedCone {
+            id: format!("catia:consolidated:cone#{index}"),
+            byte_offset: cone.pos as u64,
+            apex: cone.apex,
+            direction_x: cone.t1,
+            direction_y: cone.t2,
+            axis: cone.axis,
+            half_angle: cone.half_angle,
+            angular_offset: cone.angular_offset,
+            slant_range: cone.slant_range,
+            angular_scale: cone.angular_scale,
         })
         .collect()
 }
@@ -2729,6 +2778,58 @@ fn validate_consolidated_pcurves(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated pcurve `{}` is structurally invalid",
                 pcurve.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_cones(
+    cones: &[CatiaConsolidatedCone],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, cone) in cones.iter().enumerate() {
+        let expected_id = format!("catia:consolidated:cone#{index}");
+        let dot = |first: [f64; 3], second: [f64; 3]| {
+            first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
+        };
+        let cross = [
+            cone.direction_x[1] * cone.direction_y[2] - cone.direction_x[2] * cone.direction_y[1],
+            cone.direction_x[2] * cone.direction_y[0] - cone.direction_x[0] * cone.direction_y[2],
+            cone.direction_x[0] * cone.direction_y[1] - cone.direction_x[1] * cone.direction_y[0],
+        ];
+        if cone.id != expected_id
+            || cone
+                .apex
+                .iter()
+                .chain(&cone.direction_x)
+                .chain(&cone.direction_y)
+                .chain(&cone.axis)
+                .chain(&[
+                    cone.half_angle,
+                    cone.angular_offset,
+                    cone.slant_range[0],
+                    cone.slant_range[1],
+                    cone.angular_scale,
+                ])
+                .any(|value| !value.is_finite())
+            || [cone.direction_x, cone.direction_y, cone.axis]
+                .into_iter()
+                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1e-9)
+            || cross
+                .iter()
+                .zip(cone.axis)
+                .any(|(cross, axis)| (cross - axis).abs() > 1e-9)
+            || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle)
+            || cone.slant_range[0] < 0.0
+            || cone.slant_range[0] >= cone.slant_range[1]
+            || !(0.0..1e6).contains(&cone.slant_range[1])
+            || !(0.0..1e6).contains(&cone.angular_scale)
+            || index > 0 && cones[index - 1].byte_offset >= cone.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated cone `{}` is structurally invalid",
+                cone.id
             )));
         }
     }
@@ -3671,6 +3772,7 @@ impl CatiaNative {
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
         let consolidated_class61_records = consolidated_class61_records(bytes);
+        let consolidated_cones = consolidated_cones(bytes);
         let consolidated_groups = consolidated_groups(bytes);
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
@@ -3687,6 +3789,7 @@ impl CatiaNative {
             alias_rows,
             catalogs,
             consolidated_class61_records,
+            consolidated_cones,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
@@ -4065,6 +4168,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_class61_records")?;
         consolidated_class61_records.sort_by_key(|record| record.byte_offset);
         validate_consolidated_class61_records(&consolidated_class61_records)?;
+        let mut consolidated_cones: Vec<CatiaConsolidatedCone> =
+            namespace.arena_as("consolidated_cones")?;
+        consolidated_cones.sort_by_key(|cone| cone.byte_offset);
+        validate_consolidated_cones(&consolidated_cones)?;
         let mut consolidated_groups: Vec<CatiaConsolidatedGroup> =
             namespace.arena_as("consolidated_groups")?;
         consolidated_groups.sort_by_key(|group| group.byte_offset);
@@ -4115,6 +4222,7 @@ impl CatiaNative {
             alias_rows,
             catalogs,
             consolidated_class61_records,
+            consolidated_cones,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
@@ -4188,6 +4296,7 @@ impl CatiaNative {
             "consolidated_class61_records",
             &self.consolidated_class61_records,
         )?;
+        namespace.set_arena("consolidated_cones", &self.consolidated_cones)?;
         namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
         namespace.set_arena("consolidated_groups", &self.consolidated_groups)?;
@@ -4233,6 +4342,7 @@ impl CatiaNative {
             alias_rows,
             mut catalogs,
             consolidated_class61_records,
+            consolidated_cones,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
@@ -4269,6 +4379,7 @@ impl CatiaNative {
             "consolidated_class61_records",
             &consolidated_class61_records,
         )?;
+        namespace.set_arena("consolidated_cones", &consolidated_cones)?;
         namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
         namespace.set_arena("consolidated_groups", &consolidated_groups)?;

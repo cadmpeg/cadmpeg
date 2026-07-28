@@ -877,6 +877,8 @@ pub struct B2Cone {
     pub axis: [f64; 3],
     /// Cone half-angle in radians.
     pub half_angle: f64,
+    /// Stored angular chart offset.
+    pub angular_offset: f64,
     /// Native slant-coordinate range.
     pub slant_range: [f64; 2],
     /// Divisor mapping the stored U coordinate to azimuth.
@@ -1113,46 +1115,46 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
     for frame in b_family_frames(data, 0x29) {
         let pos = frame.pos;
         let p = frame.payload;
-        if frame.end - p != 0xb8 || p + 153 > frame.end {
+        if frame.end - p != 0xb8 {
             continue;
         }
-        let Some(apex) = read_f64_array::<3>(data, p) else {
+        let Some(values) = read_f64_array::<23>(data, p) else {
             continue;
         };
-        let Some(t1) = read_f64_array::<3>(data, p + 24) else {
-            continue;
-        };
-        let Some(t2) = read_f64_array::<3>(data, p + 48) else {
-            continue;
-        };
-        let Some(axis) = read_f64_array::<3>(data, p + 72) else {
-            continue;
-        };
-        let Some(half_angle) = f64_le(data, p + 96) else {
-            continue;
-        };
-        let Some(angular_offset) = f64_le(data, p + 120) else {
-            continue;
-        };
-        let Some(slant_range) = read_f64_array::<2>(data, p + 128) else {
-            continue;
-        };
-        let Some(angular_scale) = f64_le(data, p + 144) else {
-            continue;
-        };
+        let apex: [f64; 3] = values[0..3].try_into().expect("three apex values");
+        let t1: [f64; 3] = values[3..6]
+            .try_into()
+            .expect("three first-direction values");
+        let t2: [f64; 3] = values[6..9]
+            .try_into()
+            .expect("three second-direction values");
+        let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
+        let half_angle = values[12];
+        let angular_offset = values[15];
+        let mut slant_range = [values[16], values[17]];
+        let angular_scale = values[18];
+        if slant_range[0].abs() <= 1e-12 {
+            slant_range[0] = 0.0;
+        }
         let unit = |v: [f64; 3]| ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) - 1.0).abs() < 1e-9;
-        if unit(t1)
+        let cross = [
+            t1[1] * t2[2] - t1[2] * t2[1],
+            t1[2] * t2[0] - t1[0] * t2[2],
+            t1[0] * t2[1] - t1[1] * t2[0],
+        ];
+        if values.iter().all(|value| value.is_finite())
+            && unit(t1)
             && unit(t2)
             && unit(axis)
+            && cross
+                .iter()
+                .zip(axis)
+                .all(|(cross, axis)| (cross - axis).abs() <= 1e-9)
             && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
             && (0.0..1e6).contains(&angular_scale)
-            && 0.0 < slant_range[0]
+            && 0.0 <= slant_range[0]
             && slant_range[0] < slant_range[1]
             && slant_range[1] < 1e6
-            && apex
-                .iter()
-                .chain(&[angular_offset])
-                .all(|value| value.is_finite())
         {
             out.push(B2Cone {
                 pos,
@@ -1161,6 +1163,7 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
                 t2,
                 axis,
                 half_angle,
+                angular_offset,
                 slant_range,
                 angular_scale,
             });

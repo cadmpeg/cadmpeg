@@ -340,15 +340,19 @@ The reconstructed analytic axis is normalized after recovering `az`; this remove
 
 **Two-step param→face binding:** param→surface by shared tag (`plane.tag_u24 == prefix.target_u24`), then surface→face positionally (`surface_prefix[i]` → FBB row `i` by ascending offset). `0x60` `curve_support_row[i]` → spine `edge_row[i]` positionally.
 
-### 5.9 Sphere record `b2 03 2a`
+### 5.9 Cone record `b2 03 29`
+
+The 184-byte payload is `<apex:3f64le> <direction_x:3f64le> <direction_y:3f64le> <axis:3f64le> <half_angle:f64le> <16B> <angular_offset:f64le> <slant_min:f64le> <slant_max:f64le> <angular_scale:f64le> <32B>`. The three directions form a right-handed orthonormal frame, `0<half_angle<π/2`, the angular scale is positive, and the slant interval is increasing. `|slant_min|≤1e-12` denotes the apex and canonicalizes to zero. The native chart evaluates with `azimuth=U/angular_scale` and `P(U,V)=apex+V·(cos(half_angle)·axis+sin(half_angle)·(cos(azimuth)·direction_x+sin(azimuth)·direction_y))`.
+
+### 5.10 Sphere record `b2 03 2a`
 
 The 152-byte payload is `<center:3f64le> <stored_x:3f64le> <stored_y:3f64le> <stored_axis:3f64le> <radius:f64le> <u0:f64le> <u1:f64le> <v0:f64le> <v1:f64le> <construction_radius:f64le> <chart_origin:f64le>`. The radius and construction radius are positive and both angular intervals are increasing. Each stored direction has length `radius`; dividing the three directions by `radius` produces a right-handed orthonormal frame.
 
-### 5.10 Torus record `b2 03 2b`
+### 5.11 Torus record `b2 03 2b`
 
 The 200-byte payload is `<center:3f64le> <direction_x:3f64le> <direction_y:3f64le> <axis:3f64le> <major_radius:f64le> <minor_radius:f64le> <64B> <major_scale:f64le> <minor_scale:f64le> <zero:f64le>`. The three directions form a right-handed orthonormal frame. Both radii and both scales are positive. Native parameters use the independent gauges `major_angle=U/major_scale` and `minor_angle=V/minor_scale`. The point is `center+(major_radius+minor_radius·cos(minor_angle))·(cos(major_angle)·direction_x+sin(major_angle)·direction_y)+minor_radius·sin(minor_angle)·axis`.
 
-### 5.11 Surface-of-revolution record `b2 03 2d`
+### 5.12 Surface-of-revolution record `b2 03 2d`
 
 The `00 33 30` byte is only the kind tag; geometry is a dedicated 174-byte `b2 03 2d` record: `+5` reference token (`08` or `0a`), `+6` profile-curve ref (u16le), `+8` 12×f64le (axis origin XYZ + three basis vectors), `+104` 4×f64le angular/profile bounds, then scale/flag tail. Three normalized relations hold to f64 bit-equality (`angular_lo/scale==0.5`, `(angular_hi−angular_lo)/scale==2π`, `mean/scale==π+0.5`).
 
@@ -733,6 +737,6 @@ A nested-`V5_CFV2` file without a `30 04 04 ff` spine uses the object-stream `b5
   A single-precision family stores geometry to ~1e-5 mm; incidence gates cannot be tighter than the source storage precision.
 
 - **On-carrier incidence tolerance is 1e-3 mm.** Endpoint-by-surface-intersection binding uses `on(P,surf)` := signed distance ≤ 1e-3 mm (§5.6); circle/arc vertex matching uses `|dist(v,c) − r| ≤ 1e-3` (§5.6); per-coordinate cylinder rim/axis identity gates and the plane/cylinder/torus/cone/sphere on-carrier gates (§5.7) run at the same order.
-- **Normalized-relation checks are exact (f64 bit-equality)** where the source is f64: the surface-of-revolution angular relations (`angular_lo/scale == 0.5`, `(angular_hi−angular_lo)/scale == 2π`; §5.11) and the `SurfacicReps` bounding-sphere containment `|f[i]−f[6+i]| + f[3+i] ≤ f[9]` (§3.5) hold to bit-equality, not within a tolerance band.
+- **Normalized-relation checks are exact (f64 bit-equality)** where the source is f64: the surface-of-revolution angular relations (`angular_lo/scale == 0.5`, `(angular_hi−angular_lo)/scale == 2π`; §5.12) and the `SurfacicReps` bounding-sphere containment `|f[i]−f[6+i]| + f[3+i] ≤ f[9]` (§3.5) hold to bit-equality, not within a tolerance band.
 
 ---

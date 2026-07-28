@@ -493,8 +493,32 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
     assert_eq!(cones[0].apex, [1.0, 2.0, 3.0]);
     assert_eq!(cones[0].axis, [0.0, 0.0, 1.0]);
     assert_eq!(cones[0].half_angle, 0.25);
+    assert_eq!(cones[0].angular_offset, 0.5);
     assert_eq!(cones[0].slant_range, [2.0, 8.0]);
     assert_eq!(cones[0].angular_scale, 3.0);
+}
+
+#[test]
+fn b2_cone_parser_accepts_and_canonicalizes_an_apex_origin() {
+    let mut stream = b2_cone_stream();
+    stream[133..141].copy_from_slice(&(-5e-13f64).to_le_bytes());
+    let cones = crate::families::b2::records::b2_cones(&stream);
+    assert_eq!(cones.len(), 1);
+    assert_eq!(cones[0].slant_range, [0.0, 8.0]);
+
+    stream[133..141].copy_from_slice(&(-2e-12f64).to_le_bytes());
+    assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
+}
+
+#[test]
+fn b2_cone_parser_rejects_a_left_handed_or_nonfinite_payload() {
+    let mut stream = b2_cone_stream();
+    stream[93..101].copy_from_slice(&(-1.0f64).to_le_bytes());
+    assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
+
+    let mut stream = b2_cone_stream();
+    stream[157..165].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
 }
 
 #[test]

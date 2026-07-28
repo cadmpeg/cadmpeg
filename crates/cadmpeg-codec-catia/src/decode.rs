@@ -342,6 +342,10 @@ fn finish_decode(
             native.consolidated_class61_records.len(),
         ),
         (
+            "decoded_consolidated_cone_count".to_string(),
+            native.consolidated_cones.len(),
+        ),
+        (
             "decoded_consolidated_group_count".to_string(),
             native.consolidated_groups.len(),
         ),
