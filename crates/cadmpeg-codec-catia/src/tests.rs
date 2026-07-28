@@ -5864,6 +5864,18 @@ fn complete_prt_sketch_declaration_transfers_neutral_identity() {
         ir.model.features[0].native_ref.as_deref(),
         Some(native.design_objects[0].id.as_str())
     );
+    assert_eq!(
+        crate::sketch::transfer_sketches(
+            &mut CadIr::empty(cadmpeg_ir::units::Units::default()),
+            &native,
+        )
+        .features_by_design_object,
+        [(
+            native.design_objects[0].id.clone(),
+            ir.model.features[0].id.clone(),
+        )]
+        .into(),
+    );
 }
 
 #[test]
@@ -8858,6 +8870,79 @@ fn decode_transfers_a_closed_constant_formula() {
         .exactness
         .get(&output.id.0)
         .is_none_or(|annotation| !annotation.fields.contains_key("expression")));
+}
+
+#[test]
+fn transferred_formula_parameter_retains_a_transferred_feature_owner() {
+    let mut native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_typed_formula_relation(
+            4,
+            false,
+            "LENGTH",
+            "LENGTH",
+            35.0,
+            33.0,
+            "#1_ /2-2mm",
+        ));
+    let input = native
+        .entity_records
+        .iter()
+        .find(|entity| {
+            entity
+                .parameter_value
+                .as_ref()
+                .is_some_and(|parameter| parameter.name.value == "Thickness")
+        })
+        .expect("typed input parameter");
+    let input_entity = input.id.clone();
+    let input_object = input.object_record.clone();
+    let design_object = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .find(|record| record.id == input_object)
+        .and_then(|record| record.design_object.clone())
+        .expect("input design object");
+    let declaration = native
+        .object_graphs
+        .iter_mut()
+        .flat_map(|graph| &mut graph.records)
+        .find(|record| record.id == input_object)
+        .expect("input object record");
+    declaration.class_name = Some("PRTSketch".to_string());
+    declaration.class_entry = Some("catia:test:catalog-entry#PRTSketch".to_string());
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let sketch_transfer = crate::sketch::transfer_sketches(&mut ir, &native);
+    let feature = sketch_transfer
+        .features_by_design_object
+        .get(&design_object)
+        .expect("transferred owner feature")
+        .clone();
+    let formula_transfer = crate::formula::transfer_parameters(
+        &mut ir,
+        &native,
+        &sketch_transfer.features_by_design_object,
+        &mut cadmpeg_ir::Annotations::default(),
+    );
+    assert_eq!(formula_transfer.owned_parameter_count, 2);
+
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.native_ref.as_deref() == Some(input_entity.as_str()))
+        .expect("transferred input parameter");
+    assert_eq!(parameter.owner, Some(feature));
+    let validation = cadmpeg_ir::validate::validate(&ir, Vec::new());
+    assert!(
+        validation
+            .findings
+            .iter()
+            .all(|finding| finding.check == cadmpeg_ir::report::Check::NativeLinks),
+        "feature-owned formula parameter produces valid IR: {:?}",
+        validation.findings
+    );
 }
 
 #[test]

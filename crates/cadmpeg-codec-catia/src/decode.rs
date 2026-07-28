@@ -67,8 +67,13 @@ fn finish_decode(
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
-    let formula_transfer = formula::transfer_parameters(&mut ir, &native, &mut annotations);
     let sketch_transfer = sketch::transfer_sketches(&mut ir, &native);
+    let formula_transfer = formula::transfer_parameters(
+        &mut ir,
+        &native,
+        &sketch_transfer.features_by_design_object,
+        &mut annotations,
+    );
     let object_record_count: usize = native
         .object_graphs
         .iter()
@@ -697,6 +702,10 @@ fn finish_decode(
         (
             "transferred_legacy_formula_count".to_string(),
             formula_transfer.legacy_formula_count,
+        ),
+        (
+            "transferred_owned_parameter_count".to_string(),
+            formula_transfer.owned_parameter_count,
         ),
         (
             "transferred_formula_design_record_count".to_string(),

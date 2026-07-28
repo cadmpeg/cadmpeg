@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
+use cadmpeg_ir::features::{
+    Angle, DesignParameter, FeatureId, Length, ParameterId, ParameterValue,
+};
 use cadmpeg_ir::{Annotations, Exactness};
 
 use crate::native::CatiaNative;
@@ -12,6 +14,7 @@ use crate::native::CatiaNative;
 pub(crate) fn transfer_parameters(
     ir: &mut CadIr,
     native: &CatiaNative,
+    features_by_design_object: &HashMap<String, FeatureId>,
     annotations: &mut Annotations,
 ) -> FormulaTransfer {
     let entities = native
@@ -87,7 +90,11 @@ pub(crate) fn transfer_parameters(
             transferred.push(FormulaParameterCandidate {
                 parameter: DesignParameter {
                     id,
-                    owner: None,
+                    owner: parameter_owner(
+                        &entity.object_record,
+                        &object_records,
+                        features_by_design_object,
+                    ),
                     ordinal: 0,
                     name: parameter.name.value.clone(),
                     expression: match &value {
@@ -142,7 +149,11 @@ pub(crate) fn transfer_parameters(
                             transferred.push(FormulaParameterCandidate {
                                 parameter: DesignParameter {
                                     id: output_id,
-                                    owner: None,
+                                    owner: parameter_owner(
+                                        &output.object_record,
+                                        &object_records,
+                                        features_by_design_object,
+                                    ),
                                     ordinal: 0,
                                     name: output_value.name.value.clone(),
                                     expression: expression.expression.value.clone(),
@@ -283,6 +294,10 @@ pub(crate) fn transfer_parameters(
         }
     }
     let transferred = parameters.len();
+    let owned = parameters
+        .iter()
+        .filter(|candidate| candidate.parameter.owner.is_some())
+        .count();
     ir.model
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
@@ -291,8 +306,19 @@ pub(crate) fn transfer_parameters(
         legacy_parameter_count: legacy_transfer.parameters,
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
         legacy_formula_count: legacy_transfer.formulas,
+        owned_parameter_count: owned,
         consumed_object_records,
     }
+}
+
+fn parameter_owner(
+    object_record: &str,
+    object_records: &HashMap<&str, &crate::native::CatiaObjectRecord>,
+    features_by_design_object: &HashMap<String, FeatureId>,
+) -> Option<FeatureId> {
+    let object = object_records.get(object_record)?;
+    let design_object = object.design_object.as_deref()?;
+    features_by_design_object.get(design_object).cloned()
 }
 
 #[derive(Default)]
@@ -301,6 +327,7 @@ pub(crate) struct FormulaTransfer {
     pub(crate) legacy_parameter_count: usize,
     pub(crate) legacy_selector_parameter_count: usize,
     pub(crate) legacy_formula_count: usize,
+    pub(crate) owned_parameter_count: usize,
     pub(crate) consumed_object_records: HashSet<String>,
 }
 

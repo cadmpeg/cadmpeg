@@ -15,6 +15,7 @@ use crate::object_graph::{PayloadField, PayloadSubtype};
 pub(crate) struct SketchTransfer {
     pub(crate) declaration_records: HashSet<String>,
     pub(crate) placement_records: HashSet<String>,
+    pub(crate) features_by_design_object: HashMap<String, FeatureId>,
 }
 
 impl SketchTransfer {
@@ -39,7 +40,6 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchT
         .iter()
         .filter_map(|object| sketch_candidate(object, &records))
         .collect::<Vec<_>>();
-    let mut emitted_features = HashMap::<&str, FeatureId>::new();
     let mut transfer = SketchTransfer::default();
 
     for candidate in candidates {
@@ -79,7 +79,7 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchT
             parent: object
                 .owner_design_object
                 .as_deref()
-                .and_then(|owner| emitted_features.get(owner))
+                .and_then(|owner| transfer.features_by_design_object.get(owner))
                 .cloned(),
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -93,7 +93,9 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchT
             },
             native_ref: Some(object.id.clone()),
         });
-        emitted_features.insert(object.id.as_str(), feature_id);
+        transfer
+            .features_by_design_object
+            .insert(object.id.clone(), feature_id.clone());
         transfer.declaration_records.extend(
             declarations
                 .into_iter()
