@@ -1976,6 +1976,7 @@ fn parse_offset_surface(
     let expected_kind = match surfaces.get(&carrier_surface) {
         Some(B5Surface::Plane { .. }) => 0x15,
         Some(B5Surface::Cylinder { .. }) => 0x05,
+        Some(B5Surface::Cone { .. }) => 0x11,
         Some(B5Surface::Sphere { .. }) => 0x09,
         Some(B5Surface::Torus { .. }) => 0x0d,
         Some(B5Surface::RollingBall { .. }) => 0x19,
@@ -4195,6 +4196,46 @@ mod tests {
                 distance: -6.5,
                 carrier_kind: 0x09,
                 parameter_bounds: [[0.0, 2.0], [-2.0, 4.0]],
+            })
+        );
+    }
+
+    #[test]
+    fn offset_surface_accepts_a_cone_result_carrier() {
+        let carrier = B5Surface::Cone {
+            apex: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            half_angle: 0.25,
+            angular_offset: 0.0,
+            slant_range: [-2.0, 4.0],
+            angular_scale: 3.0,
+        };
+        let surfaces = BTreeMap::from([(2, carrier)]);
+        let mut payload = vec![0x82, 0x82, 0x83];
+        payload.extend_from_slice(&1.5_f64.to_le_bytes());
+        payload.push(0x11);
+        for value in [-3.0_f64, 3.0, -2.0, 4.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x30,
+            object_id: 9,
+            payload,
+        };
+
+        assert_eq!(
+            parse_offset_surface(&record, &surfaces, &BTreeMap::new(), &HashMap::new()),
+            Some(B5OffsetSurface {
+                object_id: 9,
+                carrier_surface: 2,
+                source_surface: 3,
+                distance: 1.5,
+                carrier_kind: 0x11,
+                parameter_bounds: [[-3.0, 3.0], [-2.0, 4.0]],
             })
         );
     }
