@@ -33,15 +33,23 @@ pub(super) fn sphere_great_circle_geometry(
         direction_y,
         axis: sphere_axis,
         radius,
+        construction_radius,
         ..
     } = surface
     else {
         return None;
     };
-    if (pcurve.radius - radius).abs() > 1e-12 * pcurve.radius.abs().max(radius.abs()).max(1.0) {
+    if (pcurve.chart_scale - construction_radius).abs()
+        > 1e-12
+            * pcurve
+                .chart_scale
+                .abs()
+                .max(construction_radius.abs())
+                .max(1.0)
+    {
         return None;
     }
-    let phase = pcurve.chart_shift / pcurve.radius + pcurve.phase;
+    let phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
     let plane_axis = unit(add(
         scale(*sphere_axis, 1.0),
         add(

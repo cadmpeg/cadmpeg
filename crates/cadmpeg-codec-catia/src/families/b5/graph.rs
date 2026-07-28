@@ -375,11 +375,11 @@ pub struct B5SphereGreatCirclePcurve {
     pub chart_bounds: [[f64; 2]; 2],
     /// Length-valued shift contributing to the great-circle plane phase.
     pub chart_shift: f64,
-    /// Sphere radius repeated by the pcurve.
-    pub radius: f64,
+    /// Length scale converting the sphere chart's angular coordinates.
+    pub chart_scale: f64,
     /// Signed slope in `tan(latitude) = slope * cos(azimuth - phase)`.
     pub slope: f64,
-    /// Stored phase term. The geometric phase is `chart_shift / radius + phase`.
+    /// Stored phase term. The geometric phase is `chart_shift / chart_scale + phase`.
     pub phase: f64,
 }
 
@@ -1976,6 +1976,7 @@ fn parse_offset_surface(
     let expected_kind = match surfaces.get(&carrier_surface) {
         Some(B5Surface::Plane { .. }) => 0x15,
         Some(B5Surface::Cylinder { .. }) => 0x05,
+        Some(B5Surface::Sphere { .. }) => 0x09,
         Some(B5Surface::Torus { .. }) => 0x0d,
         Some(B5Surface::RollingBall { .. }) => 0x19,
         Some(B5Surface::Unknown {
@@ -2774,7 +2775,7 @@ fn parse_sphere_great_circle_pcurve(
     surface: &B5Surface,
 ) -> Option<B5SphereGreatCirclePcurve> {
     let B5Surface::Sphere {
-        radius: sphere_radius,
+        construction_radius: sphere_chart_scale,
         angular_bounds,
         chart_origin,
         ..
@@ -2793,13 +2794,13 @@ fn parse_sphere_great_circle_pcurve(
     let [chart_shift, direction, zero0] = line_values::<3>(&record.payload, position + 2)?;
     position += 26;
     (record.payload.get(position) == Some(&0x1d)).then_some(())?;
-    let [radius, slope, reciprocal_scale, phase, zero1] =
+    let [chart_scale, slope, reciprocal_scale, phase, zero1] =
         line_values::<5>(&record.payload, position + 1)?;
 
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 1e-12 * left.abs().max(right.abs()).max(1.0)
     };
-    let surface_u_bounds = angular_bounds[0].map(|angle| radius * angle);
+    let surface_u_bounds = angular_bounds[0].map(|angle| chart_scale * angle);
     let contains = |outer: [f64; 2], inner: [f64; 2]| {
         let scale = outer
             .into_iter()
@@ -2812,17 +2813,17 @@ fn parse_sphere_great_circle_pcurve(
     (direction.abs() == 1.0
         && zero0 == 0.0
         && zero1 == 0.0
-        && radius > 0.0
+        && chart_scale > 0.0
         && u0 < u1
-        && close(radius, *sphere_radius)
-        && close(reciprocal_scale, -direction / radius)
+        && close(chart_scale, *sphere_chart_scale)
+        && close(reciprocal_scale, -direction / chart_scale)
         && contains(surface_u_bounds, [u0, u1])
         && close(v0, *chart_origin)
-        && close(v1, chart_origin + std::f64::consts::TAU * radius))
+        && close(v1, chart_origin + std::f64::consts::TAU * chart_scale))
     .then_some(B5SphereGreatCirclePcurve {
         chart_bounds: [[u0, u1], [v0, v1]],
         chart_shift,
-        radius,
+        chart_scale,
         slope,
         phase,
     })
@@ -4029,13 +4030,14 @@ mod tests {
     #[test]
     fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
         let radius = 5.0;
+        let chart_scale = 8.0;
         let chart_origin = 11.0;
         let mut payload = vec![0x81, 0x82];
         for value in [
-            radius * 0.25,
-            radius * 1.25,
+            chart_scale * 0.25,
+            chart_scale * 1.25,
             chart_origin,
-            chart_origin + std::f64::consts::TAU * radius,
+            chart_origin + std::f64::consts::TAU * chart_scale,
         ] {
             payload.extend_from_slice(&value.to_le_bytes());
         }
@@ -4044,7 +4046,7 @@ mod tests {
             payload.extend_from_slice(&value.to_le_bytes());
         }
         payload.push(0x1d);
-        for value in [radius, -0.75, 1.0 / radius, -1.25, 0.0] {
+        for value in [chart_scale, -0.75, 1.0 / chart_scale, -1.25, 0.0] {
             payload.extend_from_slice(&value.to_le_bytes());
         }
         let record = B5Record {
@@ -4061,7 +4063,7 @@ mod tests {
             axis: [0.0, 0.0, 1.0],
             radius,
             angular_bounds: [[0.0, 1.5], [-1.0, 1.0]],
-            construction_radius: 8.0,
+            construction_radius: chart_scale,
             chart_origin,
         };
 
@@ -4069,11 +4071,14 @@ mod tests {
             parse_sphere_great_circle_pcurve(&record, &sphere),
             Some(B5SphereGreatCirclePcurve {
                 chart_bounds: [
-                    [radius * 0.25, radius * 1.25],
-                    [chart_origin, chart_origin + std::f64::consts::TAU * radius],
+                    [chart_scale * 0.25, chart_scale * 1.25],
+                    [
+                        chart_origin,
+                        chart_origin + std::f64::consts::TAU * chart_scale,
+                    ],
                 ],
                 chart_shift: 2.0,
-                radius,
+                chart_scale,
                 slope: -0.75,
                 phase: -1.25,
             })
@@ -4150,6 +4155,46 @@ mod tests {
                 distance: -0.5,
                 carrier_kind: 0x15,
                 parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
+            })
+        );
+    }
+
+    #[test]
+    fn offset_surface_accepts_a_sphere_result_carrier() {
+        let carrier = B5Surface::Sphere {
+            center: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 2.0,
+            angular_bounds: [[0.0, 1.0], [-1.0, 1.0]],
+            construction_radius: 2.0,
+            chart_origin: -2.0,
+        };
+        let surfaces = BTreeMap::from([(2, carrier)]);
+        let mut payload = vec![0x82, 0x82, 0x83];
+        payload.extend_from_slice(&(-6.5_f64).to_le_bytes());
+        payload.push(0x09);
+        for value in [0.0_f64, 2.0, -2.0, 4.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x30,
+            object_id: 9,
+            payload,
+        };
+
+        assert_eq!(
+            parse_offset_surface(&record, &surfaces, &BTreeMap::new(), &HashMap::new()),
+            Some(B5OffsetSurface {
+                object_id: 9,
+                carrier_surface: 2,
+                source_surface: 3,
+                distance: -6.5,
+                carrier_kind: 0x09,
+                parameter_bounds: [[0.0, 2.0], [-2.0, 4.0]],
             })
         );
     }
