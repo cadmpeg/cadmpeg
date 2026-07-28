@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 148;
+pub const CATIA_NATIVE_VERSION: u32 = 149;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1288,7 +1288,7 @@ pub struct CatiaDesignClass {
     pub name: String,
 }
 
-/// One exact inter-object relation occurrence in a grouped design object.
+/// One exact outbound relation occurrence in a grouped design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaDesignObjectRelation {
     /// Field record containing the relation.
@@ -1305,11 +1305,12 @@ pub struct CatiaDesignObjectRelation {
     /// Exact schema class of the selected target field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_class: Option<CatiaDesignClass>,
-    /// Design object containing the selected field record.
-    pub target_design_object: String,
+    /// Design object containing the selected field record, when it has an owner group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_design_object: Option<String>,
 }
 
-/// Structural source of one exact inter-object relation occurrence.
+/// Structural source of one exact outbound relation occurrence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum CatiaDesignObjectRelationSource {
     /// Class-specific storage selector in the field-record head.
@@ -1441,13 +1442,13 @@ fn design_objects(
                             .flat_map(|record| {
                                 let storage =
                                     record.storage_record.as_ref().and_then(|target_field| {
-                                        let target_design_object =
-                                            record.storage_design_object.as_ref()?.clone();
                                         let target_record = record_indices
                                             .get(&record.storage_ref?)
                                             .and_then(|index| graph.records.get(*index))?;
-                                        (target_design_object != id).then_some(
-                                            CatiaDesignObjectRelation {
+                                        let target_design_object =
+                                            record.storage_design_object.clone();
+                                        (target_design_object.as_deref() != Some(id.as_str()))
+                                            .then_some(CatiaDesignObjectRelation {
                                                 source_field: record.id.clone(),
                                                 source_class: design_class(record),
                                                 source: CatiaDesignObjectRelationSource::Storage,
@@ -1455,20 +1456,18 @@ fn design_objects(
                                                 target_field: target_field.clone(),
                                                 target_class: design_class(target_record),
                                                 target_design_object,
-                                            },
-                                        )
+                                            })
                                     });
                                 storage
                                     .into_iter()
                                     .chain(record.references.iter().filter_map(|reference| {
-                                        let target_design_object =
-                                            reference.design_object.as_ref()?.clone();
                                         let target_field = reference.target.as_ref()?.clone();
                                         let target_record = record_indices
                                             .get(&reference.entity_id)
                                             .and_then(|index| graph.records.get(*index))?;
-                                        (target_design_object != id).then_some(
-                                            CatiaDesignObjectRelation {
+                                        let target_design_object = reference.design_object.clone();
+                                        (target_design_object.as_deref() != Some(id.as_str()))
+                                            .then_some(CatiaDesignObjectRelation {
                                                 source_field: record.id.clone(),
                                                 source_class: design_class(record),
                                                 source: CatiaDesignObjectRelationSource::Payload {
@@ -1479,8 +1478,7 @@ fn design_objects(
                                                 target_field,
                                                 target_class: design_class(target_record),
                                                 target_design_object,
-                                            },
-                                        )
+                                            })
                                     }))
                             })
                             .collect(),

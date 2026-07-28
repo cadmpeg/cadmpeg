@@ -5289,7 +5289,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                 target_entity_id: 3,
                 target_field: graph.records[2].id.clone(),
                 target_class: None,
-                target_design_object: native.design_objects[1].id.clone(),
+                target_design_object: Some(native.design_objects[1].id.clone()),
             },
             crate::native::CatiaDesignObjectRelation {
                 source_field: graph.records[0].id.clone(),
@@ -5304,7 +5304,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                 target_entity_id: 3,
                 target_field: graph.records[2].id.clone(),
                 target_class: None,
-                target_design_object: native.design_objects[1].id.clone(),
+                target_design_object: Some(native.design_objects[1].id.clone()),
             },
         ]
     );
@@ -5336,7 +5336,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
             target_entity_id: 1,
             target_field: graph.records[0].id.clone(),
             target_class: None,
-            target_design_object: native.design_objects[0].id.clone(),
+            target_design_object: Some(native.design_objects[0].id.clone()),
         }]
     );
 }
@@ -5364,7 +5364,7 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
                 target_entity_id: 3,
                 target_field: graph.records[2].id.clone(),
                 target_class: None,
-                target_design_object: native.design_objects[1].id.clone(),
+                target_design_object: Some(native.design_objects[1].id.clone()),
             },
             crate::native::CatiaDesignObjectRelation {
                 source_field: graph.records[0].id.clone(),
@@ -5376,7 +5376,7 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
                 target_entity_id: 3,
                 target_field: graph.records[2].id.clone(),
                 target_class: None,
-                target_design_object: native.design_objects[1].id.clone(),
+                target_design_object: Some(native.design_objects[1].id.clone()),
             },
         ]
     );
@@ -5395,6 +5395,43 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn native_design_objects_preserve_relations_to_unowned_fields() {
+    let records = [
+        object_graph_record(&[0x04, 0x01, 0x81], &[0x81, 0x82, 0xfe]),
+        object_graph_record(&[0x04, 0x01, 0xe5, 0xff, 0xff, 0xff, 0xe4], &[0xfe]),
+    ];
+    let bytes = sequential_entity_backed_object_graph(&records);
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode relation to unowned field");
+    let native =
+        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
+            .expect("load relation to unowned field");
+    let graph = &native.object_graphs[0];
+
+    assert_eq!(native.design_objects.len(), 1);
+    assert_eq!(
+        native.design_objects[0].relations,
+        [crate::native::CatiaDesignObjectRelation {
+            source_field: graph.records[0].id.clone(),
+            source_class: None,
+            source: crate::native::CatiaDesignObjectRelationSource::Payload {
+                payload_offset: 0,
+                container: crate::native::CatiaObjectRecordReferenceSource::Field,
+            },
+            target_entity_id: 2,
+            target_field: graph.records[1].id.clone(),
+            target_class: None,
+            target_design_object: None,
+        }]
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_design_unowned_field_relation_count"],
+        1
+    );
 }
 
 #[test]
