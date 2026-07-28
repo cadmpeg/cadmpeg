@@ -8381,6 +8381,69 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
         }
     );
+    let mut schema_orientation = distance_definition.clone();
+    let schema_dimension = &mut schema_orientation
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0];
+    schema_dimension.value_unit = crate::feature::DimensionUnit::SchemaDefined;
+    schema_dimension.value = Some(0.0);
+    let schema_relations = schema_orientation.relations.as_mut().expect("relations");
+    let relation_id = schema_relations.rows[0].relation_id;
+    schema_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 900,
+        kind: 2,
+        flags: 0,
+        status: 35,
+        items: vec![crate::feature::FeatureSkampItem {
+            entity_id: 12,
+            sense: 0,
+        }],
+        offset: 901,
+    }];
+    schema_relations.skamp_header = Some(crate::feature::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 902,
+        offset: 900,
+    });
+    schema_relations.triples = vec![crate::feature::FeatureRelationTriple {
+        relation_id: Some(relation_id),
+        equation_id: None,
+        skamp_id: Some(900),
+        offset: 902,
+    }];
+    schema_relations.triples_header = Some(crate::feature::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 903,
+        offset: 902,
+    });
+    assert_eq!(
+        section_dimension_constraints(
+            &schema_orientation,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Vertical {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+        }
+    );
+    schema_orientation
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .value = Some(1.0);
+    assert!(matches!(
+        section_dimension_constraints(
+            &schema_orientation,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
     let mut separate_point_distance = distance_definition.clone();
     separate_point_distance
         .relations

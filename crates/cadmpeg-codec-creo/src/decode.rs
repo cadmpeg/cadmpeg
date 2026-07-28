@@ -9471,6 +9471,47 @@ fn section_dimension_constraints(
                         parameter,
                     });
                 }
+                if relation.relation_type == 0
+                    && matches!(relation.sign, 0 | 1 | 0xf6)
+                    && dimension.value_unit == crate::feature::DimensionUnit::SchemaDefined
+                    && dimension.value == Some(0.0)
+                {
+                    let vectors = relation.operand_vectors?;
+                    if section_linear_distance_vectors(vectors) {
+                        let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
+                            return None;
+                        };
+                        let incidence = joined_incidence?;
+                        let [item] = incidence.items.as_slice() else {
+                            return None;
+                        };
+                        if !section_skamp_active(incidence.status) {
+                            return None;
+                        }
+                        let expected_coordinate = match incidence.kind {
+                            1 => 1,
+                            2 => 0,
+                            _ => return None,
+                        };
+                        if item.sense != 0 {
+                            return None;
+                        }
+                        let measured = unique_section_skamp_segment(definition, item.entity_id)?;
+                        if measured.kind == crate::feature::FeatureSegmentKind::Line
+                            && (measured.point_ids == [first_id, second_id]
+                                || measured.point_ids == [second_id, first_id])
+                            && measured.vertical_horizontal == Some(expected_coordinate)
+                            && known_entities.contains(&measured.external_id)
+                        {
+                            let entity = sketch_entity_id(sketch, measured.external_id);
+                            return Some(if incidence.kind == 1 {
+                                SketchConstraintDefinition::Horizontal { entity }
+                            } else {
+                                SketchConstraintDefinition::Vertical { entity }
+                            });
+                        }
+                    }
+                }
                 if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
                     return None;
                 }

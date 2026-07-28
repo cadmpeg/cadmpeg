@@ -1619,6 +1619,13 @@ schema-defined selected dimension does not define a neutral distance. The more
 specific operand-vector and `verhor` forms below refine that distance to
 horizontal or vertical endpoint loci; incomplete operand vectors do not discard
 the incidence-backed distance.
+When the selected dimension is schema-defined with stored value zero, the same
+type-zero linear operand vectors instead replay an orientation incidence only
+when the relation joins exactly one active unary type-one or type-two incidence
+on the same line, the vector point pair is that line's endpoint pair, and the
+line's independent orientation selectors agree with the incidence kind. The
+relation transfers as the joined horizontal or vertical line constraint without
+a dimensional parameter. A nonzero schema-defined value remains native.
 The same locus and entity mappings apply when the joined incidence is disabled;
 the resulting distance is inactive and does not require its equation to be
 satisfied by resolved geometry.
