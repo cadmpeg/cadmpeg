@@ -5310,7 +5310,7 @@ fn placed_tabulated_cylinder_directrix(
             first_offset: f64,
             reflect_sweep: bool,
         },
-        OffsetSelectedPlanar,
+        SelectedPlanar,
     }
     if parameters.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
         return None;
@@ -5320,45 +5320,44 @@ fn placed_tabulated_cylinder_directrix(
         .iter()
         .copied()
         .collect::<Option<Vec<_>>>()?;
-    let (values, layout) = (|| {
-        let frame = parameters.tabulated_cylinder_frame?;
-        let values = frame.values.to_vec();
-        let heads = frame.prefixes;
-        let offset_planar_layout = matches!(heads.as_slice(), [_, 0x46, _, _, 0x46, _]);
-        let zero_offset_layout = matches!(heads.as_slice(), [_, 0x42, _, _, 0x18, _]);
-        if offset_planar_layout {
-            Some((
-                values,
-                FrameLayout::SignedPlanar {
-                    first_offset: 30.0,
-                    reflect_sweep: false,
-                },
-            ))
-        } else if zero_offset_layout {
-            Some((
-                values,
-                FrameLayout::SignedPlanar {
-                    first_offset: 0.0,
-                    reflect_sweep: false,
-                },
-            ))
-        } else if matches!(heads.as_slice(), [_, 0x2d, _, _, 0x2d, _]) {
-            Some((values, FrameLayout::OffsetSelectedPlanar))
-        } else {
-            None
-        }
-    })()
-    .or_else(|| {
-        let [_, frame] = parameters.scalar_frames.as_slice() else {
-            return None;
-        };
-        let values = frame
-            .slots
-            .iter()
-            .map(|slot| slot.value)
-            .collect::<Option<Vec<_>>>()?;
-        Some((values, FrameLayout::LegacyReflected))
-    })?;
+    let (values, layout) = parameters
+        .tabulated_cylinder_frame
+        .map(|frame| {
+            let values = frame.values.to_vec();
+            let heads = frame.prefixes;
+            let offset_planar_layout = matches!(heads.as_slice(), [_, 0x46, _, _, 0x46, _]);
+            let zero_offset_layout = matches!(heads.as_slice(), [_, 0x42, _, _, 0x18, _]);
+            if offset_planar_layout {
+                (
+                    values,
+                    FrameLayout::SignedPlanar {
+                        first_offset: 30.0,
+                        reflect_sweep: false,
+                    },
+                )
+            } else if zero_offset_layout {
+                (
+                    values,
+                    FrameLayout::SignedPlanar {
+                        first_offset: 0.0,
+                        reflect_sweep: false,
+                    },
+                )
+            } else {
+                (values, FrameLayout::SelectedPlanar)
+            }
+        })
+        .or_else(|| {
+            let [_, frame] = parameters.scalar_frames.as_slice() else {
+                return None;
+            };
+            let values = frame
+                .slots
+                .iter()
+                .map(|slot| slot.value)
+                .collect::<Option<Vec<_>>>()?;
+            Some((values, FrameLayout::LegacyReflected))
+        })?;
     let [a0, a1, a2, b0, b1, b2] = values.as_slice() else {
         return None;
     };
@@ -5389,7 +5388,7 @@ fn placed_tabulated_cylinder_directrix(
             if coordinate == 0 { first_offset } else { 0.0 },
         )
         .is_some(),
-        FrameLayout::OffsetSelectedPlanar => {
+        FrameLayout::SelectedPlanar => {
             let offsets: &[f64] = if coordinate == 0 {
                 &[0.0, 30.0]
             } else {
@@ -5439,7 +5438,7 @@ fn placed_tabulated_cylinder_directrix(
             )),
             reflect_sweep,
         ),
-        FrameLayout::OffsetSelectedPlanar => {
+        FrameLayout::SelectedPlanar => {
             let candidates = [(0.0, false), (30.0, true)]
                 .into_iter()
                 .filter_map(|(first_offset, reflect_sweep)| {

@@ -724,14 +724,15 @@ sweep-axis sign. The fifth-slot `18` is a one-byte zero bound and does not
 consume bytes from the sixth slot. Its first and fourth slots accept the
 complete first-coordinate scalar lane; its third and sixth slots accept the second-coordinate
 scalar lane. In the `_ 2d _ _ 2d _` layout, slots one and
-four also use the first-coordinate lane. Its directrix charts select exactly
-one of two forms: a zero-offset form retaining the sweep-axis sign, or a
-first-axis intercept magnitude of 30 with a zero second-axis intercept and a
-reflected sweep-axis sign. A missing or non-unique form leaves the frame opaque.
+four also use the first-coordinate lane. Every remaining complete replay-bound
+frame selects its directrix chart from exactly two forms: a zero-offset form
+retaining the sweep-axis sign, or a first-axis intercept magnitude of 30 with a
+zero second-axis intercept and a reflected sweep-axis sign. Scalar prefixes
+select the encoding of each coordinate; they do not otherwise constrain chart
+selection. A missing or non-unique form leaves the frame opaque.
 Each endpoint bound carries its own stored sign; resolving a chart may negate
 the two bounds independently. The resulting unit-slope affine map remains
 unique.
-Other six-scalar sequences after the marker are not directrix envelopes.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 
