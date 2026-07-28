@@ -1167,6 +1167,7 @@ pub fn bind_sketch_feature_geometry(
 const ROLE_0X4: u64 = 0x0000_0004_0000_0000;
 const ROLE_0X5: u64 = 0x0000_0005_0000_0000;
 const ROLE_0X10: u64 = 0x0000_0010_0000_0000;
+const ROLE_0X12: u64 = 0x0000_0012_0000_0000;
 
 /// Return the unique non-empty construction operand group in `scope` carrying
 /// `role`. Yields `None` unless exactly one such group exists.
@@ -1241,7 +1242,16 @@ pub(crate) fn project_thicken(
         return None;
     };
     let faces = direct_face_selection(scope, operands).or_else(|| {
-        let group = single_operand_group(groups, scope, ROLE_0X5)?;
+        let mut candidates = groups.iter().filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+                && matches!(group.role, ROLE_0X5 | ROLE_0X12)
+                && !group.members.is_empty()
+        });
+        let group = candidates.next()?;
+        if candidates.next().is_some() {
+            return None;
+        }
         Some(FaceSelection::Native(group.id.clone()))
     })?;
     Some(FeatureDefinition::Thicken {

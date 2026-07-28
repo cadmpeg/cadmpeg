@@ -3582,6 +3582,23 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         })
     ));
+    thicken_scope.frame_length = 295;
+    assert_eq!(exact_direct_face_operation(&bytes, &thicken_scope), None);
+    let compact_thicken_at = bytes.len();
+    let mut compact_thicken = vec![0; 295];
+    compact_thicken[45] = 1;
+    compact_thicken[46] = 1;
+    compact_thicken[47..51].copy_from_slice(&74u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_thicken);
+    thicken_scope.byte_offset = compact_thicken_at as u64;
+    assert!(matches!(
+        exact_direct_face_operation(&bytes, &thicken_scope),
+        Some(DesignDirectFaceOperation::Thicken {
+            signed_thickness: -1.0,
+            thickness_record_index: 74,
+            ..
+        })
+    ));
     thicken_scope.direct_face_operation = exact_direct_face_operation(&bytes, &thicken_scope);
     let thicken_group = DesignConstructionOperandGroup {
         id: "thicken-group".into(),
@@ -3614,6 +3631,19 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             thickness: Some(cadmpeg_ir::features::Length(10.0)),
             side: Some(cadmpeg_ir::features::ThickenSide::Reverse),
+        }) if native == "thicken-group"
+    ));
+    let mut bounded_face_thicken_group = thicken_group.clone();
+    bounded_face_thicken_group.role = 0x0000_0012_0000_0000;
+    assert!(matches!(
+        crate::design::feature_project::project_thicken(
+            &thicken_scope,
+            &[],
+            std::slice::from_ref(&bounded_face_thicken_group)
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Thicken {
+            faces: cadmpeg_ir::features::FaceSelection::Native(native),
+            ..
         }) if native == "thicken-group"
     ));
     let shell_at = bytes.len();
@@ -3746,7 +3776,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             },
         }) if native == "offset-group"
     ));
-    bytes[thicken_at + 47] = 0;
+    bytes[compact_thicken_at + 46] = 0;
     assert_eq!(exact_direct_face_operation(&bytes, &thicken_scope), None);
 
     for (record_index, ordinal, value) in [(75u32, 0u8, -2.0f64), (76, 1, 0.0)] {

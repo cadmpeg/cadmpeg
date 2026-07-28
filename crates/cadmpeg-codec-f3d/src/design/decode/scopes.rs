@@ -721,12 +721,18 @@ pub(crate) fn exact_direct_face_operation(
                 distance_offset: scalar.value_offset,
             })
         }
-        DesignFeatureFamily::Thicken
-            if parameter_scope_payload_length(scope) == Some(287)
-                && bytes.get(start + 47) == Some(&1)
-                && scope.reference_members.len() == 3 =>
-        {
-            let thickness_record_index = u32_at(bytes, start + 48)?;
+        DesignFeatureFamily::Thicken if scope.reference_members.len() == 3 => {
+            let reference_offset = match parameter_scope_payload_length(scope) {
+                Some(281)
+                    if matches!(bytes.get(start + 45), Some(0 | 1))
+                        && bytes.get(start + 46) == Some(&1) =>
+                {
+                    46
+                }
+                Some(287) if bytes.get(start + 47) == Some(&1) => 47,
+                _ => return None,
+            };
+            let thickness_record_index = u32_at(bytes, start + reference_offset + 1)?;
             if scope.reference_members.last() != Some(&thickness_record_index) {
                 return None;
             }
