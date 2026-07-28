@@ -1773,7 +1773,7 @@ fn is_reference_type_kind(kind: u16) -> bool {
 
 fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Option<Record> {
     let previous = records.last()?;
-    (previous.end == offset && has_shareable_terminal(previous)).then_some(())?;
+    (previous.end == offset && has_shareable_terminal(stream, previous)).then_some(())?;
     let record_offset = offset.checked_sub(1)?;
     if let Some(record) = consume_intersection_auxiliary(stream, record_offset)
         .or_else(|| consume_nurbs_auxiliary(stream, record_offset))
@@ -1793,7 +1793,18 @@ fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Op
         .or_else(|| consume_variable(stream, record_offset, kind))
 }
 
-fn has_shareable_terminal(record: &Record) -> bool {
+fn has_shareable_terminal(stream: &[u8], record: &Record) -> bool {
+    if fixed_signature(record.kind).is_some_and(|signature| {
+        signature
+            .last()
+            .is_some_and(|token| matches!(token, Token::Ref))
+    }) {
+        return record
+            .end
+            .checked_sub(1)
+            .and_then(|offset| stream.get(offset))
+            == Some(&0);
+    }
     if record.kind == 84 {
         return true;
     }

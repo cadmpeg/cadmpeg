@@ -6126,6 +6126,33 @@ fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
 }
 
 #[test]
+fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
+    let mut stream = Vec::new();
+    stream.extend_from_slice(&13u16.to_be_bytes());
+    stream.extend_from_slice(&47u16.to_be_bytes());
+    stream.extend_from_slice(&61u32.to_be_bytes());
+    for (reference, status) in (1u16..=8).zip([1, 1, 1, 1, 1, 1, 1, 0]) {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(status);
+    }
+    let intersection = status_framed_deltas_intersection_stream();
+    stream.extend_from_slice(&intersection[1..]);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [13, 38]
+    );
+    assert_eq!(census.records[1].offset, census.records[0].end - 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+}
+
+#[test]
 fn deltas_does_not_share_a_consecutive_reference_byte() {
     let mut stream = vec![0, 81];
     stream.extend_from_slice(&1u32.to_be_bytes());
