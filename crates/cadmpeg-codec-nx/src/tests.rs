@@ -7259,14 +7259,14 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
 
     assert_eq!(census.reference_state_packets.len(), 1);
     assert_eq!(
-        census.reference_state_packets[0].references,
-        [2, 3, 40_000, 1]
+        census.reference_state_packets[0].frames,
+        [crate::deltas::ReferenceStateFrame {
+            references: [2, 3, 40_000, 1],
+            state_words: [34, 6, 11, 22_362, 1],
+            state_byte: 65,
+        }]
     );
-    assert_eq!(
-        census.reference_state_packets[0].state_words,
-        [34, 6, 11, 22_362, 1]
-    );
-    assert_eq!(census.reference_state_packets[0].state_byte, 65);
+    assert!(!census.reference_state_packets[0].terminal);
     assert_eq!(census.reference_state_packets[0].offset, 0);
     assert_eq!(census.reference_state_packets[0].end, packet.len());
     assert_eq!(census.bytes_decoded, packet.len());
@@ -7283,6 +7283,36 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
     assert_eq!(trailing_census.reference_state_packets.len(), 1);
     assert_eq!(trailing_census.reference_state_packets[0].end, packet.len());
     assert_eq!(trailing_census.bytes_decoded, packet.len());
+
+    let mut compound = vec![0, 1, 0, 1];
+    for (references, words, state_byte) in [
+        ([7u16, 1, 8, 1], [0u32; 5], 1),
+        ([8, 7, 9, 1], [0, 0, 0, 17, 0], 2),
+    ] {
+        compound.extend_from_slice(&4u16.to_be_bytes());
+        for reference in references {
+            compound.extend_from_slice(&reference.to_be_bytes());
+        }
+        compound.extend_from_slice(&1u16.to_be_bytes());
+        for word in words {
+            compound.extend_from_slice(&word.to_be_bytes());
+        }
+        compound.push(state_byte);
+    }
+    for _ in 0..3 {
+        compound.extend_from_slice(&1u16.to_be_bytes());
+    }
+    compound.extend_from_slice(&1u32.to_be_bytes());
+
+    let compound_census = crate::deltas::walk(&compound);
+    assert_eq!(compound_census.reference_state_packets.len(), 1);
+    assert_eq!(compound_census.reference_state_packets[0].frames.len(), 2);
+    assert!(compound_census.reference_state_packets[0].terminal);
+    assert_eq!(
+        compound_census.reference_state_packets[0].end,
+        compound.len()
+    );
+    assert_eq!(compound_census.bytes_decoded, compound.len());
 }
 
 #[test]

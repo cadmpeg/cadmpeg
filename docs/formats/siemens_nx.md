@@ -499,11 +499,14 @@ is a defined Parasolid record kind, type 79, type 80, type 55, or type 100.
 The terminal null reference distinguishes the suffix from the non-null entry
 lane.
 
-One reference-state packet is `0001, 0001, 0004, ref[4], 0001,
-state_word[5]:u32 BE, state_byte:u8`. Each reference uses compact or extended
-XMT encoding. The first three references are non-null and the fourth admits the
-null XMT value `1`. The packet ends after `state_byte` and retains reference and
-state-word order without assigned field roles.
+One reference-state packet is `0001, 0001, frame[n], terminal?`, where `n > 0`
+and each frame is `0004, ref[4], 0001, state_word[5]:u32 BE, state_byte:u8`.
+Each reference uses compact or extended XMT encoding. A frame reference lane is
+either three leading non-null references followed by a nullable reference, or
+`non-null, ref(1), non-null, ref(1)`. `terminal`, when present, is
+`ref(1)[3], one:u32 BE`, where `one` is `1`. The packet ends after the last
+frame or its terminal and retains frame, reference, and state-word order without
+assigned field roles.
 
 A schema reference preamble is `identity:u16 BE, 0004, ff, ref[2], ref(1)[3],
 state_word[4]:u32 BE, 000000, identity, ref(1)[2], count:u16 BE, entry[n],

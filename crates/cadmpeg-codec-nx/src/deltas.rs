@@ -105,15 +105,24 @@ pub struct ReferenceTypeMap {
     pub end: usize,
 }
 
-/// One deltas packet carrying four references and unassigned state words.
+/// One four-reference frame in a deltas state packet.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReferenceStatePacket {
+pub struct ReferenceStateFrame {
     /// Four ordered stream-local XMT references.
     pub references: [u32; 4],
     /// Five ordered big-endian state words.
     pub state_words: [u32; 5],
     /// Terminal serialized state byte.
     pub state_byte: u8,
+}
+
+/// One deltas packet carrying one or more reference-state frames.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceStatePacket {
+    /// Ordered packet frames.
+    pub frames: Vec<ReferenceStateFrame>,
+    /// Whether the packet ends with `ref(1)[3], u32(1)`.
+    pub terminal: bool,
     /// First byte of the packet.
     pub offset: usize,
     /// First byte following the packet.
@@ -984,18 +993,44 @@ fn reference_state_packet(
     offset: usize,
     gap_end: usize,
 ) -> Option<ReferenceStatePacket> {
-    (be::u16_at(stream, offset) == Some(1)
-        && be::u16_at(stream, offset + 2) == Some(1)
-        && be::u16_at(stream, offset + 4) == Some(4))
-    .then_some(())?;
-    let mut at = offset.checked_add(6)?;
+    (be::u16_at(stream, offset) == Some(1) && be::u16_at(stream, offset + 2) == Some(1))
+        .then_some(())?;
+    let mut at = offset.checked_add(4)?;
+    let mut frames = Vec::new();
+    while let Some((frame, end)) = reference_state_frame(stream, at, gap_end) {
+        frames.push(frame);
+        at = end;
+    }
+    (!frames.is_empty()).then_some(())?;
+    let terminal_end = reference_state_terminal(stream, at, gap_end);
+    let terminal = terminal_end.is_some();
+    at = terminal_end.unwrap_or(at);
+    Some(ReferenceStatePacket {
+        frames,
+        terminal,
+        offset,
+        end: at,
+    })
+}
+
+fn reference_state_frame(
+    stream: &[u8],
+    offset: usize,
+    gap_end: usize,
+) -> Option<(ReferenceStateFrame, usize)> {
+    (be::u16_at(stream, offset) == Some(4)).then_some(())?;
+    let mut at = offset.checked_add(2)?;
     let mut references = [0; 4];
     for reference in &mut references {
         let (value, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
         *reference = value;
     }
-    (references[..3].iter().all(|reference| *reference > 1) && references[3] >= 1).then_some(())?;
+    let leading_non_null =
+        references[..3].iter().all(|reference| *reference > 1) && references[3] >= 1;
+    let interleaved_null =
+        references[0] > 1 && references[1] == 1 && references[2] > 1 && references[3] == 1;
+    (leading_non_null || interleaved_null).then_some(())?;
     (be::u16_at(stream, at) == Some(1)).then_some(())?;
     at = at.checked_add(2)?;
     let mut state_words = [0; 5];
@@ -1005,13 +1040,26 @@ fn reference_state_packet(
     }
     let state_byte = *stream.get(at)?;
     at = at.checked_add(1)?;
-    (at <= gap_end).then_some(ReferenceStatePacket {
-        references,
-        state_words,
-        state_byte,
-        offset,
-        end: at,
-    })
+    (at <= gap_end).then_some((
+        ReferenceStateFrame {
+            references,
+            state_words,
+            state_byte,
+        },
+        at,
+    ))
+}
+
+fn reference_state_terminal(stream: &[u8], offset: usize, gap_end: usize) -> Option<usize> {
+    let mut at = offset;
+    for _ in 0..3 {
+        let (reference, consumed) = read_xmt(stream, at)?;
+        (reference == 1).then_some(())?;
+        at = at.checked_add(consumed)?;
+    }
+    (be::u32_at(stream, at) == Some(1)).then_some(())?;
+    at = at.checked_add(4)?;
+    (at <= gap_end).then_some(at)
 }
 
 fn schema_reference_preambles(stream: &[u8], census: &Census) -> Vec<SchemaReferencePreamble> {

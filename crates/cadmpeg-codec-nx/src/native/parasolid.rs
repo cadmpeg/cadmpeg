@@ -151,19 +151,28 @@ pub struct ParasolidDeltasReferenceTypeMap {
     pub inflated_offset: u64,
 }
 
-/// Four-reference state packet in a Parasolid deltas stream.
+/// One four-reference frame in a Parasolid deltas state packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidDeltasReferenceStatePacket {
-    /// Globally unique packet identity.
-    pub id: String,
-    /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+pub struct ParasolidDeltasReferenceStateFrame {
     /// Four ordered stream-local XMT references.
     pub references: [u32; 4],
     /// Five ordered big-endian state words.
     pub state_words: [u32; 5],
     /// Terminal serialized state byte.
     pub state_byte: u8,
+}
+
+/// Reference-state packet in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasReferenceStatePacket {
+    /// Globally unique packet identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Ordered packet frames.
+    pub frames: Vec<ParasolidDeltasReferenceStateFrame>,
+    /// Whether the packet ends with `ref(1)[3], u32(1)`.
+    pub terminal: bool,
     /// Exact packet byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact packet bytes.
@@ -521,9 +530,16 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                         packet.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    references: packet.references,
-                    state_words: packet.state_words,
-                    state_byte: packet.state_byte,
+                    frames: packet
+                        .frames
+                        .into_iter()
+                        .map(|frame| ParasolidDeltasReferenceStateFrame {
+                            references: frame.references,
+                            state_words: frame.state_words,
+                            state_byte: frame.state_byte,
+                        })
+                        .collect(),
+                    terminal: packet.terminal,
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: packet.offset as u64,
@@ -2273,9 +2289,15 @@ mod tests {
 
         assert_eq!(events.reference_state_packets.len(), 1);
         let packet = &events.reference_state_packets[0];
-        assert_eq!(packet.references, [2, 3, 4, 1]);
-        assert_eq!(packet.state_words, [34, 6, 11, 22_362, 1]);
-        assert_eq!(packet.state_byte, 65);
+        assert_eq!(
+            packet.frames,
+            [ParasolidDeltasReferenceStateFrame {
+                references: [2, 3, 4, 1],
+                state_words: [34, 6, 11, 22_362, 1],
+                state_byte: 65,
+            }]
+        );
+        assert!(!packet.terminal);
         assert_eq!(packet.byte_len, 37);
         assert_eq!(packet.inflated_offset, packet_offset as u64);
         assert_eq!(
