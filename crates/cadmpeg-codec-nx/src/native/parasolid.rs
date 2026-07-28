@@ -245,6 +245,13 @@ pub enum ParasolidDeltasInlineSchemaFields {
         count: u16,
         trailing_reference: u32,
     },
+    /// Type 101 declaration and its schema-bound instance state.
+    Type101 {
+        references: [u32; 4],
+        anchor_reference: u32,
+        state_words: [u32; 3],
+        terminal_value: u64,
+    },
 }
 
 /// Inline schema declaration in a Parasolid deltas stream.
@@ -587,6 +594,17 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     references,
                     count,
                     trailing_reference,
+                },
+                crate::deltas::InlineSchemaFields::Type101 {
+                    references,
+                    anchor_reference,
+                    state_words,
+                    terminal_value,
+                } => ParasolidDeltasInlineSchemaFields::Type101 {
+                    references,
+                    anchor_reference,
+                    state_words,
+                    terminal_value,
                 },
             };
             events

@@ -519,7 +519,7 @@ The leading reference is non-null and uses compact or extended XMT encoding.
 `marker` is `53` or `56`. The two remaining references are the null XMT value
 `1`. The packet ends after the final status byte.
 
-An inline schema declaration begins with one of four exact headers. The type-12
+An inline schema declaration begins with one of five exact headers. The type-12
 `BODY` form is a 282-byte header beginning `000c2443434349` and ending
 `6d6573685f6f66667365745f6461746100ce00015a`. It declares `lattice`, `mesh`,
 `polyline`, `owner`, `boundary_lattice`, `boundary_mesh`,
@@ -535,6 +535,18 @@ Every reference status is `01`. Its nonempty `state_bytes` tail ends at the
 next exact inline-schema header, the next admitted deltas event, or the end of
 the inflated stream, whichever comes first. Header and instance state retain
 independent byte spans.
+
+The type-101 form has a 156-byte header beginning
+`0065134343434343434349046d657368` and ending
+`6d6573685f6f66667365745f6461746100ce00015a`. It declares 19 fields,
+including `mesh`, `polyline`, `lattice`, `attdef_list`, `index_map_offset`,
+`index_map`, `schema_embedding_map`, and `mesh_offset_data`. Its bound state is
+`ref(2), prefix[62], count:u16 BE, ref[4], ref(1), zero:u16 BE, anchor_ref,
+state_word[3]:u32 BE, terminal_value:u40 BE`. `prefix` is
+`0001010001010003010004010001010001010001010001010001010001010100010100010100000000000000000000000000010100010100010100010001`,
+`count` is `4`, `anchor_ref` is non-null, and the first two state words are
+`19` and `9`. All references use compact or extended XMT encoding. The
+declaration ends after `terminal_value`.
 
 The REGION form begins with
 `00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.

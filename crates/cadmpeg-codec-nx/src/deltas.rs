@@ -192,6 +192,17 @@ pub enum InlineSchemaFields {
         /// Repeated terminal non-null reference.
         trailing_reference: u32,
     },
+    /// Type 101 declaration and its schema-bound instance state.
+    Type101 {
+        /// Four ordered stream-local XMT references.
+        references: [u32; 4],
+        /// Non-null reference following the zero sentinel.
+        anchor_reference: u32,
+        /// Three serialized big-endian state words.
+        state_words: [u32; 3],
+        /// Terminal unsigned 40-bit state value.
+        terminal_value: u64,
+    },
 }
 
 /// One complete inline schema declaration.
@@ -1125,6 +1136,26 @@ const TYPE_70_SCHEMA_HEADER: &[u8] = &[
     0x03, 0xf4, 0x00, 0x01, 0x43, 0x5a,
 ];
 
+const TYPE_101_SCHEMA_HEADER: &[u8] = &[
+    0x00, 0x65, 0x13, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x04, 0x6d, 0x65, 0x73, 0x68,
+    0x03, 0xee, 0x00, 0x01, 0x49, 0x08, 0x70, 0x6f, 0x6c, 0x79, 0x6c, 0x69, 0x6e, 0x65, 0x03, 0xf0,
+    0x00, 0x01, 0x49, 0x07, 0x6c, 0x61, 0x74, 0x74, 0x69, 0x63, 0x65, 0x00, 0xde, 0x00, 0x01, 0x43,
+    0x43, 0x49, 0x0b, 0x61, 0x74, 0x74, 0x64, 0x65, 0x66, 0x5f, 0x6c, 0x69, 0x73, 0x74, 0x00, 0x4a,
+    0x00, 0x01, 0x43, 0x43, 0x41, 0x10, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x5f, 0x6d, 0x61, 0x70, 0x5f,
+    0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x00, 0x00, 0x00, 0x01, 0x01, 0x64, 0x41, 0x09, 0x69, 0x6e,
+    0x64, 0x65, 0x78, 0x5f, 0x6d, 0x61, 0x70, 0x00, 0x52, 0x00, 0x01, 0x41, 0x14, 0x73, 0x63, 0x68,
+    0x65, 0x6d, 0x61, 0x5f, 0x65, 0x6d, 0x62, 0x65, 0x64, 0x64, 0x69, 0x6e, 0x67, 0x5f, 0x6d, 0x61,
+    0x70, 0x00, 0x52, 0x00, 0x01, 0x41, 0x10, 0x6d, 0x65, 0x73, 0x68, 0x5f, 0x6f, 0x66, 0x66, 0x73,
+    0x65, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x00, 0xce, 0x00, 0x01, 0x5a,
+];
+
+const TYPE_101_SCHEMA_STATE_PREFIX: &[u8] = &[
+    0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x03, 0x01, 0x00, 0x04, 0x01, 0x00, 0x01, 0x01, 0x00,
+    0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x01, 0x00,
+    0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01,
+];
+
 fn inline_schema_declaration(
     stream: &[u8],
     offset: usize,
@@ -1181,6 +1212,56 @@ fn inline_schema_declaration(
             end,
         });
     }
+    if stream.get(offset..offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?)
+        == Some(TYPE_101_SCHEMA_HEADER)
+    {
+        let mut at = offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?;
+        let (xmt, consumed) = read_xmt(stream, at)?;
+        (xmt == 2).then_some(())?;
+        at = at.checked_add(consumed)?;
+        (stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?)
+            == Some(TYPE_101_SCHEMA_STATE_PREFIX))
+        .then_some(())?;
+        at = at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?;
+        (be::u16_at(stream, at) == Some(4)).then_some(())?;
+        at = at.checked_add(2)?;
+        let mut references = [0; 4];
+        for reference in &mut references {
+            let (value, consumed) = read_xmt(stream, at)?;
+            at = at.checked_add(consumed)?;
+            *reference = value;
+        }
+        let (null_reference, consumed) = read_xmt(stream, at)?;
+        (null_reference == 1).then_some(())?;
+        at = at.checked_add(consumed)?;
+        (be::u16_at(stream, at) == Some(0)).then_some(())?;
+        at = at.checked_add(2)?;
+        let (anchor_reference, consumed) = read_xmt(stream, at)?;
+        (anchor_reference > 1).then_some(())?;
+        at = at.checked_add(consumed)?;
+        let mut state_words = [0; 3];
+        for state_word in &mut state_words {
+            *state_word = be::u32_at(stream, at)?;
+            at = at.checked_add(4)?;
+        }
+        (state_words[0] == 19 && state_words[1] == 9).then_some(())?;
+        let terminal = stream.get(at..at.checked_add(5)?)?;
+        let terminal_value = terminal
+            .iter()
+            .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte));
+        at = at.checked_add(5)?;
+        (at <= gap_end).then_some(())?;
+        return Some(InlineSchemaDeclaration {
+            fields: InlineSchemaFields::Type101 {
+                references,
+                anchor_reference,
+                state_words,
+                terminal_value,
+            },
+            offset,
+            end: at,
+        });
+    }
     None
 }
 
@@ -1202,6 +1283,7 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
             REGION_SCHEMA_HEADER,
             ATTDEF_LIST_SCHEMA_HEADER,
             TYPE_70_SCHEMA_HEADER,
+            TYPE_101_SCHEMA_HEADER,
         ]
         .iter()
         .any(|header| {
@@ -2382,7 +2464,7 @@ mod schema_reference_preamble_tests {
     use super::*;
 
     fn push_xmt(bytes: &mut Vec<u8>, reference: u32) {
-        if reference <= i16::MAX as u32 {
+        if i16::try_from(reference).is_ok() {
             bytes.extend_from_slice(&(reference as u16).to_be_bytes());
             return;
         }
@@ -2457,6 +2539,17 @@ mod schema_reference_preamble_tests {
 #[cfg(test)]
 mod inline_schema_tests {
     use super::*;
+
+    fn push_xmt(bytes: &mut Vec<u8>, reference: u32) {
+        if i16::try_from(reference).is_ok() {
+            bytes.extend_from_slice(&(reference as u16).to_be_bytes());
+            return;
+        }
+        let quotient = reference / 32_767;
+        let remainder = reference % 32_767;
+        bytes.extend_from_slice(&(-(remainder as i16)).to_be_bytes());
+        bytes.extend_from_slice(&(quotient as u16).to_be_bytes());
+    }
 
     #[test]
     fn body_schema_header_is_bounded_independently_of_instance_state() {
@@ -2558,6 +2651,45 @@ mod inline_schema_tests {
         bytes
     }
 
+    fn type_101_declaration() -> Vec<u8> {
+        let mut bytes = TYPE_101_SCHEMA_HEADER.to_vec();
+        push_xmt(&mut bytes, 2);
+        bytes.extend_from_slice(TYPE_101_SCHEMA_STATE_PREFIX);
+        bytes.extend_from_slice(&4u16.to_be_bytes());
+        for reference in [40_000, 3, 1, 9] {
+            push_xmt(&mut bytes, reference);
+        }
+        push_xmt(&mut bytes, 1);
+        bytes.extend_from_slice(&0u16.to_be_bytes());
+        push_xmt(&mut bytes, 11);
+        for state_word in [19u32, 9, 27] {
+            bytes.extend_from_slice(&state_word.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0, 0, 0, 1, 2]);
+        bytes
+    }
+
+    #[test]
+    fn type_101_schema_declaration_retains_bound_state() {
+        let bytes = type_101_declaration();
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.inline_schema_declarations,
+            [InlineSchemaDeclaration {
+                fields: InlineSchemaFields::Type101 {
+                    references: [40_000, 3, 1, 9],
+                    anchor_reference: 11,
+                    state_words: [19, 9, 27],
+                    terminal_value: 258,
+                },
+                offset: 0,
+                end: bytes.len(),
+            }]
+        );
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
     #[test]
     fn adjacent_inline_schema_declarations_allow_either_order() {
         let attdef_list = attdef_list_declaration();
@@ -2585,7 +2717,11 @@ mod inline_schema_tests {
 
     #[test]
     fn truncated_inline_schema_declaration_is_not_admitted() {
-        for mut stream in [attdef_list_declaration(), type_70_declaration()] {
+        for mut stream in [
+            attdef_list_declaration(),
+            type_70_declaration(),
+            type_101_declaration(),
+        ] {
             stream.pop();
             assert!(walk(&stream).inline_schema_declarations.is_empty());
         }
