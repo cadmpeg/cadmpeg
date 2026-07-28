@@ -261,7 +261,7 @@ pub enum ParasolidDeltasInlineSchemaFields {
     /// Type 101 declaration and its schema-bound instance state.
     Type101 {
         references: [u32; 4],
-        anchor_reference: u32,
+        anchor_reference: Option<u32>,
         state_words: [u32; 3],
         terminal_value: u64,
     },

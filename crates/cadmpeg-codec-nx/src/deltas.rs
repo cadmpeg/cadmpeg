@@ -209,8 +209,8 @@ pub enum InlineSchemaFields {
     Type101 {
         /// Four ordered stream-local XMT references.
         references: [u32; 4],
-        /// Non-null reference following the zero sentinel.
-        anchor_reference: u32,
+        /// Optional non-null reference following the zero sentinel.
+        anchor_reference: Option<u32>,
         /// Three serialized big-endian state words.
         state_words: [u32; 3],
         /// Terminal unsigned 40-bit state value.
@@ -1471,7 +1471,11 @@ fn inline_schema_declaration(
         (be::u16_at(stream, at) == Some(0)).then_some(())?;
         at = at.checked_add(2)?;
         let (anchor_reference, consumed) = read_xmt(stream, at)?;
-        (anchor_reference > 1).then_some(())?;
+        let anchor_reference = match anchor_reference {
+            0 => None,
+            value if value > 1 => Some(value),
+            _ => return None,
+        };
         at = at.checked_add(consumed)?;
         let mut state_words = [0; 3];
         for state_word in &mut state_words {
@@ -3145,7 +3149,7 @@ mod inline_schema_tests {
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type101 {
                     references: [40_000, 3, 1, 9],
-                    anchor_reference: 11,
+                    anchor_reference: Some(11),
                     state_words: [19, 9, 27],
                     terminal_value: 258,
                 },
@@ -3183,6 +3187,36 @@ mod inline_schema_tests {
             }
         ));
         assert_eq!(alternate_census.bytes_decoded, alternate.len());
+
+        let mut unanchored = TYPE_101_SCHEMA_HEADER.to_vec();
+        push_xmt(&mut unanchored, 2);
+        let mut prefix = TYPE_101_SCHEMA_STATE_PREFIX.to_vec();
+        prefix[7] = 1;
+        prefix[10] = 1;
+        prefix[30] = 0;
+        unanchored.extend(prefix);
+        unanchored.extend_from_slice(&4u16.to_be_bytes());
+        for reference in [6022, 6021, 6019, 1, 1] {
+            push_xmt(&mut unanchored, reference);
+        }
+        unanchored.extend_from_slice(&0u16.to_be_bytes());
+        push_xmt(&mut unanchored, 0);
+        for state_word in [0u32, 0, 0xc06f] {
+            unanchored.extend_from_slice(&state_word.to_be_bytes());
+        }
+        unanchored.extend_from_slice(&[0, 0, 0, 0, 4]);
+
+        let unanchored_census = walk(&unanchored);
+        assert!(matches!(
+            unanchored_census.inline_schema_declarations[0].fields,
+            InlineSchemaFields::Type101 {
+                anchor_reference: None,
+                state_words: [0, 0, 0xc06f],
+                terminal_value: 4,
+                ..
+            }
+        ));
+        assert_eq!(unanchored_census.bytes_decoded, unanchored.len());
     }
 
     #[test]

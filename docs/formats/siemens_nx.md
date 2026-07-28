@@ -594,8 +594,9 @@ state_word[3]:u32 BE, terminal_value:u40 BE`. `prefix` is either
 or
 `0001010001010001010001010001010001010001010001010001010001010000010100010100000000000000000000000000010100010100010100010001`.
 The first prefix requires leading state words `19, 9`; the second requires
-`0, 0`. `count` is `4` and `anchor_ref` is non-null. All references use
-compact or extended XMT encoding. The declaration ends after `terminal_value`.
+`0, 0`. `count` is `4`. `anchor_ref` is zero or a non-null reference; zero
+denotes the absence of an anchor. All references use compact or extended XMT
+encoding. The declaration ends after `terminal_value`.
 
 The REGION form begins with
 `00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.
