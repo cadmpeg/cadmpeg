@@ -16,10 +16,12 @@ use std::collections::{BTreeMap, HashMap};
 pub struct PlaneParams {
     /// The little-endian u24 carrier tag.
     pub target: u32,
-    /// Bounding-sphere center, which lies on the plane.
+    /// Bounding-sphere center, which lies on the plane and fixes its origin.
     pub origin: Point3,
     /// Unit plane normal from the positionally paired trim packet.
     pub normal: Vector3,
+    /// Spatial bounds of the trimmed plane face.
+    pub bounds: FreeformFaceBounds,
 }
 
 /// The `00 33 <kind>` surface kinds and their required strict-template prebyte
@@ -332,6 +334,20 @@ pub fn plane_params<S: std::hash::BuildHasher>(
                 f64::from(sphere[2]),
             ),
             normal: Vector3::new(normal[0], normal[1], normal[2]),
+            bounds: FreeformFaceBounds {
+                aabb_center: [
+                    f64::from(values[0]),
+                    f64::from(values[1]),
+                    f64::from(values[2]),
+                ],
+                aabb_half_extents: [f64::from(half[0]), f64::from(half[1]), f64::from(half[2])],
+                sphere_center: [
+                    f64::from(sphere[0]),
+                    f64::from(sphere[1]),
+                    f64::from(sphere[2]),
+                ],
+                sphere_radius: f64::from(radius),
+            },
         });
     }
     out

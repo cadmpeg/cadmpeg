@@ -569,6 +569,20 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             .into_iter()
             .map(|plane| (plane.target, plane))
             .collect();
+    let face_bounds = records
+        .iter()
+        .map(|record| match record {
+            crate::families::standard::records::StandardSurfaceRecord::Freeform {
+                bounds, ..
+            } => Some(*bounds),
+            crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix)
+                if prefix.kind == 0x32 =>
+            {
+                planes.get(&prefix.target).map(|plane| plane.bounds)
+            }
+            crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
+        })
+        .collect::<Vec<_>>();
 
     let mut surfaces = Vec::new();
     let mut surface_annotations = Vec::new();
@@ -910,6 +924,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         &mut topology_annotations,
         &face_bindings,
         &records,
+        &face_bounds,
         brep,
         &scan.data,
         &object_evidence.edge_owner_faces,
@@ -1610,6 +1625,7 @@ fn attach_standard_topology(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     records: &[crate::families::standard::records::StandardSurfaceRecord],
+    face_bounds: &[Option<crate::families::standard::records::FreeformFaceBounds>],
     brep: &[u8],
     source: &[u8],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
@@ -1641,18 +1657,7 @@ fn attach_standard_topology(
         .enumerate()
         .map(|(index, surface)| (surface.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let face_bounds = (records.len() == face_count).then(|| {
-        records
-            .iter()
-            .map(|record| match record {
-                crate::families::standard::records::StandardSurfaceRecord::Freeform {
-                    bounds,
-                    ..
-                } => Some(*bounds),
-                crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
-            })
-            .collect::<Vec<_>>()
-    });
+    let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
     let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();

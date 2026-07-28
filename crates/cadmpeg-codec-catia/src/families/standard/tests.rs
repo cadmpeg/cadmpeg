@@ -4919,11 +4919,7 @@ mod record_decoders {
             FreeformFaceBounds {
                 aabb_center: [0.0, 0.0, 50.0],
                 aabb_half_extents: [2.5, 2.5, 0.0],
-                sphere_center: [
-                    f64::from(5.2e-7f32),
-                    f64::from(1.6e-7f32),
-                    50.0,
-                ],
+                sphere_center: [f64::from(5.2e-7f32), f64::from(1.6e-7f32), 50.0,],
                 sphere_radius: 2.5,
             }
         );
