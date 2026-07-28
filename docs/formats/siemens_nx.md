@@ -582,15 +582,15 @@ The standalone type-41 form has the header
 non-null, and every numeric value is finite. The declaration ends after the
 eleventh numeric value.
 
-The type-100 form has the 29-byte header
+The type-100 form has the 28-byte header
 `00640a4343434343434343434109707265636973696f6e00e500015a`. Its bound
-precision state is `ref(48), zero:u32 BE, ref_status(2), ref_status(49),
-ref_status(1), transform[13]:f64 BE, one:u32 BE, tolerance[3]:f64 BE,
-ref_status(1)`. Every reference status is
-`01`. `transform` is an affine identity lane whose elements 0, 4, 8, and 12
-are `1.0` and whose other elements are positive zero. `one` is `1`. Every
-tolerance has the exact sentinel bits `c2bc928f996e0000`. The declaration ends
-after the final reference status.
+precision state is `xmt, zero:u32 BE, ref_status(2),
+ref_status(xmt + 1), ref_status(1), transform[13]:f64 BE, one:u32 BE,
+tolerance[3]:f64 BE, ref_status(1)`. Every reference status is `01`. `xmt` is
+non-null. `transform` has exact unit values at elements 0, 4, 8, and 12,
+arbitrary finite translation at elements 9 through 11, and positive zero at
+every other element. `one` is `1`. Every tolerance has the exact sentinel bits
+`c2bc928f996e0000`. The declaration ends after the final reference status.
 
 The type-101 form has a 156-byte header beginning
 `0065134343434343434349046d657368` and ending

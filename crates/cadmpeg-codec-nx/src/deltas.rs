@@ -203,8 +203,15 @@ pub enum InlineSchemaFields {
         /// Repeated terminal non-null reference.
         trailing_reference: u32,
     },
-    /// Type 100 declaration and its invariant precision state.
-    Type100,
+    /// Type 100 declaration and its precision state.
+    Type100 {
+        /// Non-null stream-local declaration identity.
+        xmt: u32,
+        /// Ordered precision-state references.
+        references: [u32; 3],
+        /// Serialized affine state.
+        transform: [f64; 13],
+    },
     /// Type 101 declaration and its schema-bound instance state.
     Type101 {
         /// Four ordered stream-local XMT references.
@@ -1332,16 +1339,25 @@ fn inline_schema_declaration(
     {
         let mut at = offset.checked_add(TYPE_100_SCHEMA_HEADER.len())?;
         let (xmt, consumed) = read_xmt(stream, at)?;
-        (xmt == 48).then_some(())?;
+        (xmt > 1).then_some(())?;
         at = at.checked_add(consumed)?;
         (be::u32_at(stream, at) == Some(0)).then_some(())?;
         at = at.checked_add(4)?;
-        for expected in [2, 49, 1] {
-            (read_status_one_reference(stream, &mut at) == Some(expected)).then_some(())?;
+        let mut references = [0; 3];
+        for reference in &mut references {
+            *reference = read_status_one_reference(stream, &mut at)?;
         }
-        for ordinal in 0..13 {
-            let expected = if ordinal % 4 == 0 { 1.0 } else { 0.0 };
-            (be::f64_at(stream, at)?.to_bits() == f64::to_bits(expected)).then_some(())?;
+        (references == [2, xmt.checked_add(1)?, 1]).then_some(())?;
+        let mut transform = [0.0; 13];
+        for (ordinal, transform_value) in transform.iter_mut().enumerate() {
+            let value = be::f64_at(stream, at)?;
+            let valid = match ordinal {
+                0 | 4 | 8 | 12 => value.to_bits() == 1.0f64.to_bits(),
+                9..=11 => value.is_finite(),
+                _ => value.to_bits() == 0.0f64.to_bits(),
+            };
+            valid.then_some(())?;
+            *transform_value = value;
             at = at.checked_add(8)?;
         }
         (be::u32_at(stream, at) == Some(1)).then_some(())?;
@@ -1353,7 +1369,11 @@ fn inline_schema_declaration(
         (read_status_one_reference(stream, &mut at) == Some(1)).then_some(())?;
         (at <= gap_end).then_some(())?;
         return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::Type100,
+            fields: InlineSchemaFields::Type100 {
+                xmt,
+                references,
+                transform,
+            },
             offset,
             end: at,
         });
@@ -3157,12 +3177,50 @@ mod inline_schema_tests {
         assert_eq!(
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
-                fields: InlineSchemaFields::Type100,
+                fields: InlineSchemaFields::Type100 {
+                    xmt: 48,
+                    references: [2, 49, 1],
+                    transform: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,],
+                },
                 offset: 0,
                 end: bytes.len(),
             }]
         );
         assert_eq!(census.bytes_decoded, bytes.len());
+
+        let mut translated = bytes;
+        let state = TYPE_100_SCHEMA_HEADER.len();
+        translated[state..state + 2].copy_from_slice(&53u16.to_be_bytes());
+        translated[state + 9..state + 11].copy_from_slice(&54u16.to_be_bytes());
+        let translation = state + 15 + 9 * 8;
+        translated[translation..translation + 8].copy_from_slice(&(-0.0f64).to_be_bytes());
+        translated[translation + 8..translation + 16].copy_from_slice(&(-0.0f64).to_be_bytes());
+        translated[translation + 16..translation + 24].copy_from_slice(&1.25f64.to_be_bytes());
+        let translated_census = walk(&translated);
+        assert!(matches!(
+            translated_census.inline_schema_declarations[0].fields,
+            InlineSchemaFields::Type100 {
+                xmt: 53,
+                references: [2, 54, 1],
+                transform: [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    value_x,
+                    value_y,
+                    1.25,
+                    1.0
+                ],
+            } if value_x.to_bits() == (-0.0f64).to_bits()
+                && value_y.to_bits() == (-0.0f64).to_bits()
+        ));
+        assert_eq!(translated_census.bytes_decoded, translated.len());
     }
 
     #[test]
