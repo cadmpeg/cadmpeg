@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 130;
+pub const CATIA_NATIVE_VERSION: u32 = 131;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1020,9 +1020,9 @@ pub struct CatiaObjectRecord {
     pub lead: u8,
     /// Decoded head tokens in serialized order.
     pub head: Vec<HeadToken>,
-    /// First head reference, identifying the owner by stored entity identity.
+    /// Head role identifying the owner by stored entity identity.
     pub owner_entity_id: Option<u32>,
-    /// Second head reference, identifying the per-file class ordinal.
+    /// Head role identifying the per-file class ordinal.
     pub class_ref: Option<u32>,
     /// UTF-8 class name resolved through the graph's schema catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1030,8 +1030,14 @@ pub struct CatiaObjectRecord {
     /// Exact schema-catalog entry selected by `class_ref`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class_entry: Option<String>,
-    /// Third head reference, selecting class-specific storage.
+    /// Head role selecting class-specific storage.
     pub storage_ref: Option<u32>,
+    /// Same-graph field record selected by `storage_ref`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_record: Option<String>,
+    /// Design object containing the selected storage record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_design_object: Option<String>,
     /// Typed nested payload.
     pub payload: ObjectPayload,
     /// Counted reference suffix when the payload repeats its reference prefix exactly.
@@ -1329,6 +1335,22 @@ fn resolved_payload_references(
             }
         })
         .collect()
+}
+
+fn resolved_storage_link(
+    storage_ref: Option<u32>,
+    record_ids: &[String],
+    record_design_objects: &[Option<String>],
+    record_indices: &HashMap<u32, usize>,
+) -> (Option<String>, Option<String>) {
+    let Some(index) = storage_ref.and_then(|identity| record_indices.get(&identity).copied())
+    else {
+        return (None, None);
+    };
+    (
+        record_ids.get(index).cloned(),
+        record_design_objects.get(index).cloned().flatten(),
+    )
 }
 
 #[cfg(test)]
@@ -3670,11 +3692,21 @@ impl CatiaNative {
                     .owner_entity_id
                     .map(|owner| design_object_id(graph.byte_offset, owner));
                 let paired_entity = graph_entities.get(ordinal).copied();
+                let expected_storage = resolved_storage_link(
+                    record.storage_ref,
+                    &record_ids,
+                    &record_design_objects,
+                    &record_indices,
+                );
                 if usize::try_from(record.ordinal).ok() != Some(ordinal)
                     || record.design_object != expected_design_object
                     || record.entity_record != paired_entity.map(|entity| entity.id.clone())
                     || record.entity_id != paired_entity.map(|entity| entity.entity_id)
                     || paired_entity.is_some_and(|entity| entity.object_record != record.id)
+                    || (
+                        record.storage_record.as_ref(),
+                        record.storage_design_object.as_ref(),
+                    ) != (expected_storage.0.as_ref(), expected_storage.1.as_ref())
                     || record.repeated_reference_suffix
                         != object_graph::repeated_reference_suffix(&record.payload)
                     || record.references
@@ -4154,6 +4186,8 @@ fn native_object_graph(
                 class_name: record.class_name,
                 class_entry: None,
                 storage_ref: record.storage_ref,
+                storage_record: None,
+                storage_design_object: None,
                 payload: record.payload,
                 repeated_reference_suffix: record.repeated_reference_suffix,
                 repeated_reference_schema_selection: None,
@@ -4181,6 +4215,12 @@ fn native_object_graph(
         .filter_map(|(index, record)| Some((record.entity_id?, index)))
         .collect::<HashMap<_, _>>();
     for record in &mut records {
+        (record.storage_record, record.storage_design_object) = resolved_storage_link(
+            record.storage_ref,
+            &record_ids,
+            &record_design_objects,
+            &record_indices,
+        );
         record.references = resolved_payload_references(
             &record.payload,
             &record_ids,

@@ -77,6 +77,18 @@ fn finish_decode(
         .iter()
         .map(|graph| graph.records.len())
         .sum();
+    let resolved_storage_record_count = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .filter(|record| record.storage_record.is_some())
+        .count();
+    let unresolved_storage_record_count = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .filter(|record| record.storage_ref.is_some() && record.storage_record.is_none())
+        .count();
     let repeated_reference_suffix_count = native
         .object_graphs
         .iter()
@@ -340,6 +352,14 @@ fn finish_decode(
         (
             "decoded_object_record_count".to_string(),
             object_record_count,
+        ),
+        (
+            "decoded_storage_record_link_count".to_string(),
+            resolved_storage_record_count,
+        ),
+        (
+            "unresolved_storage_record_count".to_string(),
+            unresolved_storage_record_count,
         ),
         (
             "decoded_repeated_reference_suffix_count".to_string(),

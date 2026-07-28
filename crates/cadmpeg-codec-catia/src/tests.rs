@@ -1814,7 +1814,7 @@ fn standard_catpart_with_definition_value(
     value: &[u8],
     suffix: &[u8],
 ) -> Vec<u8> {
-    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
+    let records = [object_graph_record(&[0x16, 0x84, 0x81, 0x81], &[0xfe])];
     let mut entity = entity_table_record_with_definition_and_value(1, definition, value);
     entity[6] = 2;
     entity.extend_from_slice(suffix);
@@ -7074,6 +7074,25 @@ fn native_namespace_binds_and_validates_definition_values() {
         native.design_objects[0].definition_values,
         [native.entity_records[0].id.clone()]
     );
+    assert_eq!(
+        native.object_graphs[0].records[0].storage_record,
+        Some(native.object_graphs[0].records[0].id.clone())
+    );
+    assert_eq!(
+        native.object_graphs[0].records[0].storage_design_object,
+        Some(native.design_objects[0].id.clone())
+    );
+
+    let mut malformed_storage = native.clone();
+    malformed_storage.object_graphs[0].records[0].storage_record = None;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_storage
+        .store(&mut namespace)
+        .expect("store malformed storage link");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 
     let mut malformed_ownership = native.clone();
     malformed_ownership.design_objects[0]
