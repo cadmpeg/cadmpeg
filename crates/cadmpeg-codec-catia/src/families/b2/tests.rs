@@ -26,23 +26,25 @@ fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
 
 #[test]
 fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
-    use crate::families::b2::records::B2ParameterPoint;
+    use crate::families::b2::records::B2ParameterPointPayload;
 
     let points = crate::families::b2::records::b2_parameter_points(&b2_parameter_point_stream());
     assert_eq!(points.len(), 3);
     assert!(matches!(
-        points[0],
-        B2ParameterPoint::Uv { uv: [2.0, 3.0], .. }
+        &points[0].payload,
+        B2ParameterPointPayload::Uv { uv: [2.0, 3.0] }
     ));
     assert!(matches!(
-        points[1],
-        B2ParameterPoint::StationUv {
+        &points[1].payload,
+        B2ParameterPointPayload::StationUv {
             station: 11.0,
             uv: [4.0, 5.0],
-            ..
         }
     ));
-    assert!(matches!(points[2], B2ParameterPoint::FiveScalars { .. }));
+    assert!(matches!(
+        &points[2].payload,
+        B2ParameterPointPayload::FiveScalars { .. }
+    ));
 }
 
 #[test]

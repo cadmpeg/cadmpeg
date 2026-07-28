@@ -19,7 +19,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 137;
+pub const CATIA_NATIVE_VERSION: u32 = 138;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -33,6 +33,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_edge_runs",
     "consolidated_groups",
     "consolidated_owner_packets",
+    "consolidated_parameter_points",
     "consolidated_pcurves",
     "consolidated_revolutions",
     "consolidated_spheres",
@@ -236,6 +237,44 @@ pub struct CatiaConsolidatedCylinder {
     pub v_range: [f64; 2],
     /// Layout-specific frame data.
     pub payload: CatiaConsolidatedCylinderPayload,
+}
+
+/// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CatiaConsolidatedParameterPointPayload {
+    /// Two surface-chart coordinates.
+    Uv {
+        /// Surface-chart coordinates.
+        uv: [f64; 2],
+    },
+    /// Host-chain station followed by two surface-chart coordinates.
+    StationUv {
+        /// Host-chain station.
+        station: f64,
+        /// Surface-chart coordinates.
+        uv: [f64; 2],
+    },
+    /// Unsplit five-scalar lane.
+    FiveScalars {
+        /// Stored finite scalars.
+        values: [f64; 5],
+    },
+}
+
+/// One complete consolidated `B:18` parameter-space record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedParameterPoint {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Payload-layout discriminator (`0x12`, `0x1a`, or `0x2a`).
+    pub layout: u8,
+    /// Second byte of the two-byte class-specific prefix.
+    pub control: u8,
+    /// Layout-specific finite scalar lane.
+    pub payload: CatiaConsolidatedParameterPointPayload,
 }
 
 /// One structurally complete consolidated `A/B:20` pcurve jet whose support
@@ -2202,6 +2241,9 @@ pub struct CatiaNative {
     /// Exact consolidated owner packets and their allocation links.
     #[serde(default)]
     pub consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket>,
+    /// Exact consolidated parameter-space records.
+    #[serde(default)]
+    pub consolidated_parameter_points: Vec<CatiaConsolidatedParameterPoint>,
     /// Consolidated pcurve jets retained before support resolution.
     #[serde(default)]
     pub consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
@@ -2254,6 +2296,7 @@ impl Default for CatiaNative {
             consolidated_edge_runs: Vec::new(),
             consolidated_groups: Vec::new(),
             consolidated_owner_packets: Vec::new(),
+            consolidated_parameter_points: Vec::new(),
             consolidated_pcurves: Vec::new(),
             consolidated_revolutions: Vec::new(),
             consolidated_spheres: Vec::new(),
@@ -2396,6 +2439,35 @@ fn consolidated_cylinders(bytes: &[u8]) -> Vec<CatiaConsolidatedCylinder> {
                 radius: cylinder.radius,
                 u_range: cylinder.u_range,
                 v_range: cylinder.v_range,
+                payload,
+            }
+        })
+        .collect()
+}
+
+fn consolidated_parameter_points(bytes: &[u8]) -> Vec<CatiaConsolidatedParameterPoint> {
+    use crate::families::b2::records::B2ParameterPointPayload;
+
+    crate::families::b2::records::b2_parameter_points(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, point)| {
+            let payload = match point.payload {
+                B2ParameterPointPayload::Uv { uv } => {
+                    CatiaConsolidatedParameterPointPayload::Uv { uv }
+                }
+                B2ParameterPointPayload::StationUv { station, uv } => {
+                    CatiaConsolidatedParameterPointPayload::StationUv { station, uv }
+                }
+                B2ParameterPointPayload::FiveScalars { values } => {
+                    CatiaConsolidatedParameterPointPayload::FiveScalars { values }
+                }
+            };
+            CatiaConsolidatedParameterPoint {
+                id: format!("catia:consolidated:parameter-point#{index}"),
+                byte_offset: point.pos as u64,
+                layout: point.layout,
+                control: point.control,
                 payload,
             }
         })
@@ -3065,6 +3137,37 @@ fn validate_consolidated_cylinders(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated cylinder `{}` is structurally invalid",
                 cylinder.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_parameter_points(
+    points: &[CatiaConsolidatedParameterPoint],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, point) in points.iter().enumerate() {
+        let payload_valid = match &point.payload {
+            CatiaConsolidatedParameterPointPayload::Uv { uv } => {
+                point.layout == 0x12 && uv.iter().all(|value| value.is_finite())
+            }
+            CatiaConsolidatedParameterPointPayload::StationUv { station, uv } => {
+                point.layout == 0x1a
+                    && station.is_finite()
+                    && uv.iter().all(|value| value.is_finite())
+            }
+            CatiaConsolidatedParameterPointPayload::FiveScalars { values } => {
+                point.layout == 0x2a && values.iter().all(|value| value.is_finite())
+            }
+        };
+        if point.id != format!("catia:consolidated:parameter-point#{index}")
+            || !payload_valid
+            || index > 0 && points[index - 1].byte_offset >= point.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated parameter point `{}` is structurally invalid",
+                point.id
             )));
         }
     }
@@ -4015,6 +4118,7 @@ impl CatiaNative {
         let consolidated_cylinders = consolidated_cylinders(bytes);
         let consolidated_groups = consolidated_groups(bytes);
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
+        let consolidated_parameter_points = consolidated_parameter_points(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
         let consolidated_revolutions = consolidated_revolutions(bytes);
         let consolidated_spheres = consolidated_spheres(bytes);
@@ -4036,6 +4140,7 @@ impl CatiaNative {
             consolidated_edge_runs,
             consolidated_groups,
             consolidated_owner_packets,
+            consolidated_parameter_points,
             consolidated_pcurves,
             consolidated_revolutions,
             consolidated_spheres,
@@ -4430,6 +4535,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_owner_packets")?;
         consolidated_owner_packets.sort_by_key(|packet| packet.byte_offset);
         validate_consolidated_owner_packets(&consolidated_owner_packets)?;
+        let mut consolidated_parameter_points: Vec<CatiaConsolidatedParameterPoint> =
+            namespace.arena_as("consolidated_parameter_points")?;
+        consolidated_parameter_points.sort_by_key(|point| point.byte_offset);
+        validate_consolidated_parameter_points(&consolidated_parameter_points)?;
         let mut consolidated_pcurves: Vec<CatiaConsolidatedPcurve> =
             namespace.arena_as("consolidated_pcurves")?;
         consolidated_pcurves.sort_by_key(|pcurve| pcurve.byte_offset);
@@ -4480,6 +4589,7 @@ impl CatiaNative {
             consolidated_edge_runs,
             consolidated_groups,
             consolidated_owner_packets,
+            consolidated_parameter_points,
             consolidated_pcurves,
             consolidated_revolutions,
             consolidated_spheres,
@@ -4559,6 +4669,10 @@ impl CatiaNative {
             "consolidated_owner_packets",
             &self.consolidated_owner_packets,
         )?;
+        namespace.set_arena(
+            "consolidated_parameter_points",
+            &self.consolidated_parameter_points,
+        )?;
         namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
         namespace.set_arena("consolidated_revolutions", &self.consolidated_revolutions)?;
         namespace.set_arena("consolidated_spheres", &self.consolidated_spheres)?;
@@ -4604,6 +4718,7 @@ impl CatiaNative {
             consolidated_edge_runs,
             consolidated_groups,
             consolidated_owner_packets,
+            consolidated_parameter_points,
             consolidated_pcurves,
             consolidated_revolutions,
             consolidated_spheres,
@@ -4643,6 +4758,10 @@ impl CatiaNative {
         namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
         namespace.set_arena("consolidated_groups", &consolidated_groups)?;
         namespace.set_arena("consolidated_owner_packets", &consolidated_owner_packets)?;
+        namespace.set_arena(
+            "consolidated_parameter_points",
+            &consolidated_parameter_points,
+        )?;
         namespace.set_arena("consolidated_pcurves", &consolidated_pcurves)?;
         namespace.set_arena("consolidated_revolutions", &consolidated_revolutions)?;
         namespace.set_arena("consolidated_spheres", &consolidated_spheres)?;

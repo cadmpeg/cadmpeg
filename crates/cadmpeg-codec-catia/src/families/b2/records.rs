@@ -36,19 +36,27 @@ pub struct B2OffsetSupport {
 
 /// Parameter-space data stored in a `b2/b3/b4 03 18` record.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg(test)]
-pub enum B2ParameterPoint {
+pub struct B2ParameterPoint {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Payload-layout discriminator (`0x12`, `0x1a`, or `0x2a`).
+    pub layout: u8,
+    /// Second byte of the two-byte class-specific prefix.
+    pub control: u8,
+    /// Layout-specific finite scalar lane.
+    pub payload: B2ParameterPointPayload,
+}
+
+/// Layout-specific scalar lane of a class-`0x18` parameter-space record.
+#[derive(Debug, Clone, PartialEq)]
+pub enum B2ParameterPointPayload {
     /// Two-coordinate UV point (`L=0x12`).
     Uv {
-        /// Record byte offset.
-        pos: usize,
         /// Surface-chart coordinates.
         uv: [f64; 2],
     },
     /// Host-chain station followed by UV (`L=0x1a`).
     StationUv {
-        /// Record byte offset.
-        pos: usize,
         /// Host-chain axial boundary station.
         station: f64,
         /// Surface-chart coordinates.
@@ -56,8 +64,6 @@ pub enum B2ParameterPoint {
     },
     /// Unsplit five-scalar layout (`L=0x2a`).
     FiveScalars {
-        /// Record byte offset.
-        pos: usize,
         /// Stored scalar payload.
         values: [f64; 5],
     },
@@ -677,7 +683,6 @@ pub fn b2_linked_counted_owners(data: &[u8]) -> Vec<B2LinkedCountedOwner> {
 
 /// Decode width-coded `b2/b3/b4 03 18` parameter-space records.
 #[must_use]
-#[cfg(test)]
 pub fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
     b_family_frames(data, 0x18)
         .into_iter()
@@ -685,34 +690,39 @@ pub fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
             if frame.header_token != 5 || data.get(frame.payload) != Some(&0x05) {
                 return None;
             }
+            let layout = u8::try_from(frame.end - frame.payload).ok()?;
+            let control = *data.get(frame.payload + 1)?;
             let at = frame.payload + 2;
-            match frame.end - frame.payload {
-                0x12 => Some(B2ParameterPoint::Uv {
-                    pos: frame.pos,
+            let payload = match layout {
+                0x12 => B2ParameterPointPayload::Uv {
                     uv: read_f64_array::<2>(data, at)?,
-                }),
+                },
                 0x1a => {
                     let values = read_f64_array::<3>(data, at)?;
-                    Some(B2ParameterPoint::StationUv {
-                        pos: frame.pos,
+                    B2ParameterPointPayload::StationUv {
                         station: values[0],
                         uv: [values[1], values[2]],
-                    })
+                    }
                 }
-                0x2a => Some(B2ParameterPoint::FiveScalars {
-                    pos: frame.pos,
+                0x2a => B2ParameterPointPayload::FiveScalars {
                     values: read_f64_array::<5>(data, at)?,
-                }),
-                _ => None,
-            }
-            .filter(|value| match value {
-                B2ParameterPoint::Uv { uv, .. } => uv.iter().all(|v| v.is_finite()),
-                B2ParameterPoint::StationUv { station, uv, .. } => {
+                },
+                _ => return None,
+            };
+            let finite = match &payload {
+                B2ParameterPointPayload::Uv { uv } => uv.iter().all(|v| v.is_finite()),
+                B2ParameterPointPayload::StationUv { station, uv } => {
                     station.is_finite() && uv.iter().all(|v| v.is_finite())
                 }
-                B2ParameterPoint::FiveScalars { values, .. } => {
+                B2ParameterPointPayload::FiveScalars { values } => {
                     values.iter().all(|v| v.is_finite())
                 }
+            };
+            finite.then_some(B2ParameterPoint {
+                pos: frame.pos,
+                layout,
+                control,
+                payload,
             })
         })
         .collect()

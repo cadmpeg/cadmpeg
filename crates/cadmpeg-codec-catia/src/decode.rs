@@ -358,6 +358,10 @@ fn finish_decode(
             native.consolidated_groups.len(),
         ),
         (
+            "decoded_consolidated_parameter_point_count".to_string(),
+            native.consolidated_parameter_points.len(),
+        ),
+        (
             "decoded_consolidated_pcurve_count".to_string(),
             native.consolidated_pcurves.len(),
         ),

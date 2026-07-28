@@ -3577,6 +3577,52 @@ fn native_namespace_retains_consolidated_class61_records() {
 }
 
 #[test]
+fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
+    let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
+    let [uv, station_uv, five_scalars] = native.consolidated_parameter_points.as_slice() else {
+        panic!("three consolidated parameter points")
+    };
+    assert_eq!(uv.layout, 0x12);
+    assert_eq!(uv.control, 0x12);
+    assert!(matches!(
+        &uv.payload,
+        crate::native::CatiaConsolidatedParameterPointPayload::Uv { uv: [2.0, 3.0] }
+    ));
+    assert_eq!(station_uv.layout, 0x1a);
+    assert!(matches!(
+        &station_uv.payload,
+        crate::native::CatiaConsolidatedParameterPointPayload::StationUv {
+            station: 11.0,
+            uv: [4.0, 5.0],
+        }
+    ));
+    assert_eq!(five_scalars.layout, 0x2a);
+    assert!(matches!(
+        &five_scalars.payload,
+        crate::native::CatiaConsolidatedParameterPointPayload::FiveScalars {
+            values: [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    ));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA parameter points");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA parameter points"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_parameter_points[0].layout = 0x1a;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA parameter point");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_standalone_consolidated_circle_supports() {
     let native = crate::native::CatiaNative::decode(&b2_circle_stream());
     let [circle] = native.consolidated_circles.as_slice() else {
