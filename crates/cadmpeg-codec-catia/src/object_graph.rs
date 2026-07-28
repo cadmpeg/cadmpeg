@@ -486,6 +486,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             let native_role_count = match lead {
                 0x02 => 1,
                 0x12 => 2,
+                0x16 => 3,
                 0x52 => 3,
                 _ => 0,
             };
@@ -495,15 +496,21 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                 &[]
             }
         };
-        let owner_ref = match roles.first() {
+        let (owner_index, class_index, storage_index) =
+            if lead == 0x16 && !matches!(head.get(1), Some(HeadToken::Separator)) {
+                (2, 0, 1)
+            } else {
+                (0, 1, 2)
+            };
+        let owner_ref = match roles.get(owner_index) {
             Some(HeadToken::Reference(value)) => Some(*value),
             _ => None,
         };
-        let class_ref = owner_ref.and_then(|_| match roles.get(1) {
+        let class_ref = owner_ref.and_then(|_| match roles.get(class_index) {
             Some(HeadToken::Reference(value)) => Some(*value),
             _ => None,
         });
-        let storage_ref = class_ref.and_then(|_| match roles.get(2) {
+        let storage_ref = class_ref.and_then(|_| match roles.get(storage_index) {
             Some(HeadToken::Reference(value)) => Some(*value),
             _ => None,
         });

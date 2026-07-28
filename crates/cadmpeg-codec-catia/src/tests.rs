@@ -4598,6 +4598,20 @@ fn outer_object_graph_reads_compact_owner_and_field_roles() {
 }
 
 #[test]
+fn outer_object_graph_reads_class_storage_owner_compact_roles() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x16, 0x92, 0xd2, 0x2b, 0xd2, 0x39],
+        &[0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("class-storage-owner compact head");
+    let record = &graph.records[0];
+
+    assert_eq!(record.class_ref, Some(18));
+    assert_eq!(record.storage_ref, Some(300));
+    assert_eq!(record.owner_ref, Some(314));
+}
+
+#[test]
 fn object_graph_payload_reads_fixed_width_escaped_values() {
     use crate::object_graph::PayloadField;
 
