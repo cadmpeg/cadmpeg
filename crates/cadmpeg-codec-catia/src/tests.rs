@@ -967,13 +967,21 @@ pub(crate) fn b2_pcurve_stream() -> Vec<u8> {
 
 pub(crate) fn b2_parameter_point_stream() -> Vec<u8> {
     let mut bytes = Vec::new();
-    for values in [
-        vec![2.0f64, 3.0],
-        vec![11.0, 4.0, 5.0],
-        vec![1.0, 2.0, 3.0, 4.0, 5.0],
+    for (prefix, values) in [
+        (0x05, vec![2.0f64, 3.0]),
+        (0x09, vec![11.0, 4.0, 5.0]),
+        (0x0d, vec![1.0, 2.0, 3.0, 4.0, 5.0]),
+        (0x11, vec![12.0, 6.0, 7.0]),
     ] {
         let length = 2 + 8 * values.len();
-        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, u8::try_from(length).unwrap(), 0x05, 0x05]);
+        bytes.extend_from_slice(&[
+            0xb2,
+            0x03,
+            0x18,
+            u8::try_from(length).unwrap(),
+            0x05,
+            prefix,
+        ]);
         bytes.push(0x12);
         for value in values {
             bytes.extend_from_slice(&le_f64(value));
@@ -1096,6 +1104,12 @@ pub(crate) fn b2_cone_face_stream() -> Vec<u8> {
     record.extend_from_slice(&le_f64(1.5));
     record.extend_from_slice(&le_f64(std::f64::consts::FRAC_PI_4));
     record
+}
+
+pub(crate) fn b2_cone_face_parameter_point_stream() -> Vec<u8> {
+    let mut bytes = b2_cone_face_stream();
+    bytes.extend_from_slice(&b2_parameter_point_stream());
+    bytes
 }
 
 pub(crate) fn b2_topology_metadata_stream() -> Vec<u8> {
@@ -4098,9 +4112,20 @@ fn native_namespace_retains_consolidated_class61_records() {
 #[test]
 fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
-    let [uv, station_uv, five_scalars] = native.consolidated_parameter_points.as_slice() else {
-        panic!("three consolidated parameter points")
+    let [uv, station_uv, five_scalars, station_uv_last] =
+        native.consolidated_parameter_points.as_slice()
+    else {
+        panic!("four consolidated parameter points")
     };
+    assert_eq!(
+        [
+            uv.prefix,
+            station_uv.prefix,
+            five_scalars.prefix,
+            station_uv_last.prefix
+        ],
+        [0x05, 0x09, 0x0d, 0x11]
+    );
     assert_eq!(uv.layout, 0x12);
     assert_eq!(uv.control, 0x12);
     assert!(matches!(
@@ -4282,13 +4307,22 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
 
 #[test]
 fn native_namespace_retains_consolidated_cone_face_charts() {
-    let native = crate::native::CatiaNative::decode(&b2_cone_face_stream());
+    let native = crate::native::CatiaNative::decode(&b2_cone_face_parameter_point_stream());
     let [face] = native.consolidated_cone_faces.as_slice() else {
         panic!("one consolidated cone-face chart")
     };
     assert_eq!(face.program.len(), 16);
     assert_eq!(face.angular_scale, 1.5);
     assert_eq!(face.half_angle, std::f64::consts::FRAC_PI_4);
+    assert_eq!(
+        face.parameter_points,
+        [
+            "catia:consolidated:parameter-point#0",
+            "catia:consolidated:parameter-point#1",
+            "catia:consolidated:parameter-point#2",
+            "catia:consolidated:parameter-point#3",
+        ]
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -4299,7 +4333,7 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
         native
     );
 
-    let mut invalid = native;
+    let mut invalid = native.clone();
     invalid.consolidated_cone_faces[0].program.clear();
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
@@ -4307,8 +4341,23 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
         .expect("store invalid CATIA cone-face chart");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
+    let mut invalid = native.clone();
+    invalid.consolidated_cone_faces[0]
+        .parameter_points
+        .swap(0, 1);
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA cone-face parameter run");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    let mut mixed = b2_cone_face_parameter_point_stream();
+    mixed.extend_from_slice(&[0xb2, 0x03, 0x18, 0x02, 0x05, 0x99, 0x99]);
+    let mixed = crate::native::CatiaNative::decode(&mixed);
+    assert!(mixed.consolidated_cone_faces[0].parameter_points.is_empty());
+
     let mut file = standard_catpart();
-    file.splice(16..16, b2_cone_face_stream());
+    file.splice(16..16, b2_cone_face_parameter_point_stream());
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
     file[8..12].copy_from_slice(&be32(file_len));
     let decoded = CatiaCodec
@@ -4317,6 +4366,10 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
     assert_eq!(
         decoded.report.coverage["decoded_consolidated_cone_face_count"],
         1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_consolidated_cone_face_parameter_point_count"],
+        4
     );
 }
 

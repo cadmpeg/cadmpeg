@@ -73,7 +73,11 @@ current scores require those matrices and representative fixtures.
   cumulative gate in one closed envelope passes.
 - Complete consolidated cone-face chart records retain their reference-and-
   control program, angular scale, and cone half-angle before the program's
-  higher-level roles resolve.
+  higher-level roles resolve. Consolidated parameter-space points retain all
+  four stored prefix selectors with their UV, station-plus-UV, or five-scalar
+  payload. A cone-face chart binds its immediately following complete
+  parameter-space point run in serialized order; a mixed class-`0x18` run
+  remains unbound atomically.
 - Zero-entity surface carriers retain their complete face-local `21xx` support
   tapes. Every occurrence keeps its framed local slot, record family, and
   inline UV endpoint pair when that family stores one. The independent `5e1a`

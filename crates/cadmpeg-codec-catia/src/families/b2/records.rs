@@ -39,8 +39,12 @@ pub struct B2OffsetSupport {
 pub struct B2ParameterPoint {
     /// Record byte offset.
     pub pos: usize,
+    /// Exclusive end of the complete framed record.
+    pub end: usize,
     /// Payload-layout discriminator (`0x12`, `0x1a`, or `0x2a`).
     pub layout: u8,
+    /// First byte of the two-byte class-specific prefix.
+    pub prefix: u8,
     /// Second byte of the two-byte class-specific prefix.
     pub control: u8,
     /// Layout-specific finite scalar lane.
@@ -196,6 +200,8 @@ pub struct B2LinkedCountedOwner {
 pub struct B2ConeFace {
     /// Record byte offset.
     pub pos: usize,
+    /// Exclusive end of the complete framed record.
+    pub end: usize,
     /// Complete reference-and-control program preceding the scalars.
     pub program: Vec<u8>,
     /// Stored angular chart scale.
@@ -396,6 +402,7 @@ pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
         {
             faces.push(B2ConeFace {
                 pos,
+                end,
                 program: program.to_vec(),
                 angular_scale,
                 half_angle,
@@ -707,7 +714,11 @@ pub fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
     b_family_frames(data, 0x18)
         .into_iter()
         .filter_map(|frame| {
-            if frame.header_token != 5 || data.get(frame.payload) != Some(&0x05) {
+            if frame.header_token != 5 {
+                return None;
+            }
+            let prefix = *data.get(frame.payload)?;
+            if !matches!(prefix, 0x05 | 0x09 | 0x0d | 0x11) {
                 return None;
             }
             let layout = u8::try_from(frame.end - frame.payload).ok()?;
@@ -740,7 +751,9 @@ pub fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
             };
             finite.then_some(B2ParameterPoint {
                 pos: frame.pos,
+                end: frame.end,
                 layout,
+                prefix,
                 control,
                 payload,
             })

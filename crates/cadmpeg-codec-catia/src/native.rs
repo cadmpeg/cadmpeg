@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 160;
+pub const CATIA_NATIVE_VERSION: u32 = 161;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -279,8 +279,12 @@ pub struct CatiaConsolidatedParameterPoint {
     pub id: String,
     /// Byte offset of the framed record.
     pub byte_offset: u64,
+    /// Complete framed-record length.
+    pub byte_len: u64,
     /// Payload-layout discriminator (`0x12`, `0x1a`, or `0x2a`).
     pub layout: u8,
+    /// First byte of the two-byte class-specific prefix.
+    pub prefix: u8,
     /// Second byte of the two-byte class-specific prefix.
     pub control: u8,
     /// Layout-specific finite scalar lane.
@@ -481,6 +485,8 @@ pub struct CatiaConsolidatedConeFace {
     pub id: String,
     /// Byte offset of the framed record.
     pub byte_offset: u64,
+    /// Complete framed-record length.
+    pub byte_len: u64,
     /// Complete reference-and-control program preceding the scalars.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
@@ -489,6 +495,8 @@ pub struct CatiaConsolidatedConeFace {
     pub angular_scale: f64,
     /// Cone half-angle in radians.
     pub half_angle: f64,
+    /// Complete immediately following parameter-point run.
+    pub parameter_points: Vec<String>,
 }
 
 /// One complete consolidated historical edge run referencing two retained
@@ -3296,16 +3304,45 @@ fn consolidated_groups(bytes: &[u8]) -> Vec<CatiaConsolidatedGroup> {
         .collect()
 }
 
-fn consolidated_cone_faces(bytes: &[u8]) -> Vec<CatiaConsolidatedConeFace> {
+fn consolidated_cone_faces(
+    bytes: &[u8],
+    parameter_points: &[CatiaConsolidatedParameterPoint],
+) -> Vec<CatiaConsolidatedConeFace> {
+    let point_ids = parameter_points
+        .iter()
+        .map(|point| (point.byte_offset, point.id.clone()))
+        .collect::<HashMap<_, _>>();
+    let class18_ends = crate::wire::records::consolidated_records(bytes)
+        .into_iter()
+        .filter(|record| {
+            record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x18
+        })
+        .map(|record| (record.range.start, record.range.end))
+        .collect::<HashMap<_, _>>();
     crate::families::b2::records::b2_cone_faces(bytes)
         .into_iter()
         .enumerate()
-        .map(|(index, face)| CatiaConsolidatedConeFace {
-            id: format!("catia:consolidated:cone-face#{index}"),
-            byte_offset: face.pos as u64,
-            program: face.program,
-            angular_scale: face.angular_scale,
-            half_angle: face.half_angle,
+        .map(|(index, face)| {
+            let mut positions = Vec::new();
+            let mut next = face.end;
+            while let Some(&end) = class18_ends.get(&next) {
+                positions.push(next as u64);
+                next = end;
+            }
+            let parameter_points = positions
+                .iter()
+                .map(|position| point_ids.get(position).cloned())
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_default();
+            CatiaConsolidatedConeFace {
+                id: format!("catia:consolidated:cone-face#{index}"),
+                byte_offset: face.pos as u64,
+                byte_len: (face.end - face.pos) as u64,
+                program: face.program,
+                angular_scale: face.angular_scale,
+                half_angle: face.half_angle,
+                parameter_points,
+            }
         })
         .collect()
 }
@@ -3387,7 +3424,9 @@ fn consolidated_parameter_points(bytes: &[u8]) -> Vec<CatiaConsolidatedParameter
             CatiaConsolidatedParameterPoint {
                 id: format!("catia:consolidated:parameter-point#{index}"),
                 byte_offset: point.pos as u64,
+                byte_len: (point.end - point.pos) as u64,
                 layout: point.layout,
+                prefix: point.prefix,
                 control: point.control,
                 payload,
             }
@@ -3997,14 +4036,34 @@ fn validate_consolidated_groups(
 #[cfg(test)]
 fn validate_consolidated_cone_faces(
     faces: &[CatiaConsolidatedConeFace],
+    parameter_points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let points_by_id = parameter_points
+        .iter()
+        .map(|point| (point.id.as_str(), point))
+        .collect::<HashMap<_, _>>();
     for (index, face) in faces.iter().enumerate() {
+        let mut expected_point_offset = face.byte_offset.checked_add(face.byte_len);
+        let parameter_run_valid = face.parameter_points.iter().all(|id| {
+            match (expected_point_offset, points_by_id.get(id.as_str())) {
+                (Some(expected), Some(point)) if point.byte_offset == expected => {
+                    expected_point_offset = point.byte_offset.checked_add(point.byte_len);
+                    expected_point_offset.is_some()
+                }
+                _ => false,
+            }
+        });
+        let frame_overhead = face
+            .byte_len
+            .checked_sub(u64::try_from(face.program.len()).unwrap_or(u64::MAX));
         if face.id != format!("catia:consolidated:cone-face#{index}")
             || face.program.len() < 16
             || face.program.first() != Some(&0x85)
             || !face.program.ends_with(&[0x03, 0x11])
+            || !matches!(frame_overhead, Some(21..=23))
             || !face.angular_scale.is_finite()
             || !(0.0..std::f64::consts::FRAC_PI_2).contains(&face.half_angle)
+            || !parameter_run_valid
             || index > 0 && faces[index - 1].byte_offset >= face.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -4237,7 +4296,10 @@ fn validate_consolidated_parameter_points(
                 point.layout == 0x2a && values.iter().all(|value| value.is_finite())
             }
         };
+        let frame_overhead = point.byte_len.checked_sub(u64::from(point.layout));
         if point.id != format!("catia:consolidated:parameter-point#{index}")
+            || !matches!(frame_overhead, Some(5..=7))
+            || !matches!(point.prefix, 0x05 | 0x09 | 0x0d | 0x11)
             || !payload_valid
             || index > 0 && points[index - 1].byte_offset >= point.byte_offset
         {
@@ -5509,13 +5571,14 @@ impl CatiaNative {
         let legacy_entity_runs = legacy_entity_runs(bytes);
         let consolidated_circles = consolidated_circles(bytes);
         let consolidated_class61_records = consolidated_class61_records(bytes);
-        let consolidated_cone_faces = consolidated_cone_faces(bytes);
+        let consolidated_parameter_points = consolidated_parameter_points(bytes);
+        let consolidated_cone_faces =
+            consolidated_cone_faces(bytes, &consolidated_parameter_points);
         let consolidated_cones = consolidated_cones(bytes);
         let consolidated_cylinders = consolidated_cylinders(bytes);
         let consolidated_groups = consolidated_groups(bytes);
         let consolidated_line_profiles = consolidated_line_profiles(bytes);
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
-        let consolidated_parameter_points = consolidated_parameter_points(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
         let consolidated_reference_lists = consolidated_reference_lists(bytes);
         let consolidated_revolutions = consolidated_revolutions(bytes);
@@ -5962,7 +6025,6 @@ impl CatiaNative {
         let mut consolidated_cone_faces: Vec<CatiaConsolidatedConeFace> =
             namespace.arena_as("consolidated_cone_faces")?;
         consolidated_cone_faces.sort_by_key(|face| face.byte_offset);
-        validate_consolidated_cone_faces(&consolidated_cone_faces)?;
         let mut consolidated_cones: Vec<CatiaConsolidatedCone> =
             namespace.arena_as("consolidated_cones")?;
         consolidated_cones.sort_by_key(|cone| cone.byte_offset);
@@ -5987,6 +6049,7 @@ impl CatiaNative {
             namespace.arena_as("consolidated_parameter_points")?;
         consolidated_parameter_points.sort_by_key(|point| point.byte_offset);
         validate_consolidated_parameter_points(&consolidated_parameter_points)?;
+        validate_consolidated_cone_faces(&consolidated_cone_faces, &consolidated_parameter_points)?;
         let mut consolidated_pcurves: Vec<CatiaConsolidatedPcurve> =
             namespace.arena_as("consolidated_pcurves")?;
         consolidated_pcurves.sort_by_key(|pcurve| pcurve.byte_offset);

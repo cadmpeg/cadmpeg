@@ -30,7 +30,11 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     use crate::families::b2::records::B2ParameterPointPayload;
 
     let points = crate::families::b2::records::b2_parameter_points(&b2_parameter_point_stream());
-    assert_eq!(points.len(), 3);
+    assert_eq!(points.len(), 4);
+    assert_eq!(
+        points.iter().map(|point| point.prefix).collect::<Vec<_>>(),
+        [0x05, 0x09, 0x0d, 0x11]
+    );
     assert!(matches!(
         &points[0].payload,
         B2ParameterPointPayload::Uv { uv: [2.0, 3.0] }
@@ -45,6 +49,13 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     assert!(matches!(
         &points[2].payload,
         B2ParameterPointPayload::FiveScalars { .. }
+    ));
+    assert!(matches!(
+        &points[3].payload,
+        B2ParameterPointPayload::StationUv {
+            station: 12.0,
+            uv: [6.0, 7.0],
+        }
     ));
 }
 

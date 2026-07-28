@@ -466,6 +466,14 @@ fn finish_decode(
             native.consolidated_cone_faces.len(),
         ),
         (
+            "decoded_consolidated_cone_face_parameter_point_count".to_string(),
+            native
+                .consolidated_cone_faces
+                .iter()
+                .map(|face| face.parameter_points.len())
+                .sum(),
+        ),
+        (
             "decoded_consolidated_cone_count".to_string(),
             native.consolidated_cones.len(),
         ),
