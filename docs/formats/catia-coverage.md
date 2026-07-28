@@ -44,7 +44,9 @@ current scores require those matrices and representative fixtures.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, value, expression, and dependency identities resolve exactly.
   Legacy named scalar packets also transfer when one co-owned literal numeric
-  type descriptor uniquely supplies their type.
+  type descriptor uniquely supplies their type. A uniquely bound zero-input
+  legacy relation replaces that scalar literal when its typed evaluation agrees
+  exactly.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, trigonometric calls, absolute values, and
   square roots.

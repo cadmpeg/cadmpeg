@@ -28,7 +28,7 @@ pub(crate) fn transfer_parameters(
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting = BTreeSet::<ParameterId>::new();
     let mut programs = Vec::<FormulaProgramCandidate>::new();
-    let legacy_parameter_count = collect_legacy_parameters(native, &mut candidates);
+    let legacy_transfer = collect_legacy_parameters(native, &mut candidates);
 
     for formula_entity in &native.entity_records {
         let Some(formula) = &formula_entity.formula_relation else {
@@ -287,8 +287,9 @@ pub(crate) fn transfer_parameters(
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
     FormulaTransfer {
-        formula_parameter_count: transferred.saturating_sub(legacy_parameter_count),
-        legacy_parameter_count,
+        formula_parameter_count: transferred.saturating_sub(legacy_transfer.parameter_count),
+        legacy_parameter_count: legacy_transfer.parameter_count,
+        legacy_formula_count: legacy_transfer.formula_count,
         consumed_object_records,
     }
 }
@@ -297,15 +298,23 @@ pub(crate) fn transfer_parameters(
 pub(crate) struct FormulaTransfer {
     pub(crate) formula_parameter_count: usize,
     pub(crate) legacy_parameter_count: usize,
+    pub(crate) legacy_formula_count: usize,
     pub(crate) consumed_object_records: HashSet<String>,
+}
+
+#[derive(Default)]
+struct LegacyParameterTransfer {
+    parameter_count: usize,
+    formula_count: usize,
 }
 
 fn collect_legacy_parameters(
     native: &CatiaNative,
     candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
-) -> usize {
-    let mut transferred = 0;
+) -> LegacyParameterTransfer {
+    let mut transfer = LegacyParameterTransfer::default();
     for run in &native.legacy_entity_runs {
+        let mut parameters_by_entity = HashMap::<u32, Vec<ParameterId>>::new();
         for scalar in &run.scalar_values {
             if scalar.encoding != crate::native::CatiaLegacyScalarEncoding::Named84 {
                 continue;
@@ -333,7 +342,10 @@ fn collect_legacy_parameters(
             else {
                 continue;
             };
-            let id = ParameterId(format!("{}:parameter", scalar.id));
+            let Some(key) = scalar.id.strip_prefix("catia:legacy:scalar#") else {
+                continue;
+            };
+            let id = ParameterId(format!("catia:legacy:parameter#{key}"));
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -341,7 +353,7 @@ fn collect_legacy_parameters(
                 id.clone(),
                 FormulaParameterCandidate {
                     parameter: DesignParameter {
-                        id,
+                        id: id.clone(),
                         owner: None,
                         ordinal: 0,
                         name: name.clone(),
@@ -359,16 +371,64 @@ fn collect_legacy_parameters(
                         dependencies: Vec::new(),
                         properties: BTreeMap::new(),
                         pmi: None,
-                        native_ref: Some(scalar.id.clone()),
+                        native_ref: Some(run.id.clone()),
                     },
                     formula_output: false,
                     source_order: scalar.byte_offset,
                 },
             );
-            transferred += 1;
+            parameters_by_entity
+                .entry(scalar.entity_id)
+                .or_default()
+                .push(id);
+            transfer.parameter_count += 1;
+        }
+        let mut relations_by_parameter =
+            HashMap::<u32, Vec<&crate::native::CatiaLegacyRelation>>::new();
+        for relation in &run.relations {
+            if relation.inputs.is_empty() && relation.output.is_none() {
+                if let Some(parameter) = relation.parameter_entity_id {
+                    relations_by_parameter
+                        .entry(parameter)
+                        .or_default()
+                        .push(relation);
+                }
+            }
+        }
+        for (entity_id, relations) in relations_by_parameter {
+            let ([parameter], [relation]) = (
+                parameters_by_entity
+                    .get(&entity_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+                relations.as_slice(),
+            ) else {
+                continue;
+            };
+            let Some(candidate) = candidates.get_mut(parameter) else {
+                continue;
+            };
+            let Some(stored) = candidate.parameter.value.clone() else {
+                continue;
+            };
+            let bindings = BTreeMap::new();
+            let Some(evaluated) = evaluate_formula_expression(&relation.expression, &bindings)
+                .filter(|value| value.satisfies_source_type(&relation.result_type))
+            else {
+                continue;
+            };
+            if !evaluated.agrees_with(&TypedParameterEvaluation::Value(stored)) {
+                continue;
+            }
+            candidate
+                .parameter
+                .expression
+                .clone_from(&relation.expression);
+            candidate.formula_output = true;
+            transfer.formula_count += 1;
         }
     }
-    transferred
+    transfer
 }
 
 struct FormulaParameterCandidate {

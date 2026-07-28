@@ -691,6 +691,10 @@ fn finish_decode(
             formula_transfer.legacy_parameter_count,
         ),
         (
+            "transferred_legacy_formula_count".to_string(),
+            formula_transfer.legacy_formula_count,
+        ),
+        (
             "transferred_formula_design_record_count".to_string(),
             transferred_formula_design_records.len(),
         ),
@@ -745,9 +749,10 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} legacy design run(s) with {legacy_entity_identity_count} source-ordered entity identity marker(s), {legacy_text_field_count} complete schema text field(s), including {legacy_role_text_field_count} schema-role binding(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), and {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s); {} uniquely named, literal-typed numeric parameter(s) transferred, while remaining inter-marker fields, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
+                "CATIA native data retains {} legacy design run(s) with {legacy_entity_identity_count} source-ordered entity identity marker(s), {legacy_text_field_count} complete schema text field(s), including {legacy_role_text_field_count} schema-role binding(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), and {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s); {} uniquely named, literal-typed numeric parameter(s) and {} closed zero-input formula(s) transferred, while remaining inter-marker fields, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
                 native.legacy_entity_runs.len(),
                 formula_transfer.legacy_parameter_count,
+                formula_transfer.legacy_formula_count,
             ),
             provenance: None,
         });

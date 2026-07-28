@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 152;
+pub const CATIA_NATIVE_VERSION: u32 = 153;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2539,7 +2539,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
         .into_iter()
         .enumerate()
         .map(|(index, run)| {
-            let id = format!("catia:legacy-entity-run#{index}");
+            let id = format!("catia:legacy:entity-run#{index:08}");
             let byte_offset = run
                 .identities
                 .first()
@@ -2628,7 +2628,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                     .scalar_values
                     .into_iter()
                     .map(|value| CatiaLegacyScalarValue {
-                        id: format!("{id}:scalar#{}", value.offset),
+                        id: format!("catia:legacy:scalar#{index:08}-{:016}", value.offset),
                         byte_offset: value.offset as u64,
                         entity_id: value.entity_id,
                         encoding: match value.encoding {
@@ -2727,7 +2727,7 @@ fn validate_legacy_entity_runs(
     let mut previous_end = None;
     for (index, run) in runs.iter().enumerate() {
         let run_end = run.byte_offset.checked_add(run.byte_len);
-        let valid = run.id == format!("catia:legacy-entity-run#{index}")
+        let valid = run.id == format!("catia:legacy:entity-run#{index:08}")
             && run_end == Some(run.catalog_offset)
             && previous_end.is_none_or(|end| end <= run.byte_offset)
             && run.identities.first().is_some_and(|identity| {
@@ -2796,7 +2796,7 @@ fn validate_legacy_entity_runs(
                 .windows(2)
                 .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
             && run.scalar_values.iter().all(|value| {
-                value.id == format!("{}:scalar#{}", run.id, value.byte_offset)
+                value.id == format!("catia:legacy:scalar#{index:08}-{:016}", value.byte_offset)
                     && value.byte_offset >= run.byte_offset
                     && value.byte_offset < run.catalog_offset
                     && run
