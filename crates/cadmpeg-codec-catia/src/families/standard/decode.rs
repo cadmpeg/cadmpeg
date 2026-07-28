@@ -2839,6 +2839,76 @@ pub(crate) fn bind_ordered_standard_curve_branches(
         if grouped[first]
             || !matches!(
                 supports[first].geometry,
+                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
+            )
+            || normalized[first].len() < 2
+        {
+            continue;
+        }
+        let mut edges = (first..supports.len())
+            .filter(|edge| {
+                let same_circle = match (&supports[*edge].geometry, &supports[first].geometry) {
+                    (
+                        crate::families::standard::records::StandardCurveGeometry::Circle {
+                            center: candidate_center,
+                            radius: candidate_radius,
+                        },
+                        crate::families::standard::records::StandardCurveGeometry::Circle {
+                            center,
+                            radius,
+                        },
+                    ) => candidate_center == center && candidate_radius == radius,
+                    _ => false,
+                };
+                !grouped[*edge] && same_circle && normalized[*edge] == normalized[first]
+            })
+            .collect::<Vec<_>>();
+        if edges.len() != normalized[first].len() {
+            continue;
+        }
+        let shared_faces = supports[edges[0]]
+            .faces
+            .into_iter()
+            .filter(|face| {
+                edges[1..]
+                    .iter()
+                    .all(|edge| supports[*edge].faces.contains(face))
+            })
+            .collect::<Vec<_>>();
+        let [shared_face] = shared_faces.as_slice() else {
+            continue;
+        };
+        let mut partner_faces = edges
+            .iter()
+            .map(|edge| {
+                supports[*edge]
+                    .faces
+                    .into_iter()
+                    .find(|face| face != shared_face)
+                    .map(|partner| (partner, *edge))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(partner_faces) = partner_faces.as_mut() else {
+            continue;
+        };
+        partner_faces.sort_unstable();
+        if partner_faces
+            .windows(2)
+            .any(|faces| faces[0].0 == faces[1].0)
+        {
+            continue;
+        }
+        edges.clear();
+        edges.extend(partner_faces.iter().map(|(_, edge)| *edge));
+        for (pair, edge) in normalized[first].iter().copied().zip(edges) {
+            candidates[edge] = vec![pair];
+            grouped[edge] = true;
+        }
+    }
+    for first in 0..supports.len() {
+        if grouped[first]
+            || !matches!(
+                supports[first].geometry,
                 crate::families::standard::records::StandardCurveGeometry::Bspline
             )
             || normalized[first].len() < 4
@@ -5268,6 +5338,26 @@ mod route_tests {
         bind_ordered_standard_curve_branches(&supports, &mut candidates);
 
         assert_eq!(candidates, [vec![[2, 8]], vec![[2, 9]]]);
+    }
+
+    #[test]
+    fn standard_circle_rows_bind_partner_faces_by_allocation_rank() {
+        let circle = |faces| StandardCurveSupport {
+            pos: 0,
+            tag: 0,
+            faces,
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 2.0),
+                radius: 4.0,
+            },
+        };
+        let supports = [circle([7, 3]), circle([2, 7])];
+        let domain = vec![[5, 9], [6, 9]];
+        let mut candidates = [domain.clone(), domain];
+
+        bind_ordered_standard_curve_branches(&supports, &mut candidates);
+
+        assert_eq!(candidates, [vec![[6, 9]], vec![[5, 9]]]);
     }
 
     #[test]
