@@ -2719,9 +2719,13 @@ followed immediately by the unlabeled `segtab_ptr` array body. Its `f8` extent
 bounds the section-entry table. Its first declared entry is the inherited
 prototype closed by `f2 f7 <table-class> e2`; subsequent entries are replay
 rows. Decoded line, arc, and point rows are the entries with segment type `2`,
-`3`, and `5`. Other complete fixed-field segment families remain opaque
-segment rows. The entity-reference header and segment rows use the same framing
-and field order as the labelled `segtab_ptr` table.
+`3`, and `5`. Type `25` is a section-reference line. Its two point fields are
+nullable endpoint references; its center, radius, and secondary-radius fields
+are null, and its arc-orientation field is zero. Its direction triple and
+vertical/horizontal field retain the stored reference-line state. Other
+complete fixed-field segment families remain opaque segment rows. The
+entity-reference header and segment rows use the same framing and field order
+as the labelled `segtab_ptr` table.
 
 The positional dimension table repeats the labelled template's `dimtab_ptr`
 table-class reference in an unlabeled `f8 <count> f7 <table-class> fb e2`

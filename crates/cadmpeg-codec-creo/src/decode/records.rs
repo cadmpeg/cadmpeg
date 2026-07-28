@@ -21,6 +21,7 @@ pub(super) struct CreoSketchRecord {
     pub(super) circle_segments: Vec<CreoSketchCircleSegment>,
     pub(super) point_segments: Vec<CreoSketchPointSegment>,
     pub(super) centered_line_segments: Vec<CreoSketchCenteredLineSegment>,
+    pub(super) reference_line_segments: Vec<CreoSketchReferenceLineSegment>,
     pub(super) opaque_segments: Vec<CreoSketchOpaqueSegment>,
     pub(super) trim_entities: Vec<CreoSketchTrimEntity>,
     pub(super) trim_vertices: Vec<CreoSketchTrimVertex>,
@@ -1888,6 +1889,18 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .flat_map(|table| &table.centered_line_rows)
                 .map(|segment| CreoSketchCenteredLineSegment {
                     external_id: segment.external_id,
+                    offset: segment.offset,
+                })
+                .collect(),
+            reference_line_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.reference_line_rows)
+                .map(|segment| CreoSketchReferenceLineSegment {
+                    external_id: segment.external_id,
+                    point_ids: segment.point_ids,
+                    directions: segment.directions,
+                    vertical_horizontal_constraint: segment.vertical_horizontal,
                     offset: segment.offset,
                 })
                 .collect(),

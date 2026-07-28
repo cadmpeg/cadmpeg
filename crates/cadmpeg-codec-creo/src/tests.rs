@@ -4140,10 +4140,11 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
 #[test]
 fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     let mut payload =
-        b"feat_defs_40\0segtab_ptr\0\xf8\x04\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+        b"feat_defs_40\0segtab_ptr\0\xf8\x05\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[10, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1, 0xf6, 20, 0xe2, 0xe3]);
     payload.extend_from_slice(&[1, 0, 0, 0, 0xf6, 1, 3, 0, 0, 0xf6, 0xf6, 21, 0xe2, 0xe3]);
     payload.extend_from_slice(&[47, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1, 0xf6, 22, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[25, 0, 1, 0, 10, 11, 0xf6, 0, 0, 0xf6, 0xf6, 24, 0xe2, 0xe3]);
     payload.extend_from_slice(&[47, 0, 0, 0, 0xf6, 1, 0, 0, 0, 1, 0xf6, 23, 0xe2]);
     payload.extend_from_slice(b"dimtab_ptr\0");
     let data = build_prt("c", &[("FeatDefs", payload)]);
@@ -4157,6 +4158,7 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     assert_eq!(segments.circle_rows.len(), 1);
     assert_eq!(segments.point_rows.len(), 1);
     assert_eq!(segments.centered_line_rows.len(), 1);
+    assert_eq!(segments.reference_line_rows.len(), 1);
     assert_eq!(segments.opaque_rows.len(), 1);
     assert_eq!(segments.opaque_rows[0].kind, 47);
 
@@ -4175,6 +4177,18 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     assert_eq!(
         sketch.fields["centered_line_segments"][0]["external_id"],
         22
+    );
+    assert_eq!(
+        sketch.fields["reference_line_segments"][0]["external_id"],
+        24
+    );
+    assert_eq!(
+        sketch.fields["reference_line_segments"][0]["point_ids"][0],
+        10
+    );
+    assert_eq!(
+        sketch.fields["reference_line_segments"][0]["point_ids"][1],
+        11
     );
     assert_eq!(sketch.fields["opaque_segments"][0]["external_id"], 23);
     assert_eq!(sketch.fields["opaque_segments"][0]["kind"], 47);
@@ -4262,7 +4276,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .filter(|constraint| constraint.sketch == sketch.id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 2);
-        let opaque_verhor = constraints
+        let reference_verhor = constraints
             .iter()
             .find(|constraint| {
                 matches!(
@@ -4270,17 +4284,17 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
                     SketchConstraintDefinition::Native { .. }
                 )
             })
-            .expect("opaque segment verhor");
-        assert!(opaque_verhor.id.0.starts_with(&format!(
-            "creo:featdefs:sketch_constraint#{identity_scope}:verhor:opaque:offset:"
+            .expect("reference-line verhor");
+        assert!(reference_verhor.id.0.starts_with(&format!(
+            "creo:featdefs:sketch_constraint#{identity_scope}:verhor:reference_line:offset:"
         )));
         let SketchConstraintDefinition::Native {
             native_properties,
             operands,
             ..
-        } = &opaque_verhor.definition
+        } = &reference_verhor.definition
         else {
-            panic!("opaque segment verhor must remain native");
+            panic!("reference-line verhor must remain native");
         };
         assert_eq!(native_properties["verhor"], "0");
         assert_eq!(operands[0].object_index, 42);
@@ -4541,6 +4555,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         }),

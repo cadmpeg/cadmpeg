@@ -335,6 +335,15 @@ struct CreoSketchCenteredLineSegment {
 }
 
 #[derive(Serialize)]
+struct CreoSketchReferenceLineSegment {
+    external_id: u32,
+    point_ids: [Option<u32>; 2],
+    directions: [Option<u32>; 3],
+    vertical_horizontal_constraint: Option<u32>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
 struct CreoSketchOpaqueSegment {
     external_id: u32,
     kind: u32,
@@ -1795,6 +1804,7 @@ fn sketch_table_headers(
                 + table.circle_rows.len()
                 + table.point_rows.len()
                 + table.centered_line_rows.len()
+                + table.reference_line_rows.len()
                 + table.opaque_rows.len(),
             table.offset,
         );
@@ -9704,6 +9714,18 @@ fn unique_centered_line_segment(
     (segments.external_id_count(external_id) == 1).then_some(segment)
 }
 
+fn unique_reference_line_segment(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeatureReferenceLineSegment> {
+    let segments = definition.segments.as_ref()?;
+    let segment = segments
+        .reference_line_rows
+        .iter()
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
+}
+
 fn section_skamp_locus(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -9721,6 +9743,14 @@ fn section_skamp_locus(
             (crate::feature::FeatureSegmentKind::Arc, 4) => Some(SketchLocus::Center(entity)),
             (_, 2) => Some(SketchLocus::Start(entity)),
             (_, 3) => Some(SketchLocus::End(entity)),
+            _ => None,
+        };
+    }
+    if let Some(segment) = unique_reference_line_segment(definition, item.entity_id) {
+        return match item.sense {
+            0 => Some(SketchLocus::Entity(entity)),
+            2 if segment.point_ids[0].is_some() => Some(SketchLocus::Start(entity)),
+            3 if segment.point_ids[1].is_some() => Some(SketchLocus::End(entity)),
             _ => None,
         };
     }
@@ -9765,6 +9795,12 @@ fn section_skamp_locus(
                 .chain(
                     segments
                         .centered_line_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    segments
+                        .reference_line_rows
                         .iter()
                         .map(|segment| segment.external_id),
                 )
@@ -10799,6 +10835,7 @@ fn section_segment_external_id_counts(
                 .chain(table.circle_rows.iter().map(|row| row.external_id))
                 .chain(table.point_rows.iter().map(|row| row.external_id))
                 .chain(table.centered_line_rows.iter().map(|row| row.external_id))
+                .chain(table.reference_line_rows.iter().map(|row| row.external_id))
                 .chain(table.opaque_rows.iter().map(|row| row.external_id))
                 .fold(BTreeMap::new(), |mut counts, external_id| {
                     *counts.entry(external_id).or_insert(0) += 1;
@@ -11296,6 +11333,12 @@ fn solver_only_section_entities(
                         .iter()
                         .map(|segment| segment.external_id),
                 )
+                .chain(
+                    table
+                        .reference_line_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
                 .chain(table.opaque_rows.iter().map(|segment| segment.external_id))
         })
         .collect::<BTreeSet<_>>();
@@ -11361,6 +11404,13 @@ fn section_skamp_has_proven_point_locus(
     }
     if unique_centered_line_segment(definition, item.entity_id).is_some() {
         return matches!(item.sense, 2 | 3);
+    }
+    if let Some(segment) = unique_reference_line_segment(definition, item.entity_id) {
+        return match item.sense {
+            2 => segment.point_ids[0].is_some(),
+            3 => segment.point_ids[1].is_some(),
+            _ => false,
+        };
     }
     if unique_circle_segment(definition, item.entity_id).is_some() {
         return item.sense == 4;
@@ -11528,6 +11578,7 @@ fn transfer_sketches(
                 + table.circle_rows.len()
                 + table.point_rows.len()
                 + table.centered_line_rows.len()
+                + table.reference_line_rows.len()
                 + table.opaque_rows.len();
             let expected_rows = usize::try_from(table.declared_count)
                 .expect("u32 segment count fits usize")
@@ -11968,6 +12019,48 @@ fn transfer_sketches(
                     .map(|point| sketch_point_ref(&sketch_id, point))
                     .collect(),
                 geometry,
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.reference_line_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
+            let suffix = if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("reference_line:offset:{}", segment.offset)
+            };
+            let id = sketch_entity_id(&sketch_id, &suffix);
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                "section_reference_line",
+                Exactness::ByteExact,
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: None,
+                endpoint_refs: segment
+                    .point_ids
+                    .into_iter()
+                    .flatten()
+                    .map(|point| sketch_point_ref(&sketch_id, point))
+                    .collect(),
+                geometry: SketchGeometry::Native {
+                    native_kind: "reference_line".to_string(),
+                },
             });
         }
         for segment in definition
@@ -12468,6 +12561,31 @@ fn transfer_sketches(
                             ),
                             segment.offset,
                         )
+                    }),
+            )
+            .chain(
+                definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| &table.reference_line_rows)
+                    .filter_map(|segment| {
+                        let verhor = segment.vertical_horizontal?;
+                        let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                            segment.external_id.to_string()
+                        } else {
+                            format!("reference_line:offset:{}", segment.offset)
+                        };
+                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        Some((
+                            suffix,
+                            native_section_segment_verhor_definition(
+                                &sketch_id,
+                                entity,
+                                segment.external_id,
+                                verhor,
+                            ),
+                            segment.offset,
+                        ))
                     }),
             )
             .chain(
@@ -28544,6 +28662,15 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.centered_line_rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_reference_line_segment_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.reference_line_rows.len())
             .sum::<usize>(),
     );
     coverage.insert(
