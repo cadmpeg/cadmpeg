@@ -615,6 +615,18 @@ pub fn walk(stream: &[u8]) -> Census {
         .as_ref()
         .map_or(0, |header| header.end);
     while offset + 4 <= stream.len() {
+        if let Some(preamble) = schema_reference_preamble(stream, offset, stream.len()) {
+            census.bytes_decoded += preamble.end - preamble.offset;
+            offset = preamble.end;
+            census.schema_reference_preambles.push(preamble);
+            continue;
+        }
+        if let Some(declaration) = inline_schema_declaration(stream, offset, stream.len()) {
+            census.bytes_decoded += declaration.end - declaration.offset;
+            offset = declaration.end;
+            census.inline_schema_declarations.push(declaration);
+            continue;
+        }
         if let Some(record) = consume_shared_record(stream, offset, &census.records) {
             census.bytes_decoded += record.end - offset;
             let name =
@@ -1379,7 +1391,9 @@ fn inline_schema_declaration(
         let (xmt, node_id, all_references, count, end) = type_70_body(stream, body, 2)
             .filter(|(_, _, _, _, end)| *end <= gap_end)
             .or_else(|| {
-                type_70_body(stream, body, 1).filter(|(_, _, _, _, end)| *end <= gap_end)
+                type_70_body(stream, body, 1).filter(|(_, _, _, _, end)| {
+                    *end <= gap_end && (*end == gap_end || plausible_next(stream, *end))
+                })
             })?;
         let references = all_references[..4].try_into().ok()?;
         return Some(InlineSchemaDeclaration {
@@ -3221,6 +3235,27 @@ mod schema_reference_preamble_tests {
             assert!(schema_reference_preamble(malformed, 0, malformed.len()).is_none());
         }
     }
+
+    #[test]
+    fn schema_events_precede_record_like_bytes() {
+        let preamble = preamble();
+        let preamble_end = preamble.len();
+        let bytes = [preamble, BODY_SCHEMA_HEADER.to_vec()].concat();
+        let census = walk(&bytes);
+
+        assert_eq!(census.schema_reference_preambles.len(), 1);
+        assert_eq!(census.schema_reference_preambles[0].end, preamble_end);
+        assert_eq!(
+            census.inline_schema_declarations,
+            [InlineSchemaDeclaration {
+                fields: InlineSchemaFields::BodyHeader,
+                offset: preamble_end,
+                end: bytes.len(),
+            }]
+        );
+        assert!(census.records.is_empty());
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
 }
 
 #[cfg(test)]
@@ -3808,16 +3843,22 @@ mod inline_schema_tests {
 
     #[test]
     fn truncated_inline_schema_declaration_is_not_admitted() {
-        for mut stream in [
+        for (name, mut stream) in [
             attdef_list_declaration(),
             type_70_declaration(),
             type_38_declaration(),
             type_41_declaration(),
             type_100_declaration(),
             type_101_declaration(),
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             stream.pop();
-            assert!(walk(&stream).inline_schema_declarations.is_empty());
+            assert!(
+                walk(&stream).inline_schema_declarations.is_empty(),
+                "truncated declaration {name}"
+            );
         }
     }
 }

@@ -547,7 +547,10 @@ leading references are consecutive non-null compact or extended XMT indices.
 The four state words have the form `(0|2), 0, 1, value`. Each
 entry is `entry_kind:u16 BE, ref`, `entry_kind` is type 81 or type 82, and its
 reference is non-null. The type-82 entry carrying the null XMT value terminates
-the entry lane. The preamble ends after `terminal_value`.
+the entry lane. The preamble ends after `terminal_value`. At a preamble
+boundary this terminal clause belongs to the preamble rather than to a counted
+type-82 record. Exact inline schema declarations likewise own their complete
+declaration bytes before ordinary deltas record framing is applied.
 
 One reference-marker packet is `ref 01, ref(1) 01, marker:u8, ref(1) 01`.
 The leading reference is non-null and uses compact or extended XMT encoding.
