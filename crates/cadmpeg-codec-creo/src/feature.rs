@@ -900,6 +900,17 @@ pub struct FeatureCircleSegment {
     pub offset: usize,
 }
 
+/// One point type `1` `segtab_ptr` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeaturePointSegment {
+    /// Point ID stored in the center-point field.
+    pub point_id: u32,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
 /// One fully framed `segtab_ptr` row outside the core segment-family enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOpaqueSegment {
@@ -939,6 +950,8 @@ pub struct FeatureSegmentTable {
     pub rows: Vec<FeatureSegment>,
     /// Fully aligned circular rows.
     pub circle_rows: Vec<FeatureCircleSegment>,
+    /// Fully aligned type-1 point rows.
+    pub point_rows: Vec<FeaturePointSegment>,
     /// Fully aligned rows with unsupported segment-family discriminators.
     pub opaque_rows: Vec<FeatureOpaqueSegment>,
     /// Byte offset of the `segtab_ptr` label in the original stream.
@@ -953,6 +966,7 @@ impl FeatureSegmentTable {
                 usize::from(self.has_elided_prototype)
                     + self.rows.len()
                     + self.circle_rows.len()
+                    + self.point_rows.len()
                     + self.opaque_rows.len(),
             )
     }
@@ -968,6 +982,10 @@ impl FeatureSegmentTable {
         (matches.next().is_none()
             && !self
                 .circle_rows
+                .iter()
+                .any(|row| row.external_id == external_id)
+            && !self
+                .point_rows
                 .iter()
                 .any(|row| row.external_id == external_id)
             && !self
@@ -2382,13 +2400,22 @@ fn segment_table_body(
     .unwrap_or(end);
     let mut rows = Vec::new();
     let mut circle_rows = Vec::new();
+    let mut point_rows = Vec::new();
     let mut opaque_rows = Vec::new();
     if let Some(row) = named_row {
-        retain_segment_row(row, &mut rows, &mut circle_rows, &mut opaque_rows);
+        retain_segment_row(
+            row,
+            &mut rows,
+            &mut circle_rows,
+            &mut point_rows,
+            &mut opaque_rows,
+        );
     }
     let first_row = cursor;
     let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
-    while cursor < region_end && rows.len() + circle_rows.len() + opaque_rows.len() < row_limit {
+    while cursor < region_end
+        && rows.len() + circle_rows.len() + point_rows.len() + opaque_rows.len() < row_limit
+    {
         let row_start = cursor;
         let kind_offset = if matches!(
             payload.get(cursor..cursor + 2),
@@ -2467,6 +2494,7 @@ fn segment_table_body(
                 },
                 &mut rows,
                 &mut circle_rows,
+                &mut point_rows,
                 &mut opaque_rows,
             );
             cursor = p + 1;
@@ -2480,6 +2508,7 @@ fn segment_table_body(
         entity_ref,
         rows,
         circle_rows,
+        point_rows,
         opaque_rows,
         offset: table,
     })
@@ -2489,6 +2518,7 @@ fn retain_segment_row(
     row: FeatureOpaqueSegment,
     rows: &mut Vec<FeatureSegment>,
     circle_rows: &mut Vec<FeatureCircleSegment>,
+    point_rows: &mut Vec<FeaturePointSegment>,
     opaque_rows: &mut Vec<FeatureOpaqueSegment>,
 ) {
     if row.kind == 10
@@ -2502,6 +2532,23 @@ fn retain_segment_row(
             circle_rows.push(FeatureCircleSegment {
                 center_id,
                 radius_ref,
+                external_id: row.external_id,
+                offset: row.offset,
+            });
+            return;
+        }
+    }
+    if row.kind == 1
+        && row.directions == [Some(0); 3]
+        && row.point_ids == [None, Some(1)]
+        && row.arc_orientation == Some(0)
+        && row.vertical_horizontal == Some(0)
+        && row.radius_ref.is_none()
+        && row.radius2_ref.is_none()
+    {
+        if let Some(point_id) = row.center_id {
+            point_rows.push(FeaturePointSegment {
+                point_id,
                 external_id: row.external_id,
                 offset: row.offset,
             });
@@ -8202,13 +8249,13 @@ mod tests {
 
         assert!(segments.is_complete());
         assert!(segments.rows.is_empty());
-        assert_eq!(segments.opaque_rows.len(), 2);
-        assert_eq!(segments.opaque_rows[0].kind, 1);
-        assert_eq!(segments.opaque_rows[0].point_ids, [None, Some(1)]);
-        assert_eq!(segments.opaque_rows[0].external_id, 4);
-        assert_eq!(segments.opaque_rows[1].kind, 25);
-        assert_eq!(segments.opaque_rows[1].point_ids, [Some(10), Some(11)]);
-        assert_eq!(segments.opaque_rows[1].external_id, 1);
+        assert_eq!(segments.point_rows.len(), 1);
+        assert_eq!(segments.point_rows[0].point_id, 0);
+        assert_eq!(segments.point_rows[0].external_id, 4);
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 25);
+        assert_eq!(segments.opaque_rows[0].point_ids, [Some(10), Some(11)]);
+        assert_eq!(segments.opaque_rows[0].external_id, 1);
 
         let malformed_known = [
             0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 2, 0, 1, 0, 10, 0xf6, 0xf6, 0, 0,
@@ -8252,6 +8299,38 @@ mod tests {
         assert!(segments.circle_rows.is_empty());
         assert_eq!(segments.opaque_rows.len(), 1);
         assert_eq!(segments.opaque_rows[0].kind, 10);
+    }
+
+    #[test]
+    fn segment_tables_type_complete_point_rows() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 1, 0, 0, 0, 0xf6, 1, 2, 0, 0, 0xf6,
+            0xf6, 22, 0xe2,
+        ];
+
+        let segments =
+            segment_table_body(&payload, 0, 0, payload.len(), false).expect("point segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.rows.is_empty());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.point_rows,
+            vec![FeaturePointSegment {
+                point_id: 2,
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+
+        let mut malformed = payload;
+        malformed[19] = 1;
+        let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
+            .expect("noncanonical point segment table");
+        assert!(segments.is_complete());
+        assert!(segments.point_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 1);
     }
 
     #[test]
@@ -9114,6 +9193,7 @@ mod tests {
                 segment(FeatureSegmentKind::Arc, [2, 3], 10),
             ],
             circle_rows: Vec::new(),
+            point_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -9814,6 +9894,7 @@ mod tests {
                 offset: 0,
             }],
             circle_rows: Vec::new(),
+            point_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -9881,6 +9962,7 @@ mod tests {
                 offset: 0,
             }],
             circle_rows: Vec::new(),
+            point_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -9937,6 +10019,7 @@ mod tests {
                 offset: 0,
             }],
             circle_rows: Vec::new(),
+            point_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };

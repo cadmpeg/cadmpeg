@@ -1295,6 +1295,9 @@ A type-10 circle row stores direction slots `[0, 0, 0]`, point slots
 `[f6, 1]`, a non-null center identifier, zero arc-orientation and
 vertical/horizontal slots, a non-null radius reference, and an `f6` secondary
 radius reference.
+A type-1 point row stores direction slots `[0, 0, 0]`, point slots `[f6, 1]`,
+a non-null point identifier in the center field, zero arc-orientation and
+vertical/horizontal slots, and `f6` in both radius-reference fields.
 
 The `skamp_ptr` and `triples_ptr` array headers retain their declared counts,
 table-class references, and source offsets independently of the number of rows

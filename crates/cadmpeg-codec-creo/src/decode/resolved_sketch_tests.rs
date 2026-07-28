@@ -3979,6 +3979,7 @@ fn saved_line_joins_through_order_table() {
         entity_ref: None,
         rows: Vec::new(),
         circle_rows: Vec::new(),
+        point_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 0,
     });
@@ -4468,6 +4469,7 @@ fn saved_line_joins_through_order_table() {
         entity_ref: None,
         rows: vec![segment.clone()],
         circle_rows: Vec::new(),
+        point_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -4761,6 +4763,7 @@ fn saved_arc_joins_through_order_table() {
         entity_ref: None,
         rows: vec![segment],
         circle_rows: Vec::new(),
+        point_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 38,
     });
@@ -4943,6 +4946,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
             entity_ref: None,
             rows: vec![anchor, segment.clone()],
             circle_rows: Vec::new(),
+            point_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 20,
         }),
@@ -5166,6 +5170,7 @@ fn arc_carriers_use_trim_vertices() {
         entity_ref: None,
         rows: vec![var_segment.clone()],
         circle_rows: Vec::new(),
+        point_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 6,
     });
@@ -5478,6 +5483,7 @@ fn dimension_identity_includes_its_feature_definition() {
             external_id: 42,
             offset: 20,
         }],
+        point_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 19,
     });
@@ -6131,6 +6137,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             entity_ref: None,
             rows: vec![segment, arc, point, other_line, other_arc],
             circle_rows: Vec::new(),
+            point_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 30,
         }),
@@ -7504,16 +7511,9 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(crate::feature::FeatureOpaqueSegment {
-            kind: 1,
-            directions: [Some(0); 3],
-            point_ids: [None, Some(1)],
-            center_id: Some(1),
-            arc_orientation: Some(0),
-            vertical_horizontal: Some(0),
-            radius_ref: None,
-            radius2_ref: None,
+        .point_rows
+        .push(crate::feature::FeaturePointSegment {
+            point_id: 1,
             external_id: 99,
             offset: 601,
         });
@@ -7522,13 +7522,9 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         sense: 0,
     };
     assert_eq!(
-        section_opaque_point_geometry(
+        section_point_row_geometry(
             &resolved_section_points(&opaque_point),
-            &opaque_point
-                .segments
-                .as_ref()
-                .expect("segments")
-                .opaque_rows[0],
+            &opaque_point.segments.as_ref().expect("segments").point_rows[0],
         ),
         Some(SketchGeometry::Point {
             position: Point2::new(0.0, 2.0),
@@ -7583,14 +7579,12 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         directions: [Some(0); 3],
         point_ids: [None, Some(1)],
         center_id: Some(2),
+        arc_orientation: Some(0),
+        vertical_horizontal: Some(0),
+        radius_ref: Some(1),
+        radius2_ref: None,
         external_id: 100,
         offset: 602,
-        ..opaque_point
-            .segments
-            .as_ref()
-            .expect("segments")
-            .opaque_rows[0]
-            .clone()
     };
     assert_eq!(
         section_opaque_centered_line_geometry(
@@ -7695,15 +7689,15 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .declared_count += 1;
     let colliding_row = crate::feature::FeatureOpaqueSegment {
         kind: 10,
+        directions: [Some(0); 3],
+        point_ids: [None, Some(1)],
         center_id: Some(1),
+        arc_orientation: Some(0),
+        vertical_horizontal: Some(0),
         radius_ref: Some(0),
+        radius2_ref: None,
+        external_id: 99,
         offset: 602,
-        ..opaque_family_collision
-            .segments
-            .as_ref()
-            .expect("segments")
-            .opaque_rows[0]
-            .clone()
     };
     opaque_family_collision
         .segments
@@ -10093,6 +10087,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
             })
             .collect(),
         circle_rows: Vec::new(),
+        point_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 2,
     });
@@ -10152,6 +10147,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
             })
             .collect(),
         circle_rows: Vec::new(),
+        point_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -10191,6 +10187,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         })
         .collect(),
         circle_rows: Vec::new(),
+        point_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -10275,6 +10272,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
                 offset: 2,
             }],
             circle_rows: Vec::new(),
+            point_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 2,
         }),
@@ -10455,6 +10453,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
             entity_ref: None,
             rows: Vec::new(),
             circle_rows: Vec::new(),
+            point_rows: Vec::new(),
             opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
                 kind: 25,
                 directions: [None; 3],
