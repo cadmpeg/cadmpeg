@@ -192,6 +192,8 @@ pub enum InlineSchemaFields {
         /// Repeated terminal non-null reference.
         trailing_reference: u32,
     },
+    /// Type 100 declaration and its invariant precision state.
+    Type100,
     /// Type 101 declaration and its schema-bound instance state.
     Type101 {
         /// Four ordered stream-local XMT references.
@@ -1136,6 +1138,11 @@ const TYPE_70_SCHEMA_HEADER: &[u8] = &[
     0x03, 0xf4, 0x00, 0x01, 0x43, 0x5a,
 ];
 
+const TYPE_100_SCHEMA_HEADER: &[u8] = &[
+    0x00, 0x64, 0x0a, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x41, 0x09, 0x70, 0x72,
+    0x65, 0x63, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x00, 0xe5, 0x00, 0x01, 0x5a,
+];
+
 const TYPE_101_SCHEMA_HEADER: &[u8] = &[
     0x00, 0x65, 0x13, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x04, 0x6d, 0x65, 0x73, 0x68,
     0x03, 0xee, 0x00, 0x01, 0x49, 0x08, 0x70, 0x6f, 0x6c, 0x79, 0x6c, 0x69, 0x6e, 0x65, 0x03, 0xf0,
@@ -1212,6 +1219,37 @@ fn inline_schema_declaration(
             end,
         });
     }
+    if stream.get(offset..offset.checked_add(TYPE_100_SCHEMA_HEADER.len())?)
+        == Some(TYPE_100_SCHEMA_HEADER)
+    {
+        let mut at = offset.checked_add(TYPE_100_SCHEMA_HEADER.len())?;
+        let (xmt, consumed) = read_xmt(stream, at)?;
+        (xmt == 48).then_some(())?;
+        at = at.checked_add(consumed)?;
+        (be::u32_at(stream, at) == Some(0)).then_some(())?;
+        at = at.checked_add(4)?;
+        for expected in [2, 49, 1] {
+            (read_status_one_reference(stream, &mut at) == Some(expected)).then_some(())?;
+        }
+        for ordinal in 0..13 {
+            let expected = if ordinal % 4 == 0 { 1.0 } else { 0.0 };
+            (be::f64_at(stream, at)?.to_bits() == f64::to_bits(expected)).then_some(())?;
+            at = at.checked_add(8)?;
+        }
+        (be::u32_at(stream, at) == Some(1)).then_some(())?;
+        at = at.checked_add(4)?;
+        for _ in 0..3 {
+            (be::u64_at(stream, at) == Some(0xc2bc_928f_996e_0000)).then_some(())?;
+            at = at.checked_add(8)?;
+        }
+        (read_status_one_reference(stream, &mut at) == Some(1)).then_some(())?;
+        (at <= gap_end).then_some(())?;
+        return Some(InlineSchemaDeclaration {
+            fields: InlineSchemaFields::Type100,
+            offset,
+            end: at,
+        });
+    }
     if stream.get(offset..offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?)
         == Some(TYPE_101_SCHEMA_HEADER)
     {
@@ -1283,6 +1321,7 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
             REGION_SCHEMA_HEADER,
             ATTDEF_LIST_SCHEMA_HEADER,
             TYPE_70_SCHEMA_HEADER,
+            TYPE_100_SCHEMA_HEADER,
             TYPE_101_SCHEMA_HEADER,
         ]
         .iter()
@@ -2669,6 +2708,43 @@ mod inline_schema_tests {
         bytes
     }
 
+    fn type_100_declaration() -> Vec<u8> {
+        let mut bytes = TYPE_100_SCHEMA_HEADER.to_vec();
+        push_xmt(&mut bytes, 48);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        for reference in [2, 49, 1] {
+            push_xmt(&mut bytes, reference);
+            bytes.push(1);
+        }
+        for ordinal in 0..13 {
+            let value: f64 = if ordinal % 4 == 0 { 1.0 } else { 0.0 };
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        for _ in 0..3 {
+            bytes.extend_from_slice(&0xc2bc_928f_996e_0000u64.to_be_bytes());
+        }
+        push_xmt(&mut bytes, 1);
+        bytes.push(1);
+        bytes
+    }
+
+    #[test]
+    fn type_100_schema_declaration_retains_precision_state() {
+        let bytes = type_100_declaration();
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.inline_schema_declarations,
+            [InlineSchemaDeclaration {
+                fields: InlineSchemaFields::Type100,
+                offset: 0,
+                end: bytes.len(),
+            }]
+        );
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
     #[test]
     fn type_101_schema_declaration_retains_bound_state() {
         let bytes = type_101_declaration();
@@ -2720,6 +2796,7 @@ mod inline_schema_tests {
         for mut stream in [
             attdef_list_declaration(),
             type_70_declaration(),
+            type_100_declaration(),
             type_101_declaration(),
         ] {
             stream.pop();
