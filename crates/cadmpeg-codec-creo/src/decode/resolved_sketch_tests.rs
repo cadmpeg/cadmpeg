@@ -3089,6 +3089,101 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
 }
 
 #[test]
+fn generated_nurbs_translations_define_a_blind_extrusion() {
+    let translated_surface = |last_z| NurbsSurface {
+        u_degree: 2,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 3,
+        v_count: 2,
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 2.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(1.0, 1.0, 2.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, last_z),
+        ],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let span = nurbs_translation_span(&translated_surface(2.0)).expect("translation");
+    assert_eq!(span.vector, [0.0, 0.0, 2.0]);
+    assert_eq!(
+        span.starts,
+        vec![[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 0.0]]
+    );
+    assert!(nurbs_translation_span(&translated_surface(3.0)).is_none());
+
+    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+        id,
+        type_byte: kind.canonical_type_byte(),
+        kind,
+        feature_id: 7,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([
+        row(31, crate::surface::SurfaceKind::Extrusion),
+        row(32, crate::surface::SurfaceKind::Plane),
+        row(33, crate::surface::SurfaceKind::Plane),
+    ]);
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.extend([
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#31".to_string()),
+            geometry: SurfaceGeometry::Nurbs(translated_surface(2.0)),
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#32".to_string()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#33".to_string()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 2.0),
+                normal: Vector3::new(0.0, 0.0, -1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    assert_eq!(
+        generated_nurbs_translation_extent(&scan, &ir, 7, None),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(2.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, 0.0, 1.0],
+        ))
+    );
+
+    let mut ambiguous = translated_surface(2.0);
+    ambiguous.u_degree = 1;
+    ambiguous.u_count = 2;
+    ambiguous.u_knots = vec![0.0, 0.0, 1.0, 1.0];
+    ambiguous.control_points.truncate(4);
+    assert!(nurbs_translation_span(&ambiguous).is_none());
+}
+
+#[test]
 fn section_line_requires_two_solved_points() {
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,

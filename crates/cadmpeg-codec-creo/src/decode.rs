@@ -4752,6 +4752,105 @@ fn agreed_generated_cylinder_extent(
     ))
 }
 
+struct ExtrusionCarrierSpan {
+    starts: Vec<[f64; 3]>,
+    vector: [f64; 3],
+}
+
+fn blind_extrusion_from_carriers(
+    carriers: &[ExtrusionCarrierSpan],
+    planes: &[([f64; 3], [f64; 3])],
+    transform: Option<&crate::placement::FeatureSectionTransform>,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let first = carriers.first()?;
+    let first_start = *first.starts.first()?;
+    let direction = normalized(first.vector)?;
+    let length = first.vector.into_iter().fold(0.0_f64, f64::hypot);
+    (length.is_finite() && length > 0.0).then_some(())?;
+    let coordinate_scale = carriers
+        .iter()
+        .flat_map(|carrier| carrier.starts.iter().flatten().copied())
+        .chain(planes.iter().flat_map(|(origin, _)| *origin))
+        .chain(transform.into_iter().flat_map(|transform| transform.origin))
+        .map(f64::abs)
+        .fold(length.max(1.0), f64::max);
+    let tolerance = 1e-9 * coordinate_scale;
+    let vector_tolerance = 1e-9 * length.max(1.0);
+    let start_station = dot(first_start, direction);
+    carriers
+        .iter()
+        .all(|carrier| {
+            !carrier.starts.is_empty()
+                && carrier
+                    .vector
+                    .into_iter()
+                    .zip(first.vector)
+                    .all(|(candidate, reference)| (candidate - reference).abs() <= vector_tolerance)
+                && carrier
+                    .starts
+                    .iter()
+                    .all(|start| (dot(*start, direction) - start_station).abs() <= tolerance)
+        })
+        .then_some(())?;
+    if let Some(transform) = transform {
+        let normal = normalized(transform.normal)?;
+        ((dot(direction, normal).abs() - 1.0).abs() <= 1e-10
+            && (dot(transform.origin, direction) - start_station).abs() <= tolerance)
+            .then_some(())?;
+    }
+    let cap_stations = planes
+        .iter()
+        .map(|(origin, normal)| {
+            let normal = normalized(*normal)?;
+            let alignment = dot(normal, direction).abs();
+            if alignment >= 1.0 - 1e-10 {
+                Some(Some(dot(*origin, direction)))
+            } else if alignment <= 1e-10 {
+                Some(None)
+            } else {
+                None
+            }
+        })
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let mut unique_stations = Vec::new();
+    for station in cap_stations {
+        if unique_stations
+            .iter()
+            .all(|existing| (station - existing).abs() > tolerance)
+        {
+            unique_stations.push(station);
+        }
+    }
+    let end_station = start_station + length;
+    let cap_matches = |cap: f64| {
+        (cap - start_station).abs() <= tolerance || (cap - end_station).abs() <= tolerance
+    };
+    match unique_stations.as_slice() {
+        [] => {}
+        [cap] if cap_matches(*cap) => {}
+        [first_cap, second_cap]
+            if cap_matches(*first_cap)
+                && cap_matches(*second_cap)
+                && ((first_cap - second_cap).abs() - length).abs() <= tolerance => {}
+        _ => return None,
+    }
+    Some((
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(length),
+                },
+                draft: None,
+                offset: None,
+            },
+        },
+        direction,
+    ))
+}
+
 fn generated_bounded_cylinder_extent(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -4791,7 +4890,10 @@ fn generated_bounded_cylinder_extent(
                 [Surface {
                     geometry: SurfaceGeometry::Plane { origin, normal, .. },
                     ..
-                }] => planes.push((*origin, *normal)),
+                }] => planes.push((
+                    [origin.x, origin.y, origin.z],
+                    [normal.x, normal.y, normal.z],
+                )),
                 _ => return None,
             },
             crate::surface::SurfaceKind::Cylinder => {
@@ -4827,104 +4929,175 @@ fn generated_bounded_cylinder_extent(
             _ => unreachable!("surface family checked above"),
         }
     }
-    let first = *frames.first()?;
-    let direction = normalized(first.axis)?;
-    let length = first
-        .length
-        .filter(|length| length.is_finite() && *length > 0.0)?;
-    let coordinate_scale = frames
-        .iter()
-        .flat_map(|frame| frame.origin)
-        .chain(
-            planes
-                .iter()
-                .flat_map(|(origin, _)| [origin.x, origin.y, origin.z]),
-        )
-        .map(f64::abs)
-        .fold(length.max(1.0), f64::max);
-    let tolerance = 1e-9 * coordinate_scale;
-    frames
-        .iter()
-        .all(|frame| {
-            frame
+    let carriers = frames
+        .into_iter()
+        .map(|frame| {
+            let axis = normalized(frame.axis)?;
+            let length = frame
                 .length
-                .is_some_and(|candidate| (candidate - length).abs() <= tolerance)
-                && normalized(frame.axis).is_some_and(|axis| {
-                    axis.into_iter()
-                        .zip(direction)
-                        .all(|(left, right)| (left - right).abs() <= 1e-10)
-                })
+                .filter(|length| length.is_finite() && *length > 0.0)?;
+            Some(ExtrusionCarrierSpan {
+                starts: vec![frame.origin],
+                vector: axis.map(|component| component * length),
+            })
         })
-        .then_some(())?;
-    if let Some(transform) = transform {
-        let normal = normalized(transform.normal)?;
-        ((dot(direction, normal).abs() - 1.0).abs() <= 1e-10
-            && frames.iter().all(|frame| {
-                dot(
-                    std::array::from_fn(|index| frame.origin[index] - transform.origin[index]),
-                    normal,
-                )
-                .abs()
-                    <= tolerance
-            }))
-        .then_some(())?;
-    }
-    let cap_stations = planes
-        .into_iter()
-        .map(|(origin, normal)| {
-            let normal = normalized([normal.x, normal.y, normal.z])?;
-            let alignment = dot(normal, direction).abs();
-            if alignment >= 1.0 - 1e-10 {
-                Some(Some(dot([origin.x, origin.y, origin.z], direction)))
-            } else if alignment <= 1e-10 {
-                Some(None)
-            } else {
-                None
-            }
-        })
-        .collect::<Option<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let mut unique_stations = Vec::new();
-    for station in cap_stations {
-        if unique_stations
-            .iter()
-            .all(|existing| (station - existing).abs() > tolerance)
-        {
-            unique_stations.push(station);
-        }
-    }
-    let start_station = dot(first.origin, direction);
-    let end_station = start_station + length;
-    let cap_matches = |cap: f64| {
-        (cap - start_station).abs() <= tolerance || (cap - end_station).abs() <= tolerance
+        .collect::<Option<Vec<_>>>()?;
+    blind_extrusion_from_carriers(&carriers, &planes, transform)
+}
+
+fn nurbs_translation_candidate(
+    nurbs: &NurbsSurface,
+    along_v: bool,
+) -> Option<ExtrusionCarrierSpan> {
+    let (degree, count, knots, periodic) = if along_v {
+        (
+            nurbs.v_degree,
+            nurbs.v_count,
+            nurbs.v_knots.as_slice(),
+            nurbs.v_periodic,
+        )
+    } else {
+        (
+            nurbs.u_degree,
+            nurbs.u_count,
+            nurbs.u_knots.as_slice(),
+            nurbs.u_periodic,
+        )
     };
-    (match unique_stations.as_slice() {
-        [] => true,
-        [cap] => cap_matches(*cap),
-        [first_cap, second_cap] => {
-            cap_matches(*first_cap)
-                && cap_matches(*second_cap)
-                && ((first_cap - second_cap).abs() - length).abs() <= tolerance
-        }
-        _ => false,
-    } && frames
-        .iter()
-        .all(|frame| (dot(frame.origin, direction) - start_station).abs() <= tolerance))
+    let [first, second, third, fourth] = knots else {
+        return None;
+    };
+    (degree == 1
+        && count == 2
+        && !periodic
+        && first.is_finite()
+        && fourth.is_finite()
+        && first == second
+        && third == fourth
+        && first < third)
+        .then_some(())?;
+    let u_count = usize::try_from(nurbs.u_count).ok()?;
+    let v_count = usize::try_from(nurbs.v_count).ok()?;
+    (u_count.checked_mul(v_count)? == nurbs.control_points.len()
+        && nurbs
+            .weights
+            .as_ref()
+            .is_none_or(|weights| weights.len() == nurbs.control_points.len()))
     .then_some(())?;
-    Some((
-        ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: Termination::Blind {
-                    length: Length(length),
-                },
-                draft: None,
-                offset: None,
+    let pair_count = if along_v { u_count } else { v_count };
+    let mut starts = Vec::with_capacity(pair_count);
+    let mut vector: Option<[f64; 3]> = None;
+    for index in 0..pair_count {
+        let (start_index, end_index) = if along_v {
+            (index * v_count, index * v_count + 1)
+        } else {
+            (index, v_count + index)
+        };
+        let start = *nurbs.control_points.get(start_index)?;
+        let end = *nurbs.control_points.get(end_index)?;
+        let start = [start.x, start.y, start.z];
+        let end = [end.x, end.y, end.z];
+        start
+            .into_iter()
+            .chain(end)
+            .all(f64::is_finite)
+            .then_some(())?;
+        if let Some(weights) = &nurbs.weights {
+            let start_weight = *weights.get(start_index)?;
+            let end_weight = *weights.get(end_index)?;
+            (start_weight.is_finite()
+                && end_weight.is_finite()
+                && (start_weight - end_weight).abs()
+                    <= 1e-10 * start_weight.abs().max(end_weight.abs()).max(1.0))
+            .then_some(())?;
+        }
+        let candidate = std::array::from_fn(|axis| end[axis] - start[axis]);
+        if let Some(reference) = vector {
+            let scale = reference
+                .into_iter()
+                .chain(candidate)
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+            candidate
+                .into_iter()
+                .zip(reference)
+                .all(|(left, right)| (left - right).abs() <= 1e-9 * scale)
+                .then_some(())?;
+        } else {
+            vector = Some(candidate);
+        }
+        starts.push(start);
+    }
+    Some(ExtrusionCarrierSpan {
+        starts,
+        vector: vector?,
+    })
+}
+
+fn nurbs_translation_span(nurbs: &NurbsSurface) -> Option<ExtrusionCarrierSpan> {
+    let mut candidates = [true, false]
+        .into_iter()
+        .filter_map(|along_v| nurbs_translation_candidate(nurbs, along_v));
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+fn generated_nurbs_translation_extent(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    transform: Option<&crate::placement::FeatureSectionTransform>,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!rows.is_empty()
+        && rows.iter().all(|row| {
+            matches!(
+                row.kind,
+                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Extrusion
+            )
+        }))
+    .then_some(())?;
+    let mut carriers = Vec::new();
+    let mut planes = Vec::new();
+    for row in rows {
+        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        match row.kind {
+            crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
+                [] => {}
+                [Surface {
+                    geometry: SurfaceGeometry::Plane { origin, normal, .. },
+                    ..
+                }] => planes.push((
+                    [origin.x, origin.y, origin.z],
+                    [normal.x, normal.y, normal.z],
+                )),
+                _ => return None,
             },
-        },
-        direction,
-    ))
+            crate::surface::SurfaceKind::Extrusion => match surfaces.as_slice() {
+                [] => {}
+                [Surface {
+                    geometry: SurfaceGeometry::Nurbs(nurbs),
+                    ..
+                }] => carriers.push(nurbs_translation_span(nurbs)?),
+                _ => return None,
+            },
+            _ => unreachable!("surface family checked above"),
+        }
+    }
+    blind_extrusion_from_carriers(&carriers, &planes, transform)
 }
 
 fn directed_blind_extrusion_span(
@@ -14607,40 +14780,39 @@ fn schema_feature_definition(
         let profile = definition.map(|definition| {
             section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
-        let construction =
+        let unique_transform = match transforms.as_slice() {
+            [] => Some(None),
+            [transform] => Some(Some(*transform)),
+            _ => None,
+        };
+        let extent_and_direction =
             if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
-                generated_arc_cylinder_extent(scan, definition, transform)
-                    .or_else(|| {
-                        extrusion_extent_and_direction(
-                            transform.origin,
-                            transform.normal,
-                            feature_plane_equations(scan, feature_id),
-                        )
-                    })
-                    .map(|(extent, direction)| {
-                        (
-                            Some(Vector3::new(direction[0], direction[1], direction[2])),
-                            extent,
-                        )
-                    })
+                generated_arc_cylinder_extent(scan, definition, transform).or_else(|| {
+                    extrusion_extent_and_direction(
+                        transform.origin,
+                        transform.normal,
+                        feature_plane_equations(scan, feature_id),
+                    )
+                })
             } else {
                 None
             }
             .or_else(|| {
-                match transforms.as_slice() {
-                    [] => generated_bounded_cylinder_extent(scan, ir, feature_id, None),
-                    [transform] => {
-                        generated_bounded_cylinder_extent(scan, ir, feature_id, Some(transform))
-                    }
-                    _ => None,
-                }
-                .map(|(extent, direction)| {
-                    (
-                        Some(Vector3::new(direction[0], direction[1], direction[2])),
-                        extent,
-                    )
+                unique_transform.and_then(|transform| {
+                    generated_bounded_cylinder_extent(scan, ir, feature_id, transform)
+                })
+            })
+            .or_else(|| {
+                unique_transform.and_then(|transform| {
+                    generated_nurbs_translation_extent(scan, ir, feature_id, transform)
                 })
             });
+        let construction = extent_and_direction.map(|(extent, direction)| {
+            (
+                Some(Vector3::new(direction[0], direction[1], direction[2])),
+                extent,
+            )
+        });
         let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
         let profile = profile
             .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));

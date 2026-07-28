@@ -2799,6 +2799,20 @@ the common length is the blind extent. Duplicate rows, duplicate cylinder
 parameter records, other generated surface families, missing cylinder
 transfers, or inconsistent carriers leave direction and extent unresolved.
 
+A transferred same-feature linear-extrusion surface also defines a bounded
+carrier when exactly one NURBS parameter direction is nonperiodic degree one
+with two poles and a clamped four-knot vector. Corresponding poles and rational
+weights across that direction pair, and every pole pair has the same nonzero
+finite displacement. The poles at the lower parameter bound lie in one plane
+normal to the displacement. Every transferred linear-extrusion row must satisfy
+this form and all such rows must agree on their directed displacement and start
+plane. A section transform and transferred generated planes satisfy the same
+start-plane, direction, side-carrier, and cap conditions as bounded cylinders.
+Untransferred generated rows do not compete with the complete carriers. If both
+NURBS parameter directions satisfy the linear two-pole form, the sweep
+direction is ambiguous. The common pole displacement is the extrusion vector;
+its magnitude is the blind extent.
+
 The generated-table source identifier remains part of the owning feature's design record even when the corresponding positional section entity is not decoded. It identifies the source section entity; it is not a global geometry identifier or a generated-table ordinal.
 
 The positional `order_table` opener is `f8 <count> f7 <table_class> fb e2 f7
