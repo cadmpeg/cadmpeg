@@ -1809,6 +1809,35 @@ fn attach_standard_topology(
         &supports,
         &endpoint_candidates,
     );
+    if let Some(options) = &mut endpoint_options {
+        for (edge, support) in supports.iter().enumerate() {
+            let Some(pair) = native_edge_supports
+                .get(&support.tag)
+                .and_then(|native| {
+                    standard_native_support_endpoint_pair(
+                        native,
+                        &ir.model.points,
+                        &endpoint_candidates[edge],
+                    )
+                })
+                .filter(|pair| {
+                    options[edge]
+                        .iter()
+                        .any(|candidate| missing_edge::same_unordered_pair(*candidate, *pair))
+                })
+            else {
+                continue;
+            };
+            if native_endpoint_evidence
+                .as_ref()
+                .and_then(|pairs| pairs[edge])
+                .is_some_and(|native| !missing_edge::same_unordered_pair(native, pair))
+            {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+            }
+            options[edge] = vec![pair];
+        }
+    }
     if let (Some(options), Some(pairs)) = (&mut endpoint_options, &native_endpoint_evidence) {
         for (options, pair) in options.iter_mut().zip(pairs) {
             if let Some(pair) = pair {
@@ -2549,6 +2578,59 @@ fn emit_standard_topology(
             ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
         }
     }
+}
+
+pub(crate) fn standard_native_support_endpoint_pair(
+    support: &StandardEdgeSupport,
+    points: &[Point],
+    candidates: &[usize],
+) -> Option<[usize; 2]> {
+    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
+    const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
+
+    let lifted = support
+        .carriers
+        .iter()
+        .zip(&support.pcurves)
+        .map(|(carrier, pcurve)| {
+            let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
+            else {
+                return None;
+            };
+            Some(support.parameter_range.map(|parameter| {
+                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
+                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+            }))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second] = <[[Option<Point3>; 2]; 2]>::try_from(lifted).ok()?;
+    let first = first.into_iter().collect::<Option<Vec<_>>>()?;
+    let second = second.into_iter().collect::<Option<Vec<_>>>()?;
+    if first
+        .iter()
+        .zip(&second)
+        .any(|(left, right)| left.distance_squared(*right).sqrt() > SUPPORT_AGREEMENT_TOLERANCE)
+    {
+        return None;
+    }
+    let pair = first
+        .into_iter()
+        .map(|expected| {
+            let matches = candidates
+                .iter()
+                .copied()
+                .filter(|point| {
+                    points.get(*point).is_some_and(|point| {
+                        point.position.distance_squared(expected).sqrt() <= VERTEX_MATCH_TOLERANCE
+                    })
+                })
+                .collect::<Vec<_>>();
+            <[usize; 1]>::try_from(matches).ok().map(|[point]| point)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    <[usize; 2]>::try_from(pair)
+        .ok()
+        .filter(|pair| pair[0] != pair[1])
 }
 
 pub(crate) fn resolve_standard_endpoint_pairs(
@@ -4382,8 +4464,8 @@ mod route_tests {
         intersection_line_direction, merge_native_endpoint_evidence, mesh_retry_work_is_bounded,
         point_on_known_surface, point_on_standard_face, resolve_standard_endpoint_pairs,
         retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
-        standard_circle_param_range, standard_pcurve_geometry,
-        standard_plane_normal_from_adjacent_circle_carriers,
+        standard_circle_param_range, standard_native_support_endpoint_pair,
+        standard_pcurve_geometry, standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, unique_native_identity_points, StandardEdgeSupport,
     };
@@ -4680,6 +4762,69 @@ mod route_tests {
                 && context.parameter_range == [2.0, 5.0]
                 && context.sides.iter().all(|side| side.pcurve.is_some())
         ));
+    }
+
+    #[test]
+    fn native_support_pcurves_bind_standard_edge_endpoints() {
+        let mut points = [Point3::new(1.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)]
+            .into_iter()
+            .enumerate()
+            .map(|(index, position)| Point {
+                id: PointId(format!("point-{index}")),
+                position,
+                source_object: None,
+            })
+            .collect::<Vec<_>>();
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let native = StandardEdgeSupport {
+            surface_object_ids: [20, 21],
+            carriers: [
+                crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                    SurfaceGeometry::Plane {
+                        origin: Point3::new(0.0, 0.0, 0.0),
+                        normal: Vector3::new(0.0, 0.0, 1.0),
+                        u_axis: Vector3::new(1.0, 0.0, 0.0),
+                    },
+                ),
+                crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                    SurfaceGeometry::Plane {
+                        origin: Point3::new(0.0, 0.0, 0.0),
+                        normal: Vector3::new(0.0, 1.0, 0.0),
+                        u_axis: Vector3::new(1.0, 0.0, 0.0),
+                    },
+                ),
+            ],
+            pcurves: [pcurve.clone(), pcurve],
+            parameter_range: [1.0, 4.0],
+        };
+
+        assert_eq!(
+            standard_native_support_endpoint_pair(&native, &points, &[0, 1]),
+            Some([0, 1])
+        );
+
+        points.push(Point {
+            id: PointId("ambiguous-start".to_string()),
+            position: Point3::new(1.0, 0.0, 0.0),
+            source_object: None,
+        });
+        assert_eq!(
+            standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2]),
+            None
+        );
+
+        let mut disagreeing = native.clone();
+        disagreeing.pcurves[1] = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 1.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        assert_eq!(
+            standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1]),
+            None
+        );
     }
 
     #[test]
