@@ -41,6 +41,9 @@ current scores require those matrices and representative fixtures.
   occurrences.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, value, expression, and dependency identities resolve exactly.
+  Arithmetic evaluation retains length and angle exponents through intermediate
+  products, quotients, extrema, trigonometric calls, absolute values, and
+  square roots.
 - Empty `PRTSketch` and `Sketch` declarations transfer one neutral planar
   sketch identity and its linked ordered sketch-history feature. Structural
   ownership among transferred sketches supplies feature containment. Exact

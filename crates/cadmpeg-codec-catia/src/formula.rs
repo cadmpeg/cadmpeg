@@ -342,10 +342,45 @@ enum TypedParameterEvaluation {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum FormulaDimension {
-    Scalar,
-    Length,
-    Angle,
+struct FormulaDimension {
+    length: i8,
+    angle: i8,
+}
+
+impl FormulaDimension {
+    const SCALAR: Self = Self {
+        length: 0,
+        angle: 0,
+    };
+    const LENGTH: Self = Self {
+        length: 1,
+        angle: 0,
+    };
+    const ANGLE: Self = Self {
+        length: 0,
+        angle: 1,
+    };
+
+    fn product(self, right: Self) -> Option<Self> {
+        Some(Self {
+            length: self.length.checked_add(right.length)?,
+            angle: self.angle.checked_add(right.angle)?,
+        })
+    }
+
+    fn quotient(self, right: Self) -> Option<Self> {
+        Some(Self {
+            length: self.length.checked_sub(right.length)?,
+            angle: self.angle.checked_sub(right.angle)?,
+        })
+    }
+
+    fn square_root(self) -> Option<Self> {
+        (self.length % 2 == 0 && self.angle % 2 == 0).then_some(Self {
+            length: self.length / 2,
+            angle: self.angle / 2,
+        })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -359,19 +394,19 @@ impl EvaluatedFormulaScalar {
         match value {
             ParameterValue::Length(Length(value)) => Self {
                 value: *value,
-                dimension: FormulaDimension::Length,
+                dimension: FormulaDimension::LENGTH,
             },
             ParameterValue::Angle(Angle(value)) => Self {
                 value: *value,
-                dimension: FormulaDimension::Angle,
+                dimension: FormulaDimension::ANGLE,
             },
             ParameterValue::Real(value) => Self {
                 value: *value,
-                dimension: FormulaDimension::Scalar,
+                dimension: FormulaDimension::SCALAR,
             },
             ParameterValue::Integer(value) => Self {
                 value: *value as f64,
-                dimension: FormulaDimension::Scalar,
+                dimension: FormulaDimension::SCALAR,
             },
             ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
         }
@@ -379,11 +414,11 @@ impl EvaluatedFormulaScalar {
 
     fn satisfies_source_type(self, source_type: &str) -> bool {
         match source_type {
-            "LENGTH" => self.dimension == FormulaDimension::Length,
-            "ANGLE" => self.dimension == FormulaDimension::Angle,
-            "Real" | "R" => self.dimension == FormulaDimension::Scalar,
+            "LENGTH" => self.dimension == FormulaDimension::LENGTH,
+            "ANGLE" => self.dimension == FormulaDimension::ANGLE,
+            "Real" | "R" => self.dimension == FormulaDimension::SCALAR,
             "Integer" | "I" => {
-                self.dimension == FormulaDimension::Scalar
+                self.dimension == FormulaDimension::SCALAR
                     && self.value.fract() == 0.0
                     && self.value >= i64::MIN as f64
                     && self.value < -(i64::MIN as f64)
@@ -412,7 +447,7 @@ struct FormulaExpressionParser<'a, 'b> {
 fn finite_scalar(value: f64) -> Option<EvaluatedFormulaScalar> {
     value.is_finite().then_some(EvaluatedFormulaScalar {
         value,
-        dimension: FormulaDimension::Scalar,
+        dimension: FormulaDimension::SCALAR,
     })
 }
 
@@ -462,33 +497,17 @@ impl FormulaExpressionParser<'_, '_> {
             self.at += 1;
             let right = self.unary()?;
             value = if operator == b'*' {
-                match (value.dimension, right.dimension) {
-                    (FormulaDimension::Scalar, dimension) => EvaluatedFormulaScalar {
-                        value: value.value * right.value,
-                        dimension,
-                    },
-                    (dimension, FormulaDimension::Scalar) => EvaluatedFormulaScalar {
-                        value: value.value * right.value,
-                        dimension,
-                    },
-                    _ => return None,
+                EvaluatedFormulaScalar {
+                    value: value.value * right.value,
+                    dimension: value.dimension.product(right.dimension)?,
                 }
             } else {
                 if right.value == 0.0 {
                     return None;
                 }
-                match (value.dimension, right.dimension) {
-                    (dimension, FormulaDimension::Scalar) => EvaluatedFormulaScalar {
-                        value: value.value / right.value,
-                        dimension,
-                    },
-                    (left_dimension, right_dimension) if left_dimension == right_dimension => {
-                        EvaluatedFormulaScalar {
-                            value: value.value / right.value,
-                            dimension: FormulaDimension::Scalar,
-                        }
-                    }
-                    _ => return None,
+                EvaluatedFormulaScalar {
+                    value: value.value / right.value,
+                    dimension: value.dimension.quotient(right.dimension)?,
                 }
             };
             if !value.value.is_finite() {
@@ -537,7 +556,7 @@ impl FormulaExpressionParser<'_, '_> {
             self.at += 2;
             return Some(EvaluatedFormulaScalar {
                 value: std::f64::consts::PI,
-                dimension: FormulaDimension::Angle,
+                dimension: FormulaDimension::ANGLE,
             });
         }
         if self.peek()?.is_ascii_alphabetic() {
@@ -568,17 +587,28 @@ impl FormulaExpressionParser<'_, '_> {
         (self.peek()? == b')').then_some(())?;
         self.at += 1;
         match (function, first, second) {
-            ("sin", argument, None) if argument.dimension == FormulaDimension::Angle => {
+            ("sin", argument, None) if argument.dimension == FormulaDimension::ANGLE => {
                 finite_scalar(argument.value.sin())
             }
-            ("cos", argument, None) if argument.dimension == FormulaDimension::Angle => {
+            ("cos", argument, None) if argument.dimension == FormulaDimension::ANGLE => {
                 finite_scalar(argument.value.cos())
             }
+            ("tan", argument, None) if argument.dimension == FormulaDimension::ANGLE => {
+                finite_scalar(argument.value.tan())
+            }
             ("log", argument, None)
-                if argument.dimension == FormulaDimension::Scalar && argument.value > 0.0 =>
+                if argument.dimension == FormulaDimension::SCALAR && argument.value > 0.0 =>
             {
                 finite_scalar(argument.value.ln())
             }
+            ("abs", argument, None) => Some(EvaluatedFormulaScalar {
+                value: argument.value.abs(),
+                dimension: argument.dimension,
+            }),
+            ("sqrt", argument, None) if argument.value >= 0.0 => Some(EvaluatedFormulaScalar {
+                value: argument.value.sqrt(),
+                dimension: argument.dimension.square_root()?,
+            }),
             ("min", left, Some(right)) if left.dimension == right.dimension => {
                 Some(EvaluatedFormulaScalar {
                     value: left.value.min(right.value),
@@ -652,17 +682,17 @@ impl FormulaExpressionParser<'_, '_> {
         self.skip_whitespace();
         let dimension = if self.remaining().starts_with("mm") {
             self.at += 2;
-            FormulaDimension::Length
+            FormulaDimension::LENGTH
         } else if self.remaining().starts_with("rad") {
             self.at += 3;
-            FormulaDimension::Angle
+            FormulaDimension::ANGLE
         } else if self.remaining().starts_with("deg") {
             self.at += 3;
             value = value.to_radians();
-            FormulaDimension::Angle
+            FormulaDimension::ANGLE
         } else {
             self.at = unit_boundary;
-            FormulaDimension::Scalar
+            FormulaDimension::SCALAR
         };
         value
             .is_finite()

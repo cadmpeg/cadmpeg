@@ -8630,6 +8630,90 @@ fn decode_evaluates_nested_logarithm_and_extrema_calls() {
 }
 
 #[test]
+fn decode_evaluates_a_square_root_of_a_dimensioned_product() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                5,
+                false,
+                &[
+                    ("#1_", "LENGTH", "Width", "#1_ /2", 3.0),
+                    ("#2_", "LENGTH", "Height", "#2_ /3", 4.0),
+                ],
+                "LENGTH",
+                Some(5.0),
+                "sqrt(#1_ /2*#1_ /2+#2_ /3*#2_ /3)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensioned square root");
+
+    let [first, second, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("square-root formula parameters")
+    };
+    assert_eq!(output.dependencies, [first.id.clone(), second.id.clone()]);
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(5.0)
+        ))
+    );
+}
+
+#[test]
+fn decode_evaluates_dimension_safe_absolute_and_tangent_calls() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                5,
+                false,
+                &[
+                    ("#1_", "LENGTH", "Offset", "#1_ /2", -2.0),
+                    ("#2_", "ANGLE", "Slope", "#2_ /3", 0.0),
+                ],
+                "LENGTH",
+                Some(2.0),
+                "abs(#1_ /2)*(1+tan(#2_ /3))",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode absolute and tangent formula");
+
+    let [first, second, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("absolute and tangent formula parameters")
+    };
+    assert_eq!(output.dependencies, [first.id.clone(), second.id.clone()]);
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(2.0)
+        ))
+    );
+}
+
+#[test]
+fn decode_rejects_a_square_root_with_an_odd_dimension_exponent() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "AreaLike", "#1_ /2", 4.0)],
+                "LENGTH",
+                Some(2.0),
+                "sqrt(#1_ /2)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensionally invalid square root");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "AreaLike");
+}
+
+#[test]
 fn decode_rejects_a_logarithm_outside_its_dimensionless_positive_domain() {
     let decoded = CatiaCodec
         .decode(
