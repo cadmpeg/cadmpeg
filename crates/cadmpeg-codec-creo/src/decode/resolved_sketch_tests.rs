@@ -3978,6 +3978,7 @@ fn saved_line_joins_through_order_table() {
         has_elided_prototype: false,
         entity_ref: None,
         rows: Vec::new(),
+        circle_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 0,
     });
@@ -4466,6 +4467,7 @@ fn saved_line_joins_through_order_table() {
         has_elided_prototype: false,
         entity_ref: None,
         rows: vec![segment.clone()],
+        circle_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -4758,6 +4760,7 @@ fn saved_arc_joins_through_order_table() {
         has_elided_prototype: false,
         entity_ref: None,
         rows: vec![segment],
+        circle_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 38,
     });
@@ -4939,6 +4942,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![anchor, segment.clone()],
+            circle_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 20,
         }),
@@ -5161,6 +5165,7 @@ fn arc_carriers_use_trim_vertices() {
         has_elided_prototype: false,
         entity_ref: None,
         rows: vec![var_segment.clone()],
+        circle_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 6,
     });
@@ -5467,18 +5472,13 @@ fn dimension_identity_includes_its_feature_definition() {
         has_elided_prototype: false,
         entity_ref: None,
         rows: Vec::new(),
-        opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
-            kind: 10,
-            directions: [None; 3],
-            point_ids: [None, Some(1)],
-            center_id: Some(7),
-            arc_orientation: None,
-            vertical_horizontal: None,
-            radius_ref: Some(0),
-            radius2_ref: None,
+        circle_rows: vec![crate::feature::FeatureCircleSegment {
+            center_id: 7,
+            radius_ref: 0,
             external_id: 42,
             offset: 20,
         }],
+        opaque_rows: Vec::new(),
         offset: 19,
     });
     definition
@@ -5554,12 +5554,22 @@ fn dimension_identity_includes_its_feature_definition() {
         unresolved_kind[0].0.definition,
         SketchConstraintDefinition::Native { .. }
     ));
-    definition
-        .segments
-        .as_mut()
-        .expect("segment table")
-        .opaque_rows[0]
-        .radius2_ref = Some(7);
+    let segments = definition.segments.as_mut().expect("segment table");
+    let circle = segments.circle_rows.remove(0);
+    segments
+        .opaque_rows
+        .push(crate::feature::FeatureOpaqueSegment {
+            kind: 10,
+            directions: [None; 3],
+            point_ids: [None, Some(1)],
+            center_id: Some(circle.center_id),
+            arc_orientation: Some(0),
+            vertical_horizontal: Some(0),
+            radius_ref: Some(circle.radius_ref),
+            radius2_ref: Some(7),
+            external_id: circle.external_id,
+            offset: circle.offset,
+        });
     let retained_slots = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(retained_slots.len(), 2);
     let secondary = retained_slots
@@ -5638,6 +5648,9 @@ fn dimension_identity_includes_its_feature_definition() {
         .expect("segment table")
         .rows
         .clear();
+    let segments = definition.segments.as_mut().expect("segment table");
+    segments.opaque_rows.clear();
+    segments.circle_rows.push(circle);
     definition
         .dimensions
         .as_mut()
@@ -5645,10 +5658,10 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        section_opaque_circle_geometry(
+        section_circle_geometry(
             &BTreeMap::from([(7, [1.0, 2.0])]),
             &resolved_section_radii(&definition),
-            &definition.segments.as_ref().expect("segments").opaque_rows[0],
+            &definition.segments.as_ref().expect("segments").circle_rows[0],
         ),
         Some(SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
@@ -6117,6 +6130,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: vec![segment, arc, point, other_line, other_arc],
+            circle_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 30,
         }),
@@ -8862,16 +8876,10 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .expect("segments");
     let arc = segments.rows.remove(1);
     segments
-        .opaque_rows
-        .push(crate::feature::FeatureOpaqueSegment {
-            kind: 10,
-            directions: arc.directions,
-            point_ids: arc.point_ids.map(Some),
-            center_id: arc.center_id,
-            arc_orientation: arc.arc_orientation,
-            vertical_horizontal: arc.vertical_horizontal,
-            radius_ref: arc.radius_ref,
-            radius2_ref: arc.radius2_ref,
+        .circle_rows
+        .push(crate::feature::FeatureCircleSegment {
+            center_id: arc.center_id.expect("arc center"),
+            radius_ref: arc.radius_ref.expect("arc radius"),
             external_id: arc.external_id,
             offset: arc.offset,
         });
@@ -10084,6 +10092,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 offset: external_id as usize,
             })
             .collect(),
+        circle_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 2,
     });
@@ -10142,6 +10151,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 offset: external_id as usize,
             })
             .collect(),
+        circle_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -10180,6 +10190,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
             offset: external_id as usize,
         })
         .collect(),
+        circle_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -10263,6 +10274,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
                 external_id: 1,
                 offset: 2,
             }],
+            circle_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 2,
         }),
@@ -10442,6 +10454,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
             has_elided_prototype: false,
             entity_ref: None,
             rows: Vec::new(),
+            circle_rows: Vec::new(),
             opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
                 kind: 25,
                 directions: [None; 3],

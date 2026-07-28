@@ -887,6 +887,19 @@ pub struct FeatureSegment {
     pub offset: usize,
 }
 
+/// One circular type `10` `segtab_ptr` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureCircleSegment {
+    /// Center point ID into the section variable table.
+    pub center_id: u32,
+    /// Radius reference into the section solver namespace.
+    pub radius_ref: u32,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
 /// One fully framed `segtab_ptr` row outside the core segment-family enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOpaqueSegment {
@@ -924,6 +937,8 @@ pub struct FeatureSegmentTable {
     pub entity_ref: Option<u32>,
     /// Fully aligned line and arc rows.
     pub rows: Vec<FeatureSegment>,
+    /// Fully aligned circular rows.
+    pub circle_rows: Vec<FeatureCircleSegment>,
     /// Fully aligned rows with unsupported segment-family discriminators.
     pub opaque_rows: Vec<FeatureOpaqueSegment>,
     /// Byte offset of the `segtab_ptr` label in the original stream.
@@ -935,7 +950,10 @@ impl FeatureSegmentTable {
     pub fn is_complete(&self) -> bool {
         usize::try_from(self.declared_count).ok()
             == Some(
-                usize::from(self.has_elided_prototype) + self.rows.len() + self.opaque_rows.len(),
+                usize::from(self.has_elided_prototype)
+                    + self.rows.len()
+                    + self.circle_rows.len()
+                    + self.opaque_rows.len(),
             )
     }
 
@@ -948,6 +966,10 @@ impl FeatureSegmentTable {
             .filter(|segment| segment.external_id == external_id);
         let segment = matches.next()?;
         (matches.next().is_none()
+            && !self
+                .circle_rows
+                .iter()
+                .any(|row| row.external_id == external_id)
             && !self
                 .opaque_rows
                 .iter()
@@ -2359,13 +2381,14 @@ fn segment_table_body(
     .min()
     .unwrap_or(end);
     let mut rows = Vec::new();
+    let mut circle_rows = Vec::new();
     let mut opaque_rows = Vec::new();
     if let Some(row) = named_row {
-        retain_segment_row(row, &mut rows, &mut opaque_rows);
+        retain_segment_row(row, &mut rows, &mut circle_rows, &mut opaque_rows);
     }
     let first_row = cursor;
     let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
-    while cursor < region_end && rows.len() + opaque_rows.len() < row_limit {
+    while cursor < region_end && rows.len() + circle_rows.len() + opaque_rows.len() < row_limit {
         let row_start = cursor;
         let kind_offset = if matches!(
             payload.get(cursor..cursor + 2),
@@ -2443,6 +2466,7 @@ fn segment_table_body(
                     offset: row_start,
                 },
                 &mut rows,
+                &mut circle_rows,
                 &mut opaque_rows,
             );
             cursor = p + 1;
@@ -2455,6 +2479,7 @@ fn segment_table_body(
         has_elided_prototype,
         entity_ref,
         rows,
+        circle_rows,
         opaque_rows,
         offset: table,
     })
@@ -2463,8 +2488,26 @@ fn segment_table_body(
 fn retain_segment_row(
     row: FeatureOpaqueSegment,
     rows: &mut Vec<FeatureSegment>,
+    circle_rows: &mut Vec<FeatureCircleSegment>,
     opaque_rows: &mut Vec<FeatureOpaqueSegment>,
 ) {
+    if row.kind == 10
+        && row.directions == [Some(0); 3]
+        && row.point_ids == [None, Some(1)]
+        && row.arc_orientation == Some(0)
+        && row.vertical_horizontal == Some(0)
+        && row.radius2_ref.is_none()
+    {
+        if let (Some(center_id), Some(radius_ref)) = (row.center_id, row.radius_ref) {
+            circle_rows.push(FeatureCircleSegment {
+                center_id,
+                radius_ref,
+                external_id: row.external_id,
+                offset: row.offset,
+            });
+            return;
+        }
+    }
     let kind = match row.kind {
         2 => FeatureSegmentKind::Line,
         3 => FeatureSegmentKind::Arc,
@@ -8179,6 +8222,39 @@ mod tests {
     }
 
     #[test]
+    fn segment_tables_type_complete_circle_rows() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 10, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1,
+            0xf6, 22, 0xe2,
+        ];
+
+        let segments =
+            segment_table_body(&payload, 0, 0, payload.len(), false).expect("circle segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.rows.is_empty());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.circle_rows,
+            vec![FeatureCircleSegment {
+                center_id: 2,
+                radius_ref: 1,
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+
+        let mut malformed = payload;
+        malformed[11] = 1;
+        let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
+            .expect("noncanonical circle segment table");
+        assert!(segments.is_complete());
+        assert!(segments.circle_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 10);
+    }
+
+    #[test]
     fn segment_rows_expand_compact_slots_and_accept_the_c1_type_wrapper() {
         let payload = [
             0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 0xc1, 0x00, 2, 0xe5, 0xe4, 9, 11,
@@ -9037,6 +9113,7 @@ mod tests {
                 segment(FeatureSegmentKind::Line, [1, 2], 9),
                 segment(FeatureSegmentKind::Arc, [2, 3], 10),
             ],
+            circle_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -9736,6 +9813,7 @@ mod tests {
                 external_id: 42,
                 offset: 0,
             }],
+            circle_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -9802,6 +9880,7 @@ mod tests {
                 external_id: 42,
                 offset: 0,
             }],
+            circle_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -9857,6 +9936,7 @@ mod tests {
                 external_id: 43,
                 offset: 0,
             }],
+            circle_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
