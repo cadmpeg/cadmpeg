@@ -1357,7 +1357,8 @@ separates direct items when the item count exceeds two. The row trailer is
 `f3` plus the table entity reference plus `e2`; a one-item row instead ends at
 its item `e2`, and the final row may end at the following named record. Solver
 integer fields extend the compact-integer lattice with `c0..df XX YY`, equal
-to `((head-c0)<<16)|(XX<<8)|YY`.
+to `((head-c0)<<16)|(XX<<8)|YY`, and `ea XX YY ZZ`, equal to the unsigned
+little-endian value `XX|(YY<<8)|(ZZ<<16)`.
 The least-significant `status` bit is the constraint enable state: zero denies
 the constraint and one enables it. Higher status bits are independent solver
 state and remain in the native row. A disabled incidence does not supply point

@@ -2094,6 +2094,13 @@ fn next_solver_int(payload: &[u8], offset: &mut usize) -> Option<u32> {
         *offset += 3;
         return Some((u32::from(head - 0xc0) << 16) | (u32::from(high) << 8) | u32::from(low));
     }
+    if head == 0xea {
+        let low = *payload.get(*offset + 1)?;
+        let middle = *payload.get(*offset + 2)?;
+        let high = *payload.get(*offset + 3)?;
+        *offset += 4;
+        return Some(u32::from(low) | (u32::from(middle) << 8) | (u32::from(high) << 16));
+    }
     next_segment_int(payload, offset)
 }
 
@@ -8593,7 +8600,7 @@ mod tests {
         let payload = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
             \x06\x03\xf1\xf7\x60\xe2\x07\x02\xf3\xf7\x58\xe2\
-            \x02\x01\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
+            \x02\x01\xea\x22\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
 
         let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
 
@@ -8604,6 +8611,8 @@ mod tests {
         assert_eq!(skamps[0].items[0].entity_id, 6);
         assert_eq!(skamps[0].items[1].sense, 2);
         assert_eq!(skamps[1].kind, 1);
+        assert_eq!(skamps[1].flags, 34);
+        assert_eq!(skamps[1].status, 35);
         assert_eq!(skamps[1].items[0].entity_id, 8);
     }
 
