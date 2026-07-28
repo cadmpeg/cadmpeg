@@ -5537,6 +5537,22 @@ fn complete_prt_sketch_declaration_transfers_neutral_identity() {
         ir.model.sketches[0].placement,
         cadmpeg_ir::sketches::SketchPlacement::Unresolved
     );
+    assert_eq!(ir.model.features.len(), 1);
+    assert_eq!(
+        ir.model.features[0].id.0,
+        format!("{}:feature", native.design_objects[0].id)
+    );
+    assert_eq!(
+        ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(ir.model.sketches[0].id.clone()),
+        }
+    );
+    assert_eq!(
+        ir.model.features[0].native_ref.as_deref(),
+        Some(native.design_objects[0].id.as_str())
+    );
 }
 
 #[test]
@@ -5781,6 +5797,8 @@ fn repeated_complete_sketch_declarations_transfer_one_identity() {
             .collect()
     );
     assert_eq!(ir.model.sketches.len(), 1);
+    assert_eq!(ir.model.features.len(), 1);
+    assert_eq!(ir.model.features[0].source_tag.as_deref(), Some("Sketch"));
 }
 
 #[test]
@@ -5818,6 +5836,15 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
         .expect("decode generated sketch declaration");
 
     assert_eq!(decoded.ir.model.sketches.len(), 1);
+    assert_eq!(decoded.ir.model.features.len(), 1);
+    assert_eq!(
+        decoded.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(decoded.ir.model.sketches[0].id.clone()),
+        }
+    );
+    assert_eq!(decoded.report.coverage["transferred_feature_count"], 1);
     assert_eq!(
         decoded.report.coverage["transferred_sketch_declaration_record_count"],
         1
@@ -5848,6 +5875,7 @@ fn catpart_decode_accounts_for_sketch_declaration_and_placement_separately() {
         )
         .expect("decode generated placed sketch declaration");
 
+    assert_eq!(decoded.report.coverage["transferred_feature_count"], 1);
     assert_eq!(
         decoded.report.coverage["transferred_sketch_declaration_record_count"],
         1

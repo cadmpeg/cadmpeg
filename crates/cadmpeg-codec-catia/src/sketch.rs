@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Transfer of complete CATIA sketch declarations to neutral sketch identities.
+//! Transfer of complete CATIA sketch declarations to neutral sketches and history nodes.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
@@ -25,7 +26,7 @@ impl SketchTransfer {
     }
 }
 
-/// Transfer identity-complete sketch declarations.
+/// Transfer identity-complete sketch declarations and their linked history nodes.
 pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfer {
     let records = native
         .object_graphs
@@ -77,12 +78,31 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchT
             complete_principal_plane(&plane_declarations, &object.id, object.owner_entity_id);
         let placement = resolved_placement.unwrap_or(SketchPlacement::Unresolved);
 
+        let sketch_id = SketchId(format!("{}:sketch", object.id));
         ir.model.sketches.push(Sketch {
-            id: SketchId(format!("{}:sketch", object.id)),
+            id: sketch_id.clone(),
             name: None,
             configuration: None,
             placement,
             profiles: Vec::new(),
+            native_ref: Some(object.id.clone()),
+        });
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("{}:feature", object.id)),
+            ordinal: ir.model.features.len() as u64,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some(declaration_class.to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: Some(sketch_id),
+            },
             native_ref: Some(object.id.clone()),
         });
         transfer.declaration_records.extend(
