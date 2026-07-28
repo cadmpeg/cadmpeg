@@ -8541,6 +8541,12 @@ mod marker_tests {
             Some([7, 10])
         );
         assert!(legacy_undetailed_profile_line(&compact, 0));
+        compact[74..76].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(
+            legacy_state_five_curve_endpoint_indices(&compact, 0),
+            Some([7, 10])
+        );
+        compact[74..76].fill(0);
         compact[60..64].copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(
             legacy_state_five_curve_endpoint_indices(&compact, 0),
@@ -37968,7 +37974,7 @@ fn legacy_state_five_curve_endpoint_offset(payload: &[u8], offset: usize) -> Opt
         .is_some_and(|state| matches!(state, 0 | 1))
         && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 72..offset + 74) == Some(&[0; 2])
-        && matches!(payload.get(offset + 74..offset + 76), Some([0 | 2, 0]))
+        && matches!(payload.get(offset + 74..offset + 76), Some([0..=2, 0]))
         && payload.get(offset + 76..offset + 80) == Some(&[0; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(84)?)
     {
