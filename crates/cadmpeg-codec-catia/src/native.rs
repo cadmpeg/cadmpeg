@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 126;
+pub const CATIA_NATIVE_VERSION: u32 = 127;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -852,6 +852,15 @@ pub struct CatiaParameterValue {
     pub evaluation: CatiaEntityEvaluation,
 }
 
+/// One definition-selected entity whose complete value is a suffix evaluation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDefinitionEvaluation {
+    /// Exact source-schema definition selected by the entity.
+    pub definition: CatiaEntitySchemaValue,
+    /// Stored evaluation state.
+    pub evaluation: CatiaEntityEvaluation,
+}
+
 /// One complete formula relation stored by an entity and its object payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaFormulaRelation {
@@ -935,6 +944,9 @@ pub struct CatiaEntityRecord {
     /// Complete named parameter-value production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_value: Option<CatiaParameterValue>,
+    /// Complete evaluation bound to the entity's sole definition selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition_evaluation: Option<CatiaDefinitionEvaluation>,
     /// Complete formula-to-expression and formula-to-parameter relation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula_relation: Option<CatiaFormulaRelation>,
@@ -1566,6 +1578,35 @@ fn parameter_value(
     Some(CatiaParameterValue {
         name: schema_value(name),
         binding: schema_value(binding),
+        evaluation: evaluation.clone(),
+    })
+}
+
+fn definition_evaluation(
+    lead: u8,
+    definitions: &[CatiaDefinitionSchemaSelection],
+    value_fields: &[value_block::ValueField],
+    suffix_value: Option<&CatiaEntitySuffixValue>,
+) -> Option<CatiaDefinitionEvaluation> {
+    if lead != 2
+        || !matches!(
+            value_fields,
+            [value_block::ValueField::Terminator { offset: 0 }]
+        )
+    {
+        return None;
+    }
+    let [definition] = definitions else {
+        return None;
+    };
+    let CatiaEntitySuffixPayload::Evaluation { evaluation, .. } = &suffix_value?.payload else {
+        return None;
+    };
+    Some(CatiaDefinitionEvaluation {
+        definition: CatiaEntitySchemaValue {
+            entry: definition.entry.clone()?,
+            value: definition.name.clone()?,
+        },
         evaluation: evaluation.clone(),
     })
 }
@@ -3240,6 +3281,12 @@ impl CatiaNative {
                     &entity.value_schema_selections,
                     entity.suffix_value.as_ref(),
                 );
+                entity.definition_evaluation = definition_evaluation(
+                    entity.lead,
+                    &entity.definition_schema_selections,
+                    &entity.value_fields,
+                    entity.suffix_value.as_ref(),
+                );
             }
         }
         let (relation_expressions, entities_by_object, parameter_bindings) =
@@ -3521,6 +3568,15 @@ impl CatiaNative {
                             != parameter_value(
                                 entity.lead,
                                 &entity.value_schema_selections,
+                                entity.suffix_value.as_ref(),
+                            )
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        entity.definition_evaluation
+                            != definition_evaluation(
+                                entity.lead,
+                                &entity.definition_schema_selections,
+                                &entity.value_fields,
                                 entity.suffix_value.as_ref(),
                             )
                     })
@@ -4137,6 +4193,7 @@ fn native_object_graph(
                 value_schema_selections: Vec::new(),
                 relation_expression: None,
                 parameter_value: None,
+                definition_evaluation: None,
                 formula_relation: None,
                 value_packets,
                 numeric_tuple: entity.numeric_tuple,

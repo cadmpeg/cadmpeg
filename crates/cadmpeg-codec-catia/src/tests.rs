@@ -1809,6 +1809,34 @@ fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_definition_evaluation(
+    definition: &[u8],
+    value: &[u8],
+    suffix: &[u8],
+) -> Vec<u8> {
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
+    let mut entity = entity_table_record_with_definition_and_value(1, definition, value);
+    entity[6] = 2;
+    entity.extend_from_slice(suffix);
+    let entity_len = u32::try_from(entity.len()).expect("bounded entity record");
+    entity[2..6].copy_from_slice(&entity_len.to_le_bytes());
+    let mut stream = entity;
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Thickness",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_formula_relation(
     parameter_entity_id: u8,
     duplicate_binding: bool,
@@ -6979,6 +7007,76 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn native_namespace_binds_and_validates_definition_evaluations() {
+    use crate::native::{CatiaDefinitionEvaluation, CatiaEntityEvaluation, CatiaEntitySchemaValue};
+
+    let bits = 12.5_f64.to_bits();
+    let mut suffix = vec![0xd1, 0x53, 0x96, 0x82, 0xa6, 0xe6];
+    suffix.extend_from_slice(&bits.to_le_bytes());
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0];
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_evaluation(
+                &definition,
+                &[0xfe],
+                &suffix,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode definition-bound evaluation");
+    assert_eq!(
+        decoded.report.coverage["decoded_definition_evaluation_count"],
+        1
+    );
+    let mut native =
+        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
+            .expect("load definition-bound evaluation");
+    assert_eq!(
+        native.entity_records[0].definition_evaluation,
+        Some(CatiaDefinitionEvaluation {
+            definition: CatiaEntitySchemaValue {
+                entry: native.catalogs[0].entries[4].id.clone(),
+                value: "Thickness".to_string(),
+            },
+            evaluation: CatiaEntityEvaluation::Scalar { bits },
+        })
+    );
+
+    native.entity_records[0]
+        .definition_evaluation
+        .as_mut()
+        .expect("definition-bound evaluation")
+        .evaluation = CatiaEntityEvaluation::Unset;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store malformed definition evaluation");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    for (definition, value, suffix) in [
+        (
+            vec![0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0],
+            vec![0xfe],
+            suffix.clone(),
+        ),
+        (definition.to_vec(), vec![0x80, 0xfe], suffix.clone()),
+        (
+            definition.to_vec(),
+            vec![0xfe],
+            vec![0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
+        ),
+    ] {
+        let native = crate::native::CatiaNative::decode(
+            &standard_catpart_with_definition_evaluation(&definition, &value, &suffix),
+        );
+        assert_eq!(native.entity_records[0].definition_evaluation, None);
+    }
 }
 
 #[test]
