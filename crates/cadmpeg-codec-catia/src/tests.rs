@@ -10039,6 +10039,10 @@ fn native_round_trips_legacy_entity_identity_runs() {
     );
     assert_eq!(native.legacy_entity_runs[0].relations.len(), 1);
     assert_eq!(
+        native.legacy_entity_runs[0].relations[0].parameter_entity_id,
+        Some(9)
+    );
+    assert_eq!(
         native.legacy_entity_runs[0].relations[0].inputs[0].parameter,
         "#1_"
     );
@@ -10106,6 +10110,14 @@ fn native_round_trips_legacy_entity_identity_runs() {
     invalid_scalar_id
         .store(&mut namespace)
         .expect("store invalid legacy scalar identity");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+
+    let mut invalid_parameter = native.clone();
+    invalid_parameter.legacy_entity_runs[0].relations[0].parameter_entity_id = Some(4);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_parameter
+        .store(&mut namespace)
+        .expect("store invalid legacy relation parameter");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
     let mut invalid = native;

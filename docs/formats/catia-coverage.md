@@ -39,6 +39,8 @@ current scores require those matrices and representative fixtures.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
   occurrences.
+- Legacy typed relations retain exact parameter identities when their self-body
+  and parameter role selectors close within one identity run.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, value, expression, and dependency identities resolve exactly.
   Legacy named scalar packets also transfer when one co-owned literal numeric

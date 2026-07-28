@@ -67,6 +67,8 @@ pub struct LegacyRelationSignature {
 pub struct LegacyRelation {
     /// Stored owner identity.
     pub entity_id: u32,
+    /// Parameter identity selected by exact self-`body` and target-`param` roles.
+    pub parameter_entity_id: Option<u32>,
     /// Expression-field opener offset.
     pub expression_offset: usize,
     /// Exact expression or rule program.
@@ -200,7 +202,7 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
             parse_text_fields(data, start, end, identity.entity_id)
         })
         .collect::<Vec<_>>();
-    let relations = parse_relations(&text_fields);
+    let relations = parse_relations(&text_fields, &identities);
     let type_descriptors = identities
         .iter()
         .enumerate()
@@ -339,7 +341,10 @@ fn bind_scalar_names(fields: &[LegacyTextField], values: &mut [LegacyScalarValue
     }
 }
 
-fn parse_relations(fields: &[LegacyTextField]) -> Vec<LegacyRelation> {
+fn parse_relations(
+    fields: &[LegacyTextField],
+    identities: &[LegacyEntityIdentity],
+) -> Vec<LegacyRelation> {
     let mut relations = Vec::new();
     let mut start = 0;
     while start < fields.len() {
@@ -352,6 +357,11 @@ fn parse_relations(fields: &[LegacyTextField]) -> Vec<LegacyRelation> {
             if let Some(signature) = parse_relation_signature(&type_signature.value) {
                 relations.push(LegacyRelation {
                     entity_id,
+                    parameter_entity_id: relation_parameter_entity(
+                        expression,
+                        type_signature,
+                        identities,
+                    ),
                     expression_offset: expression.offset,
                     expression: expression.value.clone(),
                     signature_offset: type_signature.offset,
@@ -363,6 +373,22 @@ fn parse_relations(fields: &[LegacyTextField]) -> Vec<LegacyRelation> {
         start = end;
     }
     relations
+}
+
+fn relation_parameter_entity(
+    expression: &LegacyTextField,
+    type_signature: &LegacyTextField,
+    identities: &[LegacyEntityIdentity],
+) -> Option<u32> {
+    let owner = expression.role.as_ref()?;
+    let parameter = type_signature.role.as_ref()?;
+    (owner.name == "body"
+        && owner.selector == expression.entity_id
+        && parameter.name == "param"
+        && identities
+            .iter()
+            .any(|identity| identity.entity_id == parameter.selector))
+    .then_some(parameter.selector)
 }
 
 /// Parse a complete legacy relation type signature.
@@ -654,9 +680,36 @@ mod tests {
 
         let relation = &parse_runs(&bytes)[0].relations[0];
         assert_eq!(relation.expression, "#2_ = #1_ + 2");
+        assert_eq!(relation.parameter_entity_id, None);
         assert_eq!(relation.signature.output.as_ref().unwrap().parameter, "#2_");
         assert_eq!(relation.signature.inputs[0].parameter, "#1_");
         assert_eq!(relation.signature.result_type, "VoidType");
+    }
+
+    #[test]
+    fn binds_exact_body_and_parameter_roles_to_a_run_identity() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        for (role, selector, value) in [
+            ("body", 1_u32, "#1_ + 2"),
+            ("param", 4_u32, "(#1_ : #In Real) : Real\n"),
+        ] {
+            bytes.push(u8::try_from(role.len() + 1).expect("short role"));
+            bytes.extend_from_slice(role.as_bytes());
+            bytes.push(0x80);
+            bytes.extend_from_slice(&selector.to_le_bytes());
+            bytes.extend_from_slice(TEXT_OPEN);
+            bytes.push(u8::try_from(value.len() + 1).expect("short text"));
+            bytes.extend_from_slice(value.as_bytes());
+            bytes.push(0xfe);
+        }
+        identity(&mut bytes, 4);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        assert_eq!(
+            parse_runs(&bytes)[0].relations[0].parameter_entity_id,
+            Some(4)
+        );
     }
 
     #[test]

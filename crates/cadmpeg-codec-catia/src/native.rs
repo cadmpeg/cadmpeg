@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 151;
+pub const CATIA_NATIVE_VERSION: u32 = 152;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2288,6 +2288,9 @@ pub struct CatiaLegacyRelationParameter {
 pub struct CatiaLegacyRelation {
     /// Stored owner identity.
     pub entity_id: u32,
+    /// Parameter identity selected by exact self-`body` and target-`param` roles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_entity_id: Option<u32>,
     /// Expression-field opener offset.
     pub expression_offset: u64,
     /// Exact expression or rule program.
@@ -2589,6 +2592,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         };
                         CatiaLegacyRelation {
                             entity_id: relation.entity_id,
+                            parameter_entity_id: relation.parameter_entity_id,
                             expression_offset: relation.expression_offset as u64,
                             expression: relation.expression,
                             signature_offset: relation.signature_offset as u64,
@@ -2662,6 +2666,61 @@ fn valid_legacy_identifier(value: &str) -> bool {
 }
 
 #[cfg(test)]
+fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelation) -> bool {
+    let Some(parsed) = legacy_entity::parse_relation_signature(&relation.type_signature) else {
+        return false;
+    };
+    let Some(expression_field) = run.text_fields.iter().find(|field| {
+        field.entity_id == relation.entity_id
+            && field.byte_offset == relation.expression_offset
+            && field.value == relation.expression
+    }) else {
+        return false;
+    };
+    let Some(signature_field) = run.text_fields.iter().find(|field| {
+        field.entity_id == relation.entity_id
+            && field.byte_offset == relation.signature_offset
+            && field.value == relation.type_signature
+    }) else {
+        return false;
+    };
+    let parameter_entity_id = expression_field
+        .role
+        .as_ref()
+        .zip(signature_field.role.as_ref())
+        .and_then(|(owner, parameter)| {
+            (owner.name == "body"
+                && owner.selector == relation.entity_id
+                && parameter.name == "param"
+                && run
+                    .identities
+                    .iter()
+                    .any(|identity| identity.entity_id == parameter.selector))
+            .then_some(parameter.selector)
+        });
+    relation.expression_offset < relation.signature_offset
+        && relation.parameter_entity_id == parameter_entity_id
+        && (relation.result_type == "VoidType") == relation.output.is_some()
+        && parsed.result_type == relation.result_type
+        && parsed.inputs.len() == relation.inputs.len()
+        && parsed
+            .inputs
+            .iter()
+            .zip(&relation.inputs)
+            .all(|(parsed, stored)| {
+                parsed.parameter == stored.parameter && parsed.value_type == stored.value_type
+            })
+        && parsed
+            .output
+            .as_ref()
+            .map(|output| (output.parameter.as_str(), output.value_type.as_str()))
+            == relation
+                .output
+                .as_ref()
+                .map(|output| (output.parameter.as_str(), output.value_type.as_str()))
+}
+
+#[cfg(test)]
 fn validate_legacy_entity_runs(
     runs: &[CatiaLegacyEntityRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -2711,38 +2770,10 @@ fn validate_legacy_entity_runs(
                                 .is_some_and(|identity| identity.entity_id == field.entity_id)
                     })
             })
-            && run.relations.iter().all(|relation| {
-                let parsed = legacy_entity::parse_relation_signature(&relation.type_signature);
-                relation.expression_offset < relation.signature_offset
-                    && (relation.result_type == "VoidType") == relation.output.is_some()
-                    && parsed.as_ref().is_some_and(|parsed| {
-                        parsed.result_type == relation.result_type
-                            && parsed.inputs.len() == relation.inputs.len()
-                            && parsed
-                                .inputs
-                                .iter()
-                                .zip(&relation.inputs)
-                                .all(|(parsed, stored)| {
-                                    parsed.parameter == stored.parameter
-                                        && parsed.value_type == stored.value_type
-                                })
-                            && parsed.output.as_ref().map(|output| {
-                                (output.parameter.as_str(), output.value_type.as_str())
-                            }) == relation.output.as_ref().map(|output| {
-                                (output.parameter.as_str(), output.value_type.as_str())
-                            })
-                    })
-                    && run.text_fields.iter().any(|field| {
-                        field.entity_id == relation.entity_id
-                            && field.byte_offset == relation.expression_offset
-                            && field.value == relation.expression
-                    })
-                    && run.text_fields.iter().any(|field| {
-                        field.entity_id == relation.entity_id
-                            && field.byte_offset == relation.signature_offset
-                            && field.value == relation.type_signature
-                    })
-            })
+            && run
+                .relations
+                .iter()
+                .all(|relation| valid_legacy_relation(run, relation))
             && run
                 .type_descriptors
                 .windows(2)
