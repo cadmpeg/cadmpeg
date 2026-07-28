@@ -9032,7 +9032,23 @@ fn transferred_formula_parameter_retains_a_transferred_feature_owner() {
         .iter()
         .find(|parameter| parameter.native_ref.as_deref() == Some(input_entity.as_str()))
         .expect("transferred input parameter");
-    assert_eq!(parameter.owner, Some(feature));
+    assert_eq!(parameter.owner, Some(feature.clone()));
+    assert_eq!(
+        ir.model
+            .features
+            .iter()
+            .find(|candidate| candidate.id == feature)
+            .expect("owner feature")
+            .source_content,
+        ir.model
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.owner.as_ref() == Some(&feature))
+            .map(|parameter| {
+                cadmpeg_ir::features::FeatureSourceContent::Parameter(parameter.id.clone())
+            })
+            .collect::<Vec<_>>()
+    );
     let validation = cadmpeg_ir::validate::validate(&ir, Vec::new());
     assert!(
         validation
