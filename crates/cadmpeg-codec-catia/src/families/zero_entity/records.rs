@@ -47,6 +47,28 @@ struct ZeroEntityRecord {
     tag: [u8; 2],
 }
 
+struct ZeroEntityNurbsLayout {
+    u_distinct: Vec<f64>,
+    u_mults: Vec<u32>,
+    u_degree: u32,
+    u_count: u32,
+    v_distinct: Vec<f64>,
+    v_mults: Vec<u32>,
+    v_degree: u32,
+    v_count: u32,
+    grid: usize,
+    end: usize,
+}
+
+fn zero_entity_fixed_logical_length(tag: [u8; 2]) -> Option<usize> {
+    match tag {
+        [0x21, 0x45] => Some(337),
+        [0x21, 0x72] => Some(382),
+        [0x21, 0x9f] => Some(427),
+        _ => None,
+    }
+}
+
 fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
     let mut records = Vec::new();
     let mut position = 0usize;
@@ -55,8 +77,20 @@ fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
             position += 1;
             continue;
         }
-        let Some(end) = position.checked_add(usize::from(data[position + 3]) + 12) else {
+        let tag = [data[position + 2], data[position + 3]];
+        let nominal_end = position.checked_add(usize::from(data[position + 3]) + 12);
+        let Some(nominal_end) = nominal_end else {
             break;
+        };
+        let end = if matches!(tag, [0x34, 0xc8 | 0x5e]) {
+            zero_entity_nurbs_logical_end(data, position).unwrap_or(nominal_end)
+        } else if let Some(length) = zero_entity_fixed_logical_length(tag) {
+            let Some(end) = position.checked_add(length) else {
+                break;
+            };
+            end
+        } else {
+            nominal_end
         };
         if end > data.len() {
             break;
@@ -64,11 +98,61 @@ fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
         records.push(ZeroEntityRecord {
             pos: position,
             end,
-            tag: [data[position + 2], data[position + 3]],
+            tag,
         });
         position = end;
     }
     records
+}
+
+fn zero_entity_nurbs_logical_end(data: &[u8], record: usize) -> Option<usize> {
+    Some(zero_entity_nurbs_layout(data, record)?.end)
+}
+
+fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurbsLayout> {
+    let (u_distinct, after_u) = f64_run_to_one(data, record.checked_add(23)?)?;
+    let (u_mults, after_u_mults) = u32_tokens(data, after_u, u_distinct.len())?;
+    let u_degree = u_mults.first().copied()?.checked_sub(1)?;
+    let u_count = u_mults
+        .iter()
+        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
+        .checked_sub(u_degree + 1)?;
+    let after_u_tokens = skip_u32_token_run(data, after_u_mults)?;
+    let extra_u_bytes = after_u_tokens.checked_sub(after_u_mults)?;
+    if extra_u_bytes != 0 && extra_u_bytes < 10 {
+        return None;
+    }
+    let (v_distinct, after_v) = f64_monotonic_run(data, after_u_tokens.checked_add(1)?)?;
+    let (v_mults, after_v_mults) = u32_tokens(data, after_v, v_distinct.len())?;
+    let v_degree = v_mults.first().copied()?.checked_sub(1)?;
+    let v_count = v_mults
+        .iter()
+        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
+        .checked_sub(v_degree + 1)?;
+    if !(1..=9).contains(&u_degree)
+        || !(1..=9).contains(&v_degree)
+        || !(2..=4096).contains(&u_count)
+        || !(2..=4096).contains(&v_count)
+    {
+        return None;
+    }
+    let pole_bytes = (u_count as usize)
+        .checked_mul(v_count as usize)?
+        .checked_mul(24)?;
+    let grid = skip_u32_token_run(data, after_v_mults)?.checked_add(3)?;
+    let end = grid.checked_add(pole_bytes)?;
+    Some(ZeroEntityNurbsLayout {
+        u_distinct,
+        u_mults,
+        u_degree,
+        u_count,
+        v_distinct,
+        v_mults,
+        v_degree,
+        v_count,
+        grid,
+        end,
+    })
 }
 
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
@@ -185,45 +269,22 @@ pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<Surfa
 /// follows the nominal framed record length, so this function receives the full
 /// preamble.
 fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
-    let (u_distinct, after_u) = f64_run_to_one(data, record.checked_add(23)?)?;
-    let (u_mults, after_u_mults) = u32_tokens(data, after_u, u_distinct.len())?;
-    let u_degree = u_mults.first().copied()?.checked_sub(1)?;
-    let u_count = u_mults
-        .iter()
-        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(u_degree + 1)?;
-    let after_u_tokens = skip_u32_token_run(data, after_u_mults)?;
-    let extra_u_bytes = after_u_tokens.checked_sub(after_u_mults)?;
-    if extra_u_bytes != 0 && extra_u_bytes < 10 {
-        return None;
-    }
-    let (v_distinct, after_v) = f64_monotonic_run(data, after_u_tokens.checked_add(1)?)?;
-    let (v_mults, after_v_mults) = u32_tokens(data, after_v, v_distinct.len())?;
-    let v_degree = v_mults.first().copied()?.checked_sub(1)?;
-    let v_count = v_mults
-        .iter()
-        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(v_degree + 1)?;
-    if !(1..=9).contains(&u_degree)
-        || !(1..=9).contains(&v_degree)
-        || !(2..=4096).contains(&u_count)
-        || !(2..=4096).contains(&v_count)
-    {
-        return None;
-    }
-    let pole_count = (u_count as usize).checked_mul(v_count as usize)?;
-    let grid = skip_u32_token_run(data, after_v_mults)?.checked_add(3)?;
+    let layout = zero_entity_nurbs_layout(data, record)?;
+    let pole_count = (layout.u_count as usize).checked_mul(layout.v_count as usize)?;
     let mut control_points = Vec::with_capacity(pole_count);
     for pole in 0..pole_count {
-        control_points.push(f64_point(data, grid.checked_add(pole.checked_mul(24)?)?)?);
+        control_points.push(f64_point(
+            data,
+            layout.grid.checked_add(pole.checked_mul(24)?)?,
+        )?);
     }
     Some(SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree,
-        v_degree,
-        u_knots: expand_knots(&u_distinct, &u_mults)?,
-        v_knots: expand_knots(&v_distinct, &v_mults)?,
-        u_count,
-        v_count,
+        u_degree: layout.u_degree,
+        v_degree: layout.v_degree,
+        u_knots: expand_knots(&layout.u_distinct, &layout.u_mults)?,
+        v_knots: expand_knots(&layout.v_distinct, &layout.v_mults)?,
+        u_count: layout.u_count,
+        v_count: layout.v_count,
         control_points,
         weights: None,
         u_periodic: false,
@@ -368,5 +429,28 @@ mod tests {
         let mut stream = zero_entity_support_stream();
         stream[0x6a + 12 + 12] = 0;
         assert!(zero_entity_support_runs(&stream).is_empty());
+    }
+
+    #[test]
+    fn record_walk_skips_complete_logical_support_continuations() {
+        let fixture = zero_entity_support_stream();
+        let plane = &fixture[..0x6a + 12];
+        let mut support = vec![0u8; zero_entity_fixed_logical_length([0x21, 0x45]).unwrap()];
+        support[..4].copy_from_slice(&[0xa9, 0x03, 0x21, 0x45]);
+        support[12] = 0x10;
+        support[13..17].copy_from_slice(&42u32.to_le_bytes());
+        support[100..100 + plane.len()].copy_from_slice(plane);
+
+        let mut stream = plane.to_vec();
+        stream.extend(support);
+        stream.extend(plane);
+
+        assert_eq!(zero_entity_surfaces(&stream).len(), 2);
+        let runs = zero_entity_support_runs(&stream);
+        let [run] = runs.as_slice() else {
+            panic!("one support run")
+        };
+        assert_eq!(run.supports.len(), 1);
+        assert_eq!(run.supports[0].tag, [0x21, 0x45]);
     }
 }
