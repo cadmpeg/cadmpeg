@@ -1894,6 +1894,7 @@ impl MeshQuotient {
             output: &mut Vec<(Vec<Vec<bool>>, MeshQuotient)>,
             seen: &mut HashSet<MeshOrientationSignature>,
             oriented: &mut HashSet<usize>,
+            gaugeable_edges: &HashSet<usize>,
             limit: usize,
             budget: Option<&MeshConstraintBudget>,
         ) {
@@ -1950,6 +1951,7 @@ impl MeshQuotient {
                     output,
                     seen,
                     oriented,
+                    gaugeable_edges,
                     limit,
                     budget,
                 );
@@ -1987,6 +1989,7 @@ impl MeshQuotient {
                     output,
                     seen,
                     oriented,
+                    gaugeable_edges,
                     limit,
                     budget,
                 );
@@ -1994,8 +1997,8 @@ impl MeshQuotient {
             };
             match (boundary[at].reversed, first) {
                 (Some(reversed), _) => advance(reversed, quotient),
-                (None, true) => advance(false, quotient),
-                (None, false) => {
+                (None, true) if gaugeable_edges.contains(&edge) => advance(false, quotient),
+                (None, _) => {
                     advance(false, quotient.clone());
                     advance(true, quotient);
                 }
@@ -2011,6 +2014,31 @@ impl MeshQuotient {
         if assignment.boundaries.iter().any(Vec::is_empty) {
             return Vec::new();
         }
+        let mut direction_union = self.union.clone();
+        let gaugeable_edges = assignment
+            .boundaries
+            .iter()
+            .flatten()
+            .map(|use_| use_.edge)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .filter(|edge| {
+                let Some(right_node) = edge.checked_mul(2).and_then(|node| node.checked_add(1))
+                else {
+                    return false;
+                };
+                if right_node >= self.domains.len() {
+                    return false;
+                }
+                let left_node = right_node - 1;
+                let left_root = direction_union.find(left_node);
+                let right_root = direction_union.find(right_node);
+                left_root == right_root
+                    || (self.domains[left_root] == self.domains[right_root]
+                        && self.members[left_root].as_slice() == [left_node]
+                        && self.members[right_root].as_slice() == [right_node])
+            })
+            .collect::<HashSet<_>>();
         let mut oriented = oriented_edges.clone();
         let mut variable_count = 0usize;
         let orientation_plan = assignment
@@ -2021,7 +2049,11 @@ impl MeshQuotient {
                     .iter()
                     .map(|use_| match use_.reversed {
                         Some(reversed) => (reversed, None),
-                        None if oriented.insert(use_.edge) => (false, None),
+                        None if oriented.insert(use_.edge)
+                            && gaugeable_edges.contains(&use_.edge) =>
+                        {
+                            (false, None)
+                        }
                         None => {
                             let variable = variable_count;
                             variable_count += 1;
@@ -2062,11 +2094,22 @@ impl MeshQuotient {
                             .collect::<Vec<_>>()
                     })
                     .collect::<Vec<_>>();
-                if !uses_canonical_edge_direction_gauge(
-                    &assignment.boundaries,
-                    &directions,
-                    oriented_edges,
-                ) {
+                let mut oriented = oriented_edges.clone();
+                let uses_gauge =
+                    assignment
+                        .boundaries
+                        .iter()
+                        .zip(&directions)
+                        .all(|(boundary, directions)| {
+                            boundary.iter().zip(directions).all(|(use_, direction)| {
+                                let first = oriented.insert(use_.edge);
+                                !first
+                                    || use_.reversed.is_some()
+                                    || !gaugeable_edges.contains(&use_.edge)
+                                    || !direction
+                            })
+                        });
+                if !uses_gauge {
                     continue;
                 }
                 let mut quotient = self.clone();
@@ -2141,6 +2184,7 @@ impl MeshQuotient {
             &mut output,
             &mut seen,
             &mut oriented,
+            &gaugeable_edges,
             limit,
             budget,
         );
@@ -4232,23 +4276,6 @@ pub(crate) fn prune_mesh_endpoint_pair_support_with_limit(
             return true;
         }
     }
-}
-
-pub(crate) fn uses_canonical_edge_direction_gauge(
-    boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
-    directions: &[Vec<bool>],
-    oriented_edges: &HashSet<usize>,
-) -> bool {
-    let mut oriented = oriented_edges.clone();
-    boundaries
-        .iter()
-        .zip(directions)
-        .all(|(boundary, directions)| {
-            boundary.iter().zip(directions).all(|(use_, direction)| {
-                let first = oriented.insert(use_.edge);
-                !first || use_.reversed.is_some() || !direction
-            })
-        })
 }
 
 impl MeshSelectionSearch<'_> {

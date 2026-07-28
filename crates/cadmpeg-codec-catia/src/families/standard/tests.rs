@@ -26,8 +26,8 @@ use crate::solve::mesh_quotient::{
     mesh_candidates_equivalent_with_edge_classes, mesh_edge_points_compatible,
     mesh_face_endpoint_configurations, possible_face_choices, possible_face_choices_with_limit,
     possible_face_equations, prune_mesh_endpoint_pair_support,
-    prune_mesh_endpoint_pair_support_with_limit, uses_canonical_edge_direction_gauge,
-    MeshConstraintBudget, MeshPartialEndpointConstraint, MeshQuotient, MeshSelectionSearch,
+    prune_mesh_endpoint_pair_support_with_limit, MeshConstraintBudget,
+    MeshPartialEndpointConstraint, MeshQuotient, MeshSelectionSearch,
     MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
@@ -1631,50 +1631,6 @@ fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
 }
 
 #[test]
-fn mesh_direction_search_fixes_each_new_edge_gauge_once() {
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 0,
-                end: 1,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 1,
-                start: 1,
-                end: 2,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 2,
-                end: 3,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 2,
-                start: 3,
-                end: 0,
-                reversed: Some(true),
-            },
-        ]],
-    };
-    let already_oriented = HashSet::from([1]);
-
-    assert!(uses_canonical_edge_direction_gauge(
-        &assignment.boundaries,
-        &[vec![false, true, true, true]],
-        &already_oriented,
-    ));
-    assert!(!uses_canonical_edge_direction_gauge(
-        &assignment.boundaries,
-        &[vec![true, false, false, true]],
-        &already_oriented,
-    ));
-}
-
-#[test]
 fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
     const EDGE_COUNT: usize = 10;
     let assignment = MeshFaceBoundaryAssignment {
@@ -1706,6 +1662,45 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
     assert_eq!(options.len(), 1);
     assert_eq!(options[0].0, vec![vec![false; EDGE_COUNT]]);
     assert!(!budget.exhausted.get());
+}
+
+#[test]
+fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let quotient = MeshQuotient {
+        union: UnionFind::new(4),
+        domains: [vec![0], vec![1], vec![0], vec![1]]
+            .map(|domain| Arc::new(domain.into_iter().collect()))
+            .into(),
+        members: (0..4).map(|node| vec![node]).collect(),
+    };
+
+    let options = quotient.assignment_options_limited(
+        &assignment,
+        &[vec![[0, 1]], vec![[0, 1]]],
+        &HashSet::new(),
+        4,
+        None,
+    );
+
+    assert!(options
+        .iter()
+        .any(|(directions, _)| directions == &[vec![false, true]]));
 }
 
 #[test]
