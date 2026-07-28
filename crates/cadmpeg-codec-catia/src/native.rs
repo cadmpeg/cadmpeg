@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 128;
+pub const CATIA_NATIVE_VERSION: u32 = 129;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1140,12 +1140,23 @@ pub struct CatiaDesignObject {
     /// Distinct exact field classes, in first field order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub field_classes: Vec<CatiaDesignClass>,
+    /// Entity records carrying definition-bound values, in field order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub definition_values: Vec<String>,
     /// Exact inter-object reference occurrences in field and payload order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<CatiaDesignObjectRelation>,
 }
 
-fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
+fn design_objects(
+    graphs: &[CatiaObjectGraph],
+    entity_records: &[CatiaEntityRecord],
+) -> Vec<CatiaDesignObject> {
+    let definition_value_entities = entity_records
+        .iter()
+        .filter(|entity| entity.definition_value.is_some())
+        .map(|entity| entity.id.as_str())
+        .collect::<HashSet<_>>();
     graphs
         .iter()
         .flat_map(|graph| {
@@ -1168,6 +1179,7 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                     fields[index].1.push(record);
                 }
             }
+            let definition_value_entities = &definition_value_entities;
             fields
                 .into_iter()
                 .enumerate()
@@ -1205,6 +1217,12 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                                 }
                                 classes
                             }),
+                        definition_values: records
+                            .iter()
+                            .filter_map(|record| record.entity_record.as_ref())
+                            .filter(|entity| definition_value_entities.contains(entity.as_str()))
+                            .cloned()
+                            .collect(),
                         relations: records
                             .iter()
                             .flat_map(|record| {
@@ -3330,7 +3348,7 @@ impl CatiaNative {
                     extents_overlap(row_start, 24, catalog.byte_offset, catalog.byte_len)
                 })
         });
-        let design_objects = design_objects(&object_graphs);
+        let design_objects = design_objects(&object_graphs, &entity_records);
         let maximum_records = object_graphs
             .iter()
             .map(|graph| graph.records.len())
@@ -3705,7 +3723,7 @@ impl CatiaNative {
                 .schema_selections
                 .sort_by_key(|selection| selection.offset);
         }
-        let design_objects = design_objects(&graphs);
+        let design_objects = design_objects(&graphs, &entity_records);
         if namespace.arenas.contains_key("design_objects") {
             let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
             let stored_by_id = stored

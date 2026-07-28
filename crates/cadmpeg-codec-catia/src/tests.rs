@@ -7031,6 +7031,14 @@ fn native_namespace_binds_and_validates_definition_values() {
         )
         .expect("decode definition-bound value");
     assert_eq!(decoded.report.coverage["decoded_definition_value_count"], 1);
+    assert_eq!(
+        decoded.report.coverage["decoded_owned_definition_value_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_definition_value_owner_count"],
+        0
+    );
     let mut native =
         crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
             .expect("load definition-bound value");
@@ -7048,6 +7056,23 @@ fn native_namespace_binds_and_validates_definition_values() {
             schema_selection: None,
         })
     );
+    assert_eq!(
+        native.design_objects[0].definition_values,
+        [native.entity_records[0].id.clone()]
+    );
+
+    let mut malformed_ownership = native.clone();
+    malformed_ownership.design_objects[0]
+        .definition_values
+        .clear();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_ownership
+        .store(&mut namespace)
+        .expect("store malformed definition-value ownership");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 
     let definition_value = native.entity_records[0]
         .definition_value
