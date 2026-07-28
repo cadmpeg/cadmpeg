@@ -764,6 +764,13 @@ fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     }
 }
 
+fn tagged_value(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
+    if matches!(bytes.get(at), Some(0x80 | 0x32)) && at.checked_add(5)? < bytes.len() {
+        return Some((u32_le(bytes, at + 1)?, 5));
+    }
+    atom(bytes, at)
+}
+
 fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
     let mut fields = Vec::new();
     let mut at = 0;
@@ -771,8 +778,10 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
         let offset = at;
         match bytes[at] {
             0xfe => {
-                fields.push(PayloadField::Terminator);
-                at += 1;
+                while bytes.get(at) == Some(&0xfe) {
+                    fields.push(PayloadField::Terminator);
+                    at += 1;
+                }
                 break;
             }
             0xe5 if blob_end(bytes, at).is_some() => {
@@ -851,7 +860,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                         at = value_at;
                         break;
                     }
-                    let Some((value, consumed)) = atom(bytes, value_at) else {
+                    let Some((value, consumed)) = tagged_value(bytes, value_at) else {
                         break;
                     };
                     items.push(if tagged_reference {
@@ -898,7 +907,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     at += 1;
                     continue;
                 }
-                let Some((value, consumed)) = atom(bytes, at + 1) else {
+                let Some((value, consumed)) = tagged_value(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
                         value: u32::from(tag),
                         offset,
@@ -981,7 +990,11 @@ fn classify(fields: &[PayloadField]) -> PayloadSubtype {
     if atom_count >= 2 && triplets == 0 && list_count == 0 {
         return PayloadSubtype::AtomVector;
     }
-    if fields.is_empty() || matches!(fields, [PayloadField::Terminator]) {
+    if fields.is_empty()
+        || fields
+            .iter()
+            .all(|field| matches!(field, PayloadField::Terminator))
+    {
         PayloadSubtype::Empty
     } else {
         PayloadSubtype::Mixed

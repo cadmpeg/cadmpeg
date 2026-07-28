@@ -4815,6 +4815,43 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
 }
 
 #[test]
+fn object_graph_payload_preserves_the_complete_terminator_run() {
+    let bytes =
+        object_graph_from_records(&[object_graph_record(&[0x04], &[0x83, 0xfe, 0xfe, 0xfe])]);
+    let graph = crate::object_graph::parse(&bytes).expect("multi-terminator payload");
+
+    assert!(matches!(
+        graph.records[0].payload.fields.as_slice(),
+        [
+            crate::object_graph::PayloadField::Atom { value: 3, .. },
+            crate::object_graph::PayloadField::Terminator,
+            crate::object_graph::PayloadField::Terminator,
+            crate::object_graph::PayloadField::Terminator,
+        ]
+    ));
+}
+
+#[test]
+fn object_graph_payload_reads_tagged_fixed_width_references() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04],
+        &[
+            0x81, 0x80, 0xfe, 0x1e, 0, 0, 0x81, 0x32, 0xeb, 0, 0, 0, 0xfe,
+        ],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("tagged fixed-width references");
+
+    assert!(matches!(
+        graph.records[0].payload.fields.as_slice(),
+        [
+            crate::object_graph::PayloadField::Reference { value: 7934, .. },
+            crate::object_graph::PayloadField::Reference { value: 235, .. },
+            crate::object_graph::PayloadField::Terminator,
+        ]
+    ));
+}
+
+#[test]
 fn outer_object_graph_requires_a_stored_head_lead() {
     let bytes = object_graph_from_records(&[object_graph_record(&[], &[0xfe])]);
     assert!(crate::object_graph::parse(&bytes).is_none());
