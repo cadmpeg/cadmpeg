@@ -3141,6 +3141,33 @@ fn decode_zero_entity_falls_back_to_metadata() {
 }
 
 #[test]
+fn decode_accounts_for_unresolved_legacy_entity_runs() {
+    let mut bytes = zero_entity_catpart();
+    for entity_id in [1_u32, 3, 8] {
+        bytes.push(0xea);
+        bytes.extend(entity_id.to_le_bytes());
+        bytes.extend([0x81, 0xfd, 0x8c]);
+    }
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode legacy identity run");
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_entity_run_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_entity_identity_count"],
+        3
+    );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss.message.contains("legacy design run")
+    }));
+}
+
+#[test]
 fn decode_zero_entity_transfers_framed_cylinder() {
     let mut cur = Cursor::new(zero_entity_cylinder_catpart());
     let result = CatiaCodec

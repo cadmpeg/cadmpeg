@@ -118,6 +118,11 @@ fn finish_decode(
         .iter()
         .filter(|object| object.owner_design_object.is_some())
         .count();
+    let legacy_entity_identity_count = native
+        .legacy_entity_runs
+        .iter()
+        .map(|run| run.identities.len())
+        .sum();
     let definition_schema_selection_count = native
         .entity_records
         .iter()
@@ -439,6 +444,14 @@ fn finish_decode(
             design_object_owner_link_count,
         ),
         (
+            "decoded_legacy_entity_run_count".to_string(),
+            native.legacy_entity_runs.len(),
+        ),
+        (
+            "decoded_legacy_entity_identity_count".to_string(),
+            legacy_entity_identity_count,
+        ),
+        (
             "decoded_definition_schema_selection_count".to_string(),
             definition_schema_selection_count,
         ),
@@ -600,6 +613,18 @@ fn finish_decode(
                 transferred_formula_design_records.len(),
                 transferred_sketch_declaration_records.len(),
                 transferred_sketch_placement_records.len(),
+            ),
+            provenance: None,
+        });
+    }
+    if !native.legacy_entity_runs.is_empty() {
+        report.losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::DesignIntent,
+            severity: Severity::Blocking,
+            message: format!(
+                "CATIA native data retains {} legacy design run(s) with {legacy_entity_identity_count} source-ordered entity identity marker(s); their inter-marker fields, ownership, parameters, relations, and feature history remain unresolved.",
+                native.legacy_entity_runs.len(),
             ),
             provenance: None,
         });
