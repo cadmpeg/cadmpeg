@@ -269,6 +269,8 @@ pub enum ParasolidDeltasInlineSchemaFields {
         state_words: [u32; 3],
         terminal_value: u64,
     },
+    /// Type 101 declaration with the compact fixed state.
+    Type101Compact,
     /// Type 38 intersection-data declaration state.
     Type38 {
         xmt: u32,
@@ -654,6 +656,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     state_words,
                     terminal_value,
                 },
+                crate::deltas::InlineSchemaFields::Type101Compact => {
+                    ParasolidDeltasInlineSchemaFields::Type101Compact
+                }
                 crate::deltas::InlineSchemaFields::Type38 {
                     xmt,
                     node_id,

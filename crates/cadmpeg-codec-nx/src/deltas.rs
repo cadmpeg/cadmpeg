@@ -223,6 +223,8 @@ pub enum InlineSchemaFields {
         /// Terminal unsigned 40-bit state value.
         terminal_value: u64,
     },
+    /// Type 101 declaration with the compact fixed state.
+    Type101Compact,
     /// Type 38 intersection-data declaration state.
     Type38 {
         /// Non-null stream-local declaration identity.
@@ -1275,6 +1277,8 @@ const TYPE_101_SCHEMA_STATE_PREFIX: &[u8] = &[
     0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01,
 ];
 
+const TYPE_101_COMPACT_STATE_LEN: usize = 58;
+
 fn inline_schema_declaration(
     stream: &[u8],
     offset: usize,
@@ -1475,15 +1479,33 @@ fn inline_schema_declaration(
         let (xmt, consumed) = read_xmt(stream, at)?;
         (xmt == 2).then_some(())?;
         at = at.checked_add(consumed)?;
-        let prefix = stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?)?;
-        let prefix_state = [prefix[7], prefix[10], prefix[30]];
-        matches!(prefix_state, [3, 4, 1] | [1, 1, 0]).then_some(())?;
-        prefix
-            .iter()
-            .zip(TYPE_101_SCHEMA_STATE_PREFIX)
-            .enumerate()
-            .all(|(index, (actual, expected))| matches!(index, 7 | 10 | 30) || actual == expected)
-            .then_some(())?;
+        let compact_end = at.checked_add(TYPE_101_COMPACT_STATE_LEN)?;
+        let compact = stream.get(at..compact_end)
+            == TYPE_101_SCHEMA_STATE_PREFIX.get(..TYPE_101_COMPACT_STATE_LEN);
+        let prefix = stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?);
+        let prefix_state = prefix.map(|prefix| [prefix[7], prefix[10], prefix[30]]);
+        let full_prefix = prefix_state.is_some_and(|state| {
+            matches!(state, [3, 4, 1] | [1, 1, 0])
+                && prefix.is_some_and(|prefix| {
+                    prefix
+                        .iter()
+                        .zip(TYPE_101_SCHEMA_STATE_PREFIX)
+                        .enumerate()
+                        .all(|(index, (actual, expected))| {
+                            matches!(index, 7 | 10 | 30) || actual == expected
+                        })
+                })
+        });
+        if !full_prefix {
+            (compact && compact_end <= gap_end && plausible_next(stream, compact_end))
+                .then_some(())?;
+            return Some(InlineSchemaDeclaration {
+                fields: InlineSchemaFields::Type101Compact,
+                offset,
+                end: compact_end,
+            });
+        }
+        let prefix_state = prefix_state?;
         at = at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?;
         (be::u16_at(stream, at) == Some(4)).then_some(())?;
         at = at.checked_add(2)?;
@@ -3301,6 +3323,24 @@ mod inline_schema_tests {
             }
         ));
         assert_eq!(unanchored_census.bytes_decoded, unanchored.len());
+
+        let mut compact = TYPE_101_SCHEMA_HEADER.to_vec();
+        push_xmt(&mut compact, 2);
+        compact.extend_from_slice(&TYPE_101_SCHEMA_STATE_PREFIX[..TYPE_101_COMPACT_STATE_LEN]);
+
+        let compact_census = walk(&compact);
+        assert_eq!(
+            compact_census.inline_schema_declarations,
+            [InlineSchemaDeclaration {
+                fields: InlineSchemaFields::Type101Compact,
+                offset: 0,
+                end: compact.len(),
+            }]
+        );
+        assert_eq!(compact_census.bytes_decoded, compact.len());
+
+        compact.push(0);
+        assert!(walk(&compact).inline_schema_declarations.is_empty());
     }
 
     #[test]

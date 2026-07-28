@@ -607,6 +607,10 @@ The first prefix requires leading state words `19, 9`; the second requires
 denotes the absence of an anchor. All references use compact or extended XMT
 encoding. The declaration ends after `terminal_value`.
 
+The compact type-101 form is the same header followed by `ref(2)` and the
+first 58 bytes of the first 62-byte prefix. It ends at the next deltas record
+boundary.
+
 The REGION form begins with
 `00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.
 The header is followed by `xmt, state_word:u32 BE, ref_status[4]`. `xmt` is
