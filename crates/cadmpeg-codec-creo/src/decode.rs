@@ -24681,6 +24681,110 @@ fn resolve_curve_candidates(
     Some(candidate.clone())
 }
 
+fn nurbs_plane_boundary_curve(nurbs: &NurbsSurface, plane: PlaneEquation) -> Option<CurveGeometry> {
+    let u_count = usize::try_from(nurbs.u_count).ok()?;
+    let v_count = usize::try_from(nurbs.v_count).ok()?;
+    let pole_count = u_count.checked_mul(v_count)?;
+    (u_count >= 2
+        && v_count >= 2
+        && nurbs.control_points.len() == pole_count
+        && nurbs.weights.as_ref().is_none_or(|weights| {
+            weights.len() == pole_count
+                && weights
+                    .iter()
+                    .all(|weight| weight.is_finite() && *weight > 0.0)
+        }))
+    .then_some(())?;
+    let normal = normalized(plane.normal)?;
+    let anchor = nurbs.control_points[0];
+    let extent = nurbs
+        .control_points
+        .iter()
+        .flat_map(|point| [point.x - anchor.x, point.y - anchor.y, point.z - anchor.z])
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let coordinate_scale = nurbs
+        .control_points
+        .iter()
+        .flat_map(|point| [point.x, point.y, point.z])
+        .chain(plane.origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let tolerance = (1e-9 * extent).max(32.0 * f64::EPSILON * coordinate_scale);
+    let signed_distances = nurbs
+        .control_points
+        .iter()
+        .map(|point| {
+            dot(
+                normal,
+                [
+                    point.x - plane.origin[0],
+                    point.y - plane.origin[1],
+                    point.z - plane.origin[2],
+                ],
+            )
+        })
+        .collect::<Vec<_>>();
+    signed_distances
+        .iter()
+        .all(|distance| distance.is_finite())
+        .then_some(())?;
+    let boundaries = [
+        (false, (0..v_count).collect::<Vec<_>>()),
+        (
+            false,
+            ((u_count - 1) * v_count..u_count * v_count).collect(),
+        ),
+        (true, (0..u_count).map(|u| u * v_count).collect()),
+        (
+            true,
+            (0..u_count).map(|u| u * v_count + v_count - 1).collect(),
+        ),
+    ];
+    let candidates = boundaries
+        .into_iter()
+        .filter(|(_, indices)| {
+            indices
+                .iter()
+                .all(|index| signed_distances[*index].abs() <= tolerance)
+                && {
+                    let outside = signed_distances
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, _)| !indices.contains(index))
+                        .map(|(_, distance)| *distance)
+                        .collect::<Vec<_>>();
+                    !outside.is_empty()
+                        && (outside.iter().all(|distance| *distance > tolerance)
+                            || outside.iter().all(|distance| *distance < -tolerance))
+                }
+        })
+        .collect::<Vec<_>>();
+    let [(along_u, indices)] = candidates.as_slice() else {
+        return None;
+    };
+    let (degree, knots, periodic) = if *along_u {
+        (nurbs.u_degree, nurbs.u_knots.clone(), nurbs.u_periodic)
+    } else {
+        (nurbs.v_degree, nurbs.v_knots.clone(), nurbs.v_periodic)
+    };
+    Some(CurveGeometry::Nurbs(NurbsCurve {
+        degree,
+        knots,
+        control_points: indices
+            .iter()
+            .map(|index| nurbs.control_points[*index])
+            .collect(),
+        weights: nurbs.weights.as_ref().map(|weights| {
+            indices
+                .iter()
+                .map(|index| weights[*index])
+                .collect::<Vec<_>>()
+        }),
+        periodic,
+    }))
+}
+
 fn analytic_curve_branches(
     geometry: &CurveGeometry,
     tag: &'static str,
@@ -24760,6 +24864,89 @@ fn transfer_carrier_intersection_curves(
             "VisibGeom",
             row.offset as u64,
             tag,
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry,
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred.insert(id);
+    }
+    transferred
+}
+
+fn transfer_extrusion_plane_boundary_curves(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> BTreeSet<CurveId> {
+    let mut transferred = BTreeSet::new();
+    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+        let Some(first) = crate::surface::unique_surface_row(&scan.surfaces.rows, row.faces[0])
+        else {
+            continue;
+        };
+        let Some(second) = crate::surface::unique_surface_row(&scan.surfaces.rows, row.faces[1])
+        else {
+            continue;
+        };
+        let (extrusion_id, plane_id) = match (first.kind, second.kind) {
+            (crate::surface::SurfaceKind::Extrusion, crate::surface::SurfaceKind::Plane) => {
+                (first.id, second.id)
+            }
+            (crate::surface::SurfaceKind::Plane, crate::surface::SurfaceKind::Extrusion) => {
+                (second.id, first.id)
+            }
+            _ => continue,
+        };
+        let extrusion_id = SurfaceId(format!("creo:visibgeom:surface#{extrusion_id}"));
+        let plane_id = SurfaceId(format!("creo:visibgeom:surface#{plane_id}"));
+        let Some(SurfaceGeometry::Nurbs(nurbs)) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == extrusion_id)
+            .map(|surface| &surface.geometry)
+        else {
+            continue;
+        };
+        let Some(SurfaceGeometry::Plane { origin, normal, .. }) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == plane_id)
+            .map(|surface| &surface.geometry)
+        else {
+            continue;
+        };
+        let Some(geometry) = nurbs_plane_boundary_curve(
+            nurbs,
+            PlaneEquation {
+                origin: [origin.x, origin.y, origin.z],
+                normal: [normal.x, normal.y, normal.z],
+            },
+        ) else {
+            continue;
+        };
+        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        if ir.model.curves.iter().any(|curve| curve.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "extrusion_plane_nurbs_boundary",
             Exactness::Derived,
         );
         ir.model.curves.push(Curve {
@@ -26230,8 +26417,12 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let analytic_pcurve_carriers =
         transfer_analytic_pcurve_carriers(scan, &mut ir, &mut annotations);
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
-    let derived_intersection_curves =
+    let mut derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
+    let extrusion_plane_boundary_curves =
+        transfer_extrusion_plane_boundary_curves(scan, &mut ir, &mut annotations);
+    let extrusion_plane_boundary_curve_count = extrusion_plane_boundary_curves.len();
+    derived_intersection_curves.extend(extrusion_plane_boundary_curves);
     let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
         scan,
         &mut ir,
@@ -26415,6 +26606,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "transferred_analytic_pcurve_carrier_count".to_string(),
             analytic_pcurve_carrier_count,
+        );
+        coverage.insert(
+            "transferred_extrusion_plane_boundary_curve_count".to_string(),
+            extrusion_plane_boundary_curve_count,
         );
         coverage.insert(
             "transferred_feature_revolution_surface_count".to_string(),
@@ -29478,6 +29673,22 @@ fn build_report(
             severity: Severity::Info,
             message: format!(
                 "Transferred {analytic_pcurve_carrier_count} exact analytic carrier(s) by mapping native linear pcurves through placed planar, cylindrical, conical, spherical, or toroidal face charts."
+            ),
+            provenance: None,
+        });
+    }
+
+    let extrusion_plane_boundary_curve_count =
+        count("transferred_extrusion_plane_boundary_curve_count");
+    if !container_only && extrusion_plane_boundary_curve_count != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {extrusion_plane_boundary_curve_count} exact NURBS boundary \
+                 carrier(s) where one tabulated-extrusion boundary lies in an adjacent plane \
+                 and every other control point lies strictly on one side."
             ),
             provenance: None,
         });

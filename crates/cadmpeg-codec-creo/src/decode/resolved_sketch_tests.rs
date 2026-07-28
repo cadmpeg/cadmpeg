@@ -10820,6 +10820,102 @@ fn planar_loop_containment_selects_one_outer_boundary() {
 }
 
 #[test]
+fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
+    let surface = NurbsSurface {
+        u_degree: 3,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 4,
+        v_count: 2,
+        control_points: (0..4)
+            .flat_map(|u| {
+                [
+                    Point3::new(f64::from(u), 0.0, f64::from(u * u)),
+                    Point3::new(f64::from(u), 1.0, f64::from(u * u)),
+                ]
+            })
+            .collect(),
+        weights: Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let boundary = nurbs_plane_boundary_curve(
+        &surface,
+        PlaneEquation {
+            origin: [0.0, 1.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+    )
+    .expect("v1 boundary");
+    let CurveGeometry::Nurbs(boundary) = boundary else {
+        panic!("extrusion boundary must retain its NURBS parameterization");
+    };
+    assert_eq!(boundary.degree, 3);
+    assert_eq!(boundary.knots, surface.u_knots);
+    assert_eq!(
+        boundary.control_points,
+        vec![
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 1.0, 1.0),
+            Point3::new(2.0, 1.0, 4.0),
+            Point3::new(3.0, 1.0, 9.0),
+        ]
+    );
+    assert_eq!(boundary.weights, Some(vec![1.0, 2.0, 3.0, 4.0]));
+
+    let generator = nurbs_plane_boundary_curve(
+        &surface,
+        PlaneEquation {
+            origin: [3.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        },
+    )
+    .expect("u1 boundary");
+    let CurveGeometry::Nurbs(generator) = generator else {
+        panic!("extrusion generator must retain its NURBS parameterization");
+    };
+    assert_eq!(generator.degree, 1);
+    assert_eq!(generator.knots, surface.v_knots);
+    assert_eq!(
+        generator.control_points,
+        vec![Point3::new(3.0, 0.0, 9.0), Point3::new(3.0, 1.0, 9.0)]
+    );
+    assert_eq!(generator.weights, Some(vec![4.0, 4.0]));
+
+    assert!(nurbs_plane_boundary_curve(
+        &surface,
+        PlaneEquation {
+            origin: [0.0, 0.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+    )
+    .is_none());
+    let mut coplanar = surface.clone();
+    for point in &mut coplanar.control_points {
+        point.z = 0.0;
+    }
+    assert!(nurbs_plane_boundary_curve(
+        &coplanar,
+        PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        },
+    )
+    .is_none());
+    coplanar.control_points = surface.control_points;
+    coplanar.weights.as_mut().expect("weights")[0] = 0.0;
+    assert!(nurbs_plane_boundary_curve(
+        &coplanar,
+        PlaneEquation {
+            origin: [0.0, 1.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+    )
+    .is_none());
+}
+
+#[test]
 fn carrier_solver_accepts_two_carrier_tangent_vertices() {
     let plane = CarrierEquation::Plane(PlaneEquation {
         origin: [0.0, 0.0, 2.0],

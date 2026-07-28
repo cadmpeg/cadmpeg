@@ -726,6 +726,13 @@ For a replay-bound row, this unique ordered frame-axis construction defines the
 extrusion vector independently of whether the bytes before `00 0c 9a` form a
 three-scalar sweep-direction frame.
 
+When a tabulated-extrusion NURBS surface is adjacent to a plane, one complete
+surface control edge defines their intersection curve when every control point
+on that edge lies in the plane and every other control point lies strictly on
+one side of the plane. Exactly one of the four control edges must satisfy the
+rule. A constant-U edge retains the surface's V degree, knots, control points,
+weights, and periodicity; a constant-V edge retains the corresponding U data.
+
 Layouts whose second and fifth scalar prefixes are `46` require a first-axis
 intercept magnitude of 30, a zero second-axis intercept, and retain the stored
 sweep-axis sign. The
