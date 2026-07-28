@@ -7915,16 +7915,15 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         .relation_expression
         .as_ref()
         .expect("complete relation expression");
-    assert_eq!(
-        expression
-            .placeholder
-            .as_ref()
-            .expect("placeholder framing")
-            .value,
-        "#1_ "
-    );
-    assert_eq!(expression.prefix_role, None);
-    assert_eq!(expression.parser_version_role, None);
+    let crate::native::CatiaRelationExpressionFraming::PlaceholderState {
+        placeholder,
+        state_role,
+    } = &expression.framing
+    else {
+        panic!("placeholder-state framing")
+    };
+    assert_eq!(placeholder.value, "#1_ ");
+    assert_eq!(state_role.value, "opened");
     assert_eq!(expression.expression.value, "#1_ /2-2mm");
     assert_eq!(expression.parameter_role.value, "param");
     assert_eq!(
@@ -7940,10 +7939,6 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         }]
     );
     assert_eq!(signature.result_type, "LENGTH");
-    assert_eq!(
-        expression.state_role.as_ref().expect("state framing").value,
-        "opened"
-    );
     assert_eq!(expression.function_role.value, "RelationExpFct");
 
     let mut malformed = native;
@@ -7973,25 +7968,20 @@ fn parser_version_relation_expression_retains_its_distinct_framing() {
         .as_ref()
         .expect("parser-version relation expression");
 
-    assert_eq!(expression.placeholder, None);
-    assert_eq!(
-        expression.prefix_role.as_ref().expect("prefix role").value,
-        "Boolean"
-    );
+    let crate::native::CatiaRelationExpressionFraming::ParserVersion {
+        prefix_role,
+        parser_version_role,
+    } = &expression.framing
+    else {
+        panic!("parser-version framing")
+    };
+    assert_eq!(prefix_role.value, "Boolean");
     assert_eq!(
         expression.expression.value,
         "log(min(100,max(20*#1_,#2_)/#2_))/log(100)/2"
     );
-    assert_eq!(
-        expression
-            .parser_version_role
-            .as_ref()
-            .expect("parser-version role")
-            .value,
-        "ParserVersion"
-    );
+    assert_eq!(parser_version_role.value, "ParserVersion");
     assert_eq!(expression.parameter_role.value, "param");
-    assert_eq!(expression.state_role, None);
     let signature = expression.signature.as_ref().expect("typed signature");
     assert_eq!(
         signature
