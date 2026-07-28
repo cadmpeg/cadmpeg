@@ -9111,8 +9111,10 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .constraint_range
         .as_ref()
         .expect("complete dimension constraint range");
-    assert!(!range.range_entry.is_empty());
-    assert!(!range.constraint_entry.is_empty());
+    assert!(!range.range.entry.is_empty());
+    assert_eq!(range.range.value, "Range");
+    assert!(!range.constraint.entry.is_empty());
+    assert_eq!(range.constraint.value, "CstAttr_Dimension");
     assert_eq!(range.framing, CatiaConstraintRangeFraming::DimensionC1);
     assert_eq!(
         range.evaluation,
@@ -9134,6 +9136,24 @@ fn native_namespace_types_dimension_constraint_ranges() {
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint range");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut malformed = crate::native::CatiaNative::decode(
+        &standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &suffix),
+    );
+    malformed.entity_records[0]
+        .constraint_range
+        .as_mut()
+        .expect("complete dimension constraint range")
+        .constraint
+        .value = "changed".to_string();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed constraint role");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))

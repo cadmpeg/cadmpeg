@@ -864,7 +864,11 @@ mod tests {
     fn record_walk_skips_complete_logical_support_continuations() {
         let fixture = zero_entity_support_stream();
         let plane = &fixture[..0x6a + 12];
-        let mut support = vec![0u8; zero_entity_fixed_logical_length([0x21, 0x45]).unwrap()];
+        let mut support = vec![
+            0u8;
+            zero_entity_fixed_logical_length([0x21, 0x45])
+                .expect("class 2145 has a fixed logical length")
+        ];
         support[..4].copy_from_slice(&[0xa9, 0x03, 0x21, 0x45]);
         support[12] = 0x10;
         support[13..17].copy_from_slice(&42u32.to_le_bytes());

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 163;
+pub const CATIA_NATIVE_VERSION: u32 = 164;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1140,10 +1140,10 @@ pub enum CatiaConstraintRangeFraming {
 /// One complete constraint-range value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaConstraintRange {
-    /// Catalog entry selected for the `Range` role.
-    pub range_entry: String,
-    /// Catalog entry selected for the constraint role encoded by `framing`.
-    pub constraint_entry: String,
+    /// Exact `Range` role selector.
+    pub range: CatiaEntitySchemaValue,
+    /// Exact constraint role selector encoded by `framing`.
+    pub constraint: CatiaEntitySchemaValue,
     /// Exact role and prefix-code framing.
     pub framing: CatiaConstraintRangeFraming,
     /// Stored evaluation state.
@@ -2071,8 +2071,14 @@ fn constraint_range(
         return None;
     };
     Some(CatiaConstraintRange {
-        range_entry: range.entry.clone(),
-        constraint_entry: constraint.entry.clone(),
+        range: CatiaEntitySchemaValue {
+            entry: range.entry.clone(),
+            value: range.name.clone(),
+        },
+        constraint: CatiaEntitySchemaValue {
+            entry: constraint.entry.clone(),
+            value: constraint.name.clone(),
+        },
         framing,
         evaluation: evaluation.clone(),
     })
@@ -4726,8 +4732,8 @@ fn validate_zero_entity_support_runs(
             || !loop_roster_valid
             || !face_valid
             || run.carrier_record_ordinal == 0
-            || !zero_entity_record(records, run.carrier_record_ordinal)
-                .is_some_and(|record| record.byte_offset == run.carrier_byte_offset)
+            || zero_entity_record(records, run.carrier_record_ordinal)
+                .is_none_or(|record| record.byte_offset != run.carrier_byte_offset)
             || index > 0
                 && (runs[index - 1].carrier_byte_offset >= run.carrier_byte_offset
                     || runs[index - 1].carrier_record_ordinal >= run.carrier_record_ordinal)
@@ -4847,15 +4853,11 @@ fn validate_zero_entity_topology_records(
                         .all(|reference| zero_entity_record(records, *reference).is_some())
                     && use_.byte_offset > pair.header_byte_offset
                     && (use_index == 0 || pair.uses[use_index - 1].byte_offset < use_.byte_offset)
-                    && use_.record_ordinal
-                        == pair
-                            .header_record_ordinal
-                            .checked_add(side)
-                            .unwrap_or(u32::MAX)
+                    && use_.record_ordinal == pair.header_record_ordinal.saturating_add(side)
                     && use_.side_slots
                         == [
-                            pair.base_columns[0].checked_add(side).unwrap_or(u32::MAX),
-                            pair.base_columns[1].checked_add(side).unwrap_or(u32::MAX),
+                            pair.base_columns[0].saturating_add(side),
+                            pair.base_columns[1].saturating_add(side),
                         ]
             })
     });

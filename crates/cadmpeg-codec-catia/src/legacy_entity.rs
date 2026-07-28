@@ -681,7 +681,15 @@ mod tests {
         let relation = &parse_runs(&bytes)[0].relations[0];
         assert_eq!(relation.expression, "#2_ = #1_ + 2");
         assert_eq!(relation.parameter_entity_id, None);
-        assert_eq!(relation.signature.output.as_ref().unwrap().parameter, "#2_");
+        assert_eq!(
+            relation
+                .signature
+                .output
+                .as_ref()
+                .expect("VoidType signature has an output")
+                .parameter,
+            "#2_"
+        );
         assert_eq!(relation.signature.inputs[0].parameter, "#1_");
         assert_eq!(relation.signature.result_type, "VoidType");
     }
