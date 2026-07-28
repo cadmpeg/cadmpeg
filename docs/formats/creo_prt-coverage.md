@@ -75,7 +75,8 @@ fixtures, claims above L1 remain unproven.
   modeling-operation precedence.
 - Every decoded section-dimension row transfers as a definition-scoped design
   parameter; table completeness gates ordinal relation joins, not row
-  preservation.
+  preservation. Decoded dimensions whose exact scalar encoding remains
+  unresolved retain the source-native value token and raise a decode loss note.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   Diagnostics report every nonzero active native discriminator.
@@ -187,9 +188,10 @@ fixtures, claims above L1 remain unproven.
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts
    decoded and transferred section dimensions separately and counts dimensions
-   whose scalar values resolve. It counts decoded section solver variables,
-   dimension-driven sentinel variables, and dimension-driven variables whose
-   exact ordinate resolves through the complete equation system separately.
+   whose scalar values resolve or remain unresolved. It counts decoded section
+   solver variables, dimension-driven sentinel variables, and dimension-driven
+   variables whose exact ordinate resolves through the complete equation system
+   separately.
    Every unresolved dimension-driven solver variable raises a decode loss
    note. The map likewise counts decoded, transferred, and evaluated active
    curve-equation assignments separately and partitions them by active,

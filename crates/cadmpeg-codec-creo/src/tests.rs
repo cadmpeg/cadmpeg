@@ -4979,6 +4979,7 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
     assert_eq!(coverage["decoded_feature_dimension_count"], 2);
     assert_eq!(coverage["transferred_feature_dimension_parameter_count"], 2);
     assert_eq!(coverage["resolved_feature_dimension_value_count"], 2);
+    assert_eq!(coverage["unresolved_feature_dimension_value_count"], 0);
     assert_eq!(coverage["decoded_feature_solver_variable_count"], 0);
     assert_eq!(
         coverage["decoded_feature_dimension_driven_variable_count"],
@@ -5073,6 +5074,20 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(dimensions[2]["unresolved_value_token"][1], 4);
     assert_eq!(dimensions[2]["unresolved_value_token"][2], 254);
     assert_eq!(dimensions[2]["unresolved_value_token"][3], 242);
+    let coverage = &result.report.coverage;
+    assert_eq!(coverage["decoded_feature_dimension_count"], 3);
+    assert_eq!(coverage["transferred_feature_dimension_parameter_count"], 3);
+    assert_eq!(coverage["resolved_feature_dimension_value_count"], 1);
+    assert_eq!(coverage["unresolved_feature_dimension_value_count"], 2);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
+            && loss.category == cadmpeg_ir::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "2 section dimension(s) retain source-native value tokens because their exact \
+                 scalar encodings remain unresolved",
+            )
+    }));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }

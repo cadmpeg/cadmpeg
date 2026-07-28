@@ -26096,6 +26096,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             "resolved_feature_dimension_value_count".to_string(),
             resolved_dimension_count,
         );
+        coverage.insert(
+            "unresolved_feature_dimension_value_count".to_string(),
+            decoded_dimension_count.saturating_sub(resolved_dimension_count),
+        );
     }
     close_sketch_constraint_parameter_references(&mut ir);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
@@ -28854,6 +28858,19 @@ fn build_report(
                 "{unresolved_dimension_driven_variables} dimension-driven section solver \
                  variable(s) retain unresolved exact values because their dimension binding or \
                  variable-family equation is unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_dimension_values = count("unresolved_feature_dimension_value_count");
+    if unresolved_dimension_values != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_dimension_values} section dimension(s) retain source-native value \
+                 tokens because their exact scalar encodings remain unresolved."
             ),
             provenance: None,
         });
