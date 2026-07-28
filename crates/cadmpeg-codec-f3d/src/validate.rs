@@ -1110,7 +1110,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Shell) => {
-                        group.role == 0x0000_0010_0000_0000
+                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0010_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
@@ -1134,7 +1134,17 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     }
                     Some(design::DesignFeatureFamily::Sweep) => {
                         (scope.path_feature_construction.is_none()
-                            || matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0041_0000_0000))
+                            || matches!(
+                                group.role,
+                                0x0000_0004_0000_0000
+                                    | 0x0000_0005_0000_0000
+                                    | 0x0000_0041_0000_0000
+                            ))
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::CircularPattern) => {
+                        group.role == 0x0000_0008_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
@@ -1180,6 +1190,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    None if scope.kind == "Decal" => {
+                        group.role == 0x0000_0004_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     None if scope.kind == "BaseFlange" => {
                         group.role == 0x0000_0041_0000_0000
                             && group.extrude_role.is_none()
@@ -1203,6 +1218,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             | "SurfaceStitch"
                             | "SplitFace"
                             | "DeleteFace"
+                            | "Decal"
                             | "BaseFlange"
                             | "EdgeFlange"
                             | "Hem"
