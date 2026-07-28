@@ -4777,27 +4777,37 @@ fn blind_extrusion_from_carriers(
     let tolerance = 1e-9 * coordinate_scale;
     let vector_tolerance = 1e-9 * length.max(1.0);
     let start_station = dot(first_start, direction);
+    let end_station = start_station + length;
+    let mut has_opposed_carrier = false;
     carriers
         .iter()
         .all(|carrier| {
-            !carrier.starts.is_empty()
-                && carrier
-                    .vector
-                    .into_iter()
-                    .zip(first.vector)
-                    .all(|(candidate, reference)| (candidate - reference).abs() <= vector_tolerance)
+            if carrier.starts.is_empty() {
+                return false;
+            }
+            let same_direction = carrier
+                .vector
+                .into_iter()
+                .zip(first.vector)
+                .all(|(candidate, reference)| (candidate - reference).abs() <= vector_tolerance);
+            let opposite_direction = carrier
+                .vector
+                .into_iter()
+                .zip(first.vector)
+                .all(|(candidate, reference)| (candidate + reference).abs() <= vector_tolerance);
+            has_opposed_carrier |= opposite_direction;
+            (same_direction
                 && carrier
                     .starts
                     .iter()
-                    .all(|start| (dot(*start, direction) - start_station).abs() <= tolerance)
+                    .all(|start| (dot(*start, direction) - start_station).abs() <= tolerance))
+                || (opposite_direction
+                    && carrier
+                        .starts
+                        .iter()
+                        .all(|start| (dot(*start, direction) - end_station).abs() <= tolerance))
         })
         .then_some(())?;
-    if let Some(transform) = transform {
-        let normal = normalized(transform.normal)?;
-        ((dot(direction, normal).abs() - 1.0).abs() <= 1e-10
-            && (dot(transform.origin, direction) - start_station).abs() <= tolerance)
-            .then_some(())?;
-    }
     let cap_stations = planes
         .iter()
         .map(|(origin, normal)| {
@@ -4824,7 +4834,50 @@ fn blind_extrusion_from_carriers(
             unique_stations.push(station);
         }
     }
-    let end_station = start_station + length;
+    let reverse = if has_opposed_carrier {
+        if let Some(transform) = transform {
+            let transform_station = dot(transform.origin, direction);
+            if (transform_station - start_station).abs() <= tolerance {
+                false
+            } else if (transform_station - end_station).abs() <= tolerance {
+                true
+            } else {
+                return None;
+            }
+        } else {
+            let [terminal_station] = unique_stations.as_slice() else {
+                return None;
+            };
+            if (*terminal_station - end_station).abs() <= tolerance {
+                false
+            } else if (*terminal_station - start_station).abs() <= tolerance {
+                true
+            } else {
+                return None;
+            }
+        }
+    } else {
+        false
+    };
+    let (direction, start_station, end_station) = if reverse {
+        (
+            direction.map(|component| -component),
+            -end_station,
+            -start_station,
+        )
+    } else {
+        (direction, start_station, end_station)
+    };
+    if let Some(transform) = transform {
+        let normal = normalized(transform.normal)?;
+        ((dot(direction, normal).abs() - 1.0).abs() <= 1e-10
+            && (dot(transform.origin, direction) - start_station).abs() <= tolerance)
+            .then_some(())?;
+    }
+    let unique_stations = unique_stations
+        .into_iter()
+        .map(|station| if reverse { -station } else { station })
+        .collect::<Vec<_>>();
     let cap_matches = |cap: f64| {
         (cap - start_station).abs() <= tolerance || (cap - end_station).abs() <= tolerance
     };

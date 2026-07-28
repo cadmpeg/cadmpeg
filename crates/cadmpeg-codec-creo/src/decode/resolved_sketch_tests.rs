@@ -3089,6 +3089,52 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
 }
 
 #[test]
+fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
+    let carriers = [
+        ExtrusionCarrierSpan {
+            starts: vec![[0.0, 5.5, 0.0]],
+            vector: [0.0, 2.0, 0.0],
+        },
+        ExtrusionCarrierSpan {
+            starts: vec![[4.0, 7.5, 0.0]],
+            vector: [0.0, -2.0, 0.0],
+        },
+    ];
+    let terminal_plane = [([0.0, 7.5, 0.0], [0.0, 1.0, 0.0])];
+    assert_eq!(
+        blind_extrusion_from_carriers(&carriers, &terminal_plane, None),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(2.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, 1.0, 0.0],
+        ))
+    );
+
+    let reversed = [
+        ExtrusionCarrierSpan {
+            starts: vec![[4.0, 7.5, 0.0]],
+            vector: [0.0, -2.0, 0.0],
+        },
+        ExtrusionCarrierSpan {
+            starts: vec![[0.0, 5.5, 0.0]],
+            vector: [0.0, 2.0, 0.0],
+        },
+    ];
+    assert_eq!(
+        blind_extrusion_from_carriers(&reversed, &terminal_plane, None),
+        blind_extrusion_from_carriers(&carriers, &terminal_plane, None)
+    );
+    assert!(blind_extrusion_from_carriers(&carriers, &[], None).is_none());
+}
+
+#[test]
 fn generated_nurbs_translations_define_a_blind_extrusion() {
     let translated_surface = |last_z| NurbsSurface {
         u_degree: 2,
