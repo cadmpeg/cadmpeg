@@ -3626,6 +3626,11 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         result.report.coverage["transferred_native_feature_count"],
         1
     );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("retain only source-native semantics")));
 }
 
 #[test]

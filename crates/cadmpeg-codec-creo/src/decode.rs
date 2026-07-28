@@ -28794,6 +28794,19 @@ fn build_report(
         });
     }
     let explicitly_unresolved_features = count("transferred_explicitly_unresolved_feature_count");
+    let native_features = count("transferred_native_feature_count");
+    if native_features != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{native_features} history feature definition(s) retain only source-native \
+                 semantics."
+            ),
+            provenance: None,
+        });
+    }
     if explicitly_unresolved_features != 0 {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,

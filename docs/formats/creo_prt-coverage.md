@@ -155,10 +155,11 @@ fixtures, claims above L1 remain unproven.
    partitions. Every active native constraint raises a decode loss note.
    It also counts all transferred history features, partitions their
    definitions into typed and native forms, and separately counts typed
-   definitions whose model-space construction is explicitly unresolved. The
-   unresolved count is partitioned into datum-plane, datum-coordinate-system,
-   boundary-surface, and draft families. Every explicit unresolved definition
-   raises a decode loss note. Extrusions are counted separately, with
+   definitions whose model-space construction is explicitly unresolved. Every
+   native definition raises a decode loss note. The unresolved typed count is
+   partitioned into datum-plane, datum-coordinate-system, boundary-surface, and
+   draft families. Every explicit unresolved definition raises a decode loss
+   note. Extrusions are counted separately, with
    unresolved and native profiles, incomplete start-face operands, incomplete
    termination operands, and unresolved Boolean operation partitions.
    Revolutions are counted separately, with missing or unresolved profiles,
