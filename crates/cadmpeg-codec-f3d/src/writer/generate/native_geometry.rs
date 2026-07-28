@@ -3654,7 +3654,22 @@ fn encode_native_variable_blend(
     })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
-    native_ident(bytes, "srf_srf_v_bl_spl_sur")?;
+    native_ident(
+        bytes,
+        match construction.subtype {
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend => "var_blend_spl_sur",
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceSurface => {
+                "srf_srf_v_bl_spl_sur"
+            }
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::CurveCurve => "crv_crv_v_bl_spl_sur",
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::CurveSurface => {
+                "crv_srf_v_bl_spl_sur"
+            }
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceCurveFree => {
+                "sfcv_free_bl_spl_sur"
+            }
+        },
+    )?;
     native_i64(bytes, construction.revision);
     for side in construction.sides.iter() {
         native_rolling_ball_side(bytes, target, side)?;

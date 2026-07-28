@@ -1604,9 +1604,29 @@ pub struct VariableBlendChamfer {
     pub value: VariableBlendValue,
 }
 
+/// Native variable-radius blend surface subtype.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableBlendSurfaceSubtype {
+    /// General variable-blend surface.
+    #[default]
+    VariableBlend,
+    /// Surface-to-surface variable blend.
+    SurfaceSurface,
+    /// Curve-to-curve variable blend.
+    CurveCurve,
+    /// Curve-to-surface variable blend.
+    CurveSurface,
+    /// Free surface-curve variable blend.
+    SurfaceCurveFree,
+}
+
 /// Complete native variable-radius blend construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableBlendConstruction {
+    /// Native surface subtype selecting the variable-blend behavior class.
+    #[serde(default)]
+    pub subtype: VariableBlendSurfaceSubtype,
     /// Native serializer-revision integer following the subtype name.
     #[serde(alias = "definition_index")]
     pub revision: i64,

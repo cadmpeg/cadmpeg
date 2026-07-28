@@ -687,14 +687,37 @@ pub(crate) fn decode_var_blend_spl_sur(
                 && &window[3..] == name
         })
     };
-    let names: [&[u8]; 4] = [
+    let names: [&[u8]; 10] = [
         b"var_blend_spl_sur",
         b"varblendsplsur",
         b"srf_srf_v_bl_spl_sur",
         b"srfsrfblndsur",
+        b"crv_crv_v_bl_spl_sur",
+        b"crvcrvblndsur",
+        b"crv_srf_v_bl_spl_sur",
+        b"crvsrfblndsur",
+        b"sfcv_free_bl_spl_sur",
+        b"sfcvfreeblndsur",
     ];
-    let (start, name_len) =
-        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let subtype = match name {
+        b"var_blend_spl_sur" | b"varblendsplsur" => {
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend
+        }
+        b"srf_srf_v_bl_spl_sur" | b"srfsrfblndsur" => {
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceSurface
+        }
+        b"crv_crv_v_bl_spl_sur" | b"crvcrvblndsur" => {
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::CurveCurve
+        }
+        b"crv_srf_v_bl_spl_sur" | b"crvsrfblndsur" => {
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::CurveSurface
+        }
+        b"sfcv_free_bl_spl_sur" | b"sfcvfreeblndsur" => {
+            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceCurveFree
+        }
+        _ => return None,
+    };
     // A rolling-ball record can embed a complete variable-blend subtype as a
     // side support surface; a rolling-ball marker before the variable-blend
     // marker means this record belongs to the rolling-ball decoder.
@@ -714,7 +737,7 @@ pub(crate) fn decode_var_blend_spl_sur(
         return None;
     }
     let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
+    let mut position = name.len() + 3;
     let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
     let sides = Box::new([
         decode_rolling_ball_side(span, &mut position, int_width, reference_context)?,
@@ -861,6 +884,7 @@ pub(crate) fn decode_var_blend_spl_sur(
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(
             EmbeddedVariableBlend {
+                subtype,
                 revision,
                 sides,
                 slice: slice.geometry,

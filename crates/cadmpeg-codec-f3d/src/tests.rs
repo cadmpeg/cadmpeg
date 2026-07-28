@@ -16018,13 +16018,39 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
 
 #[test]
 fn generated_variable_blends_decode_complete_single_radius_graphs() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendValuePayload};
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, VariableBlendSurfaceSubtype, VariableBlendValuePayload,
+    };
 
-    for name in [
-        "var_blend_spl_sur",
-        "varblendsplsur",
-        "srf_srf_v_bl_spl_sur",
-        "srfsrfblndsur",
+    for (name, subtype) in [
+        (
+            "var_blend_spl_sur",
+            VariableBlendSurfaceSubtype::VariableBlend,
+        ),
+        ("varblendsplsur", VariableBlendSurfaceSubtype::VariableBlend),
+        (
+            "srf_srf_v_bl_spl_sur",
+            VariableBlendSurfaceSubtype::SurfaceSurface,
+        ),
+        ("srfsrfblndsur", VariableBlendSurfaceSubtype::SurfaceSurface),
+        (
+            "crv_crv_v_bl_spl_sur",
+            VariableBlendSurfaceSubtype::CurveCurve,
+        ),
+        ("crvcrvblndsur", VariableBlendSurfaceSubtype::CurveCurve),
+        (
+            "crv_srf_v_bl_spl_sur",
+            VariableBlendSurfaceSubtype::CurveSurface,
+        ),
+        ("crvsrfblndsur", VariableBlendSurfaceSubtype::CurveSurface),
+        (
+            "sfcv_free_bl_spl_sur",
+            VariableBlendSurfaceSubtype::SurfaceCurveFree,
+        ),
+        (
+            "sfcvfreeblndsur",
+            VariableBlendSurfaceSubtype::SurfaceCurveFree,
+        ),
     ] {
         let result = F3dCodec
             .decode(
@@ -16037,6 +16063,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         else {
             panic!("expected variable blend")
         };
+        assert_eq!(construction.subtype, subtype);
         assert_eq!(construction.revision, 23100);
         assert_eq!(
             construction.sides[0].support_kind,

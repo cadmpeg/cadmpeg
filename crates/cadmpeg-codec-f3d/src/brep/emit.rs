@@ -1947,6 +1947,7 @@ fn emit_variable_blend_surface(
         .map(|curve| add_curve("post", CurveGeometry::Nurbs(curve)));
     ProceduralSurfaceDefinition::VariableBlend {
         construction: Box::new(VariableBlendConstruction {
+            subtype: construction.subtype,
             revision: construction.revision,
             sides: Box::new([first, second]),
             slice,

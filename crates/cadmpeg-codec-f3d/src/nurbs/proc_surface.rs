@@ -229,6 +229,7 @@ pub(crate) struct EmbeddedRollingBallThirdSide {
 
 /// Embedded native variable blend before stable IR ids are assigned.
 pub struct EmbeddedVariableBlend {
+    pub(crate) subtype: cadmpeg_ir::geometry::VariableBlendSurfaceSubtype,
     pub(crate) revision: i64,
     pub(crate) sides: Box<[EmbeddedRollingBallSide; 2]>,
     pub(crate) slice: CurveGeometry,
