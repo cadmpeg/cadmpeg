@@ -4852,6 +4852,37 @@ fn object_graph_payload_reads_tagged_fixed_width_references() {
 }
 
 #[test]
+fn object_graph_lists_retain_direct_fixed_width_references() {
+    let bytes = object_graph_from_records(&[
+        object_graph_record(
+            &[0x04, 0x01, 0x81, 0x81],
+            &[0x3b, 0x81, 0x32, 2, 0, 0, 0, 0xfe],
+        ),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x81], &[0xfe]),
+    ]);
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert!(matches!(
+        native.object_graphs[0].records[0].payload.fields.as_slice(),
+        [
+            crate::object_graph::PayloadField::List {
+                declared_count: 1,
+                items,
+                ..
+            },
+            crate::object_graph::PayloadField::Terminator,
+        ] if items == &[crate::object_graph::ListItem::Reference {
+            value: 2,
+            offset: 2,
+        }]
+    ));
+    assert_eq!(
+        native.object_graphs[0].records[0].references[0].entity_id,
+        2
+    );
+}
+
+#[test]
 fn outer_object_graph_requires_a_stored_head_lead() {
     let bytes = object_graph_from_records(&[object_graph_record(&[], &[0xfe])]);
     assert!(crate::object_graph::parse(&bytes).is_none());

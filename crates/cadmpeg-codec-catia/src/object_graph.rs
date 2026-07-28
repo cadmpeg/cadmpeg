@@ -853,6 +853,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     let item_offset = at;
                     let tagged_reference = bytes[at] == 0x81;
                     let tagged_atom = bytes[at] == 0x80;
+                    let fixed_reference = bytes[at] == 0x32;
                     let value_at = at + usize::from(tagged_reference || tagged_atom);
                     if (tagged_reference || tagged_atom)
                         && (value_at >= bytes.len() || bytes[value_at] == 0xfe)
@@ -863,7 +864,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     let Some((value, consumed)) = tagged_value(bytes, value_at) else {
                         break;
                     };
-                    items.push(if tagged_reference {
+                    items.push(if tagged_reference || fixed_reference {
                         ListItem::Reference {
                             value,
                             offset: item_offset,
