@@ -1785,20 +1785,26 @@ fn relation_type_signature(placeholder: &str, source: &str) -> Option<CatiaRelat
     if result_type.is_empty() {
         return None;
     }
-    let inputs = input_clause
-        .split(',')
-        .map(|clause| {
-            let (parameter, input_type) = clause.split_once(':')?;
-            let parameter = parameter.trim();
-            let input_type = input_type.trim().strip_prefix("#In")?.trim();
-            (!parameter.is_empty() && !input_type.is_empty()).then(|| CatiaRelationTypeInput {
-                parameter: parameter.to_string(),
-                input_type: input_type.to_string(),
+    let inputs = if input_clause.trim().is_empty() {
+        Vec::new()
+    } else {
+        input_clause
+            .split(',')
+            .map(|clause| {
+                let (parameter, input_type) = clause.split_once(':')?;
+                let parameter = parameter.trim();
+                let input_type = input_type.trim().strip_prefix("#In")?.trim();
+                (!parameter.is_empty() && !input_type.is_empty()).then(|| CatiaRelationTypeInput {
+                    parameter: parameter.to_string(),
+                    input_type: input_type.to_string(),
+                })
             })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    if inputs.is_empty()
-        || inputs[0].parameter != placeholder.trim()
+            .collect::<Option<Vec<_>>>()?
+    };
+    if (inputs.is_empty() && !placeholder.trim().is_empty())
+        || inputs
+            .first()
+            .is_some_and(|input| input.parameter != placeholder.trim())
         || inputs
             .iter()
             .map(|input| input.parameter.as_str())

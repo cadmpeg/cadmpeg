@@ -46,7 +46,7 @@ pub(crate) fn transfer_parameters(
         let mut dependencies = Vec::with_capacity(formula.parameter_dependencies.len());
         let mut used_inputs = BTreeSet::new();
         let mut expression_bindings = BTreeMap::new();
-        let mut all_inputs_complete = !formula.parameter_dependencies.is_empty();
+        let mut all_inputs_complete = true;
         for dependency in &formula.parameter_dependencies {
             let Some(input) = signature.inputs.iter().find(|input| {
                 dependency
@@ -263,24 +263,26 @@ pub(crate) fn transfer_parameters(
         .enumerate()
         .map(|(ordinal, mut candidate)| {
             candidate.parameter.ordinal = u32::try_from(ordinal).ok()?;
-            Some(candidate.parameter)
+            Some(candidate)
         })
         .collect::<Option<Vec<_>>>()
     else {
         return FormulaTransfer::default();
     };
-    for parameter in &parameters {
-        if parameter.dependencies.is_empty() {
+    for candidate in &parameters {
+        if !candidate.formula_output && candidate.parameter.dependencies.is_empty() {
             annotations
                 .exactness
-                .entry(parameter.id.0.clone())
+                .entry(candidate.parameter.id.0.clone())
                 .or_default()
                 .fields
                 .insert("expression".to_string(), Exactness::Derived);
         }
     }
     let transferred = parameters.len();
-    ir.model.parameters.extend(parameters);
+    ir.model
+        .parameters
+        .extend(parameters.into_iter().map(|candidate| candidate.parameter));
     FormulaTransfer {
         parameter_count: transferred,
         consumed_object_records,

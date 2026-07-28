@@ -1934,7 +1934,7 @@ fn standard_catpart_with_typed_formula_inputs_and_object_payload(
     source_expression: &str,
     input_object_payload: &[u8],
 ) -> Vec<u8> {
-    assert!(!inputs.is_empty());
+    assert!(!duplicate_binding || !inputs.is_empty());
     let formula_definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
     let expression_definition = [0x00, 0x08, 0x32, 5, 0, 0, 0, 0x32, 5, 0, 0, 0];
     let mut expression_value = Vec::new();
@@ -2043,7 +2043,9 @@ fn standard_catpart_with_typed_formula_inputs_and_object_payload(
         String::new(),
         "Formula".to_string(),
         "body".to_string(),
-        format!("{} ", inputs[0].0),
+        inputs
+            .first()
+            .map_or_else(String::new, |input| format!("{} ", input.0)),
         source_expression.to_string(),
         "param".to_string(),
         type_signature,
@@ -6629,6 +6631,31 @@ fn relation_expression_signature_preserves_ordered_typed_inputs() {
 }
 
 #[test]
+fn relation_expression_signature_accepts_an_empty_input_list_with_an_empty_placeholder() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_expression_signature("param", "", "() : LENGTH"),
+    );
+    let signature = native.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .and_then(|expression| expression.signature.as_ref())
+        .expect("zero-input signature");
+
+    assert!(signature.inputs.is_empty());
+    assert_eq!(signature.result_type, "LENGTH");
+
+    let nonempty_placeholder = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_expression_signature("param", "#1_ ", "() : LENGTH"),
+    );
+    assert!(nonempty_placeholder.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .expect("relation expression")
+        .signature
+        .is_none());
+}
+
+#[test]
 fn relation_expression_signature_rejects_duplicate_inputs() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression_signature(
@@ -7701,6 +7728,65 @@ fn decode_evaluates_formula_precedence_and_parentheses() {
         Some(cadmpeg_ir::features::ParameterValue::Length(
             cadmpeg_ir::features::Length(30.0)
         ))
+    );
+}
+
+#[test]
+fn decode_transfers_a_closed_constant_formula() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "LENGTH",
+                Some(12.0),
+                "10mm+2mm",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode constant formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("constant formula output")
+    };
+    assert_eq!(output.name, "Result");
+    assert_eq!(output.expression, "10mm+2mm");
+    assert!(output.dependencies.is_empty());
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(12.0)
+        ))
+    );
+    assert!(decoded
+        .source_fidelity
+        .annotations
+        .exactness
+        .get(&output.id.0)
+        .is_none_or(|annotation| !annotation.fields.contains_key("expression")));
+}
+
+#[test]
+fn decode_rejects_a_constant_formula_that_disagrees_with_its_stored_result() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "LENGTH",
+                Some(13.0),
+                "10mm+2mm",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode mismatched constant formula");
+
+    assert!(decoded.ir.model.parameters.is_empty());
+    assert_eq!(
+        decoded.report.coverage["transferred_formula_design_record_count"],
+        0
     );
 }
 
