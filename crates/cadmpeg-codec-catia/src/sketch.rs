@@ -10,15 +10,30 @@ use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 use crate::native::{CatiaNative, CatiaObjectRecord};
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct SketchTransfer {
+    pub(crate) declaration_records: HashSet<String>,
+    pub(crate) placement_records: HashSet<String>,
+}
+
+impl SketchTransfer {
+    pub(crate) fn consumed_records(&self) -> HashSet<String> {
+        self.declaration_records
+            .union(&self.placement_records)
+            .cloned()
+            .collect()
+    }
+}
+
 /// Transfer identity-complete sketch declarations.
-pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> HashSet<String> {
+pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfer {
     let records = native
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
         .map(|record| (record.id.as_str(), record))
         .collect::<HashMap<_, _>>();
-    let mut consumed_object_records = HashSet::new();
+    let mut transfer = SketchTransfer::default();
 
     for object in &native.design_objects {
         if object.owner_record.is_none() {
@@ -70,13 +85,13 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> HashSet
             profiles: Vec::new(),
             native_ref: Some(object.id.clone()),
         });
-        consumed_object_records.extend(
+        transfer.declaration_records.extend(
             declarations
                 .into_iter()
                 .map(|declaration| declaration.id.clone()),
         );
         if resolved_placement.is_some() {
-            consumed_object_records.extend(
+            transfer.placement_records.extend(
                 plane_declarations
                     .into_iter()
                     .map(|declaration| declaration.id.clone()),
@@ -84,7 +99,7 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> HashSet
         }
     }
 
-    consumed_object_records
+    transfer
 }
 
 fn complete_empty_declaration(

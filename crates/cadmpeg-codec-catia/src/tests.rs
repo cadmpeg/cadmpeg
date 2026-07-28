@@ -1718,6 +1718,28 @@ fn standard_catpart_with_prt_sketch() -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_prt_sketch_on_xy_plane() -> Vec<u8> {
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+    ];
+    let mut design = entity_backed_object_graph(&records, &[2, 3, 4]);
+    design.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "xy-plane",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, design);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_catalog() -> Vec<u8> {
     let catalog = catalog_stream(&[
         "CATCatalogManager",
@@ -5512,7 +5534,7 @@ fn complete_prt_sketch_declaration_transfers_neutral_identity() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -5552,7 +5574,7 @@ fn complete_zx_plane_declaration_places_the_sketch() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -5602,7 +5624,7 @@ fn complete_yz_plane_declaration_places_the_sketch() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -5653,7 +5675,7 @@ fn repeated_xy_plane_declarations_share_one_sketch_placement() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -5705,7 +5727,7 @@ fn conflicting_principal_plane_declarations_leave_placement_unresolved() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -5734,7 +5756,7 @@ fn complete_sketch_declaration_transfers_neutral_identity() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -5765,7 +5787,7 @@ fn repeated_complete_sketch_declarations_transfer_one_identity() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -5796,7 +5818,7 @@ fn equal_sketch_names_from_distinct_schema_entries_do_not_merge() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
 
     assert!(consumed.is_empty());
     assert!(ir.model.sketches.is_empty());
@@ -5813,14 +5835,52 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
 
     assert_eq!(decoded.ir.model.sketches.len(), 1);
     assert_eq!(
-        decoded.report.coverage["transferred_sketch_design_record_count"],
+        decoded.report.coverage["transferred_sketch_declaration_record_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_placement_record_count"],
+        0
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 1);
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss
+                .message
+                .contains("1 exact sketch declaration field record(s)")
+            && loss
+                .message
+                .contains("0 exact sketch placement field record(s)")
+            && loss.message.contains("1 field record(s)")
+    }));
+}
+
+#[test]
+fn catpart_decode_accounts_for_sketch_declaration_and_placement_separately() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_prt_sketch_on_xy_plane()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated placed sketch declaration");
+
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_declaration_record_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_placement_record_count"],
         1
     );
     assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 1);
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains("1 exact sketch field record(s)")
-            && loss.message.contains("1 field record(s)")
+            && loss
+                .message
+                .contains("1 exact sketch declaration field record(s)")
+            && loss
+                .message
+                .contains("1 exact sketch placement field record(s)")
     }));
 }
 
@@ -5838,7 +5898,7 @@ fn prt_sketch_field_without_a_resolved_owner_does_not_transfer() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
 
     assert!(consumed.is_empty());
     assert!(ir.model.sketches.is_empty());
