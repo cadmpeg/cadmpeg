@@ -894,6 +894,8 @@ struct DesignConstraintTransferCoverage {
     native: usize,
     active: usize,
     active_native: usize,
+    native_by_kind: BTreeMap<u32, usize>,
+    active_native_by_kind: BTreeMap<u32, usize>,
 }
 
 impl DesignConstraintTransferCoverage {
@@ -918,23 +920,51 @@ fn design_constraint_transfer_coverage(
             DesignConstraintTransferCoverage::default(),
             |mut coverage, constraint| {
                 coverage.transferred += 1;
-                let native = matches!(
-                    &constraint.definition,
+                let native_kind_text = match &constraint.definition {
                     SketchConstraintDefinition::Native { native_kind, .. }
-                        if native_kind.starts_with(native_kind_prefix)
-                );
-                if native {
+                        if native_kind.starts_with(native_kind_prefix) =>
+                    {
+                        Some(native_kind.as_str())
+                    }
+                    _ => None,
+                };
+                let native_kind = native_kind_text
+                    .and_then(|kind| kind.strip_prefix(native_kind_prefix))
+                    .and_then(|kind| kind.parse().ok());
+                if native_kind_text.is_some() {
                     coverage.native += 1;
+                }
+                if let Some(native_kind) = native_kind {
+                    *coverage.native_by_kind.entry(native_kind).or_default() += 1;
+                    if constraint.active == Some(true) {
+                        *coverage
+                            .active_native_by_kind
+                            .entry(native_kind)
+                            .or_default() += 1;
+                    }
                 }
                 if constraint.active == Some(true) {
                     coverage.active += 1;
-                    if native {
+                    if native_kind_text.is_some() {
                         coverage.active_native += 1;
                     }
                 }
                 coverage
             },
         )
+}
+
+fn constraint_kind_breakdown(coverage: &BTreeMap<String, usize>, prefix: &str) -> String {
+    coverage
+        .iter()
+        .filter_map(|(key, count)| {
+            let kind = key
+                .strip_prefix(prefix)?
+                .strip_suffix("_constraint_count")?;
+            (*count != 0).then_some(format!("type {kind}={count}"))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn curve_transfer_coverage(
@@ -24753,6 +24783,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             "active_typed_feature_skamp_constraint_count".to_string(),
             skamp_constraint_coverage.active_typed(),
         );
+        for (kind, count) in &skamp_constraint_coverage.native_by_kind {
+            coverage.insert(
+                format!("transferred_native_feature_skamp_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
+        for (kind, count) in &skamp_constraint_coverage.active_native_by_kind {
+            coverage.insert(
+                format!("active_native_feature_skamp_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
         coverage.insert(
             "decoded_feature_relation_count".to_string(),
             decoded_feature_relation_count,
@@ -24781,6 +24823,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             "active_typed_feature_relation_constraint_count".to_string(),
             relation_constraint_coverage.active_typed(),
         );
+        for (kind, count) in &relation_constraint_coverage.native_by_kind {
+            coverage.insert(
+                format!("transferred_native_feature_relation_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
+        for (kind, count) in &relation_constraint_coverage.active_native_by_kind {
+            coverage.insert(
+                format!("active_native_feature_relation_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
     }
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     let operation_feature_ids = scan
@@ -27119,19 +27173,22 @@ fn build_report(
     }
     let active_native_skamps = count("active_native_feature_skamp_constraint_count");
     if active_native_skamps != 0 {
+        let kinds = constraint_kind_breakdown(&coverage, "active_native_feature_skamp_type_");
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(
                 "{active_native_skamps} active section incidence constraint(s) retain native \
-                 operands because their neutral semantics or referenced geometry remain unresolved."
+                 operands because their neutral semantics or referenced geometry remain unresolved \
+                 ({kinds})."
             ),
             provenance: None,
         });
     }
     let active_native_relations = count("active_native_feature_relation_constraint_count");
     if active_native_relations != 0 {
+        let kinds = constraint_kind_breakdown(&coverage, "active_native_feature_relation_type_");
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::Attribute,
@@ -27139,7 +27196,7 @@ fn build_report(
             message: format!(
                 "{active_native_relations} active section dimension relation(s) retain native \
                  operands because their neutral semantics, incidence join, or referenced geometry \
-                 remain unresolved."
+                 remain unresolved ({kinds})."
             ),
             provenance: None,
         });

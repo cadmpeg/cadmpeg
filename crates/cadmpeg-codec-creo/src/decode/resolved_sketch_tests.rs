@@ -1179,6 +1179,28 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     assert_eq!(coverage.active, 2);
     assert_eq!(coverage.active_native, 1);
     assert_eq!(coverage.active_typed(), 1);
+    assert_eq!(coverage.native_by_kind, BTreeMap::from([(9, 1)]));
+    assert_eq!(coverage.active_native_by_kind, BTreeMap::from([(9, 1)]));
+    assert_eq!(
+        constraint_kind_breakdown(
+            &BTreeMap::from([
+                (
+                    "active_native_feature_relation_type_1_constraint_count".to_string(),
+                    2,
+                ),
+                (
+                    "active_native_feature_relation_type_9_constraint_count".to_string(),
+                    1,
+                ),
+                (
+                    "transferred_native_feature_relation_type_9_constraint_count".to_string(),
+                    4,
+                ),
+            ]),
+            "active_native_feature_relation_type_",
+        ),
+        "type 1=2, type 9=1"
+    );
 }
 
 #[test]

@@ -76,6 +76,9 @@ fixtures, claims above L1 remain unproven.
 - Every decoded section-dimension row transfers as a definition-scoped design
   parameter; table completeness gates ordinal relation joins, not row
   preservation.
+- Constraint coverage separates typed and native `skamp_ptr` incidences and
+  `relat_ptr` relations by discriminator, including the active native subset.
+  Diagnostics report every nonzero active native discriminator.
 - Every decoded non-null `segtab.verhor` field transfers as a distinct source
   constraint. Values zero and one on a line use the defined neutral vertical
   and horizontal forms; other segment families and selector values retain the
