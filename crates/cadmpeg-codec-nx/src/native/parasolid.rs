@@ -222,6 +222,8 @@ pub struct ParasolidDeltasReferenceMarkerPacket {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "schema", rename_all = "snake_case")]
 pub enum ParasolidDeltasInlineSchemaFields {
+    /// Type 12 `BODY` schema header without following instance state.
+    BodyHeader,
     /// REGION declaration state.
     Region {
         xmt: u32,
@@ -511,6 +513,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         for declaration in census.inline_schema_declarations {
             let bytes = &stream.inflated[declaration.offset..declaration.end];
             let fields = match declaration.fields {
+                crate::deltas::InlineSchemaFields::BodyHeader => {
+                    ParasolidDeltasInlineSchemaFields::BodyHeader
+                }
                 crate::deltas::InlineSchemaFields::Region {
                     xmt,
                     state_word,

@@ -519,8 +519,16 @@ The leading reference is non-null and uses compact or extended XMT encoding.
 `marker` is `53` or `56`. The two remaining references are the null XMT value
 `1`. The packet ends after the final status byte.
 
-An inline schema declaration begins with one of three exact headers. The
-REGION form begins with
+An inline schema declaration begins with one of four exact headers. The type-12
+`BODY` form is a 282-byte header beginning `000c2443434349` and ending
+`6d6573685f6f66667365745f6461746100ce00015a`. It declares `lattice`, `mesh`,
+`polyline`, `owner`, `boundary_lattice`, `boundary_mesh`,
+`boundary_polyline`, `index_map_offset`, `index_map`, `node_id_index_map`,
+`schema_embedding_map`, `child`, `lowest_node_id`, and `mesh_offset_data` in
+that order. The header ends at `5a`; following instance-state bytes are not
+part of the declaration.
+
+The REGION form begins with
 `00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.
 The header is followed by `xmt, state_word:u32 BE, ref_status[4]`. `xmt` is
 non-null. Each reference uses compact or extended XMT encoding and is followed
@@ -536,12 +544,12 @@ Its body is the type-70 body without the leading type tag or optional escaped
 envelope. Adjacent inline declarations are independently framed and may occur
 in either order.
 
-The union of the transmit header, those events, tagged-reference lanes, reference-state packets,
-reference/type maps, reference-marker packets, and inline schema declarations
-defines the typed deltas-event coverage. Each maximal nonempty complement
-interval in the inflated stream is one residual span. Residual spans retain
-their exact offset, length, and SHA-256 independently of the containing
-compressed stream.
+The union of the transmit header, those events, tagged-reference lanes,
+reference-state packets, schema reference preambles, reference/type maps,
+reference-marker packets, and inline schema declarations defines the typed
+deltas-event coverage. Each maximal nonempty complement interval in the
+inflated stream is one residual span. Residual spans retain their exact offset,
+length, and SHA-256 independently of the containing compressed stream.
 
 **Full record:**
 
