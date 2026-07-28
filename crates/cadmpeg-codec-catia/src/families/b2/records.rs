@@ -1566,6 +1566,37 @@ pub fn b2_cone_geometry(cone: &B2Cone) -> SurfaceGeometry {
     }
 }
 
+/// Build the exact neutral carrier of a validated radius-scaled sphere chart.
+#[must_use]
+pub fn b2_sphere_geometry(sphere: &B2Sphere) -> SurfaceGeometry {
+    SurfaceGeometry::Sphere {
+        center: Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
+        axis: Vector3::new(sphere.axis[0], sphere.axis[1], sphere.axis[2]),
+        ref_direction: Vector3::new(
+            sphere.direction_x[0],
+            sphere.direction_x[1],
+            sphere.direction_x[2],
+        ),
+        radius: sphere.radius,
+    }
+}
+
+/// Build the exact neutral carrier of a validated doubly periodic torus chart.
+#[must_use]
+pub fn b2_torus_geometry(torus: &B2Torus) -> SurfaceGeometry {
+    SurfaceGeometry::Torus {
+        center: Point3::new(torus.center[0], torus.center[1], torus.center[2]),
+        axis: Vector3::new(torus.axis[0], torus.axis[1], torus.axis[2]),
+        ref_direction: Vector3::new(
+            torus.direction_x[0],
+            torus.direction_x[1],
+            torus.direction_x[2],
+        ),
+        major_radius: torus.major_radius,
+        minor_radius: torus.minor_radius,
+    }
+}
+
 /// Decode standalone `b2 03 28` analytic cylinder supports.
 #[must_use]
 pub fn b2_cylinders(data: &[u8]) -> Vec<B2Cylinder> {

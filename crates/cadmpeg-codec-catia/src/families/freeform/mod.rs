@@ -182,6 +182,26 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
                 source_tag: format!("b2_03_29:frame_offset:{:010}", surface.pos),
             }),
     );
+    surfaces.extend(
+        crate::families::b2::records::b2_spheres(data)
+            .into_iter()
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: crate::families::b2::records::b2_sphere_geometry(&surface),
+                source_object: cgm_source_key("b2-03-2a-frame", format!("{:010}", surface.pos)),
+                source_tag: format!("b2_03_2a:frame_offset:{:010}", surface.pos),
+            }),
+    );
+    surfaces.extend(
+        crate::families::b2::records::b2_tori(data)
+            .into_iter()
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: crate::families::b2::records::b2_torus_geometry(&surface),
+                source_object: cgm_source_key("b2-03-2b-frame", format!("{:010}", surface.pos)),
+                source_tag: format!("b2_03_2b:frame_offset:{:010}", surface.pos),
+            }),
+    );
     surfaces
 }
 
@@ -843,5 +863,53 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
         second_limit: Vector3::new(values[3], values[4], values[5]),
         center: Vector3::new(values[6], values[7], values[8]),
         angle: values[9],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::freeform_surface_carriers;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    #[test]
+    fn freeform_fallback_retains_exact_consolidated_spheres() {
+        let carriers = freeform_surface_carriers(&crate::tests::b2_sphere_stream());
+        assert!(matches!(
+            carriers.as_slice(),
+            [carrier]
+                if matches!(
+                    carrier.geometry,
+                    SurfaceGeometry::Sphere {
+                        center,
+                        axis,
+                        ref_direction,
+                        radius: 5.0,
+                    } if center == Point3::new(1.0, 2.0, 3.0)
+                        && axis == Vector3::new(0.0, 0.0, 1.0)
+                        && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                )
+        ));
+    }
+
+    #[test]
+    fn freeform_fallback_retains_exact_consolidated_tori() {
+        let carriers = freeform_surface_carriers(&crate::tests::b2_torus_stream());
+        assert!(matches!(
+            carriers.as_slice(),
+            [carrier]
+                if matches!(
+                    carrier.geometry,
+                    SurfaceGeometry::Torus {
+                        center,
+                        axis,
+                        ref_direction,
+                        major_radius: 7.0,
+                        minor_radius: 2.0,
+                    } if center == Point3::new(1.0, 2.0, 3.0)
+                        && axis == Vector3::new(0.0, 0.0, 1.0)
+                        && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                )
+        ));
     }
 }

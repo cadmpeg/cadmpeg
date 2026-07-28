@@ -91,6 +91,9 @@ current scores require those matrices and representative fixtures.
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;
   missing and multiply matching records leave the standard carrier unchanged.
+- The freeform fallback transfers complete consolidated cylinder, cone, sphere,
+  and torus records as placed analytic surface carriers independently of
+  unresolved topology ownership.
 - Zero-entity surface carriers retain their complete face-local `21xx` support
   tapes. Every occurrence keeps its framed local slot, record family, and
   inline UV endpoint pair when that family stores one. The independent `5e1a`

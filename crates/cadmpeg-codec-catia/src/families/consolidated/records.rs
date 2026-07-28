@@ -17,9 +17,9 @@ use std::collections::HashMap;
 use crate::families::a5a8::records::{a5_pcurves, a5_surfaces, FreeformSurface};
 use crate::families::b2::records::{
     b2_circles, b2_class25_descriptors, b2_cone_point, b2_cones, b2_cylinder_point, b2_cylinders,
-    b2_edge_nodes, b2_edge_parameters, b2_embedded_cylinders, b2_pcurves, b2_use_metadata,
-    point_distance, B2Circle, B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode,
-    B2EdgeParameters, B2EmbeddedCylinder, B2UseMetadata,
+    b2_edge_nodes, b2_edge_parameters, b2_embedded_cylinders, b2_line_profiles, b2_pcurves,
+    b2_use_metadata, point_distance, B2Circle, B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode,
+    B2EdgeParameters, B2EmbeddedCylinder, B2LineProfile, B2UseMetadata,
 };
 use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
@@ -96,6 +96,16 @@ pub struct ConsolidatedClass25EdgeRun {
     pub node: B2EdgeNode,
     /// Whether the use references and endpoint selectors close one allocation chain.
     pub identity_chain_consistent: bool,
+}
+
+/// Complete straight-edge production beginning with its metric line carrier
+/// and ending with the native edge node that references allocation `7`.
+#[derive(Debug, Clone)]
+pub struct ConsolidatedLineEdgeRun {
+    /// Exact placed-line carrier at the start of the production.
+    pub line: B2LineProfile,
+    /// Native edge node at the end of the production.
+    pub node: B2EdgeNode,
 }
 
 /// Two adjacent oriented uses and their terminal native edge node.
@@ -594,6 +604,40 @@ pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
                 node,
                 identity_chain_consistent,
             })
+        })
+        .collect()
+}
+
+/// Decode the length-closed straight-edge production
+/// `0e,5b,5c,24,06,06,05,05,5d,5d,5e`.
+///
+/// The terminal node closes on the carrier allocation with curve reference
+/// `7`; its endpoint-parameter selectors close on allocations `6` and `5`.
+#[must_use]
+pub fn consolidated_line_edge_runs(data: &[u8]) -> Vec<ConsolidatedLineEdgeRun> {
+    const CLASSES: [u8; 11] = [
+        0x0e, 0x5b, 0x5c, 0x24, 0x06, 0x06, 0x05, 0x05, 0x5d, 0x5d, 0x5e,
+    ];
+    let lines = b2_line_profiles(data)
+        .into_iter()
+        .map(|line| (line.pos, line))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = b2_edge_nodes(data)
+        .into_iter()
+        .map(|node| (node.pos, node))
+        .collect::<BTreeMap<_, _>>();
+    consolidated_records(data)
+        .windows(CLASSES.len())
+        .filter_map(|window| {
+            if !window.iter().zip(CLASSES).all(|(record, class)| {
+                record.family == ConsolidatedFamily::B && record.class == class
+            }) {
+                return None;
+            }
+            let line = lines.get(&window[0].range.start)?.clone();
+            let node = *nodes.get(&window[10].range.start)?;
+            (node.curve_ref == 7 && [node.start_parameter_ref, node.end_parameter_ref] == [6, 5])
+                .then_some(ConsolidatedLineEdgeRun { line, node })
         })
         .collect()
 }

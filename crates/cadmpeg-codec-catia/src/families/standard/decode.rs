@@ -216,20 +216,7 @@ fn refine_consolidated_analytic_surfaces(
                 }))
                 .map(|sphere| {
                     (
-                        SurfaceGeometry::Sphere {
-                            center: Point3::new(
-                                sphere.center[0],
-                                sphere.center[1],
-                                sphere.center[2],
-                            ),
-                            axis: Vector3::new(sphere.axis[0], sphere.axis[1], sphere.axis[2]),
-                            ref_direction: Vector3::new(
-                                sphere.direction_x[0],
-                                sphere.direction_x[1],
-                                sphere.direction_x[2],
-                            ),
-                            radius: sphere.radius,
-                        },
+                        crate::families::b2::records::b2_sphere_geometry(sphere),
                         sphere.pos,
                     )
                 })
@@ -248,17 +235,7 @@ fn refine_consolidated_analytic_surfaces(
             }))
             .map(|torus| {
                 (
-                    SurfaceGeometry::Torus {
-                        center: Point3::new(torus.center[0], torus.center[1], torus.center[2]),
-                        axis: Vector3::new(torus.axis[0], torus.axis[1], torus.axis[2]),
-                        ref_direction: Vector3::new(
-                            torus.direction_x[0],
-                            torus.direction_x[1],
-                            torus.direction_x[2],
-                        ),
-                        major_radius: torus.major_radius,
-                        minor_radius: torus.minor_radius,
-                    },
+                    crate::families::b2::records::b2_torus_geometry(torus),
                     torus.pos,
                 )
             }),

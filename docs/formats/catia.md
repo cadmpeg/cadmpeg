@@ -354,6 +354,8 @@ The 72-byte payload is `<origin:3f64le> <direction:3f64le> <metric_scale:f64le> 
 
 Every record defines a placed line carrier with the stored origin and direction. When `metric_scale=1`, its neutral parameter is signed distance in millimetres. Retain the stored metric scalar and interval independently of unresolved parameter mapping and ownership.
 
+A straight-edge production is the contiguous B-family sequence `0e,5b,5c,24,06,06,05,05,5d,5d,5e`. The initial `0e` record is the edge's line carrier. The terminal `5e` node references carrier allocation `7` and endpoint-parameter allocations `6,5`; failure of either identity leaves the carrier unbound.
+
 ### 5.11 Cylinder record `b2 03 28`
 
 Three payload layouts encode cylinder charts. Layout `0x5a` is `<origin:3f64le> <frame_token:u8> <vector:2f64le> <one:f64le> <radius:f64le> <u_range:2f64le> <v_range:2f64le> 07`. The vector is unit length and `one=1`. Frame token `0x19` makes `(vx,vy,0)` the axis and `(-vy,vx,0)` the reference direction. Frame token `0x1c` makes `(vx,vy,0)` the reference direction and `(vy,-vx,0)` the axis. Layout `0x52` is `<origin:3f64le> 1d <one:f64le> <one:f64le> <radius:f64le> <u_range:2f64le> <v_range:2f64le> 07`; its axis is `(1,0,0)` and reference direction is `(0,1,0)`.

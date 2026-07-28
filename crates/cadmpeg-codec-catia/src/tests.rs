@@ -4524,6 +4524,89 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
+fn consolidated_line_edge_run_stream() -> Vec<u8> {
+    fn record(class: u8, payload: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0xb2, 0x03, class, payload.len() as u8, 0x05];
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    let mut bytes = b2_line_profile_stream();
+    for class in [0x5b, 0x5c, 0x24, 0x06, 0x06, 0x05, 0x05, 0x5d, 0x5d] {
+        bytes.extend_from_slice(&record(class, &[0x00]));
+    }
+    bytes.extend_from_slice(&record(0x5e, &[0x1d, 0x09, 0x05, 0x19, 0x15, 0x21]));
+    bytes
+}
+
+#[test]
+fn consolidated_line_edge_production_binds_its_carrier_to_the_terminal_node() {
+    let bytes = consolidated_line_edge_run_stream();
+    let runs = crate::families::consolidated::records::consolidated_line_edge_runs(&bytes);
+    let [run] = runs.as_slice() else {
+        panic!("one straight-edge production")
+    };
+    assert_eq!(run.line.pos, 0);
+    assert_eq!(run.node.curve_ref, 7);
+    assert_eq!(
+        [run.node.start_parameter_ref, run.node.end_parameter_ref],
+        [6, 5]
+    );
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(
+        native.consolidated_edge_nodes[0].line_profile.as_deref(),
+        Some("catia:consolidated:line-profile#0")
+    );
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store line binding");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load line binding"),
+        native
+    );
+
+    let mut file = standard_catpart();
+    file.splice(16..16, bytes);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode bound consolidated line profile");
+    assert_eq!(
+        decoded.report.coverage["bound_consolidated_line_profile_count"],
+        1
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_edge_nodes[0].line_profile = Some("missing".to_string());
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid line binding");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn consolidated_line_edge_production_requires_exact_structure_and_identities() {
+    let bytes = consolidated_line_edge_run_stream();
+    let line_end = b2_line_profile_stream().len();
+
+    let mut interrupted = bytes.clone();
+    interrupted[line_end + 2] = 0x5a;
+    assert!(
+        crate::families::consolidated::records::consolidated_line_edge_runs(&interrupted)
+            .is_empty()
+    );
+
+    let mut wrong_curve_identity = bytes;
+    let node_payload = wrong_curve_identity.len() - 6;
+    wrong_curve_identity[node_payload] = 0x19;
+    assert!(
+        crate::families::consolidated::records::consolidated_line_edge_runs(&wrong_curve_identity)
+            .is_empty()
+    );
+}
+
 #[test]
 fn decode_reports_exact_consolidated_line_profiles() {
     let mut file = standard_catpart();
