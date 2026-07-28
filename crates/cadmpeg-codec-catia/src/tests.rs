@@ -2117,7 +2117,18 @@ fn standard_catpart_with_typed_formula_inputs_and_object_payload(
     file
 }
 
-fn standard_catpart_with_formula_chain(cyclic: bool, duplicate_output: bool) -> Vec<u8> {
+#[derive(Clone, Copy)]
+enum FormulaChainCase {
+    Linear,
+    Cyclic,
+    DuplicateTerminal,
+    DuplicateIntermediate,
+}
+
+fn standard_catpart_with_formula_chain(case: FormulaChainCase) -> Vec<u8> {
+    let cyclic = matches!(case, FormulaChainCase::Cyclic);
+    let duplicate_terminal = matches!(case, FormulaChainCase::DuplicateTerminal);
+    let duplicate_intermediate = matches!(case, FormulaChainCase::DuplicateIntermediate);
     let definition = |ordinal: u32| {
         let mut bytes = vec![0x00, 0x08, 0x32];
         bytes.extend_from_slice(&ordinal.to_le_bytes());
@@ -2186,23 +2197,39 @@ fn standard_catpart_with_formula_chain(cyclic: bool, duplicate_output: bool) -> 
     stream.extend(entity_table_record_with_definition_and_value(
         6,
         &definition(5),
-        &expression_value(if duplicate_output {
+        &expression_value(if duplicate_terminal {
             [6, 7, 8, 9, 10, 11]
         } else {
             [16, 17, 8, 18, 10, 11]
         }),
     ));
     stream.extend(parameter(7, 19, 20, 3.0));
+    if duplicate_intermediate {
+        stream.extend(entity_table_record_with_definition_and_value(
+            8,
+            &definition(4),
+            &[0xfe],
+        ));
+        stream.extend(entity_table_record_with_definition_and_value(
+            9,
+            &definition(5),
+            &expression_value([6, 7, 8, 9, 10, 11]),
+        ));
+    }
     stream.push(0xde);
-    stream.extend(object_graph_from_records(&[
+    let mut objects = vec![
         formula_object(1, 2, 4),
         empty_object(),
         empty_object(),
         empty_object(),
-        formula_object(5, 6, if duplicate_output { 4 } else { 7 }),
+        formula_object(5, 6, if duplicate_terminal { 4 } else { 7 }),
         empty_object(),
         empty_object(),
-    ]));
+    ];
+    if duplicate_intermediate {
+        objects.extend([formula_object(8, 9, 4), empty_object()]);
+    }
+    stream.extend(object_graph_from_records(&objects));
     let first_expression = if cyclic { "#3_ /4" } else { "#1_ /2+1mm" };
     let first_placeholder = if cyclic { "#3_ " } else { "#1_ " };
     let first_signature = if cyclic {
@@ -10148,7 +10175,9 @@ fn decode_transfers_each_supported_formula_input_independently() {
 fn decode_transfers_a_chained_formula_definition_once() {
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_formula_chain(false, false)),
+            &mut Cursor::new(standard_catpart_with_formula_chain(
+                FormulaChainCase::Linear,
+            )),
             &DecodeOptions::default(),
         )
         .expect("decode formula chain");
@@ -10169,7 +10198,9 @@ fn decode_transfers_a_chained_formula_definition_once() {
 fn decode_rejects_multiple_formula_definitions_for_one_output() {
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_formula_chain(false, true)),
+            &mut Cursor::new(standard_catpart_with_formula_chain(
+                FormulaChainCase::DuplicateTerminal,
+            )),
             &DecodeOptions::default(),
         )
         .expect("decode duplicate formula output");
@@ -10182,10 +10213,43 @@ fn decode_rejects_multiple_formula_definitions_for_one_output() {
 }
 
 #[test]
+fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_chain(
+                FormulaChainCase::DuplicateIntermediate,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode ambiguous intermediate formula output");
+    let [input, intermediate, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("scalar fallback and downstream formula parameters")
+    };
+
+    assert_eq!(input.name, "Input");
+    assert_eq!(intermediate.name, "Intermediate");
+    assert_eq!(intermediate.expression, "2 mm");
+    assert_eq!(
+        intermediate.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(2.0)
+        ))
+    );
+    assert!(intermediate.dependencies.is_empty());
+    assert_eq!(output.expression, "#2_ /3+1mm");
+    assert_eq!(output.dependencies, std::slice::from_ref(&intermediate.id));
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+        .findings
+        .is_empty());
+}
+
+#[test]
 fn decode_rejects_a_cyclic_formula_component() {
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_formula_chain(true, false)),
+            &mut Cursor::new(standard_catpart_with_formula_chain(
+                FormulaChainCase::Cyclic,
+            )),
             &DecodeOptions::default(),
         )
         .expect("decode cyclic formula component");

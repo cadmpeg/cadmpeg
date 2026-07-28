@@ -123,6 +123,7 @@ pub(crate) fn transfer_parameters(
                     native_ref: Some(entity.id.clone()),
                 },
                 formula_output: false,
+                input_fallback: None,
                 source_order: entity.byte_offset,
             });
         }
@@ -179,6 +180,7 @@ pub(crate) fn transfer_parameters(
                                     native_ref: Some(output.id.clone()),
                                 },
                                 formula_output: true,
+                                input_fallback: None,
                                 source_order: output.byte_offset,
                             });
                         }
@@ -187,13 +189,21 @@ pub(crate) fn transfer_parameters(
             }
         }
 
-        for candidate in transferred {
+        for mut candidate in transferred {
             match candidates.get(&candidate.parameter.id) {
                 Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
                     conflicting.insert(candidate.parameter.id);
                 }
                 Some(existing) if !existing.formula_output && candidate.formula_output => {
+                    candidate.input_fallback = Some(existing.parameter.clone());
                     candidates.insert(candidate.parameter.id.clone(), candidate);
+                }
+                Some(existing) if existing.formula_output && !candidate.formula_output => {
+                    candidates
+                        .get_mut(&candidate.parameter.id)
+                        .expect("candidate exists")
+                        .input_fallback
+                        .get_or_insert(candidate.parameter);
                 }
                 Some(_) => {}
                 None => {
@@ -208,7 +218,15 @@ pub(crate) fn transfer_parameters(
     }
     candidates.retain(|id, candidate| {
         match (candidate.formula_output, formula_definition_counts.get(id)) {
-            (true, Some(count)) => *count == 1,
+            (true, Some(count)) if *count != 1 => {
+                let Some(input) = candidate.input_fallback.take() else {
+                    return false;
+                };
+                candidate.parameter = input;
+                candidate.formula_output = false;
+                true
+            }
+            (true, Some(_)) => true,
             (false, _) | (true, None) => true,
         }
     });
@@ -402,6 +420,7 @@ fn collect_legacy_parameters(
                         native_ref: Some(run.id.clone()),
                     },
                     formula_output: false,
+                    input_fallback: None,
                     source_order: scalar.byte_offset,
                 },
             );
@@ -493,6 +512,7 @@ fn resolved_legacy_type(
 struct FormulaParameterCandidate {
     parameter: DesignParameter,
     formula_output: bool,
+    input_fallback: Option<DesignParameter>,
     source_order: u64,
 }
 
