@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 166;
+pub const CATIA_NATIVE_VERSION: u32 = 167;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1061,6 +1061,21 @@ pub enum CatiaEntitySuffixSelectedValue {
     },
 }
 
+/// Exact trailer framing of one complete entity-record suffix value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaEntitySuffixTrailer {
+    /// No trailer bytes follow the payload.
+    Empty,
+    /// Exact trailer token `81 49`.
+    Token8149,
+    /// Exact trailer token `81 4A`.
+    Token814A,
+    /// Exact trailer token `81 52`.
+    Token8152,
+    /// Exact fixed trailer `FE F6 00{16}`.
+    FixedZeroFrame,
+}
+
 /// One complete typed value in an entity-record suffix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntitySuffixValue {
@@ -1072,10 +1087,8 @@ pub struct CatiaEntitySuffixValue {
     pub prefix_code: u8,
     /// Stored suffix payload.
     pub payload: CatiaEntitySuffixPayload,
-    /// Exact bytes closing the suffix production.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
-    pub trailer: Vec<u8>,
+    /// Exact framing closing the suffix production.
+    pub trailer: CatiaEntitySuffixTrailer,
 }
 
 /// One suffix selector resolved through its graph's source-schema catalog.
@@ -2023,8 +2036,8 @@ fn parameter_value(
     (suffix_value.prefix_atoms == [5, 22, 2]
         && suffix_value.prefix_atom_widths == [1, 1, 1]
         && suffix_value.prefix_code == 0x6a
-        && suffix_value.trailer == [0x81, 0x52])
-    .then_some(())?;
+        && suffix_value.trailer == CatiaEntitySuffixTrailer::Token8152)
+        .then_some(())?;
     let CatiaEntitySuffixPayload::Evaluation {
         evaluation,
         encoding: CatiaEntityEvaluationEncoding::Direct,
@@ -2060,7 +2073,7 @@ fn constraint_range(
     let suffix_value = suffix_value?;
     if suffix_value.prefix_atoms != [4, 22, 2]
         || suffix_value.prefix_atom_widths != [1, 1, 1]
-        || !suffix_value.trailer.is_empty()
+        || suffix_value.trailer != CatiaEntitySuffixTrailer::Empty
     {
         return None;
     }
@@ -2255,17 +2268,22 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             _ => return None,
         }
     };
-    let trailer = suffix.get(trailer_offset..)?;
-    let fixed_zero_frame = trailer.len() == 18
-        && trailer.starts_with(&[0xfe, 0xf6])
-        && trailer[2..].iter().all(|byte| *byte == 0);
-    (matches!(trailer.len(), 0 | 2) || fixed_zero_frame).then_some(())?;
+    let trailer = match suffix.get(trailer_offset..)? {
+        [] => CatiaEntitySuffixTrailer::Empty,
+        [0x81, 0x49] => CatiaEntitySuffixTrailer::Token8149,
+        [0x81, 0x4a] => CatiaEntitySuffixTrailer::Token814A,
+        [0x81, 0x52] => CatiaEntitySuffixTrailer::Token8152,
+        [0xfe, 0xf6, rest @ ..] if rest.len() == 16 && rest.iter().all(|byte| *byte == 0) => {
+            CatiaEntitySuffixTrailer::FixedZeroFrame
+        }
+        _ => return None,
+    };
     Some(CatiaEntitySuffixValue {
         prefix_atoms,
         prefix_atom_widths,
         prefix_code,
         payload,
-        trailer: trailer.to_vec(),
+        trailer,
     })
 }
 

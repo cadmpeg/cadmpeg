@@ -9036,7 +9036,7 @@ fn relation_expression_signature_requires_the_selected_placeholder() {
 fn native_namespace_types_and_validates_named_parameter_values() {
     use crate::native::{
         CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixPayload,
-        CatiaEntitySuffixValue,
+        CatiaEntitySuffixTrailer, CatiaEntitySuffixValue,
     };
 
     let scalar = 35.0_f64.to_bits();
@@ -9065,7 +9065,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
                 evaluation: CatiaEntityEvaluation::Scalar { bits: scalar },
                 encoding: CatiaEntityEvaluationEncoding::Direct,
             },
-            trailer: vec![0x81, 0x52],
+            trailer: CatiaEntitySuffixTrailer::Token8152,
         })
     );
 
@@ -9205,7 +9205,7 @@ fn constraint_range_requires_an_exact_role_and_framing_pair() {
 fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     use crate::native::{
         CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixPayload,
-        CatiaEntitySuffixValue,
+        CatiaEntitySuffixTrailer, CatiaEntitySuffixValue,
     };
 
     let bits = 0.1_f64.to_bits();
@@ -9228,6 +9228,14 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     );
     assert_eq!(
         decoded.report.coverage["decoded_control_entity_suffix_value_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_control_e8_entity_suffix_value_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_control_e9_entity_suffix_value_count"],
         0
     );
     assert_eq!(
@@ -9281,7 +9289,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
                 evaluation: CatiaEntityEvaluation::Scalar { bits },
                 encoding: CatiaEntityEvaluationEncoding::Direct,
             },
-            trailer: vec![0x81, 0x49],
+            trailer: CatiaEntitySuffixTrailer::Token8149,
         })
     );
 
@@ -9378,6 +9386,12 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     ]));
     assert_eq!(incomplete.entity_records[0].suffix_value, None);
 
+    let unknown_trailer =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x84, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x50,
+        ]));
+    assert_eq!(unknown_trailer.entity_records[0].suffix_value, None);
+
     let invalid_prefix =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x7f, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x49,
@@ -9395,6 +9409,14 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     assert_eq!(
         control.report.coverage["decoded_control_entity_suffix_value_count"],
         1
+    );
+    assert_eq!(
+        control.report.coverage["decoded_control_e8_entity_suffix_value_count"],
+        1
+    );
+    assert_eq!(
+        control.report.coverage["decoded_control_e9_entity_suffix_value_count"],
+        0
     );
     let control =
         crate::native::CatiaNative::load(control.ir.native.namespace("catia").expect("namespace"))
@@ -9418,6 +9440,14 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .expect("decode E9 control entity suffix");
     assert_eq!(
         control_e9.report.coverage["decoded_control_entity_suffix_value_count"],
+        1
+    );
+    assert_eq!(
+        control_e9.report.coverage["decoded_control_e8_entity_suffix_value_count"],
+        0
+    );
+    assert_eq!(
+        control_e9.report.coverage["decoded_control_e9_entity_suffix_value_count"],
         1
     );
     let control_e9 = crate::native::CatiaNative::load(
@@ -9791,7 +9821,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .as_ref()
             .expect("complete bare scalar suffix")
             .trailer,
-        Vec::<u8>::new()
+        CatiaEntitySuffixTrailer::Empty
     );
 
     let bare_unset = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
@@ -9825,7 +9855,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
         }
     );
-    assert!(nested_value.trailer.is_empty());
+    assert_eq!(nested_value.trailer, CatiaEntitySuffixTrailer::Empty);
 
     let mut nonfinite_nested = vec![0x84, 0x88, 0x82, 0x32, 0xe6, 0, 0, 0, 0xe6];
     nonfinite_nested.extend_from_slice(&f64::INFINITY.to_bits().to_le_bytes());
@@ -9841,15 +9871,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     let zero_frame_scalar = crate::native::CatiaNative::decode(
         &standard_catpart_with_parameter_value(&zero_frame_scalar),
     );
-    let mut zero_frame = vec![0xfe, 0xf6];
-    zero_frame.extend_from_slice(&[0; 16]);
     assert_eq!(
         zero_frame_scalar.entity_records[0]
             .suffix_value
             .as_ref()
             .expect("complete zero-frame scalar suffix")
             .trailer,
-        zero_frame
+        CatiaEntitySuffixTrailer::FixedZeroFrame
     );
 
     let mut malformed_zero_frame = vec![0x84, 0x96, 0x82, 0x55, 0xe6];
@@ -9885,7 +9913,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .suffix_value
         .as_mut()
         .expect("complete suffix value")
-        .trailer[1] ^= 1;
+        .trailer = CatiaEntitySuffixTrailer::Token814A;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
