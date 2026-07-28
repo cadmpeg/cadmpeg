@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 149;
+pub const CATIA_NATIVE_VERSION: u32 = 150;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1447,16 +1447,15 @@ fn design_objects(
                                             .and_then(|index| graph.records.get(*index))?;
                                         let target_design_object =
                                             record.storage_design_object.clone();
-                                        (target_design_object.as_deref() != Some(id.as_str()))
-                                            .then_some(CatiaDesignObjectRelation {
-                                                source_field: record.id.clone(),
-                                                source_class: design_class(record),
-                                                source: CatiaDesignObjectRelationSource::Storage,
-                                                target_entity_id: record.storage_ref?,
-                                                target_field: target_field.clone(),
-                                                target_class: design_class(target_record),
-                                                target_design_object,
-                                            })
+                                        Some(CatiaDesignObjectRelation {
+                                            source_field: record.id.clone(),
+                                            source_class: design_class(record),
+                                            source: CatiaDesignObjectRelationSource::Storage,
+                                            target_entity_id: record.storage_ref?,
+                                            target_field: target_field.clone(),
+                                            target_class: design_class(target_record),
+                                            target_design_object,
+                                        })
                                     });
                                 storage
                                     .into_iter()
@@ -1466,19 +1465,18 @@ fn design_objects(
                                             .get(&reference.entity_id)
                                             .and_then(|index| graph.records.get(*index))?;
                                         let target_design_object = reference.design_object.clone();
-                                        (target_design_object.as_deref() != Some(id.as_str()))
-                                            .then_some(CatiaDesignObjectRelation {
-                                                source_field: record.id.clone(),
-                                                source_class: design_class(record),
-                                                source: CatiaDesignObjectRelationSource::Payload {
-                                                    payload_offset: reference.payload_offset,
-                                                    container: reference.source.clone(),
-                                                },
-                                                target_entity_id: reference.entity_id,
-                                                target_field,
-                                                target_class: design_class(target_record),
-                                                target_design_object,
-                                            })
+                                        Some(CatiaDesignObjectRelation {
+                                            source_field: record.id.clone(),
+                                            source_class: design_class(record),
+                                            source: CatiaDesignObjectRelationSource::Payload {
+                                                payload_offset: reference.payload_offset,
+                                                container: reference.source.clone(),
+                                            },
+                                            target_entity_id: reference.entity_id,
+                                            target_field,
+                                            target_class: design_class(target_record),
+                                            target_design_object,
+                                        })
                                     }))
                             })
                             .collect(),

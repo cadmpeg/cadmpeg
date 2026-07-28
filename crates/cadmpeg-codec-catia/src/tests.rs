@@ -5306,6 +5306,18 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                 target_class: None,
                 target_design_object: Some(native.design_objects[1].id.clone()),
             },
+            crate::native::CatiaDesignObjectRelation {
+                source_field: graph.records[1].id.clone(),
+                source_class: None,
+                source: crate::native::CatiaDesignObjectRelationSource::Payload {
+                    payload_offset: 0,
+                    container: crate::native::CatiaObjectRecordReferenceSource::Field,
+                },
+                target_entity_id: 1,
+                target_field: graph.records[0].id.clone(),
+                target_class: None,
+                target_design_object: Some(native.design_objects[0].id.clone()),
+            },
         ]
     );
     assert_eq!(
@@ -5430,6 +5442,46 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
     );
     assert_eq!(
         decoded.report.coverage["decoded_design_unowned_field_relation_count"],
+        1
+    );
+}
+
+#[test]
+fn native_design_objects_preserve_reflexive_field_relations() {
+    let records = [object_graph_record(
+        &[0x04, 0x01, 0x81],
+        &[0x81, 0x81, 0xfe],
+    )];
+    let bytes = sequential_entity_backed_object_graph(&records);
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode reflexive field relation");
+    let native =
+        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
+            .expect("load reflexive field relation");
+    let field = &native.object_graphs[0].records[0];
+
+    assert_eq!(
+        native.design_objects[0].relations,
+        [crate::native::CatiaDesignObjectRelation {
+            source_field: field.id.clone(),
+            source_class: None,
+            source: crate::native::CatiaDesignObjectRelationSource::Payload {
+                payload_offset: 0,
+                container: crate::native::CatiaObjectRecordReferenceSource::Field,
+            },
+            target_entity_id: 1,
+            target_field: field.id.clone(),
+            target_class: None,
+            target_design_object: Some(native.design_objects[0].id.clone()),
+        }]
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_design_same_object_relation_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_design_reflexive_field_relation_count"],
         1
     );
 }
