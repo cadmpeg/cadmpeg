@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 135;
+pub const CATIA_NATIVE_VERSION: u32 = 136;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -25,6 +25,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "catalogs",
     "consolidated_class61_records",
     "consolidated_cones",
+    "consolidated_cylinders",
     "consolidated_edge_nodes",
     "consolidated_edge_runs",
     "consolidated_groups",
@@ -164,6 +165,49 @@ pub struct CatiaConsolidatedCone {
     pub slant_range: [f64; 2],
     /// Scale from azimuth to stored U parameter.
     pub angular_scale: f64,
+}
+
+/// Frame-specific payload of one consolidated `B:28` cylinder chart.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CatiaConsolidatedCylinderPayload {
+    /// Complete three-dimensional frame reconstructed from layout `0x52` or `0x5a`.
+    Resolved {
+        /// Token selecting the serialized frame-vector role.
+        frame_token: u8,
+        /// Cylinder-axis unit direction.
+        axis: [f64; 3],
+        /// Unit direction from which the circumferential parameter is measured.
+        reference_direction: [f64; 3],
+    },
+    /// Layout `0x62` values whose token-to-3D frame mapping is unresolved.
+    PhaseTailed {
+        /// Stored unit vector in the token-defined carrier plane.
+        stored_vector: [f64; 2],
+        /// Stored finite phase scalar.
+        phase: f64,
+    },
+}
+
+/// One structurally complete consolidated `B:28` cylinder chart.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedCylinder {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Payload-layout discriminator (`0x52`, `0x5a`, or `0x62`).
+    pub layout: u8,
+    /// Cylinder-axis origin.
+    pub origin: [f64; 3],
+    /// Cylinder radius.
+    pub radius: f64,
+    /// Arc-length circumferential interval.
+    pub u_range: [f64; 2],
+    /// Axial interval.
+    pub v_range: [f64; 2],
+    /// Layout-specific frame data.
+    pub payload: CatiaConsolidatedCylinderPayload,
 }
 
 /// One structurally complete consolidated `A/B:20` pcurve jet whose support
@@ -2124,6 +2168,9 @@ pub struct CatiaNative {
     /// Exact consolidated cone charts.
     #[serde(default)]
     pub consolidated_cones: Vec<CatiaConsolidatedCone>,
+    /// Exact consolidated cylinder charts.
+    #[serde(default)]
+    pub consolidated_cylinders: Vec<CatiaConsolidatedCylinder>,
     /// Structurally complete consolidated edge nodes.
     #[serde(default)]
     pub consolidated_edge_nodes: Vec<CatiaConsolidatedEdgeNode>,
@@ -2182,6 +2229,7 @@ impl Default for CatiaNative {
             catalogs: Vec::new(),
             consolidated_class61_records: Vec::new(),
             consolidated_cones: Vec::new(),
+            consolidated_cylinders: Vec::new(),
             consolidated_edge_nodes: Vec::new(),
             consolidated_edge_runs: Vec::new(),
             consolidated_groups: Vec::new(),
@@ -2274,6 +2322,43 @@ fn consolidated_cones(bytes: &[u8]) -> Vec<CatiaConsolidatedCone> {
             angular_offset: cone.angular_offset,
             slant_range: cone.slant_range,
             angular_scale: cone.angular_scale,
+        })
+        .collect()
+}
+
+fn consolidated_cylinders(bytes: &[u8]) -> Vec<CatiaConsolidatedCylinder> {
+    crate::families::b2::records::b2_cylinders(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, cylinder)| {
+            let payload = match cylinder.geometry {
+                Some(cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                    axis,
+                    ref_direction,
+                    ..
+                }) => CatiaConsolidatedCylinderPayload::Resolved {
+                    frame_token: cylinder.frame_token,
+                    axis: [axis.x, axis.y, axis.z],
+                    reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+                },
+                None => CatiaConsolidatedCylinderPayload::PhaseTailed {
+                    stored_vector: cylinder
+                        .stored_vector
+                        .expect("phase-tailed cylinder has its stored vector"),
+                    phase: cylinder.phase.expect("phase-tailed cylinder has its phase"),
+                },
+                Some(_) => unreachable!("B2 cylinder parser produced a non-cylinder carrier"),
+            };
+            CatiaConsolidatedCylinder {
+                id: format!("catia:consolidated:cylinder#{index}"),
+                byte_offset: cylinder.pos as u64,
+                layout: cylinder.layout,
+                origin: cylinder.origin,
+                radius: cylinder.radius,
+                u_range: cylinder.u_range,
+                v_range: cylinder.v_range,
+                payload,
+            }
         })
         .collect()
 }
@@ -2830,6 +2915,86 @@ fn validate_consolidated_cones(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated cone `{}` is structurally invalid",
                 cone.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_cylinders(
+    cylinders: &[CatiaConsolidatedCylinder],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, cylinder) in cylinders.iter().enumerate() {
+        let expected_id = format!("catia:consolidated:cylinder#{index}");
+        let squared_length =
+            |direction: [f64; 3]| direction.iter().map(|value| value * value).sum::<f64>();
+        let dot = |first: [f64; 3], second: [f64; 3]| {
+            first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
+        };
+        let payload_valid = match &cylinder.payload {
+            CatiaConsolidatedCylinderPayload::Resolved {
+                frame_token,
+                axis,
+                reference_direction,
+            } => {
+                let frame_matches_layout = match cylinder.layout {
+                    0x52 => {
+                        *frame_token == 0x1d
+                            && *axis == [1.0, 0.0, 0.0]
+                            && *reference_direction == [0.0, 1.0, 0.0]
+                    }
+                    0x5a => {
+                        matches!(*frame_token, 0x19 | 0x1c)
+                            && axis[2] == 0.0
+                            && *reference_direction == [-axis[1], axis[0], 0.0]
+                    }
+                    _ => false,
+                };
+                frame_matches_layout
+                    && axis
+                        .iter()
+                        .chain(reference_direction)
+                        .all(|value| value.is_finite())
+                    && (squared_length(*axis) - 1.0).abs() <= 1e-9
+                    && (squared_length(*reference_direction) - 1.0).abs() <= 1e-9
+                    && dot(*axis, *reference_direction).abs() <= 1e-9
+                    && ((cylinder.u_range[1] - cylinder.u_range[0])
+                        - std::f64::consts::TAU * cylinder.radius)
+                        .abs()
+                        <= 1e-6
+            }
+            CatiaConsolidatedCylinderPayload::PhaseTailed {
+                stored_vector,
+                phase,
+            } => {
+                cylinder.layout == 0x62
+                    && stored_vector
+                        .iter()
+                        .chain(std::iter::once(phase))
+                        .all(|value| value.is_finite())
+                    && (stored_vector[0].hypot(stored_vector[1]) - 1.0).abs() <= 1e-9
+                    && cylinder.u_range[1] - cylinder.u_range[0]
+                        <= std::f64::consts::TAU * cylinder.radius + 1e-6
+            }
+        };
+        if cylinder.id != expected_id
+            || cylinder
+                .origin
+                .iter()
+                .chain(&cylinder.u_range)
+                .chain(&cylinder.v_range)
+                .chain(&[cylinder.radius])
+                .any(|value| !value.is_finite())
+            || !(0.0..1e6).contains(&cylinder.radius)
+            || cylinder.u_range[0] >= cylinder.u_range[1]
+            || cylinder.v_range[0] >= cylinder.v_range[1]
+            || !payload_valid
+            || index > 0 && cylinders[index - 1].byte_offset >= cylinder.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated cylinder `{}` is structurally invalid",
+                cylinder.id
             )));
         }
     }
@@ -3773,6 +3938,7 @@ impl CatiaNative {
         let external_references = external_reference_views(&finjpl_segments);
         let consolidated_class61_records = consolidated_class61_records(bytes);
         let consolidated_cones = consolidated_cones(bytes);
+        let consolidated_cylinders = consolidated_cylinders(bytes);
         let consolidated_groups = consolidated_groups(bytes);
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
@@ -3790,6 +3956,7 @@ impl CatiaNative {
             catalogs,
             consolidated_class61_records,
             consolidated_cones,
+            consolidated_cylinders,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
@@ -4172,6 +4339,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_cones")?;
         consolidated_cones.sort_by_key(|cone| cone.byte_offset);
         validate_consolidated_cones(&consolidated_cones)?;
+        let mut consolidated_cylinders: Vec<CatiaConsolidatedCylinder> =
+            namespace.arena_as("consolidated_cylinders")?;
+        consolidated_cylinders.sort_by_key(|cylinder| cylinder.byte_offset);
+        validate_consolidated_cylinders(&consolidated_cylinders)?;
         let mut consolidated_groups: Vec<CatiaConsolidatedGroup> =
             namespace.arena_as("consolidated_groups")?;
         consolidated_groups.sort_by_key(|group| group.byte_offset);
@@ -4223,6 +4394,7 @@ impl CatiaNative {
             catalogs,
             consolidated_class61_records,
             consolidated_cones,
+            consolidated_cylinders,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
@@ -4297,6 +4469,7 @@ impl CatiaNative {
             &self.consolidated_class61_records,
         )?;
         namespace.set_arena("consolidated_cones", &self.consolidated_cones)?;
+        namespace.set_arena("consolidated_cylinders", &self.consolidated_cylinders)?;
         namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
         namespace.set_arena("consolidated_groups", &self.consolidated_groups)?;
@@ -4343,6 +4516,7 @@ impl CatiaNative {
             mut catalogs,
             consolidated_class61_records,
             consolidated_cones,
+            consolidated_cylinders,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
@@ -4380,6 +4554,7 @@ impl CatiaNative {
             &consolidated_class61_records,
         )?;
         namespace.set_arena("consolidated_cones", &consolidated_cones)?;
+        namespace.set_arena("consolidated_cylinders", &consolidated_cylinders)?;
         namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
         namespace.set_arena("consolidated_groups", &consolidated_groups)?;

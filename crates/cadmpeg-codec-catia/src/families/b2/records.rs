@@ -846,8 +846,13 @@ pub struct B2Cylinder {
     /// Record byte offset.
     pub pos: usize,
     /// Payload-layout discriminator (`0x52`, `0x5a`, or `0x62`).
-    #[cfg(test)]
     pub layout: u8,
+    /// Frame token following the origin.
+    pub frame_token: u8,
+    /// Cylinder-axis origin.
+    pub origin: [f64; 3],
+    /// Cylinder radius.
+    pub radius: f64,
     /// Decoded carrier; absent for the unresolved phase-tailed `0x62` frame.
     pub geometry: Option<SurfaceGeometry>,
     /// Arc-length circumferential range.
@@ -855,10 +860,8 @@ pub struct B2Cylinder {
     /// Axial range.
     pub v_range: [f64; 2],
     /// Stored planar vector for a phase-tailed `0x62` frame.
-    #[cfg(test)]
     pub stored_vector: Option<[f64; 2]>,
     /// Phase scalar for a phase-tailed `0x62` frame.
-    #[cfg(test)]
     pub phase: Option<f64>,
 }
 
@@ -1467,7 +1470,13 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let v_range = read_f64_array::<2>(data, p + 73)?;
             if one != 1.0
                 || !(0.0..1e6).contains(&radius)
+                || origin_values.iter().any(|value| !value.is_finite())
+                || vector.iter().any(|value| !value.is_finite())
+                || u_range.iter().any(|value| !value.is_finite())
+                || v_range.iter().any(|value| !value.is_finite())
                 || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
+                || u_range[0] >= u_range[1]
+                || v_range[0] >= v_range[1]
                 || ((u_range[1] - u_range[0]) - 2.0 * std::f64::consts::PI * radius).abs() > 1e-6
             {
                 return None;
@@ -1480,8 +1489,10 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let ref_direction = Vector3::new(-axis.y, axis.x, 0.0);
             Some(B2Cylinder {
                 pos,
-                #[cfg(test)]
                 layout,
+                frame_token,
+                origin: origin_values,
+                radius,
                 geometry: Some(SurfaceGeometry::Cylinder {
                     origin,
                     axis,
@@ -1490,9 +1501,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 }),
                 u_range,
                 v_range,
-                #[cfg(test)]
                 stored_vector: None,
-                #[cfg(test)]
                 phase: None,
             })
         }
@@ -1508,14 +1517,21 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let u_range = read_f64_array::<2>(data, p + 49)?;
             let v_range = read_f64_array::<2>(data, p + 65)?;
             if !(0.0..1e6).contains(&radius)
+                || origin_values.iter().any(|value| !value.is_finite())
+                || u_range.iter().any(|value| !value.is_finite())
+                || v_range.iter().any(|value| !value.is_finite())
+                || u_range[0] >= u_range[1]
+                || v_range[0] >= v_range[1]
                 || ((u_range[1] - u_range[0]) - 2.0 * std::f64::consts::PI * radius).abs() > 1e-6
             {
                 return None;
             }
             Some(B2Cylinder {
                 pos,
-                #[cfg(test)]
                 layout,
+                frame_token,
+                origin: origin_values,
+                radius,
                 geometry: Some(SurfaceGeometry::Cylinder {
                     origin,
                     axis: Vector3::new(1.0, 0.0, 0.0),
@@ -1524,9 +1540,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 }),
                 u_range,
                 v_range,
-                #[cfg(test)]
                 stored_vector: None,
-                #[cfg(test)]
                 phase: None,
             })
         }
@@ -1553,14 +1567,14 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             }
             Some(B2Cylinder {
                 pos,
-                #[cfg(test)]
                 layout,
+                frame_token,
+                origin: origin_values,
+                radius,
                 geometry: None,
                 u_range,
                 v_range,
-                #[cfg(test)]
                 stored_vector: Some(vector),
-                #[cfg(test)]
                 phase: Some(phase),
             })
         }

@@ -433,6 +433,12 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
+
+    for range in [5..13, 78..86] {
+        let mut malformed = b2_cylinder_stream();
+        malformed[range].copy_from_slice(&f64::NAN.to_le_bytes());
+        assert!(crate::families::b2::records::b2_cylinders(&malformed).is_empty());
+    }
 }
 
 #[test]
@@ -468,6 +474,10 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
         cylinders[0].geometry,
         Some(SurfaceGeometry::Cylinder { axis, .. }) if [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
     ));
+
+    let mut malformed = b2_implicit_axis_cylinder_stream();
+    malformed[70..78].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_cylinders(&malformed).is_empty());
 }
 
 #[test]

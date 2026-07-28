@@ -3576,6 +3576,57 @@ fn native_namespace_retains_consolidated_class61_records() {
 }
 
 #[test]
+fn native_namespace_retains_all_consolidated_cylinder_layouts() {
+    let mut stream = b2_cylinder_stream();
+    stream.extend_from_slice(&b2_implicit_axis_cylinder_stream());
+    stream.extend_from_slice(&b2_phase_tailed_cylinder_stream());
+    let native = crate::native::CatiaNative::decode(&stream);
+    let [explicit, implicit, phase_tailed] = native.consolidated_cylinders.as_slice() else {
+        panic!("three consolidated cylinders")
+    };
+    assert_eq!(explicit.layout, 0x5a);
+    assert_eq!(explicit.origin, [1.0, 2.0, 3.0]);
+    assert_eq!(explicit.radius, 2.0);
+    assert!(matches!(
+        explicit.payload,
+        crate::native::CatiaConsolidatedCylinderPayload::Resolved {
+            frame_token: 0x19,
+            axis: [1.0, 0.0, 0.0],
+            reference_direction: [0.0, 1.0, 0.0],
+        }
+    ));
+    assert_eq!(implicit.layout, 0x52);
+    assert!(matches!(
+        implicit.payload,
+        crate::native::CatiaConsolidatedCylinderPayload::Resolved { .. }
+    ));
+    assert_eq!(phase_tailed.layout, 0x62);
+    assert_eq!(phase_tailed.radius, 4.0);
+    assert!(matches!(
+        phase_tailed.payload,
+        crate::native::CatiaConsolidatedCylinderPayload::PhaseTailed {
+            stored_vector: [0.0, 1.0],
+            phase: 0.75,
+        }
+    ));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store CATIA cylinders");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA cylinders"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_cylinders[2].layout = 0x5a;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA cylinder for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_exact_consolidated_cone_charts() {
     let native = crate::native::CatiaNative::decode(&b2_cone_stream());
     let [cone] = native.consolidated_cones.as_slice() else {

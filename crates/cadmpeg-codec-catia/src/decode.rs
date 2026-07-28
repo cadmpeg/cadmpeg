@@ -346,6 +346,10 @@ fn finish_decode(
             native.consolidated_cones.len(),
         ),
         (
+            "decoded_consolidated_cylinder_count".to_string(),
+            native.consolidated_cylinders.len(),
+        ),
+        (
             "decoded_consolidated_group_count".to_string(),
             native.consolidated_groups.len(),
         ),
