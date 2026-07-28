@@ -976,6 +976,16 @@ fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Po
             ((radial.u != 0.0) || (radial.v != 0.0))
                 .then(|| Point2::new(radial.v.atan2(radial.u), axial.u))
         }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            plane_slope,
+        } => {
+            let azimuth = azimuth_origin + azimuth_rate * t;
+            let latitude = (plane_slope * (azimuth - plane_phase).cos()).atan();
+            (azimuth.is_finite() && latitude.is_finite()).then_some(Point2::new(azimuth, latitude))
+        }
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -1103,5 +1113,18 @@ mod tests {
         assert!((polar.v - 3.0).abs() < 1e-12);
         assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
         assert!((polar_nurbs.v - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn spherical_great_circle_pcurve_preserves_affine_source_parameterization() {
+        let geometry = PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin: 0.25,
+            azimuth_rate: 0.5,
+            plane_phase: 1.0,
+            plane_slope: -0.75,
+        };
+        let point = pcurve_uv(&geometry, 1.5).expect("great-circle pcurve evaluates");
+        assert_eq!(point.u, 1.0);
+        assert_eq!(point.v, (-0.75_f64).atan());
     }
 }

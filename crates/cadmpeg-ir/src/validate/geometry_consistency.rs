@@ -389,6 +389,7 @@ fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2
         PcurveGeometry::PolarNurbs { knots, .. } => pcurve
             .parameter_range
             .or_else(|| Some([*knots.first()?, *knots.last()?])),
+        PcurveGeometry::SphericalGreatCircle { .. } => pcurve.parameter_range,
         geometry => pcurve_geometry_parameter_extremes(geometry),
     }
 }
@@ -407,7 +408,8 @@ fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64;
         | PcurveGeometry::Ellipse { .. }
         | PcurveGeometry::Parabola { .. }
         | PcurveGeometry::Hyperbola { .. }
-        | PcurveGeometry::PolarHarmonic { .. } => None,
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => None,
     }
 }
 

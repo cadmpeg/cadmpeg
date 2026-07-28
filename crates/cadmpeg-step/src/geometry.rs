@@ -227,7 +227,9 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
                 &format!("'',{basis},{},.F.", real(*distance)),
             )
         }
-        PcurveGeometry::PolarHarmonic { .. } | PcurveGeometry::PolarNurbs { .. } => return None,
+        PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => return None,
     })
 }
 

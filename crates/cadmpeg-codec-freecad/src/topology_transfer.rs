@@ -1214,6 +1214,10 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
                 *value *= scale;
             }
         }
+        PcurveGeometry::SphericalGreatCircle { plane_slope, .. } => {
+            debug_assert_eq!(scale.abs(), 1.0);
+            *plane_slope *= scale;
+        }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_v(basis, scale);
         }
@@ -1281,6 +1285,17 @@ fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
             for point in radial_control_points {
                 point.v = -point.v;
             }
+        }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            ..
+        } => {
+            debug_assert_eq!(scale, -1.0);
+            *azimuth_origin = -*azimuth_origin;
+            *azimuth_rate = -*azimuth_rate;
+            *plane_phase = -*plane_phase;
         }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_u(basis, scale);

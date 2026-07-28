@@ -1933,6 +1933,17 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
             }
+            crate::geometry::PcurveGeometry::SphericalGreatCircle {
+                azimuth_origin,
+                azimuth_rate,
+                plane_phase,
+                plane_slope,
+            } => {
+                [azimuth_origin, azimuth_rate, plane_phase, plane_slope]
+                    .into_iter()
+                    .all(|value| value.is_finite())
+                    && azimuth_rate.abs() > f64::EPSILON
+            }
             crate::geometry::PcurveGeometry::Nurbs {
                 degree,
                 knots,
@@ -2438,6 +2449,15 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                             .iter()
                             .all(|weight| weight.is_finite() && *weight > 0.0)
                 })
+        }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            plane_slope,
+        } => {
+            finite(&[*azimuth_origin, *azimuth_rate, *plane_phase, *plane_slope])
+                && azimuth_rate.abs() > f64::EPSILON
         }
         PcurveGeometry::Nurbs {
             degree,

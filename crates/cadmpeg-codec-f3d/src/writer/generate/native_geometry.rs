@@ -5748,7 +5748,8 @@ fn native_pcurve_geometry(
         PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }
         | PcurveGeometry::PolarHarmonic { .. }
-        | PcurveGeometry::PolarNurbs { .. } => Err(CodecError::NotImplemented(
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
         PcurveGeometry::Nurbs {

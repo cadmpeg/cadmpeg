@@ -2944,6 +2944,17 @@ pub enum PcurveGeometry {
         #[serde(default)]
         periodic: bool,
     },
+    /// Great-circle locus in a sphere's azimuth/latitude parameter chart.
+    SphericalGreatCircle {
+        /// Azimuth at source parameter zero.
+        azimuth_origin: f64,
+        /// Azimuth change per source parameter unit.
+        azimuth_rate: f64,
+        /// Azimuth of the great-circle plane's maximum signed latitude.
+        plane_phase: f64,
+        /// Signed coefficient in `tan(latitude) = plane_slope·cos(azimuth-plane_phase)`.
+        plane_slope: f64,
+    },
     /// Full circle in parameter space.
     Circle {
         /// Circle center.
