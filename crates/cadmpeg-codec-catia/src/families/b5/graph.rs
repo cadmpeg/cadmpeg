@@ -1974,10 +1974,22 @@ fn parse_offset_surface(
         return None;
     }
     let expected_kind = match surfaces.get(&carrier_surface) {
-        Some(B5Surface::Plane { .. }) => 0x15,
-        Some(B5Surface::Cylinder { .. }) => 0x05,
-        Some(B5Surface::Sphere { .. }) => 0x09,
-        Some(B5Surface::Torus { .. }) => 0x0d,
+        Some(carrier @ B5Surface::Plane { .. }) => {
+            analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
+                .then_some(0x15)?
+        }
+        Some(carrier @ B5Surface::Cylinder { .. }) => {
+            analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
+                .then_some(0x05)?
+        }
+        Some(carrier @ B5Surface::Sphere { .. }) => {
+            analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
+                .then_some(0x09)?
+        }
+        Some(carrier @ B5Surface::Torus { .. }) => {
+            analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
+                .then_some(0x0d)?
+        }
         Some(B5Surface::RollingBall { .. }) => 0x19,
         Some(B5Surface::Unknown {
             family: 0xb5,
@@ -2038,6 +2050,113 @@ fn parse_offset_surface(
         carrier_kind,
         parameter_bounds: [[u0, u1], [v0, v1]],
     })
+}
+
+fn analytic_offset_magnitude_agrees(
+    carrier: &B5Surface,
+    source: &B5Surface,
+    distance: f64,
+) -> bool {
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= 1e-10 * left.abs().max(right.abs()).max(1.0)
+    };
+    let dot = |left: [f64; 3], right: [f64; 3]| {
+        left.into_iter().zip(right).map(|(a, b)| a * b).sum::<f64>()
+    };
+    let difference = |left: [f64; 3], right: [f64; 3]| {
+        [left[0] - right[0], left[1] - right[1], left[2] - right[2]]
+    };
+    let parallel = |left: [f64; 3], right: [f64; 3]| close(dot(left, right).abs(), 1.0);
+    let collinear = |delta: [f64; 3], axis: [f64; 3]| {
+        close(dot(delta, delta), dot(delta, axis) * dot(delta, axis))
+    };
+    let same_point = |left: [f64; 3], right: [f64; 3]| {
+        difference(left, right)
+            .into_iter()
+            .all(|component| close(component, 0.0))
+    };
+    match (carrier, source) {
+        (
+            B5Surface::Plane {
+                origin: carrier_origin,
+                direction_u: carrier_u,
+                direction_v: carrier_v,
+            },
+            B5Surface::Plane {
+                origin: source_origin,
+                direction_u: source_u,
+                direction_v: source_v,
+            },
+        ) => {
+            let (Some(carrier_normal), Some(source_normal)) = (
+                unit(cross(*carrier_u, *carrier_v)),
+                unit(cross(*source_u, *source_v)),
+            ) else {
+                return false;
+            };
+            parallel(carrier_normal, source_normal)
+                && close(
+                    dot(difference(*carrier_origin, *source_origin), source_normal).abs(),
+                    distance.abs(),
+                )
+        }
+        (
+            B5Surface::Cylinder {
+                origin: carrier_origin,
+                axis: carrier_axis,
+                radius: carrier_radius,
+                ..
+            },
+            B5Surface::Cylinder {
+                origin: source_origin,
+                axis: source_axis,
+                radius: source_radius,
+                ..
+            },
+        ) => {
+            let delta = difference(*carrier_origin, *source_origin);
+            parallel(*carrier_axis, *source_axis)
+                && collinear(delta, *source_axis)
+                && close((carrier_radius - source_radius).abs(), distance.abs())
+        }
+        (
+            B5Surface::Sphere {
+                center: carrier_center,
+                radius: carrier_radius,
+                ..
+            },
+            B5Surface::Sphere {
+                center: source_center,
+                radius: source_radius,
+                ..
+            },
+        ) => {
+            same_point(*carrier_center, *source_center)
+                && close((carrier_radius - source_radius).abs(), distance.abs())
+        }
+        (
+            B5Surface::Torus {
+                center: carrier_center,
+                axis: carrier_axis,
+                major_radius: carrier_major,
+                minor_radius: carrier_minor,
+                ..
+            },
+            B5Surface::Torus {
+                center: source_center,
+                axis: source_axis,
+                major_radius: source_major,
+                minor_radius: source_minor,
+                ..
+            },
+        ) => {
+            same_point(*carrier_center, *source_center)
+                && parallel(*carrier_axis, *source_axis)
+                && close(*carrier_major, *source_major)
+                && close((carrier_minor - source_minor).abs(), distance.abs())
+        }
+        _ => false,
+    }
 }
 
 struct B5OffsetCache {
@@ -4132,7 +4251,12 @@ mod tests {
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
         };
-        let surfaces = BTreeMap::from([(2, carrier)]);
+        let source = B5Surface::Plane {
+            origin: [0.0, 0.0, 0.5],
+            direction_u: [0.0, 1.0, 0.0],
+            direction_v: [-1.0, 0.0, 0.0],
+        };
+        let surfaces = BTreeMap::from([(2, carrier), (3, source)]);
         let mut payload = vec![0x82, 0x82, 0x83];
         payload.extend_from_slice(&(-0.5f64).to_le_bytes());
         payload.push(0x15);
@@ -4171,7 +4295,17 @@ mod tests {
             construction_radius: 2.0,
             chart_origin: -2.0,
         };
-        let surfaces = BTreeMap::from([(2, carrier)]);
+        let source = B5Surface::Sphere {
+            center: [0.0; 3],
+            direction_x: [0.0, 1.0, 0.0],
+            direction_y: [-1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 8.5,
+            angular_bounds: [[0.0, 1.0], [-1.0, 1.0]],
+            construction_radius: 8.5,
+            chart_origin: -2.0,
+        };
+        let surfaces = BTreeMap::from([(2, carrier), (3, source)]);
         let mut payload = vec![0x82, 0x82, 0x83];
         payload.extend_from_slice(&(-6.5_f64).to_le_bytes());
         payload.push(0x09);
@@ -4230,6 +4364,47 @@ mod tests {
             parse_offset_surface(&record, &surfaces, &BTreeMap::new(), &HashMap::new()),
             None
         );
+    }
+
+    #[test]
+    fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
+        let cylinder = |origin, radius| B5Surface::Cylinder {
+            origin,
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius,
+        };
+        assert!(analytic_offset_magnitude_agrees(
+            &cylinder([0.0, 0.0, 4.0], 3.0),
+            &cylinder([0.0; 3], 5.0),
+            -2.0
+        ));
+        assert!(!analytic_offset_magnitude_agrees(
+            &cylinder([0.25, 0.0, 4.0], 3.0),
+            &cylinder([0.0; 3], 5.0),
+            -2.0
+        ));
+
+        let torus = |center, major_radius, minor_radius| B5Surface::Torus {
+            center,
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            major_radius,
+            minor_radius,
+            major_scale: major_radius,
+            minor_scale: minor_radius,
+        };
+        assert!(analytic_offset_magnitude_agrees(
+            &torus([0.0; 3], 8.0, 3.0),
+            &torus([0.0; 3], 8.0, 2.5),
+            0.5
+        ));
+        assert!(!analytic_offset_magnitude_agrees(
+            &torus([0.0; 3], 9.0, 3.0),
+            &torus([0.0; 3], 8.0, 2.5),
+            0.5
+        ));
     }
 
     #[test]
