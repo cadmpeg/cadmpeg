@@ -1727,6 +1727,24 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
         .map(|definition| definition.id),
         Some(822)
     );
+
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.definitions.push(definition);
+    let ir = CadIr::empty(Units::default());
+    for kind in ["Revolve", "Revolve 2"] {
+        assert!(matches!(
+            named_feature_definition(&scan, &ir, 822, kind),
+            Some(IrFeatureDefinition::Revolve {
+                construction: RevolutionConstruction {
+                    profile: Some(ProfileRef::Native(profile)),
+                    axis: None,
+                    extent: None,
+                    ..
+                },
+                op: BooleanOp::Unresolved,
+            }) if profile == "creo:featdefs:sketch#822"
+        ));
+    }
 }
 
 #[test]

@@ -160,7 +160,8 @@ fixtures, claims above L1 remain unproven.
    and boundary-surface families. Every explicit unresolved definition raises a
    decode loss note. Extrusions are counted separately, with unresolved and
    native profiles, unresolved termination, and unresolved Boolean operation
-   partitions.
+   partitions. Revolutions are counted separately, with missing profile, axis,
+   angular extent, and unresolved Boolean operation partitions.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts

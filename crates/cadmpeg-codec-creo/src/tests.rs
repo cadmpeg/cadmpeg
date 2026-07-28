@@ -2593,6 +2593,26 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
             ..
         }
     ));
+    assert_eq!(
+        result.report.coverage["transferred_revolve_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_revolve_profile_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_revolve_axis_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_revolve_extent_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_revolve_boolean_operation_feature_count"],
+        1
+    );
 }
 
 #[test]

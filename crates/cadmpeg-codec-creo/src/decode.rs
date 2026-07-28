@@ -137,6 +137,19 @@ fn unique_feature_profile_definition<'a>(
     }
 }
 
+fn unique_feature_profile_ref(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<ProfileRef> {
+    unique_feature_profile_definition(
+        &scan.features.definitions,
+        &scan.features.section_transforms,
+        feature_id,
+    )
+    .map(|definition| section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition)))
+}
+
 fn unique_feature_datum_plane(
     datums: &[crate::datum::DatumPlane],
     feature_id: u32,
@@ -14252,20 +14265,16 @@ fn schema_feature_definition(
             .iter()
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
-        let (definition, transform) = match transforms.as_slice() {
-            [transform] => (
-                unique_feature_definition_for_transform(&scan.features.definitions, transform),
-                Some(*transform),
-            ),
-            [] => (
-                unique_owned_feature_definition(&scan.features.definitions, feature_id),
-                None,
-            ),
-            _ => (None, None),
+        let definition = unique_feature_profile_definition(
+            &scan.features.definitions,
+            &scan.features.section_transforms,
+            feature_id,
+        );
+        let profile = unique_feature_profile_ref(scan, ir, feature_id);
+        let transform = match transforms.as_slice() {
+            [transform] => Some(*transform),
+            _ => None,
         };
-        let profile = definition.map(|definition| {
-            section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
-        });
         let axis = definition
             .zip(transform)
             .and_then(|(definition, transform)| resolved_revolution_axis(definition, transform));
@@ -14728,20 +14737,13 @@ fn named_feature_definition(
             BooleanOp::Unresolved,
         ));
     }
-    if kind == "Revolve" {
-        return Some(IrFeatureDefinition::Revolve {
-            construction: RevolutionConstruction {
-                profile: None,
-                axis: None,
-                extent: None,
-                axis_reference: None,
-                solid: None,
-                face_maker_class: None,
-                fuse_order: None,
-                allow_multi_profile_faces: None,
-            },
-            op: BooleanOp::Unresolved,
-        });
+    if kind == "Revolve" || numbered_feature_name_has_family(kind, "Revolve") {
+        return Some(revolve_feature_definition_with_profile(
+            scan,
+            ir,
+            feature_id,
+            BooleanOp::Unresolved,
+        ));
     }
     let schema_class = match kind {
         "Datum Plane" | "Bezugsebene" => 923,
@@ -14804,16 +14806,30 @@ fn extrude_feature_definition_with_profile(
     feature_id: u32,
     op: BooleanOp,
 ) -> IrFeatureDefinition {
-    let definition = unique_feature_profile_definition(
-        &scan.features.definitions,
-        &scan.features.section_transforms,
-        feature_id,
-    );
-    let profile = definition.map_or_else(
-        || ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
-        |definition| section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition)),
-    );
+    let profile = unique_feature_profile_ref(scan, ir, feature_id)
+        .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
     extrude_feature_definition(profile, op)
+}
+
+fn revolve_feature_definition_with_profile(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    op: BooleanOp,
+) -> IrFeatureDefinition {
+    IrFeatureDefinition::Revolve {
+        construction: RevolutionConstruction {
+            profile: unique_feature_profile_ref(scan, ir, feature_id),
+            axis: None,
+            extent: None,
+            axis_reference: None,
+            solid: None,
+            face_maker_class: None,
+            fuse_order: None,
+            allow_multi_profile_faces: None,
+        },
+        op,
+    }
 }
 
 fn unresolved_extrude_extent() -> ExtrudeExtent {
@@ -26109,6 +26125,11 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut native_extrude_profile_feature_count = 0;
     let mut unresolved_extrude_termination_feature_count = 0;
     let mut unresolved_extrude_boolean_operation_feature_count = 0;
+    let mut revolve_feature_count = 0;
+    let mut unresolved_revolve_profile_feature_count = 0;
+    let mut unresolved_revolve_axis_feature_count = 0;
+    let mut unresolved_revolve_extent_feature_count = 0;
+    let mut unresolved_revolve_boolean_operation_feature_count = 0;
     for feature in &ir.model.features {
         match &feature.definition {
             IrFeatureDefinition::DatumPlaneUnresolved => {
@@ -26142,6 +26163,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 };
                 unresolved_extrude_termination_feature_count += usize::from(termination_unresolved);
                 unresolved_extrude_boolean_operation_feature_count +=
+                    usize::from(*op == BooleanOp::Unresolved);
+            }
+            IrFeatureDefinition::Revolve { construction, op } => {
+                revolve_feature_count += 1;
+                unresolved_revolve_profile_feature_count +=
+                    usize::from(construction.profile.is_none());
+                unresolved_revolve_axis_feature_count += usize::from(construction.axis.is_none());
+                unresolved_revolve_extent_feature_count +=
+                    usize::from(construction.extent.is_none());
+                unresolved_revolve_boolean_operation_feature_count +=
                     usize::from(*op == BooleanOp::Unresolved);
             }
             _ => {}
@@ -26197,6 +26228,26 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_unresolved_extrude_boolean_operation_feature_count".to_string(),
         unresolved_extrude_boolean_operation_feature_count,
+    );
+    coverage.insert(
+        "transferred_revolve_feature_count".to_string(),
+        revolve_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_revolve_profile_feature_count".to_string(),
+        unresolved_revolve_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_revolve_axis_feature_count".to_string(),
+        unresolved_revolve_axis_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_revolve_extent_feature_count".to_string(),
+        unresolved_revolve_extent_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_revolve_boolean_operation_feature_count".to_string(),
+        unresolved_revolve_boolean_operation_feature_count,
     );
     Ok((ir, annotations.build(), unknowns, coverage))
 }

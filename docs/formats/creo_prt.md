@@ -1875,12 +1875,13 @@ encode face selection or merge operands.
 `Boundary Blend <decimal-ordinal>` identifies a boundary-surface operation.
 `Protrusion` identifies a linear extrusion operation; absent section operands
 leave its profile, direction, and extent unresolved without changing its family.
-For `Protrusion`, `Cut`, `Extrude`, and numbered `Extrude` operations, exactly
-one feature-bound section transform selects its matching section definition.
+For `Protrusion`, `Cut`, `Extrude`, `Revolve`, and numbered `Extrude` or
+`Revolve` operations, exactly one feature-bound section transform selects its
+matching section definition.
 Without a feature-bound transform, exactly one definition owned by the feature
 selects the section. The selected section supplies the native profile identity
-independently of whether direction and termination resolve. Multiple transforms
-or competing owned definitions leave the profile unresolved.
+independently of whether the sweep direction or axis and termination resolve.
+Multiple transforms or competing owned definitions leave the profile unresolved.
 The German operation-family names `Bezugsebene`, `Rundung`,
 and `Schräge` denote the same datum-plane, round, and draft families as
 `Datum Plane`, `Round`, and `Draft`, respectively. `Annotation Feature` is a
