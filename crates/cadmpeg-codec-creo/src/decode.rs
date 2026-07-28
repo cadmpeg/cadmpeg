@@ -4752,10 +4752,11 @@ fn agreed_generated_cylinder_extent(
     ))
 }
 
-fn generated_cylinder_cap_extent(
+fn generated_bounded_cylinder_extent(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
+    transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let rows = scan
         .surfaces
@@ -4784,17 +4785,23 @@ fn generated_cylinder_cap_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
-        let [surface] = surfaces.as_slice() else {
-            return None;
-        };
-        match (&row.kind, &surface.geometry) {
-            (crate::surface::SurfaceKind::Plane, SurfaceGeometry::Plane { origin, normal, .. }) => {
-                planes.push((*origin, *normal));
-            }
-            (
-                crate::surface::SurfaceKind::Cylinder,
-                SurfaceGeometry::Cylinder { origin, axis, .. },
-            ) => {
+        match row.kind {
+            crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
+                [] => {}
+                [Surface {
+                    geometry: SurfaceGeometry::Plane { origin, normal, .. },
+                    ..
+                }] => planes.push((*origin, *normal)),
+                _ => return None,
+            },
+            crate::surface::SurfaceKind::Cylinder => {
+                let [Surface {
+                    geometry: SurfaceGeometry::Cylinder { origin, axis, .. },
+                    ..
+                }] = surfaces.as_slice()
+                else {
+                    return None;
+                };
                 let parameters =
                     crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?;
                 let frame = parameters.positional_cylinder_frame?;
@@ -4817,7 +4824,7 @@ fn generated_cylinder_cap_extent(
                 .then_some(())?;
                 frames.push(frame);
             }
-            _ => return None,
+            _ => unreachable!("surface family checked above"),
         }
     }
     let first = *frames.first()?;
@@ -4849,6 +4856,19 @@ fn generated_cylinder_cap_extent(
                 })
         })
         .then_some(())?;
+    if let Some(transform) = transform {
+        let normal = normalized(transform.normal)?;
+        ((dot(direction, normal).abs() - 1.0).abs() <= 1e-10
+            && frames.iter().all(|frame| {
+                dot(
+                    std::array::from_fn(|index| frame.origin[index] - transform.origin[index]),
+                    normal,
+                )
+                .abs()
+                    <= tolerance
+            }))
+        .then_some(())?;
+    }
     let cap_stations = planes
         .into_iter()
         .map(|(origin, normal)| {
@@ -4866,9 +4886,8 @@ fn generated_cylinder_cap_extent(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    let first_station = *cap_stations.first()?;
-    let mut unique_stations = vec![first_station];
-    for station in cap_stations.into_iter().skip(1) {
+    let mut unique_stations = Vec::new();
+    for station in cap_stations {
         if unique_stations
             .iter()
             .all(|existing| (station - existing).abs() > tolerance)
@@ -4876,20 +4895,23 @@ fn generated_cylinder_cap_extent(
             unique_stations.push(station);
         }
     }
-    let [first_cap, second_cap] = unique_stations.as_slice() else {
-        return None;
-    };
     let start_station = dot(first.origin, direction);
     let end_station = start_station + length;
-    let cap_matches = |station: f64| {
-        (*first_cap - station).abs() <= tolerance || (*second_cap - station).abs() <= tolerance
+    let cap_matches = |cap: f64| {
+        (cap - start_station).abs() <= tolerance || (cap - end_station).abs() <= tolerance
     };
-    (cap_matches(start_station)
-        && cap_matches(end_station)
-        && ((first_cap - second_cap).abs() - length).abs() <= tolerance
-        && frames
-            .iter()
-            .all(|frame| (dot(frame.origin, direction) - start_station).abs() <= tolerance))
+    (match unique_stations.as_slice() {
+        [] => true,
+        [cap] => cap_matches(*cap),
+        [first_cap, second_cap] => {
+            cap_matches(*first_cap)
+                && cap_matches(*second_cap)
+                && ((first_cap - second_cap).abs() - length).abs() <= tolerance
+        }
+        _ => false,
+    } && frames
+        .iter()
+        .all(|frame| (dot(frame.origin, direction) - start_station).abs() <= tolerance))
     .then_some(())?;
     Some((
         ExtrudeExtent::OneSided {
@@ -14605,7 +14627,14 @@ fn schema_feature_definition(
                 None
             }
             .or_else(|| {
-                generated_cylinder_cap_extent(scan, ir, feature_id).map(|(extent, direction)| {
+                match transforms.as_slice() {
+                    [] => generated_bounded_cylinder_extent(scan, ir, feature_id, None),
+                    [transform] => {
+                        generated_bounded_cylinder_extent(scan, ir, feature_id, Some(transform))
+                    }
+                    _ => None,
+                }
+                .map(|(extent, direction)| {
                     (
                         Some(Vector3::new(direction[0], direction[1], direction[2])),
                         extent,

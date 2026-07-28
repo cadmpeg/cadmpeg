@@ -2932,7 +2932,7 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
 }
 
 #[test]
-fn generated_cylinder_caps_define_a_blind_extrusion_without_a_section_transform() {
+fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         type_byte: kind.canonical_type_byte(),
@@ -2999,7 +2999,7 @@ fn generated_cylinder_caps_define_a_blind_extrusion_without_a_section_transform(
     ]);
 
     assert_eq!(
-        generated_cylinder_cap_extent(&scan, &ir, 7),
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -3014,19 +3014,59 @@ fn generated_cylinder_caps_define_a_blind_extrusion_without_a_section_transform(
         ))
     );
 
+    let mut untransferred_caps = ir.clone();
+    untransferred_caps
+        .model
+        .surfaces
+        .retain(|surface| surface.id == SurfaceId("creo:visibgeom:surface#33".to_string()));
+    assert_eq!(
+        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, None),
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None)
+    );
+
+    let transform = crate::placement::FeatureSectionTransform {
+        definition_id: 7,
+        feature_id: Some(7),
+        origin: [0.0, 4.0, 0.0],
+        u_axis: [1.0, 0.0, 0.0],
+        v_axis: [0.0, 0.0, 1.0],
+        normal: [0.0, -1.0, 0.0],
+        offset: 0,
+    };
+    assert_eq!(
+        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&transform)),
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None)
+    );
+    let displaced = crate::placement::FeatureSectionTransform {
+        origin: [0.0, 3.0, 0.0],
+        ..transform.clone()
+    };
+    assert!(
+        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&displaced))
+            .is_none()
+    );
+    let perpendicular = crate::placement::FeatureSectionTransform {
+        normal: [1.0, 0.0, 0.0],
+        ..transform
+    };
+    assert!(
+        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&perpendicular))
+            .is_none()
+    );
+
     let mut oblique = ir.clone();
     let SurfaceGeometry::Plane { normal, .. } = &mut oblique.model.surfaces[0].geometry else {
         panic!("plane");
     };
     *normal = Vector3::new(0.0, 1.0, 1.0);
-    assert!(generated_cylinder_cap_extent(&scan, &oblique, 7).is_none());
+    assert!(generated_bounded_cylinder_extent(&scan, &oblique, 7, None).is_none());
 
     scan.surfaces.parameters[0]
         .positional_cylinder_frame
         .as_mut()
         .expect("cylinder frame")
         .length = Some(7.0);
-    assert!(generated_cylinder_cap_extent(&scan, &ir, 7).is_none());
+    assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
     scan.surfaces.parameters[0]
         .positional_cylinder_frame
         .as_mut()
@@ -3034,18 +3074,18 @@ fn generated_cylinder_caps_define_a_blind_extrusion_without_a_section_transform(
         .length = Some(8.0);
 
     scan.surfaces.rows.push(scan.surfaces.rows[0].clone());
-    assert!(generated_cylinder_cap_extent(&scan, &ir, 7).is_none());
+    assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
     scan.surfaces.rows.pop();
 
     scan.surfaces
         .parameters
         .push(scan.surfaces.parameters[0].clone());
-    assert!(generated_cylinder_cap_extent(&scan, &ir, 7).is_none());
+    assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
     scan.surfaces.parameters.pop();
 
     let mut missing_transfer = ir.clone();
     missing_transfer.model.surfaces.pop();
-    assert!(generated_cylinder_cap_extent(&scan, &missing_transfer, 7).is_none());
+    assert!(generated_bounded_cylinder_extent(&scan, &missing_transfer, 7, None).is_none());
 }
 
 #[test]
