@@ -490,7 +490,8 @@ kind, including type 79 and type 80, and each XMT is a non-null compact or
 extended encoded index. The lane retains pair order and exact byte identity;
 field roles remain unassigned.
 
-A reference/type map is `ref(1), 0001, entry[n], ref(1), 0000,
+A reference/type map is either `ref(1), 0001, entry[n], ref(1), 0000,
+target_kind:u16 BE` or `01, ref(1), entry[n], ref(1), 0000,
 target_kind:u16 BE`, where `n > 0` and each entry is `ref, kind:u16 BE`.
 Every entry reference is a non-null compact or extended XMT. Every entry kind
 is a defined Parasolid record kind, type 79, type 80, type 55, or type 100.

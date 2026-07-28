@@ -927,11 +927,17 @@ fn reference_type_map(
     offset: usize,
     expected_end: usize,
 ) -> Option<ReferenceTypeMap> {
-    let (leading_null, consumed) = read_xmt(stream, offset)?;
-    (leading_null == 1).then_some(())?;
-    let mut at = offset.checked_add(consumed)?;
-    (be::u16_at(stream, at) == Some(1)).then_some(())?;
-    at = at.checked_add(2)?;
+    let mut at = if let Some((1, consumed)) = read_xmt(stream, offset) {
+        let separator = offset.checked_add(consumed)?;
+        (be::u16_at(stream, separator) == Some(1)).then_some(())?;
+        separator.checked_add(2)?
+    } else {
+        (stream.get(offset) == Some(&1)).then_some(())?;
+        let leading_null = offset.checked_add(1)?;
+        let (reference, consumed) = read_xmt(stream, leading_null)?;
+        (reference == 1).then_some(())?;
+        leading_null.checked_add(consumed)?
+    };
     let mut entries = Vec::new();
     loop {
         (at < expected_end).then_some(())?;
@@ -2967,6 +2973,25 @@ mod reference_type_map_tests {
     #[test]
     fn reference_type_map_accepts_compact_and_extended_references() {
         let bytes = map_bytes();
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.reference_type_maps,
+            [ReferenceTypeMap {
+                entries: vec![(40_000, 81), (3, 100)],
+                target_kind: 55,
+                offset: 0,
+                end: bytes.len(),
+            }]
+        );
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_accepts_status_prefixed_null_reference() {
+        let canonical = map_bytes();
+        let mut bytes = vec![1, 0, 1];
+        bytes.extend_from_slice(&canonical[4..]);
         let census = walk(&bytes);
 
         assert_eq!(
