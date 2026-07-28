@@ -5315,8 +5315,6 @@ fn placed_tabulated_cylinder_directrix(
     if parameters.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
         return None;
     }
-    let direction = parameters.extrusion_direction(0x2c)?;
-    (direction.iter().map(|value| value * value).sum::<f64>() > 0.0).then_some(())?;
     let points = replay
         .control_points
         .iter()

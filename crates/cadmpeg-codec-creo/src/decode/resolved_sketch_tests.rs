@@ -336,6 +336,19 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     assert_eq!(curve.control_points[3], Point3::new(4.0, 4.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
 
+    broad_signed_frame.scalar_frames.clear();
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame)
+        .expect("complete frame supplies its signed sweep");
+    assert_eq!(curve.control_points[0], Point3::new(1.0, 2.0, 5.0));
+    assert_eq!(curve.control_points[3], Point3::new(4.0, 4.0, 5.0));
+    assert_eq!(sweep, [0.0, 0.0, 5.0]);
+
+    broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
+        values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
+        prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
+    });
+    assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame).is_none());
+
     broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
         values: [29.0, 5.0, 2.0, -26.0, 10.0, 4.0],
         prefixes: [0x4a, 0x46, 0x2f, 0x46, 0x46, 0x2e],

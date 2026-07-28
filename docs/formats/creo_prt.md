@@ -712,6 +712,9 @@ required intercept magnitude. A missing or non-unique map leaves the frame
 opaque. The remaining axis defines the extrusion vector. The four placed
 points form a non-rational clamped cubic B-spline with knot vector
 `[0,0,0,0,1,1,1,1]`.
+For a replay-bound row, this unique ordered frame-axis construction defines the
+extrusion vector independently of whether the bytes before `00 0c 9a` form a
+three-scalar sweep-direction frame.
 
 Layouts whose second and fifth scalar prefixes are `46` require a first-axis
 intercept magnitude of 30, a zero second-axis intercept, and retain the stored
