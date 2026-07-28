@@ -2316,6 +2316,28 @@ fn decode_types_class_946_as_unresolved_surface_merge() {
         }
     ));
     assert_eq!(feature.name.as_deref(), Some("Surface Merge id 4"));
+    assert_eq!(
+        result.report.coverage["transferred_knit_surface_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_knit_surface_feature_count"],
+        1
+    );
+    for key in [
+        "transferred_unresolved_knit_surface_faces_feature_count",
+        "transferred_unresolved_knit_surface_merge_feature_count",
+        "transferred_unresolved_knit_surface_solid_feature_count",
+    ] {
+        assert_eq!(result.report.coverage[key], 1, "{key}");
+    }
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_surface_operation_feature_count"],
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("surface construction history feature")));
 }
 
 #[test]

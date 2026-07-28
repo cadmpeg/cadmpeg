@@ -24882,6 +24882,29 @@ fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
     )
 }
 
+fn edge_selection_has_unresolved_operands(selection: &EdgeSelection) -> bool {
+    matches!(
+        selection,
+        EdgeSelection::Unresolved
+            | EdgeSelection::HistoricalPartial { .. }
+            | EdgeSelection::Native(_)
+    )
+}
+
+fn path_has_unresolved_operands(path: &PathRef) -> bool {
+    matches!(
+        path,
+        PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. }
+    )
+}
+
+fn surface_boundary_has_unresolved_operands(boundary: &SurfaceBoundary) -> bool {
+    match boundary {
+        SurfaceBoundary::Edges(edges) => edge_selection_has_unresolved_operands(edges),
+        SurfaceBoundary::Path(path) => path_has_unresolved_operands(path),
+    }
+}
+
 fn termination_has_unresolved_operands(termination: &Termination) -> bool {
     match termination {
         Termination::Unresolved => true,
@@ -26910,6 +26933,22 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut unresolved_draft_direction_feature_count = 0;
     let mut unresolved_draft_angle_feature_count = 0;
     let mut unresolved_draft_outward_feature_count = 0;
+    let mut filled_surface_feature_count = 0;
+    let mut incomplete_filled_surface_feature_count = 0;
+    let mut unresolved_filled_surface_boundary_feature_count = 0;
+    let mut unresolved_filled_surface_support_feature_count = 0;
+    let mut unresolved_filled_surface_continuity_feature_count = 0;
+    let mut unresolved_filled_surface_merge_feature_count = 0;
+    let mut knit_surface_feature_count = 0;
+    let mut incomplete_knit_surface_feature_count = 0;
+    let mut unresolved_knit_surface_faces_feature_count = 0;
+    let mut unresolved_knit_surface_merge_feature_count = 0;
+    let mut unresolved_knit_surface_solid_feature_count = 0;
+    let mut thicken_feature_count = 0;
+    let mut incomplete_thicken_feature_count = 0;
+    let mut unresolved_thicken_faces_feature_count = 0;
+    let mut unresolved_thicken_thickness_feature_count = 0;
+    let mut unresolved_thicken_side_feature_count = 0;
     for feature in &ir.model.features {
         match &feature.definition {
             IrFeatureDefinition::DatumPlaneUnresolved => {
@@ -27139,6 +27178,61 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 incomplete_draft_feature_count += 1;
                 explicitly_unresolved_draft_feature_count += 1;
             }
+            IrFeatureDefinition::FilledSurface {
+                boundary,
+                support_faces,
+                continuity,
+                merge_result,
+            } => {
+                filled_surface_feature_count += 1;
+                let unresolved_boundary = surface_boundary_has_unresolved_operands(boundary);
+                let unresolved_support = face_selection_has_unresolved_operands(support_faces);
+                let unresolved_continuity = continuity.is_none();
+                let unresolved_merge = merge_result.is_none();
+                unresolved_filled_surface_boundary_feature_count +=
+                    usize::from(unresolved_boundary);
+                unresolved_filled_surface_support_feature_count += usize::from(unresolved_support);
+                unresolved_filled_surface_continuity_feature_count +=
+                    usize::from(unresolved_continuity);
+                unresolved_filled_surface_merge_feature_count += usize::from(unresolved_merge);
+                incomplete_filled_surface_feature_count += usize::from(
+                    unresolved_boundary
+                        || unresolved_support
+                        || unresolved_continuity
+                        || unresolved_merge,
+                );
+            }
+            IrFeatureDefinition::KnitSurface {
+                faces,
+                merge_entities,
+                create_solid,
+                ..
+            } => {
+                knit_surface_feature_count += 1;
+                let unresolved_faces = face_selection_has_unresolved_operands(faces);
+                let unresolved_merge = merge_entities.is_none();
+                let unresolved_solid = create_solid.is_none();
+                unresolved_knit_surface_faces_feature_count += usize::from(unresolved_faces);
+                unresolved_knit_surface_merge_feature_count += usize::from(unresolved_merge);
+                unresolved_knit_surface_solid_feature_count += usize::from(unresolved_solid);
+                incomplete_knit_surface_feature_count +=
+                    usize::from(unresolved_faces || unresolved_merge || unresolved_solid);
+            }
+            IrFeatureDefinition::Thicken {
+                faces,
+                thickness,
+                side,
+            } => {
+                thicken_feature_count += 1;
+                let unresolved_faces = face_selection_has_unresolved_operands(faces);
+                let unresolved_thickness = thickness.is_none();
+                let unresolved_side = side.is_none();
+                unresolved_thicken_faces_feature_count += usize::from(unresolved_faces);
+                unresolved_thicken_thickness_feature_count += usize::from(unresolved_thickness);
+                unresolved_thicken_side_feature_count += usize::from(unresolved_side);
+                incomplete_thicken_feature_count +=
+                    usize::from(unresolved_faces || unresolved_thickness || unresolved_side);
+            }
             _ => {}
         }
     }
@@ -27152,6 +27246,9 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         + incomplete_draft_feature_count;
     let incomplete_sweep_feature_count =
         incomplete_extrude_feature_count + incomplete_revolve_feature_count;
+    let incomplete_surface_operation_feature_count = incomplete_filled_surface_feature_count
+        + incomplete_knit_surface_feature_count
+        + incomplete_thicken_feature_count;
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
@@ -27367,6 +27464,74 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_unresolved_draft_outward_feature_count".to_string(),
         unresolved_draft_outward_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_surface_operation_feature_count".to_string(),
+        incomplete_surface_operation_feature_count,
+    );
+    coverage.insert(
+        "transferred_filled_surface_feature_count".to_string(),
+        filled_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_filled_surface_feature_count".to_string(),
+        incomplete_filled_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_filled_surface_boundary_feature_count".to_string(),
+        unresolved_filled_surface_boundary_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_filled_surface_support_feature_count".to_string(),
+        unresolved_filled_surface_support_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_filled_surface_continuity_feature_count".to_string(),
+        unresolved_filled_surface_continuity_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_filled_surface_merge_feature_count".to_string(),
+        unresolved_filled_surface_merge_feature_count,
+    );
+    coverage.insert(
+        "transferred_knit_surface_feature_count".to_string(),
+        knit_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_knit_surface_feature_count".to_string(),
+        incomplete_knit_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_knit_surface_faces_feature_count".to_string(),
+        unresolved_knit_surface_faces_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_knit_surface_merge_feature_count".to_string(),
+        unresolved_knit_surface_merge_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_knit_surface_solid_feature_count".to_string(),
+        unresolved_knit_surface_solid_feature_count,
+    );
+    coverage.insert(
+        "transferred_thicken_feature_count".to_string(),
+        thicken_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_thicken_feature_count".to_string(),
+        incomplete_thicken_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_thicken_faces_feature_count".to_string(),
+        unresolved_thicken_faces_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_thicken_thickness_feature_count".to_string(),
+        unresolved_thicken_thickness_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_thicken_side_feature_count".to_string(),
+        unresolved_thicken_side_feature_count,
     );
     Ok((ir, annotations.build(), unknowns, coverage))
 }
@@ -28455,6 +28620,38 @@ fn build_report(
             message: format!(
                 "{incomplete_sweeps} profile sweep history feature(s) retain incomplete required \
                  construction operands ({families})."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_surface_operations =
+        count("transferred_incomplete_surface_operation_feature_count");
+    if incomplete_surface_operations != 0 {
+        let families = [
+            (
+                "fill",
+                count("transferred_incomplete_filled_surface_feature_count"),
+            ),
+            (
+                "knit",
+                count("transferred_incomplete_knit_surface_feature_count"),
+            ),
+            (
+                "thicken",
+                count("transferred_incomplete_thicken_feature_count"),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_surface_operations} surface construction history feature(s) retain \
+                 incomplete required operands ({families})."
             ),
             provenance: None,
         });

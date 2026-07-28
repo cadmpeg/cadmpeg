@@ -174,7 +174,11 @@ fixtures, claims above L1 remain unproven.
    partitions unresolved and native face selections and neutral planes, pull
    direction, angle, outward sense, and wholly unresolved definitions. A
    recognized feature with any required operand in one of these partitions
-   raises a decode loss note.
+   raises a decode loss note. Filled-surface coverage partitions unresolved
+   boundaries, support faces, continuity, and merge controls. Knit-surface
+   coverage partitions unresolved faces, entity merging, and solid creation.
+   Thicken coverage partitions unresolved faces, thickness, and side. Any
+   incomplete surface construction raises a decode loss note.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts
