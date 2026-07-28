@@ -2830,14 +2830,11 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let record_indices = &ctx.record_indices;
     let parameters_by_index = &ctx.parameters_by_index;
     let companions_by_index = &ctx.companions_by_index;
-    let scopes_by_index = &ctx.scopes_by_index;
     let mut owner_indices = HashSet::new();
-    let mut owner_ordinals = HashSet::new();
     let mut owner_local_ordinals = HashSet::new();
     for owner in &native.design_parameter_owners {
         let native_stream = design_stream(&owner.id);
         let unique_index = owner_indices.insert((native_stream, owner.record_index));
-        let unique_ordinal = owner_ordinals.insert((native_stream, owner.owned_ordinal));
         let unique_local_ordinal = owner_local_ordinals.insert((
             native_stream,
             owner.scope_record_index,
@@ -2848,16 +2845,18 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && owner.companion_record_index == owner.record_index.saturating_add(2);
         let parameter_first = owner.record_index == owner.parameter_record_index.saturating_add(1)
             && owner.companion_record_index == owner.record_index.saturating_add(1);
+        let companion_first = owner.companion_record_index == owner.record_index.saturating_add(1)
+            && owner.parameter_record_index == owner.record_index.saturating_add(2);
         let valid = owner.class_tag.len() == 3
             && owner.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && owner.variant <= 1
+            && owner.variant.is_none_or(|variant| variant <= 1)
             && owner.evaluated_value.is_finite()
             && matches!(
                 owner.evaluated_value_offset.checked_sub(owner.byte_offset),
-                Some(40 | 41)
+                Some(40 | 41 | 44)
             )
-            && (owner_first || parameter_first)
-            && scopes_by_index.contains_key(&(native_stream, owner.scope_record_index))
+            && (owner_first || parameter_first || companion_first)
+            && record_indices.contains(&(native_stream, owner.scope_record_index))
             && record_indices.contains(&(native_stream, owner.parameter_record_index))
             && record_indices.contains(&(native_stream, owner.companion_record_index))
             && companions_by_index
@@ -2868,7 +2867,6 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && parameter.evaluated_value.to_bits() == owner.evaluated_value.to_bits()
             })
             && unique_index
-            && unique_ordinal
             && unique_local_ordinal;
         if !valid {
             findings.push(Finding {
@@ -3487,8 +3485,12 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
         };
         let offsets_ordered = parameter.byte_offset < parameter.expression_offset
-            && parameter.prefix_value_offset == parameter.byte_offset.saturating_add(22)
-            && parameter.prefix_value_offset < parameter.expression_offset
+            && parameter.family_discriminator.is_some()
+                == parameter.family_discriminator_offset.is_some()
+            && parameter.family_discriminator_offset.is_none_or(|offset| {
+                offset == parameter.byte_offset.saturating_add(22)
+                    && offset < parameter.expression_offset
+            })
             && parameter.expression_offset < parameter.source_kind_offset
             && parameter.source_kind_offset
                 < parameter.unit_offset.unwrap_or(parameter.name_offset)
@@ -3507,10 +3509,13 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && parameter.unit.as_ref().is_none_or(|unit| !unit.is_empty())
             && parameter.unit.is_some() == parameter.unit_offset.is_some()
             && parameter.evaluated_value.is_finite()
-            && design::decode::parameters::valid_design_parameter_prefix(
-                parameter.prefix_value,
-                &parameter.source_kind,
-            )
+            && (parameter.family_discriminator.is_some() || parameter.owner_record_index.is_some())
+            && parameter.family_discriminator.is_none_or(|value| {
+                design::decode::parameters::valid_design_parameter_discriminator(
+                    value,
+                    &parameter.source_kind,
+                )
+            })
             && parameter.kind == expected_kind
             && owner_shape_valid
             && offsets_ordered

@@ -63,7 +63,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Revolve" => Some(DesignFeatureFamily::Revolve),
         "Shell" | "Schale" => Some(DesignFeatureFamily::Shell),
         "Thicken" => Some(DesignFeatureFamily::Thicken),
-        "SpirePrimitive" => Some(DesignFeatureFamily::Coil),
+        "SpirePrimitive" | "CoilPrimitive" => Some(DesignFeatureFamily::Coil),
         "Loft" => Some(DesignFeatureFamily::Loft),
         "Sweep" => Some(DesignFeatureFamily::Sweep),
         "SurfacePatch" => Some(DesignFeatureFamily::SurfacePatch),

@@ -334,10 +334,12 @@ pub struct DesignParameter {
     pub class_tag: String,
     /// Source indexed-record identity.
     pub record_index: u32,
-    /// Parameter-family discriminator: `6` for `TangencyWeight`, otherwise `0`.
-    pub prefix_value: u64,
-    /// Byte offset of `prefix_value`.
-    pub prefix_value_offset: u64,
+    /// Parameter-family discriminator when the frame carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family_discriminator: Option<u64>,
+    /// Byte offset of `family_discriminator`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family_discriminator_offset: Option<u64>,
     /// Source ordering value stored by the parameter record.
     pub source_ordinal: u32,
     /// Indexed owner record for feature and dimension parameters.
@@ -391,10 +393,11 @@ pub struct DesignParameterOwner {
     pub evaluated_value_offset: u64,
     /// Indexed parameter record owned by this frame.
     pub parameter_record_index: u32,
-    /// Position among all feature- and dimension-owned parameters.
+    /// Native owner ordering value.
     pub owned_ordinal: u32,
-    /// Source owner-frame variant flag.
-    pub variant: u8,
+    /// Source owner-frame variant flag when the frame carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<u8>,
     /// Paired indexed record following the parameter record.
     pub companion_record_index: u32,
 }

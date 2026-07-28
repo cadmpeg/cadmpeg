@@ -469,7 +469,12 @@ fn encode_document_parameter(
     native_lp_ascii(out, &parameter.class_tag)?;
     out.extend_from_slice(&parameter.record_index.to_le_bytes());
     out.extend_from_slice(&[0; 11]);
-    out.extend_from_slice(&parameter.prefix_value.to_le_bytes());
+    out.extend_from_slice(
+        &parameter
+            .family_discriminator
+            .expect("source-less parameter preconditions require a discriminator")
+            .to_le_bytes(),
+    );
     out.push(0);
     out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
     out.push(0);

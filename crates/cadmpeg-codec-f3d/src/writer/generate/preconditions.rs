@@ -296,12 +296,14 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
     let mut parameter_indices = BTreeSet::new();
     let mut parameter_ordinals = BTreeSet::new();
     for parameter in &native.design_parameters {
-        let expected_prefix =
-            crate::design::decode::parameters::design_parameter_prefix(&parameter.source_kind);
-        if parameter.prefix_value != expected_prefix {
+        let expected_discriminator =
+            crate::design::decode::parameters::design_parameter_discriminator(
+                &parameter.source_kind,
+            );
+        if parameter.family_discriminator != Some(expected_discriminator) {
             return Err(CodecError::Malformed(format!(
-                "F3D Design parameter {} has discriminator {}, expected {expected_prefix} for {}",
-                parameter.id, parameter.prefix_value, parameter.source_kind
+                "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
+                parameter.id, parameter.family_discriminator, parameter.source_kind
             )));
         }
         validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;

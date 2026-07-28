@@ -1663,11 +1663,11 @@ pub(crate) fn parse_parameter_scope(
         coil_clockwise_offset,
     ) = if family == Some(DesignFeatureFamily::Coil) {
         let operation_offset = start.checked_add(20)?;
-        let operation = match u32_at(bytes, operation_offset)? {
-            1 => DesignExtrudeOperation::Join,
-            2 => DesignExtrudeOperation::Cut,
-            3 => DesignExtrudeOperation::Intersect,
-            4 => DesignExtrudeOperation::NewBody,
+        let operation = match (kind.as_str(), u32_at(bytes, operation_offset)?) {
+            ("SpirePrimitive", 1) => DesignExtrudeOperation::Join,
+            ("SpirePrimitive", 2) => DesignExtrudeOperation::Cut,
+            ("SpirePrimitive", 3) => DesignExtrudeOperation::Intersect,
+            ("SpirePrimitive", 4) | ("CoilPrimitive", 1) => DesignExtrudeOperation::NewBody,
             _ => return None,
         };
         let clockwise_offset = start.checked_add(24)?;
@@ -1676,7 +1676,12 @@ pub(crate) fn parse_parameter_scope(
             1 => true,
             _ => return None,
         };
-        if u32_at(bytes, start.checked_add(26)?)? != 2 {
+        let structural_constant = match kind.as_str() {
+            "SpirePrimitive" => 2,
+            "CoilPrimitive" => 4,
+            _ => return None,
+        };
+        if u32_at(bytes, start.checked_add(26)?)? != structural_constant {
             return None;
         }
         let extent_offset = start.checked_add(30)?;
@@ -1688,16 +1693,16 @@ pub(crate) fn parse_parameter_scope(
             _ => return None,
         };
         let section_offset = start.checked_add(92)?;
-        let section = match u32_at(bytes, section_offset)? {
-            0 => DesignCoilSection::Circular,
-            1 => DesignCoilSection::Square,
-            2 => DesignCoilSection::ExternalTriangle,
-            3 => DesignCoilSection::InternalTriangle,
+        let section = match (kind.as_str(), u32_at(bytes, section_offset)?) {
+            ("SpirePrimitive", 0) => DesignCoilSection::Circular,
+            ("SpirePrimitive", 1) => DesignCoilSection::Square,
+            ("SpirePrimitive", 2) | ("CoilPrimitive", 1) => DesignCoilSection::ExternalTriangle,
+            ("SpirePrimitive", 3) => DesignCoilSection::InternalTriangle,
             _ => return None,
         };
         let section_placement_offset = start.checked_add(107)?;
-        let section_placement = match u32_at(bytes, section_placement_offset)? {
-            4 => DesignCoilSectionPlacement::Inside,
+        let section_placement = match (kind.as_str(), u32_at(bytes, section_placement_offset)?) {
+            ("SpirePrimitive", 4) | ("CoilPrimitive", 3) => DesignCoilSectionPlacement::Inside,
             _ => return None,
         };
         (

@@ -25,7 +25,7 @@ use crate::design::decode::operands::{
     parse_sketch_profile, FaceRecipeProgramKind,
 };
 use crate::design::decode::parameters::{
-    bind_parameter_companion_payloads, design_parameter_prefix, parse_design_parameter,
+    bind_parameter_companion_payloads, design_parameter_discriminator, parse_design_parameter,
     parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::decode::scopes::{
@@ -2045,7 +2045,7 @@ fn parameter_record(
     out.extend_from_slice(b"305");
     out.extend_from_slice(&71u32.to_le_bytes());
     out.extend_from_slice(&[0; 11]);
-    out.extend_from_slice(&design_parameter_prefix(source_kind).to_le_bytes());
+    out.extend_from_slice(&design_parameter_discriminator(source_kind).to_le_bytes());
     out.push(0);
     out.extend_from_slice(&9u32.to_le_bytes());
     match owner {
@@ -2071,6 +2071,55 @@ fn parameter_record(
     out.extend_from_slice(&evaluated_value.to_le_bytes());
     out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     out
+}
+
+fn compact_owned_parameter_record(
+    owner_record_index: u32,
+    source_ordinal: u32,
+    expression: &str,
+    source_kind: &str,
+    unit: Option<&str>,
+    name: &str,
+    evaluated_value: f64,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"328");
+    out.extend_from_slice(&(owner_record_index + 1).to_le_bytes());
+    out.extend_from_slice(&[0; 15]);
+    out.extend_from_slice(&source_ordinal.to_le_bytes());
+    out.push(1);
+    out.extend_from_slice(&owner_record_index.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+    lp_utf16(&mut out, expression);
+    out.extend_from_slice(&[0; 5]);
+    lp_utf16(&mut out, source_kind);
+    if let Some(unit) = unit {
+        lp_utf16(&mut out, unit);
+    } else {
+        out.extend_from_slice(&0u32.to_le_bytes());
+    }
+    lp_utf16(&mut out, name);
+    out.extend_from_slice(&evaluated_value.to_le_bytes());
+    out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    out
+}
+
+#[test]
+fn compact_owned_design_parameter_has_no_family_discriminator() {
+    let bytes =
+        compact_owned_parameter_record(6653, 99, "82.00 mm", "Diameter", Some("mm"), "d99", 8.2);
+    let parameter = parse_design_parameter(&bytes).expect("compact owned parameter");
+    assert_eq!(parameter.record_index, 6654);
+    assert_eq!(parameter.owner_record_index, Some(6653));
+    assert_eq!(parameter.source_ordinal, 99);
+    assert_eq!(parameter.family_discriminator, None);
+    assert_eq!(parameter.family_discriminator_offset, None);
+    assert_eq!(parameter.expression, "82.00 mm");
+    assert_eq!(parameter.source_kind, "Diameter");
+    assert_eq!(parameter.unit.as_deref(), Some("mm"));
+    assert_eq!(parameter.name, "d99");
+    assert_eq!(parameter.evaluated_value, 8.2);
 }
 
 #[test]
@@ -2133,7 +2182,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let mut tangency = parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
     tangency[22..30].copy_from_slice(&6u64.to_le_bytes());
     let tangency = parse_design_parameter(&tangency).expect("prefixed unitless parameter");
-    assert_eq!(tangency.prefix_value, 6);
+    assert_eq!(tangency.family_discriminator, Some(6));
     assert_eq!(tangency.unit, None);
     assert_eq!(tangency.name, "d81");
     assert_eq!(tangency.evaluated_value, 1.0);
@@ -2157,8 +2206,8 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(
         parse_design_parameter(&revised_distance)
             .expect("revision-six feature parameter")
-            .prefix_value,
-        6
+            .family_discriminator,
+        Some(6)
     );
 
     let mut invalid_distance = revised_distance.clone();
@@ -2222,6 +2271,29 @@ fn parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
+fn compact_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = vec![0; 103];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(b"406");
+    frame[7..11].copy_from_slice(&6653u32.to_le_bytes());
+    frame[19] = 1;
+    frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+    frame[24] = 1;
+    frame[25..29].copy_from_slice(&6644u32.to_le_bytes());
+    frame[35..39].copy_from_slice(&0u32.to_le_bytes());
+    frame[40..48].copy_from_slice(&8.2f64.to_le_bytes());
+    frame[48] = 1;
+    frame[49..53].copy_from_slice(&6654u32.to_le_bytes());
+    frame[59..63].copy_from_slice(&4u32.to_le_bytes());
+    frame[67] = 1;
+    frame[68..72].copy_from_slice(&6644u32.to_le_bytes());
+    frame[80] = 1;
+    frame[81..85].copy_from_slice(&6655u32.to_le_bytes());
+    frame[92] = 1;
+    frame[93..97].copy_from_slice(&6644u32.to_le_bytes());
+    frame
+}
+
 fn counted_parameter_owner_frame() -> Vec<u8> {
     let mut frame = vec![0; 101];
     frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -2248,6 +2320,53 @@ fn counted_parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
+fn compact_counted_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = vec![0; 99];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(b"457");
+    frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+    frame[19] = 1;
+    frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+    frame[24] = 1;
+    frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+    frame[35..39].copy_from_slice(&2u32.to_le_bytes());
+    frame[40..44].copy_from_slice(&6u32.to_le_bytes());
+    frame[44] = 1;
+    frame[45..49].copy_from_slice(&45u32.to_le_bytes());
+    frame[55..59].copy_from_slice(&9u32.to_le_bytes());
+    frame[63] = 1;
+    frame[64..68].copy_from_slice(&12u32.to_le_bytes());
+    frame[76] = 1;
+    frame[77..81].copy_from_slice(&46u32.to_le_bytes());
+    frame[88] = 1;
+    frame[89..93].copy_from_slice(&12u32.to_le_bytes());
+    frame
+}
+
+fn tagged_scalar_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = vec![0; 107];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(b"406");
+    frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+    frame[19] = 1;
+    frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+    frame[24] = 1;
+    frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+    frame[35..39].copy_from_slice(&2u32.to_le_bytes());
+    frame[39] = 1;
+    frame[44..52].copy_from_slice(&6.0f64.to_le_bytes());
+    frame[52] = 1;
+    frame[53..57].copy_from_slice(&45u32.to_le_bytes());
+    frame[63..67].copy_from_slice(&9u32.to_le_bytes());
+    frame[71] = 1;
+    frame[72..76].copy_from_slice(&12u32.to_le_bytes());
+    frame[84] = 1;
+    frame[85..89].copy_from_slice(&46u32.to_le_bytes());
+    frame[96] = 1;
+    frame[97..101].copy_from_slice(&12u32.to_le_bytes());
+    frame
+}
+
 #[test]
 fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
@@ -2257,7 +2376,7 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     assert_eq!(parsed.evaluated_value, 6.0);
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.owned_ordinal, 9);
-    assert_eq!(parsed.variant, 1);
+    assert_eq!(parsed.variant, Some(1));
     assert_eq!(parsed.companion_record_index, 46);
 
     let mut parameter_first = parameter_owner_frame();
@@ -2274,12 +2393,49 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
 }
 
 #[test]
+fn compact_parameter_owner_omits_the_variant_slot() {
+    let parsed =
+        parse_parameter_owner(&compact_parameter_owner_frame()).expect("compact parameter owner");
+    assert_eq!(parsed.record_index, 6653);
+    assert_eq!(parsed.scope_record_index, 6644);
+    assert_eq!(parsed.parameter_record_index, 6654);
+    assert_eq!(parsed.companion_record_index, 6655);
+    assert_eq!(parsed.owned_ordinal, 4);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.evaluated_value, 8.2);
+}
+
+#[test]
 fn counted_parameter_owner_uses_typed_u32_scalar() {
     let parsed =
         parse_parameter_owner(&counted_parameter_owner_frame()).expect("counted parameter owner");
     assert_eq!(parsed.evaluated_value, 6.0);
     assert_eq!(parsed.evaluated_value_offset, 41);
     assert_eq!(parsed.parameter_record_index, 45);
+    assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
+fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
+    let mut frame = compact_counted_parameter_owner_frame();
+    frame[45..49].copy_from_slice(&46u32.to_le_bytes());
+    frame[77..81].copy_from_slice(&45u32.to_le_bytes());
+    let parsed = parse_parameter_owner(&frame).expect("compact counted parameter owner");
+    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value_offset, 40);
+    assert_eq!(parsed.parameter_record_index, 46);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.companion_record_index, 45);
+}
+
+#[test]
+fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
+    let parsed = parse_parameter_owner(&tagged_scalar_parameter_owner_frame())
+        .expect("tagged scalar parameter owner");
+    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value_offset, 44);
+    assert_eq!(parsed.parameter_record_index, 45);
+    assert_eq!(parsed.variant, None);
     assert_eq!(parsed.companion_record_index, 46);
 }
 
@@ -2566,7 +2722,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
         evaluated_value_offset: pair.paired_byte_offset + 99,
         parameter_record_index: 301,
         owned_ordinal: 3,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: 302,
     };
     assert_eq!(
@@ -4705,6 +4861,59 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     assert_eq!(scope.coil_section_placement_offset, Some(107));
     assert_eq!(scope.coil_clockwise, Some(true));
     assert_eq!(scope.coil_clockwise_offset, Some(24));
+}
+
+#[test]
+fn compact_coil_scope_uses_its_own_closed_discriminators() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"353");
+    bytes.extend_from_slice(&6644u32.to_le_bytes());
+    bytes.resize(120, 0);
+    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+    bytes[24] = 0;
+    bytes[26..30].copy_from_slice(&4u32.to_le_bytes());
+    bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
+    bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
+    bytes[107..111].copy_from_slice(&3u32.to_le_bytes());
+    let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
+    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    for reference in references {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&310u32.to_le_bytes());
+    lp_utf16(&mut bytes, "CoilPrimitive");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&309u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&6644u32.to_le_bytes());
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 6644,
+        class_tag: "353".into(),
+        byte_offset: 0,
+    };
+
+    let scope = parse_parameter_scope(&bytes, &header).expect("compact Coil scope");
+    assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::NewBody));
+    assert_eq!(scope.coil_extent, Some(DesignCoilExtent::RevolutionsHeight));
+    assert_eq!(
+        scope.coil_section,
+        Some(DesignCoilSection::ExternalTriangle)
+    );
+    assert_eq!(
+        scope.coil_section_placement,
+        Some(DesignCoilSectionPlacement::Inside)
+    );
+    assert_eq!(scope.coil_clockwise, Some(false));
+
+    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+    assert!(parse_parameter_scope(&bytes, &header).is_none());
 }
 
 #[test]
@@ -9414,8 +9623,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        prefix_value: 0,
-        prefix_value_offset: 0,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(0),
         source_ordinal: 4,
         owner_record_index: Some(21),
         expression: "2 mm".into(),
@@ -9441,7 +9650,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         evaluated_value_offset: 0,
         parameter_record_index: 20,
         owned_ordinal: 0,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: 22,
     };
     let companion = DesignParameterCompanion {
@@ -9817,7 +10026,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         evaluated_value_offset: 40,
         parameter_record_index: 11,
         owned_ordinal: 0,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: 12,
     };
     let pair = |stream: &str| DesignDimensionLocusPair {
@@ -9904,8 +10113,8 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        prefix_value: 0,
-        prefix_value_offset: 0,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(0),
         source_ordinal: 4,
         owner_record_index: Some(21),
         expression: "thickness".into(),
@@ -9931,7 +10140,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         evaluated_value_offset: 0,
         parameter_record_index: 20,
         owned_ordinal: 0,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: 22,
     };
     let companion = DesignParameterCompanion {
@@ -10721,6 +10930,28 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
 }
 
 #[test]
+fn owned_parameter_without_a_projected_scope_stays_native_only() {
+    let mut parameter = parse_design_parameter(&parameter_record(
+        Some(44),
+        "60 mm",
+        "AlongDistance",
+        Some("mm"),
+        "d12",
+        6.0,
+    ))
+    .unwrap();
+    parameter.id = "f3d:native:parameter#45".into();
+    parameter.record_index = 45;
+    let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    owner.id = "f3d:native:parameter-owner#44".into();
+
+    let (features, parameters) =
+        project_parameter_design(&[parameter], &[owner], &[], &[], &[], &[], &[], &[]);
+    assert!(features.is_empty());
+    assert!(parameters.is_empty());
+}
+
+#[test]
 fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let parameter = |owner, record_index, expression: &str, name: &str| {
         let mut parameter = parse_design_parameter(&parameter_record(
@@ -10752,7 +10983,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         evaluated_value_offset: 0,
         parameter_record_index,
         owned_ordinal: parameter_record_index,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: record_index + 1,
     };
     let scope = |record_index| DesignParameterScope {
@@ -12966,7 +13197,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         evaluated_value_offset: 0,
         parameter_record_index,
         owned_ordinal: parameter_record_index,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: record_index + 1,
     };
     let (features, parameters) = project_parameter_design(

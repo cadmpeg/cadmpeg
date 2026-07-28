@@ -669,6 +669,21 @@ pub fn project_parameter_design_with_edge_identities(
 
     let mut parameters = native
         .iter()
+        .filter(|parameter| {
+            parameter.owner_record_index.is_none_or(|owner| {
+                owners_by_index
+                    .get(&(
+                        native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM),
+                        owner,
+                    ))
+                    .is_some_and(|owner| {
+                        scope_ids.contains_key(&(
+                            native_stream(&owner.id).unwrap_or(ids::DEFAULT_STREAM),
+                            owner.scope_record_index,
+                        ))
+                    })
+            })
+        })
         .map(|parameter| {
             let mut properties = BTreeMap::new();
             if parameter.kind != DesignParameterKind::User {

@@ -5418,8 +5418,8 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             byte_offset: 0,
             class_tag: "305".into(),
             record_index: 700,
-            prefix_value: 0,
-            prefix_value_offset: 22,
+            family_discriminator: Some(0),
+            family_discriminator_offset: Some(22),
             source_ordinal: 0,
             owner_record_index: None,
             expression: "Width / 2".into(),
@@ -5441,8 +5441,8 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             byte_offset: 0,
             class_tag: "305".into(),
             record_index: 701,
-            prefix_value: 0,
-            prefix_value_offset: 22,
+            family_discriminator: Some(0),
+            family_discriminator_offset: Some(22),
             source_ordinal: 1,
             owner_record_index: None,
             expression: "60 mm".into(),
@@ -9226,8 +9226,8 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         byte_offset: 100,
         class_tag: "305".into(),
         record_index: 900,
-        prefix_value: 0,
-        prefix_value_offset: 122,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(122),
         source_ordinal: 0,
         owner_record_index: None,
         expression: "60 mm".into(),
@@ -9245,13 +9245,29 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
     assert!(crate::validate::validate_native(&ir).is_empty());
 
-    f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 7;
+    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(7);
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some("generated:design-parameter#0")
             && finding.message.contains("family discriminator")
     }));
-    f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 0;
+    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(0);
+
+    {
+        let parameter = &mut f3d_native_mut(&mut ir).design_parameters[0];
+        parameter.family_discriminator = None;
+        parameter.family_discriminator_offset = None;
+    }
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::NativeLinks
+            && finding.entity.as_deref() == Some("generated:design-parameter#0")
+            && finding.message.contains("family discriminator")
+    }));
+    {
+        let parameter = &mut f3d_native_mut(&mut ir).design_parameters[0];
+        parameter.family_discriminator = Some(0);
+        parameter.family_discriminator_offset = Some(122);
+    }
 
     {
         let mut native = f3d_native_mut(&mut ir);

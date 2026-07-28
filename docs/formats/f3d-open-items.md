@@ -34,7 +34,8 @@ This document records F3D semantics that the format specification does not yet d
 - The point-to-surface loci selected by sketch-relation member-role values `0` through `3` are unresolved. They do not select the four control-grid corners.
 - The semantic meaning of the explicit per-member role integers within a `0x80000000` spline-group relation is unresolved.
 - The value semantics of the sheet-metal `EdgeFlange` and `Hem` extent, height-datum, bend-position, direction, and hem-form discriminators are unresolved, so these features have no neutral operation grammar.
-- `SpirePrimitive` section-placement values other than `4`, and the independent semantic name of its fixed u32 value `2` at primary-header offset 26, remain unresolved.
+- `SpirePrimitive` section-placement values other than `4`, `CoilPrimitive` operation values other than `1`, extent values other than `1`, section values other than `1`, section-placement values other than `3`, and the independent semantic names of their fixed u32 values at primary-header offset 26 remain unresolved.
+- The semantic role of the eighth ordered `CoilPrimitive` scope reference is unresolved.
 - In the `EntityGenesis`-form placement record class, the role of the f64-shaped field ending at primary-record offset 45 is unresolved.
 - The construction-record join that determines the position of a reference-derived `WorkPoint` without an explicit class-282 coordinate is unresolved.
 - The field semantics of the two patch-setting records at ordered reference positions two and three of the 354-byte `SurfacePatch` scope are unresolved.
