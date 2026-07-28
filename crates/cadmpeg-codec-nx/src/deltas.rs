@@ -2525,19 +2525,33 @@ fn type_45_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(
     let (xmt, xmt_len) = read_xmt(stream, count_at.checked_add(4)?)?;
     (xmt > 1).then_some(())?;
     let data_at = count_at.checked_add(4 + xmt_len)?;
-    let value_count = count.checked_add(1)?;
-    let end = data_at.checked_add(value_count.checked_mul(8)?)?;
-    stream
-        .get(data_at..end)?
-        .chunks_exact(8)
-        .all(|raw| {
-            f64::from_be_bytes(
-                raw.try_into()
-                    .expect("chunks_exact(8) yields eight-byte slices"),
-            )
-            .is_finite()
-        })
-        .then_some((xmt, end))
+    let finite_end = |value_count: usize| {
+        let end = data_at.checked_add(value_count.checked_mul(8)?)?;
+        stream
+            .get(data_at..end)?
+            .chunks_exact(8)
+            .all(|raw| {
+                f64::from_be_bytes(
+                    raw.try_into()
+                        .expect("chunks_exact(8) yields eight-byte slices"),
+                )
+                .is_finite()
+            })
+            .then_some(end)
+    };
+    let exact_end = finite_end(count);
+    let successor_end = count.checked_add(1).and_then(finite_end);
+    let end = match (exact_end, successor_end) {
+        (Some(exact), Some(successor))
+            if plausible_next(stream, exact) && !plausible_next(stream, successor) =>
+        {
+            exact
+        }
+        (_, Some(successor)) => successor,
+        (Some(exact), None) if plausible_next(stream, exact) => exact,
+        (Some(_) | None, None) => return None,
+    };
+    Some((xmt, end))
 }
 
 fn type_141_layout(

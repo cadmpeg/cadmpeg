@@ -6719,16 +6719,20 @@ fn deltas_walks_complete_surface_data_headers() {
 
     let direct = record(false, 20, 1);
     let escaped = record(true, 40_000, 2);
+    let mut extended_marker_one = record(false, 21, 1);
+    extended_marker_one[73..77].fill(b'B');
     let mut stream = direct.clone();
     stream.extend_from_slice(&escaped);
+    stream.extend_from_slice(&extended_marker_one);
     let decoded_len = stream.len();
     stream.extend_from_slice(&[0xfe, 0xdc]);
 
     let census = crate::deltas::walk(&stream);
-    assert_eq!(census.full_counts["B_SURFACE_DATA"], 2);
+    assert_eq!(census.full_counts["B_SURFACE_DATA"], 3);
     assert_eq!(census.bytes_decoded, decoded_len);
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(census.records[1].canonical_bytes, escaped);
+    assert_eq!(census.records[2].canonical_bytes, extended_marker_one);
 
     let mut invalid_marker = record(false, 20, 2);
     invalid_marker[68] = 3;
@@ -6741,20 +6745,20 @@ fn deltas_walks_complete_surface_data_headers() {
 
 #[test]
 fn deltas_walks_complete_curve_data_headers() {
-    fn record(escape: bool, xmt: u32, reference: u32) -> Vec<u8> {
+    fn record(escape: bool, xmt: u32, mode: u8, reference: u32) -> Vec<u8> {
         let mut bytes = 135u16.to_be_bytes().to_vec();
         if escape {
             bytes.push(0xff);
         }
         bytes.extend(encoded_xmt(xmt));
-        bytes.push(2);
+        bytes.push(mode);
         bytes.extend(encoded_xmt(reference));
         bytes.push(1);
         bytes
     }
 
-    let direct = record(false, 20, 1);
-    let escaped = record(true, 40_000, 21);
+    let direct = record(false, 20, 2, 1);
+    let escaped = record(true, 40_000, 1, 21);
     let mut stream = direct.clone();
     stream.extend_from_slice(&escaped);
     let decoded_len = stream.len();
@@ -6766,11 +6770,11 @@ fn deltas_walks_complete_curve_data_headers() {
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(census.records[1].canonical_bytes, escaped);
 
-    let mut invalid_marker = record(false, 20, 1);
+    let mut invalid_marker = record(false, 20, 2, 1);
     invalid_marker[4] = 3;
     assert!(crate::deltas::walk(&invalid_marker).records.is_empty());
 
-    let mut invalid_status = record(false, 20, 1);
+    let mut invalid_status = record(false, 20, 2, 1);
     *invalid_status.last_mut().expect("final status") = 0;
     assert!(crate::deltas::walk(&invalid_status).records.is_empty());
 }
@@ -6820,13 +6824,13 @@ fn deltas_walks_complete_type_141_records() {
 
 #[test]
 fn deltas_walks_complete_type_45_records() {
-    fn record(escape: bool, xmt: u32, values: &[f64]) -> Vec<u8> {
+    fn record(escape: bool, xmt: u32, values: &[f64], count_offset: usize) -> Vec<u8> {
         let mut bytes = 45u16.to_be_bytes().to_vec();
         if escape {
             bytes.push(0xff);
         }
         bytes.extend_from_slice(
-            &u32::try_from(values.len() - 1)
+            &u32::try_from(values.len() - count_offset)
                 .expect("test value count")
                 .to_be_bytes(),
         );
@@ -6837,8 +6841,8 @@ fn deltas_walks_complete_type_45_records() {
         bytes
     }
 
-    let direct = record(false, 33_000, &[1.0, -2.0, 3.0, 4.0, 5.0]);
-    let escaped = record(true, 40_000, &[0.0, 0.25, -0.5, 0.75, 1.0]);
+    let direct = record(false, 33_000, &[1.0, -2.0, 3.0, 4.0, 5.0], 1);
+    let escaped = record(true, 40_000, &[0.0, 0.25, -0.5, 0.75, 1.0], 1);
     let mut stream = direct.clone();
     stream.extend_from_slice(&escaped);
     let decoded_len = stream.len();
@@ -6856,7 +6860,31 @@ fn deltas_walks_complete_type_45_records() {
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[direct, escaped].concat()));
 
-    let mut nonfinite = record(false, 12, &[1.0, 2.0, 3.0, 4.0, f64::NAN]);
+    let mut counted = record(false, 41_000, &[1.0, 2.0, 3.0], 0);
+    let counted_end = counted.len();
+    let mut surface_header = 125u16.to_be_bytes().to_vec();
+    surface_header.extend(encoded_xmt(42_000));
+    for value in [0.0f64, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0] {
+        surface_header.extend_from_slice(&value.to_be_bytes());
+    }
+    surface_header.extend_from_slice(&[2, b'B', b'B', b'B', b'B', b'B', b'B', b'B', b'B']);
+    surface_header.extend_from_slice(&[b'?', b'?', b'?', b'?']);
+    for reference in [1u32, 1, 1, 1] {
+        surface_header.extend(encoded_xmt(reference));
+        surface_header.push(1);
+    }
+    counted.extend_from_slice(&surface_header);
+    let census = crate::deltas::walk(&counted);
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| (record.kind, record.offset, record.end))
+            .collect::<Vec<_>>(),
+        [(45, 0, counted_end), (125, counted_end, counted.len())]
+    );
+
+    let mut nonfinite = record(false, 12, &[1.0, 2.0, 3.0, 4.0, f64::NAN], 1);
     nonfinite.extend_from_slice(&[0xfe, 0xdc]);
     assert!(crate::deltas::walk(&nonfinite).records.is_empty());
 }

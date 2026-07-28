@@ -349,20 +349,19 @@ fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     let marker = usize::from(*bytes.get(at)?);
     matches!(marker, 1 | 2).then_some(())?;
     at += 1;
-    let b_count = marker * 4;
-    bytes
-        .get(at..at + b_count)?
+    let marker_lane = bytes.get(at..at.checked_add(12)?)?;
+    let canonical_b_count = marker * 4;
+    let canonical = marker_lane[..canonical_b_count]
         .iter()
         .all(|byte| *byte == b'B')
-        .then_some(())?;
-    at += b_count;
-    let question_count = 12 - b_count;
-    bytes
-        .get(at..at + question_count)?
-        .iter()
-        .all(|byte| *byte == b'?')
-        .then_some(())?;
-    at += question_count;
+        && marker_lane[canonical_b_count..]
+            .iter()
+            .all(|byte| *byte == b'?');
+    let extended_marker_one = marker == 1
+        && marker_lane[..8].iter().all(|byte| *byte == b'B')
+        && marker_lane[8..].iter().all(|byte| *byte == b'?');
+    (canonical || extended_marker_one).then_some(())?;
+    at += marker_lane.len();
     for _ in 0..4 {
         let (_, reference_len) = read_xmt(bytes, at)?;
         at += reference_len;
@@ -401,7 +400,7 @@ fn curve_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
     (xmt > 10).then_some(())?;
     let mut at = pos.checked_add(2 + escape + xmt_len)?;
-    (bytes.get(at) == Some(&2)).then_some(())?;
+    matches!(bytes.get(at), Some(1 | 2)).then_some(())?;
     at += 1;
     let (_, reference_len) = read_xmt(bytes, at)?;
     at += reference_len;

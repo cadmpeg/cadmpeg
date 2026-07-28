@@ -469,7 +469,14 @@ Type 141 has the complete deltas record `008d [ff], xmt, ref status, ref 00, ref
 
 Type 70 has the complete deltas record `0046 [ff], xmt, node_id:u32 BE, 04, (01 ref)[4], count:u16 BE, 00000014, 00000001, ref 00, ref 00`. The XMT identity and duplicated trailing reference are non-null, the count is nonzero, and the two trailing references are equal. Each reference uses compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity. The record ends after the second trailing status byte and participates in the deltas byte ledger.
 
-Type 45 has the complete deltas record `002d [ff], count:u32 BE, xmt, value[count + 1]:f64 BE`. The count is nonzero, the XMT identity is non-null, and every value is finite. The optional `ff` envelope byte precedes the count. The record ends after its declared value lane, participates in the deltas byte ledger, and remains in the semantic lane.
+Type 45 has the complete deltas record
+`002d [ff], count:u32 BE, xmt, value[n]:f64 BE`, where `n` is `count` or
+`count + 1`. The count is nonzero, the XMT identity is non-null, and every
+value is finite. When both cardinalities fit the remaining bytes, a complete
+admitted record beginning after `count` values selects the shorter form unless
+the longer form also ends at an admitted record boundary. The optional `ff`
+envelope byte precedes the count. The record ends after its selected value
+lane, participates in the deltas byte ledger, and remains in the semantic lane.
 
 Type 74 `ATTDEF_LIST` has the complete deltas record `004a [ff], slot_count:u32 BE, xmt, active_count:u32 BE, zero:u32 BE, ref(1) 01, slot[slot_count]`. Each slot is an encoded XMT followed by status `01`. The first `active_count` slots are non-null references and the remaining slots are null reference `1`; `active_count <= slot_count`. The XMT identity and slot count are non-null. The optional `ff` envelope byte precedes the slot count. The record ends after the declared slot lane, participates in the deltas byte ledger, and does not replace topology or geometry records.
 
@@ -1344,9 +1351,11 @@ A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body snapsh
 
 ### 9.3 B-spline payloads
 
-A type-125 B-surface control payload stores a parameter-range block, a marker byte, a sense byte, `double_count:u32`, a large-index-capable `first_index`, and `double_count` doubles. An optional envelope escape before `double_count` shifts the remaining fields by one byte. A type-125 surface-data header is `007d [ff], xmt, value[8]:f64 BE, marker, marker_lane[12], ref 01, ref 01, ref 01, ref 01`. The XMT is non-null, every value is finite, and `marker` is `01` or `02`. `marker_lane` contains `marker * 4` bytes `42` followed by `(3 - marker) * 4` bytes `3f`.
+A type-125 B-surface control payload stores a parameter-range block, a marker byte, a sense byte, `double_count:u32`, a large-index-capable `first_index`, and `double_count` doubles. An optional envelope escape before `double_count` shifts the remaining fields by one byte. A type-125 surface-data header is `007d [ff], xmt, value[8]:f64 BE, marker, marker_lane[12], ref 01, ref 01, ref 01, ref 01`. The XMT is non-null, every value is finite, and `marker` is `01` or `02`. `marker_lane` contains either `marker * 4` bytes `42` followed by `(3 - marker) * 4` bytes `3f`, or, for marker `01`, eight bytes `42` followed by four bytes `3f`.
 
-A type-135 curve-data header is `0087 [ff], xmt, 02, ref 01`. Its XMT is non-null. A type-135 counted control payload is distinct and ends after its declared finite-double lane.
+A type-135 curve-data header is `0087 [ff], xmt, mode, ref 01`, where `mode`
+is `01` or `02`. Its XMT is non-null. A type-135 counted control payload is
+distinct and ends after its declared finite-double lane.
 
 A type-126 B-surface descriptor stores U and V degrees, pole counts, form codes, distinct-knot counts, multiplicity references, knot references, and a control-payload reference. It has short and large-index layouts.
 
