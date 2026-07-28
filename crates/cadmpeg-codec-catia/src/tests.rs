@@ -9247,6 +9247,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         0
     );
     assert_eq!(
+        decoded.report.coverage["decoded_schema_selected_control_entity_suffix_value_count"],
+        0
+    );
+    assert_eq!(
         decoded.report.coverage["decoded_schema_selected_separator_entity_suffix_value_count"],
         0
     );
@@ -9612,6 +9616,77 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             ..
         }
     ));
+
+    let selected_control = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parameter_value(&[
+                0x84, 0x88, 0x81, 0x32, 4, 0, 0, 0, 0xe8, 0x81, 0x49,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode schema-selected control suffix");
+    assert_eq!(
+        selected_control.report.coverage
+            ["decoded_schema_selected_control_entity_suffix_value_count"],
+        1
+    );
+    assert_eq!(
+        selected_control.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
+        1
+    );
+    let selected_control = crate::native::CatiaNative::load(
+        selected_control
+            .ir
+            .native
+            .namespace("catia")
+            .expect("namespace"),
+    )
+    .expect("load schema-selected control suffix");
+    assert!(matches!(
+        selected_control.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete schema-selected control suffix")
+            .payload,
+        CatiaEntitySuffixPayload::SchemaSelected {
+            selector: 4,
+            value: crate::native::CatiaEntitySuffixSelectedValue::ControlE8,
+        }
+    ));
+    assert!(matches!(
+        selected_control.entity_records[0]
+            .suffix_schema_selection
+            .as_ref()
+            .expect("resolved schema-selected control suffix"),
+        crate::native::CatiaEntitySuffixSchemaSelection {
+            ordinal: 4,
+            name,
+            value: crate::native::CatiaEntitySuffixSchemaValue::ControlE8,
+            ..
+        } if name == "Thickness"
+    ));
+    let mut malformed_selected_control = selected_control.clone();
+    malformed_selected_control.entity_records[0]
+        .suffix_schema_selection
+        .as_mut()
+        .expect("resolved schema-selected control suffix")
+        .value = crate::native::CatiaEntitySuffixSchemaValue::Separator37;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_selected_control
+        .store(&mut namespace)
+        .expect("store malformed schema-selected control suffix");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+    let malformed_selected_control =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x84, 0x88, 0x81, 0x32, 4, 0, 0, 0, 0xe8, 0x81, 0x49, 0x00,
+        ]));
+    assert_eq!(
+        malformed_selected_control.entity_records[0].suffix_value,
+        None
+    );
 
     let selected_separator =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[

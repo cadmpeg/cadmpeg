@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 164;
+pub const CATIA_NATIVE_VERSION: u32 = 165;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1048,6 +1048,8 @@ pub enum CatiaEntitySuffixSelectedValue {
         /// Decoded evaluation.
         evaluation: CatiaEntityEvaluation,
     },
+    /// One zero-payload `E8` control state.
+    ControlE8,
     /// One zero-payload `37` separator.
     Separator37,
     /// One further source-schema selector.
@@ -1100,6 +1102,8 @@ pub enum CatiaEntitySuffixSchemaValue {
         /// Decoded evaluation.
         evaluation: CatiaEntityEvaluation,
     },
+    /// One zero-payload `E8` control state.
+    ControlE8,
     /// One zero-payload `37` separator.
     Separator37,
     /// One nested source-schema selector.
@@ -1829,6 +1833,7 @@ fn entity_suffix_schema_selection(
                 evaluation: evaluation.clone(),
             }
         }
+        CatiaEntitySuffixSelectedValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
         CatiaEntitySuffixSelectedValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
         CatiaEntitySuffixSelectedValue::SchemaSelector { ordinal } => {
             let selected = usize::try_from(*ordinal)
@@ -2183,6 +2188,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
                 },
                 value_offset + 1,
             ),
+            0xe8 => (CatiaEntitySuffixSelectedValue::ControlE8, value_offset + 1),
             0x37 => (
                 CatiaEntitySuffixSelectedValue::Separator37,
                 value_offset + 1,
