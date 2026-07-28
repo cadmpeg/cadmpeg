@@ -4471,6 +4471,13 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .iter()
         .find(|surface| surface.id.0.starts_with("catia:standard:revolution#"))
         .expect("transferred revolution construction");
+    assert!(decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.id == revolution.surface));
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
     assert!(matches!(
         &revolution.definition,
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {

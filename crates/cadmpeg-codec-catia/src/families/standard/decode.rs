@@ -880,6 +880,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             record_bounds,
         });
     }
+    ir.model.surfaces = surfaces;
     let resolved_revolution_count =
         append_consolidated_revolutions(&mut ir, &mut annotations, &scan.data);
 
@@ -919,7 +920,6 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
     for (id, stream, offset, tag, exactness) in surface_annotations {
         annotate(&mut annotations, &id, stream, offset as u64, tag, exactness);
     }
-    ir.model.surfaces = surfaces;
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
     attach_standard_faces(
