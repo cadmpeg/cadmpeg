@@ -662,7 +662,7 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
         let Some(position) = exact_point2(entity.numeric_tuple.as_ref()) else {
             continue;
         };
-        let mut sketch_targets = BTreeMap::<&str, BTreeSet<String>>::new();
+        let mut sketch_targets = BTreeSet::<&str>::new();
         for relation in &object.relations {
             if relation
                 .source_class
@@ -675,14 +675,11 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
                 continue;
             };
             if sketch_declarations.contains_key(target.id.as_str()) {
-                sketch_targets
-                    .entry(target.id.as_str())
-                    .or_default()
-                    .insert(relation.source_field.clone());
+                sketch_targets.insert(target.id.as_str());
             }
         }
         let mut sketch_targets = sketch_targets.into_iter();
-        let Some((sketch_target, membership_fields)) = sketch_targets.next() else {
+        let Some(sketch_target) = sketch_targets.next() else {
             continue;
         };
         if sketch_targets.next().is_some() {
@@ -704,7 +701,6 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
                 native_entity: entity.id.clone(),
                 coordinate_field: owner_record.to_string(),
                 declaration_fields,
-                membership_fields,
                 source_order: object.first_field_byte_offset,
                 position,
             });
@@ -730,9 +726,6 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
             transfer
                 .consumed_object_records
                 .extend(point.declaration_fields);
-            transfer
-                .consumed_object_records
-                .extend(point.membership_fields);
             entities.push(SketchEntity {
                 id,
                 sketch: sketch_id.clone(),
@@ -777,7 +770,6 @@ struct SketchPointCandidate {
     native_entity: String,
     coordinate_field: String,
     declaration_fields: BTreeSet<String>,
-    membership_fields: BTreeSet<String>,
     source_order: u64,
     position: Point2,
 }
