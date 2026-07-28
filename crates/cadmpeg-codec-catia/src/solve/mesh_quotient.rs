@@ -35,6 +35,23 @@ pub(crate) enum MeshCandidateSolve {
     Exhausted,
 }
 
+enum MeshEndpointResolve {
+    Solved(StandardTopology, Vec<usize>),
+    Rejected,
+    Ambiguous,
+    Exhausted,
+}
+
+impl MeshEndpointResolve {
+    #[cfg(test)]
+    fn into_option(self) -> Option<(StandardTopology, Vec<usize>)> {
+        match self {
+            Self::Solved(topology, assignment) => Some((topology, assignment)),
+            Self::Rejected | Self::Ambiguous | Self::Exhausted => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct MeshQuotient {
     pub(crate) union: UnionFind,
@@ -5259,6 +5276,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
         assignments,
         &port_identities,
     )
+    .into_option()
 }
 
 fn resolve_standard_mesh_endpoint_candidates(
@@ -5267,46 +5285,54 @@ fn resolve_standard_mesh_endpoint_candidates(
     edge_candidates: &[Vec<[usize; 2]>],
     mut assignments: Vec<Vec<MeshFaceBoundaryAssignment>>,
     port_identities: &[[u32; 2]],
-) -> Option<(StandardTopology, Vec<usize>)> {
+) -> MeshEndpointResolve {
     const MAX_SELECTION_WORK: usize = 100_000;
 
     let face_count = assignments.len();
     let mut edge_candidates = edge_candidates.to_vec();
     if !prune_mesh_endpoint_pair_support(&mut assignments, &mut edge_candidates) {
-        return None;
+        return MeshEndpointResolve::Rejected;
     }
-    let quotient = initial_mesh_quotient(&edge_candidates, vertex_points.len(), port_identities)?;
+    let Some(quotient) =
+        initial_mesh_quotient(&edge_candidates, vertex_points.len(), port_identities)
+    else {
+        return MeshEndpointResolve::Rejected;
+    };
     let option_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     for face in &mut assignments {
         face.retain(|assignment| {
             quotient.assignment_has_option(assignment, &edge_candidates, Some(&option_budget))
         });
         if option_budget.exhausted.get() {
-            return None;
+            return MeshEndpointResolve::Exhausted;
         }
         if face.is_empty() {
-            return None;
+            return MeshEndpointResolve::Rejected;
         }
     }
     let face_work = assignments
         .iter()
         .map(|assignments| Some(assignments.len()))
         .collect::<Vec<_>>();
-    let total_work = face_work
+    let Some(total_work) = face_work
         .iter()
         .copied()
-        .collect::<Option<Vec<_>>>()?
-        .into_iter()
-        .try_fold(0usize, usize::checked_add)?;
+        .collect::<Option<Vec<_>>>()
+        .and_then(|work| work.into_iter().try_fold(0usize, usize::checked_add))
+    else {
+        return MeshEndpointResolve::Rejected;
+    };
     if total_work > MAX_SELECTION_WORK {
-        return None;
+        return MeshEndpointResolve::Exhausted;
     }
     let face_equations = possible_face_equations(&assignments);
-    let face_choices = possible_face_choices_with_limit(
+    let Some(face_choices) = possible_face_choices_with_limit(
         &assignments,
         &face_equations,
         MAX_MESH_CONSTRAINT_OPERATIONS,
-    )?;
+    ) else {
+        return MeshEndpointResolve::Exhausted;
+    };
     let mut search = MeshSelectionSearch {
         assignments: &assignments,
         #[cfg(test)]
@@ -5324,9 +5350,15 @@ fn resolve_standard_mesh_endpoint_candidates(
         face_equation_cache: RefCell::default(),
     };
     search.search(&quotient);
-    (!search.ambiguous && !search.exhausted)
-        .then_some(search.solution)
-        .flatten()
+    if search.exhausted {
+        MeshEndpointResolve::Exhausted
+    } else if search.ambiguous {
+        MeshEndpointResolve::Ambiguous
+    } else if let Some((topology, assignment)) = search.solution {
+        MeshEndpointResolve::Solved(topology, assignment)
+    } else {
+        MeshEndpointResolve::Rejected
+    }
 }
 
 /// Resolve geometric endpoint alternatives through face incidence before
@@ -5504,14 +5536,17 @@ where
                     continue;
                 };
                 deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
-                let Some(candidate) = resolve_standard_mesh_endpoint_candidates(
+                let candidate = match resolve_standard_mesh_endpoint_candidates(
                     &edge_rows,
                     &vertex_points,
                     &singleton,
                     mesh_assignments,
                     &port_identities,
-                ) else {
-                    continue;
+                ) {
+                    MeshEndpointResolve::Solved(topology, assignment) => (topology, assignment),
+                    MeshEndpointResolve::Rejected => continue,
+                    MeshEndpointResolve::Ambiguous => return MeshCandidateSolve::Ambiguous,
+                    MeshEndpointResolve::Exhausted => return MeshCandidateSolve::Exhausted,
                 };
                 match &solution {
                     Some(stored)
@@ -5544,15 +5579,20 @@ where
                 | MeshFaceBoundaryDomain::DeferredValidation(_) => None,
             })
             .collect::<Option<Vec<_>>>()?;
-        resolve_standard_mesh_endpoint_candidates(
+        Some(resolve_standard_mesh_endpoint_candidates(
             &edge_rows,
             &vertex_points,
             edge_candidates,
             assignments,
             &port_identities,
-        )
+        ))
     })();
-    fallback.map_or(MeshCandidateSolve::Rejected, |(topology, assignment)| {
-        MeshCandidateSolve::Solved(topology, assignment)
-    })
+    match fallback {
+        Some(MeshEndpointResolve::Solved(topology, assignment)) => {
+            MeshCandidateSolve::Solved(topology, assignment)
+        }
+        Some(MeshEndpointResolve::Ambiguous) => MeshCandidateSolve::Ambiguous,
+        Some(MeshEndpointResolve::Exhausted) => MeshCandidateSolve::Exhausted,
+        Some(MeshEndpointResolve::Rejected) | None => MeshCandidateSolve::Rejected,
+    }
 }
