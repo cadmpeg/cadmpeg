@@ -229,12 +229,26 @@ impl Brep {
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids(&value, &mut owned);
-        let roots = self
+        let native_body_ids = self
+            .body_native_keys
+            .iter()
+            .map(|native| native.body.0.as_str())
+            .collect::<HashSet<_>>();
+        let mut roots = self
             .body_selectors()
             .into_iter()
             .filter(|(_, selector)| selected_keys.contains(selector))
             .map(|(body, _)| body.0)
             .collect::<HashSet<_>>();
+        // A Design body map selects native ASM body records. Neutral roots
+        // projected from other saved top-level entities have no ASM body key
+        // and remain part of the selected BREP blob.
+        roots.extend(
+            self.bodies
+                .iter()
+                .filter(|body| !native_body_ids.contains(body.id.0.as_str()))
+                .map(|body| body.id.0.clone()),
+        );
         let mut adjacency = HashMap::<String, HashSet<String>>::new();
         collect_entity_adjacency(&value, &owned, &mut adjacency);
         let mut reachable = roots;
@@ -595,6 +609,7 @@ pub(crate) struct Reachable {
 pub(crate) struct WireShellTopology {
     wire_edges_by_shell: HashMap<i64, Vec<i64>>,
     free_vertices_by_shell: HashMap<i64, Vec<i64>>,
+    saved_free_edges: Vec<i64>,
 }
 
 /// Decode a framed active slice into the IR B-rep graph.

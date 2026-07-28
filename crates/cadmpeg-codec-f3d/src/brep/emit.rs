@@ -3609,6 +3609,7 @@ pub(crate) fn emit_containers(
     let WireShellTopology {
         wire_edges_by_shell,
         free_vertices_by_shell,
+        saved_free_edges,
     } = wire;
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
@@ -3698,6 +3699,32 @@ pub(crate) fn emit_containers(
             }
             _ => {}
         }
+    }
+    for &edge in saved_free_edges {
+        let body_id = BodyId(format!("f3d:brep:saved-edge-body#{edge}"));
+        let region_id = RegionId(format!("f3d:brep:saved-edge-region#{edge}"));
+        let shell_id = ShellId(format!("f3d:brep:saved-edge-shell#{edge}"));
+        out.bodies.push(Body {
+            id: body_id.clone(),
+            kind: cadmpeg_ir::topology::BodyKind::Wire,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        out.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id,
+            shells: vec![shell_id.clone()],
+        });
+        out.shells.push(Shell {
+            id: shell_id,
+            region: region_id,
+            faces: Vec::new(),
+            wire_edges: vec![EdgeId(id(edge))],
+            free_vertices: Vec::new(),
+        });
     }
 }
 

@@ -187,7 +187,7 @@ In both widths the remaining header is a sequence rather than a fixed-offset str
 Header invariants:
 
 - Every header word in either width is little-endian.
-- The entity-count and flags words carry stream metadata, not model-space quantities. In both widths, the entity-count word is the RecordTable index of the first owned record: `asmheader` and the stream's saved top-level entities (bodies, free faces, and free wire edges) occupy indices `0..entity_count`, no record in that range is referenced by an earlier record, and the record at index `entity_count` is the first record referenced from that range.
+- The entity-count and flags words carry stream metadata, not model-space quantities. In both widths, the entity-count word is the RecordTable index of the first owned record: `asmheader` occupies index 0, the stream's saved top-level entities (bodies, free faces, and free wire edges) occupy indices `1..entity_count` with an exclusive upper bound, no record in that range is referenced by an earlier record, and the record at index `entity_count` is the first record referenced from that range.
 - The flags word's bit 0 marks a history partition in both widths. Bits 1 and above have no assigned semantic meaning and are preserved.
 - `scale`, `resabs`, and `resnor` are kernel metadata. `scale` is not a coordinate transform. Fusion `BinaryFile8` streams use `scale = 60.0`, `resabs = 1e-6`, and `resnor = 1e-10`; ASM-227 `BinaryFile4` streams use `scale = 50.0` with the same tolerances; an ASM-229 `BinaryFile4` stream uses `scale = 90.0`.
 
