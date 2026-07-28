@@ -71,6 +71,9 @@ current scores require those matrices and representative fixtures.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
+- Complete consolidated cone-face chart records retain their reference-and-
+  control program, angular scale, and cone half-angle before the program's
+  higher-level roles resolve.
 - Zero-entity surface carriers retain their complete face-local `21xx` support
   tapes. Every occurrence keeps its framed local slot, record family, and
   inline UV endpoint pair when that family stores one. The independent `5e1a`

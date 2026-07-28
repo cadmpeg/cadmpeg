@@ -1089,9 +1089,10 @@ pub(crate) fn b2_linked_counted_owner_stream() -> Vec<u8> {
 
 pub(crate) fn b2_cone_face_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x3b, 0x20, 0x05];
-    for value in 0u8..16 {
-        record.push(4 * value + 1);
-    }
+    record.extend_from_slice(&[
+        0x85, 0x05, 0x08, 0x7f, 0x05, 0x08, 0x14, 0x03, 0xe5, 0xdd, 0x05, 0x01, 0x01, 0x05, 0x03,
+        0x11,
+    ]);
     record.extend_from_slice(&le_f64(1.5));
     record.extend_from_slice(&le_f64(std::f64::consts::FRAC_PI_4));
     record
@@ -4277,6 +4278,46 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA cone for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_consolidated_cone_face_charts() {
+    let native = crate::native::CatiaNative::decode(&b2_cone_face_stream());
+    let [face] = native.consolidated_cone_faces.as_slice() else {
+        panic!("one consolidated cone-face chart")
+    };
+    assert_eq!(face.program.len(), 16);
+    assert_eq!(face.angular_scale, 1.5);
+    assert_eq!(face.half_angle, std::f64::consts::FRAC_PI_4);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA cone-face chart");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA cone-face chart"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_cone_faces[0].program.clear();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA cone-face chart");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    let mut file = standard_catpart();
+    file.splice(16..16, b2_cone_face_stream());
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode CATIA cone-face chart");
+    assert_eq!(
+        decoded.report.coverage["decoded_consolidated_cone_face_count"],
+        1
+    );
 }
 
 #[test]

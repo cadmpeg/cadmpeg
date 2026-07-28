@@ -444,7 +444,7 @@ Every complete run is retained as a typed native historical edge record referenc
 - **Long `b2/b3/b4 03 61` family:** an eight-byte prefix, `0x06`, a nonempty strictly increasing lane of `u16le` members, `0xfe`, exactly five `0x0a <u16le>` persistent references, one finite `f64le` scalar, and terminal `0x03`. The fixed 25-byte suffix determines the member-lane boundary.
 - **`b2/b3/b4 03 5f` link:** payload `82 <width-coded target> 03 05`. The target uses the compact integer grammar; its encoded width determines the payload length.
 - **Owner allocation link:** when a `5f` link is immediately followed by a `62` owner packet, the owner's final identity equals `5f.target + 1` (the fixed nine-reference form uses its ninth identity). Both checked successor identity and framed adjacency are required; an intervening record breaks the link.
-- **`b2 03 3b`** has payload length `0x20`: compact references followed by f64 angular scale and cone half-angle.
+- **`b2/b3/b4 03 3b`** has width-coded header token `5`, a reference-and-control program beginning `85` and ending `03 11`, then finite f64 angular scale and cone half-angle. The half-angle lies strictly between zero and π/2. Complete frames retain their own identity when nested inside a wider consolidated payload.
 - **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine f64 values. The repeated range is the native parameter interval shared by the two preceding pcurves.
 
 ### 6.5 `b2 03 19/28/29/31/30/60` support and construction records

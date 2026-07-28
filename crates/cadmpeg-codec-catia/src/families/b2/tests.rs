@@ -202,12 +202,30 @@ fn b2_counted_owner_closes_variable_reference_lane_and_successor_link() {
 }
 
 #[test]
-fn b2_cone_face_parser_reads_refs_scale_and_half_angle() {
+fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
     let records = crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream());
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].references.len(), 16);
+    assert_eq!(records[0].program.len(), 16);
     assert_eq!(records[0].angular_scale, 1.5);
     assert_eq!(records[0].half_angle, std::f64::consts::FRAC_PI_4);
+}
+
+#[test]
+fn b2_cone_face_parser_reads_a_complete_nested_frame() {
+    let nested = b2_cone_face_stream();
+    let mut bytes = vec![0xa5, 0x03, 0x7f];
+    bytes.extend_from_slice(
+        &u32::try_from(nested.len())
+            .expect("bounded nested frame")
+            .to_le_bytes(),
+    );
+    bytes.push(0x05);
+    bytes.extend(nested);
+    let records = crate::families::b2::records::b2_cone_faces(&bytes);
+    let [record] = records.as_slice() else {
+        panic!("one nested cone-face chart")
+    };
+    assert_eq!(record.pos, 8);
 }
 
 #[test]

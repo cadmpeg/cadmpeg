@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 159;
+pub const CATIA_NATIVE_VERSION: u32 = 160;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -28,6 +28,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "catalogs",
     "consolidated_circles",
     "consolidated_class61_records",
+    "consolidated_cone_faces",
     "consolidated_cones",
     "consolidated_cylinders",
     "consolidated_edge_nodes",
@@ -471,6 +472,23 @@ pub struct CatiaConsolidatedGroup {
     pub byte_offset: u64,
     /// Compact group-type code.
     pub group_type: u32,
+}
+
+/// One complete consolidated cone-face chart descriptor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedConeFace {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Complete reference-and-control program preceding the scalars.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub program: Vec<u8>,
+    /// Stored angular chart scale.
+    pub angular_scale: f64,
+    /// Cone half-angle in radians.
+    pub half_angle: f64,
 }
 
 /// One complete consolidated historical edge run referencing two retained
@@ -2756,6 +2774,9 @@ pub struct CatiaNative {
     /// Complete consolidated class-`0x61` records.
     #[serde(default)]
     pub consolidated_class61_records: Vec<CatiaConsolidatedClass61Record>,
+    /// Complete consolidated cone-face chart descriptors.
+    #[serde(default)]
+    pub consolidated_cone_faces: Vec<CatiaConsolidatedConeFace>,
     /// Exact consolidated cone charts.
     #[serde(default)]
     pub consolidated_cones: Vec<CatiaConsolidatedCone>,
@@ -2847,6 +2868,7 @@ impl Default for CatiaNative {
             catalogs: Vec::new(),
             consolidated_circles: Vec::new(),
             consolidated_class61_records: Vec::new(),
+            consolidated_cone_faces: Vec::new(),
             consolidated_cones: Vec::new(),
             consolidated_cylinders: Vec::new(),
             consolidated_edge_nodes: Vec::new(),
@@ -3270,6 +3292,20 @@ fn consolidated_groups(bytes: &[u8]) -> Vec<CatiaConsolidatedGroup> {
             id: format!("catia:consolidated:group#{index}"),
             byte_offset: group.pos as u64,
             group_type: group.group_type,
+        })
+        .collect()
+}
+
+fn consolidated_cone_faces(bytes: &[u8]) -> Vec<CatiaConsolidatedConeFace> {
+    crate::families::b2::records::b2_cone_faces(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, face)| CatiaConsolidatedConeFace {
+            id: format!("catia:consolidated:cone-face#{index}"),
+            byte_offset: face.pos as u64,
+            program: face.program,
+            angular_scale: face.angular_scale,
+            half_angle: face.half_angle,
         })
         .collect()
 }
@@ -3952,6 +3988,28 @@ fn validate_consolidated_groups(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated group `{}` is structurally invalid",
                 group.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_cone_faces(
+    faces: &[CatiaConsolidatedConeFace],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, face) in faces.iter().enumerate() {
+        if face.id != format!("catia:consolidated:cone-face#{index}")
+            || face.program.len() < 16
+            || face.program.first() != Some(&0x85)
+            || !face.program.ends_with(&[0x03, 0x11])
+            || !face.angular_scale.is_finite()
+            || !(0.0..std::f64::consts::FRAC_PI_2).contains(&face.half_angle)
+            || index > 0 && faces[index - 1].byte_offset >= face.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated cone-face descriptor `{}` is structurally invalid",
+                face.id
             )));
         }
     }
@@ -5451,6 +5509,7 @@ impl CatiaNative {
         let legacy_entity_runs = legacy_entity_runs(bytes);
         let consolidated_circles = consolidated_circles(bytes);
         let consolidated_class61_records = consolidated_class61_records(bytes);
+        let consolidated_cone_faces = consolidated_cone_faces(bytes);
         let consolidated_cones = consolidated_cones(bytes);
         let consolidated_cylinders = consolidated_cylinders(bytes);
         let consolidated_groups = consolidated_groups(bytes);
@@ -5478,6 +5537,7 @@ impl CatiaNative {
             catalogs,
             consolidated_circles,
             consolidated_class61_records,
+            consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,
             consolidated_edge_nodes,
@@ -5899,6 +5959,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_class61_records")?;
         consolidated_class61_records.sort_by_key(|record| record.byte_offset);
         validate_consolidated_class61_records(&consolidated_class61_records)?;
+        let mut consolidated_cone_faces: Vec<CatiaConsolidatedConeFace> =
+            namespace.arena_as("consolidated_cone_faces")?;
+        consolidated_cone_faces.sort_by_key(|face| face.byte_offset);
+        validate_consolidated_cone_faces(&consolidated_cone_faces)?;
         let mut consolidated_cones: Vec<CatiaConsolidatedCone> =
             namespace.arena_as("consolidated_cones")?;
         consolidated_cones.sort_by_key(|cone| cone.byte_offset);
@@ -5994,6 +6058,7 @@ impl CatiaNative {
             catalogs,
             consolidated_circles,
             consolidated_class61_records,
+            consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,
             consolidated_edge_nodes,
@@ -6079,6 +6144,7 @@ impl CatiaNative {
             "consolidated_class61_records",
             &self.consolidated_class61_records,
         )?;
+        namespace.set_arena("consolidated_cone_faces", &self.consolidated_cone_faces)?;
         namespace.set_arena("consolidated_cones", &self.consolidated_cones)?;
         namespace.set_arena("consolidated_cylinders", &self.consolidated_cylinders)?;
         namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
@@ -6151,6 +6217,7 @@ impl CatiaNative {
             mut catalogs,
             consolidated_circles,
             consolidated_class61_records,
+            consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,
             consolidated_edge_nodes,
@@ -6199,6 +6266,7 @@ impl CatiaNative {
             "consolidated_class61_records",
             &consolidated_class61_records,
         )?;
+        namespace.set_arena("consolidated_cone_faces", &consolidated_cone_faces)?;
         namespace.set_arena("consolidated_cones", &consolidated_cones)?;
         namespace.set_arena("consolidated_cylinders", &consolidated_cylinders)?;
         namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;

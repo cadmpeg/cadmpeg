@@ -193,12 +193,11 @@ pub struct B2LinkedCountedOwner {
 
 /// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg(test)]
 pub struct B2ConeFace {
     /// Record byte offset.
     pub pos: usize,
-    /// Compact persistent-tag references.
-    pub references: Vec<u32>,
+    /// Complete reference-and-control program preceding the scalars.
+    pub program: Vec<u8>,
     /// Stored angular chart scale.
     pub angular_scale: f64,
     /// Cone half-angle in radians.
@@ -352,35 +351,58 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
 
 /// Decode width-coded `b2/b3/b4 03 3b` cone-face descriptors.
 #[must_use]
-#[cfg(test)]
 pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
-    b_family_frames(data, 0x3b)
-        .into_iter()
-        .filter_map(|frame| {
-            if frame.header_token != 5 || frame.end - frame.payload != 0x20 {
-                return None;
-            }
-            let scalar_at = frame.end - 16;
-            let angular_scale = f64_le(data, scalar_at)?;
-            let half_angle = f64_le(data, scalar_at + 8)?;
-            if !angular_scale.is_finite()
-                || !(0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
-            {
-                return None;
-            }
-            let mut at = frame.payload;
-            let mut references = Vec::new();
-            while at < scalar_at {
-                references.push(compact_int(data, &mut at)?);
-            }
-            (at == scalar_at).then_some(B2ConeFace {
-                pos: frame.pos,
-                references,
+    let mut faces = Vec::new();
+    for pos in 0..data.len().saturating_sub(5) {
+        let Some(width) = data[pos]
+            .checked_sub(0xb1)
+            .filter(|width| (1..=3).contains(width))
+        else {
+            continue;
+        };
+        if !matches!(data.get(pos + 1), Some(0x03 | 0x13 | 0x83))
+            || data.get(pos + 2) != Some(&0x3b)
+        {
+            continue;
+        }
+        let payload = pos + 4 + usize::from(width);
+        let Some(end) = payload.checked_add(usize::from(data[pos + 3])) else {
+            continue;
+        };
+        if end > data.len() || end - payload < 0x20 {
+            continue;
+        }
+        let header_token = data[pos + 4..payload]
+            .iter()
+            .enumerate()
+            .fold(0u32, |value, (shift, byte)| {
+                value | (u32::from(*byte) << (8 * shift))
+            });
+        let scalar_at = end - 16;
+        let Some(program) = data.get(payload..scalar_at) else {
+            continue;
+        };
+        let Some(angular_scale) = f64_le(data, scalar_at) else {
+            continue;
+        };
+        let Some(half_angle) = f64_le(data, scalar_at + 8) else {
+            continue;
+        };
+        if header_token == 5
+            && program.first() == Some(&0x85)
+            && program.ends_with(&[0x03, 0x11])
+            && angular_scale.is_finite()
+            && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+        {
+            faces.push(B2ConeFace {
+                pos,
+                program: program.to_vec(),
                 angular_scale,
                 half_angle,
-            })
-        })
-        .collect()
+            });
+        }
+    }
+    faces
 }
 
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.

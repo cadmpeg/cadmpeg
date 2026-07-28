@@ -462,6 +462,10 @@ fn finish_decode(
             native.consolidated_class61_records.len(),
         ),
         (
+            "decoded_consolidated_cone_face_count".to_string(),
+            native.consolidated_cone_faces.len(),
+        ),
+        (
             "decoded_consolidated_cone_count".to_string(),
             native.consolidated_cones.len(),
         ),
