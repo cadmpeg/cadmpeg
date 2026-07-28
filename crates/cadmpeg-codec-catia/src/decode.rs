@@ -619,6 +619,24 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
         .iter()
         .map(|object| (object.id.as_str(), object))
         .collect::<HashMap<_, _>>();
+    let sketch_declarations = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .filter(|record| {
+            record.class_name.as_deref() == Some("PRTSketch")
+                && record.subtype == crate::object_graph::PayloadSubtype::Empty
+                && record.storage_ref.is_none()
+                && record.references.is_empty()
+        })
+        .filter_map(|record| Some((record.design_object.as_deref()?, record.id.clone())))
+        .fold(
+            HashMap::<&str, BTreeSet<String>>::new(),
+            |mut declarations, (object, field)| {
+                declarations.entry(object).or_default().insert(field);
+                declarations
+            },
+        );
     let existing_sketch_ids = ir
         .model
         .sketches
@@ -656,11 +674,7 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
             let Some(target) = design_objects.get(relation.target_design_object.as_str()) else {
                 continue;
             };
-            if target
-                .field_classes
-                .iter()
-                .any(|class| class.name == "PRTSketch")
-            {
+            if sketch_declarations.contains_key(target.id.as_str()) {
                 sketch_targets
                     .entry(target.id.as_str())
                     .or_default()
@@ -674,6 +688,10 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
         if sketch_targets.next().is_some() {
             continue;
         }
+        let declaration_fields = sketch_declarations
+            .get(sketch_target)
+            .expect("sketch target was selected from the declaration map")
+            .clone();
         let sketch_object = design_objects
             .get(sketch_target)
             .expect("sketch target was selected from the design-object map");
@@ -685,6 +703,7 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
                 design_object: object.id.clone(),
                 native_entity: entity.id.clone(),
                 coordinate_field: owner_record.to_string(),
+                declaration_fields,
                 membership_fields,
                 source_order: object.first_field_byte_offset,
                 position,
@@ -708,6 +727,9 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
             transfer
                 .consumed_object_records
                 .insert(point.coordinate_field);
+            transfer
+                .consumed_object_records
+                .extend(point.declaration_fields);
             transfer
                 .consumed_object_records
                 .extend(point.membership_fields);
@@ -754,6 +776,7 @@ struct SketchPointCandidate {
     design_object: String,
     native_entity: String,
     coordinate_field: String,
+    declaration_fields: BTreeSet<String>,
     membership_fields: BTreeSet<String>,
     source_order: u64,
     position: Point2,

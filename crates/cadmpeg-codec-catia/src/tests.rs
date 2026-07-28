@@ -6041,9 +6041,9 @@ fn decode_transfers_an_exact_point_with_one_sketch_target() {
     );
     assert_eq!(
         decoded.report.coverage["transferred_sketch_design_record_count"],
-        1
+        2
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 3);
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 2);
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
