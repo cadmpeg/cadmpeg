@@ -513,6 +513,8 @@ continues with `entry[n]`, where `n > 0` and each entry is
 `ref(1), 0000`, optionally followed by `target_kind:u16 BE`. A targetless
 terminal closes at the end of the containing complement interval. A terminal
 with `target_kind` self-delimits the map independently of following bytes.
+A final entry may share its `kind` bytes with a complete record or compact
+tombstone beginning at that kind tag.
 Every entry reference is a non-null compact or extended XMT. Every entry kind
 is a defined Parasolid record kind, type 11, type 79, type 80, type 35, type
 55, type 61, type 67, or type 100.

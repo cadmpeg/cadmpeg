@@ -727,54 +727,37 @@ pub fn walk(stream: &[u8]) -> Census {
 
 fn populate_gap_events(stream: &[u8], census: &mut Census) {
     loop {
-        let mut added_bytes = 0;
+        let covered_before = merged_event_spans(census, true)
+            .into_iter()
+            .map(|(start, end)| end - start)
+            .sum::<usize>();
 
         let lanes = tagged_reference_lanes(stream, census);
-        added_bytes += lanes
-            .iter()
-            .map(|lane| lane.end - lane.offset)
-            .sum::<usize>();
         census.tagged_reference_lanes.extend(lanes);
 
         let maps = reference_type_maps(stream, census);
-        added_bytes += maps.iter().map(|map| map.end - map.offset).sum::<usize>();
         census.reference_type_maps.extend(maps);
 
         let state_packets = reference_state_packets(stream, census);
-        added_bytes += state_packets
-            .iter()
-            .map(|packet| packet.end - packet.offset)
-            .sum::<usize>();
         census.reference_state_packets.extend(state_packets);
 
         let preambles = schema_reference_preambles(stream, census);
-        added_bytes += preambles
-            .iter()
-            .map(|preamble| preamble.end - preamble.offset)
-            .sum::<usize>();
         census.schema_reference_preambles.extend(preambles);
 
         let declarations = inline_schema_declarations(stream, census);
-        added_bytes += declarations
-            .iter()
-            .map(|declaration| declaration.end - declaration.offset)
-            .sum::<usize>();
         census.inline_schema_declarations.extend(declarations);
 
         let body_states = inline_body_states(stream, census);
-        added_bytes += body_states
-            .iter()
-            .map(|state| state.end - state.offset)
-            .sum::<usize>();
         census.inline_body_states.extend(body_states);
 
         let marker_packets = reference_marker_packets(stream, census);
-        added_bytes += marker_packets
-            .iter()
-            .map(|packet| packet.end - packet.offset)
-            .sum::<usize>();
         census.reference_marker_packets.extend(marker_packets);
 
+        let covered_after = merged_event_spans(census, true)
+            .into_iter()
+            .map(|(start, end)| end - start)
+            .sum::<usize>();
+        let added_bytes = covered_after - covered_before;
         census.bytes_decoded += added_bytes;
         if added_bytes == 0 {
             break;
@@ -945,7 +928,29 @@ fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReference
 
 fn reference_type_maps(stream: &[u8], census: &Census) -> Vec<ReferenceTypeMap> {
     uncovered_spans(stream.len(), census, true)
-        .filter_map(|(offset, end)| reference_type_map(stream, offset, end))
+        .filter_map(|(offset, end)| {
+            reference_type_map(stream, offset, end).or_else(|| {
+                let following_kind = census
+                    .records
+                    .iter()
+                    .map(|record| (record.offset, record.kind))
+                    .chain(
+                        census
+                            .tombstones
+                            .iter()
+                            .map(|tombstone| (tombstone.offset, tombstone.kind)),
+                    )
+                    .find_map(|(event_offset, kind)| (event_offset == end).then_some(kind))?;
+                let shared_end = end.checked_add(2)?;
+                let map = reference_type_map(stream, offset, shared_end)?;
+                (map.target_kind.is_none()
+                    && map
+                        .entries
+                        .last()
+                        .is_some_and(|(_, kind)| *kind == following_kind))
+                .then_some(map)
+            })
+        })
         .collect()
 }
 
@@ -3510,6 +3515,36 @@ mod reference_type_map_tests {
             }]
         );
         assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_shares_its_final_kind_with_a_tombstone() {
+        let bytes = vec![0, 1, 0, 1, 0, 3, 0, 81, 0, 9, 0, 1];
+
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.reference_type_maps,
+            [ReferenceTypeMap {
+                entries: vec![(3, 81)],
+                target_kind: None,
+                offset: 0,
+                end: 8,
+            }]
+        );
+        assert_eq!(
+            census.tombstones,
+            [Tombstone {
+                kind: 81,
+                xmt: 9,
+                offset: 6,
+            }]
+        );
+        assert_eq!(census.bytes_decoded, bytes.len());
+
+        let mut incomplete_tombstone = bytes;
+        incomplete_tombstone[11] = 2;
+        assert!(walk(&incomplete_tombstone).reference_type_maps.is_empty());
     }
 
     #[test]
