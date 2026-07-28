@@ -1615,7 +1615,7 @@ fn attach_standard_topology(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     records: &[crate::families::standard::records::StandardSurfaceRecord],
-    face_bounds: &[Option<crate::families::standard::records::FreeformFaceBounds>],
+    face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     brep: &[u8],
     source: &[u8],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
@@ -3346,7 +3346,7 @@ pub(crate) fn point_on_known_surface(point: Point3, surface: &SurfaceGeometry) -
 pub(crate) fn point_on_standard_face(
     point: Point3,
     surface: &SurfaceGeometry,
-    bounds: Option<crate::families::standard::records::FreeformFaceBounds>,
+    bounds: Option<crate::families::standard::records::StandardFaceBounds>,
 ) -> bool {
     const TOLERANCE: f64 = 2e-3;
 
@@ -4468,7 +4468,7 @@ mod route_tests {
     };
 
     use crate::families::standard::records::{
-        FreeformFaceBounds, StandardCurveGeometry, StandardCurveSupport,
+        StandardCurveGeometry, StandardCurveSupport, StandardFaceBounds,
     };
 
     use cadmpeg_ir::document::CadIr;
@@ -5579,7 +5579,7 @@ mod route_tests {
 
     #[test]
     fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
-        let bounds = FreeformFaceBounds {
+        let bounds = StandardFaceBounds {
             aabb_center: [2.0, 3.0, 4.0],
             aabb_half_extents: [1.0, 2.0, 3.0],
             sphere_center: [2.0, 3.0, 4.0],

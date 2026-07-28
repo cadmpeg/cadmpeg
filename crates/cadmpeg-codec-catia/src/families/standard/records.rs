@@ -58,15 +58,15 @@ pub enum StandardSurfaceRecord {
         /// Little-endian u24 carrier tag.
         tag: u32,
         /// Trimmed-face spatial bounds stored in the roster core.
-        bounds: FreeformFaceBounds,
+        bounds: StandardFaceBounds,
         /// Face orientation relative to the linked carrier.
         forward: bool,
     },
 }
 
-/// Spatial bounds stored by one standard freeform face roster core.
+/// Spatial bounds stored by one standard face roster core.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FreeformFaceBounds {
+pub struct StandardFaceBounds {
     /// Axis-aligned bounding-box centre.
     pub aabb_center: [f64; 3],
     /// Non-negative axis-aligned bounding-box half-extents.
@@ -77,7 +77,7 @@ pub struct FreeformFaceBounds {
     pub sphere_radius: f64,
 }
 
-fn face_bounds_at(brep: &[u8], position: usize) -> Option<FreeformFaceBounds> {
+fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
     let values = (0..10)
         .map(|index| f32_le(brep, position + 4 * index))
         .collect::<Vec<_>>();
@@ -88,7 +88,7 @@ fn face_bounds_at(brep: &[u8], position: usize) -> Option<FreeformFaceBounds> {
     {
         return None;
     }
-    Some(FreeformFaceBounds {
+    Some(StandardFaceBounds {
         aabb_center: [
             f64::from(values[0]),
             f64::from(values[1]),
@@ -113,7 +113,7 @@ fn face_bounds_at(brep: &[u8], position: usize) -> Option<FreeformFaceBounds> {
 pub fn standard_face_bounds(
     brep: &[u8],
     record: &StandardSurfaceRecord,
-) -> Option<FreeformFaceBounds> {
+) -> Option<StandardFaceBounds> {
     match record {
         StandardSurfaceRecord::Freeform { bounds, .. } => Some(*bounds),
         StandardSurfaceRecord::Analytic(prefix) => {

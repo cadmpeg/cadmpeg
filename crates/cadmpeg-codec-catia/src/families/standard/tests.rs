@@ -4303,7 +4303,7 @@ mod record_decoders {
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::{HashMap, HashSet};
 
-    use crate::families::standard::records::{FreeformFaceBounds, StandardSurfaceRecord};
+    use crate::families::standard::records::{StandardFaceBounds, StandardSurfaceRecord};
     use crate::tests::{
         a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
         le_f32, le_f64, standard_quad_topology_stream,
@@ -4924,7 +4924,7 @@ mod record_decoders {
             );
             assert_eq!(
                 crate::families::standard::records::standard_face_bounds(&bytes, &record),
-                Some(FreeformFaceBounds {
+                Some(StandardFaceBounds {
                     aabb_center: [1.0, 2.0, 3.0],
                     aabb_half_extents: [4.0, 5.0, 6.0],
                     sphere_center: [1.0, 2.0, 3.0],
