@@ -8021,6 +8021,27 @@ fn parser_version_relation_expression_requires_both_exact_framing_roles() {
 }
 
 #[test]
+fn decode_retains_a_parser_version_expression_without_fabricating_formula_incidence() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parser_version_relation_expression(
+                "Boolean",
+                "ParserVersion",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode parser-version expression");
+
+    assert!(decoded.ir.model.parameters.is_empty());
+    assert_eq!(
+        decoded.report.coverage["decoded_relation_expression_count"],
+        1
+    );
+    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
+    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
+}
+
+#[test]
 fn relation_expression_signature_preserves_ordered_typed_inputs() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression_signature(

@@ -13,6 +13,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 ## Design intent
 
 - The semantic roles of the references, fixed-width words, and control bytes in inline `7C09` bodies are unresolved.
+- The entity-identity binding from compound formula-instance roles such as `expression`, ordered inputs, and `paramout` to parser-version relation-expression and parameter entities is unresolved. Record adjacency and repeated compact value-packet selectors do not establish incidence.
 - The value production and entity binding for typed `String` relation inputs and results are unresolved. Schema-catalog type signatures alone do not carry a named parameter value.
 - The value production and entity binding for typed `Boolean` parameters and active configuration state are unresolved. Boolean- and activity-named field classes include compound object payloads and do not identify scalar values.
 - The semantic binding among complete two-scalar numeric tuples, `2DPoint` field labels, and `PRTSketch` field labels is unresolved. Field-class labels and inter-object references do not establish coordinate units, geometry identity, or sketch membership.

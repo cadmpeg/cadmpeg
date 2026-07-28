@@ -43,6 +43,9 @@ current scores require those matrices and representative fixtures.
   and parameter role selectors close within one identity run.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, value, expression, and dependency identities resolve exactly.
+  Placeholder-state and parser-version relation-expression framings both retain
+  their source expressions and typed signatures. Parser-version expressions
+  remain native when their formula-instance incidence does not resolve.
   Parameters structurally contained by a transferred feature retain that
   feature ownership. Structurally owned child features and parameters share
   one object-field-ordered source-content sequence; other parameters remain
