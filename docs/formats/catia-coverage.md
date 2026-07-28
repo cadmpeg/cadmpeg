@@ -60,7 +60,8 @@ current scores require those matrices and representative fixtures.
   Legacy named scalar packets also transfer with either a finite or unset
   evaluation when a unique acyclic descriptor chain resolves their literal
   numeric type. A uniquely bound zero-input legacy relation replaces a finite
-  scalar literal when its typed evaluation agrees exactly.
+  scalar literal when its typed evaluation agrees exactly and supplies the
+  expression of an unset parameter when its result type agrees.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, trigonometric calls, absolute values, and
   square roots.

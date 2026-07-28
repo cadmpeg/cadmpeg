@@ -3647,13 +3647,16 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
 
 #[test]
 fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
-    fn legacy_constant(stored: f64) -> Vec<u8> {
+    fn legacy_constant(stored: Option<f64>, parameter_type: &str, relation_type: &str) -> Vec<u8> {
         let mut bytes = zero_entity_catpart();
         bytes.push(0xea);
         bytes.extend(1_u32.to_le_bytes());
         bytes.push(0x81);
         bytes.extend([0xfd, 0x8c]);
-        for (role, selector, value) in [("body", 1_u32, "2+3"), ("param", 4_u32, "() : Real\n")] {
+        let signature = format!("() : {relation_type}\n");
+        for (role, selector, value) in
+            [("body", 1_u32, "2+3"), ("param", 4_u32, signature.as_str())]
+        {
             bytes.push(u8::try_from(role.len() + 1).expect("short role"));
             bytes.extend(role.as_bytes());
             bytes.push(0x80);
@@ -3670,16 +3673,24 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
         bytes.extend(b"\xe8\x00\x12\x01");
         bytes.extend([7, b'R', b'e', b's', b'u', b'l', b't', 0xfe]);
-        bytes.extend(b"\xfe\x84\x92\x82\x05Real\x83");
-        bytes.extend(b"\xfe\x84\x88\x82\xfe\xe6");
-        bytes.extend(stored.to_bits().to_le_bytes());
+        bytes.extend(b"\xfe\x84\x92\x82");
+        bytes.push(u8::try_from(parameter_type.len() + 1).expect("short type"));
+        bytes.extend(parameter_type.as_bytes());
+        bytes.push(0x83);
+        bytes.extend(b"\xfe\x84\x88\x82\xfe");
+        if let Some(stored) = stored {
+            bytes.push(0xe6);
+            bytes.extend(stored.to_bits().to_le_bytes());
+        } else {
+            bytes.push(0xe7);
+        }
         bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
         bytes
     }
 
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(legacy_constant(5.0)),
+            &mut Cursor::new(legacy_constant(Some(5.0), "Real", "Real")),
             &DecodeOptions::default(),
         )
         .expect("decode closed legacy formula");
@@ -3696,13 +3707,42 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
 
     let mismatched = CatiaCodec
         .decode(
-            &mut Cursor::new(legacy_constant(6.0)),
+            &mut Cursor::new(legacy_constant(Some(6.0), "Real", "Real")),
             &DecodeOptions::default(),
         )
         .expect("decode mismatched legacy formula");
     assert_eq!(mismatched.ir.model.parameters[0].expression, "6");
     assert_eq!(
         mismatched.report.coverage["transferred_legacy_formula_count"],
+        0
+    );
+
+    let unset = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_constant(None, "Real", "Real")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset closed legacy formula");
+    let [parameter] = unset.ir.model.parameters.as_slice() else {
+        panic!("one unset legacy formula parameter")
+    };
+    assert_eq!(parameter.expression, "2+3");
+    assert_eq!(parameter.value, None);
+    assert_eq!(unset.report.coverage["transferred_legacy_formula_count"], 1);
+
+    let mismatched_unset = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_constant(None, "LENGTH", "Real")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode type-mismatched unset legacy formula");
+    let [parameter] = mismatched_unset.ir.model.parameters.as_slice() else {
+        panic!("one unset legacy parameter")
+    };
+    assert!(parameter.expression.is_empty());
+    assert_eq!(parameter.value, None);
+    assert_eq!(
+        mismatched_unset.report.coverage["transferred_legacy_formula_count"],
         0
     );
 }

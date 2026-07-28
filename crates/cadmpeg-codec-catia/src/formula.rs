@@ -508,17 +508,19 @@ fn collect_legacy_parameters(
             let Some(candidate) = candidates.get_mut(parameter) else {
                 continue;
             };
-            let Some(stored) = candidate.parameter.value.clone() else {
+            if canonical_parameter_type(&relation.result_type) != Some(candidate.parameter_type) {
                 continue;
-            };
+            }
             let bindings = BTreeMap::new();
             let Some(evaluated) = evaluate_formula_expression(&relation.expression, &bindings)
                 .filter(|value| value.satisfies_source_type(&relation.result_type))
             else {
                 continue;
             };
-            if !evaluated.agrees_with(&TypedParameterEvaluation::Value(stored)) {
-                continue;
+            if let Some(stored) = candidate.parameter.value.clone() {
+                if !evaluated.agrees_with(&TypedParameterEvaluation::Value(stored)) {
+                    continue;
+                }
             }
             candidate
                 .parameter
