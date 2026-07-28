@@ -4085,6 +4085,45 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
 }
 
 #[test]
+fn parasolid_entity_51_reference_count_is_five_plus_low_flags_byte() {
+    for low_flag in 1..=0x20u32 {
+        let mut direct = vec![0, 0x51];
+        direct.extend_from_slice(&low_flag.to_be_bytes());
+        direct.extend_from_slice(&10u16.to_be_bytes());
+        direct.extend_from_slice(&2u32.to_be_bytes());
+        direct.extend_from_slice(&0x21u16.to_be_bytes());
+        for reference in 0..low_flag + 5 {
+            direct.extend_from_slice(&(reference as u16 + 3).to_be_bytes());
+        }
+        direct.extend_from_slice(&[0xaa, 0xbb]);
+
+        let record = crate::parasolid::entity_51_record_at(&direct, 0).unwrap();
+        assert_eq!(record.references.len(), (low_flag + 5) as usize);
+        assert_eq!(record.byte_len, direct.len() - 2);
+        assert!(crate::parasolid::entity_51_record_at(&direct[..direct.len() - 3], 0).is_none());
+
+        let mut prefixed = vec![0, 0x51];
+        prefixed.extend_from_slice(&low_flag.to_be_bytes());
+        prefixed.extend_from_slice(&10u16.to_be_bytes());
+        prefixed.extend_from_slice(&2u32.to_be_bytes());
+        prefixed.extend_from_slice(&0x21u16.to_be_bytes());
+        for reference in 0..low_flag + 5 {
+            prefixed.push(u8::from(reference % 2 == 0));
+            prefixed.extend_from_slice(&(reference as u16 + 3).to_be_bytes());
+        }
+        prefixed.push(0);
+        prefixed.extend_from_slice(&[0xaa, 0xbb]);
+
+        let record = crate::parasolid::entity_51_record_at(&prefixed, 0).unwrap();
+        assert_eq!(record.references.len(), (low_flag + 5) as usize);
+        assert_eq!(record.byte_len, prefixed.len() - 2);
+        assert!(
+            crate::parasolid::entity_51_record_at(&prefixed[..prefixed.len() - 3], 0).is_none()
+        );
+    }
+}
+
+#[test]
 fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
     let mut bytes = vec![0xaa, 0x00, 0x54];
     bytes.extend_from_slice(&8u32.to_be_bytes());

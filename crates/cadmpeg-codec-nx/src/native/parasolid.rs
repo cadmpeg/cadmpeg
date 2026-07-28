@@ -921,7 +921,7 @@ pub struct ParasolidEntity51Record {
     pub flags: u32,
     /// Serialized sequence value.
     pub sequence: u32,
-    /// Layout discriminator.
+    /// Attribute-class discriminator.
     pub discriminator: u16,
     /// Ordered stream-local references.
     pub references: Vec<u32>,

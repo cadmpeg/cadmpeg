@@ -98,7 +98,7 @@ pub struct Entity51Record {
     pub xmt: u32,
     /// Serialized sequence value.
     pub sequence: u32,
-    /// Layout discriminator selecting the reference count.
+    /// Attribute-class discriminator.
     pub discriminator: u16,
     /// Ordered stream-local references.
     pub references: Vec<u32>,
@@ -299,12 +299,7 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
     at += 2;
     let low_flag = (flags & 0xff) as u8;
     (xmt > 1 && sequence != 0 && (1..=0x20).contains(&low_flag)).then_some(())?;
-    let reference_count = match (discriminator, low_flag) {
-        (0x0018 | 0x0020 | 0x0025, 1) => 6,
-        (0x001d | 0x001e, 2) => 7,
-        (0x0020 | 0x0024 | 0x0027, 4) => 9,
-        _ => 6,
-    };
+    let reference_count = usize::from(low_flag) + 5;
     let references = entity_51_references(bytes, &mut at, reference_count)?;
     Some(Entity51Record {
         offset,
