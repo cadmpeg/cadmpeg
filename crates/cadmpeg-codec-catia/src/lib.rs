@@ -47,6 +47,7 @@ pub(crate) mod container;
 pub(crate) mod decode;
 pub(crate) mod entity_table;
 pub(crate) mod families;
+pub(crate) mod formula;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod object_graph;
