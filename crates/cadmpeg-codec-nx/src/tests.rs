@@ -6131,7 +6131,10 @@ fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
     stream.extend_from_slice(&13u16.to_be_bytes());
     stream.extend_from_slice(&47u16.to_be_bytes());
     stream.extend_from_slice(&61u32.to_be_bytes());
-    for (reference, status) in (1u16..=8).zip([1, 1, 1, 1, 1, 1, 1, 0]) {
+    for (reference, status) in [1u16, 2, 1, 3, 1, 1, 4, 3]
+        .into_iter()
+        .zip([1, 1, 1, 1, 1, 1, 1, 0])
+    {
         stream.extend_from_slice(&reference.to_be_bytes());
         stream.push(status);
     }
@@ -6150,6 +6153,45 @@ fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
     );
     assert_eq!(census.records[1].offset, census.records[0].end - 1);
     assert_eq!(census.bytes_decoded, stream.len());
+}
+
+#[test]
+fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate() {
+    let mut type_101 = vec![0, 101];
+    type_101.extend_from_slice(&2u16.to_be_bytes());
+    for reference in 3u16..15 {
+        type_101.extend_from_slice(&reference.to_be_bytes());
+        type_101.push(1);
+    }
+    type_101.push(1);
+    type_101.extend_from_slice(&[0; 12]);
+    for reference in 15u16..18 {
+        type_101.extend_from_slice(&reference.to_be_bytes());
+        type_101.push(1);
+    }
+
+    let mut stream = 13u16.to_be_bytes().to_vec();
+    stream.extend(encoded_xmt(256));
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    for reference in [1u32, 2, 1, 3, 1, 1, 4] {
+        stream.extend(encoded_xmt(reference));
+        stream.push(1);
+    }
+    stream.extend_from_slice(&type_101[..3]);
+    stream.extend_from_slice(&type_101[3..]);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [101]
+    );
+    assert_eq!(census.records[0].offset, 29);
+    assert_eq!(census.bytes_decoded, type_101.len());
 }
 
 #[test]

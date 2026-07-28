@@ -2088,14 +2088,17 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
     let escaped = (stream.get(offset + 2) == Some(&0xff))
         .then(|| fixed_layout(stream, offset, kind, signature, 1))
         .flatten();
-    match (direct, escaped) {
+    let record = match (direct, escaped) {
         (Some(direct), Some(escaped)) => unique_layout(
             plausible_next(stream, direct.end).then_some(direct),
             plausible_next(stream, escaped.end).then_some(escaped),
         ),
         (Some(record), None) | (None, Some(record)) => Some(record),
         (None, None) => None,
-    }
+    }?;
+    let shadows_type_101 = (record.offset + 1..record.end)
+        .any(|offset| consume_type_101(stream, offset).is_some_and(|later| later.end > record.end));
+    (!shadows_type_101).then_some(record)
 }
 
 fn fixed_layout(
