@@ -1,68 +1,72 @@
-# CATIA V5 `.CATPart` Coverage Contract
+# CATIA V5 `.CATPart` coverage
 
-This contract defines the read envelopes and cumulative support gates for the
-CATIA V5 codec. A gate passes only when every admitted row in its envelope
-passes. Retaining a native record does not satisfy a neutral semantic gate.
+This document applies the cumulative support ladder to the CATIA V5 reader. It
+records implementation coverage and verification gates. Byte semantics belong
+in [catia.md](catia.md); unresolved byte meanings belong in
+[catia-open-items.md](catia-open-items.md).
 
 ## Envelopes
 
-| Envelope | Included storage layouts |
-|---|---|
-| Standard nested | Nested `V5_CFV2` with an FBB face spine, standard edge tables, counted vertex table, and positional `SurfacicReps` roster |
-| FBB-only | Nested `V5_CFV2` with complete-run FBB edge tables and no standard delimiter |
-| Object stream | Reference-closed A8/B5 object graphs |
-| E5 | Reference-closed `e5 0d 03` topology graphs |
-| Zero entity | Reference-closed `a9 03` topology graphs |
-| Contiguous inner body | Nested `V5_CFV2` without a BREP-body directory |
+The reader recognizes `V5_CFV2` part documents and classifies their geometry
+storage as `standard_nested`, `fbb_only`, `zero_entity`, `e5_stream`,
+`float_packed_inner_no_fbb`, `inner_no_directory`, or `unknown`.
 
-One file may contain records from several envelopes. The governing topology
-layout selects the topology envelope; auxiliary records remain required by the
-geometry, design, and application gates.
+The current primary envelope is `standard_nested`: a nested `V5_CFV2` stream
+with an FBB spine and the standard edge-table delimiter. Its implementation
+score is L2 claimed. The other recognized geometry layouts form separate
+envelopes and currently score L1 claimed. `unknown` is an inspection and
+retention envelope and does not inherit geometry support.
+
+These envelopes are not closed release bands. Supported CATIA release bounds,
+required and optional container segments, and the admitted carrier, topology,
+appearance, and feature-family matrices have not been fixed. Claims above the
+current scores require those matrices and representative fixtures.
 
 ## Cumulative gates
 
-| Level | Required matrix | Passing condition | Current state |
-|---|---|---|---|
-| L0 | CATPart signature; outer container; saved-by version; document kind; summary preview present/absent | Detection is bounded; container framing closes; version fields and document kind are typed; a stored preview transfers byte-exactly when present | Implemented |
-| L1 | Outer and nested directories; physical and reconstructed logical streams; FINJPL blocks; external document references; every admitted layout discriminator | Every directory and stream extent is bounded; compression and reconstruction are deterministic; embedded and external assets retain identity; undecoded bounded content is named and retained | Implemented for decoded layout bands |
-| L2 | Points; lines; circles; conics; analytic surfaces; NURBS curves and surfaces; exact procedural carriers; units, parameterization, placement, and trim ranges | Every required carrier is typed or represented by an exact neutral construction; evaluations agree with stored loci and tolerances; no required carrier remains unknown | Incomplete |
-| L3 | Solid, sheet, wire, multiple regions and shells, holes, seams, closed edges, non-manifold radial rings, disconnected components, and every admitted topology layout | Bodies connect through regions, shells, faces, loops, coedges, edges, vertices, and points; ownership, orientation, trimming, sharing, placement, and body kind validate without inferred identity | Incomplete |
-| L4 | Ordered bodies and feature roots; sketches and construction geometry; feature operations; operands; directions; limits; saved-result links; suppression and update state | Every projected design record has stable native identity, one structural owner, typed operation semantics, ordered dependencies, and exact links to its saved geometry | Incomplete |
-| L5 | Every L2/L3 carrier and topology branch; body, face, edge, curve, point, and construction-geometry appearance | The admitted geometry/topology census has no unknown required carrier or topology case; mainstream parts are typed throughout; appearance ownership and precedence validate | Incomplete |
-| L6 | Sketch constraints and dimensions; dimensional and non-dimensional parameters; expressions and units; every feature family and branch; configurations; coherent regeneration history | Constraint, parameter, expression, configuration, and complete feature graphs are typed and valid; history order and dependencies can re-derive every saved result; the design-domain loss report is empty | Incomplete |
+| Level | Required evidence | Current result | Remaining gate |
+| --- | --- | --- | --- |
+| L0 | `V5_CFV2` detection; part-kind and layout classification; bounded metadata; exact preview extraction when stored | Pass in implementation | Representative release-band fixtures and explicit preview-present/absent coverage |
+| L1 | Nested-stream, directory, segment, extent, and record navigation; layout dispatch; external-reference and embedded-asset enumeration; named undecoded content | Claimed across recognized layouts | Close the release/layout envelope and verify every admitted container combination |
+| L2 | Placed points; analytic curves and surfaces; NURBS; correct units, parameterization, and model-space placement throughout one envelope | Claimed for `standard_nested`; incomplete for the other layouts | Close every admitted carrier branch, persistent carrier binding, parameter chart, placement, and unit path |
+| L3 | Connected bodies through vertices with exact ownership, orientation, trimming, placement, and transforms; structurally valid topology throughout one envelope | Incomplete | Resolve every admitted face group, endpoint registry, edge incidence, loop orientation, body/shell ownership, and cross-group membership case without topology gauges standing in for source semantics |
+| L4 | Ordered feature operations with complete profiles, directions, extents, outputs, dependencies, and solved sketch geometry | Incomplete | Decode construction order and dependencies, sketch membership and geometry, and complete operands for every admitted operation family |
+| L5 | Every admitted carrier and topology case; typed mainstream bodies throughout; body and face colors with source ownership and precedence | Incomplete | Close L2/L3 matrices, appearance bindings, and precedence, then demonstrate zero shape-domain loss across the envelope |
+| L6 | Complete sketch constraints, dimensions, parameters, expressions, configurations, feature semantics, and re-derivable history | Incomplete | Complete relation and constraint incidence, parameter values and types, feature families, configuration state, and history replay coherence |
 
-L4 and L6 are separate gates. A typed feature name without its operands and
-operation controls does not satisfy L4. A complete saved B-rep without
-re-derivable design history does not satisfy L6.
+## Implemented slices above the score
 
-## Required proof
+- Structurally complete object graphs retain design objects, ordered fields,
+  exact field classes, definition-bound values, and inter-object reference
+  occurrences.
+- Complete numeric parameters and formula relations transfer when their type,
+  owner, value, expression, and dependency identities resolve exactly.
+- Empty `PRTSketch` and `Sketch` declarations transfer one neutral planar
+  sketch identity. Exact principal-plane declarations resolve the corresponding
+  origin frame.
+- Several non-primary envelopes transfer connected topology or exact analytic,
+  NURBS, and procedural carrier subsets. These are extras until every
+  cumulative gate in one closed envelope passes.
 
-Each envelope requires fixtures covering every admitted row in the cumulative
-matrix. A proof consists of:
+## Evidence required to raise a score
 
-1. bounded decode with a closing physical and logical byte ledger;
-2. canonical IR validation;
-3. exact carrier evaluation and parameter-domain assertions;
-4. topology cardinality, ownership, sharing, orientation, and trim assertions;
-5. design-object identity, ownership, ordering, operand, and saved-result assertions;
-6. zero blocking losses in every domain required by the claimed level.
+1. Declare finite release, layout, carrier, topology, appearance, and design
+   matrices for each scored envelope.
+2. Manifest redistribution-cleared fixtures for every admitted matrix row,
+   including malformed, unsupported, ambiguity, degeneracy, and negative
+   cases.
+3. Record per-fixture expected physical-byte coverage and geometry, topology,
+   appearance, and design-domain losses. A gate passes only when every required
+   domain through that level has no blocking loss.
+4. Validate semantic fingerprints for units, placements, curve and surface
+   evaluation, body ownership, orientation, trimming, feature order,
+   dependencies, sketches, constraints, dimensions, expressions,
+   configurations, and recomputed model identity as required by the claimed
+   level.
+5. Run deterministic malformed-input, resource-limit, and fuzz gates for every
+   admitted parser family.
 
-Conditional success does not raise an envelope score. A topology algorithm that
-declines ambiguous files remains useful recovery behavior but does not satisfy
-L3 until the admitted topology matrix is complete.
-
-## Open gates
-
-The authoritative unresolved byte semantics are listed in
-[`catia-open-items.md`](catia-open-items.md). The dominant cumulative gates are:
-
-- L2: freeform alias binding, standard spline-cache programs, unsupported conic
-  pcurves, and remaining persistent carrier references.
-- L3: standard endpoint identity, multi-group topology membership, unresolved
-  orientation fields, and the contiguous-inner-body topology model.
-- L4: typed feature roots, ordered dependencies, sketches, complete operation
-  controls, and saved-result bindings.
-- L5: closure of the full L2/L3 matrices plus appearance ownership and
-  precedence.
-- L6: parameters, expressions, dimensions, constraints, configurations, and
-  coherent regeneration history for every admitted feature family.
+The current public scores remain L2 claimed for `standard_nested` and L1
+claimed for the other recognized layouts. Capabilities above those scores are
+extras until every cumulative gate through the target level passes for a
+closed envelope.
