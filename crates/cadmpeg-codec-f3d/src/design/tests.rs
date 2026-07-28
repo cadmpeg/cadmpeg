@@ -5307,6 +5307,14 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
     assert_eq!(flagged.members, [200, 201]);
     assert_eq!(flagged.role, 0x0000_0008_0000_0000);
 
+    let mut unclassified_bytes = bytes.clone();
+    unclassified_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+        .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
+    let unclassified = parse_construction_operand_group(&unclassified_bytes, &scope, 0, &record)
+        .expect("counted Extrude group with an unclassified role");
+    assert_eq!(unclassified.role, 0x0000_0005_0000_0000);
+    assert_eq!(unclassified.extrude_role, None);
+
     bytes.drain(paired_at - 3..paired_at);
     let compact = parse_construction_operand_group(&bytes, &scope, 0, &record)
         .expect("compact counted operand group");

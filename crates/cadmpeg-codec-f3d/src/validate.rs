@@ -1081,7 +1081,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         Some(records::DesignExtrudeOperandRole::Faces) => {
                             group.role == 0x0000_0011_0000_0000 && group.extrude_face_role.is_some()
                         }
-                        None => false,
+                        None => {
+                            group.role == 0x0000_0005_0000_0000 && group.extrude_face_role.is_none()
+                        }
                     },
                     Some(
                         design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,

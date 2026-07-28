@@ -851,12 +851,12 @@ pub(crate) fn parse_construction_operand_group(
     let identity_record_index = u32_at(bytes, position + 7)?;
     let role = read_u64(bytes, position + 17)?;
     let extrude_role = if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
-        Some(match role {
-            0x0000_0008_0000_0000 => DesignExtrudeOperandRole::Bodies,
-            0x0000_0041_0000_0000 => DesignExtrudeOperandRole::Profile,
-            0x0000_0011_0000_0000 => DesignExtrudeOperandRole::Faces,
-            _ => return None,
-        })
+        match role {
+            0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
+            0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
+            0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
+            _ => None,
+        }
     } else {
         None
     };
