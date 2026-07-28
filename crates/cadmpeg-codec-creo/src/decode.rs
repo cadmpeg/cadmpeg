@@ -27993,37 +27993,46 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .map(|variables| variables.rows.len())
             .sum::<usize>(),
     );
+    let decoded_dimension_driven_variable_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.variables.as_ref())
+        .flat_map(|variables| &variables.rows)
+        .filter(|row| row.dimension_driven)
+        .count();
+    let resolved_dimension_driven_variable_count = scan
+        .features
+        .definitions
+        .iter()
+        .map(|definition| {
+            let resolved = resolved_section_coordinates(definition);
+            definition
+                .variables
+                .iter()
+                .flat_map(|variables| &variables.rows)
+                .filter(|row| {
+                    row.dimension_driven
+                        && matches!(row.variable_type, 1 | 2)
+                        && resolved.get(&row.key).is_some_and(|coordinates| {
+                            coordinates[usize::from(row.variable_type == 2)].is_some()
+                        })
+                })
+                .count()
+        })
+        .sum::<usize>();
     coverage.insert(
         "decoded_feature_dimension_driven_variable_count".to_string(),
-        scan.features
-            .definitions
-            .iter()
-            .filter_map(|definition| definition.variables.as_ref())
-            .flat_map(|variables| &variables.rows)
-            .filter(|row| row.dimension_driven)
-            .count(),
+        decoded_dimension_driven_variable_count,
     );
     coverage.insert(
         "resolved_feature_dimension_driven_variable_count".to_string(),
-        scan.features
-            .definitions
-            .iter()
-            .map(|definition| {
-                let resolved = resolved_section_coordinates(definition);
-                definition
-                    .variables
-                    .iter()
-                    .flat_map(|variables| &variables.rows)
-                    .filter(|row| {
-                        row.dimension_driven
-                            && matches!(row.variable_type, 1 | 2)
-                            && resolved.get(&row.key).is_some_and(|coordinates| {
-                                coordinates[usize::from(row.variable_type == 2)].is_some()
-                            })
-                    })
-                    .count()
-            })
-            .sum::<usize>(),
+        resolved_dimension_driven_variable_count,
+    );
+    coverage.insert(
+        "unresolved_feature_dimension_driven_variable_count".to_string(),
+        decoded_dimension_driven_variable_count
+            .saturating_sub(resolved_dimension_driven_variable_count),
     );
     coverage.insert(
         "decoded_feature_segment_count".to_string(),
@@ -28815,6 +28824,21 @@ fn build_report(
             message: format!(
                 "{explicitly_unresolved_features} typed history feature definition(s) retain an \
                  explicitly unresolved model-space construction."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_dimension_driven_variables =
+        count("unresolved_feature_dimension_driven_variable_count");
+    if unresolved_dimension_driven_variables != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_dimension_driven_variables} dimension-driven section solver \
+                 variable(s) retain unresolved exact values because their dimension binding or \
+                 variable-family equation is unresolved."
             ),
             provenance: None,
         });

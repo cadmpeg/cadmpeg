@@ -4988,6 +4988,43 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
         coverage["resolved_feature_dimension_driven_variable_count"],
         0
     );
+    assert_eq!(
+        coverage["unresolved_feature_dimension_driven_variable_count"],
+        0
+    );
+}
+
+#[test]
+fn decode_reports_unresolved_dimension_driven_solver_variables() {
+    let mut payload =
+        b"feat_defs_40\0var_arr\0\xf8\x01\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[1, 7, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f, 0, 1, 3, 0xe2]);
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode dimension-driven variable");
+    let coverage = &result.report.coverage;
+
+    assert_eq!(
+        coverage["decoded_feature_dimension_driven_variable_count"],
+        1
+    );
+    assert_eq!(
+        coverage["resolved_feature_dimension_driven_variable_count"],
+        0
+    );
+    assert_eq!(
+        coverage["unresolved_feature_dimension_driven_variable_count"],
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "1 dimension-driven section solver variable(s) retain unresolved exact values",
+            )
+    }));
 }
 
 #[test]

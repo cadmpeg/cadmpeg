@@ -189,15 +189,16 @@ fixtures, claims above L1 remain unproven.
    decoded and transferred section dimensions separately and counts dimensions
    whose scalar values resolve. It counts decoded section solver variables,
    dimension-driven sentinel variables, and dimension-driven variables whose
-   exact ordinate resolves through the complete equation system separately. It
-   likewise counts decoded, transferred, and
-   evaluated active curve-equation assignments separately and partitions them
-   by active, inactive, and unresolved-conditional state. Prohibited active
-   records and their distinct prohibited construct kinds are counted separately,
-   and each nonzero prohibited count raises a decode loss note. Container and
-   census facts about the file — version line, layout, section table, namespace
-   array sizes, principal unit, family-table pointer, and configuration state —
-   remain in the source metadata attribute map.
+   exact ordinate resolves through the complete equation system separately.
+   Every unresolved dimension-driven solver variable raises a decode loss
+   note. The map likewise counts decoded, transferred, and evaluated active
+   curve-equation assignments separately and partitions them by active,
+   inactive, and unresolved-conditional state. Prohibited active records and
+   their distinct prohibited construct kinds are counted separately, and each
+   nonzero prohibited count raises a decode loss note. Container and census
+   facts about the file — version line, layout, section table, namespace array
+   sizes, principal unit, family-table pointer, and configuration state — remain
+   in the source metadata attribute map.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
 The current public score remains L1 claimed. Capabilities above L1 are extras
