@@ -974,7 +974,7 @@ fn reference_type_map(
             (be::u16_at(stream, at) == Some(0)).then_some(())?;
             at = at.checked_add(2)?;
             let target_kind = be::u16_at(stream, at)?;
-            (target_kind == 1 || is_reference_type_kind(target_kind)).then_some(())?;
+            (target_kind > 0).then_some(())?;
             at = at.checked_add(2)?;
             return (at <= expected_end && !entries.is_empty()).then_some(ReferenceTypeMap {
                 entries,
@@ -3325,6 +3325,18 @@ mod reference_type_map_tests {
     }
 
     #[test]
+    fn reference_type_map_accepts_schema_defined_target_kind() {
+        let mut bytes = map_bytes();
+        bytes[18..].copy_from_slice(&323u16.to_be_bytes());
+
+        let census = walk(&bytes);
+
+        assert_eq!(census.reference_type_maps.len(), 1);
+        assert_eq!(census.reference_type_maps[0].target_kind, Some(323));
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
     fn reference_type_map_accepts_entry_table_without_target_clause() {
         let bytes = vec![0, 1, 0, 1, 0, 3, 0, 81, 0, 4, 0, 100];
 
@@ -3402,13 +3414,13 @@ mod reference_type_map_tests {
         let bytes = map_bytes();
         let mut unknown_entry_type = bytes.clone();
         unknown_entry_type[9] = 0xfe;
-        let mut unknown_target_type = bytes.clone();
-        unknown_target_type[19] = 0xfe;
+        let mut zero_target_type = bytes.clone();
+        zero_target_type[18..].copy_from_slice(&0u16.to_be_bytes());
 
         for malformed in [
             &bytes[..bytes.len() - 1],
             unknown_entry_type.as_slice(),
-            unknown_target_type.as_slice(),
+            zero_target_type.as_slice(),
         ] {
             assert!(walk(malformed).reference_type_maps.is_empty());
         }

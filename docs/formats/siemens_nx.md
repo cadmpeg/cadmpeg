@@ -507,9 +507,9 @@ The terminal clause self-delimits the map independently of following bytes.
 Every entry reference is a non-null compact or extended XMT. Every entry kind
 is a defined Parasolid record kind, type 11, type 79, type 80, type 35, type
 55, type 61, type 67, or type 100.
-When present, `target_kind` uses the same type-code set or the null type-code
-sentinel `1`. The terminal null reference distinguishes the clause from the
-non-null entry lane.
+When present, `target_kind` is any nonzero schema type code, including the null
+type-code sentinel `1`; it need not identify a parsed record family. The
+terminal null reference distinguishes the clause from the non-null entry lane.
 
 One reference-state packet is `0001, 0001, frame[n], terminal?`, where `n > 0`
 and each frame is `0004, ref[4], 0001, state_word[5]:u32 BE, state_byte:u8`.
