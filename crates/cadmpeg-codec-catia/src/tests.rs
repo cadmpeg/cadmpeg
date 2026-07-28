@@ -1962,6 +1962,10 @@ fn standard_catpart_with_unprefixed_parser_version_relation_expression(
 }
 
 fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
+    standard_catpart_with_two_selector_value("Thickness", "#1_ /2", suffix)
+}
+
+fn standard_catpart_with_two_selector_value(first: &str, second: &str, suffix: &[u8]) -> Vec<u8> {
     let value = [0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0xfe];
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
     let mut entity = entity_table_record_with_definition_and_value(1, &[0x01], &value);
@@ -1977,8 +1981,8 @@ fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
         "catalogManager",
         "catalogLinks",
         "",
-        "Thickness",
-        "#1_ /2",
+        first,
+        second,
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -8389,6 +8393,89 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn native_namespace_types_dimension_constraint_ranges() {
+    use crate::native::{CatiaConstraintRangeFraming, CatiaEntityEvaluation};
+
+    let scalar = 128.0_f64.to_bits();
+    let mut suffix = vec![0x84, 0x96, 0x82, 0xc1, 0xe6];
+    suffix.extend_from_slice(&scalar.to_le_bytes());
+    let file = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &suffix);
+    let native = crate::native::CatiaNative::decode(&file);
+    let range = native.entity_records[0]
+        .constraint_range
+        .as_ref()
+        .expect("complete dimension constraint range");
+    assert!(!range.range_entry.is_empty());
+    assert!(!range.constraint_entry.is_empty());
+    assert_eq!(range.framing, CatiaConstraintRangeFraming::DimensionC1);
+    assert_eq!(
+        range.evaluation,
+        CatiaEntityEvaluation::Scalar { bits: scalar }
+    );
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode constraint range");
+    assert_eq!(decoded.report.coverage["decoded_constraint_range_count"], 1);
+
+    let mut malformed = native;
+    malformed.entity_records[0]
+        .constraint_range
+        .as_mut()
+        .expect("complete dimension constraint range")
+        .framing = CatiaConstraintRangeFraming::DimensionB8;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed constraint range");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn constraint_range_requires_an_exact_role_and_framing_pair() {
+    use crate::native::CatiaConstraintRangeFraming;
+
+    for (constraint, code, expected) in [
+        (
+            "CstAttr_Dimension",
+            0xb8,
+            CatiaConstraintRangeFraming::DimensionB8,
+        ),
+        ("ComplexCst", 0xc9, CatiaConstraintRangeFraming::ComplexC9),
+    ] {
+        let native = crate::native::CatiaNative::decode(&standard_catpart_with_two_selector_value(
+            "Range",
+            constraint,
+            &[0x84, 0x96, 0x82, code, 0xe7],
+        ));
+        assert_eq!(
+            native.entity_records[0]
+                .constraint_range
+                .as_ref()
+                .expect("complete constraint range")
+                .framing,
+            expected
+        );
+    }
+
+    for (range, constraint, code) in [
+        ("Tolerance", "CstAttr_Dimension", 0xc1),
+        ("Range", "ComplexCst", 0xc1),
+        ("Range", "CstAttr_Dimension", 0xc9),
+    ] {
+        let native = crate::native::CatiaNative::decode(&standard_catpart_with_two_selector_value(
+            range,
+            constraint,
+            &[0x84, 0x96, 0x82, code, 0xe7],
+        ));
+        assert!(native.entity_records[0].constraint_range.is_none());
+    }
 }
 
 #[test]

@@ -1074,6 +1074,30 @@ pub struct CatiaParameterValue {
     pub evaluation: CatiaEntityEvaluation,
 }
 
+/// Exact framing of one complete constraint-range value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaConstraintRangeFraming {
+    /// `CstAttr_Dimension` selected with prefix code `B8`.
+    DimensionB8,
+    /// `CstAttr_Dimension` selected with prefix code `C1`.
+    DimensionC1,
+    /// `ComplexCst` selected with prefix code `C9`.
+    ComplexC9,
+}
+
+/// One complete constraint-range value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConstraintRange {
+    /// Catalog entry selected for the `Range` role.
+    pub range_entry: String,
+    /// Catalog entry selected for the constraint role encoded by `framing`.
+    pub constraint_entry: String,
+    /// Exact role and prefix-code framing.
+    pub framing: CatiaConstraintRangeFraming,
+    /// Stored evaluation state.
+    pub evaluation: CatiaEntityEvaluation,
+}
+
 /// One definition-selected entity whose complete value occupies its suffix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaDefinitionValue {
@@ -1169,6 +1193,9 @@ pub struct CatiaEntityRecord {
     /// Complete named parameter-value production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_value: Option<CatiaParameterValue>,
+    /// Complete constraint-range production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constraint_range: Option<CatiaConstraintRange>,
     /// Complete suffix value bound to the entity's sole definition selector.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub definition_value: Option<CatiaDefinitionValue>,
@@ -1953,6 +1980,48 @@ fn parameter_value(
     Some(CatiaParameterValue {
         name: schema_value(name),
         binding: schema_value(binding),
+        evaluation: evaluation.clone(),
+    })
+}
+
+fn constraint_range(
+    lead: u8,
+    values: &[CatiaEntityValueSchemaSelection],
+    suffix_value: Option<&CatiaEntitySuffixValue>,
+) -> Option<CatiaConstraintRange> {
+    if lead != 2 {
+        return None;
+    }
+    let [range, constraint] = values else {
+        return None;
+    };
+    if range.name != "Range" {
+        return None;
+    }
+    let suffix_value = suffix_value?;
+    if suffix_value.prefix_atoms != [4, 22, 2]
+        || suffix_value.prefix_atom_widths != [1, 1, 1]
+        || !suffix_value.trailer.is_empty()
+    {
+        return None;
+    }
+    let framing = match (constraint.name.as_str(), suffix_value.prefix_code) {
+        ("CstAttr_Dimension", 0xb8) => CatiaConstraintRangeFraming::DimensionB8,
+        ("CstAttr_Dimension", 0xc1) => CatiaConstraintRangeFraming::DimensionC1,
+        ("ComplexCst", 0xc9) => CatiaConstraintRangeFraming::ComplexC9,
+        _ => return None,
+    };
+    let CatiaEntitySuffixPayload::Evaluation {
+        evaluation,
+        encoding: CatiaEntityEvaluationEncoding::Direct,
+    } = &suffix_value.payload
+    else {
+        return None;
+    };
+    Some(CatiaConstraintRange {
+        range_entry: range.entry.clone(),
+        constraint_entry: constraint.entry.clone(),
+        framing,
         evaluation: evaluation.clone(),
     })
 }
@@ -4665,6 +4734,11 @@ impl CatiaNative {
                     &entity.value_schema_selections,
                     entity.suffix_value.as_ref(),
                 );
+                entity.constraint_range = constraint_range(
+                    entity.lead,
+                    &entity.value_schema_selections,
+                    entity.suffix_value.as_ref(),
+                );
                 entity.definition_value = definition_value(
                     entity.lead,
                     &entity.definition_schema_selections,
@@ -4967,6 +5041,14 @@ impl CatiaNative {
                     || graph_entities.iter().any(|entity| {
                         entity.parameter_value
                             != parameter_value(
+                                entity.lead,
+                                &entity.value_schema_selections,
+                                entity.suffix_value.as_ref(),
+                            )
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        entity.constraint_range
+                            != constraint_range(
                                 entity.lead,
                                 &entity.value_schema_selections,
                                 entity.suffix_value.as_ref(),
@@ -5707,6 +5789,7 @@ fn native_object_graph(
                 value_schema_selections: Vec::new(),
                 relation_expression: None,
                 parameter_value: None,
+                constraint_range: None,
                 definition_value: None,
                 formula_relation: None,
                 value_packets,
