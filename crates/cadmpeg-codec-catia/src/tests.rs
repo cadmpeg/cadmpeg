@@ -1282,6 +1282,14 @@ pub(crate) fn b2_revolution_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn b2_resolved_revolution_stream() -> Vec<u8> {
+    let mut circle = b2_circle_stream();
+    circle[32..40].copy_from_slice(&le_f64(-4.0));
+    circle[40..48].copy_from_slice(&le_f64(9.0));
+    circle.extend_from_slice(&b2_revolution_stream());
+    circle
+}
+
 pub(crate) fn b2_torus_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x2b, 200, 0x05];
     let mut values = [0.0f64; 25];
@@ -4384,8 +4392,8 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
 }
 
 #[test]
-fn native_namespace_retains_unbound_consolidated_revolution_carriers() {
-    let native = crate::native::CatiaNative::decode(&b2_revolution_stream());
+fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
+    let native = crate::native::CatiaNative::decode(&b2_resolved_revolution_stream());
     let [revolution] = native.consolidated_revolutions.as_slice() else {
         panic!("one consolidated revolution carrier")
     };
@@ -4396,6 +4404,10 @@ fn native_namespace_retains_unbound_consolidated_revolution_carriers() {
     assert_eq!(revolution.direction_y, [0.0, 1.0, 0.0]);
     assert_eq!(revolution.axis, [0.0, 0.0, 1.0]);
     assert_eq!(revolution.profile_range, [-4.0, 9.0]);
+    assert_eq!(
+        revolution.profile_circle.as_deref(),
+        Some("catia:consolidated:circle#0")
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -4406,6 +4418,14 @@ fn native_namespace_retains_unbound_consolidated_revolution_carriers() {
         native
     );
 
+    let mut invalid = native.clone();
+    invalid.consolidated_revolutions[0].profile_circle = None;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA revolution profile binding");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
     let mut invalid = native;
     invalid.consolidated_revolutions[0].axis = [0.0, 0.0, -1.0];
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
@@ -4413,6 +4433,59 @@ fn native_namespace_retains_unbound_consolidated_revolution_carriers() {
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA revolution for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    let mut file = standard_catpart();
+    file.splice(16..16, b2_resolved_revolution_stream());
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode resolved CATIA revolution");
+    let directrix = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            curve
+                .id
+                .0
+                .starts_with("catia:standard:revolution-directrix#")
+        })
+        .expect("transferred revolution directrix");
+    assert!(matches!(
+        directrix.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius: 3.0,
+        } if center == cadmpeg_ir::math::Point3::new(1.0, 4.0, -2.0)
+            && axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            && ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+    ));
+    let revolution = decoded
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|surface| surface.id.0.starts_with("catia:standard:revolution#"))
+        .expect("transferred revolution construction");
+    assert!(matches!(
+        &revolution.definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+            angular_interval,
+            parameter_interval: Some([-4.0, 9.0]),
+            ..
+        } if *angular_interval == [0.5, 0.5 + std::f64::consts::TAU]
+    ));
+    assert_eq!(
+        decoded.report.coverage["transferred_consolidated_revolution_count"],
+        1
+    );
+    assert!(!decoded.report.losses.iter().any(|loss| loss
+        .message
+        .contains("consolidated surface-of-revolution record")));
 }
 
 #[test]

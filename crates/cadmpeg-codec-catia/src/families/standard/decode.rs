@@ -33,6 +33,103 @@ use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
 use crate::solve::{mesh_quotient, missing_edge};
 
+fn append_consolidated_revolutions(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    bytes: &[u8],
+) -> usize {
+    let resolved = crate::families::b2::records::b2_resolved_revolutions(bytes);
+    for resolved in &resolved {
+        let index = resolved.revolution_index;
+        let revolution = &resolved.revolution;
+        let profile = &resolved.profile;
+        let direction_x = Vector3::new(
+            revolution.direction_x[0],
+            revolution.direction_x[1],
+            revolution.direction_x[2],
+        );
+        let direction_y = Vector3::new(
+            revolution.direction_y[0],
+            revolution.direction_y[1],
+            revolution.direction_y[2],
+        );
+        let axis = Vector3::new(revolution.axis[0], revolution.axis[1], revolution.axis[2]);
+        let origin = Point3::new(
+            revolution.origin[0],
+            revolution.origin[1],
+            revolution.origin[2],
+        );
+        let transverse_coordinate =
+            origin.x * direction_x.x + origin.y * direction_x.y + origin.z * direction_x.z;
+        let center = Point3::new(
+            transverse_coordinate * direction_x.x
+                + profile.center_pair[0] * direction_y.x
+                + profile.center_pair[1] * axis.x,
+            transverse_coordinate * direction_x.y
+                + profile.center_pair[0] * direction_y.y
+                + profile.center_pair[1] * axis.y,
+            transverse_coordinate * direction_x.z
+                + profile.center_pair[0] * direction_y.z
+                + profile.center_pair[1] * axis.z,
+        );
+        let directrix = CurveId(format!("catia:standard:revolution-directrix#{index}"));
+        annotate(
+            annotations,
+            &directrix,
+            "consolidated_b2_03_19",
+            profile.pos as u64,
+            format!("circle:{}", profile.record_id),
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
+            id: directrix.clone(),
+            geometry: CurveGeometry::Circle {
+                center,
+                axis: direction_x,
+                ref_direction: direction_y,
+                radius: profile.radius,
+            },
+            source_object: Some(cgm_source("profile-circle", profile.record_id)),
+        });
+        let surface = SurfaceId(format!("catia:standard:revolution-surface#{index}"));
+        annotate(
+            annotations,
+            &surface,
+            "consolidated_b2_03_2d",
+            revolution.pos as u64,
+            format!("profile-allocation:{}", revolution.profile_allocation_id),
+            Exactness::ByteExact,
+        );
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: Some(cgm_source(
+                "revolution",
+                u32::from(revolution.profile_allocation_id),
+            )),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("catia:standard:revolution#{index}")),
+            surface,
+            definition: ProceduralSurfaceDefinition::Revolution {
+                directrix,
+                axis_origin: origin,
+                axis_direction: axis,
+                angular_interval: [
+                    revolution.angular_range[0] / revolution.angular_scale,
+                    revolution.angular_range[1] / revolution.angular_scale,
+                ],
+                parameter_interval: Some(revolution.profile_range),
+                transposed: false,
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+    }
+    resolved.len()
+}
+
 /// Decode the standard-nested vertex cloud and analytic surface carriers. Returns
 /// `None` when the reconstructed stream yields neither vertices nor surfaces, so
 /// the caller falls back to the container-metadata path.
@@ -527,6 +624,8 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             record_bounds,
         });
     }
+    let resolved_revolution_count =
+        append_consolidated_revolutions(&mut ir, &mut annotations, &scan.data);
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:standard:pt#{i}"));
@@ -626,7 +725,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         analytic_record_count,
         &crate::assemble::UnresolvedSurfaceCounts {
             face_local_freeform: unresolved_freeform_record_count,
-            unbound_revolution: revolution_record_count,
+            unbound_revolution: revolution_record_count.saturating_sub(resolved_revolution_count),
         },
         topology_result.err().map(StandardTopologyFailure::message),
     );

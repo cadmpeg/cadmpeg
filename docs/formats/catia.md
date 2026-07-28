@@ -374,6 +374,8 @@ The 200-byte payload is `<center:3f64le> <direction_x:3f64le> <direction_y:3f64l
 
 The `00 33 30` byte is only the kind tag; geometry is a dedicated 174-byte `b2 03 2d` record: `+5` reference token (`08` or `0a`), `+6` profile allocation identity (u16le), `+8` 12×f64le (axis origin XYZ + three basis vectors), `+104` 4×f64le angular/profile bounds, then scale/flag tail. Three normalized relations hold to f64 bit-equality (`angular_lo/scale==0.5`, `(angular_hi−angular_lo)/scale==2π`, `mean/scale==π+0.5`).
 
+A revolution profile binds when exactly one complete `b2 03 19` circle has a bit-identical arc-length interval. Let `(X,Y,A)` be the revolution's right-handed frame, `O` its axis origin, and `(c1,c2,r)` the circle fields. The model-space profile circle has center `(O·X)X + c1Y + c2A`, normal `X`, zero-angle direction `Y`, radius `r`, and the stored profile interval. The surface revolves that directrix about `(O,A)` over `[angular_lo/scale, angular_hi/scale]`. No binding is assigned when the interval is absent or selects multiple circle records.
+
 ---
 
 ## 6. Object-stream record framing (`a5 03` / `a8 03` / `b5 03`)

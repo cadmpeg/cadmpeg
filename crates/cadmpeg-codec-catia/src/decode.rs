@@ -506,6 +506,14 @@ fn finish_decode(
             native.consolidated_revolutions.len(),
         ),
         (
+            "transferred_consolidated_revolution_count".to_string(),
+            ir.model
+                .procedural_surfaces
+                .iter()
+                .filter(|surface| surface.id.0.starts_with("catia:standard:revolution#"))
+                .count(),
+        ),
+        (
             "decoded_consolidated_sphere_count".to_string(),
             native.consolidated_spheres.len(),
         ),

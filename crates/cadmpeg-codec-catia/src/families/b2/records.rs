@@ -866,7 +866,7 @@ pub(crate) fn point_distance(a: Point3, b: Point3) -> f64 {
 }
 
 /// Arc-length circle support stored in a `b2 03 19` record.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct B2Circle {
     /// Record byte offset.
     pub pos: usize,
@@ -959,6 +959,18 @@ pub struct B2Revolution {
     pub profile_range: [f64; 2],
     /// Positive angular chart scale.
     pub angular_scale: f64,
+}
+
+/// One revolution record whose profile interval identifies exactly one
+/// consolidated circle record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2ResolvedRevolution {
+    /// Ordinal among all decoded revolution records.
+    pub revolution_index: usize,
+    /// Surface-of-revolution record.
+    pub revolution: B2Revolution,
+    /// Unique profile circle with the same stored parameter interval.
+    pub profile: B2Circle,
 }
 
 /// Metric line profile stored in a `b2/b3/b4 03 0e` record.
@@ -1322,6 +1334,28 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
         });
     }
     out
+}
+
+/// Bind revolution profiles by exact, unique stored parameter interval.
+#[must_use]
+pub fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
+    let circles = b2_circles(data);
+    b2_revolutions(data)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(revolution_index, revolution)| {
+            let mut profiles = circles.iter().filter(|circle| {
+                circle.range[0].to_bits() == revolution.profile_range[0].to_bits()
+                    && circle.range[1].to_bits() == revolution.profile_range[1].to_bits()
+            });
+            let profile = profiles.next()?.clone();
+            profiles.next().is_none().then_some(B2ResolvedRevolution {
+                revolution_index,
+                revolution,
+                profile,
+            })
+        })
+        .collect()
 }
 
 /// Decode exact B-family metric line profiles.

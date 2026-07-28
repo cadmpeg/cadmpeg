@@ -10,9 +10,9 @@ use crate::tests::{
     b2_line_profile_stream, b2_link_5f_stream, b2_linked_counted_owner_stream,
     b2_linked_owner_stream, b2_long_61_stream, b2_offset_support_stream, b2_owner_packet_stream,
     b2_parameter_point_stream, b2_pcurve_stream, b2_phase_tailed_cylinder_stream,
-    b2_reference_list_stream, b2_revolution_stream, b2_sphere_stream, b2_topology_metadata_stream,
-    b2_torus_stream, b2_width_coded_owner_packet_stream, b3_cylinder_stream,
-    b3_offset_support_stream,
+    b2_reference_list_stream, b2_resolved_revolution_stream, b2_revolution_stream,
+    b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
+    b2_width_coded_owner_packet_stream, b3_cylinder_stream, b3_offset_support_stream,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -307,6 +307,41 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         assert_eq!(records[0].profile_range, [-4.0, 9.0]);
         assert_eq!(records[0].angular_scale, 2.0);
     }
+}
+
+#[test]
+fn b2_revolution_profile_requires_one_exact_circle_interval() {
+    let stream = b2_resolved_revolution_stream();
+    let resolved = crate::families::b2::records::b2_resolved_revolutions(&stream);
+    let [resolved] = resolved.as_slice() else {
+        panic!("one resolved revolution profile")
+    };
+    assert_eq!(resolved.revolution.profile_range, resolved.profile.range);
+    assert_eq!(resolved.revolution_index, 0);
+
+    let mut unmatched_prefix = b2_revolution_stream();
+    unmatched_prefix[120..128].copy_from_slice(&(-5.0f64).to_le_bytes());
+    unmatched_prefix.extend_from_slice(&stream);
+    let resolved = crate::families::b2::records::b2_resolved_revolutions(&unmatched_prefix);
+    let [resolved] = resolved.as_slice() else {
+        panic!("one resolved revolution after unmatched prefix")
+    };
+    assert_eq!(resolved.revolution_index, 1);
+
+    let mut ambiguous = stream.clone();
+    ambiguous.splice(0..0, stream[..57].iter().copied());
+    assert!(crate::families::b2::records::b2_resolved_revolutions(&ambiguous).is_empty());
+
+    let mut mismatched = stream;
+    mismatched[40..48].copy_from_slice(&10.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_resolved_revolutions(&mismatched).is_empty());
+
+    let mut signed_zero_mismatch = b2_resolved_revolution_stream();
+    signed_zero_mismatch[32..40].copy_from_slice(&0.0f64.to_le_bytes());
+    signed_zero_mismatch[177..185].copy_from_slice(&(-0.0f64).to_le_bytes());
+    assert!(
+        crate::families::b2::records::b2_resolved_revolutions(&signed_zero_mismatch).is_empty()
+    );
 }
 
 #[test]

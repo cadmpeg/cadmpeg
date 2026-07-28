@@ -78,6 +78,10 @@ current scores require those matrices and representative fixtures.
   payload. A cone-face chart binds its immediately following complete
   parameter-space point run in serialized order; a mixed class-`0x18` run
   remains unbound atomically.
+- A consolidated revolution whose profile interval selects exactly one
+  consolidated circle transfers a placed analytic directrix and neutral
+  surface-of-revolution construction. Missing and multiply matching intervals
+  remain unbound atomically.
 - Zero-entity surface carriers retain their complete face-local `21xx` support
   tapes. Every occurrence keeps its framed local slot, record family, and
   inline UV endpoint pair when that family stores one. The independent `5e1a`

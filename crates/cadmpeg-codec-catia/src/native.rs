@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 162;
+pub const CATIA_NATIVE_VERSION: u32 = 163;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -424,6 +424,9 @@ pub struct CatiaConsolidatedRevolution {
     pub angular_range: [f64; 2],
     /// Stored profile parameter interval.
     pub profile_range: [f64; 2],
+    /// Unique consolidated circle with the same stored profile interval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_circle: Option<String>,
     /// Positive scale from revolution angle to stored angular parameter.
     pub angular_scale: f64,
 }
@@ -3483,7 +3486,18 @@ fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
         .collect()
 }
 
-fn consolidated_revolutions(bytes: &[u8]) -> Vec<CatiaConsolidatedRevolution> {
+fn consolidated_revolutions(
+    bytes: &[u8],
+    circles: &[CatiaConsolidatedCircle],
+) -> Vec<CatiaConsolidatedRevolution> {
+    let resolved_profiles = crate::families::b2::records::b2_resolved_revolutions(bytes)
+        .into_iter()
+        .map(|resolved| (resolved.revolution.pos as u64, resolved.profile.pos as u64))
+        .collect::<HashMap<_, _>>();
+    let circle_ids = circles
+        .iter()
+        .map(|circle| (circle.byte_offset, circle.id.clone()))
+        .collect::<HashMap<_, _>>();
     crate::families::b2::records::b2_revolutions(bytes)
         .into_iter()
         .enumerate()
@@ -3498,6 +3512,10 @@ fn consolidated_revolutions(bytes: &[u8]) -> Vec<CatiaConsolidatedRevolution> {
             axis: revolution.axis,
             angular_range: revolution.angular_range,
             profile_range: revolution.profile_range,
+            profile_circle: resolved_profiles
+                .get(&(revolution.pos as u64))
+                .and_then(|offset| circle_ids.get(offset))
+                .cloned(),
             angular_scale: revolution.angular_scale,
         })
         .collect()
@@ -4362,8 +4380,19 @@ fn validate_consolidated_reference_lists(
 #[cfg(test)]
 fn validate_consolidated_revolutions(
     revolutions: &[CatiaConsolidatedRevolution],
+    circles: &[CatiaConsolidatedCircle],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, revolution) in revolutions.iter().enumerate() {
+        let mut profile_candidates = circles.iter().filter(|circle| {
+            circle.range[0].to_bits() == revolution.profile_range[0].to_bits()
+                && circle.range[1].to_bits() == revolution.profile_range[1].to_bits()
+        });
+        let expected_profile = profile_candidates.next().and_then(|circle| {
+            profile_candidates
+                .next()
+                .is_none()
+                .then_some(circle.id.as_str())
+        });
         let expected_id = format!("catia:consolidated:revolution#{index}");
         let squared_length = |direction: [f64; 3]| {
             direction
@@ -4395,6 +4424,7 @@ fn validate_consolidated_revolutions(
             || revolution.angular_scale <= 0.0
             || revolution.angular_range[0] >= revolution.angular_range[1]
             || revolution.profile_range[0] >= revolution.profile_range[1]
+            || revolution.profile_circle.as_deref() != expected_profile
             || [
                 revolution.direction_x,
                 revolution.direction_y,
@@ -5643,7 +5673,7 @@ impl CatiaNative {
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
         let consolidated_reference_lists = consolidated_reference_lists(bytes);
-        let consolidated_revolutions = consolidated_revolutions(bytes);
+        let consolidated_revolutions = consolidated_revolutions(bytes, &consolidated_circles);
         let consolidated_spheres = consolidated_spheres(bytes);
         let consolidated_tori = consolidated_tori(bytes);
         let zero_entity_records = zero_entity_records(bytes);
@@ -6124,7 +6154,7 @@ impl CatiaNative {
         let mut consolidated_revolutions: Vec<CatiaConsolidatedRevolution> =
             namespace.arena_as("consolidated_revolutions")?;
         consolidated_revolutions.sort_by_key(|revolution| revolution.byte_offset);
-        validate_consolidated_revolutions(&consolidated_revolutions)?;
+        validate_consolidated_revolutions(&consolidated_revolutions, &consolidated_circles)?;
         let mut consolidated_spheres: Vec<CatiaConsolidatedSphere> =
             namespace.arena_as("consolidated_spheres")?;
         consolidated_spheres.sort_by_key(|sphere| sphere.byte_offset);
