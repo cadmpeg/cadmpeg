@@ -13104,11 +13104,22 @@ fn feature_dimension_display(dimension_type: u32) -> Option<DimensionDisplay> {
 }
 
 fn feature_relation_table_complete(table: &crate::feature::FeatureRelationTable) -> bool {
-    table
-        .declared_count
-        .checked_sub(2)
-        .and_then(|count| usize::try_from(count).ok())
-        == Some(table.rows.len())
+    feature_relation_table_expected_rows(table) == Some(table.rows.len())
+}
+
+fn feature_relation_table_expected_rows(
+    table: &crate::feature::FeatureRelationTable,
+) -> Option<usize> {
+    match table.declared_count {
+        0 => None,
+        1 => Some(0),
+        count => usize::try_from(count - 2).ok(),
+    }
+}
+
+fn feature_relation_table_missing_rows(table: &crate::feature::FeatureRelationTable) -> usize {
+    feature_relation_table_expected_rows(table)
+        .map_or(0, |expected| expected.saturating_sub(table.rows.len()))
 }
 
 fn feature_solver_table_complete(
@@ -13117,6 +13128,17 @@ fn feature_solver_table_complete(
 ) -> bool {
     header.map_or(row_count == 0, |header| {
         usize::try_from(header.declared_count).ok() == Some(row_count)
+    })
+}
+
+fn feature_solver_table_missing_rows(
+    header: Option<&crate::feature::FeatureSolverTableHeader>,
+    row_count: usize,
+) -> usize {
+    header.map_or(0, |header| {
+        usize::try_from(header.declared_count)
+            .unwrap_or(usize::MAX)
+            .saturating_sub(row_count)
     })
 }
 
@@ -25478,6 +25500,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .filter_map(|definition| definition.relations.as_ref())
         .map(|relations| relations.skamps.len())
         .sum::<usize>();
+    let missing_feature_skamp_row_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| {
+            feature_solver_table_missing_rows(
+                relations.skamp_header.as_ref(),
+                relations.skamps.len(),
+            )
+        })
+        .sum::<usize>();
     let skamp_constraint_coverage =
         design_constraint_transfer_coverage(&ir.model.sketch_constraints, ":skamp:", "creo:skamp:");
     let decoded_feature_relation_count = scan
@@ -25486,6 +25520,39 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
         .map(|relations| relations.rows.len())
+        .sum::<usize>();
+    let missing_feature_relation_row_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(feature_relation_table_missing_rows)
+        .sum::<usize>();
+    let malformed_feature_relation_table_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .filter(|relations| feature_relation_table_expected_rows(relations).is_none())
+        .count();
+    let decoded_feature_relation_triple_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| relations.triples.len())
+        .sum::<usize>();
+    let missing_feature_relation_triple_row_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| {
+            feature_solver_table_missing_rows(
+                relations.triples_header.as_ref(),
+                relations.triples.len(),
+            )
+        })
         .sum::<usize>();
     let relation_constraint_coverage = design_constraint_transfer_coverage(
         &ir.model.sketch_constraints,
@@ -25679,6 +25746,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             decoded_feature_skamp_count,
         );
         coverage.insert(
+            "missing_feature_skamp_row_count".to_string(),
+            missing_feature_skamp_row_count,
+        );
+        coverage.insert(
             "transferred_feature_skamp_constraint_count".to_string(),
             skamp_constraint_coverage.transferred,
         );
@@ -25717,6 +25788,22 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "decoded_feature_relation_count".to_string(),
             decoded_feature_relation_count,
+        );
+        coverage.insert(
+            "missing_feature_relation_row_count".to_string(),
+            missing_feature_relation_row_count,
+        );
+        coverage.insert(
+            "malformed_feature_relation_table_count".to_string(),
+            malformed_feature_relation_table_count,
+        );
+        coverage.insert(
+            "decoded_feature_relation_triple_count".to_string(),
+            decoded_feature_relation_triple_count,
+        );
+        coverage.insert(
+            "missing_feature_relation_triple_row_count".to_string(),
+            missing_feature_relation_triple_row_count,
         );
         coverage.insert(
             "transferred_feature_relation_constraint_count".to_string(),
@@ -28747,6 +28834,58 @@ fn build_report(
             message: format!(
                 "{missing_segment_rows} declared section segment row(s) did not decode and remain \
                  unavailable to the defining sketch."
+            ),
+            provenance: None,
+        });
+    }
+    let missing_relation_rows = count("missing_feature_relation_row_count");
+    if missing_relation_rows != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_relation_rows} declared section relation row(s) did not decode; the \
+                 affected complete-table solver identities remain unavailable."
+            ),
+            provenance: None,
+        });
+    }
+    let malformed_relation_tables = count("malformed_feature_relation_table_count");
+    if malformed_relation_tables != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{malformed_relation_tables} section relation table(s) use the invalid zero \
+                 allocation count."
+            ),
+            provenance: None,
+        });
+    }
+    let missing_skamp_rows = count("missing_feature_skamp_row_count");
+    if missing_skamp_rows != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_skamp_rows} declared section incidence row(s) did not decode; the \
+                 affected complete-table solver identities remain unavailable."
+            ),
+            provenance: None,
+        });
+    }
+    let missing_triple_rows = count("missing_feature_relation_triple_row_count");
+    if missing_triple_rows != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_triple_rows} declared section relation-incidence join row(s) did not \
+                 decode; the affected complete-table solver identities remain unavailable."
             ),
             provenance: None,
         });

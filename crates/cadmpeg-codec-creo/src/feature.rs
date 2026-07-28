@@ -1287,8 +1287,8 @@ pub struct FeatureRelation {
 /// Counted `relat_ptr` constraint-relation table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureRelationTable {
-    /// Allocation count declared by the table's `f8` opener. Two entries are
-    /// structural; positional row count is `declared_count - 2`.
+    /// Allocation count declared by the table's `f8` opener. One is the empty
+    /// table form; larger counts include two structural entries.
     pub declared_count: u32,
     /// Relation entity-class reference following the opener.
     pub entity_ref: Option<u32>,

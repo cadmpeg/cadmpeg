@@ -5340,6 +5340,108 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(triples["declared_count"], 2);
     assert_eq!(triples["entity_ref"], 109);
     assert_eq!(triples["row_count"], 2);
+    let coverage = &result.report.coverage;
+    assert_eq!(coverage["decoded_feature_relation_count"], 2);
+    assert_eq!(coverage["missing_feature_relation_row_count"], 0);
+    assert_eq!(coverage["malformed_feature_relation_table_count"], 0);
+    assert_eq!(coverage["decoded_feature_skamp_count"], 1);
+    assert_eq!(coverage["missing_feature_skamp_row_count"], 0);
+    assert_eq!(coverage["decoded_feature_relation_triple_count"], 2);
+    assert_eq!(coverage["missing_feature_relation_triple_row_count"], 0);
+}
+
+#[test]
+fn decode_reports_missing_declared_constraint_table_rows() {
+    let mut payload = b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x05\xf7\x6a\xfb\xe2\
+        \xe0\x01id\0\xe0\x01used\0\xe0\x01type\0\xf1\xf7\x6a\xe2\
+        \x34\x00\x05\x01\xf6\xe4\x00\xe6\x0f\x10\x0f\xe4\x00\x00\x00\xe2\
+        \x35\x01\x07\x29\x32\xf6\x00\xe6\x0f\x10\x0f\xe4\x01\x2a\x03\xe2"
+        .to_vec();
+    payload.extend_from_slice(
+        b"skamp_ptr\0\xf3\xf8\x02\xf7\x6b\xfb\xe2\
+          \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+          \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+          \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+          \xf3\xf7\x6b\xe2\
+          triples_ptr\0\xf4\x04\xf8\x03\xf7\x6d\xfb\xe2\
+          \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\xe0\x01skamp_id\0\x05\
+          \xf1\xf7\x6d\xe2\xf6\x09\x05\xe2",
+    );
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode incomplete constraint tables");
+    let coverage = &result.report.coverage;
+
+    assert_eq!(coverage["decoded_feature_relation_count"], 2);
+    assert_eq!(coverage["missing_feature_relation_row_count"], 1);
+    assert_eq!(coverage["decoded_feature_skamp_count"], 1);
+    assert_eq!(coverage["missing_feature_skamp_row_count"], 1);
+    assert_eq!(coverage["decoded_feature_relation_triple_count"], 2);
+    assert_eq!(coverage["missing_feature_relation_triple_row_count"], 1);
+    for message in [
+        "1 declared section relation row(s) did not decode",
+        "1 declared section incidence row(s) did not decode",
+        "1 declared section relation-incidence join row(s) did not decode",
+    ] {
+        assert!(result.report.losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
+                && loss.category == cadmpeg_ir::LossCategory::Attribute
+                && loss.severity == cadmpeg_ir::Severity::Warning
+                && loss.message.contains(message)
+        }));
+    }
+}
+
+#[test]
+fn decode_reports_malformed_relation_table_allocation_count() {
+    let payload =
+        b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x00\xf7\x6a\xfb\xe2schema\xf1\xf7\x6a\xe2".to_vec();
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode malformed relation table");
+
+    assert_eq!(
+        result.report.coverage["malformed_feature_relation_table_count"],
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
+            && loss.category == cadmpeg_ir::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss
+                .message
+                .contains("use the invalid zero allocation count")
+    }));
+}
+
+#[test]
+fn decode_accepts_the_count_one_empty_relation_table() {
+    let payload =
+        b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x01\xf7\x6a\xfb\xe2schema\xf1\xf7\x6a\xe2".to_vec();
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode empty relation table");
+
+    assert_eq!(result.report.coverage["decoded_feature_relation_count"], 0);
+    assert_eq!(
+        result.report.coverage["missing_feature_relation_row_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["malformed_feature_relation_table_count"],
+        0
+    );
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("section relation table")));
 }
 
 #[test]

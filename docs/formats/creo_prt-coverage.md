@@ -85,7 +85,10 @@ fixtures, claims above L1 remain unproven.
   declared variable rows are counted and raise a decode loss note.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
-  Diagnostics report every nonzero active native discriminator.
+  It also counts decoded and missing declared relation, incidence, and
+  relation-incidence join rows. A zero relation allocation count is counted
+  separately. Diagnostics report every nonzero row shortfall, malformed
+  relation allocation, and active native discriminator.
 - Every decoded non-null `segtab.verhor` field transfers as a distinct source
   constraint. Values zero and one on a line use the defined neutral vertical
   and horizontal forms; other segment families and selector values retain the
@@ -159,7 +162,11 @@ fixtures, claims above L1 remain unproven.
    Nonzero untransferred and ambiguous row counts each raise a decode loss note.
    The coverage map separately counts decoded, transferred, typed, and native
    `relat_ptr` and `skamp_ptr` constraints, with active typed and native
-   partitions. Every active native constraint raises a decode loss note.
+   partitions. It counts decoded `triples_ptr` joins and missing declared rows
+   in all three constraint tables. Relation tables with the invalid zero
+   allocation count are counted separately. Every missing row, malformed
+   relation allocation, and active native constraint raises a decode loss
+   note.
    It also counts all transferred history features, partitions their
    definitions into typed and native forms, and separately counts typed
    definitions whose model-space construction is explicitly unresolved. Every
