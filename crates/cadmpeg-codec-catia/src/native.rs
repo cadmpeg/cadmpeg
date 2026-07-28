@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 153;
+pub const CATIA_NATIVE_VERSION: u32 = 154;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -383,7 +383,7 @@ pub struct CatiaConsolidatedRevolution {
     /// Reference-token dialect (`0x08` or `0x0a`).
     pub reference_token: u8,
     /// Unresolved consolidated allocation identity of the profile curve.
-    pub profile_curve_id: u16,
+    pub profile_allocation_id: u16,
     /// Axis-frame origin.
     pub origin: [f64; 3],
     /// First transverse unit direction.
@@ -3216,7 +3216,7 @@ fn consolidated_revolutions(bytes: &[u8]) -> Vec<CatiaConsolidatedRevolution> {
             id: format!("catia:consolidated:revolution#{index}"),
             byte_offset: revolution.pos as u64,
             reference_token: revolution.reference_token,
-            profile_curve_id: revolution.profile_curve_id,
+            profile_allocation_id: revolution.profile_allocation_id,
             origin: revolution.origin,
             direction_x: revolution.direction_x,
             direction_y: revolution.direction_y,
@@ -3917,7 +3917,7 @@ fn validate_consolidated_revolutions(
         ];
         if revolution.id != expected_id
             || !matches!(revolution.reference_token, 0x08 | 0x0a)
-            || revolution.profile_curve_id == 0
+            || revolution.profile_allocation_id == 0
             || revolution
                 .origin
                 .iter()

@@ -908,8 +908,8 @@ pub struct B2Revolution {
     pub pos: usize,
     /// Reference-token dialect (`0x08` or `0x0a`).
     pub reference_token: u8,
-    /// Referenced profile-curve identifier.
-    pub profile_curve_id: u16,
+    /// Stored profile allocation identity.
+    pub profile_allocation_id: u16,
     /// Axis-frame origin.
     pub origin: [f64; 3],
     /// First transverse unit direction.
@@ -1204,7 +1204,7 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
         {
             continue;
         }
-        let Some(profile_curve_id) = u16_le(data, p + 1) else {
+        let Some(profile_allocation_id) = u16_le(data, p + 1) else {
             continue;
         };
         let Some(axis_frame) = read_f64_array::<12>(data, p + 3) else {
@@ -1242,7 +1242,7 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
             .chain(&bounds)
             .chain(&[angular_scale, mean_angle_parameter])
             .any(|value| !value.is_finite())
-            || profile_curve_id == 0
+            || profile_allocation_id == 0
             || angular_scale <= 0.0
             || bounds[2] >= bounds[3]
             || [direction_x, direction_y, axis]
@@ -1261,7 +1261,7 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
         out.push(B2Revolution {
             pos: frame.pos,
             reference_token: data[p],
-            profile_curve_id,
+            profile_allocation_id,
             origin: axis_frame[0..3].try_into().expect("three origin values"),
             direction_x,
             direction_y,

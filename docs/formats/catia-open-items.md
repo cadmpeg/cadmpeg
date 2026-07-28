@@ -18,6 +18,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The value production and entity binding for typed `Boolean` parameters and active configuration state are unresolved. Boolean- and activity-named field classes include compound object payloads and do not identify scalar values.
 - The semantic binding among complete two-scalar numeric tuples, `2DPoint` field labels, and `PRTSketch` field labels is unresolved. Field-class labels and inter-object references do not establish coordinate units, geometry identity, or sketch membership.
 - The semantic roles of nonempty `PRTSketch` and `Sketch` atom, list, and reference payloads are unresolved.
+- The incidence from complete `Range`/`CstAttr_Dimension` and `Range`/`ComplexCst` values to individual constraints is unresolved. Incoming `ListAggregator` references mix these identities with unrelated graph members and repeat identities outside the counted list, so they do not establish a constraint owner or operand relation.
 - Constructed and support-face sketch placement frames, construction state, profile membership, sketch-geometry classes, dimensional constraints, and non-dimensional constraints are unresolved.
 - The feature-instance grammar that binds empty mainstream operation fields, definition-bound values, and structurally owned operand objects into one ordered operation is unresolved. Operation-named field classes and structural ownership alone do not establish feature identity, operands, outputs, or replay order.
 
@@ -43,6 +44,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The semantic roles of class-`0x60` group types `2` and `12..=21` are unspecified. Type `3` opens a cylinder chain.
 - The semantic roles of the structurally typed counted `b2/b3/b4 03 61` references and tails, and of the long-form `61` prefix, monotone members, five persistent references, and scalar, are unspecified.
 - The higher-level object role of each `b2/b3/b4 03 5f` → `62` allocation-linked owner remains unspecified.
+- The `b2 03 2d` revolution record's `u16le` profile allocation identity is typed, but its binding to the owning consolidated profile-curve record is unresolved. The axis frame, angular chart, and profile interval do not establish a surface without that directrix identity.
 
 ## Object stream
 
@@ -67,7 +69,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - Plane-cap digon orientation and rank-deficient plane frames.
 - The two root `extra_orientation_signs`.
 - The E5 body and shell orientation equation remains incomplete because the two root `extra_orientation_signs` lack assigned roles.
-- The `b2 03 2d` revolution record's `u16le` profile identifier is typed, but its binding to the owning consolidated profile-curve record is unresolved. The axis frame, angular chart, and profile interval do not establish a surface without that directrix identity.
 - Curve-support records: the mode byte following the pcurve reference lane and the bytes after the fixed header are carried raw; both are unresolved.
 - Bounds records: the trailing `u32` code after each bound parameter is unresolved.
 - Edge-use records: the bytes after the five counted reference fields are unresolved.

@@ -265,7 +265,7 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].pos, 0);
         assert_eq!(records[0].reference_token, reference_token);
-        assert_eq!(records[0].profile_curve_id, 0x1234);
+        assert_eq!(records[0].profile_allocation_id, 0x1234);
         assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
         assert_eq!(records[0].direction_x, [1.0, 0.0, 0.0]);
         assert_eq!(records[0].direction_y, [0.0, 1.0, 0.0]);
