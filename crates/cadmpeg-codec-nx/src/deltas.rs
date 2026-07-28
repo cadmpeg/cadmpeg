@@ -66,6 +66,17 @@ pub struct TermUseNumericTail {
     pub end: usize,
 }
 
+/// Maximal deltas gap containing only typed stream-local references.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaggedReferenceLane {
+    /// Ordered `(Parasolid record kind, XMT identity)` references.
+    pub references: Vec<(u16, u32)>,
+    /// First byte of the first tagged reference.
+    pub offset: usize,
+    /// First byte following the final tagged reference.
+    pub end: usize,
+}
+
 /// Result of a deterministic deltas record walk.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Census {
@@ -77,12 +88,21 @@ pub struct Census {
     pub body_revisions: Vec<BodyRevision>,
     /// Complete count-selected numeric tails following `term_use` records.
     pub term_use_numeric_tails: Vec<TermUseNumericTail>,
+    /// Maximal event gaps composed entirely of typed stream-local references.
+    pub tagged_reference_lanes: Vec<TaggedReferenceLane>,
     /// Complete-record counts keyed by Parasolid family name.
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
     pub tombstone_counts: BTreeMap<&'static str, usize>,
-    /// Sum of accepted full-record, tombstone, revision-prefix, and numeric-tail byte lengths.
+    /// Sum of all accepted record, revision, tombstone, numeric-tail, and reference-lane bytes.
     pub bytes_decoded: usize,
+}
+
+impl Census {
+    /// Return the sorted disjoint union of every admitted event byte span.
+    pub(crate) fn covered_spans(&self) -> Vec<(usize, usize)> {
+        merged_event_spans(self, true)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -463,6 +483,12 @@ pub fn walk(stream: &[u8]) -> Census {
         .iter()
         .map(|tail| tail.end - tail.offset)
         .sum::<usize>();
+    census.tagged_reference_lanes = tagged_reference_lanes(stream, &census);
+    census.bytes_decoded += census
+        .tagged_reference_lanes
+        .iter()
+        .map(|lane| lane.end - lane.offset)
+        .sum::<usize>();
     census
 }
 
@@ -508,6 +534,96 @@ fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericT
                 })
         })
         .collect()
+}
+
+fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReferenceLane> {
+    uncovered_spans(stream.len(), census)
+        .filter_map(|(offset, end)| {
+            let mut at = offset;
+            let mut references = Vec::new();
+            while at < end {
+                let kind = be::u16_at(stream, at)?;
+                is_tagged_reference_kind(kind).then_some(())?;
+                let (xmt, consumed) = read_xmt(stream, at.checked_add(2)?)?;
+                (xmt > 1).then_some(())?;
+                at = at.checked_add(2 + consumed)?;
+                (at <= end).then_some(())?;
+                references.push((kind, xmt));
+            }
+            (at == end && !references.is_empty()).then_some(TaggedReferenceLane {
+                references,
+                offset,
+                end,
+            })
+        })
+        .collect()
+}
+
+fn uncovered_spans(stream_len: usize, census: &Census) -> impl Iterator<Item = (usize, usize)> {
+    let covered = merged_event_spans(census, false);
+    let mut gaps = Vec::new();
+    let mut at = 0;
+    for (start, end) in covered {
+        if at < start {
+            gaps.push((at, start));
+        }
+        at = at.max(end);
+    }
+    if at < stream_len {
+        gaps.push((at, stream_len));
+    }
+    gaps.into_iter()
+}
+
+fn merged_event_spans(
+    census: &Census,
+    include_tagged_reference_lanes: bool,
+) -> Vec<(usize, usize)> {
+    let mut covered = census
+        .records
+        .iter()
+        .map(|record| (record.offset, record.end))
+        .chain(
+            census
+                .tombstones
+                .iter()
+                .map(|tombstone| (tombstone.offset, tombstone.offset + 6)),
+        )
+        .chain(
+            census
+                .body_revisions
+                .iter()
+                .map(|revision| (revision.offset, revision.prefix_end)),
+        )
+        .chain(
+            census
+                .term_use_numeric_tails
+                .iter()
+                .map(|tail| (tail.offset, tail.end)),
+        )
+        .collect::<Vec<_>>();
+    if include_tagged_reference_lanes {
+        covered.extend(
+            census
+                .tagged_reference_lanes
+                .iter()
+                .map(|lane| (lane.offset, lane.end)),
+        );
+    }
+    covered.sort_unstable();
+    let mut merged = Vec::<(usize, usize)>::new();
+    for (start, end) in covered {
+        if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
+            *merged_end = (*merged_end).max(end);
+        } else {
+            merged.push((start, end));
+        }
+    }
+    merged
+}
+
+fn is_tagged_reference_kind(kind: u16) -> bool {
+    family_name(kind).is_some() || matches!(kind, 79 | 80)
 }
 
 fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Option<Record> {

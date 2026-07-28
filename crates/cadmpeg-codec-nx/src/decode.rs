@@ -6621,6 +6621,12 @@ fn source_meta(scan: &Scan) -> SourceMeta {
                 census.term_use_numeric_tails.len().to_string(),
             );
         }
+        if !census.tagged_reference_lanes.is_empty() {
+            attributes.insert(
+                format!("deltas.{index}.tagged_reference_lanes"),
+                census.tagged_reference_lanes.len().to_string(),
+            );
+        }
         for (name, count) in census.full_counts {
             attributes.insert(format!("deltas.{index}.full.{name}"), count.to_string());
         }
@@ -6796,7 +6802,8 @@ fn build_geometry_report(
                  and BODY revision prefix was retained as an individually identified native event \
                  with its source bounds and decoded identities. Count-selected numeric tails after \
                  term-use endpoints were retained with their ordered finite binary64 values. Maximal \
-                 spans outside those events were retained with exact inflated-stream bounds and \
+                 event gaps containing only typed stream-local references were retained in order. \
+                 Spans outside those events were retained with exact inflated-stream bounds and \
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",

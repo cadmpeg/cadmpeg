@@ -88,6 +88,23 @@ pub struct ParasolidDeltasTermUseNumericTail {
     pub inflated_offset: u64,
 }
 
+/// Maximal deltas gap composed entirely of typed stream-local references.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTaggedReferenceLane {
+    /// Globally unique reference-lane identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Ordered `(Parasolid record kind, XMT identity)` references.
+    pub references: Vec<(u16, u32)>,
+    /// Exact reference-lane byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact reference-lane bytes.
+    pub sha256: String,
+    /// First byte of the first tagged reference.
+    pub inflated_offset: u64,
+}
+
 /// Maximal inflated-stream span outside every admitted deltas event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidDeltasResidualSpan {
@@ -108,6 +125,7 @@ pub(crate) struct ParasolidDeltasEvents {
     pub(crate) tombstones: Vec<ParasolidDeltasTombstone>,
     pub(crate) body_revisions: Vec<ParasolidDeltasBodyRevision>,
     pub(crate) term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
+    pub(crate) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
 }
 
@@ -118,6 +136,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         tombstones: Vec::new(),
         body_revisions: Vec::new(),
         term_use_numeric_tails: Vec::new(),
+        tagged_reference_lanes: Vec::new(),
         residual_spans: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -125,40 +144,8 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
             continue;
         }
         let census = crate::deltas::walk(&stream.inflated);
-        let mut covered = census
-            .records
-            .iter()
-            .map(|record| (record.offset, record.end))
-            .chain(
-                census
-                    .tombstones
-                    .iter()
-                    .map(|tombstone| (tombstone.offset, tombstone.offset + 6)),
-            )
-            .chain(
-                census
-                    .body_revisions
-                    .iter()
-                    .map(|revision| (revision.offset, revision.prefix_end)),
-            )
-            .chain(
-                census
-                    .term_use_numeric_tails
-                    .iter()
-                    .map(|tail| (tail.offset, tail.end)),
-            )
-            .collect::<Vec<_>>();
-        covered.sort_unstable();
-        let mut merged = Vec::<(usize, usize)>::new();
-        for (start, end) in covered {
-            if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
-                *merged_end = (*merged_end).max(end);
-            } else {
-                merged.push((start, end));
-            }
-        }
         let mut residual_start = 0;
-        for (covered_start, covered_end) in merged {
+        for (covered_start, covered_end) in census.covered_spans() {
             if residual_start < covered_start {
                 push_deltas_residual_span(
                     &mut events.residual_spans,
@@ -245,6 +232,22 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     inflated_offset: tail.offset as u64,
                 });
         }
+        for lane in census.tagged_reference_lanes {
+            let bytes = &stream.inflated[lane.offset..lane.end];
+            events
+                .tagged_reference_lanes
+                .push(ParasolidDeltasTaggedReferenceLane {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-tagged-reference-lane#{}",
+                        lane.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    references: lane.references,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: lane.offset as u64,
+                });
+        }
     }
     events.records.sort_by(|left, right| left.id.cmp(&right.id));
     events
@@ -255,6 +258,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .term_use_numeric_tails
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .tagged_reference_lanes
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .residual_spans
@@ -1637,6 +1643,57 @@ mod tests {
             (tail_offset + 64) as u64
         );
         assert_eq!(events.residual_spans[1].byte_len, 3);
+    }
+
+    #[test]
+    fn deltas_events_subtract_tagged_reference_lanes_from_residuals() {
+        fn type_45(xmt: u16) -> Vec<u8> {
+            let mut bytes = 45u16.to_be_bytes().to_vec();
+            bytes.extend_from_slice(&1u32.to_be_bytes());
+            bytes.extend_from_slice(&xmt.to_be_bytes());
+            bytes.extend_from_slice(&1.25f64.to_be_bytes());
+            bytes.extend_from_slice(&2.5f64.to_be_bytes());
+            bytes
+        }
+
+        let mut bytes = [0xaa, 0xbb, 0xcc].to_vec();
+        bytes.extend(type_45(10));
+        let lane_offset = bytes.len();
+        bytes.extend([
+            0x00, 0x4f, 0x00, 0x0a, // direct type-79 reference
+            0x00, 0x50, 0xff, 0xff, 0x00, 0x01, // extended type-80 reference
+        ]);
+        let lane_end = bytes.len();
+        bytes.extend(type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xdd, 0xee]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.tagged_reference_lanes.len(), 1);
+        let lane = &events.tagged_reference_lanes[0];
+        assert_eq!(lane.references, [(79, 10), (80, 32_768)]);
+        assert_eq!(lane.byte_len, 10);
+        assert_eq!(lane.inflated_offset, lane_offset as u64);
+        assert_eq!(
+            lane.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[lane_offset..lane_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].inflated_offset, 0);
+        assert_eq!(events.residual_spans[0].byte_len, 3);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
     }
 
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};

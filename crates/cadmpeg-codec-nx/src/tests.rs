@@ -6475,6 +6475,33 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
 }
 
 #[test]
+fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
+    let stream = [
+        0x00, 0x4f, 0x00, 0x0a, // direct type-79 reference
+        0x00, 0x50, 0xff, 0xff, 0x00, 0x01, // extended type-80 reference
+    ];
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.tagged_reference_lanes.len(), 1);
+    assert_eq!(
+        census.tagged_reference_lanes[0].references,
+        [(79, 10), (80, 32_768)]
+    );
+    assert_eq!(census.tagged_reference_lanes[0].offset, 0);
+    assert_eq!(census.tagged_reference_lanes[0].end, stream.len());
+    assert_eq!(census.bytes_decoded, stream.len());
+
+    for invalid in [
+        &[0x00, 0x4e, 0x00, 0x0a][..],
+        &[0x00, 0x4f, 0x00, 0x01],
+        &[0x00, 0x50, 0xff, 0xff, 0x00],
+    ] {
+        assert!(crate::deltas::walk(invalid)
+            .tagged_reference_lanes
+            .is_empty());
+    }
+}
+
+#[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
         .records
@@ -10761,6 +10788,7 @@ mod golden {
         "parasolid_deltas_body_revisions",
         "parasolid_deltas_records",
         "parasolid_deltas_residual_spans",
+        "parasolid_deltas_tagged_reference_lanes",
         "parasolid_deltas_term_use_numeric_tails",
         "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",
@@ -11487,7 +11515,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (181), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (187), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -11496,7 +11524,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 186, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 187, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",
