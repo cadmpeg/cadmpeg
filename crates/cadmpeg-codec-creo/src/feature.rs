@@ -1793,6 +1793,37 @@ fn decode_section_coordinate_scalar(
     decode_variable_scalar(payload, offset, end, cache)
 }
 
+fn decode_variable_guess(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (Option<f64>, usize, bool) {
+    if payload.get(offset) == Some(&0x18) {
+        let mut trailing = offset + 1;
+        let complete_suffix = (0..3).all(|_| {
+            if trailing >= end || payload[trailing] >= 0xc0 {
+                return false;
+            }
+            let (_, next) = psb::compact_int(payload, trailing);
+            if next <= trailing {
+                return false;
+            }
+            trailing = next;
+            true
+        });
+        if complete_suffix
+            && (trailing == end
+                || payload
+                    .get(trailing)
+                    .is_some_and(|byte| matches!(byte, 0xe0..=0xe3 | 0xf1..=0xf3)))
+        {
+            return (Some(0.0), offset + 1, false);
+        }
+    }
+    decode_section_coordinate_scalar(payload, offset, end, cache)
+}
+
 fn variable_table(
     payload: &[u8],
     start: usize,
@@ -1861,7 +1892,7 @@ fn variable_table(
         let (value, next, dimension_driven) =
             decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let (guess, next, _) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (guess, next, _) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
         let mut trailing = Vec::new();
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
@@ -1983,7 +2014,7 @@ fn positional_variable_table(
         let (value, next, dimension_driven) =
             decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let (guess, next, _) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (guess, next, _) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
         let mut trailing = Vec::with_capacity(3);
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
@@ -8294,12 +8325,40 @@ mod tests {
         assert_eq!(variables.entity_ref, Some(119));
         assert_eq!(variables.rows.len(), 2);
         assert!(variables.is_complete());
+        assert_eq!(variables.rows[0].guess, Some(0.0));
+        assert_eq!(variables.rows[0].known, Some(1));
+        assert_eq!(variables.rows[0].homogeneity, Some(0));
         assert_eq!(variables.rows[0].uvar_id, Some(9));
+        assert_eq!(variables.rows[1].guess, Some(0.0));
+        assert_eq!(variables.rows[1].known, Some(1));
+        assert_eq!(variables.rows[1].homogeneity, Some(0));
         assert_eq!(variables.rows[1].uvar_id, Some(10));
         assert_eq!(variables.points.len(), 1);
         assert_eq!(variables.points[0].point_id, 7);
         assert_eq!(variables.points[0].u, Some(0.0));
         assert_eq!(variables.points[0].v, Some(0.0));
+    }
+
+    #[test]
+    fn positional_variable_guess_zero_preserves_compact_trailing_fields_at_table_boundary() {
+        let payload = b"prefix\xf8\x02\xf7\x77\xfb\xe2\xf7\x78\
+            \x07\x00\x18\x18\x01\x01\x0f\xf1\xf7\x77\xe2\
+            \x07\x01\x18\x18\x00\x01\x07\xf2next_table\0";
+        let cache = scalar::ScalarCache::from_section(payload);
+
+        let variables = positional_variable_table(payload, 0, payload.len(), 119, &cache)
+            .expect("positional var_arr");
+
+        assert!(variables.is_complete());
+        assert_eq!(variables.rows.len(), 2);
+        assert_eq!(variables.rows[0].guess, Some(0.0));
+        assert_eq!(variables.rows[0].known, Some(1));
+        assert_eq!(variables.rows[0].homogeneity, Some(1));
+        assert_eq!(variables.rows[0].uvar_id, Some(15));
+        assert_eq!(variables.rows[1].guess, Some(0.0));
+        assert_eq!(variables.rows[1].known, Some(0));
+        assert_eq!(variables.rows[1].homogeneity, Some(1));
+        assert_eq!(variables.rows[1].uvar_id, Some(7));
     }
 
     #[test]

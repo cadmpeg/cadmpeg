@@ -4323,9 +4323,38 @@ fn decode_counts_resolved_section_segment_geometry() {
     assert_eq!(coverage["resolved_feature_segment_geometry_count"], 1);
     assert_eq!(coverage["unresolved_feature_segment_geometry_count"], 0);
     assert_eq!(coverage["missing_feature_segment_row_count"], 0);
+    assert_eq!(coverage["decoded_feature_solver_variable_count"], 4);
+    assert_eq!(coverage["missing_feature_solver_variable_count"], 0);
     assert!(!result.report.losses.iter().any(|loss| {
         loss.message
             .contains("decoded section segment(s) retain source-native geometry")
+    }));
+}
+
+#[test]
+fn decode_reports_missing_declared_solver_variable_rows() {
+    let payload = b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2\
+        \xe0\x05type\0\x01\xe0\x08key\0\x07\xe0\x02value\0\xe4\
+        \xe0\x02guess\0\x0f\xe0\x06known\0\x01\
+        \xe0\x0chomogeneity\0\x02\xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
+        .to_vec();
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode incomplete variable table");
+    let coverage = &result.report.coverage;
+
+    assert_eq!(coverage["decoded_feature_solver_variable_count"], 1);
+    assert_eq!(coverage["missing_feature_solver_variable_count"], 1);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
+            && loss.category == cadmpeg_ir::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "1 declared section solver variable row(s) did not decode; stored and \
+                 equation-derived coordinates are withheld",
+            )
     }));
 }
 

@@ -28062,6 +28062,19 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .map(|variables| variables.rows.len())
             .sum::<usize>(),
     );
+    coverage.insert(
+        "missing_feature_solver_variable_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.variables.as_ref())
+            .map(|variables| {
+                usize::try_from(variables.declared_count)
+                    .expect("u32 variable count fits usize")
+                    .saturating_sub(variables.rows.len())
+            })
+            .sum::<usize>(),
+    );
     let decoded_dimension_driven_variable_count = scan
         .features
         .definitions
@@ -28934,6 +28947,20 @@ fn build_report(
                 "{unresolved_dimension_driven_variables} dimension-driven section solver \
                  variable(s) retain unresolved exact values because their dimension binding or \
                  variable-family equation is unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let missing_solver_variables = count("missing_feature_solver_variable_count");
+    if missing_solver_variables != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_solver_variables} declared section solver variable row(s) did not \
+                 decode; stored and equation-derived coordinates are withheld for the incomplete \
+                 table."
             ),
             provenance: None,
         });

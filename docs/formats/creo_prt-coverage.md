@@ -81,6 +81,8 @@ fixtures, claims above L1 remain unproven.
   geometry, decoded rows retaining source-native geometry, and declared rows
   that did not decode. Each nonzero unresolved or missing count raises a decode
   loss note.
+- Section-coordinate solving requires a complete variable table. Missing
+  declared variable rows are counted and raise a decode loss note.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   Diagnostics report every nonzero active native discriminator.
@@ -192,7 +194,8 @@ fixtures, claims above L1 remain unproven.
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts
    decoded section-segment rows, resolved and unresolved segment geometry, and
-   missing declared segment rows separately. It counts
+   missing declared segment rows separately. It also counts decoded and missing
+   solver-variable rows separately. It counts
    decoded and transferred section dimensions separately and counts dimensions
    whose scalar values resolve or remain unresolved. It counts decoded section
    solver variables, dimension-driven sentinel variables, and dimension-driven

@@ -2714,7 +2714,9 @@ table-class reference in the same unlabeled array header and then stores its
 variable-row class reference. The first row ends with
 `f1 f7 <table-class> e2`; later rows are separated by `e2`. Its `f8` extent is
 the number of variable rows. Each row replays `type`, `key`, `value`, `guess`,
-`known`, `homogeneity`, and `uvar_id` in that order.
+`known`, `homogeneity`, and `uvar_id` in that order. A bare `18` in the
+`guess` slot is exact zero when exactly three compact solver-state fields
+follow before the row separator or next table boundary.
 
 The positional relation table repeats the labelled template's `relat_ptr`
 table-class reference and relation-row class reference. Its first row is the
