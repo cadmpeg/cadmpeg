@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 168;
+pub const CATIA_NATIVE_VERSION: u32 = 169;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2712,6 +2712,9 @@ pub struct CatiaZeroEntityLoop {
     pub member_ids: Vec<u32>,
     /// Odd-lane typed references in member order.
     pub typed_references: Vec<u32>,
+    /// Face-local support record ordinals selected by the logical members.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub support_record_ordinals: Vec<u32>,
     /// Terminal even-lane logical identifier.
     pub terminal_id: u32,
     /// Difference between the terminal and first member identifiers.
@@ -3667,6 +3670,7 @@ fn zero_entity_support_runs(bytes: &[u8]) -> Vec<CatiaZeroEntitySupportRun> {
                         tag: loop_record.tag,
                         member_ids: loop_record.member_ids,
                         typed_references: loop_record.typed_references,
+                        support_record_ordinals: loop_record.support_record_ordinals,
                         terminal_id: loop_record.terminal_id,
                         gap: loop_record.gap,
                         loop_class: loop_record.loop_class,
@@ -4694,6 +4698,34 @@ fn validate_zero_entity_support_runs(
                 .windows(2)
                 .all(|pair| pair[0].byte_offset < pair[1].byte_offset);
     for (index, run) in runs.iter().enumerate() {
+        let support_bindings_valid = run.face.as_ref().is_none_or(|face| {
+            let binding_count = face
+                .loops
+                .iter()
+                .filter(|loop_record| !loop_record.support_record_ordinals.is_empty())
+                .count();
+            if binding_count == 0 {
+                return true;
+            }
+            if binding_count != face.loops.len() {
+                return false;
+            }
+            let mut bound = HashSet::new();
+            face.loops.iter().all(|loop_record| {
+                loop_record
+                    .member_ids
+                    .iter()
+                    .zip(&loop_record.support_record_ordinals)
+                    .all(|(member, record_ordinal)| {
+                        let slot = loop_record.terminal_id.checked_sub(*member);
+                        bound.insert(*record_ordinal)
+                            && run.supports.iter().any(|support| {
+                                support.record_ordinal == *record_ordinal
+                                    && Some(support.face_local_slot) == slot
+                            })
+                    })
+            }) && bound.len() == run.supports.len()
+        });
         let face_valid = run.face.as_ref().is_none_or(|face| {
             let derived_terminals = face.allocations.first().and_then(|first| {
                 face.allocations[1..]
@@ -4731,6 +4763,8 @@ fn validate_zero_entity_support_runs(
                                 loop_record.tag[0] == 0x62
                                     && !loop_record.member_ids.is_empty()
                                     && loop_record.typed_references.len() == edge_count
+                                    && (loop_record.support_record_ordinals.is_empty()
+                                        || loop_record.support_record_ordinals.len() == edge_count)
                                     && loop_record.forward_senses.len() == edge_count
                                     && loop_record.terminal_id == *terminal
                                     && matches!(loop_record.loop_class, 0x41 | 0x50 | 0xc1)
@@ -4757,6 +4791,7 @@ fn validate_zero_entity_support_runs(
                 && zero_entity_record(records, face.record_ordinal).is_some_and(|record| {
                     record.byte_offset == face.byte_offset && record.tag == face.tag
                 })
+                && support_bindings_valid
                 && (index == 0
                     || runs[index - 1]
                         .face

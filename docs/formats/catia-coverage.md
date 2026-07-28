@@ -113,7 +113,9 @@ current scores require those matrices and representative fixtures.
   retains each face's counted allocations and ordered loop terminals.
   Complete `62xx` loop rosters bind to those terminals and retain alternating
   logical-member and typed-reference lanes, loop class, and absolute member
-  senses.
+  senses. Each loop member binds to the unique face-local support occurrence
+  whose slot equals the loop terminal minus that member; the complete
+  face-local binding is atomic and retained as support-record ordinals.
   Loop-to-oriented-use, oriented-use-to-incidence, and physical endpoint
   binding remain unresolved.
 

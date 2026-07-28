@@ -590,6 +590,16 @@ fn finish_decode(
                 .sum(),
         ),
         (
+            "decoded_zero_entity_bound_support_member_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .flat_map(|face| &face.loops)
+                .map(|loop_record| loop_record.support_record_ordinals.len())
+                .sum(),
+        ),
+        (
             "decoded_zero_entity_oriented_use_pair_count".to_string(),
             native.zero_entity_oriented_use_pairs.len(),
         ),
@@ -987,6 +997,13 @@ fn finish_decode(
             .flat_map(|face| &face.loops)
             .map(|loop_record| loop_record.forward_senses.len())
             .sum::<usize>();
+        let bound_support_member_count = native
+            .zero_entity_support_runs
+            .iter()
+            .filter_map(|run| run.face.as_ref())
+            .flat_map(|face| &face.loops)
+            .map(|loop_record| loop_record.support_record_ordinals.len())
+            .sum::<usize>();
         let edge_support_binding_count = native
             .zero_entity_edge_strides
             .iter()
@@ -1007,7 +1024,9 @@ fn finish_decode(
                  occurrence(s), including {endpoint_count} with exact UV endpoint pairs; \
                  {face_count} run(s) bind the complete face roster with {loop_terminal_count} \
                  ordered loop terminal(s), {loop_record_count} loop record(s), and \
-                 {oriented_loop_member_count} stored member sense(s); {} edge-stride record(s) \
+                 {oriented_loop_member_count} stored member sense(s), including \
+                 {bound_support_member_count} member(s) bound to face-local support records; {} \
+                 edge-stride record(s) \
                  bind {edge_support_binding_count} adjacent support record(s), and \
                  {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
                  adjacent vertex owner; {} oriented-use pair(s) remain separate because the \

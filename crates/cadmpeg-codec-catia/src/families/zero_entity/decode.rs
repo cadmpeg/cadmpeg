@@ -59,7 +59,7 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
                 code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
                 category: LossCategory::Topology,
                 severity: Severity::Blocking,
-                message: "Zero-entity surface carriers and topology registries were decoded, but their cross-registry incidence and body/shell membership are unresolved; no neutral topology was transferred."
+                message: "Zero-entity loop members bind their face-local support occurrences, but support-to-oriented-use, oriented-use-to-incidence, physical endpoint, and body/shell bindings remain unresolved; no neutral topology was transferred."
                     .to_string(),
                 provenance: None,
             }],

@@ -3,6 +3,8 @@
 //! Decodes analytic (plane, cylinder, cone, torus) and inline non-rational
 //! NURBS surface carriers from a zero-entity record stream.
 
+use std::collections::{HashMap, HashSet};
+
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::le::u32_at as u32_le;
 
@@ -78,6 +80,8 @@ pub struct ZeroEntityLoop {
     pub member_ids: Vec<u32>,
     /// Odd-lane typed references in member order.
     pub typed_references: Vec<u32>,
+    /// Face-local support record ordinals selected by the logical members.
+    pub support_record_ordinals: Vec<u32>,
     /// Terminal even-lane logical identifier.
     pub terminal_id: u32,
     /// Difference between the terminal and first member identifiers.
@@ -369,11 +373,55 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
         }
     }
     if faces.len() == runs.len() {
-        for (run, face) in runs.iter_mut().zip(faces) {
+        for (run, mut face) in runs.iter_mut().zip(faces) {
+            bind_face_support_occurrences(&mut face, &run.supports);
             run.face = Some(face);
         }
     }
     runs
+}
+
+fn bind_face_support_occurrences(
+    face: &mut ZeroEntityFace,
+    supports: &[ZeroEntitySupportOccurrence],
+) {
+    if face.loops.len() != face.loop_terminals.len() {
+        return;
+    }
+    let mut supports_by_slot = HashMap::<u32, Option<u32>>::new();
+    for support in supports {
+        supports_by_slot
+            .entry(support.face_local_slot)
+            .and_modify(|record| *record = None)
+            .or_insert(Some(support.record_ordinal));
+    }
+    let bindings = face
+        .loops
+        .iter()
+        .map(|loop_record| {
+            loop_record
+                .member_ids
+                .iter()
+                .map(|member| {
+                    let slot = loop_record.terminal_id.checked_sub(*member)?;
+                    supports_by_slot.get(&slot).copied().flatten()
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(bindings) = bindings else {
+        return;
+    };
+    if bindings.iter().map(Vec::len).sum::<usize>() != supports.len() {
+        return;
+    }
+    let bound = bindings.iter().flatten().copied().collect::<HashSet<_>>();
+    if bound.len() != supports.len() {
+        return;
+    }
+    for (loop_record, support_record_ordinals) in face.loops.iter_mut().zip(bindings) {
+        loop_record.support_record_ordinals = support_record_ordinals;
+    }
 }
 
 fn zero_entity_faces_from_records(
@@ -484,6 +532,7 @@ fn zero_entity_loops_from_records(
                 tag: record.tag,
                 member_ids,
                 typed_references,
+                support_record_ordinals: Vec::new(),
                 terminal_id,
                 gap,
                 loop_class: data[trailer + 1],
@@ -992,6 +1041,38 @@ mod tests {
         assert_eq!(loop_record.gap, 1);
         assert_eq!(loop_record.loop_class, 0x41);
         assert_eq!(loop_record.forward_senses, [true]);
+        assert!(loop_record.support_record_ordinals.is_empty());
+    }
+
+    #[test]
+    fn loop_members_bind_unique_face_local_support_slots() {
+        let mut stream = zero_entity_face_loop_support_stream();
+        let support_slot = 0x6a + 12 + 13;
+        stream[support_slot..support_slot + 4].copy_from_slice(&1u32.to_le_bytes());
+
+        let runs = zero_entity_support_runs(&stream);
+        let face = runs[0].face.as_ref().expect("face");
+        assert_eq!(face.loops[0].support_record_ordinals, [2]);
+    }
+
+    #[test]
+    fn loop_support_binding_rejects_duplicate_face_local_slots_atomically() {
+        let mut stream = zero_entity_face_loop_support_stream();
+        let carrier_length = 0x6a + 12;
+        let support_length = 0x71 + 12;
+        let support = stream[carrier_length..carrier_length + support_length].to_vec();
+        stream.splice(
+            carrier_length + support_length..carrier_length + support_length,
+            support,
+        );
+        let support_slot = carrier_length + 13;
+        stream[support_slot..support_slot + 4].copy_from_slice(&1u32.to_le_bytes());
+        let duplicate_slot = carrier_length + support_length + 13;
+        stream[duplicate_slot..duplicate_slot + 4].copy_from_slice(&1u32.to_le_bytes());
+
+        let runs = zero_entity_support_runs(&stream);
+        let face = runs[0].face.as_ref().expect("face");
+        assert!(face.loops[0].support_record_ordinals.is_empty());
     }
 
     #[test]

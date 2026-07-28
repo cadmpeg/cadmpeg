@@ -4709,7 +4709,10 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
 
 #[test]
 fn native_namespace_retains_zero_entity_surface_support_runs() {
-    let native = crate::native::CatiaNative::decode(&zero_entity_face_loop_support_stream());
+    let mut stream = zero_entity_face_loop_support_stream();
+    let support_slot = 0x6a + 12 + 13;
+    stream[support_slot..support_slot + 4].copy_from_slice(&1u32.to_le_bytes());
+    let native = crate::native::CatiaNative::decode(&stream);
     let [run] = native.zero_entity_support_runs.as_slice() else {
         panic!("one zero-entity support run")
     };
@@ -4727,12 +4730,13 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(loop_record.terminal_id, 7);
     assert_eq!(loop_record.loop_class, 0x41);
     assert_eq!(loop_record.forward_senses, [true]);
+    assert_eq!(loop_record.support_record_ordinals, [2]);
     let [support] = run.supports.as_slice() else {
         panic!("one zero-entity support occurrence")
     };
     assert_eq!(support.tag, [0x21, 0x71]);
     assert_eq!(support.record_ordinal, 2);
-    assert_eq!(support.face_local_slot, 42);
+    assert_eq!(support.face_local_slot, 1);
     assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -4769,6 +4773,19 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_loop_namespace)
         .expect("store invalid CATIA zero-entity loop");
     assert!(crate::native::CatiaNative::load(&invalid_loop_namespace).is_err());
+
+    let mut invalid_binding = native.clone();
+    invalid_binding.zero_entity_support_runs[0]
+        .face
+        .as_mut()
+        .expect("face")
+        .loops[0]
+        .support_record_ordinals[0] = 1;
+    let mut invalid_binding_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_binding
+        .store(&mut invalid_binding_namespace)
+        .expect("store invalid CATIA zero-entity loop support binding");
+    assert!(crate::native::CatiaNative::load(&invalid_binding_namespace).is_err());
 
     let mut invalid = native;
     invalid.zero_entity_support_runs[0].supports[0].uv_endpoints = None;
