@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 131;
+pub const CATIA_NATIVE_VERSION: u32 = 132;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1093,18 +1093,16 @@ pub struct CatiaDesignClass {
     pub name: String,
 }
 
-/// One exact inter-object reference occurrence in a grouped design object.
+/// One exact inter-object relation occurrence in a grouped design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaDesignObjectRelation {
-    /// Field record containing the reference.
+    /// Field record containing the relation.
     pub source_field: String,
     /// Exact schema class of the source field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_class: Option<CatiaDesignClass>,
-    /// Byte offset of the reference occurrence within the source payload.
-    pub source_payload_offset: u64,
-    /// Structural container of the source reference occurrence.
-    pub source: CatiaObjectRecordReferenceSource,
+    /// Structural source of the relation occurrence.
+    pub source: CatiaDesignObjectRelationSource,
     /// Stored target entity identity.
     pub target_entity_id: u32,
     /// Exact field record selected by the stored identity.
@@ -1114,6 +1112,20 @@ pub struct CatiaDesignObjectRelation {
     pub target_class: Option<CatiaDesignClass>,
     /// Design object containing the selected field record.
     pub target_design_object: String,
+}
+
+/// Structural source of one exact inter-object relation occurrence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaDesignObjectRelationSource {
+    /// Class-specific storage selector in the field-record head.
+    Storage,
+    /// Reference occurrence in the field-record payload.
+    Payload {
+        /// Byte offset of the reference occurrence within the payload.
+        payload_offset: u64,
+        /// Structural container of the payload reference occurrence.
+        container: CatiaObjectRecordReferenceSource,
+    },
 }
 
 /// One serialized design object formed by a shared `7C09` owner identity.
@@ -1232,26 +1244,49 @@ fn design_objects(
                         relations: records
                             .iter()
                             .flat_map(|record| {
-                                record.references.iter().filter_map(|reference| {
-                                    let target_design_object =
-                                        reference.design_object.as_ref()?.clone();
-                                    let target_field = reference.target.as_ref()?.clone();
-                                    let target_record = record_indices
-                                        .get(&reference.entity_id)
-                                        .and_then(|index| graph.records.get(*index))?;
-                                    (target_design_object != id).then_some(
-                                        CatiaDesignObjectRelation {
-                                            source_field: record.id.clone(),
-                                            source_class: design_class(record),
-                                            source_payload_offset: reference.payload_offset,
-                                            source: reference.source.clone(),
-                                            target_entity_id: reference.entity_id,
-                                            target_field,
-                                            target_class: design_class(target_record),
-                                            target_design_object,
-                                        },
-                                    )
-                                })
+                                let storage =
+                                    record.storage_record.as_ref().and_then(|target_field| {
+                                        let target_design_object =
+                                            record.storage_design_object.as_ref()?.clone();
+                                        let target_record = record_indices
+                                            .get(&record.storage_ref?)
+                                            .and_then(|index| graph.records.get(*index))?;
+                                        (target_design_object != id).then_some(
+                                            CatiaDesignObjectRelation {
+                                                source_field: record.id.clone(),
+                                                source_class: design_class(record),
+                                                source: CatiaDesignObjectRelationSource::Storage,
+                                                target_entity_id: record.storage_ref?,
+                                                target_field: target_field.clone(),
+                                                target_class: design_class(target_record),
+                                                target_design_object,
+                                            },
+                                        )
+                                    });
+                                storage
+                                    .into_iter()
+                                    .chain(record.references.iter().filter_map(|reference| {
+                                        let target_design_object =
+                                            reference.design_object.as_ref()?.clone();
+                                        let target_field = reference.target.as_ref()?.clone();
+                                        let target_record = record_indices
+                                            .get(&reference.entity_id)
+                                            .and_then(|index| graph.records.get(*index))?;
+                                        (target_design_object != id).then_some(
+                                            CatiaDesignObjectRelation {
+                                                source_field: record.id.clone(),
+                                                source_class: design_class(record),
+                                                source: CatiaDesignObjectRelationSource::Payload {
+                                                    payload_offset: reference.payload_offset,
+                                                    container: reference.source.clone(),
+                                                },
+                                                target_entity_id: reference.entity_id,
+                                                target_field,
+                                                target_class: design_class(target_record),
+                                                target_design_object,
+                                            },
+                                        )
+                                    }))
                             })
                             .collect(),
                     }

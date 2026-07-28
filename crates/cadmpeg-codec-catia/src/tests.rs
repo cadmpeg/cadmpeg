@@ -4751,10 +4751,12 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
             crate::native::CatiaDesignObjectRelation {
                 source_field: graph.records[0].id.clone(),
                 source_class: None,
-                source_payload_offset: 2,
-                source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
-                    list_payload_offset: 0,
-                    item_ordinal: 0,
+                source: crate::native::CatiaDesignObjectRelationSource::Payload {
+                    payload_offset: 2,
+                    container: crate::native::CatiaObjectRecordReferenceSource::ListItem {
+                        list_payload_offset: 0,
+                        item_ordinal: 0,
+                    },
                 },
                 target_entity_id: 3,
                 target_field: graph.records[2].id.clone(),
@@ -4764,10 +4766,12 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
             crate::native::CatiaDesignObjectRelation {
                 source_field: graph.records[0].id.clone(),
                 source_class: None,
-                source_payload_offset: 4,
-                source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
-                    list_payload_offset: 0,
-                    item_ordinal: 1,
+                source: crate::native::CatiaDesignObjectRelationSource::Payload {
+                    payload_offset: 4,
+                    container: crate::native::CatiaObjectRecordReferenceSource::ListItem {
+                        list_payload_offset: 0,
+                        item_ordinal: 1,
+                    },
                 },
                 target_entity_id: 3,
                 target_field: graph.records[2].id.clone(),
@@ -4797,14 +4801,72 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         [crate::native::CatiaDesignObjectRelation {
             source_field: graph.records[2].id.clone(),
             source_class: None,
-            source_payload_offset: 0,
-            source: crate::native::CatiaObjectRecordReferenceSource::Field,
+            source: crate::native::CatiaDesignObjectRelationSource::Payload {
+                payload_offset: 0,
+                container: crate::native::CatiaObjectRecordReferenceSource::Field,
+            },
             target_entity_id: 1,
             target_field: graph.records[0].id.clone(),
             target_class: None,
             target_design_object: native.design_objects[0].id.clone(),
         }]
     );
+}
+
+#[test]
+fn native_design_objects_preserve_storage_relations_before_payload_relations() {
+    let bytes = sequential_entity_backed_object_graph(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84, 0x83], &[0x81, 0x83, 0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x85], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x86], &[0xfe]),
+    ]);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let graph = &native.object_graphs[0];
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode storage and payload relations");
+
+    assert_eq!(
+        native.design_objects[0].relations,
+        [
+            crate::native::CatiaDesignObjectRelation {
+                source_field: graph.records[0].id.clone(),
+                source_class: None,
+                source: crate::native::CatiaDesignObjectRelationSource::Storage,
+                target_entity_id: 3,
+                target_field: graph.records[2].id.clone(),
+                target_class: None,
+                target_design_object: native.design_objects[1].id.clone(),
+            },
+            crate::native::CatiaDesignObjectRelation {
+                source_field: graph.records[0].id.clone(),
+                source_class: None,
+                source: crate::native::CatiaDesignObjectRelationSource::Payload {
+                    payload_offset: 0,
+                    container: crate::native::CatiaObjectRecordReferenceSource::Field,
+                },
+                target_entity_id: 3,
+                target_field: graph.records[2].id.clone(),
+                target_class: None,
+                target_design_object: native.design_objects[1].id.clone(),
+            },
+        ]
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_design_object_relation_count"],
+        2
+    );
+
+    let mut malformed = native.clone();
+    malformed.design_objects[0].relations.swap(0, 1);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store reordered design relations");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]
@@ -5581,7 +5643,7 @@ fn decode_retains_outer_object_graph_order_and_references() {
     assert_eq!(decoded.report.coverage["decoded_design_object_count"], 1);
     assert_eq!(decoded.report.coverage["decoded_design_field_count"], 2);
     assert_eq!(
-        decoded.report.coverage["decoded_design_object_reference_count"],
+        decoded.report.coverage["decoded_design_object_relation_count"],
         0
     );
     assert_eq!(decoded.report.coverage["classified_design_object_count"], 0);
