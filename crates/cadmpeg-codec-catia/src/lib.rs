@@ -51,6 +51,7 @@ pub(crate) mod formula;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod object_graph;
+pub(crate) mod sketch;
 pub(crate) mod solve;
 pub(crate) mod value_block;
 pub(crate) mod variant;

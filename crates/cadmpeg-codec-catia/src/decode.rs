@@ -26,6 +26,7 @@ use crate::entity_table;
 use crate::families;
 use crate::formula;
 use crate::native::CatiaNative;
+use crate::sketch;
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
 ///
@@ -67,6 +68,7 @@ fn finish_decode(
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
     let formula_transfer = formula::transfer_parameters(&mut ir, &native, &mut annotations);
+    let consumed_sketch_records = sketch::transfer_sketches(&mut ir, &native);
     let object_record_count: usize = native
         .object_graphs
         .iter()
@@ -309,8 +311,16 @@ fn finish_decode(
         .intersection(&structurally_owned_records)
         .cloned()
         .collect::<HashSet<_>>();
+    let transferred_sketch_design_records = consumed_sketch_records
+        .intersection(&structurally_owned_records)
+        .cloned()
+        .collect::<HashSet<_>>();
+    let transferred_design_records = transferred_formula_design_records
+        .union(&transferred_sketch_design_records)
+        .cloned()
+        .collect::<HashSet<_>>();
     let unresolved_object_record_count =
-        object_record_count.saturating_sub(transferred_formula_design_records.len());
+        object_record_count.saturating_sub(transferred_design_records.len());
     let unresolved_design_object_count = native
         .design_objects
         .iter()
@@ -318,7 +328,7 @@ fn finish_decode(
             object
                 .fields
                 .iter()
-                .any(|field| !transferred_formula_design_records.contains(field))
+                .any(|field| !transferred_design_records.contains(field))
         })
         .count();
     let value_field_count = native
@@ -538,7 +548,10 @@ fn finish_decode(
             "transferred_formula_design_record_count".to_string(),
             transferred_formula_design_records.len(),
         ),
-        ("transferred_sketch_design_record_count".to_string(), 0),
+        (
+            "transferred_sketch_design_record_count".to_string(),
+            transferred_sketch_design_records.len(),
+        ),
         (
             "unresolved_design_record_count".to_string(),
             unresolved_object_record_count,
@@ -570,7 +583,7 @@ fn finish_decode(
                 native.design_objects.len(),
                 formula_transfer.parameter_count,
                 transferred_formula_design_records.len(),
-                0,
+                transferred_sketch_design_records.len(),
             ),
             provenance: None,
         });
