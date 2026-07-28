@@ -4727,6 +4727,10 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     };
     assert_eq!(loop_record.member_ids, [6]);
     assert_eq!(loop_record.typed_references, [1]);
+    assert_eq!(
+        loop_record.typed_records,
+        ["catia:zero-entity:record#1".to_string()]
+    );
     assert_eq!(loop_record.terminal_id, 7);
     assert_eq!(loop_record.loop_class, 0x41);
     assert_eq!(loop_record.forward_senses, [true]);
@@ -4773,6 +4777,19 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_loop_namespace)
         .expect("store invalid CATIA zero-entity loop");
     assert!(crate::native::CatiaNative::load(&invalid_loop_namespace).is_err());
+
+    let mut invalid_typed_record = native.clone();
+    invalid_typed_record.zero_entity_support_runs[0]
+        .face
+        .as_mut()
+        .expect("face")
+        .loops[0]
+        .typed_records[0] = "catia:zero-entity:record#2".to_string();
+    let mut invalid_typed_record_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_typed_record
+        .store(&mut invalid_typed_record_namespace)
+        .expect("store invalid CATIA zero-entity typed loop reference");
+    assert!(crate::native::CatiaNative::load(&invalid_typed_record_namespace).is_err());
 
     let mut invalid_binding = native.clone();
     invalid_binding.zero_entity_support_runs[0]

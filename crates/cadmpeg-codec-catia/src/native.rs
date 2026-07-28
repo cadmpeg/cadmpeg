@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 169;
+pub const CATIA_NATIVE_VERSION: u32 = 170;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2712,6 +2712,9 @@ pub struct CatiaZeroEntityLoop {
     pub member_ids: Vec<u32>,
     /// Odd-lane typed references in member order.
     pub typed_references: Vec<u32>,
+    /// Global zero-entity records selected by the typed references.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub typed_records: Vec<String>,
     /// Face-local support record ordinals selected by the logical members.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub support_record_ordinals: Vec<u32>,
@@ -3647,7 +3650,10 @@ fn consolidated_tori(bytes: &[u8]) -> Vec<CatiaConsolidatedTorus> {
         .collect()
 }
 
-fn zero_entity_support_runs(bytes: &[u8]) -> Vec<CatiaZeroEntitySupportRun> {
+fn zero_entity_support_runs(
+    bytes: &[u8],
+    records: &[CatiaZeroEntityRecord],
+) -> Vec<CatiaZeroEntitySupportRun> {
     crate::families::zero_entity::records::zero_entity_support_runs(bytes)
         .into_iter()
         .enumerate()
@@ -3664,17 +3670,29 @@ fn zero_entity_support_runs(bytes: &[u8]) -> Vec<CatiaZeroEntitySupportRun> {
                 loops: face
                     .loops
                     .into_iter()
-                    .map(|loop_record| CatiaZeroEntityLoop {
-                        byte_offset: loop_record.pos as u64,
-                        record_ordinal: loop_record.record_ordinal,
-                        tag: loop_record.tag,
-                        member_ids: loop_record.member_ids,
-                        typed_references: loop_record.typed_references,
-                        support_record_ordinals: loop_record.support_record_ordinals,
-                        terminal_id: loop_record.terminal_id,
-                        gap: loop_record.gap,
-                        loop_class: loop_record.loop_class,
-                        forward_senses: loop_record.forward_senses,
+                    .map(|loop_record| {
+                        let typed_records = loop_record
+                            .typed_references
+                            .iter()
+                            .map(|ordinal| {
+                                zero_entity_record(records, *ordinal)
+                                    .map(|record| record.id.clone())
+                            })
+                            .collect::<Option<Vec<_>>>()
+                            .unwrap_or_default();
+                        CatiaZeroEntityLoop {
+                            byte_offset: loop_record.pos as u64,
+                            record_ordinal: loop_record.record_ordinal,
+                            tag: loop_record.tag,
+                            member_ids: loop_record.member_ids,
+                            typed_references: loop_record.typed_references,
+                            typed_records,
+                            support_record_ordinals: loop_record.support_record_ordinals,
+                            terminal_id: loop_record.terminal_id,
+                            gap: loop_record.gap,
+                            loop_class: loop_record.loop_class,
+                            forward_senses: loop_record.forward_senses,
+                        }
                     })
                     .collect(),
                 terminal_control: face.terminal_control,
@@ -4763,6 +4781,16 @@ fn validate_zero_entity_support_runs(
                                 loop_record.tag[0] == 0x62
                                     && !loop_record.member_ids.is_empty()
                                     && loop_record.typed_references.len() == edge_count
+                                    && (loop_record.typed_records.is_empty()
+                                        || loop_record.typed_records.len() == edge_count
+                                            && loop_record
+                                                .typed_references
+                                                .iter()
+                                                .zip(&loop_record.typed_records)
+                                                .all(|(ordinal, id)| {
+                                                    zero_entity_record(records, *ordinal)
+                                                        .is_some_and(|record| &record.id == id)
+                                                }))
                                     && (loop_record.support_record_ordinals.is_empty()
                                         || loop_record.support_record_ordinals.len() == edge_count)
                                     && loop_record.forward_senses.len() == edge_count
@@ -5784,7 +5812,7 @@ impl CatiaNative {
         let zero_entity_records = zero_entity_records(bytes);
         let zero_entity_edge_strides = zero_entity_edge_strides(bytes, &zero_entity_records);
         let zero_entity_oriented_use_pairs = zero_entity_oriented_use_pairs(bytes);
-        let zero_entity_support_runs = zero_entity_support_runs(bytes);
+        let zero_entity_support_runs = zero_entity_support_runs(bytes, &zero_entity_records);
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(bytes, &zero_entity_records);
         let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes, &consolidated_circles);
