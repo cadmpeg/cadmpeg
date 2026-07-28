@@ -29,6 +29,14 @@ pub(crate) fn native_stream(id: &str) -> Option<&str> {
     id.rsplit_once(':').map(|(stream, _)| stream)
 }
 
+/// Parse the Design segment shared by sibling `MetaStream.dat` and
+/// `BulkStream.dat` entries from a native record identity.
+pub(crate) fn design_segment(id: &str) -> Option<&str> {
+    let stream = native_stream(id)?;
+    let (segment, entry) = stream.rsplit_once('/')?;
+    matches!(entry, "MetaStream.dat" | "BulkStream.dat").then_some(segment)
+}
+
 /// The fixed key of the single source-image record a design carries.
 pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
 
@@ -536,3 +544,20 @@ native_record_id!(
     native_design_body_binding_id,
     "design-body-binding"
 );
+
+#[cfg(test)]
+mod tests {
+    use super::design_segment;
+
+    #[test]
+    fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {
+        let meta = "f3d:Asset/Design1/MetaStream.dat:design-object#10";
+        let bulk = "f3d:Asset/Design1/BulkStream.dat:design-canvas-image#20";
+        assert_eq!(design_segment(meta), Some("f3d:Asset/Design1"));
+        assert_eq!(design_segment(meta), design_segment(bulk));
+        assert_eq!(
+            design_segment("f3d:Asset/Design1/Other.dat:record#20"),
+            None
+        );
+    }
+}

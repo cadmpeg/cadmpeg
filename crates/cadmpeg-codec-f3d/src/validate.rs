@@ -352,11 +352,11 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .iter()
         .filter(|object| object.kind == records::DesignObjectKind::Geometry)
         .flat_map(|object| {
-            let native_stream = design_stream(&object.id);
+            let design_segment = ids::design_segment(&object.id);
             object
                 .entity_ids
                 .iter()
-                .map(move |suffix| (native_stream, *suffix))
+                .map(move |suffix| (design_segment, *suffix))
         })
         .collect::<HashSet<_>>();
     let component_entities = native
@@ -369,15 +369,16 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
             )
         })
         .flat_map(|object| {
-            let native_stream = design_stream(&object.id);
+            let design_segment = ids::design_segment(&object.id);
             object
                 .entity_ids
                 .iter()
-                .map(move |suffix| (native_stream, *suffix))
+                .map(move |suffix| (design_segment, *suffix))
         })
         .collect::<HashSet<_>>();
     for image in &native.design_canvas_images {
         let native_stream = design_stream(&image.id);
+        let design_segment = ids::design_segment(&image.id);
         let scope = ctx
             .scopes_by_index
             .get(&(native_stream, image.scope_record_index));
@@ -445,9 +446,9 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .all(|byte| byte.is_ascii_graphic())
             && !image.asset_name.is_empty()
             && !image.label.is_empty()
-            && geometry_entities.contains(&(native_stream, u64::from(image.plane_entity_suffix)))
+            && geometry_entities.contains(&(design_segment, u64::from(image.plane_entity_suffix)))
             && component_entities
-                .contains(&(native_stream, u64::from(image.component_entity_suffix)));
+                .contains(&(design_segment, u64::from(image.component_entity_suffix)));
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
