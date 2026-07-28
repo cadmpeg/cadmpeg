@@ -5829,7 +5829,8 @@ fn complete_prt_sketch_declaration_transfers_neutral_identity() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -5865,7 +5866,7 @@ fn complete_prt_sketch_declaration_transfers_neutral_identity() {
         Some(native.design_objects[0].id.as_str())
     );
     assert_eq!(
-        crate::sketch::transfer_sketches(
+        crate::design_feature::transfer_design_features(
             &mut CadIr::empty(cadmpeg_ir::units::Units::default()),
             &native,
         )
@@ -5876,6 +5877,95 @@ fn complete_prt_sketch_declaration_transfers_neutral_identity() {
         )]
         .into(),
     );
+}
+
+#[test]
+fn complete_standalone_principal_plane_declarations_transfer_one_history_node() {
+    use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
+
+    for (class, plane) in [
+        ("xy-plane", PrincipalPlane::Top),
+        ("yz-plane", PrincipalPlane::Right),
+        ("zx-plane", PrincipalPlane::Front),
+    ] {
+        let records = [
+            object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+            object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        ];
+        let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
+        bytes.extend(catalog_stream(&[
+            "CATCatalogManager",
+            "catalogManager",
+            "catalogLinks",
+            "",
+            class,
+        ]));
+        let native = crate::native::CatiaNative::decode(&bytes);
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+        let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
+
+        assert!(ir.model.sketches.is_empty());
+        assert_eq!(ir.model.features.len(), 1);
+        assert_eq!(
+            ir.model.features[0].definition,
+            FeatureDefinition::DatumPrincipalPlane { plane }
+        );
+        assert_eq!(ir.model.features[0].source_tag.as_deref(), Some(class));
+        assert_eq!(
+            transfer.principal_plane_records,
+            native.design_objects[0].fields.iter().cloned().collect()
+        );
+        assert_eq!(
+            transfer
+                .features_by_design_object
+                .get(&native.design_objects[0].id),
+            Some(&ir.model.features[0].id)
+        );
+    }
+}
+
+#[test]
+fn mixed_or_payload_bearing_principal_plane_fields_do_not_transfer() {
+    for (records, catalog) in [
+        (
+            vec![
+                object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+                object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+            ],
+            vec![
+                "CATCatalogManager",
+                "catalogManager",
+                "catalogLinks",
+                "",
+                "xy-plane",
+                "yz-plane",
+            ],
+        ),
+        (
+            vec![
+                object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+                object_graph_record(&[0x12, 0x82, 0x84], &[0x80, 0xfe]),
+            ],
+            vec![
+                "CATCatalogManager",
+                "catalogManager",
+                "catalogLinks",
+                "",
+                "xy-plane",
+            ],
+        ),
+    ] {
+        let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
+        bytes.extend(catalog_stream(&catalog));
+        let native = crate::native::CatiaNative::decode(&bytes);
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+        let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
+
+        assert!(ir.model.features.is_empty());
+        assert!(transfer.principal_plane_records.is_empty());
+    }
 }
 
 #[test]
@@ -5899,7 +5989,8 @@ fn nonempty_prt_sketch_declaration_transfers_identity_without_consuming_geometry
     );
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert!(consumed.is_empty());
     assert_eq!(ir.model.sketches.len(), 1);
@@ -5933,7 +6024,8 @@ fn complete_zx_plane_declaration_places_the_sketch() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -5983,7 +6075,8 @@ fn complete_yz_plane_declaration_places_the_sketch() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -6034,7 +6127,8 @@ fn repeated_xy_plane_declarations_share_one_sketch_placement() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -6086,7 +6180,8 @@ fn conflicting_principal_plane_declarations_leave_placement_unresolved() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -6115,7 +6210,8 @@ fn complete_sketch_declaration_transfers_neutral_identity() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -6146,7 +6242,8 @@ fn repeated_complete_sketch_declarations_transfer_one_identity() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert_eq!(
         consumed,
@@ -6185,7 +6282,7 @@ fn structurally_owned_sketch_feature_retains_its_parent() {
     );
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    crate::sketch::transfer_sketches(&mut ir, &native);
+    crate::design_feature::transfer_design_features(&mut ir, &native);
 
     assert_eq!(ir.model.features.len(), 2);
     assert_eq!(ir.model.features[0].parent, None);
@@ -6219,7 +6316,7 @@ fn later_structural_sketch_owner_does_not_become_a_forward_parent() {
     );
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    crate::sketch::transfer_sketches(&mut ir, &native);
+    crate::design_feature::transfer_design_features(&mut ir, &native);
 
     assert_eq!(ir.model.features.len(), 2);
     assert!(ir
@@ -6248,7 +6345,8 @@ fn equal_sketch_names_from_distinct_schema_entries_do_not_merge() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert!(consumed.is_empty());
     assert!(ir.model.sketches.is_empty());
@@ -6364,7 +6462,8 @@ fn prt_sketch_field_without_a_resolved_owner_does_not_transfer() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+    let consumed =
+        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
 
     assert!(consumed.is_empty());
     assert!(ir.model.sketches.is_empty());
@@ -8913,8 +9012,8 @@ fn transferred_formula_parameter_retains_a_transferred_feature_owner() {
     declaration.class_entry = Some("catia:test:catalog-entry#PRTSketch".to_string());
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let sketch_transfer = crate::sketch::transfer_sketches(&mut ir, &native);
-    let feature = sketch_transfer
+    let design_feature_transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
+    let feature = design_feature_transfer
         .features_by_design_object
         .get(&design_object)
         .expect("transferred owner feature")
@@ -8922,7 +9021,7 @@ fn transferred_formula_parameter_retains_a_transferred_feature_owner() {
     let formula_transfer = crate::formula::transfer_parameters(
         &mut ir,
         &native,
-        &sketch_transfer.features_by_design_object,
+        &design_feature_transfer.features_by_design_object,
         &mut cadmpeg_ir::Annotations::default(),
     );
     assert_eq!(formula_transfer.owned_parameter_count, 2);

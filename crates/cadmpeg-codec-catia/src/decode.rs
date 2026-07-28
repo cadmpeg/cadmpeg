@@ -22,11 +22,11 @@ use cadmpeg_ir::{Annotations, SourceFidelity};
 
 use crate::assemble::{build_container_report, build_metadata_ir};
 use crate::container::{self, ContainerScan};
+use crate::design_feature;
 use crate::entity_table;
 use crate::families;
 use crate::formula;
 use crate::native::CatiaNative;
-use crate::sketch;
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
 ///
@@ -67,11 +67,11 @@ fn finish_decode(
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
-    let sketch_transfer = sketch::transfer_sketches(&mut ir, &native);
+    let design_feature_transfer = design_feature::transfer_design_features(&mut ir, &native);
     let formula_transfer = formula::transfer_parameters(
         &mut ir,
         &native,
-        &sketch_transfer.features_by_design_object,
+        &design_feature_transfer.features_by_design_object,
         &mut annotations,
     );
     let object_record_count: usize = native
@@ -395,23 +395,28 @@ fn finish_decode(
         .intersection(&structurally_owned_records)
         .cloned()
         .collect::<HashSet<_>>();
-    let transferred_sketch_declaration_records = sketch_transfer
+    let transferred_sketch_declaration_records = design_feature_transfer
         .declaration_records
         .intersection(&structurally_owned_records)
         .cloned()
         .collect::<HashSet<_>>();
-    let transferred_sketch_placement_records = sketch_transfer
+    let transferred_sketch_placement_records = design_feature_transfer
         .placement_records
         .intersection(&structurally_owned_records)
         .cloned()
         .collect::<HashSet<_>>();
-    let transferred_sketch_records = sketch_transfer
+    let transferred_principal_plane_records = design_feature_transfer
+        .principal_plane_records
+        .intersection(&structurally_owned_records)
+        .cloned()
+        .collect::<HashSet<_>>();
+    let transferred_design_feature_records = design_feature_transfer
         .consumed_records()
         .intersection(&structurally_owned_records)
         .cloned()
         .collect::<HashSet<_>>();
     let transferred_design_records = transferred_formula_design_records
-        .union(&transferred_sketch_records)
+        .union(&transferred_design_feature_records)
         .cloned()
         .collect::<HashSet<_>>();
     let unresolved_object_record_count =
@@ -720,6 +725,10 @@ fn finish_decode(
             transferred_sketch_placement_records.len(),
         ),
         (
+            "transferred_principal_plane_record_count".to_string(),
+            transferred_principal_plane_records.len(),
+        ),
+        (
             "unresolved_design_record_count".to_string(),
             unresolved_object_record_count,
         ),
@@ -746,10 +755,11 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} control entity-suffix value(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact outbound design-field relation occurrence(s), including {design_same_object_relation_count} within one design object, {design_reflexive_field_relation_count} reflexive field occurrence(s), and {design_unowned_field_relation_count} to fields without owner groups; {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s), {} exact formula, expression, or parameter field record(s), {} exact sketch declaration field record(s), and {} exact sketch placement field record(s) transferred, while {unresolved_object_record_count} field record(s) across {unresolved_design_object_count} design object(s), neutral features, other parameters, remaining sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} control entity-suffix value(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact outbound design-field relation occurrence(s), including {design_same_object_relation_count} within one design object, {design_reflexive_field_relation_count} reflexive field occurrence(s), and {design_unowned_field_relation_count} to fields without owner groups; {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s), {} exact formula, expression, or parameter field record(s), {} exact principal-plane field record(s), {} exact sketch declaration field record(s), and {} exact sketch placement field record(s) transferred, while {unresolved_object_record_count} field record(s) across {unresolved_design_object_count} design object(s), neutral features, other parameters, remaining sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
                 formula_transfer.formula_parameter_count,
                 transferred_formula_design_records.len(),
+                transferred_principal_plane_records.len(),
                 transferred_sketch_declaration_records.len(),
                 transferred_sketch_placement_records.len(),
             ),

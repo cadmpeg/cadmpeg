@@ -57,7 +57,9 @@ current scores require those matrices and representative fixtures.
   of unresolved geometry payloads. Complete empty declaration records are
   consumed separately. Structural ownership among transferred sketches
   supplies feature containment. Exact principal-plane declarations resolve the
-  corresponding origin frame.
+  corresponding origin frame. Design objects consisting entirely of one exact
+  empty principal-plane declaration class transfer the corresponding built-in
+  reference-plane history node.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
