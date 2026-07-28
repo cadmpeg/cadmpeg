@@ -7905,7 +7905,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn extended_marker84_line_uses_zero_based_point_roster() {
+    fn extended_marker84_line_uses_state_selected_point_roster_base() {
         let mut payload = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -7958,7 +7958,38 @@ mod marker_tests {
         );
         payload[72..76].fill(0);
         assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
+        assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
+        payload[72..76].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+        payload[56..58].copy_from_slice(&4u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&1u16.to_le_bytes());
+        let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+        assert_eq!(
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["fourth", "first"]
+        );
+        payload[72..76].fill(0);
+        payload[56..58].copy_from_slice(&1u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&3u16.to_le_bytes());
+        let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+        assert_eq!(
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["second", "fourth"]
+        );
+        payload[27..29].copy_from_slice(&2u16.to_le_bytes());
+        assert!(!super::extended_marker84_line_uses_point_roster(
+            &payload, 0
+        ));
 
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
         payload[56..58].fill(0);
         assert!(!super::extended_marker84_line_uses_point_roster(
             &payload, 0
@@ -36356,6 +36387,9 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
     let Some(endpoint_offset) = coordinate_roster_endpoint_offset(payload, offset) else {
         return Vec::new();
     };
+    let one_based = extended_marker84_line_uses_point_roster(payload, offset)
+        && payload.get(offset + 27..offset + 31) == Some(&[0x01, 0x00, 0x01, 0x00])
+        && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x02, 0x00]);
     let endpoint = |relative: usize| {
         let index = usize::from(u16::from_le_bytes(
             payload
@@ -36363,6 +36397,11 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
                 .try_into()
                 .ok()?,
         ));
+        let index = if one_based {
+            index.checked_sub(1)?
+        } else {
+            index
+        };
         coordinates.get(index).copied()
     };
     let (Some(first), Some(second)) = (endpoint(endpoint_offset), endpoint(endpoint_offset + 2))
@@ -37511,7 +37550,13 @@ fn extended_marker84_line_uses_point_roster(payload: &[u8], offset: usize) -> bo
         && marker_native_code(payload, offset) == Some(2)
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
         && matches!(marker_profile_curve_role(payload, offset), Some(1 | 2))
-        && payload.get(offset + 29..offset + 31) == Some(&[0; 2])
+        && matches!(
+            (
+                marker_profile_curve_role(payload, offset),
+                payload.get(offset + 29..offset + 31)
+            ),
+            (Some(1), Some([0 | 1, 0])) | (Some(2), Some([0, 0]))
+        )
         && payload.get(offset + 31..offset + 35) == Some(&[0x00, 0x00, 0x80, 0xbf])
         && matches!(
             payload.get(offset + 35..offset + 39),
