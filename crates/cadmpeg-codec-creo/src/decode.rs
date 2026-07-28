@@ -314,6 +314,27 @@ struct CreoSketchSegment {
 }
 
 #[derive(Serialize)]
+struct CreoSketchCircleSegment {
+    external_id: u32,
+    center_id: u32,
+    radius_dimension_id: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchPointSegment {
+    external_id: u32,
+    point_id: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchCenteredLineSegment {
+    external_id: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
 struct CreoSketchOpaqueSegment {
     external_id: u32,
     kind: u32,
@@ -1773,6 +1794,7 @@ fn sketch_table_headers(
             table.rows.len()
                 + table.circle_rows.len()
                 + table.point_rows.len()
+                + table.centered_line_rows.len()
                 + table.opaque_rows.len(),
             table.offset,
         );
@@ -2088,15 +2110,7 @@ fn section_point_row_geometry(
     })
 }
 
-fn section_opaque_centered_line_geometry(
-    points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureOpaqueSegment,
-) -> Option<SketchGeometry> {
-    (segment.kind == 47
-        && segment.directions == [Some(0); 3]
-        && segment.point_ids == [None, Some(1)]
-        && segment.center_id == Some(2))
-    .then_some(())?;
+fn section_centered_line_geometry(points: &BTreeMap<u32, [f64; 2]>) -> Option<SketchGeometry> {
     let start = points.get(&0)?;
     let end = points.get(&1)?;
     let center = points.get(&2)?;
@@ -3519,25 +3533,11 @@ fn unique_decoded_section_segment(
     external_id: u32,
 ) -> Option<&crate::feature::FeatureSegment> {
     let segments = definition.segments.as_ref()?;
-    let mut matches = segments
+    let segment = segments
         .rows
         .iter()
-        .filter(|segment| segment.external_id == external_id);
-    let segment = matches.next()?;
-    (matches.next().is_none()
-        && !segments
-            .circle_rows
-            .iter()
-            .any(|row| row.external_id == external_id)
-        && !segments
-            .point_rows
-            .iter()
-            .any(|row| row.external_id == external_id)
-        && !segments
-            .opaque_rows
-            .iter()
-            .any(|row| row.external_id == external_id))
-    .then_some(segment)
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
 }
 
 fn section_segment_rows(
@@ -9668,48 +9668,16 @@ fn section_point_locus(
         .map(|(_, locus)| locus)
 }
 
-fn unique_opaque_section_segment(
-    definition: &crate::feature::FeatureDefinition,
-    external_id: u32,
-    kind: u32,
-) -> Option<&crate::feature::FeatureOpaqueSegment> {
-    let mut matches = definition.segments.iter().flat_map(|segments| {
-        segments
-            .opaque_rows
-            .iter()
-            .filter(|segment| segment.external_id == external_id)
-    });
-    let segment = matches.next()?;
-    (segment.kind == kind
-        && matches.next().is_none()
-        && !definition
-            .segments
-            .iter()
-            .flat_map(|segments| &segments.rows)
-            .any(|segment| segment.external_id == external_id))
-    .then_some(segment)
-}
-
 fn unique_circle_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeatureCircleSegment> {
     let segments = definition.segments.as_ref()?;
-    let mut matches = segments
+    let segment = segments
         .circle_rows
         .iter()
-        .filter(|segment| segment.external_id == external_id);
-    let segment = matches.next()?;
-    (matches.next().is_none()
-        && !segments
-            .rows
-            .iter()
-            .any(|row| row.external_id == external_id)
-        && !segments
-            .opaque_rows
-            .iter()
-            .any(|row| row.external_id == external_id))
-    .then_some(segment)
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
 }
 
 fn unique_point_segment(
@@ -9717,25 +9685,23 @@ fn unique_point_segment(
     external_id: u32,
 ) -> Option<&crate::feature::FeaturePointSegment> {
     let segments = definition.segments.as_ref()?;
-    let mut matches = segments
+    let segment = segments
         .point_rows
         .iter()
-        .filter(|segment| segment.external_id == external_id);
-    let segment = matches.next()?;
-    (matches.next().is_none()
-        && !segments
-            .rows
-            .iter()
-            .any(|row| row.external_id == external_id)
-        && !segments
-            .circle_rows
-            .iter()
-            .any(|row| row.external_id == external_id)
-        && !segments
-            .opaque_rows
-            .iter()
-            .any(|row| row.external_id == external_id))
-    .then_some(segment)
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
+}
+
+fn unique_centered_line_segment(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeatureCenteredLineSegment> {
+    let segments = definition.segments.as_ref()?;
+    let segment = segments
+        .centered_line_rows
+        .iter()
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
 }
 
 fn section_skamp_locus(
@@ -9761,7 +9727,7 @@ fn section_skamp_locus(
     if unique_point_segment(definition, item.entity_id).is_some() {
         return matches!(item.sense, 0 | 4).then_some(SketchLocus::Entity(entity));
     }
-    if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
+    if unique_centered_line_segment(definition, item.entity_id).is_some() {
         return match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
             2 => Some(SketchLocus::Start(entity)),
@@ -9793,6 +9759,12 @@ fn section_skamp_locus(
                 .chain(
                     segments
                         .point_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    segments
+                        .centered_line_rows
                         .iter()
                         .map(|segment| segment.external_id),
                 )
@@ -10108,7 +10080,7 @@ fn section_skamp_is_line(
     {
         return true;
     }
-    if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
+    if unique_centered_line_segment(definition, item.entity_id).is_some() {
         return true;
     }
     let has_segment = definition
@@ -10175,9 +10147,7 @@ fn section_skamp_midpoint(
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let target = |item: &crate::feature::FeatureSkampItem| {
-        if item.sense == 4
-            && unique_opaque_section_segment(definition, item.entity_id, 47).is_some()
-        {
+        if item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some() {
             return Some(sketch_entity_id(sketch, item.entity_id));
         }
         (item.sense == 0).then_some(())?;
@@ -10828,6 +10798,7 @@ fn section_segment_external_id_counts(
                 .map(|row| row.external_id)
                 .chain(table.circle_rows.iter().map(|row| row.external_id))
                 .chain(table.point_rows.iter().map(|row| row.external_id))
+                .chain(table.centered_line_rows.iter().map(|row| row.external_id))
                 .chain(table.opaque_rows.iter().map(|row| row.external_id))
                 .fold(BTreeMap::new(), |mut counts, external_id| {
                     *counts.entry(external_id).or_insert(0) += 1;
@@ -11319,6 +11290,12 @@ fn solver_only_section_entities(
                 .map(|segment| segment.external_id)
                 .chain(table.circle_rows.iter().map(|segment| segment.external_id))
                 .chain(table.point_rows.iter().map(|segment| segment.external_id))
+                .chain(
+                    table
+                        .centered_line_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
                 .chain(table.opaque_rows.iter().map(|segment| segment.external_id))
         })
         .collect::<BTreeSet<_>>();
@@ -11382,7 +11359,7 @@ fn section_skamp_has_proven_point_locus(
                 | (crate::feature::FeatureSegmentKind::Arc, 2..=4)
         );
     }
-    if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
+    if unique_centered_line_segment(definition, item.entity_id).is_some() {
         return matches!(item.sense, 2 | 3);
     }
     if unique_circle_segment(definition, item.entity_id).is_some() {
@@ -11486,7 +11463,7 @@ fn solver_only_section_entity_family(
                 point.entity_id == entity_id
                     && point.sense == 0
                     && target.sense == 4
-                    && unique_opaque_section_segment(definition, target.entity_id, 47).is_some()
+                    && unique_centered_line_segment(definition, target.entity_id).is_some()
             })
     }) {
         evidence.insert(SectionEntityIncidenceFamily::Point);
@@ -11550,6 +11527,7 @@ fn transfer_sketches(
             let decoded_rows = table.rows.len()
                 + table.circle_rows.len()
                 + table.point_rows.len()
+                + table.centered_line_rows.len()
                 + table.opaque_rows.len();
             let expected_rows = usize::try_from(table.declared_count)
                 .expect("u32 segment count fits usize")
@@ -11631,13 +11609,8 @@ fn transfer_sketches(
         let centered_line_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.opaque_rows)
-            .filter_map(|segment| {
-                Some((
-                    segment.offset,
-                    section_opaque_centered_line_geometry(&points, segment)?,
-                ))
-            })
+            .flat_map(|table| &table.centered_line_rows)
+            .filter_map(|segment| Some((segment.offset, section_centered_line_geometry(&points)?)))
             .collect::<BTreeMap<_, _>>();
         let mut emitted = segments
             .iter()
@@ -11689,11 +11662,20 @@ fn transfer_sketches(
         coverage.resolved_geometry += definition
             .segments
             .iter()
-            .flat_map(|table| &table.opaque_rows)
+            .flat_map(|table| &table.centered_line_rows)
             .filter(|segment| {
                 centered_line_geometries.contains_key(&segment.offset)
                     || (unique_segment_ids.contains(&segment.external_id)
                         && materialized_saved_section_external_ids.contains(&segment.external_id))
+            })
+            .count();
+        coverage.resolved_geometry += definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.opaque_rows)
+            .filter(|segment| {
+                unique_segment_ids.contains(&segment.external_id)
+                    && materialized_saved_section_external_ids.contains(&segment.external_id)
             })
             .count();
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
@@ -11938,6 +11920,59 @@ fn transfer_sketches(
         for segment in definition
             .segments
             .iter()
+            .flat_map(|table| &table.centered_line_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
+            let suffix = if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("centered_line:offset:{}", segment.offset)
+            };
+            let id = sketch_entity_id(&sketch_id, &suffix);
+            let geometry = centered_line_geometries
+                .get(&segment.offset)
+                .cloned()
+                .unwrap_or_else(|| SketchGeometry::Native {
+                    native_kind: "line".to_string(),
+                });
+            let solved_geometry = matches!(geometry, SketchGeometry::Line { .. });
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                if solved_geometry {
+                    "solved_section_centered_line"
+                } else {
+                    "unresolved_section_centered_line"
+                },
+                if solved_geometry {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
+                },
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
+                endpoint_refs: [0, 1]
+                    .into_iter()
+                    .map(|point| sketch_point_ref(&sketch_id, point))
+                    .collect(),
+                geometry,
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
             .flat_map(|table| &table.opaque_rows)
         {
             let unique_external_id = unique_segment_ids.contains(&segment.external_id);
@@ -11948,14 +11983,7 @@ fn transfer_sketches(
             }
             let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
             let id = sketch_entity_id(&sketch_id, suffix);
-            let geometry = if segment.kind == 47 {
-                centered_line_geometries
-                    .get(&segment.offset)
-                    .cloned()
-                    .unwrap_or_else(|| SketchGeometry::Native {
-                        native_kind: "line".to_string(),
-                    })
-            } else if unique_external_id {
+            let geometry = if unique_external_id {
                 let native_kind =
                     match unique_section_incidence_curve_family(definition, segment.external_id) {
                         Some(SectionEntityIncidenceFamily::BoundedCurve) => {
@@ -11972,28 +12000,14 @@ fn transfer_sketches(
                     native_kind: format!("segment_type:{}", segment.kind),
                 }
             };
-            let solved_geometry = matches!(
-                &geometry,
-                SketchGeometry::Point { .. }
-                    | SketchGeometry::Circle { .. }
-                    | SketchGeometry::Line { .. }
-            );
             let construction = !unique_external_id || !profile_entities.contains(&id);
             annotate(
                 annotations,
                 &id.0,
                 "FeatDefs",
                 segment.offset as u64,
-                if solved_geometry {
-                    "solved_section_line"
-                } else {
-                    "opaque_section_segment"
-                },
-                if solved_geometry {
-                    Exactness::Derived
-                } else {
-                    Exactness::ByteExact
-                },
+                "opaque_section_segment",
+                Exactness::ByteExact,
             );
             entities.push(SketchEntity {
                 id,
@@ -12296,8 +12310,7 @@ fn transfer_sketches(
             for segment in definition
                 .segments
                 .iter()
-                .flat_map(|segments| &segments.opaque_rows)
-                .filter(|segment| segment.kind == 47)
+                .flat_map(|segments| &segments.centered_line_rows)
             {
                 let Some(section_geometry) = centered_line_geometries.get(&segment.offset).cloned()
                 else {
@@ -12310,7 +12323,7 @@ fn transfer_sketches(
                 let suffix = if unique_segment_ids.contains(&segment.external_id) {
                     segment.external_id.to_string()
                 } else {
-                    format!("opaque:offset:{}", segment.offset)
+                    format!("centered_line:offset:{}", segment.offset)
                 };
                 let id = CurveId(sketch_section_curve_id(&sketch_id, &suffix));
                 if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -12433,6 +12446,30 @@ fn transfer_sketches(
                     segment.offset,
                 ))
             })
+            .chain(
+                definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| &table.centered_line_rows)
+                    .map(|segment| {
+                        let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                            segment.external_id.to_string()
+                        } else {
+                            format!("centered_line:offset:{}", segment.offset)
+                        };
+                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        (
+                            suffix,
+                            native_section_segment_verhor_definition(
+                                &sketch_id,
+                                entity,
+                                segment.external_id,
+                                0,
+                            ),
+                            segment.offset,
+                        )
+                    }),
+            )
             .chain(
                 definition
                     .segments
@@ -28498,6 +28535,15 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.point_rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_centered_line_segment_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.centered_line_rows.len())
             .sum::<usize>(),
     );
     coverage.insert(

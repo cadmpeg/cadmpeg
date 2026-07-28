@@ -18,6 +18,9 @@ pub(super) struct CreoSketchRecord {
     pub(super) solved_external_ids: Vec<u32>,
     pub(super) variables: Vec<CreoSketchVariable>,
     pub(super) segments: Vec<CreoSketchSegment>,
+    pub(super) circle_segments: Vec<CreoSketchCircleSegment>,
+    pub(super) point_segments: Vec<CreoSketchPointSegment>,
+    pub(super) centered_line_segments: Vec<CreoSketchCenteredLineSegment>,
     pub(super) opaque_segments: Vec<CreoSketchOpaqueSegment>,
     pub(super) trim_entities: Vec<CreoSketchTrimEntity>,
     pub(super) trim_vertices: Vec<CreoSketchTrimVertex>,
@@ -1855,6 +1858,36 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertical_horizontal_constraint: segment.vertical_horizontal,
                     radius_dimension_id: segment.radius_ref,
                     secondary_radius_dimension_id: segment.radius2_ref,
+                    offset: segment.offset,
+                })
+                .collect(),
+            circle_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.circle_rows)
+                .map(|segment| CreoSketchCircleSegment {
+                    external_id: segment.external_id,
+                    center_id: segment.center_id,
+                    radius_dimension_id: segment.radius_ref,
+                    offset: segment.offset,
+                })
+                .collect(),
+            point_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.point_rows)
+                .map(|segment| CreoSketchPointSegment {
+                    external_id: segment.external_id,
+                    point_id: segment.point_id,
+                    offset: segment.offset,
+                })
+                .collect(),
+            centered_line_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.centered_line_rows)
+                .map(|segment| CreoSketchCenteredLineSegment {
+                    external_id: segment.external_id,
                     offset: segment.offset,
                 })
                 .collect(),

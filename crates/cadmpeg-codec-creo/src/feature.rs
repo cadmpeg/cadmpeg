@@ -911,6 +911,15 @@ pub struct FeaturePointSegment {
     pub offset: usize,
 }
 
+/// One centered construction-line type `47` `segtab_ptr` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureCenteredLineSegment {
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
 /// One fully framed `segtab_ptr` row outside the core segment-family enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOpaqueSegment {
@@ -952,6 +961,8 @@ pub struct FeatureSegmentTable {
     pub circle_rows: Vec<FeatureCircleSegment>,
     /// Fully aligned type-1 point rows.
     pub point_rows: Vec<FeaturePointSegment>,
+    /// Fully aligned centered construction-line rows.
+    pub centered_line_rows: Vec<FeatureCenteredLineSegment>,
     /// Fully aligned rows with unsupported segment-family discriminators.
     pub opaque_rows: Vec<FeatureOpaqueSegment>,
     /// Byte offset of the `segtab_ptr` label in the original stream.
@@ -967,32 +978,32 @@ impl FeatureSegmentTable {
                     + self.rows.len()
                     + self.circle_rows.len()
                     + self.point_rows.len()
+                    + self.centered_line_rows.len()
                     + self.opaque_rows.len(),
             )
+    }
+
+    /// Number of decoded rows carrying one external identifier.
+    pub(crate) fn external_id_count(&self, external_id: u32) -> usize {
+        self.rows
+            .iter()
+            .map(|row| row.external_id)
+            .chain(self.circle_rows.iter().map(|row| row.external_id))
+            .chain(self.point_rows.iter().map(|row| row.external_id))
+            .chain(self.centered_line_rows.iter().map(|row| row.external_id))
+            .chain(self.opaque_rows.iter().map(|row| row.external_id))
+            .filter(|candidate| *candidate == external_id)
+            .count()
     }
 
     /// Resolve a uniquely identified defining-sketch segment.
     pub fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
         self.is_complete().then_some(())?;
-        let mut matches = self
+        let segment = self
             .rows
             .iter()
-            .filter(|segment| segment.external_id == external_id);
-        let segment = matches.next()?;
-        (matches.next().is_none()
-            && !self
-                .circle_rows
-                .iter()
-                .any(|row| row.external_id == external_id)
-            && !self
-                .point_rows
-                .iter()
-                .any(|row| row.external_id == external_id)
-            && !self
-                .opaque_rows
-                .iter()
-                .any(|row| row.external_id == external_id))
-        .then_some(segment)
+            .find(|segment| segment.external_id == external_id)?;
+        (self.external_id_count(external_id) == 1).then_some(segment)
     }
 }
 
@@ -2401,6 +2412,7 @@ fn segment_table_body(
     let mut rows = Vec::new();
     let mut circle_rows = Vec::new();
     let mut point_rows = Vec::new();
+    let mut centered_line_rows = Vec::new();
     let mut opaque_rows = Vec::new();
     if let Some(row) = named_row {
         retain_segment_row(
@@ -2408,13 +2420,19 @@ fn segment_table_body(
             &mut rows,
             &mut circle_rows,
             &mut point_rows,
+            &mut centered_line_rows,
             &mut opaque_rows,
         );
     }
     let first_row = cursor;
     let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
     while cursor < region_end
-        && rows.len() + circle_rows.len() + point_rows.len() + opaque_rows.len() < row_limit
+        && rows.len()
+            + circle_rows.len()
+            + point_rows.len()
+            + centered_line_rows.len()
+            + opaque_rows.len()
+            < row_limit
     {
         let row_start = cursor;
         let kind_offset = if matches!(
@@ -2495,6 +2513,7 @@ fn segment_table_body(
                 &mut rows,
                 &mut circle_rows,
                 &mut point_rows,
+                &mut centered_line_rows,
                 &mut opaque_rows,
             );
             cursor = p + 1;
@@ -2509,6 +2528,7 @@ fn segment_table_body(
         rows,
         circle_rows,
         point_rows,
+        centered_line_rows,
         opaque_rows,
         offset: table,
     })
@@ -2519,6 +2539,7 @@ fn retain_segment_row(
     rows: &mut Vec<FeatureSegment>,
     circle_rows: &mut Vec<FeatureCircleSegment>,
     point_rows: &mut Vec<FeaturePointSegment>,
+    centered_line_rows: &mut Vec<FeatureCenteredLineSegment>,
     opaque_rows: &mut Vec<FeatureOpaqueSegment>,
 ) {
     if row.kind == 10
@@ -2554,6 +2575,21 @@ fn retain_segment_row(
             });
             return;
         }
+    }
+    if row.kind == 47
+        && row.directions == [Some(0); 3]
+        && row.point_ids == [None, Some(1)]
+        && row.center_id == Some(2)
+        && row.arc_orientation == Some(0)
+        && row.vertical_horizontal == Some(0)
+        && row.radius_ref == Some(1)
+        && row.radius2_ref.is_none()
+    {
+        centered_line_rows.push(FeatureCenteredLineSegment {
+            external_id: row.external_id,
+            offset: row.offset,
+        });
+        return;
     }
     let kind = match row.kind {
         2 => FeatureSegmentKind::Line,
@@ -8334,6 +8370,37 @@ mod tests {
     }
 
     #[test]
+    fn segment_tables_type_complete_centered_line_rows() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 47, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1,
+            0xf6, 22, 0xe2,
+        ];
+
+        let segments = segment_table_body(&payload, 0, 0, payload.len(), false)
+            .expect("centered line segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.rows.is_empty());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.centered_line_rows,
+            vec![FeatureCenteredLineSegment {
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+
+        let mut other_type_47 = payload;
+        other_type_47[16] = 0;
+        let segments = segment_table_body(&other_type_47, 0, 0, other_type_47.len(), false)
+            .expect("other type-47 segment table");
+        assert!(segments.is_complete());
+        assert!(segments.centered_line_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 47);
+    }
+
+    #[test]
     fn segment_rows_expand_compact_slots_and_accept_the_c1_type_wrapper() {
         let payload = [
             0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 0xc1, 0x00, 2, 0xe5, 0xe4, 9, 11,
@@ -9194,6 +9261,7 @@ mod tests {
             ],
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -9895,6 +9963,7 @@ mod tests {
             }],
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -9963,6 +10032,7 @@ mod tests {
             }],
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -10020,6 +10090,7 @@ mod tests {
             }],
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };

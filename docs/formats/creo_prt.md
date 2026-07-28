@@ -1341,12 +1341,13 @@ point. Sense zero selects the whole point in solver incidences. Construction
 points do not participate in `ent_tab` profile chains. Sense four selects the
 same point as a point locus.
 A type-47 `segtab` row is a centered construction line when `dir=[0,0,0]`,
-the point slots are `[null,1]`, and `cntrid=2`. Point keys zero and one are
-the line endpoints; point key two is their midpoint. Complete coordinates
-define the bounded neutral line only when the stored center equals the endpoint
-midpoint and the endpoints are distinct. Sense zero selects the line, and
-senses two and three select its start and end. Other type-47 layouts remain
-opaque.
+the point slots are `[null,1]`, `cntrid=2`, `arcorient=0`, `verhor=0`, the
+primary radius-reference slot is one, and the secondary radius-reference slot
+is null. Point keys zero and one are the line endpoints; point key two is their
+midpoint. Complete coordinates define the bounded neutral line only when the
+stored center equals the endpoint midpoint and the endpoints are distinct.
+Sense zero selects the line, and senses two and three select its start and end.
+Other type-47 layouts remain opaque.
 The `order_table` header retains its declared count and table-class reference
 when its prototype or positional identity rows do not validate.
 The `relat_ptr` header and its independent `skamp_ptr` and `triples_ptr` tables

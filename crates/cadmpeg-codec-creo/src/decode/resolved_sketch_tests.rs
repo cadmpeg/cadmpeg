@@ -3980,6 +3980,7 @@ fn saved_line_joins_through_order_table() {
         rows: Vec::new(),
         circle_rows: Vec::new(),
         point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 0,
     });
@@ -4470,6 +4471,7 @@ fn saved_line_joins_through_order_table() {
         rows: vec![segment.clone()],
         circle_rows: Vec::new(),
         point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -4764,6 +4766,7 @@ fn saved_arc_joins_through_order_table() {
         rows: vec![segment],
         circle_rows: Vec::new(),
         point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 38,
     });
@@ -4947,6 +4950,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
             rows: vec![anchor, segment.clone()],
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 20,
         }),
@@ -5171,6 +5175,7 @@ fn arc_carriers_use_trim_vertices() {
         rows: vec![var_segment.clone()],
         circle_rows: Vec::new(),
         point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 6,
     });
@@ -5484,6 +5489,7 @@ fn dimension_identity_includes_its_feature_definition() {
             offset: 20,
         }],
         point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 19,
     });
@@ -6138,6 +6144,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             rows: vec![segment, arc, point, other_line, other_arc],
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 30,
         }),
@@ -7574,23 +7581,16 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         ),
         None
     );
-    let centered_line = crate::feature::FeatureOpaqueSegment {
-        kind: 47,
-        directions: [Some(0); 3],
-        point_ids: [None, Some(1)],
-        center_id: Some(2),
-        arc_orientation: Some(0),
-        vertical_horizontal: Some(0),
-        radius_ref: Some(1),
-        radius2_ref: None,
+    let centered_line = crate::feature::FeatureCenteredLineSegment {
         external_id: 100,
         offset: 602,
     };
     assert_eq!(
-        section_opaque_centered_line_geometry(
-            &BTreeMap::from([(0, [3.0, -1.0]), (1, [3.0, 5.0]), (2, [3.0, 2.0]),]),
-            &centered_line,
-        ),
+        section_centered_line_geometry(&BTreeMap::from([
+            (0, [3.0, -1.0]),
+            (1, [3.0, 5.0]),
+            (2, [3.0, 2.0]),
+        ])),
         Some(SketchGeometry::Line {
             start: Point2::new(3.0, -1.0),
             end: Point2::new(3.0, 5.0),
@@ -7606,7 +7606,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
+        .centered_line_rows
         .push(centered_line);
     let opaque_line_item = crate::feature::FeatureSkampItem {
         entity_id: 100,
@@ -10088,6 +10088,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
             .collect(),
         circle_rows: Vec::new(),
         point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 2,
     });
@@ -10148,6 +10149,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
             .collect(),
         circle_rows: Vec::new(),
         point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -10188,6 +10190,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .collect(),
         circle_rows: Vec::new(),
         point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -10273,6 +10276,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
             }],
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 2,
         }),
@@ -10454,6 +10458,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
             rows: Vec::new(),
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
             opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
                 kind: 25,
                 directions: [None; 3],

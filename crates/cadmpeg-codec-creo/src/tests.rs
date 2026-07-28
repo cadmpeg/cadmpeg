@@ -4138,6 +4138,49 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
 }
 
 #[test]
+fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
+    let mut payload =
+        b"feat_defs_40\0segtab_ptr\0\xf8\x04\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[10, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1, 0xf6, 20, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[1, 0, 0, 0, 0xf6, 1, 3, 0, 0, 0xf6, 0xf6, 21, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[47, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1, 0xf6, 22, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[47, 0, 0, 0, 0xf6, 1, 0, 0, 0, 1, 0xf6, 23, 0xe2]);
+    payload.extend_from_slice(b"dimtab_ptr\0");
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
+    let segments = scan.features.definitions[0]
+        .segments
+        .as_ref()
+        .expect("segtab");
+
+    assert!(segments.is_complete());
+    assert_eq!(segments.circle_rows.len(), 1);
+    assert_eq!(segments.point_rows.len(), 1);
+    assert_eq!(segments.centered_line_rows.len(), 1);
+    assert_eq!(segments.opaque_rows.len(), 1);
+    assert_eq!(segments.opaque_rows[0].kind, 47);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let sketch = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0];
+    assert_eq!(sketch.fields["circle_segments"][0]["external_id"], 20);
+    assert_eq!(sketch.fields["circle_segments"][0]["center_id"], 2);
+    assert_eq!(
+        sketch.fields["circle_segments"][0]["radius_dimension_id"],
+        1
+    );
+    assert_eq!(sketch.fields["point_segments"][0]["external_id"], 21);
+    assert_eq!(sketch.fields["point_segments"][0]["point_id"], 3);
+    assert_eq!(
+        sketch.fields["centered_line_segments"][0]["external_id"],
+        22
+    );
+    assert_eq!(sketch.fields["opaque_segments"][0]["external_id"], 23);
+    assert_eq!(sketch.fields["opaque_segments"][0]["kind"], 47);
+}
+
+#[test]
 fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
     let mut definition =
         b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
@@ -4497,6 +4540,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
             ],
             circle_rows: Vec::new(),
             point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         }),
