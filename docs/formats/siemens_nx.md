@@ -506,8 +506,9 @@ field roles remain unassigned.
 A reference/type map begins with either `ref(1), 0001` or `01, ref(1)` and
 continues with `entry[n]`, where `n > 0` and each entry is
 `ref, kind:u16 BE`. The map either ends after its entries or has the terminal
-clause `ref(1), 0000, target_kind:u16 BE`.
-The terminal clause self-delimits the map independently of following bytes.
+`ref(1), 0000`, optionally followed by `target_kind:u16 BE`. A targetless
+terminal closes at the end of the containing complement interval. A terminal
+with `target_kind` self-delimits the map independently of following bytes.
 Every entry reference is a non-null compact or extended XMT. Every entry kind
 is a defined Parasolid record kind, type 11, type 79, type 80, type 35, type
 55, type 61, type 67, or type 100.

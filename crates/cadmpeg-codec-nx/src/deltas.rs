@@ -973,6 +973,14 @@ fn reference_type_map(
         if reference == 1 {
             (be::u16_at(stream, at) == Some(0)).then_some(())?;
             at = at.checked_add(2)?;
+            if at == expected_end {
+                return (!entries.is_empty()).then_some(ReferenceTypeMap {
+                    entries,
+                    target_kind: None,
+                    offset,
+                    end: at,
+                });
+            }
             let target_kind = be::u16_at(stream, at)?;
             (target_kind > 0).then_some(())?;
             at = at.checked_add(2)?;
@@ -3384,6 +3392,24 @@ mod reference_type_map_tests {
     #[test]
     fn reference_type_map_accepts_entry_table_without_target_clause() {
         let bytes = vec![0, 1, 0, 1, 0, 3, 0, 81, 0, 4, 0, 100];
+
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.reference_type_maps,
+            [ReferenceTypeMap {
+                entries: vec![(3, 81), (4, 100)],
+                target_kind: None,
+                offset: 0,
+                end: bytes.len(),
+            }]
+        );
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_accepts_targetless_terminal_clause() {
+        let bytes = vec![1, 0, 1, 0, 3, 0, 81, 0, 4, 0, 100, 0, 1, 0, 0];
 
         let census = walk(&bytes);
 
