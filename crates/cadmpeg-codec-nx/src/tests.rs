@@ -6861,14 +6861,16 @@ fn deltas_walks_complete_type_141_records() {
     let direct = record(false, 3158, [646, 3943, 3165, 131], [0, 1]);
     let direct_extended = record(false, 33_000, [646, 3943, 3165, 131], [1, 0]);
     let escaped = record(true, 40_000, [40_001, 1, 0, 40_002], [1, 1]);
+    let ambiguous_escaped = record(true, 325, [317, 44, 44, 8], [1, 1]);
     let mut stream = direct.clone();
     stream.extend_from_slice(&direct_extended);
     stream.extend_from_slice(&escaped);
+    stream.extend_from_slice(&ambiguous_escaped);
     let decoded_len = stream.len();
     stream.extend_from_slice(&[0xfe, 0xdc]);
 
     let census = crate::deltas::walk(&stream);
-    assert_eq!(census.full_counts["TYPE_141"], 3);
+    assert_eq!(census.full_counts["TYPE_141"], 4);
     assert_eq!(census.bytes_decoded, decoded_len);
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(census.records[1].canonical_bytes, direct_extended);
@@ -6876,10 +6878,13 @@ fn deltas_walks_complete_type_141_records() {
     assert_eq!(census.records[2].canonical_bytes, escaped);
     assert_eq!(census.records[2].xmt, 40_000);
     assert_eq!(census.records[2].references, [40_001, 1, 0, 40_002]);
+    assert_eq!(census.records[3].canonical_bytes, ambiguous_escaped);
+    assert_eq!(census.records[3].xmt, 325);
+    assert_eq!(census.records[3].references, [317, 44, 44, 8]);
 
     let residual = crate::deltas::semantic_residual(&stream);
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
-    assert!(residual.ends_with(&[direct, direct_extended, escaped].concat()));
+    assert!(residual.ends_with(&[direct, direct_extended, escaped, ambiguous_escaped].concat()));
 }
 
 #[test]

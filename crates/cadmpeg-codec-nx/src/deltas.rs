@@ -2485,10 +2485,15 @@ fn type_91_layout(
 fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
     (be::u16_at(stream, offset) == Some(141)).then_some(())?;
     let direct = type_141_layout(stream, offset, 0);
-    let escaped = (stream.get(offset + 2) == Some(&0xff))
+    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| type_141_layout(stream, offset, 1))
         .flatten();
-    let (xmt, references, at) = unique_layout(direct, escaped)?;
+    let (xmt, references, at) = if escaped_marker {
+        escaped.or(direct)?
+    } else {
+        direct?
+    };
     Some(Record {
         kind: 141,
         xmt,
