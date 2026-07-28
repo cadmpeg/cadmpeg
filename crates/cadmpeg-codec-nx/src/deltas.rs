@@ -97,8 +97,8 @@ pub struct TaggedReferenceLane {
 pub struct ReferenceTypeMap {
     /// Ordered `(reference, type_code)` entries.
     pub entries: Vec<(u32, u16)>,
-    /// Type code of the map target.
-    pub target_kind: u16,
+    /// Type code of the optional terminal map target.
+    pub target_kind: Option<u16>,
     /// First byte of the map.
     pub offset: usize,
     /// First byte following the map.
@@ -949,6 +949,14 @@ fn reference_type_map(
     };
     let mut entries = Vec::new();
     loop {
+        if at == expected_end {
+            return (!entries.is_empty()).then_some(ReferenceTypeMap {
+                entries,
+                target_kind: None,
+                offset,
+                end: at,
+            });
+        }
         (at < expected_end).then_some(())?;
         let (reference, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
@@ -961,7 +969,7 @@ fn reference_type_map(
             at = at.checked_add(2)?;
             return (at == expected_end && !entries.is_empty()).then_some(ReferenceTypeMap {
                 entries,
-                target_kind,
+                target_kind: Some(target_kind),
                 offset,
                 end: at,
             });
@@ -3118,7 +3126,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(40_000, 81), (3, 100)],
-                target_kind: 55,
+                target_kind: Some(55),
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -3137,7 +3145,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(40_000, 81), (3, 100)],
-                target_kind: 55,
+                target_kind: Some(55),
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -3153,7 +3161,25 @@ mod reference_type_map_tests {
         let census = walk(&bytes);
 
         assert_eq!(census.reference_type_maps.len(), 1);
-        assert_eq!(census.reference_type_maps[0].target_kind, 1);
+        assert_eq!(census.reference_type_maps[0].target_kind, Some(1));
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_accepts_entry_table_without_target_clause() {
+        let bytes = vec![0, 1, 0, 1, 0, 3, 0, 81, 0, 4, 0, 100];
+
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.reference_type_maps,
+            [ReferenceTypeMap {
+                entries: vec![(3, 81), (4, 100)],
+                target_kind: None,
+                offset: 0,
+                end: bytes.len(),
+            }]
+        );
         assert_eq!(census.bytes_decoded, bytes.len());
     }
 

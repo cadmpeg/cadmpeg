@@ -141,8 +141,8 @@ pub struct ParasolidDeltasReferenceTypeMap {
     pub stream_ordinal: u32,
     /// Ordered `(XMT identity, Parasolid type code)` entries.
     pub entries: Vec<(u32, u16)>,
-    /// Type code of the map target.
-    pub target_kind: u16,
+    /// Type code of the optional terminal map target.
+    pub target_kind: Option<u16>,
     /// Exact map byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact map bytes.
@@ -2243,7 +2243,7 @@ mod tests {
         assert_eq!(events.reference_type_maps.len(), 1);
         let map = &events.reference_type_maps[0];
         assert_eq!(map.entries, [(40_000, 81), (3, 100)]);
-        assert_eq!(map.target_kind, 55);
+        assert_eq!(map.target_kind, Some(55));
         assert_eq!(map.byte_len, 20);
         assert_eq!(map.inflated_offset, map_offset as u64);
         assert_eq!(

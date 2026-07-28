@@ -490,14 +490,15 @@ kind, including type 79 and type 80, and each XMT is a non-null compact or
 extended encoded index. The lane retains pair order and exact byte identity;
 field roles remain unassigned.
 
-A reference/type map is either `ref(1), 0001, entry[n], ref(1), 0000,
-target_kind:u16 BE` or `01, ref(1), entry[n], ref(1), 0000,
-target_kind:u16 BE`, where `n > 0` and each entry is `ref, kind:u16 BE`.
+A reference/type map begins with either `ref(1), 0001` or `01, ref(1)` and
+continues with `entry[n]`, where `n > 0` and each entry is
+`ref, kind:u16 BE`. The map either ends after its entries or has the terminal
+clause `ref(1), 0000, target_kind:u16 BE`.
 Every entry reference is a non-null compact or extended XMT. Every entry kind
 is a defined Parasolid record kind, type 79, type 80, type 55, or type 100.
-`target_kind` uses the same type-code set or the null type-code sentinel `1`.
-The terminal null reference distinguishes the suffix from the non-null entry
-lane.
+When present, `target_kind` uses the same type-code set or the null type-code
+sentinel `1`. The terminal null reference distinguishes the clause from the
+non-null entry lane.
 
 One reference-state packet is `0001, 0001, frame[n], terminal?`, where `n > 0`
 and each frame is `0004, ref[4], 0001, state_word[5]:u32 BE, state_byte:u8`.
