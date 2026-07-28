@@ -438,7 +438,7 @@ Lengths are logical, before escape/large-index shifts. Each code is a Parasolid 
 |   31 | CIRCLE  |     99 |  137 | SP_CURVE      | 33 + shift |
 |   32 | ELLIPSE |    107 |      |               |            |
 
-Types carrying `node_id:u32` place it at record offset `+4` (after shifts). FIN has no `node_id`. EDGE candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records.
+Types carrying `node_id:u32` place it at record offset `+4` (after shifts). FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records.
 
 Type 38 is the XT `INTERSECTION` node. Delta-stream `0x5a` records use the `intersection_data` layout.
 

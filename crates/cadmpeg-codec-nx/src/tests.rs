@@ -6571,7 +6571,7 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
 }
 
 #[test]
-fn deltas_rejects_denormal_edge_tolerance_payload_coincidences() {
+fn deltas_rejects_denormal_topology_tolerance_payload_coincidences() {
     fn edge(tolerance: f64) -> Vec<u8> {
         let mut bytes = 16u16.to_be_bytes().to_vec();
         bytes.extend(encoded_xmt(20));
@@ -6594,6 +6594,25 @@ fn deltas_rejects_denormal_edge_tolerance_payload_coincidences() {
 
     let denormal = edge(1.0e-120);
     assert!(crate::deltas::walk(&denormal).records.is_empty());
+
+    let mut vertex = 18u16.to_be_bytes().to_vec();
+    vertex.extend(encoded_xmt(20));
+    vertex.extend_from_slice(&1u32.to_be_bytes());
+    for reference in [2u32, 3, 4, 5, 6] {
+        vertex.extend(encoded_xmt(reference));
+        vertex.push(1);
+    }
+    let tolerance_at = vertex.len();
+    vertex.extend_from_slice(&1.0e-8f64.to_be_bytes());
+    vertex.extend(encoded_xmt(7));
+    vertex.push(1);
+
+    let census = crate::deltas::walk(&vertex);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 18);
+
+    vertex[tolerance_at..tolerance_at + 8].copy_from_slice(&1.0e-120f64.to_be_bytes());
+    assert!(crate::deltas::walk(&vertex).records.is_empty());
 }
 
 #[test]
