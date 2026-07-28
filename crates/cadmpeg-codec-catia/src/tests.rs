@@ -6320,6 +6320,47 @@ fn structurally_owned_sketch_feature_retains_its_parent() {
 }
 
 #[test]
+fn structurally_owned_sketch_does_not_treat_a_principal_plane_as_its_parent() {
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x83, 0x85], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "xy-plane",
+        "PRTSketch",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.design_objects.len(), 2);
+    assert_eq!(
+        native.design_objects[1].owner_design_object.as_deref(),
+        Some(native.design_objects[0].id.as_str())
+    );
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    crate::design_feature::transfer_design_features(&mut ir, &native);
+
+    let [plane, sketch] = ir.model.features.as_slice() else {
+        panic!("principal plane and sketch history")
+    };
+    assert!(matches!(
+        plane.definition,
+        cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { .. }
+    ));
+    assert!(matches!(
+        sketch.definition,
+        cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
+    ));
+    assert_eq!(plane.parent, None);
+    assert_eq!(sketch.parent, None);
+}
+
+#[test]
 fn feature_source_content_interleaves_parameters_and_children_by_object_field_offset() {
     use cadmpeg_ir::features::{DesignParameter, FeatureSourceContent, ParameterId};
 

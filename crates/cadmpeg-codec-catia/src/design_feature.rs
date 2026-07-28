@@ -48,15 +48,11 @@ pub(crate) fn transfer_design_features(
         .filter_map(|object| design_feature_candidate(object, &records))
         .collect::<Vec<_>>();
     let mut transfer = DesignFeatureTransfer::default();
+    let mut sketch_features_by_design_object = HashMap::<String, FeatureId>::new();
 
     for candidate in candidates {
         let object = candidate.object;
         let feature_id = FeatureId(format!("{}:feature", object.id));
-        let parent = object
-            .owner_design_object
-            .as_deref()
-            .and_then(|owner| transfer.features_by_design_object.get(owner))
-            .cloned();
         match candidate.definition {
             DesignFeatureDefinition::PrincipalPlane {
                 declarations,
@@ -68,7 +64,7 @@ pub(crate) fn transfer_design_features(
                     ordinal: ir.model.features.len() as u64,
                     name: None,
                     suppressed: None,
-                    parent,
+                    parent: None,
                     dependencies: Vec::new(),
                     source_properties: BTreeMap::new(),
                     source_tag: Some(declaration_class.to_string()),
@@ -103,6 +99,11 @@ pub(crate) fn transfer_design_features(
                     object.owner_entity_id,
                 );
                 let placement = resolved_placement.unwrap_or(SketchPlacement::Unresolved);
+                let parent = object
+                    .owner_design_object
+                    .as_deref()
+                    .and_then(|owner| sketch_features_by_design_object.get(owner))
+                    .cloned();
 
                 let sketch_id = SketchId(format!("{}:sketch", object.id));
                 ir.model.sketches.push(Sketch {
@@ -150,6 +151,7 @@ pub(crate) fn transfer_design_features(
                             .map(|declaration| declaration.id.clone()),
                     );
                 }
+                sketch_features_by_design_object.insert(object.id.clone(), feature_id.clone());
             }
         }
         transfer
