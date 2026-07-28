@@ -43,7 +43,9 @@ current scores require those matrices and representative fixtures.
   exact parameter identities when those selectors close within one identity
   run.
 - Complete numeric parameters and formula relations transfer when their type,
-  owner, value, expression, and dependency identities resolve exactly.
+  owner, evaluation state, expression, and dependency identities resolve
+  exactly. Typed unset inputs transfer independently while preventing formula
+  evaluation.
   Placeholder-state, Boolean-prefixed parser-version, unprefixed
   parser-version, and opened Boolean parser-version relation-expression
   framings retain their source expressions and typed signatures. Parser-version

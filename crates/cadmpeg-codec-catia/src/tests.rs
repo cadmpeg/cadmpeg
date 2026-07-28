@@ -2214,7 +2214,7 @@ fn standard_catpart_with_typed_formula_inputs(
         result_type,
         output_value,
         source_expression,
-        &[0xfe],
+        (&[0xfe], None),
     )
 }
 
@@ -2225,8 +2225,9 @@ fn standard_catpart_with_typed_formula_inputs_and_object_payload(
     result_type: &str,
     output_value: Option<f64>,
     source_expression: &str,
-    input_object_payload: &[u8],
+    input_options: (&[u8], Option<usize>),
 ) -> Vec<u8> {
+    let (input_object_payload, unset_input_index) = input_options;
     assert!(!duplicate_binding || !inputs.is_empty());
     let formula_definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
     let expression_definition = [0x00, 0x08, 0x32, 5, 0, 0, 0, 0x32, 5, 0, 0, 0];
@@ -2272,7 +2273,7 @@ fn standard_catpart_with_typed_formula_inputs_and_object_payload(
             entity_id.into(),
             name_ordinal,
             name_ordinal + 1,
-            Some(*value),
+            (unset_input_index != Some(index)).then_some(*value),
         ));
     }
     if duplicate_binding {
@@ -10451,7 +10452,7 @@ fn formula_input_with_additional_object_payload_remains_unresolved() {
                     "LENGTH",
                     Some(33.0),
                     "#1_ /2-2mm",
-                    &[0x81, 0xfe],
+                    (&[0x81, 0xfe], None),
                 ),
             ),
             &DecodeOptions::default(),
@@ -11567,6 +11568,34 @@ fn decode_transfers_an_unset_typed_formula_result() {
     assert_eq!(output.value, None);
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(output.expression, "#1_ /2+1mm");
+}
+
+#[test]
+fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(
+                standard_catpart_with_typed_formula_inputs_and_object_payload(
+                    4,
+                    false,
+                    &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
+                    "LENGTH",
+                    Some(13.0),
+                    "#1_ /2+1mm",
+                    (&[0xfe], Some(0)),
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset formula input");
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed unset input")
+    };
+
+    assert_eq!(input.name, "Width");
+    assert_eq!(input.value, None);
+    assert!(input.expression.is_empty());
+    assert!(input.dependencies.is_empty());
 }
 
 #[test]

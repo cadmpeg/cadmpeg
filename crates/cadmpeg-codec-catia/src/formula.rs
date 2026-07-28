@@ -82,22 +82,31 @@ pub(crate) fn transfer_parameters(
                 all_inputs_complete = false;
                 continue;
             };
-            let Some(TypedParameterEvaluation::Value(value)) =
+            let Some(evaluation) =
                 typed_parameter_evaluation(&input.input_type, &parameter.evaluation)
             else {
                 all_inputs_complete = false;
                 continue;
             };
             used_inputs.insert(input.parameter.as_str());
-            expression_bindings.insert(
-                input.parameter.as_str(),
-                EvaluatedFormulaScalar::from_parameter_value(&value),
-            );
             let id = neutral_parameter_id(&entity.id);
             if dependencies.contains(&id) {
                 continue;
             }
             dependencies.push(id.clone());
+            let (expression, value) = match evaluation {
+                TypedParameterEvaluation::Unset => {
+                    all_inputs_complete = false;
+                    (String::new(), None)
+                }
+                TypedParameterEvaluation::Value(value) => {
+                    expression_bindings.insert(
+                        input.parameter.as_str(),
+                        EvaluatedFormulaScalar::from_parameter_value(&value),
+                    );
+                    (parameter_expression(&value), Some(value))
+                }
+            };
             transferred.push(FormulaParameterCandidate {
                 parameter: DesignParameter {
                     id,
@@ -108,15 +117,9 @@ pub(crate) fn transfer_parameters(
                     ),
                     ordinal: 0,
                     name: parameter.name.value.clone(),
-                    expression: match &value {
-                        ParameterValue::Length(Length(value)) => format!("{value} mm"),
-                        ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
-                        ParameterValue::Real(value) => value.to_string(),
-                        ParameterValue::Integer(value) => value.to_string(),
-                        ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
-                    },
+                    expression,
                     display: None,
-                    value: Some(value),
+                    value,
                     dependencies: Vec::new(),
                     properties: BTreeMap::new(),
                     pmi: None,
@@ -434,13 +437,7 @@ fn collect_legacy_parameters(
             let (expression, value) = match evaluation {
                 TypedParameterEvaluation::Unset => (String::new(), None),
                 TypedParameterEvaluation::Value(value) => {
-                    let expression = match &value {
-                        ParameterValue::Length(Length(value)) => format!("{value} mm"),
-                        ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
-                        ParameterValue::Real(value) => value.to_string(),
-                        ParameterValue::Integer(value) => value.to_string(),
-                        ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
-                    };
+                    let expression = parameter_expression(&value);
                     (expression, Some(value))
                 }
             };
@@ -621,6 +618,16 @@ fn demote_formula_output(candidate: &mut FormulaParameterCandidate) -> bool {
 enum TypedParameterEvaluation {
     Unset,
     Value(ParameterValue),
+}
+
+fn parameter_expression(value: &ParameterValue) -> String {
+    match value {
+        ParameterValue::Length(Length(value)) => format!("{value} mm"),
+        ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
+        ParameterValue::Real(value) => value.to_string(),
+        ParameterValue::Integer(value) => value.to_string(),
+        ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
