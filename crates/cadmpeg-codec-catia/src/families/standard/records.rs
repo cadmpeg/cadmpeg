@@ -20,8 +20,6 @@ pub struct PlaneParams {
     pub origin: Point3,
     /// Unit plane normal from the positionally paired trim packet.
     pub normal: Vector3,
-    /// Spatial bounds of the trimmed plane face.
-    pub bounds: FreeformFaceBounds,
 }
 
 /// The `00 33 <kind>` surface kinds and their required strict-template prebyte
@@ -79,6 +77,58 @@ pub struct FreeformFaceBounds {
     pub sphere_radius: f64,
 }
 
+fn face_bounds_at(brep: &[u8], position: usize) -> Option<FreeformFaceBounds> {
+    let values = (0..10)
+        .map(|index| f32_le(brep, position + 4 * index))
+        .collect::<Vec<_>>();
+    if values.iter().any(|value| !value.is_finite())
+        || values[3..6].iter().any(|extent| *extent < 0.0)
+        || values[9] < 0.0
+        || (0..3).any(|axis| (values[axis] - values[6 + axis]).abs() + values[3 + axis] > values[9])
+    {
+        return None;
+    }
+    Some(FreeformFaceBounds {
+        aabb_center: [
+            f64::from(values[0]),
+            f64::from(values[1]),
+            f64::from(values[2]),
+        ],
+        aabb_half_extents: [
+            f64::from(values[3]),
+            f64::from(values[4]),
+            f64::from(values[5]),
+        ],
+        sphere_center: [
+            f64::from(values[6]),
+            f64::from(values[7]),
+            f64::from(values[8]),
+        ],
+        sphere_radius: f64::from(values[9]),
+    })
+}
+
+/// Read the spatial bounds of one complete face-local surface record.
+#[must_use]
+pub fn standard_face_bounds(
+    brep: &[u8],
+    record: &StandardSurfaceRecord,
+) -> Option<FreeformFaceBounds> {
+    match record {
+        StandardSurfaceRecord::Freeform { bounds, .. } => Some(*bounds),
+        StandardSurfaceRecord::Analytic(prefix) => {
+            let relative = match prefix.kind {
+                0x32 => 3,
+                0x33 | 0x34 => 27,
+                0x35 => 19,
+                0x38 => 31,
+                _ => return None,
+            };
+            face_bounds_at(brep, prefix.pos + relative).filter(|bounds| bounds.sphere_radius > 0.0)
+        }
+    }
+}
+
 impl StandardSurfaceRecord {
     fn pos(&self) -> usize {
         match self {
@@ -131,16 +181,10 @@ pub fn standard_surface_records(
             0xff => false,
             _ => continue,
         };
-        let values = (0..10)
-            .map(|index| f32_le(brep, pos + 6 + 4 * index))
-            .collect::<Vec<_>>();
-        if tag == 0
-            || values.iter().any(|value| !value.is_finite())
-            || values[3..6].iter().any(|extent| *extent < 0.0)
-            || values[9] < 0.0
-            || (0..3)
-                .any(|axis| (values[axis] - values[6 + axis]).abs() + values[3 + axis] > values[9])
-        {
+        let Some(bounds) = face_bounds_at(brep, pos + 6) else {
+            continue;
+        };
+        if tag == 0 {
             continue;
         }
         records.insert(
@@ -148,24 +192,7 @@ pub fn standard_surface_records(
             StandardSurfaceRecord::Freeform {
                 pos,
                 tag,
-                bounds: FreeformFaceBounds {
-                    aabb_center: [
-                        f64::from(values[0]),
-                        f64::from(values[1]),
-                        f64::from(values[2]),
-                    ],
-                    aabb_half_extents: [
-                        f64::from(values[3]),
-                        f64::from(values[4]),
-                        f64::from(values[5]),
-                    ],
-                    sphere_center: [
-                        f64::from(values[6]),
-                        f64::from(values[7]),
-                        f64::from(values[8]),
-                    ],
-                    sphere_radius: f64::from(values[9]),
-                },
+                bounds,
                 forward,
             },
         );
@@ -334,20 +361,6 @@ pub fn plane_params<S: std::hash::BuildHasher>(
                 f64::from(sphere[2]),
             ),
             normal: Vector3::new(normal[0], normal[1], normal[2]),
-            bounds: FreeformFaceBounds {
-                aabb_center: [
-                    f64::from(values[0]),
-                    f64::from(values[1]),
-                    f64::from(values[2]),
-                ],
-                aabb_half_extents: [f64::from(half[0]), f64::from(half[1]), f64::from(half[2])],
-                sphere_center: [
-                    f64::from(sphere[0]),
-                    f64::from(sphere[1]),
-                    f64::from(sphere[2]),
-                ],
-                sphere_radius: f64::from(radius),
-            },
         });
     }
     out

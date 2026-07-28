@@ -4303,7 +4303,7 @@ mod record_decoders {
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::{HashMap, HashSet};
 
-    use crate::families::standard::records::FreeformFaceBounds;
+    use crate::families::standard::records::{FreeformFaceBounds, StandardSurfaceRecord};
     use crate::tests::{
         a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
         le_f32, le_f64, standard_quad_topology_stream,
@@ -4371,12 +4371,6 @@ mod record_decoders {
                 target: 0,
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 0.999_999),
-                bounds: FreeformFaceBounds {
-                    aabb_center: [0.0; 3],
-                    aabb_half_extents: [1.0; 3],
-                    sphere_center: [0.0; 3],
-                    sphere_radius: 1.0,
-                },
             },
         )
         .expect("near-unit plane carrier");
@@ -4391,12 +4385,6 @@ mod record_decoders {
                 target: 0,
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 0.0),
-                bounds: FreeformFaceBounds {
-                    aabb_center: [0.0; 3],
-                    aabb_half_extents: [1.0; 3],
-                    sphere_center: [0.0; 3],
-                    sphere_radius: 1.0,
-                },
             },
         )
         .is_none());
@@ -4914,14 +4902,48 @@ mod record_decoders {
             planes[2].origin,
             Point3::new(f64::from(5.2e-7f32), f64::from(1.6e-7f32), 50.0)
         );
-        assert_eq!(
-            planes[2].bounds,
-            FreeformFaceBounds {
-                aabb_center: [0.0, 0.0, 50.0],
-                aabb_half_extents: [2.5, 2.5, 0.0],
-                sphere_center: [f64::from(5.2e-7f32), f64::from(1.6e-7f32), 50.0,],
-                sphere_radius: 2.5,
+    }
+
+    #[test]
+    fn analytic_surface_records_retain_trimmed_face_bounds_after_their_parameters() {
+        for (kind, relative) in [(0x32, 3), (0x33, 27), (0x34, 27), (0x35, 19), (0x38, 31)] {
+            let mut bytes = vec![0; 96];
+            for (index, value) in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0, 8.0]
+                .into_iter()
+                .enumerate()
+            {
+                let at = 5 + relative + 4 * index;
+                bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
             }
+            let record = StandardSurfaceRecord::Analytic(
+                crate::families::standard::records::SurfacePrefix {
+                    pos: 5,
+                    target: 1,
+                    kind,
+                },
+            );
+            assert_eq!(
+                crate::families::standard::records::standard_face_bounds(&bytes, &record),
+                Some(FreeformFaceBounds {
+                    aabb_center: [1.0, 2.0, 3.0],
+                    aabb_half_extents: [4.0, 5.0, 6.0],
+                    sphere_center: [1.0, 2.0, 3.0],
+                    sphere_radius: 8.0,
+                })
+            );
+        }
+        assert_eq!(
+            crate::families::standard::records::standard_face_bounds(
+                &[0; 96],
+                &StandardSurfaceRecord::Analytic(
+                    crate::families::standard::records::SurfacePrefix {
+                        pos: 5,
+                        target: 1,
+                        kind: 0x34,
+                    },
+                ),
+            ),
+            None
         );
     }
 

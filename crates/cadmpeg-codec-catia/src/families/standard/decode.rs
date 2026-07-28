@@ -571,17 +571,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             .collect();
     let face_bounds = records
         .iter()
-        .map(|record| match record {
-            crate::families::standard::records::StandardSurfaceRecord::Freeform {
-                bounds, ..
-            } => Some(*bounds),
-            crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix)
-                if prefix.kind == 0x32 =>
-            {
-                planes.get(&prefix.target).map(|plane| plane.bounds)
-            }
-            crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
-        })
+        .map(|record| crate::families::standard::records::standard_face_bounds(brep, record))
         .collect::<Vec<_>>();
 
     let mut surfaces = Vec::new();
