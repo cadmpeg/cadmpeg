@@ -1516,13 +1516,12 @@ pub enum VariableBlendValuePayload {
         /// Endpoint radii in document length units.
         radii: [f64; 2],
     },
-    /// Fixed-width branch: two endpoint parameters and one native width
-    /// scalar, stored unscaled.
+    /// `fixed_width` branch. The three serialized scalars are retained in
+    /// source order; no application-level role is assigned without an
+    /// independently varying witness.
     FixedWidth {
-        /// Endpoint parameters.
-        parameters: [f64; 2],
-        /// Native width scalar.
-        width: f64,
+        /// Ordered native scalar triple.
+        scalars: [f64; 3],
     },
     /// Edge-offset branch.
     EdgeOffset {

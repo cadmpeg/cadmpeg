@@ -396,8 +396,11 @@ fn decode_variable_blend_value(
     };
     let payload = match name.as_str() {
         "fixed_width" => VariableBlendValuePayload::FixedWidth {
-            parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
-            width: take_f64(bytes, position)?,
+            scalars: [
+                take_f64(bytes, position)?,
+                take_f64(bytes, position)?,
+                take_f64(bytes, position)?,
+            ],
         },
         "two_ends" => VariableBlendValuePayload::TwoEnds {
             parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
@@ -602,11 +605,10 @@ mod variable_blend_value_tests {
         let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
             .expect("generated fixed-width value");
         assert_eq!(position, bytes.len());
-        let VariableBlendValuePayload::FixedWidth { parameters, width } = decoded.payload else {
+        let VariableBlendValuePayload::FixedWidth { scalars } = decoded.payload else {
             panic!("expected fixed-width payload")
         };
-        assert_eq!(parameters, [0.0, 2.5]);
-        assert_eq!(width, 1.5);
+        assert_eq!(scalars, [0.0, 2.5, 1.5]);
     }
 
     #[test]

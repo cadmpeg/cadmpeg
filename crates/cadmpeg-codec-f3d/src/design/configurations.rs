@@ -70,16 +70,10 @@ pub(crate) fn validate_configuration_payload(
         ))
     })?;
     if kind == DesignConfigurationKind::Rule {
-        let condition = object.get("when");
-        let target = object.get("activate");
-        if (condition.is_some() || target.is_some())
-            && (!condition.is_some_and(serde_json::Value::is_string)
-                || !target.is_some_and(serde_json::Value::is_string))
-        {
-            return Err(CodecError::Malformed(format!(
-                "F3D configuration rule `when` and `activate` must be paired strings: {entry_name}"
-            )));
-        }
+        // A rule document is an open JSON object. Only the closed, typed
+        // projection with both `when` and `activate` as strings has neutral
+        // activation semantics; every other shape remains native JSON and is
+        // deliberately not interpreted as a partial rule.
         return Ok(());
     }
     let configurations = match object.get("configurations") {

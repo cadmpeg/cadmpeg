@@ -364,6 +364,25 @@ fn configuration_unknown_members_are_counted_at_each_semantic_level() {
 }
 
 #[test]
+fn configuration_rule_without_the_typed_pair_is_retained_not_rejected() {
+    let native = [DesignConfiguration {
+        id: "f3d:configuration:entry#partial.dsgcfgrule".into(),
+        entry_name: "partial.dsgcfgrule".into(),
+        kind: DesignConfigurationKind::Rule,
+        payload: serde_json::json!({"when": "width > 20 mm", "vendorExtension": 7}),
+    }];
+    assert!(validate_configuration_payload(
+        "partial.dsgcfgrule",
+        DesignConfigurationKind::Rule,
+        &native[0].payload,
+    )
+    .is_ok());
+    let projected = project_configurations(&native);
+    assert!(projected.is_empty());
+    assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
+}
+
+#[test]
 fn configuration_rules_bind_only_one_named_variant() {
     let table = |entry_name: &str, variant_name: &str| DesignConfiguration {
         id: format!("f3d:configuration:entry#{entry_name}"),

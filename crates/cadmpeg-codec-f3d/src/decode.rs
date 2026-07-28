@@ -2,8 +2,9 @@
 //! Assemble a `.f3d` archive into a [`CadIr`] document and [`DecodeReport`].
 //!
 //! [`crate::container`] scans the ZIP, reads ASM headers, finds the history
-//! boundary, and selects the active B-rep. This module frames that B-rep with
-//! [`crate::sab`], builds topology and geometry through [`crate::brep`], then
+//! boundary. This module resolves Design body-to-blob bindings, frames every
+//! referenced B-rep with [`crate::sab`], builds topology and geometry through
+//! [`crate::brep`], then
 //! adds design, sketch, history, ACT, and appearance data.
 //!
 //! A framing failure or a stream without decoded geometry produces a
@@ -874,33 +875,44 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
 fn model_brep_candidates(
     scan: &ContainerScan,
     bindings: &[crate::records::DesignBodyBinding],
-) -> Vec<BrepFacts> {
-    let referenced = bindings
-        .iter()
-        .map(|binding| binding.blob_name.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    let mut candidates = scan
-        .breps
-        .iter()
-        .filter(|brep| {
-            brep.name
-                .rsplit('/')
-                .next()
-                .is_some_and(|basename| referenced.contains(basename))
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    if candidates.is_empty() {
-        candidates.extend(container::select_active_brep(scan).cloned());
-    } else if let Some(active) = container::select_active_brep(scan) {
-        if let Some(position) = candidates
+) -> Result<Vec<BrepFacts>, CodecError> {
+    let mut candidates = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for binding in bindings {
+        if !seen.insert(binding.blob_name.as_str()) {
+            continue;
+        }
+        let matches = scan
+            .breps
             .iter()
-            .position(|candidate| candidate.name == active.name)
-        {
-            candidates.swap(0, position);
+            .filter(|brep| brep.name.rsplit('/').next() == Some(binding.blob_name.as_str()))
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [brep] => candidates.push((**brep).clone()),
+            [] => {
+                return Err(CodecError::Malformed(format!(
+                    "Design body map references missing BREP entry {}",
+                    binding.blob_name
+                )))
+            }
+            _ => {
+                return Err(CodecError::Malformed(format!(
+                    "Design body map BREP basename is ambiguous: {}",
+                    binding.blob_name
+                )))
+            }
         }
     }
-    candidates
+    if candidates.is_empty() {
+        if let Some(fallback) = container::select_fallback_brep(scan) {
+            candidates.push((*fallback).clone());
+        } else if !scan.breps.is_empty() {
+            return Err(CodecError::Malformed(
+                "Design body map is absent and BREP selection is ambiguous".to_string(),
+            ));
+        }
+    }
+    Ok(candidates)
 }
 
 fn brep_identity_namespace(entry: &str) -> Option<&str> {
@@ -929,15 +941,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(&scan, None, &[])?;
-    let model_breps = model_brep_candidates(&scan, &unbound_body_bindings);
+    let model_breps = model_brep_candidates(&scan, &unbound_body_bindings)?;
 
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
     // arbitrary `.smbh` entry.
-    if let Some(model_brep) = model_breps.first().cloned() {
-        let active = container::select_active_brep(&scan)
-            .cloned()
-            .unwrap_or(model_brep);
+    if let Some(primary_model_brep) = model_breps.first().cloned() {
         let qualify_ids = model_breps.len() > 1;
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
@@ -1016,11 +1025,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             }
             let decoded_materials = materials::decode_with_bodies(&scan, &brep.body_keys)?;
             let annotation_records = std::mem::take(&mut brep.annotation_records);
-            let (mut ir, mut native, unknowns) = build_geometry_ir(&scan, &active, brep);
+            let (mut ir, mut native, unknowns) =
+                build_geometry_ir(&scan, &primary_model_brep, brep);
             ir.model.subds = crate::tsm::decode(&scan)?;
             native.body_visibilities = body_visibilities;
-            if let Some(history) = decode_asm_history(&scan, &active)? {
-                native.asm_histories.push(history);
+            for history_brep in container::history_breps(&scan) {
+                if let Some(history) = decode_asm_history(&scan, history_brep)? {
+                    native.asm_histories.push(history);
+                }
             }
             native.construction_recipes = crate::design::decode::parameters::decode_recipes(&scan)?;
             native.persistent_references =
@@ -1114,7 +1126,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             native.design_body_members = crate::design::decode::body::decode_body_members(&scan)?;
             native.design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
                 &scan,
-                Some(&active.name),
+                Some(&primary_model_brep.name),
                 &native.body_native_keys,
             )?;
             native.design_body_bounds = crate::design::decode::body::decode_body_bounds(
@@ -1381,7 +1393,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 &ir,
                 &scan,
                 &native,
-                Some((&active.name, &annotation_records)),
+                Some((&primary_model_brep.name, &annotation_records)),
                 &unknowns,
             );
             let source_image = preserve_source_image(&scan, &mut ir);
@@ -1392,8 +1404,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     // No decodable SAB stream: use container metadata.
     let (mut ir, unknowns) = build_metadata_ir(&scan);
     let mut native = F3dNative::default();
-    if let Some(active) = container::select_active_brep(&scan) {
-        if let Some(history) = decode_asm_history(&scan, active)? {
+    for history_brep in container::history_breps(&scan) {
+        if let Some(history) = decode_asm_history(&scan, history_brep)? {
             native.asm_histories.push(history);
         }
     }
@@ -1483,7 +1495,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.design_body_members = crate::design::decode::body::decode_body_members(&scan)?;
     native.design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
         &scan,
-        container::select_active_brep(&scan).map(|entry| entry.name.as_str()),
+        container::select_fallback_brep(&scan).map(|entry| entry.name.as_str()),
         &native.body_native_keys,
     )?;
     native.design_body_bounds =
@@ -1770,19 +1782,29 @@ fn apply_assembly_classification(
         provenance: None,
     });
     for reference in &table.references {
+        let property_note = if reference.neutron_data.is_empty()
+            || reference.neutron_data == reference.neutron_role
+        {
+            format!("neutronRole {}", reference.neutron_role)
+        } else {
+            format!(
+                "neutronRole {}, neutronData {}",
+                reference.neutron_role, reference.neutron_data
+            )
+        };
         let note = match crate::xref::design_for(table, reference) {
             Some(design) => format!(
-                "xref {}: {} -> {} (lineage {}, version {}, neutronRole {})",
+                "xref {}: {} -> {} (lineage {}, version {}, {})",
                 reference.ordinal,
                 design.display_name,
                 design.target_file_name,
                 design.lineage_urn,
                 design.version_urn,
-                reference.neutron_role
+                property_note
             ),
             None => format!(
-                "xref {}: -> {} (neutronRole {})",
-                reference.ordinal, reference.relative_path, reference.neutron_role
+                "xref {}: -> {} ({})",
+                reference.ordinal, reference.relative_path, property_note
             ),
         };
         report.notes.push(note);
@@ -2078,8 +2100,8 @@ fn populate_annotations(
             .tag("appearance_binding");
     }
     if brep.is_none() {
-        if let Some(active) = container::select_active_brep(scan) {
-            let stream = annotations.stream(crate::ids::native_scope(&active.name));
+        if let Some(fallback) = container::select_fallback_brep(scan) {
+            let stream = annotations.stream(crate::ids::native_scope(&fallback.name));
             for unknown in unknowns {
                 annotations
                     .note(&unknown.id.0, stream, unknown.offset)
@@ -2098,11 +2120,14 @@ fn trailing_offset(id: &str) -> u64 {
 
 fn decode_asm_history(
     scan: &ContainerScan,
-    active: &BrepFacts,
+    history_brep: &BrepFacts,
 ) -> Result<Option<crate::history_records::AsmHistory>, CodecError> {
-    let width = active.header.as_ref().map_or(8, |h| usize::from(h.width));
-    let bytes = scan.entry_bytes(&active.name)?;
-    Ok(crate::history::decode(bytes, &active.name, width))
+    let width = history_brep
+        .header
+        .as_ref()
+        .map_or(8, |header| usize::from(header.width));
+    let bytes = scan.entry_bytes(&history_brep.name)?;
+    Ok(crate::history::decode(bytes, &history_brep.name, width))
 }
 
 fn extend_related_design_records(
@@ -2582,23 +2607,27 @@ fn extend_related_design_records(
     Ok(())
 }
 
-/// Frame and decode the active BREP's SAB stream. Returns `None` when the stream
+/// Frame and decode one Design-selected or explicit fallback BREP SAB stream.
+/// Returns `None` when the stream
 /// is not a decodable `BinaryFile4`/`BinaryFile8` SAB, or frames but yields no
 /// geometry (leaving the caller to fall back to the container-metadata IR).
-fn try_decode_brep(scan: &ContainerScan, active: &BrepFacts) -> Result<Option<Brep>, CodecError> {
-    let width = active.header.as_ref().map_or(0, |h| h.width);
+fn try_decode_brep(
+    scan: &ContainerScan,
+    brep_entry: &BrepFacts,
+) -> Result<Option<Brep>, CodecError> {
+    let width = brep_entry.header.as_ref().map_or(0, |h| h.width);
     if width != 4 && width != 8 {
         return Ok(None);
     }
 
-    let bytes = scan.entry_bytes(&active.name)?;
+    let bytes = scan.entry_bytes(&brep_entry.name)?;
     let Some(start) = asm_header::record_stream_start(bytes) else {
         return Ok(None);
     };
     // A stream without a delta-state boundary is history-less: its final
     // `End-of-ASM-data` record ends at EOF without the `0x11` terminator, so
     // it needs the EOF-tolerant framer used for the history partition.
-    let framed = match active.delta_state_offset {
+    let framed = match brep_entry.solved_record_limit {
         Some(limit) => sab::frame(bytes, start, limit, usize::from(width)),
         None => sab::frame_history(bytes, start, bytes.len(), usize::from(width)),
     };
@@ -2607,7 +2636,7 @@ fn try_decode_brep(scan: &ContainerScan, active: &BrepFacts) -> Result<Option<Br
         _ => return Ok(None),
     };
 
-    let decoded = brep::decode(&records, bytes, &active.name);
+    let decoded = brep::decode(&records, bytes, &brep_entry.name);
     if decoded.surfaces.is_empty() && decoded.points.is_empty() && decoded.faces.is_empty() {
         return Ok(None);
     }
@@ -2617,11 +2646,11 @@ fn try_decode_brep(scan: &ContainerScan, active: &BrepFacts) -> Result<Option<Br
 /// Assemble the IR document from the decoded B-rep graph.
 fn build_geometry_ir(
     scan: &ContainerScan,
-    active: &BrepFacts,
+    primary_model_brep: &BrepFacts,
     brep: Brep,
 ) -> (CadIr, F3dNative, Vec<UnknownRecord>) {
     let mut ir = CadIr::empty(Units::default());
-    let (source, tolerances) = source_and_tolerances(scan, active);
+    let (source, tolerances) = source_and_tolerances(scan, primary_model_brep);
     ir.source = Some(source);
     ir.tolerances = tolerances;
 
@@ -2661,8 +2690,11 @@ fn build_geometry_ir(
     (ir, native, brep.unknowns)
 }
 
-/// Source metadata attributes and kernel tolerances from the active BREP header.
-fn source_and_tolerances(scan: &ContainerScan, active: &BrepFacts) -> (SourceMeta, Tolerances) {
+/// Source metadata attributes and kernel tolerances from the primary model BREP header.
+fn source_and_tolerances(
+    scan: &ContainerScan,
+    primary_model_brep: &BrepFacts,
+) -> (SourceMeta, Tolerances) {
     let mut attributes = std::collections::BTreeMap::new();
     if let Some(folder) = &scan.asset_folder {
         attributes.insert("asset_folder".to_string(), folder.clone());
@@ -2671,14 +2703,17 @@ fn source_and_tolerances(scan: &ContainerScan, active: &BrepFacts) -> (SourceMet
         "zip_entry_count".to_string(),
         scan.entries.len().to_string(),
     );
-    attributes.insert("active_brep".to_string(), active.name.clone());
-    attributes.insert("active_brep_sha256".to_string(), active.sha256.clone());
-    if let Some(off) = active.delta_state_offset {
-        attributes.insert("active_slice_len".to_string(), off.to_string());
+    attributes.insert("active_brep".to_string(), primary_model_brep.name.clone());
+    attributes.insert(
+        "active_brep_sha256".to_string(),
+        primary_model_brep.sha256.clone(),
+    );
+    if let Some(off) = primary_model_brep.solved_record_limit {
+        attributes.insert("solved_record_len".to_string(), off.to_string());
     }
 
     let mut tolerances = Tolerances::default();
-    if let Some(h) = &active.header {
+    if let Some(h) = &primary_model_brep.header {
         if let Some(pf) = &h.product_family {
             attributes.insert("product_family".to_string(), pf.clone());
         }
@@ -2835,7 +2870,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(
-                "{} active-slice application/refinement record(s) were not transferred: {}.",
+                "{} solved-record application/refinement record(s) were not transferred: {}.",
                 s.other_records,
                 s.other_record_kinds
                     .iter()
@@ -2883,11 +2918,11 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
         scan.entries.len().to_string(),
     );
 
-    if let Some(brep) = container::select_active_brep(scan) {
+    if let Some(brep) = container::select_fallback_brep(scan) {
         attributes.insert("active_brep".to_string(), brep.name.clone());
         attributes.insert("active_brep_sha256".to_string(), brep.sha256.clone());
-        if let Some(off) = brep.delta_state_offset {
-            attributes.insert("active_slice_len".to_string(), off.to_string());
+        if let Some(off) = brep.solved_record_limit {
+            attributes.insert("solved_record_len".to_string(), off.to_string());
         }
         if let Some(h) = &brep.header {
             if let Some(pf) = &h.product_family {
@@ -2934,7 +2969,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: format!(
-                "ASM BREP geometry was not transferred: the active stream is not a decodable \
+                "ASM BREP geometry was not transferred: the selected stream is not a decodable \
                  BinaryFile4/BinaryFile8 SAB (or its framing failed). {brep_count} BREP stream(s) \
                  were located, but no surfaces, curves, or points were produced."
             ),
@@ -2961,7 +2996,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         },
     ];
 
-    if container::select_active_brep(scan).is_none() {
+    if container::select_fallback_brep(scan).is_none() {
         losses.push(LossNote {
             code: LossCode::MissingGeometryStream,
             category: LossCategory::Geometry,

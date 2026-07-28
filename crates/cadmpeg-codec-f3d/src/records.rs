@@ -3270,8 +3270,8 @@ pub struct XrefReference {
     /// Occurrence-role GUID joining this reference to the Design-segment
     /// `DcXRefPCIFeature` record and the ACT GUID pool.
     pub neutron_role: String,
-    /// The `neutronData` property GUID; carries the same GUID as
-    /// `neutron_role`.
+    /// The independent `neutronData` property value. It is retained exactly
+    /// and is never inferred from or aliased to `neutron_role`.
     pub neutron_data: String,
     /// Source Design occurrence transform in centimetres. `None` is the
     /// serialized identity-placement form.

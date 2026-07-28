@@ -612,10 +612,9 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
     let ref_width = header
         .as_ref()
         .map_or(8, |header| usize::from(header.width));
-    let release_major = header
+    let save_format_major = header
         .as_ref()
-        .and_then(|header| header.release)
-        .map(|release| release / 100);
+        .and_then(crate::asm_header::AsmHeader::save_format_major);
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records);
@@ -676,7 +675,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         records,
         bytes,
         &subtype_tables,
-        release_major,
+        save_format_major,
         &carriers,
         &reach,
     );

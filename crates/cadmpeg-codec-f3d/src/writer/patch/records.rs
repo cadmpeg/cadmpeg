@@ -321,7 +321,7 @@ pub(crate) fn patch_body_native_keys(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
     let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
@@ -351,7 +351,7 @@ pub(crate) fn patch_transform_hints(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
     let ref_width = active_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
@@ -397,7 +397,7 @@ pub(crate) fn patch_tolerant_coedge_parameters(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
     let ref_width = active_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
@@ -433,7 +433,7 @@ pub(crate) fn patch_wire_topologies(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
     let ref_width = active_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
@@ -475,7 +475,7 @@ pub(crate) fn patch_edge_ownerships(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
     let ref_width = active_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;

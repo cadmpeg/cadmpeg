@@ -21,6 +21,8 @@ use crate::records::{XrefDesign, XrefReference};
 pub const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
 /// Top-level container entry holding the document-properties slot.
 pub const PROPERTIES_ENTRY: &str = "Properties.dat";
+/// Top-level JSON document carrying component-reference extension data.
+pub const COMPONENT_REFERENCE_ENTRY: &str = "ComponentReferenceData.json";
 
 /// The parsed `RedirectionsStream.dat` table.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -102,8 +104,44 @@ impl ReferenceJson {
     }
 }
 
+/// Validate `ComponentReferenceData.json`, if present.
+///
+/// The stable grammar is an open top-level JSON object. Member names and values
+/// are application-defined extension data: the codec validates the envelope,
+/// preserves the original ZIP entry byte-for-byte, and performs no semantic
+/// projection without a separately identified field contract.
+fn validate_component_reference_data(scan: &ContainerScan) -> Result<(), CodecError> {
+    if !scan
+        .entries
+        .iter()
+        .any(|entry| entry.name == COMPONENT_REFERENCE_ENTRY)
+    {
+        return Ok(());
+    }
+    parse_component_reference_data(scan.entry_bytes(COMPONENT_REFERENCE_ENTRY)?)?;
+    Ok(())
+}
+
+fn parse_component_reference_data(bytes: &[u8]) -> Result<serde_json::Value, CodecError> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
+        CodecError::Malformed(format!(
+            "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"
+        ))
+    })?;
+    if !value.is_object() {
+        return Err(CodecError::Malformed(format!(
+            "{COMPONENT_REFERENCE_ENTRY} must contain a top-level JSON object"
+        )));
+    }
+    Ok(value)
+}
+
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
 pub fn decode(scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
+    // Validate the extension document independently of whether a redirections
+    // table is present. Its members are application-defined and retained by
+    // source fidelity, so no field-level semantics are guessed here.
+    validate_component_reference_data(scan)?;
     let Ok(bytes) = scan.entry_bytes(REDIRECTIONS_ENTRY) else {
         return Ok(None);
     };
@@ -475,6 +513,28 @@ fn decode_rigid_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn redirections_keep_neutron_role_and_data_independent() {
+        let table = super::parse(
+            br#"{"designs":[],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role-guid","dataType":"STRING"}},{"neutronData":{"value":"data-guid","dataType":"STRING"}}]}]}"#,
+        )
+        .expect("redirections JSON");
+        assert_eq!(table.references.len(), 1);
+        assert_eq!(table.references[0].neutron_role, "role-guid");
+        assert_eq!(table.references[0].neutron_data, "data-guid");
+    }
+
+    #[test]
+    fn component_reference_data_is_an_open_json_object() {
+        let value = super::parse_component_reference_data(
+            br#"{"schema":7,"references":[{"id":"component"}],"extension":{"x":true}}"#,
+        )
+        .expect("open component-reference object");
+        assert_eq!(value["schema"], 7);
+        assert!(super::parse_component_reference_data(br"[]").is_err());
+        assert!(super::parse_component_reference_data(b"not-json").is_err());
+    }
+
     fn placement_record(
         index: u64,
         transforms: &[[[f64; 4]; 4]],

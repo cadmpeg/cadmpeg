@@ -3381,7 +3381,7 @@ pub(crate) fn emit_coedges(
     records: &[Record],
     bytes: &[u8],
     subtype_tables: &nurbs::subtypes::SubtypeTables,
-    release_major: Option<u32>,
+    save_format_major: Option<u32>,
     carriers: &Carriers,
     reach: &Reachable,
 ) {
@@ -3415,7 +3415,7 @@ pub(crate) fn emit_coedges(
             let tolerant = if r.head == "tcoedge" {
                 match (r.chunk(11), r.chunk(12)) {
                     (Some(Token::Double(start)), Some(Token::Double(end))) => {
-                        let extension = match release_major {
+                        let extension = match save_format_major {
                             Some(major) if major > 219 => tolerant_coedge_extension(r),
                             Some(215..=219) => match r.chunk(13) {
                                 Some(Token::Ref(target)) => {
@@ -3636,7 +3636,7 @@ pub(crate) fn emit_containers(
                         .collect(),
                 });
             }
-            // ASM release 231 names this record `region`; release 227 streams
+            // Save-format 231 names this record `region`; format-227 streams
             // carry the original ACIS head `lump`. Same layout in both.
             "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };

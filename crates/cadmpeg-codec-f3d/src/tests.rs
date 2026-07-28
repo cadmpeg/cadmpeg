@@ -29,7 +29,7 @@ fn with_scan<T>(bytes: &[u8], f: impl FnOnce(&container::ContainerScan<'_>) -> T
 fn synthetic_smbh() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"ASM BinaryFile8"); // 0..15 magic
-    b.extend_from_slice(&23100u32.to_le_bytes()); // 15..19 release word
+    b.extend_from_slice(&23100u32.to_le_bytes()); // 15..19 save-format version
     b.extend_from_slice(&[0u8; 12]); // 19..31 zero
     b.extend_from_slice(&7u64.to_le_bytes()); // 31..39 entity-count word
     b.extend_from_slice(&3u64.to_le_bytes()); // 39..47 flags: history partition
@@ -44,13 +44,16 @@ fn synthetic_smbh() -> Vec<u8> {
     b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
     let active_len = b.len();
 
-    // History boundary: 0x11 0x0d 0x0b "delta_state" ... ([spec §4a](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#2-b-rep-streams-and-history-partition)).
-    b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
+    // History boundary: the preceding record's `0x11` terminator is followed
+    // by the exact `0x0d 0x0b "delta_state"` record-name token.
+    b.extend_from_slice(&[0x0d, 0x0b]);
     b.extend_from_slice(b"delta_state");
     b.extend_from_slice(&[0u8; 16]);
 
-    // Sanity: the delta_state string starts at active_len + 3.
-    assert_eq!(&b[active_len + 3..active_len + 3 + 11], b"delta_state");
+    // Sanity: the delta-state identifier starts immediately after the solved
+    // record sequence.
+    assert_eq!(&b[active_len..active_len + 2], &[0x0d, 0x0b]);
+    assert_eq!(&b[active_len + 2..active_len + 13], b"delta_state");
     b
 }
 
@@ -73,7 +76,7 @@ fn push_u8_string(b: &mut Vec<u8>, s: &str) {
 fn smbh_header_prefix() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"ASM BinaryFile8");
-    b.extend_from_slice(&23100u32.to_le_bytes()); // release word
+    b.extend_from_slice(&23100u32.to_le_bytes()); // save-format version
     b.extend_from_slice(&[0u8; 12]); // zero region
     b.extend_from_slice(&5u64.to_le_bytes()); // entity-count word
     b.extend_from_slice(&3u64.to_le_bytes()); // flags: history partition
@@ -496,7 +499,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
 }
 
 #[test]
-fn decode_selects_tolerant_coedge_extension_from_asm_release() {
+fn decode_selects_tolerant_coedge_extension_from_save_format() {
     for (release, fixed_tail, expected) in [
         (
             23000u32,
@@ -710,7 +713,7 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
         t_subident(&mut smbh, name);
     }
     t_ident(&mut smbh, "data"); // no trailing 0x11
-    assert!(crate::asm_header::first_delta_state_offset(&smbh).is_none());
+    assert!(crate::asm_header::solved_record_limit(&smbh).is_none());
 
     let decoded = F3dCodec
         .decode(
@@ -789,7 +792,7 @@ fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let body = &records[1];
@@ -816,7 +819,7 @@ fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let body = &records[1];
@@ -839,7 +842,7 @@ fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let face = &records[4];
@@ -862,7 +865,7 @@ fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let plane = records
@@ -925,7 +928,7 @@ fn synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh() -> Vec<u8> {
 
 fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[6];
     let mut surface = Vec::new();
@@ -992,7 +995,7 @@ fn synthetic_geometry_with_rational_pcurve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
@@ -1040,7 +1043,7 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
 fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
@@ -1076,7 +1079,7 @@ fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
 
 fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
@@ -1090,7 +1093,7 @@ fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> 
 
 fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
@@ -1106,7 +1109,7 @@ fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
 
 fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
@@ -1126,7 +1129,7 @@ fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8>
 fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let record = &mut bytes[edge.offset..edge.offset + edge.len];
@@ -1157,7 +1160,7 @@ fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1198,7 +1201,7 @@ fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_helix_curve_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let helix = records.iter().find(|record| record.index == 19).unwrap();
     let block = generated_curve_block();
@@ -1214,7 +1217,7 @@ fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
@@ -1267,7 +1270,7 @@ fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1307,7 +1310,7 @@ fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1340,7 +1343,7 @@ fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1394,7 +1397,7 @@ fn with_legacy_subtype(mut bytes: Vec<u8>, modern: &str, legacy: &str) -> Vec<u8
 fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1434,7 +1437,7 @@ fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1478,7 +1481,7 @@ fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1522,7 +1525,7 @@ fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1766,7 +1769,7 @@ fn synthetic_geometry_with_spring_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1824,7 +1827,7 @@ fn synthetic_geometry_with_cache_first_curve_smbh(
 ) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -2078,7 +2081,7 @@ fn push_revision_surface_tail(surface: &mut Vec<u8>) {
 fn synthetic_revision_surface_smbh(subtype: &str, body: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -2269,7 +2272,7 @@ fn generated_revision_loft_surface_round_trips() {
 fn synthetic_geometry_with_deformable_curve_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -2326,7 +2329,7 @@ fn synthetic_geometry_with_deformable_curve_smbh(mode: i64) -> Vec<u8> {
 fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let body = &records[1];
     let record = &mut bytes[body.offset..body.offset + body.len];
@@ -2370,7 +2373,7 @@ fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_sketch_link_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
@@ -2555,7 +2558,7 @@ fn synthetic_free_vertex_body_smbh() -> Vec<u8> {
 fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     for (record_index, reference_ordinal) in [(1usize, 3usize), (3, 5)] {
         let record = &records[record_index];
@@ -2642,7 +2645,7 @@ fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -2780,7 +2783,7 @@ fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
@@ -2821,7 +2824,7 @@ fn synthetic_cacheless_cyl_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
@@ -2852,7 +2855,7 @@ fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
 fn synthetic_exact_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -2890,7 +2893,7 @@ fn synthetic_exact_spl_sur_with_decoy_sense_smbh() -> Vec<u8> {
 fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -2917,7 +2920,7 @@ fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
 fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -2945,7 +2948,7 @@ fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
 fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -2971,7 +2974,7 @@ fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
 fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -3007,7 +3010,7 @@ fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
 fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -3040,7 +3043,7 @@ fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -3117,7 +3120,7 @@ fn append_generated_loft_section(bytes: &mut Vec<u8>, parameter: f64, direction:
 fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3155,7 +3158,7 @@ fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
 fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3198,7 +3201,7 @@ fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3246,7 +3249,7 @@ fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
 fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3286,7 +3289,7 @@ fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3336,7 +3339,7 @@ fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
 fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3377,7 +3380,7 @@ fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
 fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3435,7 +3438,7 @@ fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
 fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3491,7 +3494,7 @@ fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
 fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>) -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3560,7 +3563,7 @@ fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>) -> Vec<u8>
 fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
@@ -3600,7 +3603,7 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let records = crate::sab::frame(
         &bytes,
         asm_header::record_stream_start(&bytes).unwrap(),
-        asm_header::first_delta_state_offset(&bytes).unwrap(),
+        asm_header::solved_record_limit(&bytes).unwrap(),
         8,
     )
     .unwrap();
@@ -3616,7 +3619,7 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3664,7 +3667,7 @@ fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
 fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3717,7 +3720,7 @@ fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
 fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3771,7 +3774,7 @@ fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
 fn synthetic_law_driven_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3850,7 +3853,7 @@ fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
 fn synthetic_compound_loft_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3889,7 +3892,7 @@ fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) {
 fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3941,7 +3944,7 @@ fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
 fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4050,7 +4053,7 @@ fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
 fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool, tail_selector: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4127,7 +4130,7 @@ fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool, tail_selector: i6
 fn synthetic_sub_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4168,7 +4171,7 @@ fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
 fn synthetic_g2_blend_spl_sur_smbh(name: &str, full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4230,7 +4233,7 @@ fn synthetic_rational_cyl_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_ref_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let asmheader = &records[0];
     let surface = &records[9];
@@ -4256,7 +4259,7 @@ fn synthetic_ref_cyl_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -4313,7 +4316,7 @@ fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) 
 fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4429,7 +4432,7 @@ fn synthetic_variable_blend_smbh_with_selector(
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4526,7 +4529,7 @@ fn append_vertex_boundary_common(bytes: &mut Vec<u8>, kind: &str, x: f64) {
 fn synthetic_vertex_blend_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -5018,19 +5021,29 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         ));
     }
 
-    let invalid_rule = F3dCodec.decode(
-        &mut Cursor::new(f3d_with_configuration(
-            &synthetic_geometry_smbh(),
-            rule_name,
-            br#"{"when":"width > 20 mm"}"#,
-        )),
-        &DecodeOptions::default(),
+    let partial_rule = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_configuration(
+                &synthetic_geometry_smbh(),
+                rule_name,
+                br#"{"when":"width > 20 mm","vendorExtension":7}"#,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("partial native rule remains decodable");
+    assert!(partial_rule.ir.model.configurations.is_empty());
+    let partial_native = f3d_native(&partial_rule.ir);
+    assert_eq!(
+        partial_native.design_configurations[0].payload["vendorExtension"],
+        7
     );
-    assert!(matches!(
-        invalid_rule,
-        Err(cadmpeg_ir::codec::CodecError::Malformed(message))
-            if message.contains("`when` and `activate` must be paired strings")
-    ));
+    assert!(partial_rule
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(
+            "configuration rule(s) were retained without an unambiguous neutral activation target"
+        )));
 }
 
 #[test]
@@ -10073,8 +10086,11 @@ fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) ->
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
-    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
-        .unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+        stored,
+    )
+    .unwrap();
     zip.write_all(smbh).unwrap();
     for (ordinal, protein) in proteins.iter().enumerate() {
         zip.start_file(
@@ -10594,9 +10610,10 @@ fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
         zip.write_all(&synthetic_smbh()).unwrap();
     }
 
-    // A construction-snapshot .smb (header only, no delta_state).
+    // A history-less .smb (header only, no history partition).
     let mut smb = synthetic_smbh();
-    smb.truncate(60); // header prefix only, no delta_state marker
+    smb[39..47].copy_from_slice(&2u64.to_le_bytes());
+    smb.truncate(60); // header prefix only, no history partition
     zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)
         .unwrap();
     zip.write_all(&smb).unwrap();
@@ -10621,9 +10638,13 @@ fn asm_header_parses_documented_fields() {
     let bytes = synthetic_smbh();
     let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width, 8);
-    assert_eq!(h.release, Some(23100));
+    assert_eq!(h.save_format_version, Some(23100));
     assert_eq!(h.entity_count, Some(7));
     assert_eq!(h.flags, Some(3));
+    assert_eq!(h.save_format_major(), Some(231));
+    assert_eq!(h.save_format_minor(), Some(0));
+    assert!(h.has_history_partition());
+    assert_eq!(h.unassigned_flags(), Some(2));
     assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
     assert_eq!(h.product_version.as_deref(), Some("ASM 231.6.3.65535 OSX"));
     assert_eq!(h.save_date.as_deref(), Some("Tue Mar 31 16:16:19 2026"));
@@ -10639,12 +10660,12 @@ fn asm_header_absent_on_non_asm_bytes() {
 }
 
 /// The `BinaryFile4` fixed header ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)): 15-byte magic, four little-endian
-/// u32 words (release, record count, entity count, flags), then the same
+/// u32 words (save-format version, record count, entity count, flags), then the same
 /// tagged string/double sequence as `BinaryFile8`.
 fn bf4_header_prefix(flags: u32) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"ASM BinaryFile4");
-    b.extend_from_slice(&22700u32.to_le_bytes()); // ASM release word
+    b.extend_from_slice(&22700u32.to_le_bytes()); // ACIS save-format version
     b.extend_from_slice(&0u32.to_le_bytes()); // record count (unwritten)
     b.extend_from_slice(&2u32.to_le_bytes()); // entity count
     b.extend_from_slice(&flags.to_le_bytes());
@@ -10673,7 +10694,7 @@ fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
 
     let mut bytes = synthetic_geometry_bf4_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 4).unwrap();
     let ellipse_range = records[19].offset..records[19].offset + records[19].len;
 
@@ -10883,7 +10904,7 @@ fn asm_header_parses_binaryfile4_fields() {
     assert!(asm_header::has_asm_magic(&bytes));
     let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width, 4);
-    assert_eq!(h.release, Some(22700));
+    assert_eq!(h.save_format_version, Some(22700));
     assert_eq!(h.record_count, Some(0));
     assert_eq!(h.entity_count, Some(2));
     assert_eq!(h.flags, Some(5));
@@ -11049,14 +11070,52 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
 }
 
 #[test]
-fn delta_state_boundary_is_located() {
+fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let bytes = synthetic_smbh();
-    let off = asm_header::first_delta_state_offset(&bytes).expect("has a delta_state");
-    assert_eq!(&bytes[off..off + 11], b"delta_state");
-    // The .smb truncation removes the marker.
-    let mut smb = bytes.clone();
-    smb.truncate(60);
-    assert!(asm_header::first_delta_state_offset(&smb).is_none());
+    let off = asm_header::solved_record_limit(&bytes).expect("has a delta_state");
+    assert_eq!(&bytes[off..off + 2], &[0x0d, 0x0b]);
+    assert_eq!(&bytes[off + 2..off + 13], b"delta_state");
+
+    // The header flag is part of the partition contract. A history-less
+    // `.smb` with the same solved prefix has no partition boundary.
+    let mut smb = bytes;
+    smb[39..47].copy_from_slice(&2u64.to_le_bytes());
+    smb.truncate(off);
+    assert!(asm_header::solved_record_limit(&smb).is_none());
+}
+
+#[test]
+fn history_preamble_record_is_the_modern_partition_boundary() {
+    let direct = synthetic_smbh();
+    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let mut bytes = direct[..delta].to_vec();
+    let expected = bytes.len();
+    t_ident(&mut bytes, "Begin-of-ASM-History-Data");
+    t_end(&mut bytes);
+    bytes.extend_from_slice(&direct[delta..]);
+
+    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let solved = crate::sab::frame(&bytes, start, expected, 8).unwrap();
+    assert_eq!(
+        solved.last().map(|record| record.name.as_str()),
+        Some("body")
+    );
+}
+
+#[test]
+fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
+    let direct = synthetic_smbh();
+    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let start = asm_header::record_stream_start(&direct).unwrap();
+    let mut bytes = direct[..start].to_vec();
+    t_ident(&mut bytes, "metadata");
+    push_u8_string(&mut bytes, "delta_state");
+    t_end(&mut bytes);
+    let expected = bytes.len();
+    bytes.extend_from_slice(&direct[delta..]);
+
+    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
 }
 
 #[test]
@@ -11213,14 +11272,14 @@ fn inspect_enumerates_and_reads_headers() {
         Some("Autodesk Neutron")
     );
     assert_eq!(smbh.attributes.get("scale").map(String::as_str), Some("60"));
-    assert!(smbh.attributes.contains_key("delta_state_first_offset"));
+    assert!(smbh.attributes.contains_key("history_partition_offset"));
     assert!(smbh.attributes.contains_key("sha256"));
 
-    // The active history-stream selection prefers the .smbh.
+    // The header identifies the unique history-bearing stream.
     assert!(summary
         .notes
         .iter()
-        .any(|n| n.contains(".smbh history stream")));
+        .any(|n| n.contains("history-bearing BREP")));
 }
 
 #[test]
@@ -11240,7 +11299,7 @@ fn decode_yields_metadata_and_honest_report() {
         .iter()
         .any(|l| matches!(l.category, cadmpeg_ir::report::LossCategory::Geometry)));
 
-    // But the active BREP is preserved as an unknown passthrough with a hash,
+    // But the explicit fallback BREP is preserved as an unknown passthrough with a hash,
     // and source metadata was captured.
     let unknowns = result.ir.native_unknowns("f3d").unwrap();
     assert_eq!(unknowns.len(), 1);
@@ -11271,18 +11330,17 @@ fn decode_yields_metadata_and_honest_report() {
 }
 
 #[test]
-fn smb_only_is_reported_as_construction_snapshot() {
-    // With no .smbh present, only the .smb construction snapshot remains; it must
-    // be selected as a fallback but flagged as non-authoritative ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)).
+fn smb_only_is_an_explicit_geometry_fallback_without_history() {
     let f3d = synthetic_f3d(false);
     with_scan(&f3d, |scan| {
-        let active = container::select_active_brep(scan).unwrap();
-        assert!(!active.is_smbh);
+        let fallback = container::select_fallback_brep(scan).unwrap();
+        assert!(!fallback.is_smbh);
+        assert!(container::select_history_brep(scan).is_none());
         let summary = container::summarize(scan);
         assert!(summary
             .notes
             .iter()
-            .any(|n| n.contains("construction snapshot")));
+            .any(|note| note.contains("no BREP header declares a history partition")));
     });
 }
 
@@ -11312,7 +11370,7 @@ fn smbh_header_string_region_starts_at_byte_47() {
 fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("framing succeeds");
 
     // asmheader occupies index 0; the topology records follow in order.
@@ -12509,7 +12567,7 @@ fn decode_reports_faces_with_missing_surface_references() {
     for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
-        let limit = asm_header::first_delta_state_offset(&smbh).unwrap();
+        let limit = asm_header::solved_record_limit(&smbh).unwrap();
         let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
         let face = records
             .iter()
@@ -12573,7 +12631,7 @@ fn decode_reports_undecoded_edge_curve_kinds() {
 fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
-    let limit = asm_header::first_delta_state_offset(&smbh).unwrap();
+    let limit = asm_header::solved_record_limit(&smbh).unwrap();
     let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
     let edge = &records[10];
     let record = &mut smbh[edge.offset..edge.offset + edge.len];
@@ -19987,7 +20045,7 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
 fn generated_pcurve_reports_dangling_carrier_reference() {
     let mut smbh = synthetic_geometry_with_pcurve_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
-    let limit = asm_header::first_delta_state_offset(&smbh).unwrap();
+    let limit = asm_header::solved_record_limit(&smbh).unwrap();
     let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut smbh[coedge.offset..coedge.offset + coedge.len];
