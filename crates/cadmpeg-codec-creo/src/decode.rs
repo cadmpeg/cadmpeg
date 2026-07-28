@@ -15518,9 +15518,16 @@ fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>>
         .filter(|row| row.feature_id == feature_id)
         .collect::<Vec<_>>();
     (!generated_rows.is_empty()).then_some(())?;
-    generated_rows
+    let radii = round_observed_radii(scan, feature_id);
+    (radii.len() == generated_rows.len()).then_some(radii)
+}
+
+fn round_observed_radii(scan: &ContainerScan, feature_id: u32) -> Vec<f64> {
+    scan.surfaces
+        .rows
         .iter()
-        .map(|row| {
+        .filter(|row| row.feature_id == feature_id)
+        .filter_map(|row| {
             let parameters = unique_surface_parameter_record(scan, row)?;
             match row.kind {
                 crate::surface::SurfaceKind::Cylinder => {
@@ -15734,12 +15741,10 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 913 {
+        let observed_radii = round_observed_radii(scan, feature_id);
         let radius = round_constant_radius(scan, ir, feature_id).map_or_else(
             || RadiusSpec::Unresolved {
-                form: round_direct_radii(scan, feature_id)
-                    .as_deref()
-                    .is_some_and(differing_positive_lengths)
-                    .then_some(RadiusForm::Variable),
+                form: differing_positive_lengths(&observed_radii).then_some(RadiusForm::Variable),
             },
             |radius| RadiusSpec::Constant {
                 radius: Length(radius),
@@ -28614,6 +28619,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut unresolved_fillet_edge_selection_feature_count = 0;
     let mut native_fillet_edge_selection_feature_count = 0;
     let mut unresolved_fillet_radius_feature_count = 0;
+    let mut variable_radius_fillet_feature_count = 0;
     let mut chamfer_feature_count = 0;
     let mut incomplete_chamfer_feature_count = 0;
     let mut unresolved_chamfer_edge_selection_feature_count = 0;
@@ -28807,9 +28813,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                     || groups
                         .iter()
                         .any(|group| matches!(&group.radius, RadiusSpec::Unresolved { .. }));
+                let variable_radius = groups.iter().any(|group| {
+                    matches!(
+                        &group.radius,
+                        RadiusSpec::Unresolved {
+                            form: Some(RadiusForm::Variable)
+                        }
+                    )
+                });
                 unresolved_fillet_edge_selection_feature_count += usize::from(unresolved_edges);
                 native_fillet_edge_selection_feature_count += usize::from(native_edges);
                 unresolved_fillet_radius_feature_count += usize::from(unresolved_radius);
+                variable_radius_fillet_feature_count += usize::from(variable_radius);
                 incomplete_fillet_feature_count +=
                     usize::from(unresolved_edges || native_edges || unresolved_radius);
             }
@@ -29132,6 +29147,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_unresolved_fillet_radius_feature_count".to_string(),
         unresolved_fillet_radius_feature_count,
+    );
+    coverage.insert(
+        "transferred_variable_radius_fillet_feature_count".to_string(),
+        variable_radius_fillet_feature_count,
     );
     coverage.insert(
         "transferred_chamfer_feature_count".to_string(),

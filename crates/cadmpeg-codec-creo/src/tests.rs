@@ -3038,6 +3038,43 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         }])
     ));
 
+    let mut partial_geometry = visibgeom_payload(3, 0);
+    partial_geometry.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 8]);
+    partial_geometry.extend_from_slice(&cylinder_panel);
+    partial_geometry.extend_from_slice(&[0xe3, 8, 0x26, 4, 0x01, 0, 9]);
+    partial_geometry.extend_from_slice(&direct_quarter);
+    partial_geometry.extend_from_slice(&[9, 0x29, 4, 0x01, 0, 0, 0xe3]);
+    let partial = build_prt(
+        "c",
+        &[
+            ("VisibGeom", partial_geometry),
+            (
+                "AllFeatur",
+                vec![
+                    4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+                ],
+            ),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+    let result = CreoCodec
+        .decode(&mut Cursor::new(partial), &DecodeOptions::default())
+        .expect("decode");
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+            }, ..
+        }])
+    ));
+    assert_eq!(
+        result.report.coverage["transferred_variable_radius_fillet_feature_count"],
+        1
+    );
+
     let conflicting = round(&[
         0x18, 0x0d, 0x29, 0xdf, 0xff, 0x7b, 0x0e, 0x29, 0xdf, 0xff, 0xe3,
     ]);
