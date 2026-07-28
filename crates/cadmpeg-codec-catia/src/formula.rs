@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, DesignParameter, FeatureId, FeatureSourceContent, Length, ParameterId, ParameterValue,
+    Angle, DesignParameter, FeatureId, Length, ParameterId, ParameterValue,
 };
 use cadmpeg_ir::{Annotations, Exactness};
 
@@ -298,22 +298,6 @@ pub(crate) fn transfer_parameters(
         .iter()
         .filter(|candidate| candidate.parameter.owner.is_some())
         .count();
-    for candidate in &parameters {
-        let Some(owner) = &candidate.parameter.owner else {
-            continue;
-        };
-        let Some(feature) = ir
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| &feature.id == owner)
-        else {
-            continue;
-        };
-        feature.source_content.push(FeatureSourceContent::Parameter(
-            candidate.parameter.id.clone(),
-        ));
-    }
     ir.model
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));

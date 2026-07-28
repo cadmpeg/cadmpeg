@@ -6290,6 +6290,75 @@ fn structurally_owned_sketch_feature_retains_its_parent() {
         ir.model.features[1].parent.as_ref(),
         Some(&ir.model.features[0].id)
     );
+    crate::design_feature::project_feature_source_content(&mut ir, &native);
+    assert_eq!(
+        ir.model.features[0].source_content,
+        [cadmpeg_ir::features::FeatureSourceContent::Feature(
+            ir.model.features[1].id.clone()
+        )]
+    );
+}
+
+#[test]
+fn feature_source_content_interleaves_parameters_and_children_by_object_field_offset() {
+    use cadmpeg_ir::features::{DesignParameter, FeatureSourceContent, ParameterId};
+
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4, 5, 6]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "OwnerAnchor",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    crate::design_feature::transfer_design_features(&mut ir, &native);
+    let parent = ir.model.features[0].id.clone();
+    let child = ir.model.features[1].id.clone();
+    let parent_object = &native.design_objects[0];
+    let parameter = |ordinal: u32, field: &str, name: &str| {
+        let entity = native
+            .entity_records
+            .iter()
+            .find(|entity| entity.object_record == field)
+            .expect("field's paired entity");
+        DesignParameter {
+            id: ParameterId(format!("catia:test:parameter#{name}")),
+            owner: Some(parent.clone()),
+            ordinal,
+            name: name.to_string(),
+            expression: String::new(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(entity.id.clone()),
+        }
+    };
+    let before = parameter(0, &parent_object.fields[1], "before");
+    let after = parameter(1, &parent_object.fields[3], "after");
+    ir.model.parameters.extend([before.clone(), after.clone()]);
+
+    crate::design_feature::project_feature_source_content(&mut ir, &native);
+
+    assert_eq!(
+        ir.model.features[0].source_content,
+        [
+            FeatureSourceContent::Parameter(before.id),
+            FeatureSourceContent::Feature(child),
+            FeatureSourceContent::Parameter(after.id),
+        ]
+    );
 }
 
 #[test]
@@ -6324,6 +6393,12 @@ fn later_structural_sketch_owner_does_not_become_a_forward_parent() {
         .features
         .iter()
         .all(|feature| feature.parent.is_none()));
+    crate::design_feature::project_feature_source_content(&mut ir, &native);
+    assert!(ir
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.source_content.is_empty()));
 }
 
 #[test]
@@ -9024,6 +9099,7 @@ fn transferred_formula_parameter_retains_a_transferred_feature_owner() {
         &design_feature_transfer.features_by_design_object,
         &mut cadmpeg_ir::Annotations::default(),
     );
+    crate::design_feature::project_feature_source_content(&mut ir, &native);
     assert_eq!(formula_transfer.owned_parameter_count, 2);
 
     let parameter = ir

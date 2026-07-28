@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PrincipalPlane, SketchSpace};
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, PrincipalPlane, SketchSpace,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
@@ -156,6 +158,106 @@ pub(crate) fn transfer_design_features(
     }
 
     transfer
+}
+
+/// Project exact design-object membership into ordered feature source content.
+pub(crate) fn project_feature_source_content(ir: &mut CadIr, native: &CatiaNative) {
+    let design_objects = native
+        .design_objects
+        .iter()
+        .map(|object| (object.id.as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let object_records = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .map(|record| (record.id.as_str(), record))
+        .collect::<HashMap<_, _>>();
+    let entity_records = native
+        .entity_records
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect::<HashMap<_, _>>();
+    let features_by_design_object = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let native_ref = feature.native_ref.as_deref()?;
+            design_objects
+                .contains_key(native_ref)
+                .then_some((native_ref, feature.id.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut content = HashMap::<FeatureId, Vec<(u64, FeatureSourceContent)>>::new();
+
+    for feature in &ir.model.features {
+        let Some(child_object) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| design_objects.get(native_ref))
+        else {
+            continue;
+        };
+        let Some(parent) = feature.parent.as_ref() else {
+            continue;
+        };
+        if child_object
+            .owner_design_object
+            .as_deref()
+            .and_then(|owner| features_by_design_object.get(owner))
+            != Some(parent)
+        {
+            continue;
+        }
+        content.entry(parent.clone()).or_default().push((
+            child_object.first_field_byte_offset,
+            FeatureSourceContent::Feature(feature.id.clone()),
+        ));
+    }
+
+    for parameter in &ir.model.parameters {
+        let Some(owner) = parameter.owner.as_ref() else {
+            continue;
+        };
+        let Some(owner_object) = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| &feature.id == owner)
+            .and_then(|feature| feature.native_ref.as_deref())
+        else {
+            continue;
+        };
+        let Some(object_record) = parameter
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| entity_records.get(native_ref))
+            .and_then(|entity| object_records.get(entity.object_record.as_str()))
+        else {
+            continue;
+        };
+        if object_record.design_object.as_deref() != Some(owner_object) {
+            continue;
+        }
+        content.entry(owner.clone()).or_default().push((
+            object_record.byte_offset,
+            FeatureSourceContent::Parameter(parameter.id.clone()),
+        ));
+    }
+
+    for feature in &mut ir.model.features {
+        if !feature
+            .native_ref
+            .as_deref()
+            .is_some_and(|native_ref| design_objects.contains_key(native_ref))
+        {
+            continue;
+        }
+        let mut items = content.remove(&feature.id).unwrap_or_default();
+        items.sort_by_key(|(offset, _)| *offset);
+        feature.source_content = items.into_iter().map(|(_, item)| item).collect();
+    }
 }
 
 struct DesignFeatureCandidate<'a> {

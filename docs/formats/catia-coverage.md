@@ -44,7 +44,8 @@ current scores require those matrices and representative fixtures.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, value, expression, and dependency identities resolve exactly.
   Parameters structurally contained by a transferred feature retain that
-  feature ownership and source-content order; other parameters remain
+  feature ownership. Structurally owned child features and parameters share
+  one object-field-ordered source-content sequence; other parameters remain
   document-scoped.
   Legacy named scalar packets also transfer when a unique acyclic descriptor
   chain resolves their literal numeric type. A uniquely bound zero-input
