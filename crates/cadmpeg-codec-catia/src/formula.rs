@@ -136,6 +136,10 @@ pub(crate) fn transfer_parameters(
             })
             .flatten()
             .filter(|value| value.satisfies_source_type(&signature.result_type));
+        let input_parameters = transferred
+            .iter()
+            .map(|candidate| candidate.parameter.clone())
+            .collect::<Vec<_>>();
         if let Some(output) = formula
             .parameter
             .as_deref()
@@ -157,6 +161,7 @@ pub(crate) fn transfer_parameters(
                                 expression_entity: expression_entity.id.clone(),
                                 output: output_id.clone(),
                                 inputs: dependencies.clone(),
+                                input_parameters,
                             });
                             transferred.push(FormulaParameterCandidate {
                                 parameter: DesignParameter {
@@ -192,9 +197,19 @@ pub(crate) fn transfer_parameters(
         for mut candidate in transferred {
             match candidates.get(&candidate.parameter.id) {
                 Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
-                    conflicting.insert(candidate.parameter.id);
+                    match (existing.formula_output, candidate.formula_output) {
+                        (true, _) => {}
+                        (false, true) => {
+                            conflicting.remove(&candidate.parameter.id);
+                            candidates.insert(candidate.parameter.id.clone(), candidate);
+                        }
+                        (false, false) => {
+                            conflicting.insert(candidate.parameter.id);
+                        }
+                    }
                 }
                 Some(existing) if !existing.formula_output && candidate.formula_output => {
+                    conflicting.remove(&candidate.parameter.id);
                     candidate.input_fallback = Some(existing.parameter.clone());
                     candidates.insert(candidate.parameter.id.clone(), candidate);
                 }
@@ -218,18 +233,33 @@ pub(crate) fn transfer_parameters(
     }
     candidates.retain(|id, candidate| {
         match (candidate.formula_output, formula_definition_counts.get(id)) {
-            (true, Some(count)) if *count != 1 => {
-                let Some(input) = candidate.input_fallback.take() else {
-                    return false;
-                };
-                candidate.parameter = input;
-                candidate.formula_output = false;
-                true
-            }
+            (true, Some(count)) if *count != 1 => demote_formula_output(candidate),
             (true, Some(_)) => true,
             (false, _) | (true, None) => true,
         }
     });
+    let invalid_outputs = programs
+        .iter()
+        .filter(|program| {
+            program.input_parameters.iter().any(|input| {
+                !candidates.get(&input.id).is_some_and(|candidate| {
+                    formula_parameter_candidate_accepts_input(candidate, input)
+                })
+            })
+        })
+        .map(|program| program.output.clone())
+        .collect::<HashSet<_>>();
+    for output in invalid_outputs {
+        let Some(candidate) = candidates.get_mut(&output) else {
+            continue;
+        };
+        if !candidate.formula_output {
+            continue;
+        }
+        if !demote_formula_output(candidate) {
+            candidates.remove(&output);
+        }
+    }
     loop {
         let invalid = candidates
             .iter()
@@ -521,6 +551,7 @@ struct FormulaProgramCandidate {
     expression_entity: String,
     output: ParameterId,
     inputs: Vec<ParameterId>,
+    input_parameters: Vec<DesignParameter>,
 }
 
 fn formula_parameter_candidates_agree(
@@ -547,6 +578,26 @@ fn formula_parameter_matches_input(formula: &DesignParameter, input: &DesignPara
         && formula.properties == input.properties
         && formula.pmi == input.pmi
         && formula.native_ref == input.native_ref
+}
+
+fn formula_parameter_candidate_accepts_input(
+    candidate: &FormulaParameterCandidate,
+    input: &DesignParameter,
+) -> bool {
+    if candidate.formula_output {
+        formula_parameter_matches_input(&candidate.parameter, input)
+    } else {
+        candidate.parameter == *input
+    }
+}
+
+fn demote_formula_output(candidate: &mut FormulaParameterCandidate) -> bool {
+    let Some(input) = candidate.input_fallback.take() else {
+        return false;
+    };
+    candidate.parameter = input;
+    candidate.formula_output = false;
+    true
 }
 
 enum TypedParameterEvaluation {

@@ -2123,12 +2123,14 @@ enum FormulaChainCase {
     Cyclic,
     DuplicateTerminal,
     DuplicateIntermediate,
+    IncompatibleDownstream,
 }
 
 fn standard_catpart_with_formula_chain(case: FormulaChainCase) -> Vec<u8> {
     let cyclic = matches!(case, FormulaChainCase::Cyclic);
     let duplicate_terminal = matches!(case, FormulaChainCase::DuplicateTerminal);
     let duplicate_intermediate = matches!(case, FormulaChainCase::DuplicateIntermediate);
+    let incompatible_downstream = matches!(case, FormulaChainCase::IncompatibleDownstream);
     let definition = |ordinal: u32| {
         let mut bytes = vec![0x00, 0x08, 0x32];
         bytes.extend_from_slice(&ordinal.to_le_bytes());
@@ -2255,8 +2257,18 @@ fn standard_catpart_with_formula_chain(case: FormulaChainCase) -> Vec<u8> {
         "Intermediate",
         "#2_ /3",
         "#2_ ",
-        if cyclic { "#2_ /3" } else { "#2_ /3+1mm" },
-        "(#2_ : #In LENGTH) : LENGTH",
+        if cyclic {
+            "#2_ /3"
+        } else if incompatible_downstream {
+            "#2_ /3+1"
+        } else {
+            "#2_ /3+1mm"
+        },
+        if incompatible_downstream {
+            "(#2_ : #In Real) : Real"
+        } else {
+            "(#2_ : #In LENGTH) : LENGTH"
+        },
         "Final",
         "#3_ /4",
     ];
@@ -10238,6 +10250,29 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     assert!(intermediate.dependencies.is_empty());
     assert_eq!(output.expression, "#2_ /3+1mm");
     assert_eq!(output.dependencies, std::slice::from_ref(&intermediate.id));
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+        .findings
+        .is_empty());
+}
+
+#[test]
+fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_chain(
+                FormulaChainCase::IncompatibleDownstream,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode incompatible downstream formula");
+    let [input, intermediate] = decoded.ir.model.parameters.as_slice() else {
+        panic!("upstream formula parameters")
+    };
+
+    assert_eq!(input.name, "Input");
+    assert_eq!(intermediate.name, "Intermediate");
+    assert_eq!(intermediate.expression, "#1_ /2+1mm");
+    assert_eq!(intermediate.dependencies, std::slice::from_ref(&input.id));
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .is_empty());
