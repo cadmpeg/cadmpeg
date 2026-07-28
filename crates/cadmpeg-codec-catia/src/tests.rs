@@ -1902,6 +1902,39 @@ fn standard_catpart_with_parser_version_relation_expression(
     file
 }
 
+fn standard_catpart_with_unprefixed_parser_version_relation_expression(
+    parser_version_role: &str,
+) -> Vec<u8> {
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
+    let mut value = Vec::new();
+    for ordinal in 5u32..=9 {
+        value.push(0x32);
+        value.extend_from_slice(&ordinal.to_le_bytes());
+    }
+    value.push(0xfe);
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
+    let mut stream = entity_table_record_with_definition_and_value(1, &definition, &value);
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "body",
+        "360.0*1 deg/#1_",
+        parser_version_role,
+        "param",
+        "(#1_ : #In Integer) : ANGLE\n",
+        "RelationExpFct",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
     let value = [0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0xfe];
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
@@ -7968,7 +8001,7 @@ fn parser_version_relation_expression_retains_its_distinct_framing() {
         .as_ref()
         .expect("parser-version relation expression");
 
-    let crate::native::CatiaRelationExpressionFraming::ParserVersion {
+    let crate::native::CatiaRelationExpressionFraming::BooleanParserVersion {
         prefix_role,
         parser_version_role,
     } = &expression.framing
@@ -7992,6 +8025,67 @@ fn parser_version_relation_expression_retains_its_distinct_framing() {
         [("#1_", "LENGTH"), ("#2_", "LENGTH")]
     );
     assert_eq!(signature.result_type, "Real");
+}
+
+#[test]
+fn unprefixed_parser_version_relation_expression_retains_its_distinct_framing() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_unprefixed_parser_version_relation_expression("ParserVersion"),
+    );
+    let expression = native.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .expect("unprefixed parser-version relation expression");
+
+    let crate::native::CatiaRelationExpressionFraming::ParserVersion {
+        parser_version_role,
+    } = &expression.framing
+    else {
+        panic!("unprefixed parser-version framing")
+    };
+    assert_eq!(expression.expression.value, "360.0*1 deg/#1_");
+    assert_eq!(parser_version_role.value, "ParserVersion");
+    assert_eq!(expression.parameter_role.value, "param");
+    let signature = expression.signature.as_ref().expect("typed signature");
+    assert_eq!(
+        signature.inputs,
+        [crate::native::CatiaRelationTypeInput {
+            parameter: "#1_".to_string(),
+            input_type: "Integer".to_string(),
+        }]
+    );
+    assert_eq!(signature.result_type, "ANGLE");
+}
+
+#[test]
+fn unprefixed_parser_version_relation_expression_requires_the_exact_version_role() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_unprefixed_parser_version_relation_expression("ParserRevision"),
+    );
+
+    assert!(native.entity_records[0].relation_expression.is_none());
+}
+
+#[test]
+fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incidence() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(
+                standard_catpart_with_unprefixed_parser_version_relation_expression(
+                    "ParserVersion",
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unprefixed parser-version expression");
+
+    assert!(decoded.ir.model.parameters.is_empty());
+    assert_eq!(
+        decoded.report.coverage["decoded_relation_expression_count"],
+        1
+    );
+    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
+    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
 }
 
 #[test]

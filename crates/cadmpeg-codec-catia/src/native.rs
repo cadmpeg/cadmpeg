@@ -893,8 +893,13 @@ pub enum CatiaRelationExpressionFraming {
         /// Exact `opened` selector.
         state_role: CatiaEntitySchemaValue,
     },
-    /// Exact `Boolean` and `ParserVersion` role selectors.
+    /// Exact `ParserVersion` role selector without a prefix role.
     ParserVersion {
+        /// Exact `ParserVersion` selector.
+        parser_version_role: CatiaEntitySchemaValue,
+    },
+    /// Exact `Boolean` and `ParserVersion` role selectors.
+    BooleanParserVersion {
         /// Exact `Boolean` prefix selector.
         prefix_role: CatiaEntitySchemaValue,
         /// Exact `ParserVersion` selector.
@@ -1769,43 +1774,68 @@ fn relation_expression(
     {
         return None;
     }
-    let [first, expression, third, fourth, fifth, function_role] = values else {
-        return None;
-    };
-    if function_role.name != "RelationExpFct" {
-        return None;
-    }
     let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
         entry: selection.entry.clone(),
         value: selection.name.clone(),
     };
-    let (framing, parameter_role, type_signature, signature) = if third.name == "param"
-        && fifth.name == "opened"
-    {
-        let placeholder = schema_value(first);
-        let signature = relation_type_signature(Some(&placeholder.value), &fourth.name);
-        (
-            CatiaRelationExpressionFraming::PlaceholderState {
-                placeholder,
-                state_role: schema_value(fifth),
-            },
-            third,
-            fourth,
-            signature,
-        )
-    } else if first.name == "Boolean" && third.name == "ParserVersion" && fourth.name == "param" {
-        (
-            CatiaRelationExpressionFraming::ParserVersion {
-                prefix_role: schema_value(first),
-                parser_version_role: schema_value(third),
-            },
-            fourth,
-            fifth,
-            relation_type_signature(None, &fifth.name),
-        )
-    } else {
-        return None;
-    };
+    let (framing, expression, parameter_role, type_signature, function_role, signature) =
+        match values {
+            [placeholder, expression, parameter_role, type_signature, state_role, function_role]
+                if parameter_role.name == "param"
+                    && state_role.name == "opened"
+                    && function_role.name == "RelationExpFct" =>
+            {
+                let placeholder = schema_value(placeholder);
+                let signature =
+                    relation_type_signature(Some(&placeholder.value), &type_signature.name);
+                (
+                    CatiaRelationExpressionFraming::PlaceholderState {
+                        placeholder,
+                        state_role: schema_value(state_role),
+                    },
+                    expression,
+                    parameter_role,
+                    type_signature,
+                    function_role,
+                    signature,
+                )
+            }
+            [prefix_role, expression, parser_version_role, parameter_role, type_signature, function_role]
+                if prefix_role.name == "Boolean"
+                    && parser_version_role.name == "ParserVersion"
+                    && parameter_role.name == "param"
+                    && function_role.name == "RelationExpFct" =>
+            {
+                (
+                    CatiaRelationExpressionFraming::BooleanParserVersion {
+                        prefix_role: schema_value(prefix_role),
+                        parser_version_role: schema_value(parser_version_role),
+                    },
+                    expression,
+                    parameter_role,
+                    type_signature,
+                    function_role,
+                    relation_type_signature(None, &type_signature.name),
+                )
+            }
+            [expression, parser_version_role, parameter_role, type_signature, function_role]
+                if parser_version_role.name == "ParserVersion"
+                    && parameter_role.name == "param"
+                    && function_role.name == "RelationExpFct" =>
+            {
+                (
+                    CatiaRelationExpressionFraming::ParserVersion {
+                        parser_version_role: schema_value(parser_version_role),
+                    },
+                    expression,
+                    parameter_role,
+                    type_signature,
+                    function_role,
+                    relation_type_signature(None, &type_signature.name),
+                )
+            }
+            _ => return None,
+        };
     Some(CatiaRelationExpression {
         framing,
         expression: schema_value(expression),
