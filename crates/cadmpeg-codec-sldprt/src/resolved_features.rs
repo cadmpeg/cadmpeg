@@ -941,7 +941,7 @@ fn extended_compact_linked_profile_point_coordinates(
         || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
         || !matches!(
             payload.get(offset + 74..offset + 78),
-            Some([0x00, 0x00, 0x02 | 0x03, 0x00])
+            Some([0x00 | 0x01, 0x00, 0x02 | 0x03, 0x00])
         )
     {
         return None;
@@ -7341,6 +7341,17 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+        payload[74..76].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(
+            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            Some([0.8, 0.0125])
+        );
+        payload[74..76].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            None
+        );
+        payload[74..76].copy_from_slice(&1u16.to_le_bytes());
         payload[76..78].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(
             extended_compact_linked_profile_point_coordinates(&payload, 0),
