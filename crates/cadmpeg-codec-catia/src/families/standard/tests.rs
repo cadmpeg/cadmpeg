@@ -377,6 +377,15 @@ fn incidence_propagation_closes_degree_one_vertices_before_search() {
 }
 
 #[test]
+fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
+    let mut choices = vec![vec![[0, 1], [2, 3]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, 4)
+        .expect("face incidence is satisfiable");
+    assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
+}
+
+#[test]
 fn incidence_component_does_not_charge_a_forced_viable_pair() {
     let choices = vec![vec![[0, 0], [1, 1]]];
     let edge_faces = [[0, 0]];

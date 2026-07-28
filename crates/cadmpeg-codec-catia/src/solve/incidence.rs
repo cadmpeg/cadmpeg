@@ -43,6 +43,35 @@ pub(crate) fn prune_incidence_choices(
         })
     }
 
+    fn preserves_degree_support(
+        choices: &[Vec<[usize; 2]>],
+        fixed: &[bool],
+        degrees: &[Vec<u8>],
+        edge_faces: &[[usize; 2]],
+        face_edges: &[Vec<usize>],
+        edge: usize,
+        pair: [usize; 2],
+    ) -> bool {
+        unique_faces(edge_faces[edge]).all(|face| {
+            degrees[face]
+                .iter()
+                .copied()
+                .enumerate()
+                .all(|(point, degree)| {
+                    let selected_degree =
+                        pair.iter().filter(|candidate| **candidate == point).count();
+                    degree + selected_degree as u8 != 1
+                        || face_edges[face].iter().copied().any(|supporting_edge| {
+                            supporting_edge != edge
+                                && !fixed[supporting_edge]
+                                && choices[supporting_edge]
+                                    .iter()
+                                    .any(|candidate| candidate.contains(&point))
+                        })
+                })
+        })
+    }
+
     if choices.len() != edge_faces.len()
         || choices.iter().any(Vec::is_empty)
         || edge_faces.iter().flatten().any(|face| *face >= face_count)
@@ -69,7 +98,23 @@ pub(crate) fn prune_incidence_choices(
                 continue;
             }
             let before = choices[edge].len();
-            choices[edge].retain(|pair| fits(&degrees, edge_faces, edge, *pair));
+            let retained = choices[edge]
+                .iter()
+                .copied()
+                .filter(|pair| {
+                    fits(&degrees, edge_faces, edge, *pair)
+                        && preserves_degree_support(
+                            choices,
+                            &fixed,
+                            &degrees,
+                            edge_faces,
+                            &face_edges,
+                            edge,
+                            *pair,
+                        )
+                })
+                .collect::<Vec<_>>();
+            choices[edge] = retained;
             changed |= choices[edge].len() != before;
             let [pair] = choices[edge].as_slice() else {
                 if choices[edge].is_empty() {
