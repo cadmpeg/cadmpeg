@@ -1089,10 +1089,15 @@ fn group_layout(
 fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
     (be::u16_at(stream, offset) == Some(91)).then_some(())?;
     let direct = type_91_layout(stream, offset, 0);
-    let escaped = (stream.get(offset + 2) == Some(&0xff))
+    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| type_91_layout(stream, offset, 1))
         .flatten();
-    let (xmt, references, end) = unique_layout(direct, escaped)?;
+    let (xmt, references, end) = if escaped_marker {
+        escaped.or(direct)?
+    } else {
+        direct?
+    };
     Some(Record {
         kind: 91,
         xmt,

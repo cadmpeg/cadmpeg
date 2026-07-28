@@ -6163,13 +6163,19 @@ fn deltas_walks_complete_type_91_records() {
 
     let direct = record(false, 10, 0);
     let escaped = record(true, 11, 1);
+    let zero_flag_escaped = record(true, 12, 0);
+    let escaped_with_null_tail = vec![
+        0, 91, 0xff, 1, 89, 0, 0, 0, 0, 0, 202, 1, 1, 88, 1, 1, 90, 1, 1, 41, 1, 0, 1, 1, 0, 1, 1,
+    ];
     let mut stream = direct.clone();
     stream.extend_from_slice(&escaped);
+    stream.extend_from_slice(&zero_flag_escaped);
+    stream.extend_from_slice(&escaped_with_null_tail);
     let record_len = stream.len();
     stream.extend_from_slice(&[0xfe, 0xdc]);
 
     let census = crate::deltas::walk(&stream);
-    assert_eq!(census.records.len(), 2);
+    assert_eq!(census.records.len(), 4);
     assert_eq!(census.records[0].kind, 91);
     assert_eq!(census.records[0].xmt, 10);
     assert_eq!(census.records[0].node_id, None);
@@ -6177,7 +6183,9 @@ fn deltas_walks_complete_type_91_records() {
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(census.records[1].xmt, 11);
     assert_eq!(census.records[1].canonical_bytes, escaped);
-    assert_eq!(census.full_counts["TYPE_91"], 2);
+    assert_eq!(census.records[2].canonical_bytes, zero_flag_escaped);
+    assert_eq!(census.records[3].canonical_bytes, escaped_with_null_tail);
+    assert_eq!(census.full_counts["TYPE_91"], 4);
     assert_eq!(census.bytes_decoded, record_len);
 
     let residual = crate::deltas::semantic_residual(&stream);
