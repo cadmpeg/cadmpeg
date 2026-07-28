@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 150;
+pub const CATIA_NATIVE_VERSION: u32 = 151;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2356,6 +2356,8 @@ pub enum CatiaLegacyScalarEncoding {
 /// One complete typed scalar packet in a legacy identity interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaLegacyScalarValue {
+    /// Stable native identity derived from the containing run and packet offset.
+    pub id: String,
     /// Offset of the packet prefix.
     pub byte_offset: u64,
     /// Stored containing identity.
@@ -2534,13 +2536,14 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
         .into_iter()
         .enumerate()
         .map(|(index, run)| {
+            let id = format!("catia:legacy-entity-run#{index}");
             let byte_offset = run
                 .identities
                 .first()
                 .expect("legacy run has identity one")
                 .offset;
             CatiaLegacyEntityRun {
-                id: format!("catia:legacy-entity-run#{index}"),
+                id: id.clone(),
                 byte_offset: byte_offset as u64,
                 byte_len: (run.catalog_offset - byte_offset) as u64,
                 catalog_offset: run.catalog_offset as u64,
@@ -2621,6 +2624,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                     .scalar_values
                     .into_iter()
                     .map(|value| CatiaLegacyScalarValue {
+                        id: format!("{id}:scalar#{}", value.offset),
                         byte_offset: value.offset as u64,
                         entity_id: value.entity_id,
                         encoding: match value.encoding {
@@ -2761,7 +2765,8 @@ fn validate_legacy_entity_runs(
                 .windows(2)
                 .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
             && run.scalar_values.iter().all(|value| {
-                value.byte_offset >= run.byte_offset
+                value.id == format!("{}:scalar#{}", run.id, value.byte_offset)
+                    && value.byte_offset >= run.byte_offset
                     && value.byte_offset < run.catalog_offset
                     && run
                         .identities

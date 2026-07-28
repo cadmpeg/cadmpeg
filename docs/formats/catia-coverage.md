@@ -41,6 +41,8 @@ current scores require those matrices and representative fixtures.
   occurrences.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, value, expression, and dependency identities resolve exactly.
+  Legacy named scalar packets also transfer when one co-owned literal numeric
+  type descriptor uniquely supplies their type.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, trigonometric calls, absolute values, and
   square roots.

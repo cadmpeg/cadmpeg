@@ -3168,6 +3168,78 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
 }
 
 #[test]
+fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.push(0x81);
+    bytes.extend([0xfd, 0x8c]);
+    bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+    bytes.extend(b"\xe8\x00\x12\x01");
+    bytes.extend([6, b'W', b'i', b'd', b't', b'h', 0xfe]);
+    bytes.extend(b"\xfe\x84\x92\x82");
+    bytes.extend([7, b'L', b'E', b'N', b'G', b'T', b'H', 0x83]);
+    bytes.extend(b"\xfe\x84\x88\x82\xfe\xe6");
+    bytes.extend(12.5_f64.to_bits().to_le_bytes());
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode typed legacy parameter");
+
+    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+        panic!("one transferred legacy parameter")
+    };
+    assert_eq!(parameter.name, "Width");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::ParameterValue::Length(
+            cadmpeg_ir::features::Length(12.5)
+        ))
+    );
+    assert_eq!(parameter.expression, "12.5 mm");
+    assert!(parameter
+        .native_ref
+        .as_deref()
+        .is_some_and(|id| id.contains(":scalar#")));
+    assert_eq!(
+        decoded.report.coverage["transferred_legacy_parameter_count"],
+        1
+    );
+}
+
+#[test]
+fn decode_rejects_a_legacy_parameter_with_multiple_type_descriptors() {
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.push(0x81);
+    bytes.extend([0xfd, 0x8c]);
+    bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+    bytes.extend(b"\xe8\x00\x12\x01");
+    bytes.extend([6, b'W', b'i', b'd', b't', b'h', 0xfe]);
+    for value_type in [b"LENGTH".as_slice(), b"Real".as_slice()] {
+        bytes.extend(b"\xfe\x84\x92\x82");
+        bytes.push(u8::try_from(value_type.len() + 1).expect("short type"));
+        bytes.extend(value_type);
+        bytes.push(0x83);
+    }
+    bytes.extend(b"\xfe\x84\x88\x82\xfe\xe6");
+    bytes.extend(12.5_f64.to_bits().to_le_bytes());
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode ambiguous legacy parameter");
+
+    assert!(decoded.ir.model.parameters.is_empty());
+    assert_eq!(
+        decoded.report.coverage["transferred_legacy_parameter_count"],
+        0
+    );
+}
+
+#[test]
 fn decode_zero_entity_transfers_framed_cylinder() {
     let mut cur = Cursor::new(zero_entity_cylinder_catpart());
     let result = CatiaCodec
@@ -9992,6 +10064,9 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].scalar_values[0].encoding,
         crate::native::CatiaLegacyScalarEncoding::Named84
     );
+    assert!(native.legacy_entity_runs[0].scalar_values[0]
+        .id
+        .starts_with("catia:legacy-entity-run#0:scalar#"));
     assert!(matches!(
         native.legacy_entity_runs[0].scalar_values[0].evaluation,
         crate::native::CatiaLegacyScalarEvaluation::Value { bits }
@@ -10022,6 +10097,15 @@ fn native_round_trips_legacy_entity_identity_runs() {
     invalid_name
         .store(&mut namespace)
         .expect("store invalid legacy scalar name");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+
+    let mut invalid_scalar_id = native.clone();
+    invalid_scalar_id.legacy_entity_runs[0].scalar_values[0].id =
+        "catia:legacy-entity-run#0:scalar#0".to_string();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_scalar_id
+        .store(&mut namespace)
+        .expect("store invalid legacy scalar identity");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
     let mut invalid = native;

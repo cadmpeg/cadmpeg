@@ -28,6 +28,7 @@ pub(crate) fn transfer_parameters(
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting = BTreeSet::<ParameterId>::new();
     let mut programs = Vec::<FormulaProgramCandidate>::new();
+    let legacy_parameter_count = collect_legacy_parameters(native, &mut candidates);
 
     for formula_entity in &native.entity_records {
         let Some(formula) = &formula_entity.formula_relation else {
@@ -286,15 +287,88 @@ pub(crate) fn transfer_parameters(
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
     FormulaTransfer {
-        parameter_count: transferred,
+        formula_parameter_count: transferred.saturating_sub(legacy_parameter_count),
+        legacy_parameter_count,
         consumed_object_records,
     }
 }
 
 #[derive(Default)]
 pub(crate) struct FormulaTransfer {
-    pub(crate) parameter_count: usize,
+    pub(crate) formula_parameter_count: usize,
+    pub(crate) legacy_parameter_count: usize,
     pub(crate) consumed_object_records: HashSet<String>,
+}
+
+fn collect_legacy_parameters(
+    native: &CatiaNative,
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+) -> usize {
+    let mut transferred = 0;
+    for run in &native.legacy_entity_runs {
+        for scalar in &run.scalar_values {
+            if scalar.encoding != crate::native::CatiaLegacyScalarEncoding::Named84 {
+                continue;
+            }
+            let (Some(name), crate::native::CatiaLegacyScalarEvaluation::Value { bits }) =
+                (&scalar.name, &scalar.evaluation)
+            else {
+                continue;
+            };
+            let mut descriptors = run
+                .type_descriptors
+                .iter()
+                .filter(|descriptor| descriptor.entity_id == scalar.entity_id);
+            let Some(crate::native::CatiaLegacyTypeValue::Name { value: value_type }) =
+                descriptors.next().map(|descriptor| &descriptor.value)
+            else {
+                continue;
+            };
+            if descriptors.next().is_some() {
+                continue;
+            }
+            let evaluation = crate::native::CatiaEntityEvaluation::Scalar { bits: *bits };
+            let Some(TypedParameterEvaluation::Value(value)) =
+                typed_parameter_evaluation(value_type, &evaluation)
+            else {
+                continue;
+            };
+            let id = ParameterId(format!("{}:parameter", scalar.id));
+            if candidates.contains_key(&id) {
+                continue;
+            }
+            candidates.insert(
+                id.clone(),
+                FormulaParameterCandidate {
+                    parameter: DesignParameter {
+                        id,
+                        owner: None,
+                        ordinal: 0,
+                        name: name.clone(),
+                        expression: match &value {
+                            ParameterValue::Length(Length(value)) => format!("{value} mm"),
+                            ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
+                            ParameterValue::Real(value) => value.to_string(),
+                            ParameterValue::Integer(value) => value.to_string(),
+                            ParameterValue::Boolean(_) | ParameterValue::String(_) => {
+                                unreachable!()
+                            }
+                        },
+                        display: None,
+                        value: Some(value),
+                        dependencies: Vec::new(),
+                        properties: BTreeMap::new(),
+                        pmi: None,
+                        native_ref: Some(scalar.id.clone()),
+                    },
+                    formula_output: false,
+                    source_order: scalar.byte_offset,
+                },
+            );
+            transferred += 1;
+        }
+    }
+    transferred
 }
 
 struct FormulaParameterCandidate {
