@@ -904,7 +904,7 @@ mod tests {
             panic!("one edge stride")
         };
         assert_eq!(edge_stride.record_ordinal, 1);
-        assert_eq!(edge_stride.references, [1, 2, 3, 4, 5, 1]);
+        assert_eq!(edge_stride.references, [1, 2, 7, 8, 5, 1]);
 
         let pairs = zero_entity_oriented_use_pairs(&stream);
         let [pair] = pairs.as_slice() else {

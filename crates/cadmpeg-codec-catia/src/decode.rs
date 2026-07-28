@@ -518,6 +518,15 @@ fn finish_decode(
             native.zero_entity_edge_strides.len(),
         ),
         (
+            "decoded_zero_entity_edge_support_binding_count".to_string(),
+            native
+                .zero_entity_edge_strides
+                .iter()
+                .filter(|edge| edge.adjacent_support_records.is_some())
+                .count()
+                * 2,
+        ),
+        (
             "decoded_zero_entity_face_bound_support_run_count".to_string(),
             native
                 .zero_entity_support_runs
@@ -585,6 +594,14 @@ fn finish_decode(
         (
             "decoded_zero_entity_vertex_incidence_count".to_string(),
             native.zero_entity_vertex_incidences.len(),
+        ),
+        (
+            "decoded_zero_entity_vertex_owner_binding_count".to_string(),
+            native
+                .zero_entity_vertex_incidences
+                .iter()
+                .filter(|incidence| incidence.vertex_record.is_some())
+                .count(),
         ),
         (
             "decoded_object_graph_count".to_string(),
@@ -911,6 +928,17 @@ fn finish_decode(
             .flat_map(|face| &face.loops)
             .map(|loop_record| loop_record.forward_senses.len())
             .sum::<usize>();
+        let edge_support_binding_count = native
+            .zero_entity_edge_strides
+            .iter()
+            .filter(|edge| edge.adjacent_support_records.is_some())
+            .count()
+            * 2;
+        let vertex_owner_binding_count = native
+            .zero_entity_vertex_incidences
+            .iter()
+            .filter(|incidence| incidence.vertex_record.is_some())
+            .count();
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
@@ -920,13 +948,15 @@ fn finish_decode(
                  occurrence(s), including {endpoint_count} with exact UV endpoint pairs; \
                  {face_count} run(s) bind the complete face roster with {loop_terminal_count} \
                  ordered loop terminal(s), {loop_record_count} loop record(s), and \
-                 {oriented_loop_member_count} stored member sense(s); {} edge-stride record(s), \
-                 {} oriented-use pair(s), and {} vertex-incidence record(s) remain separate \
-                 because their cross-registry binding is unresolved.",
+                 {oriented_loop_member_count} stored member sense(s); {} edge-stride record(s) \
+                 bind {edge_support_binding_count} adjacent support record(s), and \
+                 {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
+                 adjacent vertex owner; {} oriented-use pair(s) remain separate because the \
+                 loop-to-use and use-to-incidence bindings are unresolved.",
                 native.zero_entity_support_runs.len(),
                 native.zero_entity_edge_strides.len(),
-                native.zero_entity_oriented_use_pairs.len(),
                 native.zero_entity_vertex_incidences.len(),
+                native.zero_entity_oriented_use_pairs.len(),
             ),
             provenance: None,
         });

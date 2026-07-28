@@ -83,13 +83,17 @@ current scores require those matrices and representative fixtures.
   inline UV endpoint pair when that family stores one. The independent `5e1a`
   edge-stride, `2569`/`0638` positional-use, and counted `05xx`
   vertex-incidence registries retain one-based global record ordinals and exact
-  references against a complete framed-record identity inventory.
+  references against a complete framed-record identity inventory. Each
+  edge-stride atomically binds its two typed adjacent support records. Each
+  counted vertex-incidence record binds its immediately following `5d06`
+  vertex-owner record.
   A complete `5fxx` face roster binds positionally to those support tapes and
   retains each face's counted allocations and ordered loop terminals.
   Complete `62xx` loop rosters bind to those terminals and retain alternating
   logical-member and typed-reference lanes, loop class, and absolute member
   senses.
-  Cross-registry physical-edge and incidence binding remains unresolved.
+  Loop-to-oriented-use, oriented-use-to-incidence, and physical endpoint
+  binding remain unresolved.
 
 ## Evidence required to raise a score
 
