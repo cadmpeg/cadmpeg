@@ -4537,13 +4537,86 @@ fn decode_reports_exact_consolidated_line_profiles() {
         decoded.report.coverage["decoded_consolidated_line_profile_count"],
         1
     );
+    assert_eq!(
+        decoded.report.coverage["transferred_consolidated_line_profile_count"],
+        0
+    );
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::Geometry
             && loss
                 .message
-                .contains("1 consolidated line-profile record(s)")
+                .contains("1 non-unit consolidated line-profile record(s)")
             && loss.message.contains("owner bindings")
     }));
+}
+
+#[test]
+fn decode_transfers_unit_metric_consolidated_line_profiles() {
+    let mut profile = b2_line_profile_stream();
+    profile[53..61].copy_from_slice(&1.0_f64.to_le_bytes());
+    let mut file = standard_catpart();
+    file.splice(16..16, profile);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode unit-metric line profile");
+    assert_eq!(
+        decoded.report.coverage["transferred_consolidated_line_profile_count"],
+        1
+    );
+    let line = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            curve
+                .id
+                .0
+                .starts_with("catia:consolidated:line-profile-curve#")
+        })
+        .expect("transferred line profile");
+    assert!(matches!(
+        line.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction }
+            if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
+    ));
+    assert!(!decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("consolidated line-profile record(s)")));
+}
+
+#[test]
+fn transferred_line_profile_identity_retains_its_native_ordinal() {
+    let mut unit_profile = b2_line_profile_stream();
+    unit_profile[53..61].copy_from_slice(&1.0_f64.to_le_bytes());
+    let mut file = standard_catpart();
+    file.splice(16..16, [b2_line_profile_stream(), unit_profile].concat());
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode mixed-metric line profiles");
+    let line_ids = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            curve
+                .id
+                .0
+                .starts_with("catia:consolidated:line-profile-curve#")
+        })
+        .map(|curve| curve.id.0.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(line_ids, ["catia:consolidated:line-profile-curve#1"]);
 }
 
 #[test]

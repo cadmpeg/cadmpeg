@@ -84,6 +84,9 @@ current scores require those matrices and representative fixtures.
   consolidated circle transfers a placed analytic directrix and neutral
   surface-of-revolution construction. Missing and multiply matching intervals
   remain unbound atomically.
+- A consolidated line profile with exact unit metric transfers its placed
+  analytic line carrier. Non-unit profiles remain native until their metric
+  parameter equation resolves.
 - A standard binary32 cylinder, cone, sphere, or torus face carrier is refined
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;

@@ -352,6 +352,8 @@ Payload layouts `0x32..=0x34` store `<record_id:compact> <center_pair:2f64le> <r
 
 The 72-byte payload is `<origin:3f64le> <direction:3f64le> <metric_scale:f64le> <parameter_min:f64le> <parameter_max:f64le>`. The direction is unit length, the metric scale is positive, and the stored parameter interval is strictly increasing.
 
+When `metric_scale=1`, the record defines a placed line carrier with the stored origin and direction. Its neutral parameter is signed distance in millimetres. Retain the stored interval independently of unresolved ownership.
+
 ### 5.11 Cylinder record `b2 03 28`
 
 Three payload layouts encode cylinder charts. Layout `0x5a` is `<origin:3f64le> <frame_token:u8> <vector:2f64le> <one:f64le> <radius:f64le> <u_range:2f64le> <v_range:2f64le> 07`. The vector is unit length and `one=1`. Frame token `0x19` makes `(vx,vy,0)` the axis and `(-vy,vx,0)` the reference direction. Frame token `0x1c` makes `(vx,vy,0)` the reference direction and `(vy,-vx,0)` the axis. Layout `0x52` is `<origin:3f64le> 1d <one:f64le> <one:f64le> <radius:f64le> <u_range:2f64le> <v_range:2f64le> 07`; its axis is `(1,0,0)` and reference direction is `(0,1,0)`.

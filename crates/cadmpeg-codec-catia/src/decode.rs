@@ -456,6 +456,17 @@ fn finish_decode(
         .iter()
         .map(|block| block.schema_selections.len())
         .sum();
+    let transferred_line_profile_count = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            curve
+                .id
+                .0
+                .starts_with("catia:consolidated:line-profile-curve#")
+        })
+        .count();
     report.coverage.extend([
         (
             "decoded_consolidated_circle_count".to_string(),
@@ -492,6 +503,10 @@ fn finish_decode(
         (
             "decoded_consolidated_line_profile_count".to_string(),
             native.consolidated_line_profiles.len(),
+        ),
+        (
+            "transferred_consolidated_line_profile_count".to_string(),
+            transferred_line_profile_count,
         ),
         (
             "decoded_consolidated_parameter_point_count".to_string(),
@@ -898,16 +913,41 @@ fn finish_decode(
             ir.model.configurations.len(),
         ),
     ]);
-    if !native.consolidated_line_profiles.is_empty() {
+    let unresolved_line_profile_count = native
+        .consolidated_line_profiles
+        .iter()
+        .filter(|line| line.metric_scale.to_bits() != 1.0_f64.to_bits())
+        .count();
+    if unresolved_line_profile_count > 0 {
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
-                "{} consolidated line-profile record(s) retain their exact origin, unit \
+                "{unresolved_line_profile_count} non-unit consolidated line-profile record(s) \
+                 retain their exact origin, unit \
                  direction, metric scalar, and parameter interval, but their owner bindings and \
-                 metric-scalar parameter semantics remain unresolved.",
-                native.consolidated_line_profiles.len(),
+                 metric-scalar parameter semantics remain unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let unit_line_profile_count = native
+        .consolidated_line_profiles
+        .iter()
+        .filter(|line| line.metric_scale.to_bits() == 1.0_f64.to_bits())
+        .count();
+    let untransferred_unit_line_profile_count =
+        unit_line_profile_count.saturating_sub(transferred_line_profile_count);
+    if untransferred_unit_line_profile_count > 0 {
+        report.losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{untransferred_unit_line_profile_count} unit-metric consolidated line-profile \
+                 record(s) retain exact line geometry but were not transferred by the active \
+                 geometry route."
             ),
             provenance: None,
         });

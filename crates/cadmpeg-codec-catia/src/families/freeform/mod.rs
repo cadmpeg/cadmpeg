@@ -84,6 +84,7 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         }
     }
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
+    append_consolidated_line_profiles(&mut ir, &mut annotations, &scan.data);
     let mut losses = if topology_transferred && b5_complete {
         vec![LossNote {
             code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
@@ -199,6 +200,40 @@ fn freeform_surface_source(
     }
 }
 
+/// Transfer every consolidated line profile whose metric parameter is signed distance.
+fn append_consolidated_line_profiles(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    data: &[u8],
+) {
+    for (index, line) in crate::families::b2::records::b2_line_profiles(data)
+        .into_iter()
+        .enumerate()
+        .filter(|(_, line)| line.metric_scale.to_bits() == 1.0_f64.to_bits())
+    {
+        let id = CurveId(format!("catia:consolidated:line-profile-curve#{index}"));
+        annotate(
+            annotations,
+            &id,
+            "consolidated_b2_03_0e",
+            line.pos as u64,
+            "unit_metric_line_profile",
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(line.origin[0], line.origin[1], line.origin[2]),
+                direction: Vector3::new(line.direction[0], line.direction[1], line.direction[2]),
+            },
+            source_object: Some(cgm_source_key(
+                "b2-03-0e-frame",
+                format!("{:010}", line.pos),
+            )),
+        });
+    }
+}
+
 pub(crate) fn append_freeform_surface_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -277,6 +312,8 @@ pub(crate) fn append_freeform_surface_pools(
             record_bounds: None,
         });
     }
+
+    append_consolidated_line_profiles(ir, annotations, data);
 
     for guide in crate::families::a5a8::records::a5_guide_curves(data) {
         let points = guide
