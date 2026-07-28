@@ -918,6 +918,13 @@ struct CurveTransferCoverage {
 }
 
 #[derive(Default)]
+struct SketchSegmentTransferCoverage {
+    decoded_rows: usize,
+    resolved_geometry: usize,
+    missing_rows: usize,
+}
+
+#[derive(Default)]
 struct DesignConstraintTransferCoverage {
     transferred: usize,
     native: usize,
@@ -11426,7 +11433,12 @@ fn solver_only_section_entity_family(
     evidence.next().is_none().then_some(family)
 }
 
-fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn transfer_sketches(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> SketchSegmentTransferCoverage {
+    let mut coverage = SketchSegmentTransferCoverage::default();
     for definition in scan
         .features
         .definitions
@@ -11449,6 +11461,14 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .segments
             .as_ref()
             .is_some_and(crate::feature::FeatureSegmentTable::is_complete);
+        if let Some(table) = &definition.segments {
+            let decoded_rows = table.rows.len() + table.opaque_rows.len();
+            let expected_rows = usize::try_from(table.declared_count)
+                .expect("u32 segment count fits usize")
+                .saturating_sub(usize::from(table.has_elided_prototype));
+            coverage.decoded_rows += decoded_rows;
+            coverage.missing_rows += expected_rows.saturating_sub(decoded_rows);
+        }
         let points = resolved_section_points(definition);
         let radii = resolved_section_radii(definition);
         let missing_line_geometry = saved_section_missing_line_geometry(definition);
@@ -11526,6 +11546,17 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .collect::<BTreeSet<_>>();
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(definition);
+        coverage.resolved_geometry += resolved_segment_offsets.len();
+        coverage.resolved_geometry += definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.opaque_rows)
+            .filter(|segment| {
+                opaque_geometries.contains_key(&segment.offset)
+                    || (unique_segment_ids.contains(&segment.external_id)
+                        && materialized_saved_section_external_ids.contains(&segment.external_id))
+            })
+            .count();
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
         let generated_profile_geometries = segments
             .iter()
@@ -12314,6 +12345,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             });
         }
     }
+    coverage
 }
 
 fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
@@ -25400,7 +25432,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
-    transfer_sketches(scan, &mut ir, &mut annotations);
+    let sketch_segment_coverage = transfer_sketches(scan, &mut ir, &mut annotations);
     let feature_revolution_surface_count =
         transfer_resolved_revolution_surfaces(scan, &mut ir, &mut annotations);
     let feature_revolution_vertex_orbit_curve_count =
@@ -25623,6 +25655,24 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "transferred_part_product_count".to_string(),
             usize::from(transferred_part_product),
+        );
+        coverage.insert(
+            "decoded_feature_segment_row_count".to_string(),
+            sketch_segment_coverage.decoded_rows,
+        );
+        coverage.insert(
+            "resolved_feature_segment_geometry_count".to_string(),
+            sketch_segment_coverage.resolved_geometry,
+        );
+        coverage.insert(
+            "unresolved_feature_segment_geometry_count".to_string(),
+            sketch_segment_coverage
+                .decoded_rows
+                .saturating_sub(sketch_segment_coverage.resolved_geometry),
+        );
+        coverage.insert(
+            "missing_feature_segment_row_count".to_string(),
+            sketch_segment_coverage.missing_rows,
         );
         coverage.insert(
             "decoded_feature_skamp_count".to_string(),
@@ -28671,6 +28721,32 @@ fn build_report(
             message: format!(
                 "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
                  identity and were not resolved to a single carrier."
+            ),
+            provenance: None,
+        });
+    }
+    let missing_segment_rows = count("missing_feature_segment_row_count");
+    if missing_segment_rows != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_segment_rows} declared section segment row(s) did not decode and remain \
+                 unavailable to the defining sketch."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_segment_geometry = count("unresolved_feature_segment_geometry_count");
+    if unresolved_segment_geometry != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_segment_geometry} decoded section segment(s) retain source-native \
+                 geometry because their exact neutral construction remains unresolved."
             ),
             provenance: None,
         });

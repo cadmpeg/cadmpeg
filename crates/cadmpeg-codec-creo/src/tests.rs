@@ -4257,8 +4257,76 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .len(),
         4
     );
+    let coverage = &result.report.coverage;
+    assert_eq!(coverage["decoded_feature_segment_row_count"], 4);
+    assert_eq!(coverage["resolved_feature_segment_geometry_count"], 0);
+    assert_eq!(coverage["unresolved_feature_segment_geometry_count"], 4);
+    assert_eq!(coverage["missing_feature_segment_row_count"], 0);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossCode::GeometryNotTransferred
+            && loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "4 decoded section segment(s) retain source-native geometry because their exact \
+                 neutral construction remains unresolved",
+            )
+    }));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn decode_reports_missing_declared_section_segment_rows() {
+    let mut payload =
+        b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+    payload.extend_from_slice(b"dimtab_ptr\0");
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode incomplete segment table");
+    let coverage = &result.report.coverage;
+
+    assert_eq!(coverage["decoded_feature_segment_row_count"], 1);
+    assert_eq!(coverage["missing_feature_segment_row_count"], 1);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
+            && loss.category == cadmpeg_ir::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "1 declared section segment row(s) did not decode and remain unavailable to the \
+                 defining sketch",
+            )
+    }));
+}
+
+#[test]
+fn decode_counts_resolved_section_segment_geometry() {
+    let mut payload =
+        b"feat_defs_40\0var_arr\0\xf8\x04\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
+    payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    payload.extend_from_slice(&[1, 8, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 5, 0xe2]);
+    payload.extend_from_slice(&[2, 8, 0xe4, 0x0f, 1, 0, 6, 0xe2]);
+    payload.extend_from_slice(b"segtab_ptr\0\xf8\x01\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2");
+    payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+    payload.extend_from_slice(b"dimtab_ptr\0");
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode resolved segment");
+    let coverage = &result.report.coverage;
+
+    assert_eq!(coverage["decoded_feature_segment_row_count"], 1);
+    assert_eq!(coverage["resolved_feature_segment_geometry_count"], 1);
+    assert_eq!(coverage["unresolved_feature_segment_geometry_count"], 0);
+    assert_eq!(coverage["missing_feature_segment_row_count"], 0);
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("decoded section segment(s) retain source-native geometry")
+    }));
 }
 
 #[test]
