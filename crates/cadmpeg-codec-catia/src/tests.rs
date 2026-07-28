@@ -9827,6 +9827,9 @@ fn native_round_trips_legacy_entity_identity_runs() {
                 bytes.extend(value.as_bytes());
                 bytes.push(0xfe);
             }
+        } else if entity_id == 9 {
+            bytes.extend(b"\xfe\x85\x88\x82\xfe\xe6");
+            bytes.extend(3.5_f64.to_bits().to_le_bytes());
         }
     }
     let catalog_offset = bytes.len();
@@ -9854,6 +9857,12 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].relations[0].inputs[0].parameter,
         "#1_"
     );
+    assert_eq!(native.legacy_entity_runs[0].scalar_values.len(), 1);
+    assert!(matches!(
+        native.legacy_entity_runs[0].scalar_values[0].evaluation,
+        crate::native::CatiaLegacyScalarEvaluation::Value { bits }
+            if bits == 3.5_f64.to_bits()
+    ));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

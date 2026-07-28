@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 143;
+pub const CATIA_NATIVE_VERSION: u32 = 144;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2295,6 +2295,29 @@ pub struct CatiaLegacyRelation {
     pub result_type: String,
 }
 
+/// Evaluation stored by a complete legacy scalar packet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaLegacyScalarEvaluation {
+    /// Finite binary64 scalar.
+    Value {
+        /// Exact IEEE-754 bits.
+        bits: u64,
+    },
+    /// Stored unset evaluation.
+    Unset,
+}
+
+/// One complete typed scalar packet in a legacy identity interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyScalarValue {
+    /// Offset of the packet prefix.
+    pub byte_offset: u64,
+    /// Stored containing identity.
+    pub entity_id: u32,
+    /// Stored evaluation.
+    pub evaluation: CatiaLegacyScalarEvaluation,
+}
+
 /// A monotonically identified pre-`7C05` run and its terminating catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaLegacyEntityRun {
@@ -2312,6 +2335,8 @@ pub struct CatiaLegacyEntityRun {
     pub text_fields: Vec<CatiaLegacyTextField>,
     /// Complete expression/signature pairs.
     pub relations: Vec<CatiaLegacyRelation>,
+    /// Complete typed scalar packets.
+    pub scalar_values: Vec<CatiaLegacyScalarValue>,
 }
 
 /// CATIA-native records retained outside the format-neutral model.
@@ -2515,6 +2540,22 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         }
                     })
                     .collect(),
+                scalar_values: run
+                    .scalar_values
+                    .into_iter()
+                    .map(|value| CatiaLegacyScalarValue {
+                        byte_offset: value.offset as u64,
+                        entity_id: value.entity_id,
+                        evaluation: match value.evaluation {
+                            legacy_entity::LegacyScalarEvaluation::Value(bits) => {
+                                CatiaLegacyScalarEvaluation::Value { bits }
+                            }
+                            legacy_entity::LegacyScalarEvaluation::Unset => {
+                                CatiaLegacyScalarEvaluation::Unset
+                            }
+                        },
+                    })
+                    .collect(),
             }
         })
         .collect()
@@ -2590,6 +2631,25 @@ fn validate_legacy_entity_runs(
                             && field.byte_offset == relation.signature_offset
                             && field.value == relation.type_signature
                     })
+            })
+            && run
+                .scalar_values
+                .windows(2)
+                .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
+            && run.scalar_values.iter().all(|value| {
+                value.byte_offset >= run.byte_offset
+                    && value.byte_offset < run.catalog_offset
+                    && run
+                        .identities
+                        .iter()
+                        .rfind(|identity| identity.byte_offset < value.byte_offset)
+                        .is_some_and(|identity| identity.entity_id == value.entity_id)
+                    && match value.evaluation {
+                        CatiaLegacyScalarEvaluation::Value { bits } => {
+                            f64::from_bits(bits).is_finite()
+                        }
+                        CatiaLegacyScalarEvaluation::Unset => true,
+                    }
             });
         if !valid {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

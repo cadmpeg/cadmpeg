@@ -3,6 +3,7 @@
 
 const CATALOG_OPEN: &[u8] = b"\xde\x04\xfe\xfe\x12CATCatalogManager";
 const TEXT_OPEN: &[u8] = b"\xe8\x00\x12\x01";
+const SCALAR_OPEN: &[u8] = b"\xfe\x85\x88\x82\xfe";
 
 /// Length production used by one legacy schema text field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +64,26 @@ pub struct LegacyRelation {
     pub signature: LegacyRelationSignature,
 }
 
+/// Evaluation stored by a complete legacy scalar packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyScalarEvaluation {
+    /// `E6` followed by finite binary64 bits.
+    Value(u64),
+    /// `E7` without a scalar payload.
+    Unset,
+}
+
+/// One complete typed scalar packet in an identity interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LegacyScalarValue {
+    /// Offset of the fixed packet prefix.
+    pub offset: usize,
+    /// Stored identity whose interval contains the packet.
+    pub entity_id: u32,
+    /// Stored evaluation.
+    pub evaluation: LegacyScalarEvaluation,
+}
+
 /// One stored entity identity in a legacy identity run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LegacyEntityIdentity {
@@ -83,6 +104,8 @@ pub struct LegacyEntityRun {
     pub text_fields: Vec<LegacyTextField>,
     /// Complete expression/signature pairs.
     pub relations: Vec<LegacyRelation>,
+    /// Complete typed scalar packets.
+    pub scalar_values: Vec<LegacyScalarValue>,
 }
 
 /// Parse complete legacy identity runs terminated by the fixed schema-catalog opener.
@@ -126,12 +149,60 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         })
         .collect::<Vec<_>>();
     let relations = parse_relations(&text_fields);
+    let scalar_values = identities
+        .iter()
+        .enumerate()
+        .flat_map(|(index, identity)| {
+            let start = identity.offset + 6;
+            let end = identities
+                .get(index + 1)
+                .map_or(catalog_offset, |next| next.offset);
+            parse_scalar_values(data, start, end, identity.entity_id)
+        })
+        .collect();
     Some(LegacyEntityRun {
         catalog_offset,
         identities,
         text_fields,
         relations,
+        scalar_values,
     })
+}
+
+fn parse_scalar_values(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    entity_id: u32,
+) -> Vec<LegacyScalarValue> {
+    memchr::memmem::find_iter(&data[start..end], SCALAR_OPEN)
+        .filter_map(|relative| {
+            let offset = start + relative;
+            if offset.checked_add(6)? > end {
+                return None;
+            }
+            let opcode = *data.get(offset + SCALAR_OPEN.len())?;
+            let evaluation = match opcode {
+                0xe6 => {
+                    if offset.checked_add(14)? > end {
+                        return None;
+                    }
+                    let value = data.get(offset + 6..offset + 14)?;
+                    let bits = u64::from_le_bytes(value.try_into().ok()?);
+                    f64::from_bits(bits)
+                        .is_finite()
+                        .then_some(LegacyScalarEvaluation::Value(bits))?
+                }
+                0xe7 => LegacyScalarEvaluation::Unset,
+                _ => return None,
+            };
+            Some(LegacyScalarValue {
+                offset,
+                entity_id,
+                evaluation,
+            })
+        })
+        .collect()
 }
 
 fn parse_relations(fields: &[LegacyTextField]) -> Vec<LegacyRelation> {
@@ -270,7 +341,7 @@ fn text_value(bytes: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_runs, CATALOG_OPEN, TEXT_OPEN};
+    use super::{parse_runs, CATALOG_OPEN, SCALAR_OPEN, TEXT_OPEN};
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
         bytes.push(0xea);
@@ -293,6 +364,7 @@ mod tests {
         assert_eq!(runs[0].catalog_offset, catalog_offset);
         assert!(runs[0].text_fields.is_empty());
         assert!(runs[0].relations.is_empty());
+        assert!(runs[0].scalar_values.is_empty());
         assert_eq!(
             runs[0]
                 .identities
@@ -374,5 +446,29 @@ mod tests {
         assert_eq!(relation.signature.output.as_ref().unwrap().parameter, "#2_");
         assert_eq!(relation.signature.inputs[0].parameter, "#1_");
         assert_eq!(relation.signature.result_type, "VoidType");
+    }
+
+    #[test]
+    fn parses_finite_and_unset_scalar_packets() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(SCALAR_OPEN);
+        bytes.push(0xe6);
+        bytes.extend_from_slice(&3.5_f64.to_bits().to_le_bytes());
+        bytes.extend_from_slice(SCALAR_OPEN);
+        bytes.push(0xe7);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let values = &parse_runs(&bytes)[0].scalar_values;
+        assert_eq!(
+            values
+                .iter()
+                .map(|value| value.evaluation)
+                .collect::<Vec<_>>(),
+            [
+                super::LegacyScalarEvaluation::Value(3.5_f64.to_bits()),
+                super::LegacyScalarEvaluation::Unset,
+            ]
+        );
     }
 }
