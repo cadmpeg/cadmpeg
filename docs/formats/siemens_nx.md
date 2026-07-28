@@ -539,11 +539,13 @@ either three leading non-null references followed by a nullable reference, or
 frame or its terminal and retains frame, reference, and state-word order without
 assigned field roles.
 
-A schema reference preamble is `identity:u16 BE, 0004, ff, ref[2], ref(1)[3],
+A schema reference preamble is `identity:u16 BE, 0004, ff, ref[2], state_ref[3],
 state_word[4]:u32 BE, 000000, identity, ref(1)[2], count:u16 BE, entry[n],
 0052, ref(1), 0000, terminal_value:u16 BE`, where `identity > 1`, `n > 0`,
 and `count > 0`. The repeated `identity` equals the leading value. The two
 leading references are consecutive non-null compact or extended XMT indices.
+The state-reference lane is either `ref(1)[3]` or
+`ref(1), ref(ref[1] + 1), ref(1)`.
 The four state words have the form `(0|2), 0, 1, value`. Each
 entry is `entry_kind:u16 BE, ref`, `entry_kind` is type 81 or type 82, and its
 reference is non-null. The type-82 entry carrying the null XMT value terminates

@@ -138,6 +138,8 @@ pub struct SchemaReferencePreamble {
     pub identity: u16,
     /// Two consecutive non-null stream-local XMT references.
     pub references: [u32; 2],
+    /// Three ordered state-lane XMT references.
+    pub state_references: [u32; 3],
     /// Four ordered big-endian state words.
     pub state_words: [u32; 4],
     /// Serialized state count.
@@ -1180,11 +1182,14 @@ fn schema_reference_preamble(
         at = at.checked_add(consumed)?;
     }
     (references[1] == references[0].checked_add(1)?).then_some(())?;
-    for _ in 0..3 {
-        let (reference, consumed) = read_xmt(stream, at)?;
-        (reference == 1).then_some(())?;
+    let mut state_references = [0; 3];
+    for reference in &mut state_references {
+        let (value, consumed) = read_xmt(stream, at)?;
+        *reference = value;
         at = at.checked_add(consumed)?;
     }
+    let linked_state = [1, references[1].checked_add(1)?, 1];
+    (state_references == [1; 3] || state_references == linked_state).then_some(())?;
     let mut state_words = [0; 4];
     for state_word in &mut state_words {
         *state_word = be::u32_at(stream, at)?;
@@ -1218,6 +1223,7 @@ fn schema_reference_preamble(
             return (at <= gap_end && !entries.is_empty()).then_some(SchemaReferencePreamble {
                 identity,
                 references,
+                state_references,
                 state_words,
                 count,
                 entries,
@@ -3253,6 +3259,7 @@ mod schema_reference_preamble_tests {
             SchemaReferencePreamble {
                 identity: 300,
                 references: [40_000, 40_001],
+                state_references: [1; 3],
                 state_words: [2, 0, 1, 55],
                 count: 7,
                 entries: vec![(81, 4), (82, 40_000), (81, 5)],
@@ -3294,6 +3301,29 @@ mod schema_reference_preamble_tests {
         );
         assert!(census.records.is_empty());
         assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn schema_reference_preamble_retains_linked_state_reference() {
+        let mut bytes = preamble();
+        let first_state_reference = 5 + 2 * 4;
+        let mut linked_state = 1u16.to_be_bytes().to_vec();
+        push_xmt(&mut linked_state, 40_002);
+        linked_state.extend_from_slice(&1u16.to_be_bytes());
+        bytes.splice(
+            first_state_reference..first_state_reference + 6,
+            linked_state,
+        );
+
+        let parsed = schema_reference_preamble(&bytes, 0, bytes.len())
+            .expect("linked state-reference lane must be admitted");
+
+        assert_eq!(parsed.references, [40_000, 40_001]);
+        assert_eq!(parsed.state_references, [1, 40_002, 1]);
+
+        let mut invalid = bytes;
+        invalid[first_state_reference + 3] ^= 1;
+        assert!(schema_reference_preamble(&invalid, 0, invalid.len()).is_none());
     }
 }
 

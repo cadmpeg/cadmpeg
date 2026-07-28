@@ -194,6 +194,9 @@ pub struct ParasolidDeltasSchemaReferencePreamble {
     pub identity: u16,
     /// Two consecutive non-null stream-local XMT references.
     pub references: [u32; 2],
+    /// Non-null state-lane reference between null sentinels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_reference: Option<u32>,
     /// Four ordered big-endian state words.
     pub state_words: [u32; 4],
     /// Serialized state count.
@@ -597,6 +600,8 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     stream_ordinal: stream_ordinal as u32,
                     identity: preamble.identity,
                     references: preamble.references,
+                    state_reference: (preamble.state_references != [1; 3])
+                        .then_some(preamble.state_references[1]),
                     state_words: preamble.state_words,
                     count: preamble.count,
                     entries: preamble.entries,
@@ -2439,6 +2444,7 @@ mod tests {
         let preamble = &events.schema_reference_preambles[0];
         assert_eq!(preamble.identity, 300);
         assert_eq!(preamble.references, [2, 3]);
+        assert_eq!(preamble.state_reference, None);
         assert_eq!(preamble.state_words, [2, 0, 1, 55]);
         assert_eq!(preamble.count, 5);
         assert_eq!(preamble.entries, [(81, 4), (82, 5), (81, 6)]);
