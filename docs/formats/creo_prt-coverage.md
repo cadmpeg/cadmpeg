@@ -198,7 +198,9 @@ fixtures, claims above L1 remain unproven.
    nonzero prohibited count raises a decode loss note. Container and census
    facts about the file — version line, layout, section table, namespace array
    sizes, principal unit, family-table pointer, and configuration state — remain
-   in the source metadata attribute map.
+   in the source metadata attribute map. Referenced configuration driver tables
+   are counted separately from transferred configuration tables, and every
+   unresolved reference raises a decode loss note.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
 The current public score remains L1 claimed. Capabilities above L1 are extras

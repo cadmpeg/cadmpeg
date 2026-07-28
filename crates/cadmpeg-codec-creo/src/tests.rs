@@ -8288,6 +8288,14 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
         "none"
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_configuration_driver_table_reference_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_configuration_driver_table_count"],
+        0
+    );
     assert!(!decoded
         .report
         .losses
@@ -8315,6 +8323,21 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
         "driver_table_unresolved"
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_configuration_driver_table_reference_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_configuration_driver_table_count"],
+        0
+    );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss
+                .message
+                .contains("1 referenced configuration driver table(s) retain unresolved")
+    }));
 }
 
 #[test]

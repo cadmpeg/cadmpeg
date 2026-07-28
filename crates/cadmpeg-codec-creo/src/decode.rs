@@ -27846,6 +27846,21 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             },
         );
     }
+    let configuration_driver_table_reference_count =
+        usize::from(scan.framing.family_table.is_some_and(|table| {
+            matches!(
+                table.pointer,
+                crate::container::FamilyTablePointer::Entity(_)
+            )
+        }));
+    coverage.insert(
+        "decoded_configuration_driver_table_reference_count".to_string(),
+        configuration_driver_table_reference_count,
+    );
+    coverage.insert(
+        "transferred_configuration_driver_table_count".to_string(),
+        0,
+    );
     coverage.insert(
         "decoded_pcurve_count".to_string(),
         scan.curves.pcurves.len(),
@@ -28839,6 +28854,21 @@ fn build_report(
                 "{unresolved_dimension_driven_variables} dimension-driven section solver \
                  variable(s) retain unresolved exact values because their dimension binding or \
                  variable-family equation is unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_configuration_driver_tables =
+        count("decoded_configuration_driver_table_reference_count")
+            .saturating_sub(count("transferred_configuration_driver_table_count"));
+    if unresolved_configuration_driver_tables != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_configuration_driver_tables} referenced configuration driver \
+                 table(s) retain unresolved traversal and row semantics."
             ),
             provenance: None,
         });
