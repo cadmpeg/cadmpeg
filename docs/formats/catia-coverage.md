@@ -55,10 +55,10 @@ current scores require those matrices and representative fixtures.
   owner sets remain unparented. Child features and parameters share one
   object-field-ordered source-content sequence; other parameters remain
   document-scoped.
-  Legacy named scalar packets also transfer when a unique acyclic descriptor
-  chain resolves their literal numeric type. A uniquely bound zero-input
-  legacy relation replaces that scalar literal when its typed evaluation agrees
-  exactly.
+  Legacy named scalar packets also transfer with either a finite or unset
+  evaluation when a unique acyclic descriptor chain resolves their literal
+  numeric type. A uniquely bound zero-input legacy relation replaces a finite
+  scalar literal when its typed evaluation agrees exactly.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, trigonometric calls, absolute values, and
   square roots.

@@ -3522,6 +3522,38 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
 }
 
 #[test]
+fn decode_transfers_an_unset_typed_legacy_parameter() {
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.push(0x81);
+    bytes.extend([0xfd, 0x8c]);
+    bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+    bytes.extend(b"\xe8\x00\x12\x01");
+    bytes.extend([6, b'W', b'i', b'd', b't', b'h', 0xfe]);
+    bytes.extend(b"\xfe\x84\x92\x82");
+    bytes.extend([7, b'L', b'E', b'N', b'G', b'T', b'H', 0x83]);
+    bytes.extend(b"\xfe\x84\x88\x82\xfe\xe7");
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode unset typed legacy parameter");
+
+    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+        panic!("one transferred legacy parameter")
+    };
+    assert_eq!(parameter.name, "Width");
+    assert_eq!(parameter.value, None);
+    assert!(parameter.expression.is_empty());
+    assert_eq!(
+        decoded.report.coverage["transferred_legacy_parameter_count"],
+        1
+    );
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_rejects_a_legacy_parameter_with_multiple_type_descriptors() {
     let mut bytes = zero_entity_catpart();
     bytes.push(0xea);

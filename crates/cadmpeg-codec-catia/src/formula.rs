@@ -414,19 +414,35 @@ fn collect_legacy_parameters(
             if scalar.encoding != crate::native::CatiaLegacyScalarEncoding::Named84 {
                 continue;
             }
-            let (Some(name), crate::native::CatiaLegacyScalarEvaluation::Value { bits }) =
-                (&scalar.name, &scalar.evaluation)
-            else {
+            let Some(name) = &scalar.name else {
                 continue;
             };
             let Some((value_type, selected)) = resolved_legacy_type(run, scalar.entity_id) else {
                 continue;
             };
-            let evaluation = crate::native::CatiaEntityEvaluation::Scalar { bits: *bits };
-            let Some(TypedParameterEvaluation::Value(value)) =
-                typed_parameter_evaluation(value_type, &evaluation)
-            else {
+            let evaluation = match scalar.evaluation {
+                crate::native::CatiaLegacyScalarEvaluation::Value { bits } => {
+                    crate::native::CatiaEntityEvaluation::Scalar { bits }
+                }
+                crate::native::CatiaLegacyScalarEvaluation::Unset => {
+                    crate::native::CatiaEntityEvaluation::Unset
+                }
+            };
+            let Some(evaluation) = typed_parameter_evaluation(value_type, &evaluation) else {
                 continue;
+            };
+            let (expression, value) = match evaluation {
+                TypedParameterEvaluation::Unset => (String::new(), None),
+                TypedParameterEvaluation::Value(value) => {
+                    let expression = match &value {
+                        ParameterValue::Length(Length(value)) => format!("{value} mm"),
+                        ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
+                        ParameterValue::Real(value) => value.to_string(),
+                        ParameterValue::Integer(value) => value.to_string(),
+                        ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
+                    };
+                    (expression, Some(value))
+                }
             };
             let Some(key) = scalar.id.strip_prefix("catia:legacy:scalar#") else {
                 continue;
@@ -443,17 +459,9 @@ fn collect_legacy_parameters(
                         owner: None,
                         ordinal: 0,
                         name: name.clone(),
-                        expression: match &value {
-                            ParameterValue::Length(Length(value)) => format!("{value} mm"),
-                            ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
-                            ParameterValue::Real(value) => value.to_string(),
-                            ParameterValue::Integer(value) => value.to_string(),
-                            ParameterValue::Boolean(_) | ParameterValue::String(_) => {
-                                unreachable!()
-                            }
-                        },
+                        expression,
                         display: None,
-                        value: Some(value),
+                        value,
                         dependencies: Vec::new(),
                         properties: BTreeMap::new(),
                         pmi: None,
