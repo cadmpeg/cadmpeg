@@ -683,7 +683,10 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfe
             let Some(target) = design_objects.get(relation.target_design_object.as_str()) else {
                 continue;
             };
-            if sketch_declarations.contains_key(target.id.as_str()) {
+            let Some(declarations) = sketch_declarations.get(target.id.as_str()) else {
+                continue;
+            };
+            if declarations.contains(&relation.target_field) {
                 let closes_coordinate_field = relation.source_field == owner_record
                     && exact_single_field_reference(coordinate_record, relation.target_entity_id);
                 sketch_targets

@@ -2255,13 +2255,21 @@ fn standard_catpart_with_sketch_point_payload(
     ambiguous_sketch: bool,
     point_payload: &[u8],
 ) -> Vec<u8> {
+    standard_catpart_with_sketch_point_records(ambiguous_sketch, point_payload, false)
+}
+
+fn standard_catpart_with_sketch_point_records(
+    ambiguous_sketch: bool,
+    point_payload: &[u8],
+    add_sketch_sibling: bool,
+) -> Vec<u8> {
     let mut coordinate_value = vec![0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6];
     coordinate_value.extend_from_slice(&12.5_f64.to_bits().to_le_bytes());
     coordinate_value.push(0xe6);
     coordinate_value.extend_from_slice(&(-3.25_f64).to_bits().to_le_bytes());
     coordinate_value.extend_from_slice(&[0xfe, 0xfe]);
 
-    let records = vec![
+    let mut records = vec![
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
         object_graph_record(&[0x04, 0x01, 0x82, 0x85], point_payload),
         object_graph_record(
@@ -2270,10 +2278,17 @@ fn standard_catpart_with_sketch_point_payload(
         ),
         object_graph_record(&[0x04, 0x01, 0x82, 0x85], &[0x32, 3, 0, 0, 0, 0xfe]),
     ];
-    let mut stream = entity_table_record(1);
-    stream.extend(entity_table_record_with_value(2, &coordinate_value));
-    stream.extend(entity_table_record(3));
-    stream.extend(entity_table_record(4));
+    if add_sketch_sibling {
+        records.push(object_graph_record(&[0x04, 0x01, 0x81, 0x86], &[0xfe]));
+    }
+    let mut stream = Vec::new();
+    for entity_id in 1..=u32::try_from(records.len()).expect("bounded object record count") {
+        if entity_id == 2 {
+            stream.extend(entity_table_record_with_value(entity_id, &coordinate_value));
+        } else {
+            stream.extend(entity_table_record(entity_id));
+        }
+    }
     stream.push(0xde);
     stream.extend(object_graph_from_records(&records));
     stream.extend(catalog_stream(&[
@@ -6121,6 +6136,28 @@ fn sketch_point_with_additional_membership_payload_remains_unresolved() {
         1
     );
     assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 3);
+}
+
+#[test]
+fn sketch_point_relation_to_a_sibling_field_does_not_bind_the_sketch() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_sketch_point_records(
+                false,
+                &[0x32, 5, 0, 0, 0, 0xfe],
+                true,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode point related to a sibling sketch field");
+
+    assert!(decoded.ir.model.sketches.is_empty());
+    assert!(decoded.ir.model.sketch_entities.is_empty());
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_design_record_count"],
+        0
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 5);
 }
 
 #[test]
