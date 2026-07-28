@@ -446,6 +446,13 @@ Type 38 is the XT `INTERSECTION` node. Delta-stream `0x5a` records use the `inte
 
 A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode. Records use the following forms:
 
+A deltas transmit header is `5053, description_len:u32 BE,
+description[description_len], schema_len:u32 BE, schema[schema_len], 00e7,
+zero:u32 BE, 0003, ff, first_xmt, second_xmt, 0000`. The description is
+printable ASCII and contains `(deltas)`. The schema is a complete `SCH_` token.
+Both XMT identities are non-null and `second_xmt == first_xmt + 1`. Each XMT
+uses compact or extended encoding. The header ends after the terminal `0000`.
+
 Status-framed fixed records use a status byte in `0..=1` after each encoded reference. A unique complete family field grammar delimits the record; the following bytes need not begin with a recognized node type. When direct and escaped interpretations are both complete, exactly one must end before a recognized node type. Fixed records are normalized by removing each reference status byte before graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
 
 Type-81 entity/attribute-list records and type-82, type-83, and type-84 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted type-82 integer and type-83 finite-binary64 records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
@@ -518,7 +525,7 @@ Its body is the type-70 body without the leading type tag or optional escaped
 envelope. Adjacent inline declarations are independently framed and may occur
 in either order.
 
-The union of those events, tagged-reference lanes, reference-state packets,
+The union of the transmit header, those events, tagged-reference lanes, reference-state packets,
 reference/type maps, reference-marker packets, and inline schema declarations
 defines the typed deltas-event coverage. Each maximal nonempty complement
 interval in the inflated stream is one residual span. Residual spans retain

@@ -53,6 +53,19 @@ pub struct BodyRevision {
     pub end: usize,
 }
 
+/// Framed Parasolid transmit header at the start of a deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransmitHeader {
+    /// Printable transmit-file description.
+    pub description: String,
+    /// Declared Parasolid schema token.
+    pub schema: String,
+    /// Consecutive stream-local header identities.
+    pub references: [u32; 2],
+    /// First byte following the header.
+    pub end: usize,
+}
+
 /// Count-selected binary64 lane immediately following one deltas `term_use`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TermUseNumericTail {
@@ -172,6 +185,8 @@ pub struct InlineSchemaDeclaration {
 /// Result of a deterministic deltas record walk.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Census {
+    /// Complete stream transmit header.
+    pub transmit_header: Option<TransmitHeader>,
     /// Complete records in source order.
     pub records: Vec<Record>,
     /// Compact tombstones in source order.
@@ -457,8 +472,17 @@ const COMPOSITE_CURVE: &[Token] = &[
 /// Walk all accepted records, revisions, tombstones, and numeric tails in an
 /// inflated deltas stream.
 pub fn walk(stream: &[u8]) -> Census {
-    let mut census = Census::default();
-    let mut offset = 0;
+    let transmit_header = transmit_header(stream);
+    let header_byte_len = transmit_header.as_ref().map_or(0, |header| header.end);
+    let mut census = Census {
+        transmit_header,
+        bytes_decoded: header_byte_len,
+        ..Census::default()
+    };
+    let mut offset = census
+        .transmit_header
+        .as_ref()
+        .map_or(0, |header| header.end);
     while offset + 4 <= stream.len() {
         if let Some(record) = consume_shared_record(stream, offset, &census.records) {
             census.bytes_decoded += record.end - offset;
@@ -616,6 +640,59 @@ pub fn walk(stream: &[u8]) -> Census {
     let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
     census.bytes_decoded += body_revision_state_bytes;
     census
+}
+
+fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
+    (stream.get(..2) == Some(b"PS")).then_some(())?;
+    let description_len = usize::try_from(be::u32_at(stream, 2)?).ok()?;
+    (description_len > 0).then_some(())?;
+    let description_start = 6usize;
+    let description_end = description_start.checked_add(description_len)?;
+    let description_bytes = stream.get(description_start..description_end)?;
+    description_bytes
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        .then_some(())?;
+    description_bytes
+        .windows(b"(deltas)".len())
+        .any(|window| window == b"(deltas)")
+        .then_some(())?;
+
+    let schema_len = usize::try_from(be::u32_at(stream, description_end)?).ok()?;
+    (schema_len > 4).then_some(())?;
+    let schema_start = description_end.checked_add(4)?;
+    let schema_end = schema_start.checked_add(schema_len)?;
+    let schema_bytes = stream.get(schema_start..schema_end)?;
+    (schema_bytes.starts_with(b"SCH_")
+        && schema_bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'))
+    .then_some(())?;
+
+    let mut at = schema_end;
+    (stream.get(at..at.checked_add(2)?) == Some([0x00, 0xe7].as_slice())).then_some(())?;
+    at = at.checked_add(2)?;
+    (be::u32_at(stream, at) == Some(0)).then_some(())?;
+    at = at.checked_add(4)?;
+    (be::u16_at(stream, at) == Some(3)).then_some(())?;
+    at = at.checked_add(2)?;
+    (stream.get(at) == Some(&0xff)).then_some(())?;
+    at = at.checked_add(1)?;
+    let (first, consumed) = read_xmt(stream, at)?;
+    (first > 1).then_some(())?;
+    at = at.checked_add(consumed)?;
+    let (second, consumed) = read_xmt(stream, at)?;
+    (second == first.checked_add(1)?).then_some(())?;
+    at = at.checked_add(consumed)?;
+    (be::u16_at(stream, at) == Some(0)).then_some(())?;
+    at = at.checked_add(2)?;
+
+    Some(TransmitHeader {
+        description: String::from_utf8(description_bytes.to_vec()).ok()?,
+        schema: String::from_utf8(schema_bytes.to_vec()).ok()?,
+        references: [first, second],
+        end: at,
+    })
 }
 
 fn populate_body_revision_state_tails(stream: &[u8], census: &mut Census) -> usize {
@@ -960,9 +1037,15 @@ fn uncovered_spans(
 
 fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usize, usize)> {
     let mut covered = census
-        .records
+        .transmit_header
         .iter()
-        .map(|record| (record.offset, record.end))
+        .map(|header| (0, header.end))
+        .chain(
+            census
+                .records
+                .iter()
+                .map(|record| (record.offset, record.end)),
+        )
         .chain(
             census
                 .tombstones
@@ -2107,5 +2190,52 @@ mod reference_type_map_tests {
         ] {
             assert!(walk(malformed).reference_type_maps.is_empty());
         }
+    }
+}
+
+#[cfg(test)]
+mod transmit_header_tests {
+    use super::*;
+
+    fn header(references: &[u8]) -> Vec<u8> {
+        let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";
+        let schema = b"SCH_3501171_35102_13006";
+        let mut bytes = b"PS".to_vec();
+        bytes.extend_from_slice(&(description.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(description);
+        bytes.extend_from_slice(&(schema.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(schema);
+        bytes.extend_from_slice(&[0, 0xe7, 0, 0, 0, 0, 0, 3, 0xff]);
+        bytes.extend_from_slice(references);
+        bytes.extend_from_slice(&[0, 0]);
+        bytes
+    }
+
+    #[test]
+    fn transmit_header_accepts_compact_and_extended_consecutive_references() {
+        for (references, expected) in [
+            (&[0x04, 0x27, 0x04, 0x28][..], [1063, 1064]),
+            (&[0xbc, 0xe4, 0, 1, 0xbc, 0xe3, 0, 1][..], [49_947, 49_948]),
+        ] {
+            let bytes = header(references);
+            let census = walk(&bytes);
+            let parsed = census.transmit_header.expect("complete transmit header");
+            assert_eq!(parsed.references, expected);
+            assert_eq!(parsed.schema, "SCH_3501171_35102_13006");
+            assert_eq!(parsed.end, bytes.len());
+            assert_eq!(census.bytes_decoded, bytes.len());
+            assert!(census.records.is_empty());
+            assert!(census.tombstones.is_empty());
+        }
+    }
+
+    #[test]
+    fn transmit_header_rejects_nonconsecutive_references_and_truncation() {
+        let nonconsecutive = header(&[0x04, 0x27, 0x04, 0x29]);
+        let complete = header(&[0x04, 0x27, 0x04, 0x28]);
+        assert!(walk(&nonconsecutive).transmit_header.is_none());
+        assert!(walk(&complete[..complete.len() - 1])
+            .transmit_header
+            .is_none());
     }
 }

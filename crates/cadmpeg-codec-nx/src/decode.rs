@@ -6601,6 +6601,9 @@ fn source_meta(scan: &Scan) -> SourceMeta {
         .enumerate()
     {
         let census = crate::deltas::walk(&stream.inflated);
+        if census.transmit_header.is_some() {
+            attributes.insert(format!("deltas.{index}.transmit_headers"), "1".to_string());
+        }
         attributes.insert(
             format!("deltas.{index}.grammar"),
             "typed_status_framed_records".to_string(),
@@ -6825,7 +6828,8 @@ fn build_geometry_report(
                  attribute extraction. Every completely bounded full record, compact tombstone, \
                  and BODY revision envelope was retained as an individually identified native event \
                  with its source bounds and decoded identities; BODY state tails retain exact \
-                 bounded bytes and digests. Count-selected numeric tails after \
+                 bounded bytes and digests. Complete transmit headers retain their description, \
+                 schema, consecutive identities, and exact bytes. Count-selected numeric tails after \
                  term-use endpoints were retained with their ordered finite binary64 values. Maximal \
                  event gaps containing only typed stream-local references, framed reference/type \
                  maps, and complete four-reference state packets, reference-marker packets, and inline schema \

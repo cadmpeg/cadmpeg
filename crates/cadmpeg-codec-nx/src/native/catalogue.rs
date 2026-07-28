@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative catalogue of the native record families.
 //!
-//! One [`CatalogueRow`] per model field (191 total). Each row names the `nx`
+//! One [`CatalogueRow`] per model field (192 total). Each row names the `nx`
 //! namespace arena the family serializes into, and — for families that also emit
 //! source annotations — the tag, exactness, and a `note` fn. Row order is the
 //! observable annotation-emission order for the note-bearing rows;
@@ -45,8 +45,8 @@ pub(crate) struct CatalogueRow {
     /// Record count for this family, feeding the catalogue-derived emptiness
     /// fold ([`NativeModel::is_empty`]) and inspect counts.
     pub(crate) len: fn(&NativeModel) -> usize,
-    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 145 of
-    /// the 191 families count; the 46 that do not are transcribed verbatim from
+    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 146 of
+    /// the 192 families count; the 46 that do not are transcribed verbatim from
     /// the legacy hand-written all-empty guard, which omitted them. The
     /// exclusions look like oversights (25 of the 26 `display_jt` families are
     /// excluded, for instance) but are frozen observable behavior: flipping any
@@ -466,6 +466,11 @@ impl StreamNoted for ParasolidSupportUvRecord {
     }
 }
 impl StreamNoted for ParasolidChartRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidDeltasTransmitHeader {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -997,6 +1002,17 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.segments.segment_body_lineage_statuses, r, a)),
         emit: |m, r, ns| emit_arena(&m.segments.segment_body_lineage_statuses, r, ns),
         len: |m| m.segments.segment_body_lineage_statuses.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_deltas_transmit_headers",
+        tag: Some("DELTAS_TRANSMIT_HEADER"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_deltas_transmit_headers, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_transmit_headers, r, ns),
+        len: |m| m.parasolid.parasolid_deltas_transmit_headers.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

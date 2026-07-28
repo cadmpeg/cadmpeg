@@ -73,6 +73,27 @@ pub struct ParasolidDeltasBodyRevision {
     pub inflated_offset: u64,
 }
 
+/// Parasolid transmit header at the start of a deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTransmitHeader {
+    /// Globally unique header identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Printable transmit-file description.
+    pub description: String,
+    /// Declared Parasolid schema token.
+    pub schema: String,
+    /// Consecutive stream-local header identities.
+    pub references: [u32; 2],
+    /// Exact header byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact header bytes.
+    pub sha256: String,
+    /// First header byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Count-selected numeric lane following one deltas `term_use` endpoint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParasolidDeltasTermUseNumericTail {
@@ -231,6 +252,7 @@ pub struct ParasolidDeltasResidualSpan {
 }
 
 pub(crate) struct ParasolidDeltasEvents {
+    pub(crate) transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
     pub(crate) records: Vec<ParasolidDeltasRecord>,
     pub(crate) tombstones: Vec<ParasolidDeltasTombstone>,
     pub(crate) body_revisions: Vec<ParasolidDeltasBodyRevision>,
@@ -246,6 +268,7 @@ pub(crate) struct ParasolidDeltasEvents {
 /// Retain every completely bounded event in every Parasolid deltas stream.
 pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
     let mut events = ParasolidDeltasEvents {
+        transmit_headers: Vec::new(),
         records: Vec::new(),
         tombstones: Vec::new(),
         body_revisions: Vec::new(),
@@ -283,6 +306,19 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                 residual_start,
                 stream.inflated.len(),
             );
+        }
+        if let Some(header) = census.transmit_header {
+            let bytes = &stream.inflated[..header.end];
+            events.transmit_headers.push(ParasolidDeltasTransmitHeader {
+                id: format!("nx:s{stream_ordinal}:deltas-transmit-header"),
+                stream_ordinal: stream_ordinal as u32,
+                description: header.description,
+                schema: header.schema,
+                references: header.references,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                inflated_offset: 0,
+            });
         }
         for record in census.records {
             let family = crate::deltas::family_name(record.kind)
@@ -474,6 +510,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                 });
         }
     }
+    events
+        .transmit_headers
+        .sort_by(|left, right| left.id.cmp(&right.id));
     events.records.sort_by(|left, right| left.id.cmp(&right.id));
     events
         .tombstones
@@ -1945,6 +1984,45 @@ mod tests {
             suffix_offset as u64
         );
         assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_subtract_transmit_headers_from_residuals() {
+        let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";
+        let schema = b"SCH_3501171_35102_13006";
+        let mut bytes = b"PS".to_vec();
+        bytes.extend_from_slice(&(description.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(description);
+        bytes.extend_from_slice(&(schema.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(schema);
+        bytes.extend_from_slice(&[
+            0, 0xe7, 0, 0, 0, 0, 0, 3, 0xff, 0x04, 0x27, 0x04, 0x28, 0, 0,
+        ]);
+        let header_end = bytes.len();
+        bytes.extend([0xaa, 0xbb]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: Some("SCH_3501171_35102_13006".to_string()),
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.transmit_headers.len(), 1);
+        let header = &events.transmit_headers[0];
+        assert_eq!(header.description.as_bytes(), description);
+        assert_eq!(header.schema.as_bytes(), schema);
+        assert_eq!(header.references, [1063, 1064]);
+        assert_eq!(header.byte_len, header_end as u64);
+        assert_eq!(
+            header.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[..header_end])
+        );
+        assert_eq!(events.residual_spans.len(), 1);
+        assert_eq!(events.residual_spans[0].inflated_offset, header_end as u64);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
     }
 
     #[test]
