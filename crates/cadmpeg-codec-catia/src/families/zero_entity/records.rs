@@ -23,6 +23,8 @@ pub struct ZeroEntitySurface {
 pub struct ZeroEntitySupportOccurrence {
     /// Offset of the framed `21xx` record.
     pub pos: usize,
+    /// One-based global record ordinal in the zero-entity stream.
+    pub record_ordinal: u32,
     /// Complete two-byte record tag.
     pub tag: [u8; 2],
     /// Face-local support slot stored by the framed token at record offset 12.
@@ -36,8 +38,75 @@ pub struct ZeroEntitySupportOccurrence {
 pub struct ZeroEntitySupportRun {
     /// Offset of the owning surface-carrier record.
     pub carrier_pos: usize,
+    /// One-based global record ordinal of the owning surface carrier.
+    pub carrier_record_ordinal: u32,
     /// Face-local support occurrences in storage order.
     pub supports: Vec<ZeroEntitySupportOccurrence>,
+}
+
+/// One `5e1a` edge-stride record in the global zero-entity reference namespace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityEdgeStride {
+    /// Offset of the framed record.
+    pub pos: usize,
+    /// One-based global record ordinal in the zero-entity stream.
+    pub record_ordinal: u32,
+    /// Six stored global-record references.
+    pub references: [u32; 6],
+}
+
+/// One positional `0638` oriented use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityOrientedUse {
+    /// Offset of the framed record.
+    pub pos: usize,
+    /// One-based global record ordinal in the zero-entity stream.
+    pub record_ordinal: u32,
+    /// Positional side number, either one or two.
+    pub side: u32,
+    /// Two stored global-record references.
+    pub references: [u32; 2],
+    /// Side-specific slots derived from the owning header's base columns.
+    pub side_slots: [u32; 2],
+}
+
+/// One `2569` header and its two immediately following positional uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityOrientedUsePair {
+    /// Offset of the `2569` header.
+    pub header_pos: usize,
+    /// One-based global record ordinal of the `2569` header.
+    pub header_record_ordinal: u32,
+    /// Stored base columns.
+    pub base_columns: [u32; 2],
+    /// Side-one then side-two oriented uses.
+    pub uses: [ZeroEntityOrientedUse; 2],
+}
+
+/// One counted zero-entity vertex-incidence record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityVertexIncidence {
+    /// Offset of the framed `05xx` record.
+    pub pos: usize,
+    /// One-based global record ordinal in the zero-entity stream.
+    pub record_ordinal: u32,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// Stored global-record references.
+    pub references: Vec<u32>,
+}
+
+/// One framed record in the zero-entity global identity namespace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityRecordIdentity {
+    /// Offset of the framed record.
+    pub pos: usize,
+    /// Exclusive logical end, including any inline continuation.
+    pub end: usize,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// One-based global record ordinal.
+    pub record_ordinal: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -45,6 +114,7 @@ struct ZeroEntityRecord {
     pos: usize,
     end: usize,
     tag: [u8; 2],
+    ordinal: u32,
 }
 
 struct ZeroEntityNurbsLayout {
@@ -83,7 +153,10 @@ fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
             break;
         };
         let end = if matches!(tag, [0x34, 0xc8 | 0x5e]) {
-            zero_entity_nurbs_logical_end(data, position).unwrap_or(nominal_end)
+            let Some(end) = zero_entity_nurbs_logical_end(data, position) else {
+                break;
+            };
+            end
         } else if let Some(length) = zero_entity_fixed_logical_length(tag) {
             let Some(end) = position.checked_add(length) else {
                 break;
@@ -95,10 +168,17 @@ fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
         if end > data.len() {
             break;
         }
+        let Some(one_based_ordinal) = records.len().checked_add(1) else {
+            break;
+        };
+        let Ok(ordinal) = u32::try_from(one_based_ordinal) else {
+            break;
+        };
         records.push(ZeroEntityRecord {
             pos: position,
             end,
             tag,
+            ordinal,
         });
         position = end;
     }
@@ -155,6 +235,20 @@ fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurb
     })
 }
 
+/// Inventory every complete framed record in the one-based global namespace.
+#[must_use]
+pub fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity> {
+    zero_entity_records(data)
+        .into_iter()
+        .map(|record| ZeroEntityRecordIdentity {
+            pos: record.pos,
+            end: record.end,
+            tag: record.tag,
+            record_ordinal: record.ordinal,
+        })
+        .collect()
+}
+
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
 /// record's second tag byte is also its length code (`length = tag + 12`), so
 /// the decoder walks framed records.
@@ -204,6 +298,7 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
         if !supports.is_empty() {
             runs.push(ZeroEntitySupportRun {
                 carrier_pos: carrier_record.pos,
+                carrier_record_ordinal: carrier_record.ordinal,
                 supports,
             });
         }
@@ -246,10 +341,150 @@ fn zero_entity_support_occurrence(
     };
     Some(ZeroEntitySupportOccurrence {
         pos: record.pos,
+        record_ordinal: record.ordinal,
         tag: record.tag,
         face_local_slot,
         uv_endpoints,
     })
+}
+
+/// Decode complete `5e1a` edge-stride reference records.
+#[must_use]
+pub fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
+    let records = zero_entity_records(data);
+    let Ok(record_count) = u32::try_from(records.len()) else {
+        return Vec::new();
+    };
+    records
+        .into_iter()
+        .filter_map(|record| {
+            if record.tag != [0x5e, 0x1a] || data.get(record.pos + 37) != Some(&0x21) {
+                return None;
+            }
+            let mut references = [0; 6];
+            for (index, reference) in references.iter_mut().enumerate() {
+                *reference = tagged_u32(data, record.pos.checked_add(7 + index * 5)?)?;
+            }
+            if references
+                .iter()
+                .any(|reference| !(1..=record_count).contains(reference))
+            {
+                return None;
+            }
+            Some(ZeroEntityEdgeStride {
+                pos: record.pos,
+                record_ordinal: record.ordinal,
+                references,
+            })
+        })
+        .collect()
+}
+
+/// Decode complete `2569` headers with their adjacent `(1, 2)` oriented uses.
+#[must_use]
+pub fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUsePair> {
+    let records = zero_entity_records(data);
+    let Ok(record_count) = u32::try_from(records.len()) else {
+        return Vec::new();
+    };
+    records
+        .windows(3)
+        .filter_map(|records| {
+            let [header, side_one, side_two] = records else {
+                return None;
+            };
+            if header.tag != [0x25, 0x69]
+                || side_one.tag != [0x06, 0x38]
+                || side_two.tag != [0x06, 0x38]
+                || tagged_u32(data, header.pos + 7) != Some(1)
+                || data.get(header.pos + 12) != Some(&0x82)
+            {
+                return None;
+            }
+            let base_columns = [
+                tagged_u32(data, header.pos + 13)?,
+                tagged_u32(data, header.pos + 18)?,
+            ];
+            let parse_use = |record: ZeroEntityRecord, expected_side: u32| {
+                if tagged_u32(data, record.pos + 7) != Some(1)
+                    || data.get(record.pos + 12) != Some(&0x83)
+                    || tagged_u32(data, record.pos + 13) != Some(expected_side)
+                {
+                    return None;
+                }
+                let references = [
+                    tagged_u32(data, record.pos + 18)?,
+                    tagged_u32(data, record.pos + 23)?,
+                ];
+                if references
+                    .iter()
+                    .any(|reference| !(1..=record_count).contains(reference))
+                {
+                    return None;
+                }
+                Some(ZeroEntityOrientedUse {
+                    pos: record.pos,
+                    record_ordinal: record.ordinal,
+                    side: expected_side,
+                    references,
+                    side_slots: [
+                        base_columns[0].checked_add(expected_side)?,
+                        base_columns[1].checked_add(expected_side)?,
+                    ],
+                })
+            };
+            Some(ZeroEntityOrientedUsePair {
+                header_pos: header.pos,
+                header_record_ordinal: header.ordinal,
+                base_columns,
+                uses: [parse_use(*side_one, 1)?, parse_use(*side_two, 2)?],
+            })
+        })
+        .collect()
+}
+
+/// Decode complete counted `050b`, `0510`, and `0515` incidence records.
+#[must_use]
+pub fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
+    let records = zero_entity_records(data);
+    let Ok(record_count) = u32::try_from(records.len()) else {
+        return Vec::new();
+    };
+    records
+        .into_iter()
+        .filter_map(|record| {
+            let count = match record.tag {
+                [0x05, 0x0b] => 2,
+                [0x05, 0x10] => 3,
+                [0x05, 0x15] => 4,
+                _ => return None,
+            };
+            if tagged_u32(data, record.pos + 7) != Some(1)
+                || data.get(record.pos + 12) != Some(&(0x80 + count as u8))
+            {
+                return None;
+            }
+            let references = (0..count)
+                .map(|index| tagged_u32(data, record.pos + 13 + index * 5))
+                .collect::<Option<Vec<_>>>()?;
+            if references
+                .iter()
+                .any(|reference| !(1..=record_count).contains(reference))
+            {
+                return None;
+            }
+            Some(ZeroEntityVertexIncidence {
+                pos: record.pos,
+                record_ordinal: record.ordinal,
+                tag: record.tag,
+                references,
+            })
+        })
+        .collect()
+}
+
+fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
+    (data.get(at) == Some(&0x10)).then(|| u32_le(data, at + 1))?
 }
 
 pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
@@ -407,7 +642,12 @@ fn u32_tokens(bytes: &[u8], mut at: usize, count: usize) -> Option<(Vec<u32>, us
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::zero_entity_support_stream;
+    use crate::tests::{zero_entity_support_stream, zero_entity_topology_stream};
+
+    fn write_tagged_u32(record: &mut [u8], at: usize, value: u32) {
+        record[at] = 0x10;
+        record[at + 1..at + 5].copy_from_slice(&value.to_le_bytes());
+    }
 
     #[test]
     fn support_run_binds_maximal_21xx_lane_to_preceding_surface() {
@@ -452,5 +692,65 @@ mod tests {
         };
         assert_eq!(run.supports.len(), 1);
         assert_eq!(run.supports[0].tag, [0x21, 0x45]);
+    }
+
+    #[test]
+    fn malformed_extended_carrier_stops_before_its_unbounded_continuation() {
+        let fixture = zero_entity_support_stream();
+        let plane = &fixture[..0x6a + 12];
+        let mut stream = vec![0u8; 0xc8 + 12];
+        stream[..4].copy_from_slice(&[0xa9, 0x03, 0x34, 0xc8]);
+        stream[80..80 + plane.len()].copy_from_slice(plane);
+        stream.extend(plane);
+
+        assert!(zero_entity_record_inventory(&stream).is_empty());
+        assert!(zero_entity_surfaces(&stream).is_empty());
+    }
+
+    #[test]
+    fn topology_records_retain_global_ordinals_and_separate_namespaces() {
+        let stream = zero_entity_topology_stream();
+        let edge_strides = zero_entity_edge_strides(&stream);
+        let [edge_stride] = edge_strides.as_slice() else {
+            panic!("one edge stride")
+        };
+        assert_eq!(edge_stride.record_ordinal, 1);
+        assert_eq!(edge_stride.references, [1, 2, 3, 4, 5, 1]);
+
+        let pairs = zero_entity_oriented_use_pairs(&stream);
+        let [pair] = pairs.as_slice() else {
+            panic!("one oriented-use pair")
+        };
+        assert_eq!(pair.header_record_ordinal, 2);
+        assert_eq!(pair.base_columns, [100, 200]);
+        assert_eq!(pair.uses[0].record_ordinal, 3);
+        assert_eq!(pair.uses[0].references, [1, 2]);
+        assert_eq!(pair.uses[0].side_slots, [101, 201]);
+        assert_eq!(pair.uses[1].record_ordinal, 4);
+        assert_eq!(pair.uses[1].references, [3, 4]);
+        assert_eq!(pair.uses[1].side_slots, [102, 202]);
+
+        let incidences = zero_entity_vertex_incidences(&stream);
+        let [incidence] = incidences.as_slice() else {
+            panic!("one vertex incidence")
+        };
+        assert_eq!(incidence.record_ordinal, 5);
+        assert_eq!(incidence.tag, [0x05, 0x10]);
+        assert_eq!(incidence.references, [1, 2, 5]);
+    }
+
+    #[test]
+    fn oriented_use_pair_requires_adjacent_ordered_sides() {
+        let mut stream = zero_entity_topology_stream();
+        let second_use = 38 + (0x69 + 12) + (0x38 + 12);
+        write_tagged_u32(&mut stream, second_use + 13, 1);
+        assert!(zero_entity_oriented_use_pairs(&stream).is_empty());
+    }
+
+    #[test]
+    fn topology_global_references_are_one_based() {
+        let mut stream = zero_entity_topology_stream();
+        write_tagged_u32(&mut stream, 7, 0);
+        assert!(zero_entity_edge_strides(&stream).is_empty());
     }
 }

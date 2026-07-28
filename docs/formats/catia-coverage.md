@@ -73,8 +73,11 @@ current scores require those matrices and representative fixtures.
   cumulative gate in one closed envelope passes.
 - Zero-entity surface carriers retain their complete face-local `21xx` support
   tapes. Every occurrence keeps its framed local slot, record family, and
-  inline UV endpoint pair when that family stores one. Physical-edge,
-  oriented-use, and vertex-incidence binding remains unresolved.
+  inline UV endpoint pair when that family stores one. The independent `5e1a`
+  edge-stride, `2569`/`0638` positional-use, and counted `05xx`
+  vertex-incidence registries retain one-based global record ordinals and exact
+  references against a complete framed-record identity inventory.
+  Cross-registry physical-edge and incidence binding remains unresolved.
 
 ## Evidence required to raise a score
 

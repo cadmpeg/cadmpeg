@@ -1147,6 +1147,53 @@ pub(crate) fn zero_entity_support_stream() -> Vec<u8> {
     plane
 }
 
+pub(crate) fn zero_entity_topology_stream() -> Vec<u8> {
+    let write_tagged_u32 = |record: &mut [u8], at: usize, value: u32| {
+        record[at] = 0x10;
+        record[at + 1..at + 5].copy_from_slice(&value.to_le_bytes());
+    };
+    let mut edge_stride = vec![0u8; 38];
+    edge_stride[..4].copy_from_slice(&[0xa9, 0x03, 0x5e, 0x1a]);
+    for (index, value) in [1, 2, 3, 4, 5, 1].into_iter().enumerate() {
+        write_tagged_u32(&mut edge_stride, 7 + index * 5, value);
+    }
+    edge_stride[37] = 0x21;
+
+    let mut header = vec![0u8; 0x69 + 12];
+    header[..4].copy_from_slice(&[0xa9, 0x03, 0x25, 0x69]);
+    write_tagged_u32(&mut header, 7, 1);
+    header[12] = 0x82;
+    write_tagged_u32(&mut header, 13, 100);
+    write_tagged_u32(&mut header, 18, 200);
+
+    let make_use = |side, references: [u32; 2]| {
+        let mut record = vec![0u8; 0x38 + 12];
+        record[..4].copy_from_slice(&[0xa9, 0x03, 0x06, 0x38]);
+        write_tagged_u32(&mut record, 7, 1);
+        record[12] = 0x83;
+        write_tagged_u32(&mut record, 13, side);
+        write_tagged_u32(&mut record, 18, references[0]);
+        write_tagged_u32(&mut record, 23, references[1]);
+        record
+    };
+
+    let mut incidence = vec![0u8; 0x10 + 12];
+    incidence[..4].copy_from_slice(&[0xa9, 0x03, 0x05, 0x10]);
+    write_tagged_u32(&mut incidence, 7, 1);
+    incidence[12] = 0x83;
+    for (index, value) in [1, 2, 5].into_iter().enumerate() {
+        write_tagged_u32(&mut incidence, 13 + index * 5, value);
+    }
+
+    edge_stride
+        .into_iter()
+        .chain(header)
+        .chain(make_use(1, [1, 2]))
+        .chain(make_use(2, [3, 4]))
+        .chain(incidence)
+        .collect()
+}
+
 pub(crate) fn b2_revolution_stream() -> Vec<u8> {
     let scale = 2.0;
     let angular_lo = scale * 0.5;
@@ -4291,10 +4338,12 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         panic!("one zero-entity support run")
     };
     assert_eq!(run.carrier_byte_offset, 0);
+    assert_eq!(run.carrier_record_ordinal, 1);
     let [support] = run.supports.as_slice() else {
         panic!("one zero-entity support occurrence")
     };
     assert_eq!(support.tag, [0x21, 0x71]);
+    assert_eq!(support.record_ordinal, 2);
     assert_eq!(support.face_local_slot, 42);
     assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
 
@@ -4313,6 +4362,59 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity support run");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_separate_zero_entity_topology_registries() {
+    let native = crate::native::CatiaNative::decode(&zero_entity_topology_stream());
+    assert_eq!(native.zero_entity_records.len(), 5);
+    assert_eq!(native.zero_entity_records[0].record_ordinal, 1);
+    assert_eq!(native.zero_entity_records[0].tag, [0x5e, 0x1a]);
+    let [edge_stride] = native.zero_entity_edge_strides.as_slice() else {
+        panic!("one zero-entity edge stride")
+    };
+    assert_eq!(edge_stride.record_ordinal, 1);
+    assert_eq!(edge_stride.references, [1, 2, 3, 4, 5, 1]);
+
+    let [pair] = native.zero_entity_oriented_use_pairs.as_slice() else {
+        panic!("one zero-entity oriented-use pair")
+    };
+    assert_eq!(pair.header_record_ordinal, 2);
+    assert_eq!(pair.base_columns, [100, 200]);
+    assert_eq!(pair.uses[0].side_slots, [101, 201]);
+    assert_eq!(pair.uses[1].side_slots, [102, 202]);
+
+    let [incidence] = native.zero_entity_vertex_incidences.as_slice() else {
+        panic!("one zero-entity vertex incidence")
+    };
+    assert_eq!(incidence.record_ordinal, 5);
+    assert_eq!(incidence.references, [1, 2, 5]);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA zero-entity topology registries");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace)
+            .expect("load CATIA zero-entity topology registries"),
+        native
+    );
+
+    let mut invalid_reference = native.clone();
+    invalid_reference.zero_entity_edge_strides[0].references[0] = 6;
+    let mut invalid_reference_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_reference
+        .store(&mut invalid_reference_namespace)
+        .expect("store invalid CATIA zero-entity record reference");
+    assert!(crate::native::CatiaNative::load(&invalid_reference_namespace).is_err());
+
+    let mut invalid = native;
+    invalid.zero_entity_oriented_use_pairs[0].uses[1].side_slots[0] += 1;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA zero-entity topology registries");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
@@ -4343,6 +4445,40 @@ fn decode_reports_zero_entity_surface_support_runs() {
                 .message
                 .contains("1 zero-entity surface-support run(s)")
             && loss.message.contains("oriented-use")
+    }));
+}
+
+#[test]
+fn decode_reports_separate_zero_entity_topology_registries() {
+    let mut file = standard_catpart();
+    file.splice(16..16, zero_entity_topology_stream());
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode zero-entity topology registries");
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_record_count"],
+        5
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_edge_stride_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_oriented_use_pair_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_vertex_incidence_count"],
+        1
+    );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Topology
+            && loss.message.contains("1 edge-stride record(s)")
+            && loss.message.contains("1 oriented-use pair(s)")
+            && loss.message.contains("1 vertex-incidence record(s)")
+            && loss.message.contains("cross-registry binding")
     }));
 }
 

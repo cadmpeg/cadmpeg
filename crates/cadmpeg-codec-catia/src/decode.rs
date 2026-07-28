@@ -502,6 +502,18 @@ fn finish_decode(
             native.consolidated_tori.len(),
         ),
         (
+            "decoded_zero_entity_edge_stride_count".to_string(),
+            native.zero_entity_edge_strides.len(),
+        ),
+        (
+            "decoded_zero_entity_oriented_use_pair_count".to_string(),
+            native.zero_entity_oriented_use_pairs.len(),
+        ),
+        (
+            "decoded_zero_entity_record_count".to_string(),
+            native.zero_entity_records.len(),
+        ),
+        (
             "decoded_zero_entity_support_run_count".to_string(),
             native.zero_entity_support_runs.len(),
         ),
@@ -521,6 +533,10 @@ fn finish_decode(
                 .flat_map(|run| &run.supports)
                 .filter(|support| support.uv_endpoints.is_some())
                 .count(),
+        ),
+        (
+            "decoded_zero_entity_vertex_incidence_count".to_string(),
+            native.zero_entity_vertex_incidences.len(),
         ),
         (
             "decoded_object_graph_count".to_string(),
@@ -807,7 +823,11 @@ fn finish_decode(
             provenance: None,
         });
     }
-    if !native.zero_entity_support_runs.is_empty() {
+    if !native.zero_entity_support_runs.is_empty()
+        || !native.zero_entity_edge_strides.is_empty()
+        || !native.zero_entity_oriented_use_pairs.is_empty()
+        || !native.zero_entity_vertex_incidences.is_empty()
+    {
         let support_count = native
             .zero_entity_support_runs
             .iter()
@@ -825,9 +845,13 @@ fn finish_decode(
             severity: Severity::Warning,
             message: format!(
                 "{} zero-entity surface-support run(s) retain {support_count} face-local \
-                 occurrence(s), including {endpoint_count} with exact UV endpoint pairs; the \
-                 oriented-use and vertex-incidence registries remain unresolved.",
+                 occurrence(s), including {endpoint_count} with exact UV endpoint pairs; {} \
+                 edge-stride record(s), {} oriented-use pair(s), and {} vertex-incidence \
+                 record(s) remain separate because their cross-registry binding is unresolved.",
                 native.zero_entity_support_runs.len(),
+                native.zero_entity_edge_strides.len(),
+                native.zero_entity_oriented_use_pairs.len(),
+                native.zero_entity_vertex_incidences.len(),
             ),
             provenance: None,
         });

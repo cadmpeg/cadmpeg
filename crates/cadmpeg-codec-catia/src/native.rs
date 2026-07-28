@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 156;
+pub const CATIA_NATIVE_VERSION: u32 = 157;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -52,7 +52,11 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "preview_images",
     "value_blocks",
     "value_schema_selections",
+    "zero_entity_edge_strides",
+    "zero_entity_oriented_use_pairs",
+    "zero_entity_records",
     "zero_entity_support_runs",
+    "zero_entity_vertex_incidences",
 ];
 
 /// Consolidated pcurve framing family.
@@ -2593,6 +2597,8 @@ pub struct CatiaLegacyEntityRun {
 pub struct CatiaZeroEntitySupportOccurrence {
     /// Byte offset of the framed `21xx` record.
     pub byte_offset: u64,
+    /// One-based global record ordinal in the zero-entity stream.
+    pub record_ordinal: u32,
     /// Complete two-byte record tag.
     pub tag: [u8; 2],
     /// Face-local support slot stored at record offset 12.
@@ -2609,8 +2615,83 @@ pub struct CatiaZeroEntitySupportRun {
     pub id: String,
     /// Byte offset of the owning surface-carrier record.
     pub carrier_byte_offset: u64,
+    /// One-based global record ordinal of the owning surface carrier.
+    pub carrier_record_ordinal: u32,
     /// Face-local support occurrences in storage order.
     pub supports: Vec<CatiaZeroEntitySupportOccurrence>,
+}
+
+/// One zero-entity `5e1a` edge-stride reference record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntityEdgeStride {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// One-based global record ordinal in the zero-entity stream.
+    pub record_ordinal: u32,
+    /// Six stored global-record references.
+    pub references: [u32; 6],
+}
+
+/// One positional zero-entity `0638` oriented use.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntityOrientedUse {
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// One-based global record ordinal in the zero-entity stream.
+    pub record_ordinal: u32,
+    /// Positional side number.
+    pub side: u32,
+    /// Two stored global-record references.
+    pub references: [u32; 2],
+    /// Side-specific slots derived from the owning header's base columns.
+    pub side_slots: [u32; 2],
+}
+
+/// One zero-entity `2569` header and its two positional uses.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntityOrientedUsePair {
+    /// Stable native-pair identity.
+    pub id: String,
+    /// Byte offset of the `2569` header.
+    pub header_byte_offset: u64,
+    /// One-based global record ordinal of the `2569` header.
+    pub header_record_ordinal: u32,
+    /// Stored base columns.
+    pub base_columns: [u32; 2],
+    /// Side-one then side-two oriented uses.
+    pub uses: [CatiaZeroEntityOrientedUse; 2],
+}
+
+/// One counted zero-entity `05xx` vertex-incidence record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntityVertexIncidence {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// One-based global record ordinal in the zero-entity stream.
+    pub record_ordinal: u32,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// Stored global-record references.
+    pub references: Vec<u32>,
+}
+
+/// One framed record in the zero-entity global identity namespace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntityRecord {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Exclusive logical byte end, including any inline continuation.
+    pub logical_end: u64,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// One-based global record ordinal.
+    pub record_ordinal: u32,
 }
 
 /// CATIA-native records retained outside the format-neutral model.
@@ -2696,9 +2777,21 @@ pub struct CatiaNative {
     /// Framed value blocks adjacent to source-schema catalogs.
     #[serde(default)]
     pub value_blocks: Vec<CatiaValueBlock>,
+    /// Zero-entity edge-stride reference records.
+    #[serde(default)]
+    pub zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride>,
+    /// Zero-entity side-pair headers and positional oriented uses.
+    #[serde(default)]
+    pub zero_entity_oriented_use_pairs: Vec<CatiaZeroEntityOrientedUsePair>,
+    /// Complete zero-entity framed-record identity namespace.
+    #[serde(default)]
+    pub zero_entity_records: Vec<CatiaZeroEntityRecord>,
     /// Zero-entity surface carriers and their face-local support tapes.
     #[serde(default)]
     pub zero_entity_support_runs: Vec<CatiaZeroEntitySupportRun>,
+    /// Zero-entity counted vertex-incidence records.
+    #[serde(default)]
+    pub zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence>,
 }
 
 impl Default for CatiaNative {
@@ -2731,7 +2824,11 @@ impl Default for CatiaNative {
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
             value_blocks: Vec::new(),
+            zero_entity_edge_strides: Vec::new(),
+            zero_entity_oriented_use_pairs: Vec::new(),
+            zero_entity_records: Vec::new(),
             zero_entity_support_runs: Vec::new(),
+            zero_entity_vertex_incidences: Vec::new(),
         }
     }
 }
@@ -3340,16 +3437,78 @@ fn zero_entity_support_runs(bytes: &[u8]) -> Vec<CatiaZeroEntitySupportRun> {
         .map(|(index, run)| CatiaZeroEntitySupportRun {
             id: format!("catia:zero-entity:support-run#{index}"),
             carrier_byte_offset: run.carrier_pos as u64,
+            carrier_record_ordinal: run.carrier_record_ordinal,
             supports: run
                 .supports
                 .into_iter()
                 .map(|support| CatiaZeroEntitySupportOccurrence {
                     byte_offset: support.pos as u64,
+                    record_ordinal: support.record_ordinal,
                     tag: support.tag,
                     face_local_slot: support.face_local_slot,
                     uv_endpoints: support.uv_endpoints,
                 })
                 .collect(),
+        })
+        .collect()
+}
+
+fn zero_entity_edge_strides(bytes: &[u8]) -> Vec<CatiaZeroEntityEdgeStride> {
+    crate::families::zero_entity::records::zero_entity_edge_strides(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, record)| CatiaZeroEntityEdgeStride {
+            id: format!("catia:zero-entity:edge-stride#{index}"),
+            byte_offset: record.pos as u64,
+            record_ordinal: record.record_ordinal,
+            references: record.references,
+        })
+        .collect()
+}
+
+fn zero_entity_oriented_use_pairs(bytes: &[u8]) -> Vec<CatiaZeroEntityOrientedUsePair> {
+    crate::families::zero_entity::records::zero_entity_oriented_use_pairs(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, pair)| CatiaZeroEntityOrientedUsePair {
+            id: format!("catia:zero-entity:oriented-use-pair#{index}"),
+            header_byte_offset: pair.header_pos as u64,
+            header_record_ordinal: pair.header_record_ordinal,
+            base_columns: pair.base_columns,
+            uses: pair.uses.map(|use_| CatiaZeroEntityOrientedUse {
+                byte_offset: use_.pos as u64,
+                record_ordinal: use_.record_ordinal,
+                side: use_.side,
+                references: use_.references,
+                side_slots: use_.side_slots,
+            }),
+        })
+        .collect()
+}
+
+fn zero_entity_vertex_incidences(bytes: &[u8]) -> Vec<CatiaZeroEntityVertexIncidence> {
+    crate::families::zero_entity::records::zero_entity_vertex_incidences(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, record)| CatiaZeroEntityVertexIncidence {
+            id: format!("catia:zero-entity:vertex-incidence#{index}"),
+            byte_offset: record.pos as u64,
+            record_ordinal: record.record_ordinal,
+            tag: record.tag,
+            references: record.references,
+        })
+        .collect()
+}
+
+fn zero_entity_records(bytes: &[u8]) -> Vec<CatiaZeroEntityRecord> {
+    crate::families::zero_entity::records::zero_entity_record_inventory(bytes)
+        .into_iter()
+        .map(|record| CatiaZeroEntityRecord {
+            id: format!("catia:zero-entity:record#{}", record.record_ordinal),
+            byte_offset: record.pos as u64,
+            logical_end: record.end as u64,
+            tag: record.tag,
+            record_ordinal: record.record_ordinal,
         })
         .collect()
 }
@@ -4194,6 +4353,7 @@ fn validate_consolidated_tori(
 #[cfg(test)]
 fn validate_zero_entity_support_runs(
     runs: &[CatiaZeroEntitySupportRun],
+    records: &[CatiaZeroEntityRecord],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, run) in runs.iter().enumerate() {
         let supports_valid = !run.supports.is_empty()
@@ -4210,15 +4370,31 @@ fn validate_zero_entity_support_runs(
                         ([0x21, _], None) => true,
                         _ => false,
                     };
+                    let expected_ordinal = u32::try_from(support_index)
+                        .ok()
+                        .and_then(|index| index.checked_add(1))
+                        .and_then(|offset| run.carrier_record_ordinal.checked_add(offset));
                     support.tag[0] == 0x21
+                        && zero_entity_record(records, support.record_ordinal).is_some_and(
+                            |record| {
+                                record.byte_offset == support.byte_offset
+                                    && record.tag == support.tag
+                            },
+                        )
                         && support.byte_offset > run.carrier_byte_offset
+                        && Some(support.record_ordinal) == expected_ordinal
                         && (support_index == 0
                             || run.supports[support_index - 1].byte_offset < support.byte_offset)
                         && endpoints_valid
                 });
         if run.id != format!("catia:zero-entity:support-run#{index}")
             || !supports_valid
-            || index > 0 && runs[index - 1].carrier_byte_offset >= run.carrier_byte_offset
+            || run.carrier_record_ordinal == 0
+            || !zero_entity_record(records, run.carrier_record_ordinal)
+                .is_some_and(|record| record.byte_offset == run.carrier_byte_offset)
+            || index > 0
+                && (runs[index - 1].carrier_byte_offset >= run.carrier_byte_offset
+                    || runs[index - 1].carrier_record_ordinal >= run.carrier_record_ordinal)
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "zero-entity support run `{}` is structurally invalid",
@@ -4227,6 +4403,125 @@ fn validate_zero_entity_support_runs(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn zero_entity_record(
+    records: &[CatiaZeroEntityRecord],
+    ordinal: u32,
+) -> Option<&CatiaZeroEntityRecord> {
+    let index = usize::try_from(ordinal.checked_sub(1)?).ok()?;
+    records.get(index)
+}
+
+#[cfg(test)]
+fn validate_zero_entity_records(
+    records: &[CatiaZeroEntityRecord],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let valid = records.iter().enumerate().all(|(index, record)| {
+        let ordinal = u32::try_from(index)
+            .ok()
+            .and_then(|index| index.checked_add(1));
+        Some(record.record_ordinal) == ordinal
+            && record.id == format!("catia:zero-entity:record#{}", record.record_ordinal)
+            && record.logical_end > record.byte_offset
+            && (index == 0 || records[index - 1].logical_end <= record.byte_offset)
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "zero-entity record namespace is structurally invalid".to_string(),
+        ))
+    }
+}
+
+#[cfg(test)]
+fn validate_zero_entity_topology_records(
+    edge_strides: &[CatiaZeroEntityEdgeStride],
+    oriented_use_pairs: &[CatiaZeroEntityOrientedUsePair],
+    vertex_incidences: &[CatiaZeroEntityVertexIncidence],
+    records: &[CatiaZeroEntityRecord],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let edge_strides_valid = edge_strides.iter().enumerate().all(|(index, record)| {
+        record.id == format!("catia:zero-entity:edge-stride#{index}")
+            && record.record_ordinal != 0
+            && !record.references.contains(&0)
+            && zero_entity_record(records, record.record_ordinal).is_some_and(|source| {
+                source.byte_offset == record.byte_offset && source.tag == [0x5e, 0x1a]
+            })
+            && record
+                .references
+                .iter()
+                .all(|reference| zero_entity_record(records, *reference).is_some())
+            && (index == 0
+                || edge_strides[index - 1].byte_offset < record.byte_offset
+                    && edge_strides[index - 1].record_ordinal < record.record_ordinal)
+    });
+    let pairs_valid = oriented_use_pairs.iter().enumerate().all(|(index, pair)| {
+        pair.id == format!("catia:zero-entity:oriented-use-pair#{index}")
+            && pair.header_record_ordinal != 0
+            && zero_entity_record(records, pair.header_record_ordinal).is_some_and(|source| {
+                source.byte_offset == pair.header_byte_offset && source.tag == [0x25, 0x69]
+            })
+            && (index == 0
+                || oriented_use_pairs[index - 1].header_byte_offset < pair.header_byte_offset
+                    && oriented_use_pairs[index - 1].header_record_ordinal
+                        < pair.header_record_ordinal)
+            && pair.uses.iter().enumerate().all(|(use_index, use_)| {
+                let side = use_index as u32 + 1;
+                use_.side == side
+                    && !use_.references.contains(&0)
+                    && zero_entity_record(records, use_.record_ordinal).is_some_and(|source| {
+                        source.byte_offset == use_.byte_offset && source.tag == [0x06, 0x38]
+                    })
+                    && use_
+                        .references
+                        .iter()
+                        .all(|reference| zero_entity_record(records, *reference).is_some())
+                    && use_.byte_offset > pair.header_byte_offset
+                    && (use_index == 0 || pair.uses[use_index - 1].byte_offset < use_.byte_offset)
+                    && use_.record_ordinal
+                        == pair
+                            .header_record_ordinal
+                            .checked_add(side)
+                            .unwrap_or(u32::MAX)
+                    && use_.side_slots
+                        == [
+                            pair.base_columns[0].checked_add(side).unwrap_or(u32::MAX),
+                            pair.base_columns[1].checked_add(side).unwrap_or(u32::MAX),
+                        ]
+            })
+    });
+    let incidences_valid = vertex_incidences.iter().enumerate().all(|(index, record)| {
+        let expected_count = match record.tag {
+            [0x05, 0x0b] => 2,
+            [0x05, 0x10] => 3,
+            [0x05, 0x15] => 4,
+            _ => return false,
+        };
+        record.id == format!("catia:zero-entity:vertex-incidence#{index}")
+            && record.record_ordinal != 0
+            && !record.references.contains(&0)
+            && zero_entity_record(records, record.record_ordinal).is_some_and(|source| {
+                source.byte_offset == record.byte_offset && source.tag == record.tag
+            })
+            && record
+                .references
+                .iter()
+                .all(|reference| zero_entity_record(records, *reference).is_some())
+            && record.references.len() == expected_count
+            && (index == 0
+                || vertex_incidences[index - 1].byte_offset < record.byte_offset
+                    && vertex_incidences[index - 1].record_ordinal < record.record_ordinal)
+    });
+    if edge_strides_valid && pairs_valid && incidences_valid {
+        Ok(())
+    } else {
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "zero-entity topology records are structurally invalid".to_string(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -5010,7 +5305,11 @@ impl CatiaNative {
         let consolidated_revolutions = consolidated_revolutions(bytes);
         let consolidated_spheres = consolidated_spheres(bytes);
         let consolidated_tori = consolidated_tori(bytes);
+        let zero_entity_edge_strides = zero_entity_edge_strides(bytes);
+        let zero_entity_oriented_use_pairs = zero_entity_oriented_use_pairs(bytes);
+        let zero_entity_records = zero_entity_records(bytes);
         let zero_entity_support_runs = zero_entity_support_runs(bytes);
+        let zero_entity_vertex_incidences = zero_entity_vertex_incidences(bytes);
         let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes, &consolidated_circles);
         let consolidated_edge_runs =
             consolidated_edge_runs(bytes, &consolidated_pcurves, &consolidated_edge_nodes);
@@ -5044,7 +5343,11 @@ impl CatiaNative {
             object_graphs,
             preview_images,
             value_blocks,
+            zero_entity_edge_strides,
+            zero_entity_oriented_use_pairs,
+            zero_entity_records,
             zero_entity_support_runs,
+            zero_entity_vertex_incidences,
         }
     }
 
@@ -5491,10 +5794,29 @@ impl CatiaNative {
         consolidated_edge_nodes.sort_by_key(|node| node.byte_offset);
         let consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity> =
             namespace.arena_as("consolidated_vertex_identities")?;
+        let mut zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride> =
+            namespace.arena_as("zero_entity_edge_strides")?;
+        zero_entity_edge_strides.sort_by_key(|record| record.byte_offset);
+        let mut zero_entity_oriented_use_pairs: Vec<CatiaZeroEntityOrientedUsePair> =
+            namespace.arena_as("zero_entity_oriented_use_pairs")?;
+        zero_entity_oriented_use_pairs.sort_by_key(|pair| pair.header_byte_offset);
+        let mut zero_entity_records: Vec<CatiaZeroEntityRecord> =
+            namespace.arena_as("zero_entity_records")?;
+        zero_entity_records.sort_by_key(|record| record.record_ordinal);
+        validate_zero_entity_records(&zero_entity_records)?;
         let mut zero_entity_support_runs: Vec<CatiaZeroEntitySupportRun> =
             namespace.arena_as("zero_entity_support_runs")?;
         zero_entity_support_runs.sort_by_key(|run| run.carrier_byte_offset);
-        validate_zero_entity_support_runs(&zero_entity_support_runs)?;
+        validate_zero_entity_support_runs(&zero_entity_support_runs, &zero_entity_records)?;
+        let mut zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence> =
+            namespace.arena_as("zero_entity_vertex_incidences")?;
+        zero_entity_vertex_incidences.sort_by_key(|record| record.byte_offset);
+        validate_zero_entity_topology_records(
+            &zero_entity_edge_strides,
+            &zero_entity_oriented_use_pairs,
+            &zero_entity_vertex_incidences,
+            &zero_entity_records,
+        )?;
         validate_consolidated_edge_runs(
             &consolidated_edge_runs,
             &consolidated_pcurves,
@@ -5537,7 +5859,11 @@ impl CatiaNative {
             object_graphs: graphs,
             preview_images,
             value_blocks,
+            zero_entity_edge_strides,
+            zero_entity_oriented_use_pairs,
+            zero_entity_records,
             zero_entity_support_runs,
+            zero_entity_vertex_incidences,
         })
     }
 
@@ -5637,7 +5963,17 @@ impl CatiaNative {
         namespace.set_arena("preview_images", &self.preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
+        namespace.set_arena("zero_entity_edge_strides", &self.zero_entity_edge_strides)?;
+        namespace.set_arena(
+            "zero_entity_oriented_use_pairs",
+            &self.zero_entity_oriented_use_pairs,
+        )?;
+        namespace.set_arena("zero_entity_records", &self.zero_entity_records)?;
         namespace.set_arena("zero_entity_support_runs", &self.zero_entity_support_runs)?;
+        namespace.set_arena(
+            "zero_entity_vertex_incidences",
+            &self.zero_entity_vertex_incidences,
+        )?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));
@@ -5680,7 +6016,11 @@ impl CatiaNative {
             mut object_graphs,
             preview_images,
             mut value_blocks,
+            zero_entity_edge_strides,
+            zero_entity_oriented_use_pairs,
+            zero_entity_records,
             zero_entity_support_runs,
+            zero_entity_vertex_incidences,
         } = self;
         let entries = catalogs
             .iter_mut()
@@ -5737,7 +6077,17 @@ impl CatiaNative {
         namespace.set_arena("preview_images", &preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
+        namespace.set_arena("zero_entity_edge_strides", &zero_entity_edge_strides)?;
+        namespace.set_arena(
+            "zero_entity_oriented_use_pairs",
+            &zero_entity_oriented_use_pairs,
+        )?;
+        namespace.set_arena("zero_entity_records", &zero_entity_records)?;
         namespace.set_arena("zero_entity_support_runs", &zero_entity_support_runs)?;
+        namespace.set_arena(
+            "zero_entity_vertex_incidences",
+            &zero_entity_vertex_incidences,
+        )?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));
