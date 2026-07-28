@@ -1731,7 +1731,7 @@ fn is_tagged_reference_kind(kind: u16) -> bool {
 }
 
 fn is_reference_type_kind(kind: u16) -> bool {
-    is_tagged_reference_kind(kind) || matches!(kind, 55 | 100)
+    is_tagged_reference_kind(kind) || matches!(kind, 35 | 55 | 67 | 100)
 }
 
 fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Option<Record> {
@@ -3243,6 +3243,24 @@ mod reference_type_map_tests {
             [ReferenceTypeMap {
                 entries: vec![(3, 81), (4, 100)],
                 target_kind: None,
+                offset: 0,
+                end: bytes.len(),
+            }]
+        );
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_accepts_map_only_type_codes() {
+        let bytes = vec![1, 0, 1, 0, 3, 0, 67, 0, 1, 0, 0, 0, 35];
+
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.reference_type_maps,
+            [ReferenceTypeMap {
+                entries: vec![(3, 67)],
+                target_kind: Some(35),
                 offset: 0,
                 end: bytes.len(),
             }]
