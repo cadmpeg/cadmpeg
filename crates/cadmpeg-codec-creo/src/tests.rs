@@ -4158,11 +4158,17 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     assert!(segments.is_complete());
     assert_eq!(segments.circle_rows.len(), 1);
     assert_eq!(segments.point_rows.len(), 1);
-    assert_eq!(segments.centered_line_rows.len(), 1);
+    assert_eq!(
+        segments
+            .centered_line_rows
+            .iter()
+            .map(|row| (row.external_id, row.center_id))
+            .collect::<Vec<_>>(),
+        vec![(22, 2), (23, 0)]
+    );
     assert_eq!(segments.reference_line_rows.len(), 1);
     assert_eq!(segments.bounded_curve_rows.len(), 1);
-    assert_eq!(segments.opaque_rows.len(), 1);
-    assert_eq!(segments.opaque_rows[0].kind, 47);
+    assert!(segments.opaque_rows.is_empty());
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -4180,6 +4186,12 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
         sketch.fields["centered_line_segments"][0]["external_id"],
         22
     );
+    assert_eq!(sketch.fields["centered_line_segments"][0]["center_id"], 2);
+    assert_eq!(
+        sketch.fields["centered_line_segments"][1]["external_id"],
+        23
+    );
+    assert_eq!(sketch.fields["centered_line_segments"][1]["center_id"], 0);
     assert_eq!(
         sketch.fields["reference_line_segments"][0]["external_id"],
         24
@@ -4204,8 +4216,9 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
         sketch.fields["bounded_curve_segments"][0]["point_ids"][1],
         3
     );
-    assert_eq!(sketch.fields["opaque_segments"][0]["external_id"], 23);
-    assert_eq!(sketch.fields["opaque_segments"][0]["kind"], 47);
+    assert!(sketch.fields["opaque_segments"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
 }
 
 #[test]

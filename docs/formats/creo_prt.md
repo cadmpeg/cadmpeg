@@ -1341,13 +1341,14 @@ point. Sense zero selects the whole point in solver incidences. Construction
 points do not participate in `ent_tab` profile chains. Sense four selects the
 same point as a point locus.
 A type-47 `segtab` row is a centered construction line when `dir=[0,0,0]`,
-the point slots are `[null,1]`, `cntrid=2`, `arcorient=0`, `verhor=0`, the
+the point slots are `[null,1]`, `cntrid` is present, `arcorient=0`, `verhor=0`, the
 primary radius-reference slot is one, and the secondary radius-reference slot
-is null. Point keys zero and one are the line endpoints; point key two is their
-midpoint. Complete coordinates define the bounded neutral line only when the
-stored center equals the endpoint midpoint and the endpoints are distinct.
-Sense zero selects the line, and senses two and three select its start and end.
-Other type-47 layouts remain opaque.
+is null. Point keys zero and one are the line endpoints; `cntrid` selects their
+stored center point. Complete coordinates define the bounded neutral line only
+when the stored center equals the endpoint midpoint and the endpoints are
+distinct. Sense zero selects the line, senses two and three select its start
+and end, and sense four selects its center. Other type-47 layouts remain
+opaque.
 The `order_table` header retains its declared count and table-class reference
 when its prototype or positional identity rows do not validate.
 The `relat_ptr` header and its independent `skamp_ptr` and `triples_ptr` tables
@@ -1679,9 +1680,8 @@ Positional rows may insert the two-byte `c0 80` or `c1 00` wrapper before
 `ext_id` value of zero is an identifier; the `f6` control sentinel represents
 an absent value.
 The `c0 80` wrapper may also precede the named row's scalar `type`. Segment
-families other than types `1`, `2`, `3`, `5`, `10`, and the defined type-47
-form retain the same fields and count toward table completeness, but do not
-define line, arc, point, or circle geometry.
+Segment layouts outside the defined families retain the same fields and count
+toward table completeness, but do not define neutral geometry.
 `ext_id` is the neutral section-entity identity when exactly one `segtab` row
 stores that value. Rows sharing an `ext_id` remain independent construction
 entities identified by their row offsets and do not participate in profile,

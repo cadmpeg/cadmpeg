@@ -7603,19 +7603,29 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         None
     );
     let centered_line = crate::feature::FeatureCenteredLineSegment {
+        center_id: 2,
         external_id: 100,
         offset: 602,
     };
     assert_eq!(
-        section_centered_line_geometry(&BTreeMap::from([
-            (0, [3.0, -1.0]),
-            (1, [3.0, 5.0]),
-            (2, [3.0, 2.0]),
-        ])),
+        section_centered_line_geometry(
+            &BTreeMap::from([(0, [3.0, -1.0]), (1, [3.0, 5.0]), (2, [3.0, 2.0]),]),
+            &centered_line,
+        ),
         Some(SketchGeometry::Line {
             start: Point2::new(3.0, -1.0),
             end: Point2::new(3.0, 5.0),
         })
+    );
+    assert_eq!(
+        section_centered_line_geometry(
+            &BTreeMap::from([(0, [3.0, -1.0]), (1, [3.0, 5.0]), (2, [3.0, 2.0]),]),
+            &crate::feature::FeatureCenteredLineSegment {
+                center_id: 0,
+                ..centered_line.clone()
+            },
+        ),
+        None
     );
     let mut opaque_line = definition.clone();
     opaque_line

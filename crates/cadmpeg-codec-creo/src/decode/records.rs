@@ -1891,6 +1891,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .flat_map(|table| &table.centered_line_rows)
                 .map(|segment| CreoSketchCenteredLineSegment {
                     external_id: segment.external_id,
+                    center_id: segment.center_id,
                     offset: segment.offset,
                 })
                 .collect(),

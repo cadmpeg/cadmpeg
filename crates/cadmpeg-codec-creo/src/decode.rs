@@ -339,6 +339,7 @@ struct CreoSketchPointSegment {
 #[derive(Serialize)]
 struct CreoSketchCenteredLineSegment {
     external_id: u32,
+    center_id: u32,
     offset: usize,
 }
 
@@ -2145,10 +2146,13 @@ fn section_point_row_geometry(
     })
 }
 
-fn section_centered_line_geometry(points: &BTreeMap<u32, [f64; 2]>) -> Option<SketchGeometry> {
+fn section_centered_line_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureCenteredLineSegment,
+) -> Option<SketchGeometry> {
     let start = points.get(&0)?;
     let end = points.get(&1)?;
-    let center = points.get(&2)?;
+    let center = points.get(&segment.center_id)?;
     let scale = start
         .iter()
         .chain(end)
@@ -3722,6 +3726,14 @@ fn section_skamp_selected_point_id(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<u32> {
+    if let Some(segment) = unique_centered_line_segment(definition, item.entity_id) {
+        return match item.sense {
+            2 => Some(0),
+            3 => Some(1),
+            4 => Some(segment.center_id),
+            _ => None,
+        };
+    }
     let segment = unique_section_skamp_segment(definition, item.entity_id)?;
     match item.sense {
         2 => Some(segment.point_ids[0]),
@@ -9926,6 +9938,7 @@ fn section_skamp_locus(
             0 => Some(SketchLocus::Entity(entity)),
             2 => Some(SketchLocus::Start(entity)),
             3 => Some(SketchLocus::End(entity)),
+            4 => Some(SketchLocus::Center(entity)),
             _ => None,
         };
     }
@@ -11603,7 +11616,7 @@ fn section_skamp_has_proven_point_locus(
         );
     }
     if unique_centered_line_segment(definition, item.entity_id).is_some() {
-        return matches!(item.sense, 2 | 3);
+        return matches!(item.sense, 2..=4);
     }
     if let Some(segment) = unique_reference_line_segment(definition, item.entity_id) {
         return match item.sense {
@@ -11865,7 +11878,12 @@ fn transfer_sketches(
             .segments
             .iter()
             .flat_map(|table| &table.centered_line_rows)
-            .filter_map(|segment| Some((segment.offset, section_centered_line_geometry(&points)?)))
+            .filter_map(|segment| {
+                Some((
+                    segment.offset,
+                    section_centered_line_geometry(&points, segment)?,
+                ))
+            })
             .collect::<BTreeMap<_, _>>();
         let mut emitted = segments
             .iter()

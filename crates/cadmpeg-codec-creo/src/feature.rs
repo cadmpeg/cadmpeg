@@ -914,6 +914,8 @@ pub struct FeaturePointSegment {
 /// One centered construction-line type `47` `segtab_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureCenteredLineSegment {
+    /// Center point reference stored by the section solver.
+    pub center_id: u32,
     /// External segment identifier used by section tables.
     pub external_id: u32,
     /// Byte offset of the positional row in the original stream.
@@ -2641,19 +2643,21 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
     if row.kind == 47
         && row.directions == [Some(0); 3]
         && row.point_ids == [None, Some(1)]
-        && row.center_id == Some(2)
         && row.arc_orientation == Some(0)
         && row.vertical_horizontal == Some(0)
         && row.radius_ref == Some(1)
         && row.radius2_ref.is_none()
     {
-        segments
-            .centered_line_rows
-            .push(FeatureCenteredLineSegment {
-                external_id: row.external_id,
-                offset: row.offset,
-            });
-        return;
+        if let Some(center_id) = row.center_id {
+            segments
+                .centered_line_rows
+                .push(FeatureCenteredLineSegment {
+                    center_id,
+                    external_id: row.external_id,
+                    offset: row.offset,
+                });
+            return;
+        }
     }
     if row.kind == 25
         && row.center_id.is_none()
@@ -8638,6 +8642,7 @@ mod tests {
         assert_eq!(
             segments.centered_line_rows,
             vec![FeatureCenteredLineSegment {
+                center_id: 2,
                 external_id: 22,
                 offset: 10,
             }]
@@ -8647,6 +8652,27 @@ mod tests {
         other_type_47[16] = 0;
         let segments = segment_table_body(&other_type_47, 0, 0, other_type_47.len(), false)
             .expect("other type-47 segment table");
+        assert!(segments.is_complete());
+        assert_eq!(
+            segments.centered_line_rows,
+            vec![FeatureCenteredLineSegment {
+                center_id: 0,
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+        assert!(segments.opaque_rows.is_empty());
+
+        let mut missing_construction_ref = payload;
+        missing_construction_ref[19] = 0xf6;
+        let segments = segment_table_body(
+            &missing_construction_ref,
+            0,
+            0,
+            missing_construction_ref.len(),
+            false,
+        )
+        .expect("incomplete centered-line segment table");
         assert!(segments.is_complete());
         assert!(segments.centered_line_rows.is_empty());
         assert_eq!(segments.opaque_rows.len(), 1);
