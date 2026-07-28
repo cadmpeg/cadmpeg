@@ -19,6 +19,9 @@ This document records F3D semantics that the format specification does not yet d
 - Which of the three `fixed_width` blend-value scalars are the endpoint parameters and which is the width is unresolved.
 - The token tags of a revision-gated `VBL_SURF` `deg` boundary are unobserved.
 - The semantic roles of the variable-blend tail Boolean and of the three integers that follow it are unresolved.
+- Blend-value payloads have incomplete selector namespaces: two-radii chamfer-selector values other than `0` and `3`, single-radius selector values other than `0`, `1`, and `7`, the roles of the two scalars selected by values `1` and `7`, and the semantics of the optional `interp` scalar-pair tail are unresolved.
+- The roles of the two leading `tvertex` tolerance slots are unresolved; only the last slot is the vertex tolerance.
+- The role of the `tedge` trailing LONG zero (`chunk[13]`) is unresolved.
 
 ## Container, header, and design records
 
@@ -40,6 +43,7 @@ This document records F3D semantics that the format specification does not yet d
 - In Extrude selections, identities absent from history, the discriminator between multiple profile loops incident at the same ordered persistent Sketch points, the selector for one of several closed spatial-Sketch profiles, the context UUID's role, and the semantic role of the fixed member tail's optional slot remain unresolved.
 - The construction-group scalar fields and variant byte, and the construction-group role field outside Extrude scopes, remain unresolved.
 - The topology meaning of the root, prelude, and side-clause scalar fields shared by face-recipe nodes remains unresolved.
+- The join from a `Move` or `RemoveBody` role-`0x0000000400000000` construction-group identity to neutral body identities is unresolved; the group identity is retained as the native body selection.
 - The semantic roles of the class-365 whole-body operand fields after its asset and context UUIDs, excluding the bounded nested-record and body-recipe joins, remain unresolved.
 - The semantic roles of the six-byte fields following Base Feature body suffixes and record references are unresolved.
 - The semantic roles of the f64 and two f32 fields between a sketch-text record's nominal height and font family, its two internal record references, and its class-specific tail fields are unresolved.
