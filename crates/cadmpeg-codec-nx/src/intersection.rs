@@ -35,6 +35,20 @@ pub enum ChartPointLayout {
     Ext11,
 }
 
+/// Serialized framing of one type-59 blend-bound record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlendBoundFraming {
+    /// Partition-style fields following a direct `0x003b` tag.
+    PartitionDirect,
+    /// Partition-style fields following an escaped `0x003bff` tag.
+    PartitionEscaped,
+    /// Status-framed deltas fields following a direct `0x003b` tag.
+    DeltasDirect,
+    /// Status-framed deltas fields following an escaped `0x003bff` tag.
+    DeltasEscaped,
+}
+
 /// One complete physical `CHART_s` source record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChartSourceRecord {
@@ -81,8 +95,8 @@ pub struct BlendBound {
     pub boundary_index: u32,
     /// Cross-reference index of the blend surface.
     pub blend_surface: u32,
-    /// Whether the record tag uses the `0xff` envelope escape.
-    pub escaped: bool,
+    /// Serialized partition/deltas and direct/escaped framing.
+    pub framing: BlendBoundFraming,
     /// Type-tag offset in the inflated stream.
     pub pos: usize,
 }
@@ -455,58 +469,87 @@ pub fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
 
 pub(crate) fn blend_bound_at(stream: &[u8], tag: usize) -> Option<(BlendBound, usize)> {
     (stream.get(tag..tag + 2) == Some(&[0, 59])).then_some(())?;
-    for escape in [0usize, 1] {
-        if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
+    let mut candidate = None;
+    for framing in [
+        BlendBoundFraming::PartitionDirect,
+        BlendBoundFraming::PartitionEscaped,
+        BlendBoundFraming::DeltasDirect,
+        BlendBoundFraming::DeltasEscaped,
+    ] {
+        if matches!(
+            framing,
+            BlendBoundFraming::PartitionEscaped | BlendBoundFraming::DeltasEscaped
+        ) && stream.get(tag + 2) != Some(&0xff)
+        {
             continue;
         }
-        let mut at = tag + 2 + escape;
-        let Some((xmt, consumed)) = read_xmt(stream, at) else {
+        let Some((bound, end)) = blend_bound_layout(stream, tag, framing) else {
             continue;
         };
-        at += consumed + 4;
-        let mut header = [0u32; 5];
-        let mut valid = true;
-        for reference in &mut header {
-            let Some((value, consumed)) = read_xmt(stream, at) else {
-                valid = false;
-                break;
-            };
-            *reference = value;
-            at += consumed;
+        if candidate.is_some() {
+            return None;
         }
-        if !valid || header[0] != 1 {
-            continue;
-        }
-        let sense = match stream.get(at) {
-            Some(b'+') => true,
-            Some(b'-') => false,
-            _ => continue,
-        };
-        at += 1;
-        let Some((boundary, consumed)) = read_xmt(stream, at) else {
-            continue;
-        };
+        candidate = Some((bound, end));
+    }
+    candidate
+}
+
+fn blend_bound_layout(
+    stream: &[u8],
+    tag: usize,
+    framing: BlendBoundFraming,
+) -> Option<(BlendBound, usize)> {
+    let escaped = matches!(
+        framing,
+        BlendBoundFraming::PartitionEscaped | BlendBoundFraming::DeltasEscaped
+    );
+    let status_framed = matches!(
+        framing,
+        BlendBoundFraming::DeltasDirect | BlendBoundFraming::DeltasEscaped
+    );
+    let mut at = tag.checked_add(2 + usize::from(escaped))?;
+    let (xmt, consumed) = read_xmt(stream, at)?;
+    (xmt > 1).then_some(())?;
+    at = at.checked_add(consumed + 4)?;
+    let mut header = [0u32; 5];
+    for reference in &mut header {
+        let (value, consumed) = read_xmt(stream, at)?;
+        *reference = value;
         at += consumed;
-        let Some((surface, consumed)) = read_xmt(stream, at) else {
-            continue;
-        };
-        at += consumed;
-        if boundary <= 1 && surface > 1 {
-            return Some((
-                BlendBound {
-                    xmt,
-                    header_references: header,
-                    sense,
-                    boundary_index: boundary,
-                    blend_surface: surface,
-                    escaped: escape == 1,
-                    pos: tag,
-                },
-                at,
-            ));
+        if status_framed {
+            (*stream.get(at)? <= 1).then_some(())?;
+            at += 1;
         }
     }
-    None
+    (header[0] == 1).then_some(())?;
+    let sense = match stream.get(at) {
+        Some(b'+') => true,
+        Some(b'-') => false,
+        _ => return None,
+    };
+    at += 1;
+    let (boundary, consumed) = read_xmt(stream, at)?;
+    (boundary <= 1).then_some(())?;
+    at += consumed;
+    let (surface, consumed) = read_xmt(stream, at)?;
+    (surface > 1).then_some(())?;
+    at += consumed;
+    if status_framed {
+        (stream.get(at) == Some(&1)).then_some(())?;
+        at += 1;
+    }
+    Some((
+        BlendBound {
+            xmt,
+            header_references: header,
+            sense,
+            boundary_index: boundary,
+            blend_surface: surface,
+            framing,
+            pos: tag,
+        },
+        at,
+    ))
 }
 
 fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {

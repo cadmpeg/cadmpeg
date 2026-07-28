@@ -288,7 +288,7 @@
               {
                 "blend_surface_xmt": 13,
                 "boundary_index": 0,
-                "escaped": false,
+                "framing": "partition_direct",
                 "header_references": [
                   1,
                   1,

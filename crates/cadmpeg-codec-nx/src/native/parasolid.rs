@@ -261,8 +261,8 @@ pub struct ParasolidBlendBoundRecord {
     pub boundary_index: u32,
     /// Cross-reference index of the blend surface.
     pub blend_surface_xmt: u32,
-    /// Whether the record tag uses the `0xff` envelope escape.
-    pub escaped: bool,
+    /// Serialized partition/deltas and direct/escaped framing.
+    pub framing: crate::intersection::BlendBoundFraming,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -291,7 +291,7 @@ impl ParasolidScanRecords for ParasolidBlendBoundRecord {
             sense: row.sense,
             boundary_index: row.boundary_index,
             blend_surface_xmt: row.blend_surface,
-            escaped: row.escaped,
+            framing: row.framing,
             inflated_offset: row.pos as u64,
         }
     }
@@ -1786,7 +1786,10 @@ mod tests {
         assert!(records[0].sense);
         assert_eq!(records[0].boundary_index, 0);
         assert_eq!(records[0].blend_surface_xmt, 13);
-        assert!(!records[0].escaped);
+        assert_eq!(
+            records[0].framing,
+            crate::intersection::BlendBoundFraming::PartitionDirect
+        );
 
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
             &result.ir.model.procedural_curves[0].definition

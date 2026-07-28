@@ -6484,6 +6484,57 @@ fn deltas_walks_complete_intersection_auxiliary_records() {
 }
 
 #[test]
+fn deltas_walks_status_framed_blend_bound_records() {
+    fn record(escape: bool, xmt: u32, surface: u32) -> Vec<u8> {
+        let mut bytes = 59u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        bytes.extend_from_slice(&17u32.to_be_bytes());
+        for (reference, status) in [(1u32, 1u8), (3, 1), (40_001, 0), (1, 1), (40_002, 0)] {
+            bytes.extend(encoded_xmt(reference));
+            bytes.push(status);
+        }
+        bytes.push(b'+');
+        bytes.extend(encoded_xmt(0));
+        bytes.extend(encoded_xmt(surface));
+        bytes.push(1);
+        bytes
+    }
+
+    let direct = record(false, 24, 40_003);
+    let escaped = record(true, 40_004, 40_005);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(census.full_counts["BLEND_BOUND"], 2);
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(
+        census.records[0].references,
+        [1, 3, 40_001, 1, 40_002, 0, 40_003]
+    );
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+    assert_eq!(
+        crate::intersection::blend_bounds(&stream)
+            .into_iter()
+            .map(|record| record.framing)
+            .collect::<Vec<_>>(),
+        [
+            crate::intersection::BlendBoundFraming::DeltasDirect,
+            crate::intersection::BlendBoundFraming::DeltasEscaped,
+        ]
+    );
+
+    let mut invalid_status = record(false, 24, 40_003);
+    *invalid_status.last_mut().expect("terminal status") = 0;
+    assert!(crate::deltas::walk(&invalid_status).records.is_empty());
+}
+
+#[test]
 fn deltas_walks_complete_nurbs_auxiliary_records() {
     let source = bspline_partition_stream();
     for (kind, family) in [
