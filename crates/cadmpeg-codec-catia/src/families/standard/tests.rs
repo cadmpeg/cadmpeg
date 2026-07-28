@@ -20,10 +20,12 @@ use crate::families::standard::topology::{
 use crate::solve::incidence::reconstruct_incidence_candidates;
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::mesh_quotient::{
-    canonicalize_mesh_vertex_labels, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
-    mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable, mesh_candidates_equivalent,
-    mesh_edge_points_compatible, mesh_face_endpoint_configurations, possible_face_choices,
-    possible_face_choices_with_limit, possible_face_equations, prune_mesh_endpoint_pair_support,
+    canonical_edge_class_assignment, canonicalize_mesh_vertex_labels,
+    deduplicate_mesh_quotient_assignments, initial_mesh_quotient, mesh_assignment_can_merge,
+    mesh_assignment_endpoint_cycles_viable, mesh_candidates_equivalent,
+    mesh_candidates_equivalent_with_edge_classes, mesh_edge_points_compatible,
+    mesh_face_endpoint_configurations, possible_face_choices, possible_face_choices_with_limit,
+    possible_face_equations, prune_mesh_endpoint_pair_support,
     prune_mesh_endpoint_pair_support_with_limit, uses_canonical_edge_direction_gauge,
     MeshConstraintBudget, MeshPartialEndpointConstraint, MeshQuotient, MeshSelectionSearch,
     MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
@@ -240,6 +242,107 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
 
     assert_ne!(left, right);
     assert!(mesh_candidates_equivalent(&left, &right));
+}
+
+#[test]
+fn mesh_candidate_comparison_canonicalizes_equivalent_edge_allocations() {
+    let edge_rows = vec![
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 11],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        },
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 12],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        },
+    ];
+    let topology = |swapped: bool| StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![
+                Boundary {
+                    coedges: vec![CoedgeUse {
+                        edge_row: usize::from(swapped),
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    }],
+                },
+                Boundary {
+                    coedges: vec![CoedgeUse {
+                        edge_row: usize::from(!swapped),
+                        reversed: false,
+                        start_vertex: 1,
+                        end_vertex: 2,
+                    }],
+                },
+            ],
+        }],
+        edge_rows: edge_rows.clone(),
+        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        logical_vertex_count: 3,
+    };
+    let left = (topology(false), vec![0, 1, 2]);
+    let right = (topology(true), vec![0, 1, 2]);
+
+    assert!(mesh_candidates_equivalent_with_edge_classes(
+        &left,
+        &right,
+        &[7, 7]
+    ));
+    assert!(!mesh_candidates_equivalent_with_edge_classes(
+        &left,
+        &right,
+        &[7, 8]
+    ));
+    assert!(!mesh_candidates_equivalent_with_edge_classes(
+        &left,
+        &right,
+        &[7]
+    ));
+}
+
+#[test]
+fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
+    let invalid = (
+        StandardTopology {
+            faces: Vec::new(),
+            edge_rows: Vec::new(),
+            vertex_points: Vec::new(),
+            logical_vertex_count: 0,
+        },
+        vec![0],
+    );
+
+    assert!(!mesh_candidates_equivalent(&invalid, &invalid));
+    assert!(!mesh_candidates_equivalent_with_edge_classes(
+        &invalid,
+        &invalid,
+        &[]
+    ));
+}
+
+#[test]
+fn equivalent_edge_classes_require_monotone_endpoint_assignments() {
+    let classes = [4, 4, 9];
+    let choices = vec![
+        vec![[0, 2], [0, 1]],
+        vec![[0, 1], [0, 2]],
+        vec![[3, 4], [3, 5]],
+    ];
+
+    assert_eq!(
+        canonical_edge_class_assignment(&classes, &choices, &[Some([2, 0]), Some([0, 2]), None]),
+        Some(vec![true, true, false])
+    );
+    assert_eq!(
+        canonical_edge_class_assignment(&classes, &choices, &[Some([0, 2]), Some([1, 0]), None]),
+        None
+    );
+    assert!(
+        canonical_edge_class_assignment(&classes, &choices, &[None, Some([0, 1]), None]).is_some()
+    );
 }
 
 #[test]

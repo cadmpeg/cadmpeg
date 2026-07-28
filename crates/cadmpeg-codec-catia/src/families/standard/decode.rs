@@ -2219,6 +2219,7 @@ fn attach_standard_topology(
             brep,
             &edge_faces,
             options,
+            &edge_classes,
             &circle_constraint_edges,
             |pairs| {
                 standard_circle_pair_solution_is_simple(
@@ -2246,6 +2247,7 @@ fn attach_standard_topology(
                     brep,
                     &edge_faces,
                     options,
+                    &edge_classes,
                     &unconstrained,
                     |_| true,
                 )
