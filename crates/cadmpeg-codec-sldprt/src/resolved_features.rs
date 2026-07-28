@@ -5622,11 +5622,10 @@ mod marker_tests {
     }
 
     #[test]
-    fn packed_legacy_curve_carries_coordinate_roster_indices() {
+    fn packed_legacy_curve_codes_carry_coordinate_roster_indices() {
         let mut payload = vec![0; 76 + LEGACY_SKETCH_MARKER.len()];
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[5..13].fill(0xff);
-        payload[13..17].copy_from_slice(&2u32.to_le_bytes());
         payload[17..23].copy_from_slice(&[0x00, 0x00, 0x04, 0x00, 0x02, 0x00]);
         payload[23..25].copy_from_slice(&1u16.to_le_bytes());
         payload[25..27].copy_from_slice(&1u16.to_le_bytes());
@@ -5638,11 +5637,17 @@ mod marker_tests {
         payload[56..64].copy_from_slice(&(-1.0f64).to_le_bytes());
         payload[76..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-        assert_eq!(
-            packed_legacy_curve_endpoint_indices(&payload, 0),
-            Some([3, 4])
-        );
+        for code in 0u32..=2 {
+            payload[13..17].copy_from_slice(&code.to_le_bytes());
+            assert_eq!(
+                packed_legacy_curve_endpoint_indices(&payload, 0),
+                Some([3, 4])
+            );
+        }
         assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(48));
+
+        payload[13..17].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(packed_legacy_curve_endpoint_indices(&payload, 0), None);
     }
 
     #[test]
@@ -38605,7 +38610,7 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
 
 fn packed_legacy_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if !packed_legacy_marker_body(payload, offset)
-        || !matches!(marker_native_code(payload, offset), Some(1 | 2))
+        || !matches!(marker_native_code(payload, offset), Some(0..=2))
         || !matches!(marker_profile_curve_role(payload, offset), Some(1 | 2))
         || payload.get(offset + 52..offset + 56) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 56..offset + 64) != Some(&(-1.0f64).to_le_bytes())
