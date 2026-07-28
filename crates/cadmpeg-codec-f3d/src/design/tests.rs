@@ -30,10 +30,11 @@ use crate::design::decode::parameters::{
 };
 use crate::design::decode::scopes::{
     exact_base_feature_construction, exact_circular_pattern_construction, exact_combine_operation,
-    exact_direct_face_operation, exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
-    exact_fixed_fillet_parameters, exact_joint_origin_frame, exact_path_feature_construction,
-    exact_scale_operation, exact_solid_primitive, exact_surface_stitch_operation,
-    exact_work_plane_frame, exact_work_point_position, parse_parameter_scope,
+    exact_direct_face_operation, exact_draft_operation, exact_fixed_chamfer_parameters,
+    exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_joint_origin_frame,
+    exact_path_feature_construction, exact_scale_operation, exact_solid_primitive,
+    exact_surface_stitch_operation, exact_work_plane_frame, exact_work_point_position,
+    parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -83,8 +84,8 @@ use crate::records::{
     DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
-    DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFixedChamferParameters,
     DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind, DesignParameter,
     DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
@@ -3818,6 +3819,38 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     extrude_scope.reference_members.push(75);
     assert_eq!(exact_fixed_extrude_parameters(&bytes, &extrude_scope), None);
 
+    let draft_start = bytes.len();
+    for (record_index, ordinal, value) in [(175u32, 0u8, 0.4f64), (176, 1, 0.0)] {
+        let mut scalar = vec![0; 104];
+        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        scalar[4..7].copy_from_slice(b"277");
+        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+        scalar[24] = 1;
+        scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        scalar[35] = ordinal;
+        scalar[40..48].copy_from_slice(&value.to_le_bytes());
+        scalar.extend_from_slice(&3u32.to_le_bytes());
+        scalar.extend_from_slice(b"261");
+        scalar.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&scalar);
+    }
+    let mut draft_scope = scope.clone();
+    draft_scope.kind = "Draft".into();
+    draft_scope.frame_length = 361;
+    draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
+    assert_eq!(
+        exact_draft_operation(&bytes, &draft_scope),
+        Some(DesignDraftOperation {
+            angle: 0.4,
+            angle_record_index: 175,
+            angle_offset: (draft_start + 40) as u64,
+            opposite_angle_record_index: 176,
+            opposite_angle_offset: (draft_start + 155) as u64,
+        })
+    );
+    draft_scope.reference_members.swap(0, 1);
+    assert_eq!(exact_draft_operation(&bytes, &draft_scope), None);
+
     let fillet_start = bytes.len();
     for (record_index, ordinal, value) in [
         (77u32, 0u8, 1.0f64),
@@ -4934,6 +4967,7 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -5540,6 +5574,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -5967,6 +6002,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -10555,6 +10591,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -10685,6 +10722,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -10861,6 +10899,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -11491,6 +11530,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -12269,6 +12309,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -12671,6 +12712,7 @@ fn parameter_expressions_project_feature_dependencies() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -12792,6 +12834,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -13448,6 +13491,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
@@ -13620,6 +13664,7 @@ fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,

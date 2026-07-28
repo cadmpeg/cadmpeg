@@ -27,6 +27,7 @@ pub(crate) enum DesignFeatureFamily {
     Fillet,
     Chamfer,
     Combine,
+    Draft,
     CircularPattern,
     Mirror,
     Move,
@@ -52,6 +53,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Fillet" | "Congé" | "Abrundung" | "Arredondamento" => Some(DesignFeatureFamily::Fillet),
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
         "Combine" => Some(DesignFeatureFamily::Combine),
+        "Draft" => Some(DesignFeatureFamily::Draft),
         "C-Pattern" | "Circular Pattern" | "Réseau C" => {
             Some(DesignFeatureFamily::CircularPattern)
         }

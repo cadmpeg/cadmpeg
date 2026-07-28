@@ -820,6 +820,26 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     })
             }
         };
+        let draft_link = match (
+            scope.draft_operation.as_ref(),
+            design::design_feature_family(&scope.kind),
+        ) {
+            (None, _) => true,
+            (Some(_), family) if family != Some(design::DesignFeatureFamily::Draft) => false,
+            (Some(operation), _) => {
+                scope.frame_length == 361
+                    && scope.reference_members.len() == 7
+                    && scope.reference_members[0] == operation.angle_record_index
+                    && scope.reference_members[1] == operation.opposite_angle_record_index
+                    && operation.angle.is_finite()
+                    && operation.angle != 0.0
+                    && operation.angle_offset > scope.paired_byte_offset
+                    && operation.opposite_angle_offset > operation.angle_offset
+                    && record_indices.contains(&(native_stream, operation.angle_record_index))
+                    && record_indices
+                        .contains(&(native_stream, operation.opposite_angle_record_index))
+            }
+        };
         let valid = scope.class_tag.len() == 3
             && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.paired_class_tag.len() == 3
@@ -932,6 +952,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && edge_flange_link
             && hem_link
             && copy_paste_link
+            && draft_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
@@ -1073,6 +1094,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     }
                     Some(design::DesignFeatureFamily::OffsetFaces) => {
                         group.role == 0x0000_0010_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::Draft) => {
+                        matches!(group.role, 0x0000_0010_0000_0000 | 0x0000_0021_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
@@ -2562,6 +2588,19 @@ fn validate_face_operands<'a>(
                                         )
                                     }) && operand.recipe_kind
                                         == records::ConstructionRecipeKind::BoundedFace
+                                }
+                                Some(design::DesignFeatureFamily::Draft) => {
+                                    group.is_some_and(|group| match group.role {
+                                        0x0000_0010_0000_0000 => {
+                                            operand.recipe_kind
+                                                == records::ConstructionRecipeKind::BoundedFace
+                                        }
+                                        0x0000_0021_0000_0000 => {
+                                            operand.recipe_kind
+                                                == records::ConstructionRecipeKind::Face
+                                        }
+                                        _ => false,
+                                    })
                                 }
                                 Some(
                                     design::DesignFeatureFamily::Fillet

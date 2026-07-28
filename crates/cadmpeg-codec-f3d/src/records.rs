@@ -1044,6 +1044,21 @@ pub struct DesignCombineOperation {
     pub body_selection_record_indexes: Vec<u32>,
 }
 
+/// Exact signed-angle lanes carried by a `Draft` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDraftOperation {
+    /// Signed draft angle in radians.
+    pub angle: f64,
+    /// Referenced draft-angle scalar record.
+    pub angle_record_index: u32,
+    /// Byte offset of the draft-angle scalar.
+    pub angle_offset: u64,
+    /// Zero-valued opposite-side angle scalar record.
+    pub opposite_angle_record_index: u32,
+    /// Byte offset of the opposite-side angle scalar.
+    pub opposite_angle_offset: u64,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -1174,6 +1189,9 @@ pub struct DesignParameterScope {
     /// Exact Boolean construction carried by a `Combine` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combine_operation: Option<DesignCombineOperation>,
+    /// Exact signed-angle construction carried by a `Draft` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_operation: Option<DesignDraftOperation>,
     /// Exact construction carried by a circular-pattern scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub circular_pattern_construction: Option<DesignCircularPatternConstruction>,

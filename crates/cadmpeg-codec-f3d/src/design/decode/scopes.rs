@@ -11,12 +11,13 @@ use crate::ids::{self, native_stream};
 use crate::records::{
     DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignCircularPatternConstruction,
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
-    DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignEdgeFlangeOperation,
-    DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudeStart,
-    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation, DesignMoveOperation,
-    DesignObjectKind, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignScaleOperation, DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignDraftOperation,
+    DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
+    DesignExtrudeStart, DesignFixedChamferDistance, DesignFixedChamferParameters,
+    DesignFixedExtrudeParameters, DesignFixedFilletGroup, DesignFixedFilletParameters,
+    DesignHemOperation, DesignMoveOperation, DesignObjectKind, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation, DesignSolidPrimitive,
+    DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -107,6 +108,7 @@ pub fn decode_parameter_scopes(
             scope.fixed_chamfer_parameters = exact_fixed_chamfer_parameters(bytes, &scope);
             scope.path_feature_construction = exact_path_feature_construction(bytes, &scope);
             scope.combine_operation = exact_combine_operation(bytes, &scope);
+            scope.draft_operation = exact_draft_operation(bytes, &scope);
             scope.circular_pattern_construction =
                 exact_circular_pattern_construction(bytes, &scope);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
@@ -1394,6 +1396,48 @@ pub(crate) fn exact_combine_operation(
     })
 }
 
+pub(crate) fn exact_draft_operation(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignDraftOperation> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Draft)
+        || scope.frame_length != 361
+        || scope.reference_members.len() != 7
+    {
+        return None;
+    }
+    let lanes = scope
+        .reference_members
+        .iter()
+        .filter_map(|record_index| {
+            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            (scalar.owner_record_index == Some(scope.record_index))
+                .then_some((*record_index, scalar))
+        })
+        .collect::<Vec<_>>();
+    let [(angle_record_index, angle), (opposite_angle_record_index, opposite)] = lanes.as_slice()
+    else {
+        return None;
+    };
+    if angle.ordinal != 0
+        || opposite.ordinal != 1
+        || !angle.value.is_finite()
+        || angle.value == 0.0
+        || opposite.value != 0.0
+        || *angle_record_index != scope.reference_members[0]
+        || *opposite_angle_record_index != scope.reference_members[1]
+    {
+        return None;
+    }
+    Some(DesignDraftOperation {
+        angle: angle.value,
+        angle_record_index: *angle_record_index,
+        angle_offset: angle.value_offset,
+        opposite_angle_record_index: *opposite_angle_record_index,
+        opposite_angle_offset: opposite.value_offset,
+    })
+}
+
 fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
     (0..bytes.len()).any(|at| {
         lp_utf16_bounded(bytes, at, 1..=256)
@@ -1719,6 +1763,7 @@ pub(crate) fn parse_parameter_scope(
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,

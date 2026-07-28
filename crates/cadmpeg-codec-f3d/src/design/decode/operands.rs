@@ -214,6 +214,8 @@ pub fn decode_face_operands(
             && group.role == 0x0000_0008_0000_0000;
         let is_split_face_operand = scope.kind == "SplitFace";
         let is_delete_face_operand = scope.kind == "DeleteFace";
+        let is_draft_operand =
+            design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -222,6 +224,7 @@ pub fn decode_face_operands(
             && !is_circular_pattern_seed
             && !is_split_face_operand
             && !is_delete_face_operand
+            && !is_draft_operand
         {
             continue;
         }
@@ -553,6 +556,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft)
             || scope.kind == "SplitFace"
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)

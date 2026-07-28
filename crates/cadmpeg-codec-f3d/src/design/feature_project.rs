@@ -203,6 +203,15 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                         properties: native_scope_properties(scope, native_scope),
                     }),
+                Some(DesignFeatureFamily::Draft) => {
+                    project_draft(scope, construction_groups, face_operands).unwrap_or_else(|| {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: BTreeMap::new(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
+                    })
+                }
                 Some(DesignFeatureFamily::Revolve) => {
                     project_fixed_revolve(scope, construction_groups, edge_operands).unwrap_or_else(
                         || FeatureDefinition::Native {
@@ -1208,6 +1217,46 @@ const ROLE_0X4: u64 = 0x0000_0004_0000_0000;
 const ROLE_0X5: u64 = 0x0000_0005_0000_0000;
 const ROLE_0X10: u64 = 0x0000_0010_0000_0000;
 const ROLE_0X12: u64 = 0x0000_0012_0000_0000;
+
+fn project_draft(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{Angle, FeatureDefinition};
+
+    let construction = scope.draft_operation.as_ref()?;
+    let stream = native_stream(&scope.id)?;
+    let mut groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let [faces, neutral_plane] = groups.as_slice() else {
+        return None;
+    };
+    if faces.scope_reference_ordinal != 2
+        || faces.record_index != scope.reference_members[2]
+        || faces.role != ROLE_0X10
+        || faces.members.as_slice() != &scope.reference_members[3..5]
+        || neutral_plane.scope_reference_ordinal != 5
+        || neutral_plane.record_index != scope.reference_members[5]
+        || neutral_plane.role != 0x0000_0021_0000_0000
+        || neutral_plane.members.as_slice() != &scope.reference_members[6..]
+    {
+        return None;
+    }
+    Some(FeatureDefinition::Draft {
+        faces: resolved_historical_face_group(scope, faces, face_operands)?,
+        neutral_plane: resolved_historical_face_group(scope, neutral_plane, face_operands)?,
+        pull_direction: None,
+        angle: Some(Angle(construction.angle)),
+        outward: None,
+    })
+}
 
 /// Return the unique non-empty construction operand group in `scope` carrying
 /// `role`. Yields `None` unless exactly one such group exists.
