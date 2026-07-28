@@ -159,11 +159,13 @@ fixtures, claims above L1 remain unproven.
    unresolved count is partitioned into datum-plane, datum-coordinate-system,
    boundary-surface, and draft families. Every explicit unresolved definition
    raises a decode loss note. Extrusions are counted separately, with
-   unresolved and native profiles, unresolved termination, and unresolved
-   Boolean operation partitions. Revolutions are counted separately, with
-   missing profile, axis, angular extent, and unresolved Boolean operation
-   partitions. Recognized holes, fillets, chamfers, and drafts are counted
-   separately. Hole coverage
+   unresolved and native profiles, incomplete start-face operands, incomplete
+   termination operands, and unresolved Boolean operation partitions.
+   Revolutions are counted separately, with missing or unresolved profiles,
+   native profiles, missing axes, missing or incomplete angular extents, and
+   unresolved Boolean operation partitions. A sweep with any required operand
+   in one of these partitions raises a decode loss note. Recognized holes,
+   fillets, chamfers, and drafts are counted separately. Hole coverage
    partitions missing location, unresolved and native profiles, unresolved and
    native placement faces, direction, kind, diameter, and incomplete
    termination operands. Fillet and chamfer coverage partitions unresolved and

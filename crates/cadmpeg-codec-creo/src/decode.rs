@@ -18,11 +18,11 @@ use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
-    ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
+    ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
     FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm,
     HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef,
     RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent, SurfaceBoundary,
-    Termination,
+    Termination, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -24873,6 +24873,36 @@ fn build_container_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     Ok((ir, annotations.build(), unknowns, coverage))
 }
 
+fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
+    matches!(
+        selection,
+        FaceSelection::Unresolved
+            | FaceSelection::HistoricalPartial { .. }
+            | FaceSelection::Native(_)
+    )
+}
+
+fn termination_has_unresolved_operands(termination: &Termination) -> bool {
+    match termination {
+        Termination::Unresolved => true,
+        Termination::ToFace { face, .. }
+        | Termination::OffsetFromFace { face, .. }
+        | Termination::ToShape { target: face } => face_selection_has_unresolved_operands(face),
+        Termination::ToVertex { vertex } => {
+            matches!(
+                vertex,
+                VertexSelection::Unresolved | VertexSelection::Native(_)
+            )
+        }
+        Termination::Blind { .. }
+        | Termination::ThroughAll
+        | Termination::ThroughNext
+        | Termination::ToFirst
+        | Termination::ToLast
+        | Termination::Angle { .. } => false,
+    }
+}
+
 /// Build source metadata, preserved geometry records, and transferred entities.
 fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
@@ -26836,14 +26866,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut unresolved_datum_coordinate_system_feature_count = 0;
     let mut unresolved_boundary_surface_feature_count = 0;
     let mut extrude_feature_count = 0;
+    let mut incomplete_extrude_feature_count = 0;
     let mut unresolved_extrude_profile_feature_count = 0;
     let mut native_extrude_profile_feature_count = 0;
-    let mut unresolved_extrude_termination_feature_count = 0;
+    let mut incomplete_extrude_start_feature_count = 0;
+    let mut incomplete_extrude_termination_feature_count = 0;
     let mut unresolved_extrude_boolean_operation_feature_count = 0;
     let mut revolve_feature_count = 0;
+    let mut incomplete_revolve_feature_count = 0;
     let mut unresolved_revolve_profile_feature_count = 0;
+    let mut native_revolve_profile_feature_count = 0;
     let mut unresolved_revolve_axis_feature_count = 0;
-    let mut unresolved_revolve_extent_feature_count = 0;
+    let mut incomplete_revolve_extent_feature_count = 0;
     let mut unresolved_revolve_boolean_operation_feature_count = 0;
     let mut hole_feature_count = 0;
     let mut incomplete_hole_feature_count = 0;
@@ -26889,37 +26923,77 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             }
             IrFeatureDefinition::Extrude {
                 profile,
+                start,
                 extent,
                 op,
                 ..
             } => {
                 extrude_feature_count += 1;
-                unresolved_extrude_profile_feature_count +=
-                    usize::from(matches!(profile, ProfileRef::Unresolved(_)));
-                native_extrude_profile_feature_count +=
-                    usize::from(matches!(profile, ProfileRef::Native(_)));
-                let termination_unresolved = match extent {
+                let unresolved_profile = matches!(profile, ProfileRef::Unresolved(_));
+                let native_profile = matches!(profile, ProfileRef::Native(_));
+                let incomplete_start = matches!(
+                    start,
+                    ExtrudeStart::FromFace { face, .. }
+                        if face_selection_has_unresolved_operands(face)
+                );
+                let incomplete_termination = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                        matches!(side.termination, Termination::Unresolved)
+                        termination_has_unresolved_operands(&side.termination)
                     }
                     ExtrudeExtent::TwoSided { first, second } => {
-                        matches!(first.termination, Termination::Unresolved)
-                            || matches!(second.termination, Termination::Unresolved)
+                        termination_has_unresolved_operands(&first.termination)
+                            || termination_has_unresolved_operands(&second.termination)
                     }
                 };
-                unresolved_extrude_termination_feature_count += usize::from(termination_unresolved);
-                unresolved_extrude_boolean_operation_feature_count +=
-                    usize::from(*op == BooleanOp::Unresolved);
+                let unresolved_op = *op == BooleanOp::Unresolved;
+                unresolved_extrude_profile_feature_count += usize::from(unresolved_profile);
+                native_extrude_profile_feature_count += usize::from(native_profile);
+                incomplete_extrude_start_feature_count += usize::from(incomplete_start);
+                incomplete_extrude_termination_feature_count += usize::from(incomplete_termination);
+                unresolved_extrude_boolean_operation_feature_count += usize::from(unresolved_op);
+                incomplete_extrude_feature_count += usize::from(
+                    unresolved_profile
+                        || native_profile
+                        || incomplete_start
+                        || incomplete_termination
+                        || unresolved_op,
+                );
             }
             IrFeatureDefinition::Revolve { construction, op } => {
                 revolve_feature_count += 1;
-                unresolved_revolve_profile_feature_count +=
-                    usize::from(construction.profile.is_none());
-                unresolved_revolve_axis_feature_count += usize::from(construction.axis.is_none());
-                unresolved_revolve_extent_feature_count +=
-                    usize::from(construction.extent.is_none());
-                unresolved_revolve_boolean_operation_feature_count +=
-                    usize::from(*op == BooleanOp::Unresolved);
+                let unresolved_profile = construction
+                    .profile
+                    .as_ref()
+                    .is_none_or(|profile| matches!(profile, ProfileRef::Unresolved(_)));
+                let native_profile = matches!(construction.profile, Some(ProfileRef::Native(_)));
+                let unresolved_axis = construction.axis.is_none();
+                let incomplete_extent =
+                    construction
+                        .extent
+                        .as_ref()
+                        .is_none_or(|extent| match extent {
+                            RevolveExtent::OneSided { termination }
+                            | RevolveExtent::Symmetric { termination } => {
+                                termination_has_unresolved_operands(termination)
+                            }
+                            RevolveExtent::TwoSided { first, second } => {
+                                termination_has_unresolved_operands(first)
+                                    || termination_has_unresolved_operands(second)
+                            }
+                        });
+                let unresolved_op = *op == BooleanOp::Unresolved;
+                unresolved_revolve_profile_feature_count += usize::from(unresolved_profile);
+                native_revolve_profile_feature_count += usize::from(native_profile);
+                unresolved_revolve_axis_feature_count += usize::from(unresolved_axis);
+                incomplete_revolve_extent_feature_count += usize::from(incomplete_extent);
+                unresolved_revolve_boolean_operation_feature_count += usize::from(unresolved_op);
+                incomplete_revolve_feature_count += usize::from(
+                    unresolved_profile
+                        || native_profile
+                        || unresolved_axis
+                        || incomplete_extent
+                        || unresolved_op,
+                );
             }
             IrFeatureDefinition::Hole {
                 profile,
@@ -26953,28 +27027,9 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 let unresolved_kind = matches!(kind, HoleKind::Unresolved { .. })
                     || matches!(exit_kind, Some(HoleKind::Unresolved { .. }));
                 let unresolved_diameter = diameter.is_none();
-                let incomplete_termination = extent.as_ref().is_none_or(|extent| match extent {
-                    Termination::Unresolved => true,
-                    Termination::ToFace { face, .. }
-                    | Termination::OffsetFromFace { face, .. }
-                    | Termination::ToShape { target: face } => matches!(
-                        face,
-                        FaceSelection::Unresolved
-                            | FaceSelection::HistoricalPartial { .. }
-                            | FaceSelection::Native(_)
-                    ),
-                    Termination::ToVertex { vertex } => matches!(
-                        vertex,
-                        cadmpeg_ir::features::VertexSelection::Unresolved
-                            | cadmpeg_ir::features::VertexSelection::Native(_)
-                    ),
-                    Termination::Blind { .. }
-                    | Termination::ThroughAll
-                    | Termination::ThroughNext
-                    | Termination::ToFirst
-                    | Termination::ToLast
-                    | Termination::Angle { .. } => false,
-                });
+                let incomplete_termination = extent
+                    .as_ref()
+                    .is_none_or(termination_has_unresolved_operands);
                 unresolved_hole_location_feature_count += usize::from(unresolved_location);
                 unresolved_hole_profile_feature_count += usize::from(unresolved_profile);
                 native_hole_profile_feature_count += usize::from(native_profile);
@@ -27095,6 +27150,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         + incomplete_fillet_feature_count
         + incomplete_chamfer_feature_count
         + incomplete_draft_feature_count;
+    let incomplete_sweep_feature_count =
+        incomplete_extrude_feature_count + incomplete_revolve_feature_count;
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
@@ -27128,6 +27185,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         extrude_feature_count,
     );
     coverage.insert(
+        "transferred_incomplete_extrude_feature_count".to_string(),
+        incomplete_extrude_feature_count,
+    );
+    coverage.insert(
         "transferred_unresolved_extrude_profile_feature_count".to_string(),
         unresolved_extrude_profile_feature_count,
     );
@@ -27136,8 +27197,12 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         native_extrude_profile_feature_count,
     );
     coverage.insert(
-        "transferred_unresolved_extrude_termination_feature_count".to_string(),
-        unresolved_extrude_termination_feature_count,
+        "transferred_incomplete_extrude_start_feature_count".to_string(),
+        incomplete_extrude_start_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_extrude_termination_feature_count".to_string(),
+        incomplete_extrude_termination_feature_count,
     );
     coverage.insert(
         "transferred_unresolved_extrude_boolean_operation_feature_count".to_string(),
@@ -27148,20 +27213,32 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         revolve_feature_count,
     );
     coverage.insert(
+        "transferred_incomplete_revolve_feature_count".to_string(),
+        incomplete_revolve_feature_count,
+    );
+    coverage.insert(
         "transferred_unresolved_revolve_profile_feature_count".to_string(),
         unresolved_revolve_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_revolve_profile_feature_count".to_string(),
+        native_revolve_profile_feature_count,
     );
     coverage.insert(
         "transferred_unresolved_revolve_axis_feature_count".to_string(),
         unresolved_revolve_axis_feature_count,
     );
     coverage.insert(
-        "transferred_unresolved_revolve_extent_feature_count".to_string(),
-        unresolved_revolve_extent_feature_count,
+        "transferred_incomplete_revolve_extent_feature_count".to_string(),
+        incomplete_revolve_extent_feature_count,
     );
     coverage.insert(
         "transferred_unresolved_revolve_boolean_operation_feature_count".to_string(),
         unresolved_revolve_boolean_operation_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_sweep_feature_count".to_string(),
+        incomplete_sweep_feature_count,
     );
     coverage.insert(
         "transferred_incomplete_recognized_feature_count".to_string(),
@@ -28351,6 +28428,33 @@ fn build_report(
                 "{active_native_relations} active section dimension relation(s) retain native \
                  operands because their neutral semantics, incidence join, or referenced geometry \
                  remain unresolved ({kinds})."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_sweeps = count("transferred_incomplete_sweep_feature_count");
+    if incomplete_sweeps != 0 {
+        let families = [
+            (
+                "extrude",
+                count("transferred_incomplete_extrude_feature_count"),
+            ),
+            (
+                "revolve",
+                count("transferred_incomplete_revolve_feature_count"),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_sweeps} profile sweep history feature(s) retain incomplete required \
+                 construction operands ({families})."
             ),
             provenance: None,
         });

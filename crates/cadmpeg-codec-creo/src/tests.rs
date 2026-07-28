@@ -2561,13 +2561,30 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_extrude_termination_feature_count"],
+        result.report.coverage["transferred_incomplete_extrude_start_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_extrude_termination_feature_count"],
         1
     );
     assert_eq!(
         result.report.coverage["transferred_unresolved_extrude_boolean_operation_feature_count"],
         0
     );
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_extrude_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_sweep_feature_count"],
+        1
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("profile sweep history feature")));
 }
 
 #[test]
@@ -2674,15 +2691,23 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         1
     );
     assert_eq!(
+        result.report.coverage["transferred_native_revolve_profile_feature_count"],
+        0
+    );
+    assert_eq!(
         result.report.coverage["transferred_unresolved_revolve_axis_feature_count"],
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_revolve_extent_feature_count"],
+        result.report.coverage["transferred_incomplete_revolve_extent_feature_count"],
         1
     );
     assert_eq!(
         result.report.coverage["transferred_unresolved_revolve_boolean_operation_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_revolve_feature_count"],
         1
     );
 }
