@@ -6039,7 +6039,11 @@ fn decode_transfers_an_exact_point_with_one_sketch_target() {
         decoded.report.coverage["transferred_sketch_entity_count"],
         1
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 4);
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_design_record_count"],
+        1
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 3);
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
@@ -6063,6 +6067,10 @@ fn decode_rejects_a_point_related_to_multiple_sketches() {
     assert_eq!(decoded.report.coverage["transferred_sketch_count"], 0);
     assert_eq!(
         decoded.report.coverage["transferred_sketch_entity_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_design_record_count"],
         0
     );
 }

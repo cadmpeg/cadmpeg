@@ -71,7 +71,7 @@ fn finish_decode(
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
     let formula_transfer = transfer_formula_parameters(&mut ir, &native, &mut annotations);
-    transfer_sketch_points(&mut ir, &native);
+    let sketch_transfer = transfer_sketch_points(&mut ir, &native);
     let object_record_count: usize = native
         .object_graphs
         .iter()
@@ -314,8 +314,17 @@ fn finish_decode(
         .intersection(&structurally_owned_records)
         .cloned()
         .collect::<HashSet<_>>();
+    let transferred_sketch_design_records = sketch_transfer
+        .consumed_object_records
+        .intersection(&structurally_owned_records)
+        .cloned()
+        .collect::<HashSet<_>>();
+    let transferred_design_records = transferred_formula_design_records
+        .union(&transferred_sketch_design_records)
+        .cloned()
+        .collect::<HashSet<_>>();
     let unresolved_object_record_count =
-        object_record_count.saturating_sub(transferred_formula_design_records.len());
+        object_record_count.saturating_sub(transferred_design_records.len());
     let unresolved_design_object_count = native
         .design_objects
         .iter()
@@ -323,7 +332,7 @@ fn finish_decode(
             object
                 .fields
                 .iter()
-                .any(|field| !transferred_formula_design_records.contains(field))
+                .any(|field| !transferred_design_records.contains(field))
         })
         .count();
     let value_field_count = native
@@ -544,6 +553,10 @@ fn finish_decode(
             transferred_formula_design_records.len(),
         ),
         (
+            "transferred_sketch_design_record_count".to_string(),
+            transferred_sketch_design_records.len(),
+        ),
+        (
             "unresolved_design_record_count".to_string(),
             unresolved_object_record_count,
         ),
@@ -570,10 +583,11 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} control entity-suffix value(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact inter-object relation occurrence(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s) and {} exact formula, expression, or parameter field record(s) transferred, while {unresolved_object_record_count} field record(s) across {unresolved_design_object_count} design object(s), neutral features, other parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_packet_count} numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} control entity-suffix value(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {formula_relation_count} complete formula relation(s), {formula_parameter_dependency_count} formula parameter dependency link(s), {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact inter-object relation occurrence(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s), {} exact formula, expression, or parameter field record(s), and {} exact sketch field record(s) transferred, while {unresolved_object_record_count} field record(s) across {unresolved_design_object_count} design object(s), neutral features, other parameters, remaining sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
                 formula_transfer.parameter_count,
                 transferred_formula_design_records.len(),
+                transferred_sketch_design_records.len(),
             ),
             provenance: None,
         });
@@ -594,7 +608,7 @@ fn finish_decode(
     decode_result(ir, report, annotations, unknowns)
 }
 
-fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) {
+fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfer {
     let entities = native
         .entity_records
         .iter()
@@ -618,6 +632,7 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) {
         .map(|entity| entity.id.clone())
         .collect::<HashSet<_>>();
     let mut points_by_sketch = HashMap::<String, (u64, Vec<SketchPointCandidate>)>::new();
+    let mut transfer = SketchTransfer::default();
 
     for object in &native.design_objects {
         let Some(owner_record) = object.owner_record.as_deref() else {
@@ -629,26 +644,31 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) {
         let Some(position) = exact_point2(entity.numeric_tuple.as_ref()) else {
             continue;
         };
-        let sketch_targets = object
-            .relations
-            .iter()
-            .filter(|relation| {
-                relation
-                    .source_class
-                    .as_ref()
-                    .is_some_and(|class| class.name == "2DPoint")
-            })
-            .filter_map(|relation| {
-                let target = design_objects.get(relation.target_design_object.as_str())?;
-                target
-                    .field_classes
-                    .iter()
-                    .any(|class| class.name == "PRTSketch")
-                    .then_some(target.id.as_str())
-            })
-            .collect::<BTreeSet<_>>();
+        let mut sketch_targets = BTreeMap::<&str, BTreeSet<String>>::new();
+        for relation in &object.relations {
+            if relation
+                .source_class
+                .as_ref()
+                .is_none_or(|class| class.name != "2DPoint")
+            {
+                continue;
+            }
+            let Some(target) = design_objects.get(relation.target_design_object.as_str()) else {
+                continue;
+            };
+            if target
+                .field_classes
+                .iter()
+                .any(|class| class.name == "PRTSketch")
+            {
+                sketch_targets
+                    .entry(target.id.as_str())
+                    .or_default()
+                    .insert(relation.source_field.clone());
+            }
+        }
         let mut sketch_targets = sketch_targets.into_iter();
-        let Some(sketch_target) = sketch_targets.next() else {
+        let Some((sketch_target, membership_fields)) = sketch_targets.next() else {
             continue;
         };
         if sketch_targets.next().is_some() {
@@ -664,6 +684,8 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) {
             .push(SketchPointCandidate {
                 design_object: object.id.clone(),
                 native_entity: entity.id.clone(),
+                coordinate_field: owner_record.to_string(),
+                membership_fields,
                 source_order: object.first_field_byte_offset,
                 position,
             });
@@ -677,23 +699,30 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) {
             continue;
         }
         points.sort_by_key(|point| point.source_order);
-        let entities = points
-            .into_iter()
-            .filter_map(|point| {
-                let id = SketchEntityId(format!("{}:sketch-point", point.design_object));
-                (!existing_entity_ids.contains(&id)).then_some(SketchEntity {
-                    id,
-                    sketch: sketch_id.clone(),
-                    construction: false,
-                    native_ref: Some(point.native_entity),
-                    geometry_ref: None,
-                    endpoint_refs: Vec::new(),
-                    geometry: SketchGeometry::Point {
-                        position: point.position,
-                    },
-                })
-            })
-            .collect::<Vec<_>>();
+        let mut entities = Vec::new();
+        for point in points {
+            let id = SketchEntityId(format!("{}:sketch-point", point.design_object));
+            if existing_entity_ids.contains(&id) {
+                continue;
+            }
+            transfer
+                .consumed_object_records
+                .insert(point.coordinate_field);
+            transfer
+                .consumed_object_records
+                .extend(point.membership_fields);
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: Some(point.native_entity),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: point.position,
+                },
+            });
+        }
         if entities.is_empty() {
             continue;
         }
@@ -707,6 +736,7 @@ fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) {
         });
         ir.model.sketch_entities.extend(entities);
     }
+    transfer
 }
 
 fn exact_point2(tuple: Option<&entity_table::NumericTuple>) -> Option<Point2> {
@@ -723,8 +753,15 @@ fn exact_point2(tuple: Option<&entity_table::NumericTuple>) -> Option<Point2> {
 struct SketchPointCandidate {
     design_object: String,
     native_entity: String,
+    coordinate_field: String,
+    membership_fields: BTreeSet<String>,
     source_order: u64,
     position: Point2,
+}
+
+#[derive(Default)]
+struct SketchTransfer {
+    consumed_object_records: HashSet<String>,
 }
 
 fn transfer_formula_parameters(
