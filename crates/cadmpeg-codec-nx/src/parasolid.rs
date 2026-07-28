@@ -297,9 +297,8 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
         .get(at..at + 2)
         .map(|value| u16::from_be_bytes(value.try_into().expect("two bytes")))?;
     at += 2;
-    let low_flag = (flags & 0xff) as u8;
-    (xmt > 1 && sequence != 0 && (1..=0x20).contains(&low_flag)).then_some(())?;
-    let reference_count = usize::from(low_flag) + 5;
+    (xmt > 1 && sequence != 0 && (1..=0x20).contains(&flags)).then_some(())?;
+    let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
     let references = entity_51_references(bytes, &mut at, reference_count)?;
     Some(Entity51Record {
         offset,

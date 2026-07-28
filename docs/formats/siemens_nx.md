@@ -1218,13 +1218,12 @@ Parasolid attribute definitions use a two-record catalog entry. `00 4f [ff] name
 A type-81 entity/attribute-list record is `00 51 [ff], flags:u32 BE,
 xmt, sequence:u32 BE, discriminator:u16 BE, references`. XMT fields use the
 compact or extended XMT encoding. `xmt` is non-null, `sequence` is nonzero, and
-the low flags byte is in `1..=0x20`. The reference count is seven for
-`low_flags = 02`, nine for `low_flags = 04`, and in general five plus the
-unsigned low flags byte. The discriminator does not affect framing. References
-are either consecutive XMT values or individually binary-status-prefixed XMT
-values followed by `00`; the two forms are atomic. A topology attribute-list
-identity resolves only when exactly one type-81 record in the same stream has
-that xmt.
+`flags` is in `1..=0x20`. The reference count is seven for `flags = 02`, nine
+for `flags = 04`, and in general five plus `flags`. The discriminator does not
+affect framing. References are either consecutive XMT values or individually
+binary-status-prefixed XMT values followed by `00`; the two forms are atomic. A
+topology attribute-list identity resolves only when exactly one type-81 record
+in the same stream has that xmt.
 
 The terminal `00` of a status-prefixed type-81 or printable type-84 record may
 also be the leading `00` of the immediately following two-byte record tag. The
