@@ -1147,6 +1147,22 @@ pub(crate) fn zero_entity_support_stream() -> Vec<u8> {
     plane
 }
 
+pub(crate) fn zero_entity_face_support_stream() -> Vec<u8> {
+    let mut stream = zero_entity_support_stream();
+    let mut face = vec![0u8; 0x0c + 12];
+    face[..4].copy_from_slice(&[0xa9, 0x03, 0x5f, 0x0c]);
+    face[7] = 0x10;
+    face[8..12].copy_from_slice(&1u32.to_le_bytes());
+    face[12] = 0x82;
+    face[13] = 0x10;
+    face[14..18].copy_from_slice(&10u32.to_le_bytes());
+    face[18] = 0x10;
+    face[19..23].copy_from_slice(&3u32.to_le_bytes());
+    face[23] = 0x05;
+    stream.extend(face);
+    stream
+}
+
 pub(crate) fn zero_entity_topology_stream() -> Vec<u8> {
     let write_tagged_u32 = |record: &mut [u8], at: usize, value: u32| {
         record[at] = 0x10;
@@ -4333,12 +4349,16 @@ fn decode_reports_exact_consolidated_line_profiles() {
 
 #[test]
 fn native_namespace_retains_zero_entity_surface_support_runs() {
-    let native = crate::native::CatiaNative::decode(&zero_entity_support_stream());
+    let native = crate::native::CatiaNative::decode(&zero_entity_face_support_stream());
     let [run] = native.zero_entity_support_runs.as_slice() else {
         panic!("one zero-entity support run")
     };
     assert_eq!(run.carrier_byte_offset, 0);
     assert_eq!(run.carrier_record_ordinal, 1);
+    let face = run.face.as_ref().expect("positionally aligned face");
+    assert_eq!(face.record_ordinal, 3);
+    assert_eq!(face.allocations, [10, 3]);
+    assert_eq!(face.loop_terminals, [7]);
     let [support] = run.supports.as_slice() else {
         panic!("one zero-entity support occurrence")
     };
@@ -4355,6 +4375,18 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         crate::native::CatiaNative::load(&namespace).expect("load CATIA zero-entity support run"),
         native
     );
+
+    let mut invalid_face = native.clone();
+    invalid_face.zero_entity_support_runs[0]
+        .face
+        .as_mut()
+        .expect("face")
+        .loop_terminals[0] = 8;
+    let mut invalid_face_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_face
+        .store(&mut invalid_face_namespace)
+        .expect("store invalid CATIA zero-entity face");
+    assert!(crate::native::CatiaNative::load(&invalid_face_namespace).is_err());
 
     let mut invalid = native;
     invalid.zero_entity_support_runs[0].supports[0].uv_endpoints = None;
@@ -4421,12 +4453,20 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
 #[test]
 fn decode_reports_zero_entity_surface_support_runs() {
     let mut file = standard_catpart();
-    file.splice(16..16, zero_entity_support_stream());
+    file.splice(16..16, zero_entity_face_support_stream());
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
     file[8..12].copy_from_slice(&be32(file_len));
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode zero-entity support run");
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_face_bound_support_run_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_loop_terminal_count"],
+        1
+    );
     assert_eq!(
         decoded.report.coverage["decoded_zero_entity_support_run_count"],
         1
@@ -4444,6 +4484,9 @@ fn decode_reports_zero_entity_surface_support_runs() {
             && loss
                 .message
                 .contains("1 zero-entity surface-support run(s)")
+            && loss
+                .message
+                .contains("1 run(s) bind the complete face roster")
             && loss.message.contains("oriented-use")
     }));
 }

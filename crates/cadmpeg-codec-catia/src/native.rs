@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 157;
+pub const CATIA_NATIVE_VERSION: u32 = 158;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2608,6 +2608,23 @@ pub struct CatiaZeroEntitySupportOccurrence {
     pub uv_endpoints: Option<[[f64; 2]; 2]>,
 }
 
+/// One counted zero-entity `5fxx` face record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntityFace {
+    /// Byte offset of the framed face record.
+    pub byte_offset: u64,
+    /// One-based global record ordinal.
+    pub record_ordinal: u32,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// Counted allocation values in storage order.
+    pub allocations: Vec<u32>,
+    /// Ordered loop terminals derived from the allocation lane.
+    pub loop_terminals: Vec<u32>,
+    /// Terminal control byte following the allocation lane.
+    pub terminal_control: u8,
+}
+
 /// One zero-entity surface carrier and its maximal following support run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaZeroEntitySupportRun {
@@ -2617,6 +2634,9 @@ pub struct CatiaZeroEntitySupportRun {
     pub carrier_byte_offset: u64,
     /// One-based global record ordinal of the owning surface carrier.
     pub carrier_record_ordinal: u32,
+    /// Positionally aligned face record when the complete rosters agree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<CatiaZeroEntityFace>,
     /// Face-local support occurrences in storage order.
     pub supports: Vec<CatiaZeroEntitySupportOccurrence>,
 }
@@ -3438,6 +3458,14 @@ fn zero_entity_support_runs(bytes: &[u8]) -> Vec<CatiaZeroEntitySupportRun> {
             id: format!("catia:zero-entity:support-run#{index}"),
             carrier_byte_offset: run.carrier_pos as u64,
             carrier_record_ordinal: run.carrier_record_ordinal,
+            face: run.face.map(|face| CatiaZeroEntityFace {
+                byte_offset: face.pos as u64,
+                record_ordinal: face.record_ordinal,
+                tag: face.tag,
+                allocations: face.allocations,
+                loop_terminals: face.loop_terminals,
+                terminal_control: face.terminal_control,
+            }),
             supports: run
                 .supports
                 .into_iter()
@@ -4355,7 +4383,34 @@ fn validate_zero_entity_support_runs(
     runs: &[CatiaZeroEntitySupportRun],
     records: &[CatiaZeroEntityRecord],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let face_count = runs.iter().filter(|run| run.face.is_some()).count();
+    let face_roster_valid = face_count == 0 || face_count == runs.len();
     for (index, run) in runs.iter().enumerate() {
+        let face_valid = run.face.as_ref().is_none_or(|face| {
+            let derived_terminals = face.allocations.first().and_then(|first| {
+                face.allocations[1..]
+                    .iter()
+                    .map(|allocation| first.checked_sub(*allocation))
+                    .collect::<Option<Vec<_>>>()
+            });
+            let expected_length = face
+                .allocations
+                .len()
+                .checked_mul(5)
+                .and_then(|length| length.checked_add(14));
+            face.tag[0] == 0x5f
+                && face.allocations.len() >= 2
+                && expected_length == Some(usize::from(face.tag[1]) + 12)
+                && derived_terminals.as_ref() == Some(&face.loop_terminals)
+                && zero_entity_record(records, face.record_ordinal).is_some_and(|record| {
+                    record.byte_offset == face.byte_offset && record.tag == face.tag
+                })
+                && (index == 0
+                    || runs[index - 1]
+                        .face
+                        .as_ref()
+                        .is_none_or(|previous| previous.byte_offset < face.byte_offset))
+        });
         let supports_valid = !run.supports.is_empty()
             && run
                 .supports
@@ -4389,6 +4444,8 @@ fn validate_zero_entity_support_runs(
                 });
         if run.id != format!("catia:zero-entity:support-run#{index}")
             || !supports_valid
+            || !face_roster_valid
+            || !face_valid
             || run.carrier_record_ordinal == 0
             || !zero_entity_record(records, run.carrier_record_ordinal)
                 .is_some_and(|record| record.byte_offset == run.carrier_byte_offset)

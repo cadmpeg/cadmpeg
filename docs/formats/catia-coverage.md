@@ -77,6 +77,8 @@ current scores require those matrices and representative fixtures.
   edge-stride, `2569`/`0638` positional-use, and counted `05xx`
   vertex-incidence registries retain one-based global record ordinals and exact
   references against a complete framed-record identity inventory.
+  A complete `5fxx` face roster binds positionally to those support tapes and
+  retains each face's counted allocations and ordered loop terminals.
   Cross-registry physical-edge and incidence binding remains unresolved.
 
 ## Evidence required to raise a score

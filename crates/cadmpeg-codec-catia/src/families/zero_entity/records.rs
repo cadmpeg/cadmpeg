@@ -40,8 +40,27 @@ pub struct ZeroEntitySupportRun {
     pub carrier_pos: usize,
     /// One-based global record ordinal of the owning surface carrier.
     pub carrier_record_ordinal: u32,
+    /// Positionally aligned face record when the complete rosters agree.
+    pub face: Option<ZeroEntityFace>,
     /// Face-local support occurrences in storage order.
     pub supports: Vec<ZeroEntitySupportOccurrence>,
+}
+
+/// One counted zero-entity `5fxx` face record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityFace {
+    /// Offset of the framed face record.
+    pub pos: usize,
+    /// One-based global record ordinal.
+    pub record_ordinal: u32,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// Counted allocation values in storage order.
+    pub allocations: Vec<u32>,
+    /// Ordered loop terminals `allocations[0] - allocations[1..]`.
+    pub loop_terminals: Vec<u32>,
+    /// Terminal control byte following the allocation lane.
+    pub terminal_control: u8,
 }
 
 /// One `5e1a` edge-stride record in the global zero-entity reference namespace.
@@ -299,12 +318,53 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
             runs.push(ZeroEntitySupportRun {
                 carrier_pos: carrier_record.pos,
                 carrier_record_ordinal: carrier_record.ordinal,
+                face: None,
                 supports,
             });
         }
         index = next.max(index + 1);
     }
+    let faces = zero_entity_faces_from_records(data, &records);
+    if faces.len() == runs.len() {
+        for (run, face) in runs.iter_mut().zip(faces) {
+            run.face = Some(face);
+        }
+    }
     runs
+}
+
+fn zero_entity_faces_from_records(
+    data: &[u8],
+    records: &[ZeroEntityRecord],
+) -> Vec<ZeroEntityFace> {
+    records
+        .iter()
+        .filter_map(|record| {
+            if record.tag[0] != 0x5f || tagged_u32(data, record.pos + 7) != Some(1) {
+                return None;
+            }
+            let count = usize::from(data.get(record.pos + 12)?.checked_sub(0x80)?);
+            if count < 2 || record.pos.checked_add(14 + count.checked_mul(5)?)? != record.end {
+                return None;
+            }
+            let allocations = (0..count)
+                .map(|index| tagged_u32(data, record.pos + 13 + index * 5))
+                .collect::<Option<Vec<_>>>()?;
+            let first = *allocations.first()?;
+            let loop_terminals = allocations[1..]
+                .iter()
+                .map(|allocation| first.checked_sub(*allocation))
+                .collect::<Option<Vec<_>>>()?;
+            Some(ZeroEntityFace {
+                pos: record.pos,
+                record_ordinal: record.ordinal,
+                tag: record.tag,
+                allocations,
+                loop_terminals,
+                terminal_control: *data.get(record.end - 1)?,
+            })
+        })
+        .collect()
 }
 
 fn zero_entity_support_occurrence(
@@ -642,7 +702,9 @@ fn u32_tokens(bytes: &[u8], mut at: usize, count: usize) -> Option<(Vec<u32>, us
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{zero_entity_support_stream, zero_entity_topology_stream};
+    use crate::tests::{
+        zero_entity_face_support_stream, zero_entity_support_stream, zero_entity_topology_stream,
+    };
 
     fn write_tagged_u32(record: &mut [u8], at: usize, value: u32) {
         record[at] = 0x10;
@@ -752,5 +814,32 @@ mod tests {
         let mut stream = zero_entity_topology_stream();
         write_tagged_u32(&mut stream, 7, 0);
         assert!(zero_entity_edge_strides(&stream).is_empty());
+    }
+
+    #[test]
+    fn complete_face_roster_aligns_to_surface_support_runs() {
+        let stream = zero_entity_face_support_stream();
+        let runs = zero_entity_support_runs(&stream);
+        let [run] = runs.as_slice() else {
+            panic!("one support run")
+        };
+        let face = run.face.as_ref().expect("positionally aligned face");
+        assert_eq!(face.record_ordinal, 3);
+        assert_eq!(face.tag, [0x5f, 0x0c]);
+        assert_eq!(face.allocations, [10, 3]);
+        assert_eq!(face.loop_terminals, [7]);
+        assert_eq!(face.terminal_control, 0x05);
+    }
+
+    #[test]
+    fn mismatched_face_roster_does_not_partially_bind_support_runs() {
+        let mut stream = zero_entity_face_support_stream();
+        let face = stream[stream.len() - (0x0c + 12)..].to_vec();
+        stream.extend(face);
+        let runs = zero_entity_support_runs(&stream);
+        let [run] = runs.as_slice() else {
+            panic!("one support run")
+        };
+        assert!(run.face.is_none());
     }
 }

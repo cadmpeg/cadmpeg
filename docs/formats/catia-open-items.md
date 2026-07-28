@@ -58,6 +58,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 ## Zero-entity `a9 03`
 
+- The semantic role of the terminal control byte in each `5fxx` face record is unresolved.
 - The reference-lane rule associating a `0638` oriented use with its owner-local `21xx` support and `05xx` incidence record is unspecified.
 - The fields that bind each `05 0b`/`05 10`/`05 15` incidence lane to physical-edge endpoints are unspecified.
 - The records or fields encoding body and shell membership are unspecified.

@@ -506,6 +506,23 @@ fn finish_decode(
             native.zero_entity_edge_strides.len(),
         ),
         (
+            "decoded_zero_entity_face_bound_support_run_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter(|run| run.face.is_some())
+                .count(),
+        ),
+        (
+            "decoded_zero_entity_loop_terminal_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .map(|face| face.loop_terminals.len())
+                .sum(),
+        ),
+        (
             "decoded_zero_entity_oriented_use_pair_count".to_string(),
             native.zero_entity_oriented_use_pairs.len(),
         ),
@@ -839,15 +856,28 @@ fn finish_decode(
             .flat_map(|run| &run.supports)
             .filter(|support| support.uv_endpoints.is_some())
             .count();
+        let face_count = native
+            .zero_entity_support_runs
+            .iter()
+            .filter(|run| run.face.is_some())
+            .count();
+        let loop_terminal_count = native
+            .zero_entity_support_runs
+            .iter()
+            .filter_map(|run| run.face.as_ref())
+            .map(|face| face.loop_terminals.len())
+            .sum::<usize>();
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
                 "{} zero-entity surface-support run(s) retain {support_count} face-local \
-                 occurrence(s), including {endpoint_count} with exact UV endpoint pairs; {} \
-                 edge-stride record(s), {} oriented-use pair(s), and {} vertex-incidence \
-                 record(s) remain separate because their cross-registry binding is unresolved.",
+                 occurrence(s), including {endpoint_count} with exact UV endpoint pairs; \
+                 {face_count} run(s) bind the complete face roster with {loop_terminal_count} \
+                 ordered loop terminal(s); {} edge-stride record(s), {} oriented-use pair(s), \
+                 and {} vertex-incidence record(s) remain separate because their cross-registry \
+                 binding is unresolved.",
                 native.zero_entity_support_runs.len(),
                 native.zero_entity_edge_strides.len(),
                 native.zero_entity_oriented_use_pairs.len(),
