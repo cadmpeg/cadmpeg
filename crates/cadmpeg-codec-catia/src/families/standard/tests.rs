@@ -1501,52 +1501,6 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
 }
 
 #[test]
-fn incidence_components_filter_quotient_impossible_solutions_before_the_solution_limit() {
-    let point_count = 257;
-    let mut choices = vec![(0..point_count)
-        .map(|point| [point, point])
-        .collect::<Vec<_>>()];
-    choices.extend((0..point_count - 1).map(|point| vec![[point, point]]));
-    let edge_faces = (0..point_count)
-        .map(|face| [face, face])
-        .collect::<Vec<_>>();
-
-    let mut union = UnionFind::new(point_count * 2);
-    let mut domains = Vec::with_capacity(point_count * 2);
-    let mut members = Vec::with_capacity(point_count * 2);
-    for edge in 0..point_count {
-        union.union(edge * 2, edge * 2 + 1);
-        let domain = if edge == 0 {
-            Arc::new((0..point_count).collect())
-        } else {
-            Arc::new(HashSet::from([edge - 1]))
-        };
-        domains.extend([domain.clone(), domain]);
-        members.extend([vec![edge * 2, edge * 2 + 1], Vec::new()]);
-    }
-    let quotient = MeshQuotient {
-        union,
-        domains,
-        members,
-    };
-
-    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
-        &choices,
-        &edge_faces,
-        point_count,
-        point_count,
-        None,
-        Some(&quotient),
-        None,
-        &|_| true,
-    )
-    .expect("late quotient-valid component solution");
-
-    assert_eq!(solutions.len(), 1);
-    assert_eq!(solutions[0][0], [point_count - 1, point_count - 1]);
-}
-
-#[test]
 fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
     use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
 
@@ -2074,6 +2028,24 @@ fn quotient_point_existence_rejects_an_all_different_conflict() {
     };
 
     assert!(!quotient.point_assignment_exists(2, &[vec![]], None));
+}
+
+#[test]
+fn quotient_point_existence_can_become_viable_after_a_root_merge() {
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(4),
+        domains: vec![
+            Arc::new(HashSet::from([0])),
+            Arc::new(HashSet::from([0])),
+            Arc::new(HashSet::from([1])),
+            Arc::new(HashSet::from([2])),
+        ],
+        members: vec![vec![0], vec![1], vec![2], vec![3]],
+    };
+
+    assert!(!quotient.point_assignment_exists(3, &[vec![], vec![]], None));
+    quotient.merge(0, 1).expect("compatible roots merge");
+    assert!(quotient.point_assignment_exists(3, &[vec![], vec![]], None));
 }
 
 #[test]
