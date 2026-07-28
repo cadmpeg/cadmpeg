@@ -4984,18 +4984,57 @@ fn generated_bounded_cylinder_extent(
     }
     let carriers = frames
         .into_iter()
-        .map(|frame| {
-            let axis = normalized(frame.axis)?;
-            let length = frame
-                .length
-                .filter(|length| length.is_finite() && *length > 0.0)?;
-            Some(ExtrusionCarrierSpan {
-                starts: vec![frame.origin],
-                vector: axis.map(|component| component * length),
-            })
-        })
+        .map(|frame| bounded_cylinder_span(frame, &planes))
         .collect::<Option<Vec<_>>>()?;
     blind_extrusion_from_carriers(&carriers, &planes, transform)
+}
+
+fn bounded_cylinder_span(
+    frame: crate::surface::PositionalCylinderFrame,
+    planes: &[([f64; 3], [f64; 3])],
+) -> Option<ExtrusionCarrierSpan> {
+    let axis = normalized(frame.axis)?;
+    let vector = match frame.length {
+        Some(length) => {
+            (length.is_finite() && length > 0.0).then_some(())?;
+            axis.map(|component| component * length)
+        }
+        None => {
+            let scale = planes
+                .iter()
+                .flat_map(|(origin, _)| *origin)
+                .chain(frame.origin)
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+            let tolerance = 1e-9 * scale;
+            let start_station = dot(frame.origin, axis);
+            let mut terminal_offsets = Vec::new();
+            for (origin, normal) in planes {
+                let normal = normalized(*normal)?;
+                let alignment = dot(normal, axis).abs();
+                if alignment >= 1.0 - 1e-10 {
+                    let offset = dot(*origin, axis) - start_station;
+                    if offset.abs() > tolerance
+                        && terminal_offsets
+                            .iter()
+                            .all(|existing| (offset - existing).abs() > tolerance)
+                    {
+                        terminal_offsets.push(offset);
+                    }
+                } else if alignment > 1e-10 {
+                    return None;
+                }
+            }
+            let [offset] = terminal_offsets.as_slice() else {
+                return None;
+            };
+            axis.map(|component| component * offset)
+        }
+    };
+    Some(ExtrusionCarrierSpan {
+        starts: vec![frame.origin],
+        vector,
+    })
 }
 
 fn nurbs_translation_candidate(

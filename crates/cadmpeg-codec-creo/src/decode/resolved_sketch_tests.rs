@@ -3024,6 +3024,51 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         generated_bounded_cylinder_extent(&scan, &ir, 7, None)
     );
 
+    scan.surfaces.parameters[0]
+        .positional_cylinder_frame
+        .as_mut()
+        .expect("cylinder frame")
+        .length = None;
+    assert_eq!(
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(8.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, -1.0, 0.0],
+        ))
+    );
+    assert!(generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, None).is_none());
+    let lengthless = scan.surfaces.parameters[0]
+        .positional_cylinder_frame
+        .expect("cylinder frame");
+    assert!(bounded_cylinder_span(
+        lengthless,
+        &[
+            ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
+            ([0.0, -6.0, 0.0], [0.0, 1.0, 0.0]),
+        ],
+    )
+    .is_none());
+    let invalid_length = crate::surface::PositionalCylinderFrame {
+        length: Some(0.0),
+        ..lengthless
+    };
+    assert!(
+        bounded_cylinder_span(invalid_length, &[([0.0, -4.0, 0.0], [0.0, 1.0, 0.0])]).is_none()
+    );
+    scan.surfaces.parameters[0]
+        .positional_cylinder_frame
+        .as_mut()
+        .expect("cylinder frame")
+        .length = Some(8.0);
+
     let transform = crate::placement::FeatureSectionTransform {
         definition_id: 7,
         feature_id: Some(7),
