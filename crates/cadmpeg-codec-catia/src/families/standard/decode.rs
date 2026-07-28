@@ -2939,9 +2939,6 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .flatten()
             .copied()
             .collect::<HashSet<_>>();
-        if vertices.len() != branch_count.saturating_mul(2) {
-            continue;
-        }
         let fixed_relations = normalized
             .iter()
             .enumerate()
@@ -2961,9 +2958,6 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .copied()
             .filter(|pair| !fixed_relations.contains(pair))
             .collect::<Vec<_>>();
-        if relation.len() != branch_count.saturating_mul(branch_count) {
-            continue;
-        }
         let mut adjacency = HashMap::<usize, Vec<usize>>::new();
         for &[left, right] in &relation {
             if left == right {
@@ -2973,11 +2967,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             adjacency.entry(left).or_default().push(right);
             adjacency.entry(right).or_default().push(left);
         }
-        if adjacency.len() != branch_count.saturating_mul(2)
-            || adjacency
-                .values()
-                .any(|neighbors| neighbors.len() != branch_count)
-        {
+        if adjacency.is_empty() {
             continue;
         }
         let Some(&root) = adjacency.keys().min() else {
@@ -3008,7 +2998,20 @@ pub(crate) fn bind_ordered_standard_curve_branches(
         }
         sides[0].sort_unstable();
         sides[1].sort_unstable();
-        if sides.iter().any(|side| side.len() != branch_count) {
+        let ranked_side = match [
+            sides[0].len() == branch_count,
+            sides[1].len() == branch_count,
+        ] {
+            [true, true] => None,
+            [true, false] => Some(0),
+            [false, true] => Some(1),
+            [false, false] => continue,
+        };
+        if sides[0]
+            .len()
+            .checked_mul(sides[1].len())
+            .is_none_or(|count| relation.len() != count)
+        {
             continue;
         }
         let cross_relations = sides[0]
@@ -3029,7 +3032,16 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             continue;
         }
         for (rank, edge) in edges.into_iter().enumerate() {
-            candidates[edge] = vec![[sides[0][rank], sides[1][rank]]];
+            candidates[edge] = ranked_side.map_or_else(
+                || vec![[sides[0][rank], sides[1][rank]]],
+                |side| {
+                    normalized[first]
+                        .iter()
+                        .copied()
+                        .filter(|pair| pair.contains(&sides[side][rank]))
+                        .collect()
+                },
+            );
             grouped[edge] = true;
         }
     }
@@ -5319,6 +5331,25 @@ mod route_tests {
         bind_ordered_standard_curve_branches(&supports, &mut candidates);
 
         assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
+    }
+
+    #[test]
+    fn standard_spline_rows_bind_the_cardinality_matched_bipartite_side() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        });
+        let domain = vec![[2, 8], [2, 9], [2, 10], [3, 8], [3, 9], [3, 10]];
+        let mut candidates = [domain.clone(), domain];
+
+        bind_ordered_standard_curve_branches(&supports, &mut candidates);
+
+        assert_eq!(
+            candidates,
+            [vec![[2, 8], [2, 9], [2, 10]], vec![[3, 8], [3, 9], [3, 10]],]
+        );
     }
 
     #[test]
