@@ -505,14 +505,6 @@ fn finish_decode(
             native.consolidated_line_profiles.len(),
         ),
         (
-            "bound_consolidated_line_profile_count".to_string(),
-            native
-                .consolidated_edge_nodes
-                .iter()
-                .filter(|node| node.line_profile.is_some())
-                .count(),
-        ),
-        (
             "transferred_consolidated_line_profile_count".to_string(),
             transferred_line_profile_count,
         ),

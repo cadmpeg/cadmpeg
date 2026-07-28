@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 168;
+pub const CATIA_NATIVE_VERSION: u32 = 167;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -561,9 +561,6 @@ pub struct CatiaConsolidatedEdgeNode {
     /// Analytic circle carrier structurally bound by an adjacent six-record run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub analytic_circle: Option<CatiaConsolidatedAnalyticCircleBinding>,
-    /// Metric line carrier structurally bound by its complete straight-edge production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line_profile: Option<String>,
     /// Typed class-`0x18` descriptor bound to a class-`0x25` edge run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class25_descriptor: Option<CatiaConsolidatedClass25Descriptor>,
@@ -3876,7 +3873,6 @@ fn consolidated_edge_runs(
 fn consolidated_edge_nodes(
     bytes: &[u8],
     circles: &[CatiaConsolidatedCircle],
-    line_profiles: &[CatiaConsolidatedLineProfile],
 ) -> Vec<CatiaConsolidatedEdgeNode> {
     let circle_ids = circles
         .iter()
@@ -3925,19 +3921,6 @@ fn consolidated_edge_nodes(
                 ))
             })
             .collect::<HashMap<_, _>>();
-    let line_ids = line_profiles
-        .iter()
-        .map(|line| (line.byte_offset, line.id.as_str()))
-        .collect::<HashMap<_, _>>();
-    let line_bindings = crate::families::consolidated::records::consolidated_line_edge_runs(bytes)
-        .into_iter()
-        .filter_map(|run| {
-            Some((
-                run.node.pos,
-                line_ids.get(&(run.line.pos as u64))?.to_string(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
     let class25_descriptors =
         crate::families::consolidated::records::consolidated_class25_edge_runs(bytes)
             .into_iter()
@@ -3973,7 +3956,6 @@ fn consolidated_edge_nodes(
                 definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
                 uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
                 analytic_circle: analytic_circles.get(&node.pos).cloned(),
-                line_profile: line_bindings.get(&node.pos).cloned(),
                 class25_descriptor: class25_descriptors.get(&node.pos).cloned(),
             })
         })
@@ -4985,7 +4967,6 @@ fn validate_consolidated_edge_runs(
     runs: &[CatiaConsolidatedEdgeRun],
     pcurves: &[CatiaConsolidatedPcurve],
     circles: &[CatiaConsolidatedCircle],
-    line_profiles: &[CatiaConsolidatedLineProfile],
     nodes: &[CatiaConsolidatedEdgeNode],
     vertex_identities: &[CatiaConsolidatedVertexIdentity],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -5000,10 +4981,6 @@ fn validate_consolidated_edge_runs(
     let circles = circles
         .iter()
         .map(|circle| (circle.id.as_str(), circle))
-        .collect::<HashMap<_, _>>();
-    let line_profiles = line_profiles
-        .iter()
-        .map(|line| (line.id.as_str(), line))
         .collect::<HashMap<_, _>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
@@ -5076,13 +5053,6 @@ fn validate_consolidated_edge_runs(
                 && matches!(descriptor.values.len(), 2 | 3)
                 && descriptor.values.iter().all(|value| value.is_finite())
         });
-        let line_profile_valid = node.line_profile.as_ref().is_none_or(|line_id| {
-            line_profiles.get(line_id.as_str()).is_some_and(|line| {
-                line.byte_offset < node.byte_offset
-                    && node.curve_ref == 7
-                    && node.parameter_selectors == [6, 5]
-            })
-        });
         if node.id != format!("catia:consolidated:edge-node#{index}")
             || !matches!(node.width, 1..=3)
             || !matches!(node.flag, 0x03 | 0x13 | 0x83)
@@ -5090,7 +5060,6 @@ fn validate_consolidated_edge_runs(
             || !uses_valid
             || !definition_valid
             || !analytic_circle_valid
-            || !line_profile_valid
             || !class25_descriptor_valid
             || index > 0 && nodes[index - 1].byte_offset >= node.byte_offset
         {
@@ -5742,8 +5711,7 @@ impl CatiaNative {
         let zero_entity_support_runs = zero_entity_support_runs(bytes);
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(bytes, &zero_entity_records);
-        let mut consolidated_edge_nodes =
-            consolidated_edge_nodes(bytes, &consolidated_circles, &consolidated_line_profiles);
+        let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes, &consolidated_circles);
         let consolidated_edge_runs =
             consolidated_edge_runs(bytes, &consolidated_pcurves, &consolidated_edge_nodes);
         let consolidated_vertex_identities =
@@ -6259,7 +6227,6 @@ impl CatiaNative {
             &consolidated_edge_runs,
             &consolidated_pcurves,
             &consolidated_circles,
-            &consolidated_line_profiles,
             &consolidated_edge_nodes,
             &consolidated_vertex_identities,
         )?;

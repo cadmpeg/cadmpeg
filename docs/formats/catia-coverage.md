@@ -86,9 +86,7 @@ current scores require those matrices and representative fixtures.
   remain unbound atomically.
 - Every consolidated line profile transfers its placed analytic line carrier.
   A non-unit profile retains its metric scalar and interval while its neutral
-  parameter mapping remains unresolved. The complete straight-edge production
-  binds its initial line profile to the terminal native edge node when the
-  carrier and endpoint-parameter allocation identities close.
+  parameter mapping remains unresolved.
 - A standard binary32 cylinder, cone, sphere, or torus face carrier is refined
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;
