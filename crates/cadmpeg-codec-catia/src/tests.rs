@@ -9787,6 +9787,48 @@ fn native_store_paths_write_the_current_schema_version() {
 }
 
 #[test]
+fn native_round_trips_legacy_entity_identity_runs() {
+    let mut bytes = Vec::new();
+    for entity_id in [1_u32, 4, 9] {
+        bytes.push(0xea);
+        bytes.extend(entity_id.to_le_bytes());
+        bytes.extend([0x81, 0xfd, 0x8c]);
+    }
+    let catalog_offset = bytes.len();
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.legacy_entity_runs.len(), 1);
+    assert_eq!(
+        native.legacy_entity_runs[0]
+            .identities
+            .iter()
+            .map(|identity| identity.entity_id)
+            .collect::<Vec<_>>(),
+        [1, 4, 9]
+    );
+    assert_eq!(
+        native.legacy_entity_runs[0].catalog_offset,
+        catalog_offset as u64
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store legacy entity run");
+    let loaded = crate::native::CatiaNative::load(&namespace).expect("load legacy entity run");
+    assert_eq!(loaded.legacy_entity_runs, native.legacy_entity_runs);
+
+    let mut invalid = native;
+    invalid.legacy_entity_runs[0].identities[1].entity_id = 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid legacy entity run");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
 fn native_load_restores_segment_source_order_and_validates_retained_views() {
     let mut bytes = Vec::new();
     for index in 0..12 {

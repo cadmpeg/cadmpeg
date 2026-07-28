@@ -539,7 +539,11 @@ connected graph.
 
 ## 7. Outer schema and object records
 
-### 7.1 `7C02` source-schema catalogs
+### 7.1 Legacy entity identity runs
+
+A legacy schema catalog opens with `DE 04 FE FE 12 CATCatalogManager`. The design data immediately preceding that opener contains `EA <entity_id:u32le> 81` identity productions. Its complete identity run is the maximal source-ordered suffix whose nonzero identities strictly increase and whose first identity is one. Identities may be sparse. Preserve each delimiter offset, identity, and the catalog-opener offset. The bytes between identity productions are not independently record-framed by this invariant.
+
+### 7.2 `7C02` source-schema catalogs
 
 ```text
 catalog := 7C 02 <total_len:u32le> <count:atom> entry{count-1}
@@ -548,7 +552,7 @@ entry   := <inclusive_len:u8> <utf8[inclusive_len-1]>
 
 `total_len` includes the marker and length field. The entries consume the frame exactly. A `7C02` candidate contained by another complete catalog extent is entry data, not an independent catalog. The first four entries are `CATCatalogManager`, `catalogManager`, `catalogLinks`, and the empty string. The catalog names source classes and fields available to the serialized object schema; a name does not declare an object instance.
 
-### 7.2 `7C08` object graph
+### 7.3 `7C08` object graph
 
 An object graph is preceded by a contiguous entity-table run containing one `7C05` record for each serialized `7C09` record. A `7C05` record is `7C 05 <total_len:u32le> <lead:u8> <definition> <value> <record_suffix>`, where `definition := 7C 06 <definition_len:u32le> <definition_prefix> EA <entity_id:u32le> <definition_suffix>` and `value := 7C 07 <value_len:u32le> <value_payload>`. Both nested lengths are total lengths measured from their markers. The definition frame ends at the value marker, and the value frame ends at or before the enclosing record end. Within `definition_prefix`, `32` begins a fixed-width five-byte atom, so an `EA` among its four value bytes is not the identity delimiter. Entity identities are nonzero and strictly increase across a run but may be sparse. One `DE` byte separates the run from its paired `7C08` marker, and the run has the same record count as that graph. Pair `7C05` and `7C09` records by serialized position. Preserve the complete definition prefix, definition suffix, value payload, and record suffix.
 
@@ -607,7 +611,7 @@ The payload prefix can bind this suffix to a source-schema ordinal in either of 
 
 The following `7C02` schema catalog stores UTF-8 strings. A nonzero first byte is the inclusive one-byte-header-plus-string length. A zero first byte selects a following `u32le` string-byte length after the five-byte header. It either immediately follows the `7C08` graph or follows the graph's intervening `7C0B` value block. Preserve the graph's exact catalog link and the catalog's framing offset. String values may contain line feeds and non-ASCII unit symbols. Its fixed first four entries are `CATCatalogManager`, `catalogManager`, `catalogLinks`, and the empty string. A `7C09` head's `class_ref` is the zero-based ordinal of its class name in this catalog; preserve both the selected entry identity and its string value on the field record.
 
-### 7.3 `7C0B` visualization value blocks
+### 7.4 `7C0B` visualization value blocks
 
 ```text
 value_block := 7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02 ...
@@ -621,7 +625,7 @@ The payload is a serialized token stream. `32 <ordinal:u32le>` stores a source-s
 
 Resolve every in-range selector to the exact entry in the block's source schema and preserve both the entry identity and its UTF-8 string value. An in-range selector begins one stored value; its complete encoded value is every following token before the next in-range selector, absent-schema sentinel, or end of the payload. Consecutive delimiting selectors give the first selector an empty encoded value. The selector's absolute marker offset is its persistent source identity; preserve its containing block, payload offset, and serialized order. Preserve the absent-schema sentinel as a selector without an entry link, name, or encoded value.
 
-### 7.4 Outer alias rows
+### 7.5 Outer alias rows
 
 ```text
 alias_row := <lead:u32le> 01 00 04 00 <tag:u32le> <flag:u8> <f1:3B> <f2:u32le> <f3:u32le>

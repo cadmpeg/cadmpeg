@@ -12,6 +12,7 @@ use crate::container;
 use crate::entity_table;
 #[cfg(test)]
 use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+use crate::legacy_entity;
 use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
     PayloadSubtype,
@@ -19,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 140;
+pub const CATIA_NATIVE_VERSION: u32 = 141;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -44,6 +45,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "entity_records",
     "external_references",
     "finjpl_segments",
+    "legacy_entity_runs",
     "object_graph_records",
     "object_graphs",
     "preview_images",
@@ -2230,6 +2232,30 @@ fn repeated_reference_schema_selection(
     })
 }
 
+/// One stored entity identity in a pre-`7C05` design stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyEntityIdentity {
+    /// Offset of the `EA` identity delimiter.
+    pub byte_offset: u64,
+    /// Little-endian identity following the delimiter.
+    pub entity_id: u32,
+}
+
+/// A monotonically identified pre-`7C05` run and its terminating catalog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyEntityRun {
+    /// Stable native identity.
+    pub id: String,
+    /// Offset of the first identity delimiter.
+    pub byte_offset: u64,
+    /// Bytes from the first identity delimiter to the catalog opener.
+    pub byte_len: u64,
+    /// Offset of the fixed schema-catalog opening production.
+    pub catalog_offset: u64,
+    /// Stored identities in source order.
+    pub identities: Vec<CatiaLegacyEntityIdentity>,
+}
+
 /// CATIA-native records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaNative {
@@ -2298,6 +2324,9 @@ pub struct CatiaNative {
     /// Complete bounded outer FINJPL segments.
     #[serde(default)]
     pub finjpl_segments: Vec<CatiaFinjplSegment>,
+    /// Monotone entity identities in pre-`7C05` design streams.
+    #[serde(default)]
+    pub legacy_entity_runs: Vec<CatiaLegacyEntityRun>,
     /// Outer ownership graphs.
     #[serde(default)]
     pub object_graphs: Vec<CatiaObjectGraph>,
@@ -2334,6 +2363,7 @@ impl Default for CatiaNative {
             entity_records: Vec::new(),
             external_references: Vec::new(),
             finjpl_segments: Vec::new(),
+            legacy_entity_runs: Vec::new(),
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
             value_blocks: Vec::new(),
@@ -2358,6 +2388,67 @@ fn consolidated_circles(bytes: &[u8]) -> Vec<CatiaConsolidatedCircle> {
             chart_shift: circle.chart_shift,
         })
         .collect()
+}
+
+fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
+    legacy_entity::parse_runs(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, run)| {
+            let byte_offset = run
+                .identities
+                .first()
+                .expect("legacy run has identity one")
+                .offset;
+            CatiaLegacyEntityRun {
+                id: format!("catia:legacy-entity-run#{index}"),
+                byte_offset: byte_offset as u64,
+                byte_len: (run.catalog_offset - byte_offset) as u64,
+                catalog_offset: run.catalog_offset as u64,
+                identities: run
+                    .identities
+                    .into_iter()
+                    .map(|identity| CatiaLegacyEntityIdentity {
+                        byte_offset: identity.offset as u64,
+                        entity_id: identity.entity_id,
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn validate_legacy_entity_runs(
+    runs: &[CatiaLegacyEntityRun],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let mut previous_end = None;
+    for (index, run) in runs.iter().enumerate() {
+        let run_end = run.byte_offset.checked_add(run.byte_len);
+        let valid = run.id == format!("catia:legacy-entity-run#{index}")
+            && run_end == Some(run.catalog_offset)
+            && previous_end.is_none_or(|end| end <= run.byte_offset)
+            && run.identities.first().is_some_and(|identity| {
+                identity.byte_offset == run.byte_offset && identity.entity_id == 1
+            })
+            && run.identities.windows(2).all(|pair| {
+                pair[0].byte_offset < pair[1].byte_offset && pair[0].entity_id < pair[1].entity_id
+            })
+            && run.identities.last().is_some_and(|identity| {
+                identity
+                    .byte_offset
+                    .checked_add(6)
+                    .is_some_and(|end| end <= run.catalog_offset)
+            });
+        if !valid {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "legacy entity run `{}` has an invalid identity sequence",
+                run.id
+            )));
+        }
+        previous_end = run_end;
+    }
+    Ok(())
 }
 
 fn consolidated_class61_records(bytes: &[u8]) -> Vec<CatiaConsolidatedClass61Record> {
@@ -4170,6 +4261,7 @@ impl CatiaNative {
             .collect::<Vec<_>>();
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
+        let legacy_entity_runs = legacy_entity_runs(bytes);
         let consolidated_circles = consolidated_circles(bytes);
         let consolidated_class61_records = consolidated_class61_records(bytes);
         let consolidated_cones = consolidated_cones(bytes);
@@ -4210,6 +4302,7 @@ impl CatiaNative {
             entity_records,
             external_references,
             finjpl_segments,
+            legacy_entity_runs,
             object_graphs,
             preview_images,
             value_blocks,
@@ -4568,6 +4661,14 @@ impl CatiaNative {
             ));
         }
         let external_references = expected_external_references;
+        let mut legacy_entity_runs: Vec<CatiaLegacyEntityRun> =
+            if namespace.arenas.contains_key("legacy_entity_runs") {
+                namespace.arena_as("legacy_entity_runs")?
+            } else {
+                Vec::new()
+            };
+        legacy_entity_runs.sort_by_key(|run| run.byte_offset);
+        validate_legacy_entity_runs(&legacy_entity_runs)?;
         let mut preview_images: Vec<CatiaPreviewImage> =
             if namespace.arenas.contains_key("preview_images") {
                 namespace.arena_as("preview_images")?
@@ -4676,6 +4777,7 @@ impl CatiaNative {
             entity_records,
             external_references,
             finjpl_segments,
+            legacy_entity_runs,
             object_graphs: graphs,
             preview_images,
             value_blocks,
@@ -4766,6 +4868,7 @@ impl CatiaNative {
         namespace.set_arena("entity_records", &self.entity_records)?;
         namespace.set_arena("external_references", &self.external_references)?;
         namespace.set_arena("finjpl_segments", &self.finjpl_segments)?;
+        namespace.set_arena("legacy_entity_runs", &self.legacy_entity_runs)?;
         namespace.set_arena("alias_rows", &self.alias_rows)?;
         namespace.set_arena("catalog_entries", &entries)?;
         namespace.set_arena("object_graphs", &graphs)?;
@@ -4810,6 +4913,7 @@ impl CatiaNative {
             entity_records,
             external_references,
             finjpl_segments,
+            legacy_entity_runs,
             mut object_graphs,
             preview_images,
             mut value_blocks,
@@ -4863,6 +4967,7 @@ impl CatiaNative {
         namespace.set_arena("object_graphs", &object_graphs)?;
         namespace.set_arena("object_graph_records", &records)?;
         namespace.set_arena("finjpl_segments", &finjpl_segments)?;
+        namespace.set_arena("legacy_entity_runs", &legacy_entity_runs)?;
         namespace.set_arena("alias_rows", &alias_rows)?;
         namespace.set_arena("preview_images", &preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
