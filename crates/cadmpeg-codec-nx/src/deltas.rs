@@ -1244,11 +1244,30 @@ const BODY_SCHEMA_HEADER: &[u8] = &[
 ];
 
 fn inline_schema_declarations(stream: &[u8], census: &Census) -> Vec<InlineSchemaDeclaration> {
+    let covered = merged_event_spans(census, true);
     uncovered_spans(stream.len(), census, true)
         .flat_map(|(offset, gap_end)| {
+            let parse_end = covered
+                .iter()
+                .position(|(start, end)| *start <= gap_end && gap_end < *end)
+                .map_or(gap_end, |index| {
+                    covered
+                        .get(index + 1)
+                        .map_or(stream.len(), |(start, _)| *start)
+                });
             let mut declarations = Vec::new();
             let mut at = offset;
-            while let Some(declaration) = inline_schema_declaration(stream, at, gap_end) {
+            while at < gap_end {
+                let declaration = inline_schema_declaration(stream, at, gap_end).or_else(|| {
+                    (parse_end > gap_end
+                        && stream.get(at..at.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())?)
+                            == Some(ATTDEF_LIST_SCHEMA_HEADER))
+                    .then(|| inline_schema_declaration(stream, at, parse_end))
+                    .flatten()
+                });
+                let Some(declaration) = declaration else {
+                    break;
+                };
                 at = declaration.end;
                 declarations.push(declaration);
             }
@@ -3564,6 +3583,54 @@ mod inline_schema_tests {
                     || matches!(second.fields, InlineSchemaFields::Type70 { .. })
             );
         }
+    }
+
+    #[test]
+    fn attdef_list_declaration_shares_its_slot_lane() {
+        let mut stream = ATTDEF_LIST_SCHEMA_HEADER.to_vec();
+        stream.extend_from_slice(&20u32.to_be_bytes());
+        stream.extend_from_slice(&43u16.to_be_bytes());
+        stream.extend_from_slice(&10u32.to_be_bytes());
+        stream.extend_from_slice(&0u32.to_be_bytes());
+        for reference in [1u16, 143, 155, 114, 150, 145, 167, 164, 105, 137, 141] {
+            stream.extend_from_slice(&reference.to_be_bytes());
+            stream.push(1);
+        }
+        for _ in 0..10 {
+            stream.extend_from_slice(&1u16.to_be_bytes());
+            stream.push(1);
+        }
+        let declaration_end = stream.len();
+        let shared_offset = declaration_end - 33;
+        stream.extend_from_slice(&[0; 3]);
+        let census = Census {
+            tagged_reference_lanes: vec![
+                TaggedReferenceLane {
+                    references: Vec::new(),
+                    offset: shared_offset,
+                    end: shared_offset + 16,
+                },
+                TaggedReferenceLane {
+                    references: Vec::new(),
+                    offset: declaration_end,
+                    end: stream.len(),
+                },
+            ],
+            ..Census::default()
+        };
+        let declarations = inline_schema_declarations(&stream, &census);
+
+        assert!(matches!(
+            &declarations[0].fields,
+            InlineSchemaFields::AttdefList {
+                xmt: 43,
+                slot_count: 20,
+                active_count: 10,
+                references,
+            } if references[..10] == [143, 155, 114, 150, 145, 167, 164, 105, 137, 141]
+                && references[10..] == [1; 10]
+        ));
+        assert_eq!(declarations[0].end, declaration_end);
     }
 
     #[test]
