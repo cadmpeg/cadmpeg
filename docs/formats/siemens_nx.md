@@ -519,7 +519,7 @@ The leading reference is non-null and uses compact or extended XMT encoding.
 `marker` is `53` or `56`. The two remaining references are the null XMT value
 `1`. The packet ends after the final status byte.
 
-An inline schema declaration begins with one of six exact headers. The type-12
+An inline schema declaration begins with one of seven exact headers. The type-12
 `BODY` form is a 282-byte header beginning `000c2443434349` and ending
 `6d6573685f6f66667365745f6461746100ce00015a`. It declares `lattice`, `mesh`,
 `polyline`, `owner`, `boundary_lattice`, `boundary_mesh`,
@@ -535,6 +535,18 @@ Every reference status is `01`. Its nonempty `state_bytes` tail ends at the
 next exact inline-schema header, the next admitted deltas event, or the end of
 the inflated stream, whichever comes first. Header and instance state retain
 independent byte spans.
+
+The type-38 form has the header
+`00260c43434343434343434343434111696e74657273656374696f6e5f6461746100cc00015a`.
+Its state is `xmt, node_id:u32 BE, ref_status[5], marker:u8,
+ref_status[2], descending_ref_status[3], ref_status(1), term_schema[22],
+one:u32 BE, term_ref, 4c3f, value[11]:f64 BE`. `xmt` and the two references
+after `marker` are non-null. The first seven reference statuses are `01`.
+`marker` is `2b` or `2d`. The three descending references have status `00`
+and values `xmt + 3`, `xmt + 2`, and `xmt + 1`. `term_schema` is
+`0029034349087465726d5f757365000000010163435a`, `one` is `1`, and
+`term_ref` equals `xmt + 2`. Every numeric value is finite. The declaration
+ends after the eleventh numeric value.
 
 The type-100 form has the 29-byte header
 `00640a4343434343434343434109707265636973696f6e00e500015a`. Its bound

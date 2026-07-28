@@ -219,7 +219,7 @@ pub struct ParasolidDeltasReferenceMarkerPacket {
 }
 
 /// Body of an inline schema declaration in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "schema", rename_all = "snake_case")]
 pub enum ParasolidDeltasInlineSchemaFields {
     /// Type 12 `BODY` schema header without following instance state.
@@ -254,10 +254,19 @@ pub enum ParasolidDeltasInlineSchemaFields {
         state_words: [u32; 3],
         terminal_value: u64,
     },
+    /// Type 38 intersection-data declaration with a nested term-use schema.
+    Type38 {
+        xmt: u32,
+        node_id: u32,
+        leading_references: [u32; 5],
+        marker: u8,
+        linked_references: [u32; 2],
+        numeric_values: [f64; 11],
+    },
 }
 
 /// Inline schema declaration in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParasolidDeltasInlineSchemaDeclaration {
     /// Globally unique declaration identity.
     pub id: String,
@@ -610,6 +619,21 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     anchor_reference,
                     state_words,
                     terminal_value,
+                },
+                crate::deltas::InlineSchemaFields::Type38 {
+                    xmt,
+                    node_id,
+                    leading_references,
+                    marker,
+                    linked_references,
+                    numeric_values,
+                } => ParasolidDeltasInlineSchemaFields::Type38 {
+                    xmt,
+                    node_id,
+                    leading_references,
+                    marker,
+                    linked_references,
+                    numeric_values,
                 },
             };
             events
