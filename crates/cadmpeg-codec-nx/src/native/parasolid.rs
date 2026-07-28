@@ -776,6 +776,31 @@ pub struct ParasolidAttributeClassUse {
     pub attribute_definition: String,
 }
 
+/// Class-qualified numeric value referenced by one Parasolid attribute instance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidAttributeNumericClassUse {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Resolved class relation for the attribute instance.
+    pub attribute_class_use: String,
+    /// Type-81 attribute-instance record.
+    pub entity_51_record: String,
+    /// Uniquely matched attribute definition.
+    pub attribute_definition: String,
+    /// Numeric-reference relation carried by the instance.
+    pub numeric_use: String,
+    /// Zero-based position in the type-81 reference lane.
+    pub reference_ordinal: u32,
+    /// Numeric record family.
+    pub kind: ParasolidEntity51NumericKind,
+    /// Uniquely resolved numeric value record.
+    pub value_record: String,
+    /// Offset of the owning type-81 record in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Resolved class of one topology-owned Parasolid attribute instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidTopologyAttributeClassUse {
@@ -1188,6 +1213,48 @@ pub fn parasolid_attribute_class_uses(
     uses
 }
 
+/// Join every resolved attribute class to its uniquely resolved numeric values.
+pub fn parasolid_attribute_numeric_class_uses(
+    class_uses: &[ParasolidAttributeClassUse],
+    numeric_uses: &[ParasolidEntity51NumericUse],
+) -> Vec<ParasolidAttributeNumericClassUse> {
+    let mut classes = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
+    for class_use in class_uses {
+        classes
+            .entry(class_use.entity_51_record.as_str())
+            .or_default()
+            .push(class_use);
+    }
+    let mut uses = numeric_uses
+        .iter()
+        .filter_map(|numeric_use| {
+            let [class_use] = classes
+                .get(numeric_use.entity_51_record.as_str())?
+                .as_slice()
+            else {
+                return None;
+            };
+            Some(ParasolidAttributeNumericClassUse {
+                id: format!(
+                    "{}:numeric-class-use#{}",
+                    class_use.id, numeric_use.reference_ordinal
+                ),
+                stream_ordinal: numeric_use.stream_ordinal,
+                attribute_class_use: class_use.id.clone(),
+                entity_51_record: numeric_use.entity_51_record.clone(),
+                attribute_definition: class_use.attribute_definition.clone(),
+                numeric_use: numeric_use.id.clone(),
+                reference_ordinal: numeric_use.reference_ordinal,
+                kind: numeric_use.kind,
+                value_record: numeric_use.value_record.clone(),
+                inflated_offset: numeric_use.inflated_offset,
+            })
+        })
+        .collect::<Vec<_>>();
+    uses.sort_by(|first, second| first.id.cmp(&second.id));
+    uses
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(unused_imports)]
@@ -1203,6 +1270,7 @@ mod tests {
     };
     use cadmpeg_ir::math::{Point2, Vector3};
     use cadmpeg_ir::report::LossCategory;
+
     use cadmpeg_ir::Exactness;
 
     use crate::container;
@@ -1211,6 +1279,53 @@ mod tests {
     use crate::NxCodec;
 
     use super::*;
+
+    #[test]
+    fn numeric_attribute_uses_retain_their_resolved_class() {
+        let class_use = ParasolidAttributeClassUse {
+            id: "class-use".into(),
+            stream_ordinal: 2,
+            entity_51_record: "entity".into(),
+            class_discriminator: 8,
+            definition_xmt: 9,
+            attribute_definition: "definition".into(),
+        };
+        let numeric_use = ParasolidEntity51NumericUse {
+            id: "numeric-use".into(),
+            stream_ordinal: 2,
+            entity_51_record: "entity".into(),
+            reference_ordinal: 5,
+            referenced_xmt: 12,
+            kind: ParasolidEntity51NumericKind::UnsignedIntegers,
+            value_record: "integers".into(),
+            inflated_offset: 48,
+        };
+
+        let uses = parasolid_attribute_numeric_class_uses(
+            std::slice::from_ref(&class_use),
+            std::slice::from_ref(&numeric_use),
+        );
+
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].attribute_class_use, "class-use");
+        assert_eq!(uses[0].attribute_definition, "definition");
+        assert_eq!(uses[0].numeric_use, "numeric-use");
+        assert_eq!(uses[0].reference_ordinal, 5);
+        assert_eq!(uses[0].value_record, "integers");
+
+        let duplicate = ParasolidAttributeClassUse {
+            id: "duplicate".into(),
+            stream_ordinal: 2,
+            entity_51_record: "entity".into(),
+            class_discriminator: 10,
+            definition_xmt: 11,
+            attribute_definition: "other-definition".into(),
+        };
+        assert!(
+            parasolid_attribute_numeric_class_uses(&[class_use, duplicate], &[numeric_use])
+                .is_empty()
+        );
+    }
 
     #[test]
     fn topology_retains_entity_attribute_list_references() {

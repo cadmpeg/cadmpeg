@@ -10660,6 +10660,7 @@ mod golden {
         "offset_store_named_points",
         "om_record_areas",
         "parasolid_attribute_class_uses",
+        "parasolid_attribute_numeric_class_uses",
         "parasolid_attribute_definitions",
         "parasolid_blend_bound_records",
         "parasolid_blend_surface_records",
@@ -11388,7 +11389,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (180), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (181), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -11397,7 +11398,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::CATALOGUE;
 
-        assert_eq!(CATALOGUE.len(), 180, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 181, "one catalogue row per model field");
 
         let mut catalogue_arenas = BTreeSet::new();
         for row in CATALOGUE {

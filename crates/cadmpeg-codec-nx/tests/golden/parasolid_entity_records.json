@@ -106,6 +106,32 @@
                 "xmt": 201
               }
             ],
+            "parasolid_attribute_numeric_class_uses": [
+              {
+                "attribute_class_use": "nx:s0:attribute-class-use#50-178",
+                "attribute_definition": "nx:s0:attribute-definition#201",
+                "entity_51_record": "nx:s0:entity-51#50-178",
+                "id": "nx:s0:attribute-class-use#50-178:numeric-class-use#1",
+                "inflated_offset": 178,
+                "kind": "unsigned_integers",
+                "numeric_use": "nx:s0:entity-51-numeric-use#50-178-1",
+                "reference_ordinal": 1,
+                "stream_ordinal": 0,
+                "value_record": "nx:s0:entity-52-integers#101-131"
+              },
+              {
+                "attribute_class_use": "nx:s0:attribute-class-use#50-178",
+                "attribute_definition": "nx:s0:attribute-definition#201",
+                "entity_51_record": "nx:s0:entity-51#50-178",
+                "id": "nx:s0:attribute-class-use#50-178:numeric-class-use#2",
+                "inflated_offset": 178,
+                "kind": "doubles",
+                "numeric_use": "nx:s0:entity-51-numeric-use#50-178-2",
+                "reference_ordinal": 2,
+                "stream_ordinal": 0,
+                "value_record": "nx:s0:entity-53-doubles#102-143"
+              }
+            ],
             "parasolid_entity_51_numeric_uses": [
               {
                 "entity_51_record": "nx:s0:entity-51#50-178",

@@ -1101,6 +1101,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "parasolid_attribute_numeric_class_uses",
+        tag: None,
+        exactness: Exactness::Derived,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_attribute_numeric_class_uses, r, ns),
+        len: |m| m.parasolid.parasolid_attribute_numeric_class_uses.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "parasolid_topology_attribute_list_references",
         tag: Some("TOPOLOGY_ATTRIBUTE_LIST_REFERENCE"),
         exactness: Exactness::ByteExact,
