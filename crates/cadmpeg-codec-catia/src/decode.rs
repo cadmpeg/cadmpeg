@@ -789,6 +789,12 @@ fn transfer_formula_parameters(
         .iter()
         .map(|entity| (entity.id.as_str(), entity))
         .collect::<HashMap<_, _>>();
+    let object_records = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .map(|record| (record.id.as_str(), record))
+        .collect::<HashMap<_, _>>();
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting = BTreeSet::<ParameterId>::new();
     let mut programs = Vec::<FormulaProgramCandidate>::new();
@@ -996,9 +1002,12 @@ fn transfer_formula_parameters(
     let consumed_object_records = consumed_entity_records
         .iter()
         .filter_map(|entity| {
-            entities
-                .get(entity.as_str())
-                .map(|entity| entity.object_record.clone())
+            let entity = entities.get(entity.as_str())?;
+            let object = object_records.get(entity.object_record.as_str())?;
+            (entity.formula_relation.is_some()
+                || object.subtype == crate::object_graph::PayloadSubtype::Empty
+                    && object.references.is_empty())
+            .then(|| object.id.clone())
         })
         .collect();
     let mut parameters = candidates.into_values().collect::<Vec<_>>();

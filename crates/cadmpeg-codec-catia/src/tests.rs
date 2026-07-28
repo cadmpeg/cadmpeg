@@ -1914,6 +1914,26 @@ fn standard_catpart_with_typed_formula_inputs(
     output_value: Option<f64>,
     source_expression: &str,
 ) -> Vec<u8> {
+    standard_catpart_with_typed_formula_inputs_and_object_payload(
+        parameter_entity_id,
+        duplicate_binding,
+        inputs,
+        result_type,
+        output_value,
+        source_expression,
+        &[0xfe],
+    )
+}
+
+fn standard_catpart_with_typed_formula_inputs_and_object_payload(
+    parameter_entity_id: u8,
+    duplicate_binding: bool,
+    inputs: &[(&str, &str, &str, &str, f64)],
+    result_type: &str,
+    output_value: Option<f64>,
+    source_expression: &str,
+    input_object_payload: &[u8],
+) -> Vec<u8> {
     assert!(!inputs.is_empty());
     let formula_definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
     let expression_definition = [0x00, 0x08, 0x32, 5, 0, 0, 0, 0x32, 5, 0, 0, 0];
@@ -2003,7 +2023,7 @@ fn standard_catpart_with_typed_formula_inputs(
     records.extend(
         inputs
             .iter()
-            .map(|_| object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])),
+            .map(|_| object_graph_record(&[0x04, 0x01, 0x81, 0x84], input_object_payload)),
     );
     if duplicate_binding {
         records.push(object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]));
@@ -7662,6 +7682,33 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .is_empty());
+}
+
+#[test]
+fn formula_input_with_additional_object_payload_remains_unresolved() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(
+                standard_catpart_with_typed_formula_inputs_and_object_payload(
+                    0x63,
+                    false,
+                    &[("#1_", "LENGTH", "Thickness", "#1_ /2", 35.0)],
+                    "LENGTH",
+                    Some(33.0),
+                    "#1_ /2-2mm",
+                    &[0x81, 0xfe],
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("decode formula input with additional object payload");
+
+    assert_eq!(decoded.ir.model.parameters.len(), 1);
+    assert_eq!(
+        decoded.report.coverage["transferred_formula_design_record_count"],
+        0
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 4);
 }
 
 #[test]
