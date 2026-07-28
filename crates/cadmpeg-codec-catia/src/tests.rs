@@ -4821,6 +4821,45 @@ fn decode_reports_separate_zero_entity_topology_registries() {
 }
 
 #[test]
+fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
+    let exact_x = 1.000_000_01_f64;
+    let mut surf = surf_stream();
+    for (index, value) in [exact_x as f32, 2.0_f32, 3.0_f32, 1.0_f32, 0.0_f32, 2.0_f32]
+        .into_iter()
+        .enumerate()
+    {
+        surf[8 + 4 * index..12 + 4 * index].copy_from_slice(&be_f32(value));
+    }
+    let mut consolidated = b2_cylinder_stream();
+    consolidated[5..13].copy_from_slice(&le_f64(exact_x));
+    let mut file = standard_catpart_from_streams(&main_stream(), &surf);
+    file.splice(16..16, consolidated);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode exact consolidated analytic refinement");
+    let surface = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "catia:standard:surf#0")
+        .expect("refined standard cylinder");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { origin, axis, .. }
+            if origin.x == exact_x
+                && axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+    ));
+    assert_eq!(
+        decoded.report.coverage["refined_consolidated_analytic_surface_count"],
+        1
+    );
+}
+
+#[test]
 fn native_namespace_retains_exact_consolidated_torus_charts() {
     let native = crate::native::CatiaNative::decode(&b2_torus_stream());
     let [torus] = native.consolidated_tori.as_slice() else {

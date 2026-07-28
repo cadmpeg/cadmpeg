@@ -82,6 +82,10 @@ current scores require those matrices and representative fixtures.
   consolidated circle transfers a placed analytic directrix and neutral
   surface-of-revolution construction. Missing and multiply matching intervals
   remain unbound atomically.
+- A standard binary32 cylinder, cone, sphere, or torus face carrier is refined
+  to its complete consolidated binary64 frame when quantization selects exactly
+  one same-family record. One exact carrier may refine repeated face carriers;
+  missing and multiply matching records leave the standard carrier unchanged.
 - Zero-entity surface carriers retain their complete face-local `21xx` support
   tapes. Every occurrence keeps its framed local slot, record family, and
   inline UV endpoint pair when that family stores one. The independent `5e1a`

@@ -130,6 +130,242 @@ fn append_consolidated_revolutions(
     resolved.len()
 }
 
+fn refine_consolidated_analytic_surfaces(
+    bytes: &[u8],
+    surfaces: &mut [Option<SurfaceGeometry>],
+) -> HashMap<usize, usize> {
+    fn exactly_one<T>(mut values: impl Iterator<Item = T>) -> Option<T> {
+        let value = values.next()?;
+        values.next().is_none().then_some(value)
+    }
+
+    let cylinders = crate::families::b2::records::b2_cylinders(bytes);
+    let cones = crate::families::b2::records::b2_cones(bytes);
+    let spheres = crate::families::b2::records::b2_spheres(bytes);
+    let tori = crate::families::b2::records::b2_tori(bytes);
+    let quantized = |value: f64| f64::from(value as f32);
+    let same_point = |point: Point3, stored: [f64; 3]| {
+        point.x.to_bits() == quantized(stored[0]).to_bits()
+            && point.y.to_bits() == quantized(stored[1]).to_bits()
+            && point.z.to_bits() == quantized(stored[2]).to_bits()
+    };
+    let same_axis = |axis: Vector3, stored: [f64; 3]| {
+        let x = stored[0] as f32;
+        let y = stored[1] as f32;
+        let z = (1.0 - f64::from(x * x + y * y))
+            .max(0.0)
+            .sqrt()
+            .copysign(stored[2]);
+        unit_vector(Vector3::new(f64::from(x), f64::from(y), z)).is_some_and(|reconstructed| {
+            axis.x.to_bits() == reconstructed.x.to_bits()
+                && axis.y.to_bits() == reconstructed.y.to_bits()
+                && axis.z.to_bits() == reconstructed.z.to_bits()
+        })
+    };
+    let mut refined = HashMap::new();
+    for (index, surface) in surfaces.iter_mut().enumerate() {
+        let replacement = match surface.as_ref() {
+            Some(SurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                radius,
+                ..
+            }) => exactly_one(cylinders.iter().filter_map(|cylinder| {
+                let geometry = cylinder.geometry.as_ref()?;
+                let SurfaceGeometry::Cylinder {
+                    axis: exact_axis, ..
+                } = geometry
+                else {
+                    return None;
+                };
+                (same_point(*origin, cylinder.origin)
+                    && same_axis(*axis, [exact_axis.x, exact_axis.y, exact_axis.z])
+                    && radius.to_bits() == quantized(cylinder.radius).to_bits())
+                .then_some((geometry, cylinder.pos))
+            }))
+            .map(|(geometry, pos)| (geometry.clone(), pos)),
+            Some(SurfaceGeometry::Cone {
+                origin,
+                axis,
+                radius,
+                ratio,
+                half_angle,
+                ..
+            }) if *radius == 0.0 && *ratio == 1.0 => exactly_one(cones.iter().filter(|cone| {
+                same_point(*origin, cone.apex)
+                    && same_axis(*axis, cone.axis)
+                    && half_angle.to_bits() == quantized(cone.half_angle).to_bits()
+            }))
+            .map(|cone| {
+                (
+                    SurfaceGeometry::Cone {
+                        origin: Point3::new(cone.apex[0], cone.apex[1], cone.apex[2]),
+                        axis: Vector3::new(cone.axis[0], cone.axis[1], cone.axis[2]),
+                        ref_direction: Vector3::new(cone.t1[0], cone.t1[1], cone.t1[2]),
+                        radius: 0.0,
+                        ratio: 1.0,
+                        half_angle: cone.half_angle,
+                    },
+                    cone.pos,
+                )
+            }),
+            Some(SurfaceGeometry::Sphere { center, radius, .. }) => {
+                exactly_one(spheres.iter().filter(|sphere| {
+                    same_point(*center, sphere.center)
+                        && radius.to_bits() == quantized(sphere.radius).to_bits()
+                }))
+                .map(|sphere| {
+                    (
+                        SurfaceGeometry::Sphere {
+                            center: Point3::new(
+                                sphere.center[0],
+                                sphere.center[1],
+                                sphere.center[2],
+                            ),
+                            axis: Vector3::new(sphere.axis[0], sphere.axis[1], sphere.axis[2]),
+                            ref_direction: Vector3::new(
+                                sphere.direction_x[0],
+                                sphere.direction_x[1],
+                                sphere.direction_x[2],
+                            ),
+                            radius: sphere.radius,
+                        },
+                        sphere.pos,
+                    )
+                })
+            }
+            Some(SurfaceGeometry::Torus {
+                center,
+                axis,
+                major_radius,
+                minor_radius,
+                ..
+            }) => exactly_one(tori.iter().filter(|torus| {
+                same_point(*center, torus.center)
+                    && same_axis(*axis, torus.axis)
+                    && major_radius.to_bits() == quantized(torus.major_radius).to_bits()
+                    && minor_radius.to_bits() == quantized(torus.minor_radius).to_bits()
+            }))
+            .map(|torus| {
+                (
+                    SurfaceGeometry::Torus {
+                        center: Point3::new(torus.center[0], torus.center[1], torus.center[2]),
+                        axis: Vector3::new(torus.axis[0], torus.axis[1], torus.axis[2]),
+                        ref_direction: Vector3::new(
+                            torus.direction_x[0],
+                            torus.direction_x[1],
+                            torus.direction_x[2],
+                        ),
+                        major_radius: torus.major_radius,
+                        minor_radius: torus.minor_radius,
+                    },
+                    torus.pos,
+                )
+            }),
+            _ => None,
+        };
+        if let Some((geometry, source_pos)) = replacement {
+            *surface = Some(geometry);
+            refined.insert(index, source_pos);
+        }
+    }
+    refined
+}
+
+#[cfg(test)]
+mod consolidated_analytic_refinement_tests {
+    use super::refine_consolidated_analytic_surfaces;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    #[test]
+    fn unique_quantized_torus_refines_every_matching_face_to_binary64() {
+        let mut bytes = crate::tests::b2_torus_stream();
+        let exact_x = 1.000_000_01_f64;
+        bytes[5..13].copy_from_slice(&exact_x.to_le_bytes());
+        let coarse = SurfaceGeometry::Torus {
+            center: Point3::new(f64::from(exact_x as f32), 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 7.0,
+            minor_radius: 2.0,
+        };
+        let mut surfaces = vec![Some(coarse.clone()), Some(coarse)];
+        let refined = refine_consolidated_analytic_surfaces(&bytes, &mut surfaces);
+        assert_eq!(refined, [(0, 0), (1, 0)].into());
+        for surface in surfaces {
+            assert!(matches!(
+                surface,
+                Some(SurfaceGeometry::Torus { center, .. }) if center.x == exact_x
+            ));
+        }
+    }
+
+    #[test]
+    fn sphere_refinement_requires_one_matching_consolidated_carrier() {
+        let mut bytes = crate::tests::b2_sphere_stream();
+        let exact_x = 1.000_000_01_f64;
+        bytes[5..13].copy_from_slice(&exact_x.to_le_bytes());
+        let coarse = SurfaceGeometry::Sphere {
+            center: Point3::new(f64::from(exact_x as f32), 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 5.0,
+        };
+        let mut unique = vec![Some(coarse.clone())];
+        assert_eq!(
+            refine_consolidated_analytic_surfaces(&bytes, &mut unique),
+            [(0, 0)].into()
+        );
+        assert!(matches!(
+            unique[0],
+            Some(SurfaceGeometry::Sphere { center, .. }) if center.x == exact_x
+        ));
+
+        bytes.extend_from_slice(&bytes.clone());
+        let mut ambiguous = vec![Some(coarse)];
+        assert!(refine_consolidated_analytic_surfaces(&bytes, &mut ambiguous).is_empty());
+    }
+
+    #[test]
+    fn cylinder_and_cone_refinement_use_their_complete_exact_frames() {
+        let mut bytes = crate::tests::b2_cylinder_stream();
+        bytes.extend_from_slice(&crate::tests::b2_cone_stream());
+        let mut surfaces = vec![
+            Some(SurfaceGeometry::Cylinder {
+                origin: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(1.0, 0.0, 0.0),
+                ref_direction: Vector3::new(0.0, 1.0, 0.0),
+                radius: 2.0,
+            }),
+            Some(SurfaceGeometry::Cone {
+                origin: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 0.0,
+                ratio: 1.0,
+                half_angle: f64::from(0.25_f32),
+            }),
+        ];
+        assert_eq!(
+            refine_consolidated_analytic_surfaces(&bytes, &mut surfaces).len(),
+            2
+        );
+        assert!(matches!(
+            surfaces[0],
+            Some(SurfaceGeometry::Cylinder { ref_direction, .. })
+                if ref_direction == Vector3::new(0.0, 1.0, 0.0)
+        ));
+        assert!(matches!(
+            surfaces[1],
+            Some(SurfaceGeometry::Cone {
+                half_angle: 0.25,
+                ..
+            })
+        ));
+    }
+}
+
 /// Decode the standard-nested vertex cloud and analytic surface carriers. Returns
 /// `None` when the reconstructed stream yields neither vertices nor surfaces, so
 /// the caller falls back to the container-metadata path.
@@ -295,7 +531,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         })
         .count();
     let face_frame_vectors = fbb::standard_face_frame_vectors(brep);
-    let curved_surfaces = records
+    let mut curved_surfaces = records
         .iter()
         .map(|record| match record {
             crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix)
@@ -307,6 +543,8 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             | crate::families::standard::records::StandardSurfaceRecord::Freeform { .. } => None,
         })
         .collect::<Vec<_>>();
+    let refined_analytic_surfaces =
+        refine_consolidated_analytic_surfaces(&scan.data, &mut curved_surfaces);
     let mut plane_normal_candidates = HashMap::<u32, Option<[f64; 3]>>::new();
     let mut derived_plane_targets = HashSet::new();
     let mut exact_plane_targets = HashSet::new();
@@ -382,8 +620,9 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             face_bindings.push((id.clone(), *forward, *pos));
             surface_annotations.push((
                 id.clone(),
+                "MainDataStream+SurfacicReps",
                 *pos,
-                None,
+                "surfacic_reps_freeform_alias".to_string(),
                 if freeform_procedural_surfaces.contains_key(tag) {
                     Exactness::ByteExact
                 } else if matches!(geometry, SurfaceGeometry::Unknown { .. }) {
@@ -422,10 +661,26 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                 {
                     face_bindings.push((id.clone(), forward, prefix.pos));
                 }
+                let (annotation_stream, annotation_offset, annotation_tag) =
+                    refined_analytic_surfaces.get(&i).map_or(
+                        (
+                            "MainDataStream+SurfacicReps",
+                            prefix.pos,
+                            format!("surfacic_reps_{:02x}", prefix.kind),
+                        ),
+                        |source_pos| {
+                            (
+                                "consolidated_b2_03",
+                                *source_pos,
+                                "consolidated_exact_analytic_surface".to_string(),
+                            )
+                        },
+                    );
                 surface_annotations.push((
                     id.clone(),
-                    prefix.pos,
-                    Some(prefix.kind),
+                    annotation_stream,
+                    annotation_offset,
+                    annotation_tag,
                     if derived_plane_targets.contains(&prefix.target)
                         && !exact_plane_targets.contains(&prefix.target)
                     {
@@ -451,8 +706,9 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                 }
                 surface_annotations.push((
                     id.clone(),
+                    "MainDataStream+SurfacicReps",
                     prefix.pos,
-                    Some(prefix.kind),
+                    format!("surfacic_reps_{:02x}", prefix.kind),
                     Exactness::Unknown,
                 ));
                 surfaces.push(Surface {
@@ -660,18 +916,8 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             tolerance: None,
         });
     }
-    for (id, offset, kind, exactness) in surface_annotations {
-        annotate(
-            &mut annotations,
-            &id,
-            "MainDataStream+SurfacicReps",
-            offset as u64,
-            kind.map_or_else(
-                || "surfacic_reps_freeform_alias".to_string(),
-                |kind| format!("surfacic_reps_{kind:02x}"),
-            ),
-            exactness,
-        );
+    for (id, stream, offset, tag, exactness) in surface_annotations {
+        annotate(&mut annotations, &id, stream, offset as u64, tag, exactness);
     }
     ir.model.surfaces = surfaces;
     let mut topology_ir = ir.clone();
@@ -717,7 +963,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
 
-    let report = build_geometry_report(
+    let mut report = build_geometry_report(
         &ir,
         scan,
         &typed,
@@ -728,6 +974,10 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             unbound_revolution: revolution_record_count.saturating_sub(resolved_revolution_count),
         },
         topology_result.err().map(StandardTopologyFailure::message),
+    );
+    report.coverage.insert(
+        "refined_consolidated_analytic_surface_count".to_string(),
+        refined_analytic_surfaces.len(),
     );
     Some(FamilyOutput {
         ir,

@@ -340,6 +340,8 @@ A sequential walker over the SURFACE section consumes exactly one fixed-length a
 
 The reconstructed analytic axis is normalized after recovering `az`; this removes f32 unit-sphere roundoff while preserving the stored axis direction and hemisphere. A tag-bridged plane normal is normalized under the same rule. A zero or non-finite reconstructed direction does not define a carrier.
 
+The standard binary32 cylinder, cone, sphere, or torus carrier is refined by a consolidated binary64 carrier of the same family when exactly one consolidated record reproduces every standard field under binary32 conversion. Axis matching converts the consolidated X and Y components to binary32, reconstructs Z from the unit-sphere equation with the consolidated Z hemisphere, and applies the standard normalization. Cylinder origin and radius, cone apex and half-angle, sphere center and radius, and torus center and radii must convert bit-identically. One consolidated carrier may refine multiple identical face carriers. No refinement is assigned when the converted fields are absent or select multiple consolidated records.
+
 **Two-step param→face binding:** param→surface by shared tag (`plane.tag_u24 == prefix.target_u24`), then surface→face positionally (`surface_prefix[i]` → FBB row `i` by ascending offset). `0x60` `curve_support_row[i]` → spine `edge_row[i]` positionally.
 
 ### 5.9 Circle record `b2 03 19`
