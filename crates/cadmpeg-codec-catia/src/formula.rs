@@ -832,6 +832,14 @@ impl FormulaExpressionParser<'_, '_> {
         let dimension = if self.remaining().starts_with("mm") {
             self.at += 2;
             FormulaDimension::LENGTH
+        } else if self.remaining().starts_with("cm") {
+            self.at += 2;
+            value *= 10.0;
+            FormulaDimension::LENGTH
+        } else if self.remaining().starts_with('m') {
+            self.at += 1;
+            value *= 1_000.0;
+            FormulaDimension::LENGTH
         } else if self.remaining().starts_with("rad") {
             self.at += 3;
             FormulaDimension::ANGLE

@@ -9230,6 +9230,33 @@ fn decode_transfers_linear_interpolation_formula() {
 }
 
 #[test]
+fn decode_converts_metric_length_literals_to_millimetres() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "LENGTH",
+                Some(1_023.0),
+                "1m+2cm+3mm",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode metric length formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("metric length formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(1_023.0)
+        ))
+    );
+}
+
+#[test]
 fn decode_rejects_dimensioned_linear_interpolation_arguments() {
     let decoded = CatiaCodec
         .decode(
