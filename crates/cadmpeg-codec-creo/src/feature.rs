@@ -1705,6 +1705,34 @@ fn decode_parameter_scalar(
     None
 }
 
+fn variable_row_trailing_fields(payload: &[u8], mut cursor: usize, end: usize) -> Option<[u32; 3]> {
+    let mut fields = [0; 3];
+    for field in &mut fields {
+        let &head = payload.get(cursor)?;
+        if head >= 0xc0 {
+            return None;
+        }
+        let (value, next) = psb::compact_int(payload, cursor);
+        (next > cursor && next <= end).then_some(())?;
+        *field = value;
+        cursor = next;
+    }
+    (cursor == end).then_some(fields)
+}
+
+fn unresolved_variable_guess_end(payload: &[u8], offset: usize, end: usize) -> Option<usize> {
+    let delimiter = payload
+        .get(offset + 1..end)?
+        .iter()
+        .position(|&byte| byte == 0xe2)
+        .map(|relative| offset + 1 + relative)?;
+    let mut suffixes = (offset + 1..delimiter).filter(|&trailing_start| {
+        variable_row_trailing_fields(payload, trailing_start, delimiter).is_some()
+    });
+    let suffix = suffixes.next()?;
+    suffixes.next().is_none().then_some(suffix)
+}
+
 fn decode_variable_scalar(
     payload: &[u8],
     offset: usize,
@@ -1730,11 +1758,14 @@ fn decode_variable_scalar(
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7, false);
     }
-    if prefix == 0x28 && offset + 8 <= end {
+    if matches!(prefix, 0x19 | 0x28 | 0x32 | 0x41) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
         return (Some(f64::from_be_bytes(raw)), offset + 8, false);
+    }
+    if prefix == 0x34 && offset + 3 <= end {
+        return (None, offset + 3, false);
     }
     if prefix == 0x31 && offset + 7 <= end {
         let mut raw = [0; 8];
@@ -1747,12 +1778,14 @@ fn decode_variable_scalar(
         0xad => Some([0x3f, 0xd9]),
         0xb3 => Some([0xbf, 0xe0]),
         0xc6 => Some([0xbf, 0xf3]),
+        0xc7 => Some([0xbf, 0xf4]),
         0xc8 => Some([0xbf, 0xf5]),
         0xcb => Some([0xbf, 0xf8]),
         0xcc => Some([0xbf, 0xf9]),
         0xd0 => Some([0xbf, 0xfe]),
         0xd2 => Some([0xc0, 0x00]),
         0xd6 => Some([0xc0, 0x04]),
+        0xda => Some([0xc0, 0x08]),
         0xdd => Some([0xc0, 0x0c]),
         _ => None,
     };
@@ -1767,6 +1800,9 @@ fn decode_variable_scalar(
             .get(offset + 1)
             .is_some_and(|next| matches!(next, 0x18 | 0xe0 | 0xe2 | 0xe3 | 0x10 | 0xe4 | 0xe6))
     {
+        return (Some(0.0), offset + 1, false);
+    }
+    if prefix == 0x18 && unresolved_variable_guess_end(payload, offset + 1, end).is_some() {
         return (Some(0.0), offset + 1, false);
     }
     if prefix == 0xed && offset + 9 <= end {
@@ -1821,7 +1857,13 @@ fn decode_variable_guess(
             return (Some(0.0), offset + 1, false);
         }
     }
-    decode_section_coordinate_scalar(payload, offset, end, cache)
+    let decoded = decode_section_coordinate_scalar(payload, offset, end, cache);
+    if decoded.0.is_none() {
+        if let Some(next) = unresolved_variable_guess_end(payload, offset, end) {
+            return (None, next, false);
+        }
+    }
+    decoded
 }
 
 fn variable_table(
@@ -9194,6 +9236,8 @@ mod tests {
                 [0x80, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
                 1.334_018_271_988_806_7,
             ),
+            ([0x7f, 0xa3, 0xd7, 0x0a, 0x3d, 0x70, 0xa4], 1.29),
+            ([0xc7, 0xa3, 0xd7, 0x0a, 0x3d, 0x70, 0xa4], -1.29),
             (
                 [0xc8, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
                 -1.334_018_271_988_806_7,
@@ -9217,6 +9261,26 @@ mod tests {
         assert_eq!(value, Some(-0.395_669_107_559_015_74));
         assert_eq!(next, bytes.len());
         assert!(!dimension_driven);
+    }
+
+    #[test]
+    fn variable_row_bounds_an_unresolved_guess_from_its_fixed_suffix() {
+        let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
+            \x00\x41\x18\x20\x96\x61\x01\x01\x82\x06\xe2";
+        let variables = variable_table(payload, 0, payload.len(), &scalar::ScalarCache::default())
+            .expect("variable table");
+        let [row] = variables.rows.as_slice() else {
+            panic!("one structurally complete variable row");
+        };
+
+        assert!(variables.is_complete());
+        assert_eq!(row.variable_type, 0);
+        assert_eq!(row.key, 65);
+        assert_eq!(row.value, Some(0.0));
+        assert_eq!(row.guess, None);
+        assert_eq!(row.known, Some(1));
+        assert_eq!(row.homogeneity, Some(1));
+        assert_eq!(row.uvar_id, Some(518));
     }
 
     #[test]
@@ -9264,6 +9328,7 @@ mod tests {
             ([0xd0, 1, 2, 3, 4, 5, 6], [0xbf, 0xfe]),
             ([0xd2, 1, 2, 3, 4, 5, 6], [0xc0, 0x00]),
             ([0xd6, 1, 2, 3, 4, 5, 6], [0xc0, 0x04]),
+            ([0xda, 1, 2, 3, 4, 5, 6], [0xc0, 0x08]),
         ] {
             let (value, next, dimension_driven) =
                 decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
@@ -9284,6 +9349,21 @@ mod tests {
                 bytes.len(),
                 false,
             )
+        );
+        for prefix in [0x19, 0x32, 0x41] {
+            let bytes = [prefix, 1, 2, 3, 4, 5, 6, 7];
+            assert_eq!(
+                decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+                (
+                    Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
+                    bytes.len(),
+                    false,
+                )
+            );
+        }
+        assert_eq!(
+            decode_variable_scalar(&[0x34, 0xd0, 0x00], 0, 3, &scalar::ScalarCache::default()),
+            (None, 3, false)
         );
     }
 

@@ -159,12 +159,15 @@ byte0 = 0x3F when byte1 >= 0x80, otherwise 0x40
 Known prefixes include `71→3F E6`, `74→3F E9`, `76→3F EB`, `81→3F F6`, `8b→40 00`, `90→40 05`, `91→40 06`, `a1→40 16`, `a2→40 17`, and `b7→3F E4`. The negative saved-spline tangent form `b3` maps to `BF E0`. In the `var_arr` coordinate lane, `d7` is the sign counterpart of `90` and maps to `C0 05 <tail6>`.
 
 The `var_arr` coordinate lane also defines the sign pairs
-`7e→3F F3`/`c6→BF F3`, `80→3F F5`/`c8→BF F5`, and
+`7e→3F F3`/`c6→BF F3`, `7f→3F F4`/`c7→BF F4`,
+`80→3F F5`/`c8→BF F5`, and
 `97→40 0C`/`dd→C0 0C`. Each prefix is followed by the remaining six IEEE
 bytes. Its negative sub-unit form `d5 <tail6>` reconstructs
 `BF <tail6> 00`. Its eight-byte world-coordinate form `2d <tail7>`
 reconstructs `40 <tail7>`; the same form is positive in the saved-section
-coordinate lane.
+coordinate lane. Its `19 <tail7>`, `32 <tail7>`, and `41 <tail7>` forms
+reconstruct `3F <tail7>`, and its `da <tail6>` form reconstructs
+`C0 08 <tail6>`. The `34 XX YY` form occupies three bytes.
 
 Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `9e <tail6>` and `a3 <tail6>` for positive and negative forms paired with the section-local `46` cache; `b9`, `d1`, `d3`, `de`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`. A paired form finds the `46 <byte1> <tail6>` token with the same six-byte tail and reconstructs `40 <byte1> <tail6>` for `9e` or `C0 <byte1> <tail6>` for `a3`.
 
