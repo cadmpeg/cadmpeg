@@ -4914,6 +4914,66 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         } if targets.ends_with("#400") && tool.ends_with("#100")
     ));
 
+    let mut delete_scope = scope.clone();
+    delete_scope.kind = "DeleteFace".into();
+    delete_scope.frame_length = 258;
+    delete_scope.kind_offset = 1161;
+    delete_scope.reference_members = vec![100, 200];
+    delete_scope.reference_member_offsets = vec![1085, 1096];
+    let mut delete_group = group.clone();
+    delete_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    delete_group.members = vec![200];
+    delete_group.member_offsets = vec![1096];
+    delete_group.role = 0x0000_0010_0000_0000;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            heal: true,
+        }
+    );
+    delete_scope.frame_length = 263;
+    delete_scope.kind_offset = 1165;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace { heal: true, .. }
+    ));
+    delete_scope.frame_length += 1;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Native { ref kind, .. } if kind == "DeleteFace"
+    ));
+
     let mut remove_scope = scope.clone();
     remove_scope.kind = "RemoveBody".into();
     let mut remove_group = group;

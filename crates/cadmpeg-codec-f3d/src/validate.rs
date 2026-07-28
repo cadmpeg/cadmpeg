@@ -1147,6 +1147,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    None if scope.kind == "DeleteFace" => {
+                        group.role == 0x0000_0010_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     None if scope.kind == "BaseFlange" => {
                         group.role == 0x0000_0041_0000_0000
                             && group.extrude_role.is_none()
@@ -1169,6 +1174,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         "RemoveBody"
                             | "SurfaceStitch"
                             | "SplitFace"
+                            | "DeleteFace"
                             | "BaseFlange"
                             | "EdgeFlange"
                             | "Hem"
@@ -2580,6 +2586,11 @@ fn validate_face_operands<'a>(
                                         )
                                 }
                                 None if scope.kind == "SplitFace" => {
+                                    group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
+                                        && operand.recipe_kind
+                                            == records::ConstructionRecipeKind::BoundedFace
+                                }
+                                None if scope.kind == "DeleteFace" => {
                                     group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
                                         && operand.recipe_kind
                                             == records::ConstructionRecipeKind::BoundedFace

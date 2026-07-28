@@ -212,6 +212,7 @@ pub fn decode_face_operands(
             == Some(DesignFeatureFamily::CircularPattern)
             && group.role == 0x0000_0008_0000_0000;
         let is_split_face_operand = scope.kind == "SplitFace";
+        let is_delete_face_operand = scope.kind == "DeleteFace";
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -219,6 +220,7 @@ pub fn decode_face_operands(
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
             && !is_split_face_operand
+            && !is_delete_face_operand
         {
             continue;
         }
@@ -555,6 +557,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)
             || scope.kind == "RemoveBody"
             || scope.kind == "SurfaceStitch"
+            || scope.kind == "DeleteFace"
             || scope.kind == "Decal"
             || matches!(scope.kind.as_str(), "BaseFlange" | "EdgeFlange" | "Hem")
             || has_typed_edge_treatment_group(&scope.kind)

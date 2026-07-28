@@ -529,6 +529,13 @@ pub fn project_parameter_design_with_edge_identities(
                                 properties: native_scope_properties(scope, native_scope),
                             }
                         })
+                    } else if scope.kind == "DeleteFace" {
+                        project_delete_face(scope, construction_groups, face_operands)
+                            .unwrap_or_else(|| FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: BTreeMap::new(),
+                                properties: native_scope_properties(scope, native_scope),
+                            })
                     } else if scope.kind == "CopyPasteBodies" {
                         scope.copy_paste_bodies_operation.as_ref().map_or_else(
                             || FeatureDefinition::Native {
@@ -2676,6 +2683,52 @@ fn project_split_face(
         targets: FaceSelection::Native(targets.id.clone()),
         tool: PathRef::Native(tool.id.clone()),
     })
+}
+
+fn project_delete_face(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+
+    let reference_count = scope.reference_members.len();
+    let reference_bytes = 11_u64.checked_mul(u64::try_from(reference_count).ok()?)?;
+    let base_frame_length = scope.frame_length.checked_sub(reference_bytes)?;
+    let base_kind_offset = scope
+        .kind_offset
+        .checked_sub(scope.byte_offset)?
+        .checked_sub(reference_bytes)?;
+    if scope.kind != "DeleteFace"
+        || reference_count < 2
+        || !matches!(
+            (base_frame_length, base_kind_offset),
+            (236, 139) | (241, 143)
+        )
+    {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let matching = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let [group] = matching.as_slice() else {
+        return None;
+    };
+    if group.scope_reference_ordinal != 0
+        || group.record_index != scope.reference_members[0]
+        || group.role != ROLE_0X10
+        || group.members.as_slice() != &scope.reference_members[1..]
+    {
+        return None;
+    }
+    let faces = resolved_historical_face_group(scope, group, face_operands)
+        .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
+    Some(FeatureDefinition::DeleteFace { faces, heal: true })
 }
 
 pub(crate) fn project_extrude(
