@@ -2084,6 +2084,36 @@ fn decode_types_class_911_as_unresolved_hole() {
         result.report.coverage["transferred_native_feature_count"],
         0
     );
+    assert_eq!(result.report.coverage["transferred_hole_feature_count"], 1);
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_hole_feature_count"],
+        1
+    );
+    for key in [
+        "transferred_unresolved_hole_location_feature_count",
+        "transferred_unresolved_hole_direction_feature_count",
+        "transferred_unresolved_hole_kind_feature_count",
+        "transferred_unresolved_hole_diameter_feature_count",
+        "transferred_incomplete_hole_termination_feature_count",
+    ] {
+        assert_eq!(result.report.coverage[key], 1, "{key}");
+    }
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_hole_profile_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_native_hole_profile_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_hole_face_selection_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_native_hole_face_selection_feature_count"],
+        0
+    );
 }
 
 #[test]
@@ -2122,6 +2152,26 @@ fn decode_types_class_914_as_unresolved_chamfer() {
             spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
         }])
     ));
+    assert_eq!(
+        result.report.coverage["transferred_chamfer_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_chamfer_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_chamfer_edge_selection_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_native_chamfer_edge_selection_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_chamfer_spec_feature_count"],
+        1
+    );
 }
 
 #[test]
@@ -2298,6 +2348,28 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
             outward: None,
         }
     ));
+    assert_eq!(result.report.coverage["transferred_draft_feature_count"], 1);
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_draft_feature_count"],
+        1
+    );
+    for key in [
+        "transferred_unresolved_draft_face_selection_feature_count",
+        "transferred_unresolved_draft_neutral_plane_feature_count",
+        "transferred_unresolved_draft_direction_feature_count",
+        "transferred_unresolved_draft_angle_feature_count",
+        "transferred_unresolved_draft_outward_feature_count",
+    ] {
+        assert_eq!(result.report.coverage[key], 1, "{key}");
+    }
+    assert_eq!(
+        result.report.coverage["transferred_native_draft_face_selection_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_native_draft_neutral_plane_feature_count"],
+        0
+    );
 }
 
 #[test]
@@ -2791,6 +2863,26 @@ fn decode_types_class_913_without_an_edge_array() {
             ..
         }])
     ));
+    assert_eq!(
+        result.report.coverage["transferred_fillet_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_fillet_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_fillet_edge_selection_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_native_fillet_edge_selection_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_fillet_radius_feature_count"],
+        1
+    );
     assert_eq!(
         result.report.coverage["untransferred_visible_plane_surface_row_count"],
         1

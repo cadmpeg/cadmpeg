@@ -157,11 +157,22 @@ fixtures, claims above L1 remain unproven.
    definitions into typed and native forms, and separately counts typed
    definitions whose model-space construction is explicitly unresolved. The
    unresolved count is partitioned into datum-plane, datum-coordinate-system,
-   and boundary-surface families. Every explicit unresolved definition raises a
-   decode loss note. Extrusions are counted separately, with unresolved and
-   native profiles, unresolved termination, and unresolved Boolean operation
-   partitions. Revolutions are counted separately, with missing profile, axis,
-   angular extent, and unresolved Boolean operation partitions.
+   boundary-surface, and draft families. Every explicit unresolved definition
+   raises a decode loss note. Extrusions are counted separately, with
+   unresolved and native profiles, unresolved termination, and unresolved
+   Boolean operation partitions. Revolutions are counted separately, with
+   missing profile, axis, angular extent, and unresolved Boolean operation
+   partitions. Recognized holes, fillets, chamfers, and drafts are counted
+   separately. Hole coverage
+   partitions missing location, unresolved and native profiles, unresolved and
+   native placement faces, direction, kind, diameter, and incomplete
+   termination operands. Fillet and chamfer coverage partitions unresolved and
+   native edge selections from unresolved radius or dimensional specifications.
+   Draft coverage
+   partitions unresolved and native face selections and neutral planes, pull
+   direction, angle, outward sense, and wholly unresolved definitions. A
+   recognized feature with any required operand in one of these partitions
+   raises a decode loss note.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts

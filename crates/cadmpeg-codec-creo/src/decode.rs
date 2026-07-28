@@ -26845,6 +26845,37 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut unresolved_revolve_axis_feature_count = 0;
     let mut unresolved_revolve_extent_feature_count = 0;
     let mut unresolved_revolve_boolean_operation_feature_count = 0;
+    let mut hole_feature_count = 0;
+    let mut incomplete_hole_feature_count = 0;
+    let mut unresolved_hole_location_feature_count = 0;
+    let mut unresolved_hole_profile_feature_count = 0;
+    let mut native_hole_profile_feature_count = 0;
+    let mut unresolved_hole_face_selection_feature_count = 0;
+    let mut native_hole_face_selection_feature_count = 0;
+    let mut unresolved_hole_direction_feature_count = 0;
+    let mut unresolved_hole_kind_feature_count = 0;
+    let mut unresolved_hole_diameter_feature_count = 0;
+    let mut incomplete_hole_termination_feature_count = 0;
+    let mut fillet_feature_count = 0;
+    let mut incomplete_fillet_feature_count = 0;
+    let mut unresolved_fillet_edge_selection_feature_count = 0;
+    let mut native_fillet_edge_selection_feature_count = 0;
+    let mut unresolved_fillet_radius_feature_count = 0;
+    let mut chamfer_feature_count = 0;
+    let mut incomplete_chamfer_feature_count = 0;
+    let mut unresolved_chamfer_edge_selection_feature_count = 0;
+    let mut native_chamfer_edge_selection_feature_count = 0;
+    let mut unresolved_chamfer_spec_feature_count = 0;
+    let mut draft_feature_count = 0;
+    let mut incomplete_draft_feature_count = 0;
+    let mut explicitly_unresolved_draft_feature_count = 0;
+    let mut unresolved_draft_face_selection_feature_count = 0;
+    let mut native_draft_face_selection_feature_count = 0;
+    let mut unresolved_draft_neutral_plane_feature_count = 0;
+    let mut native_draft_neutral_plane_feature_count = 0;
+    let mut unresolved_draft_direction_feature_count = 0;
+    let mut unresolved_draft_angle_feature_count = 0;
+    let mut unresolved_draft_outward_feature_count = 0;
     for feature in &ir.model.features {
         match &feature.definition {
             IrFeatureDefinition::DatumPlaneUnresolved => {
@@ -26890,12 +26921,180 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 unresolved_revolve_boolean_operation_feature_count +=
                     usize::from(*op == BooleanOp::Unresolved);
             }
+            IrFeatureDefinition::Hole {
+                profile,
+                face,
+                position,
+                direction,
+                placements,
+                kind,
+                exit_kind,
+                diameter,
+                extent,
+                ..
+            } => {
+                hole_feature_count += 1;
+                let unresolved_location =
+                    profile.is_none() && position.is_none() && placements.is_empty();
+                let unresolved_profile = matches!(profile, Some(ProfileRef::Unresolved(_)));
+                let native_profile = matches!(profile, Some(ProfileRef::Native(_)));
+                let unresolved_face = matches!(
+                    face,
+                    Some(FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. })
+                );
+                let native_face = matches!(face, Some(FaceSelection::Native(_)));
+                let unresolved_direction = direction.is_none()
+                    && !placements.iter().any(|placement| {
+                        matches!(
+                            placement,
+                            cadmpeg_ir::features::HolePlacement::Directed { .. }
+                        )
+                    });
+                let unresolved_kind = matches!(kind, HoleKind::Unresolved { .. })
+                    || matches!(exit_kind, Some(HoleKind::Unresolved { .. }));
+                let unresolved_diameter = diameter.is_none();
+                let incomplete_termination = extent.as_ref().is_none_or(|extent| match extent {
+                    Termination::Unresolved => true,
+                    Termination::ToFace { face, .. }
+                    | Termination::OffsetFromFace { face, .. }
+                    | Termination::ToShape { target: face } => matches!(
+                        face,
+                        FaceSelection::Unresolved
+                            | FaceSelection::HistoricalPartial { .. }
+                            | FaceSelection::Native(_)
+                    ),
+                    Termination::ToVertex { vertex } => matches!(
+                        vertex,
+                        cadmpeg_ir::features::VertexSelection::Unresolved
+                            | cadmpeg_ir::features::VertexSelection::Native(_)
+                    ),
+                    Termination::Blind { .. }
+                    | Termination::ThroughAll
+                    | Termination::ThroughNext
+                    | Termination::ToFirst
+                    | Termination::ToLast
+                    | Termination::Angle { .. } => false,
+                });
+                unresolved_hole_location_feature_count += usize::from(unresolved_location);
+                unresolved_hole_profile_feature_count += usize::from(unresolved_profile);
+                native_hole_profile_feature_count += usize::from(native_profile);
+                unresolved_hole_face_selection_feature_count += usize::from(unresolved_face);
+                native_hole_face_selection_feature_count += usize::from(native_face);
+                unresolved_hole_direction_feature_count += usize::from(unresolved_direction);
+                unresolved_hole_kind_feature_count += usize::from(unresolved_kind);
+                unresolved_hole_diameter_feature_count += usize::from(unresolved_diameter);
+                incomplete_hole_termination_feature_count += usize::from(incomplete_termination);
+                incomplete_hole_feature_count += usize::from(
+                    unresolved_location
+                        || unresolved_profile
+                        || native_profile
+                        || unresolved_face
+                        || native_face
+                        || unresolved_direction
+                        || unresolved_kind
+                        || unresolved_diameter
+                        || incomplete_termination,
+                );
+            }
+            IrFeatureDefinition::Fillet { groups } => {
+                fillet_feature_count += 1;
+                let unresolved_edges = groups.is_empty()
+                    || groups.iter().any(|group| {
+                        matches!(
+                            &group.edges,
+                            EdgeSelection::Unresolved | EdgeSelection::HistoricalPartial { .. }
+                        )
+                    });
+                let native_edges = groups
+                    .iter()
+                    .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
+                let unresolved_radius = groups.is_empty()
+                    || groups
+                        .iter()
+                        .any(|group| matches!(&group.radius, RadiusSpec::Unresolved { .. }));
+                unresolved_fillet_edge_selection_feature_count += usize::from(unresolved_edges);
+                native_fillet_edge_selection_feature_count += usize::from(native_edges);
+                unresolved_fillet_radius_feature_count += usize::from(unresolved_radius);
+                incomplete_fillet_feature_count +=
+                    usize::from(unresolved_edges || native_edges || unresolved_radius);
+            }
+            IrFeatureDefinition::Chamfer { groups, .. } => {
+                chamfer_feature_count += 1;
+                let unresolved_edges = groups.is_empty()
+                    || groups.iter().any(|group| {
+                        matches!(
+                            &group.edges,
+                            EdgeSelection::Unresolved | EdgeSelection::HistoricalPartial { .. }
+                        )
+                    });
+                let native_edges = groups
+                    .iter()
+                    .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
+                let unresolved_spec = groups.is_empty()
+                    || groups
+                        .iter()
+                        .any(|group| matches!(&group.spec, ChamferSpec::Unresolved { .. }));
+                unresolved_chamfer_edge_selection_feature_count += usize::from(unresolved_edges);
+                native_chamfer_edge_selection_feature_count += usize::from(native_edges);
+                unresolved_chamfer_spec_feature_count += usize::from(unresolved_spec);
+                incomplete_chamfer_feature_count +=
+                    usize::from(unresolved_edges || native_edges || unresolved_spec);
+            }
+            IrFeatureDefinition::Draft {
+                faces,
+                neutral_plane,
+                pull_direction,
+                angle,
+                outward,
+            } => {
+                draft_feature_count += 1;
+                let unresolved_faces = matches!(
+                    faces,
+                    FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                );
+                let native_faces = matches!(faces, FaceSelection::Native(_));
+                let unresolved_neutral_plane = matches!(
+                    neutral_plane,
+                    FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                );
+                let native_neutral_plane = matches!(neutral_plane, FaceSelection::Native(_));
+                let unresolved_direction = pull_direction.is_none();
+                let unresolved_angle = angle.is_none();
+                let unresolved_outward = outward.is_none();
+                unresolved_draft_face_selection_feature_count += usize::from(unresolved_faces);
+                native_draft_face_selection_feature_count += usize::from(native_faces);
+                unresolved_draft_neutral_plane_feature_count +=
+                    usize::from(unresolved_neutral_plane);
+                native_draft_neutral_plane_feature_count += usize::from(native_neutral_plane);
+                unresolved_draft_direction_feature_count += usize::from(unresolved_direction);
+                unresolved_draft_angle_feature_count += usize::from(unresolved_angle);
+                unresolved_draft_outward_feature_count += usize::from(unresolved_outward);
+                incomplete_draft_feature_count += usize::from(
+                    unresolved_faces
+                        || native_faces
+                        || unresolved_neutral_plane
+                        || native_neutral_plane
+                        || unresolved_direction
+                        || unresolved_angle
+                        || unresolved_outward,
+                );
+            }
+            IrFeatureDefinition::DraftUnresolved => {
+                draft_feature_count += 1;
+                incomplete_draft_feature_count += 1;
+                explicitly_unresolved_draft_feature_count += 1;
+            }
             _ => {}
         }
     }
     let explicitly_unresolved_feature_count = unresolved_datum_plane_feature_count
         + unresolved_datum_coordinate_system_feature_count
-        + unresolved_boundary_surface_feature_count;
+        + unresolved_boundary_surface_feature_count
+        + explicitly_unresolved_draft_feature_count;
+    let incomplete_recognized_feature_count = incomplete_hole_feature_count
+        + incomplete_fillet_feature_count
+        + incomplete_chamfer_feature_count
+        + incomplete_draft_feature_count;
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
@@ -26963,6 +27162,134 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_unresolved_revolve_boolean_operation_feature_count".to_string(),
         unresolved_revolve_boolean_operation_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_recognized_feature_count".to_string(),
+        incomplete_recognized_feature_count,
+    );
+    coverage.insert(
+        "transferred_hole_feature_count".to_string(),
+        hole_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_hole_feature_count".to_string(),
+        incomplete_hole_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_location_feature_count".to_string(),
+        unresolved_hole_location_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_profile_feature_count".to_string(),
+        unresolved_hole_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_hole_profile_feature_count".to_string(),
+        native_hole_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_face_selection_feature_count".to_string(),
+        unresolved_hole_face_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_hole_face_selection_feature_count".to_string(),
+        native_hole_face_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_direction_feature_count".to_string(),
+        unresolved_hole_direction_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_kind_feature_count".to_string(),
+        unresolved_hole_kind_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_diameter_feature_count".to_string(),
+        unresolved_hole_diameter_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_hole_termination_feature_count".to_string(),
+        incomplete_hole_termination_feature_count,
+    );
+    coverage.insert(
+        "transferred_fillet_feature_count".to_string(),
+        fillet_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_fillet_feature_count".to_string(),
+        incomplete_fillet_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_fillet_edge_selection_feature_count".to_string(),
+        unresolved_fillet_edge_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_fillet_edge_selection_feature_count".to_string(),
+        native_fillet_edge_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_fillet_radius_feature_count".to_string(),
+        unresolved_fillet_radius_feature_count,
+    );
+    coverage.insert(
+        "transferred_chamfer_feature_count".to_string(),
+        chamfer_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_chamfer_feature_count".to_string(),
+        incomplete_chamfer_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_chamfer_edge_selection_feature_count".to_string(),
+        unresolved_chamfer_edge_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_chamfer_edge_selection_feature_count".to_string(),
+        native_chamfer_edge_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_chamfer_spec_feature_count".to_string(),
+        unresolved_chamfer_spec_feature_count,
+    );
+    coverage.insert(
+        "transferred_draft_feature_count".to_string(),
+        draft_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_draft_feature_count".to_string(),
+        incomplete_draft_feature_count,
+    );
+    coverage.insert(
+        "transferred_explicitly_unresolved_draft_feature_count".to_string(),
+        explicitly_unresolved_draft_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_face_selection_feature_count".to_string(),
+        unresolved_draft_face_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_draft_face_selection_feature_count".to_string(),
+        native_draft_face_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_neutral_plane_feature_count".to_string(),
+        unresolved_draft_neutral_plane_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_draft_neutral_plane_feature_count".to_string(),
+        native_draft_neutral_plane_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_direction_feature_count".to_string(),
+        unresolved_draft_direction_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_angle_feature_count".to_string(),
+        unresolved_draft_angle_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_outward_feature_count".to_string(),
+        unresolved_draft_outward_feature_count,
     );
     Ok((ir, annotations.build(), unknowns, coverage))
 }
@@ -28024,6 +28351,35 @@ fn build_report(
                 "{active_native_relations} active section dimension relation(s) retain native \
                  operands because their neutral semantics, incidence join, or referenced geometry \
                  remain unresolved ({kinds})."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_recognized_features = count("transferred_incomplete_recognized_feature_count");
+    if incomplete_recognized_features != 0 {
+        let families = [
+            ("hole", count("transferred_incomplete_hole_feature_count")),
+            (
+                "fillet",
+                count("transferred_incomplete_fillet_feature_count"),
+            ),
+            (
+                "chamfer",
+                count("transferred_incomplete_chamfer_feature_count"),
+            ),
+            ("draft", count("transferred_incomplete_draft_feature_count")),
+        ]
+        .into_iter()
+        .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_recognized_features} recognized non-sweep history feature(s) retain \
+                 incomplete required construction operands ({families})."
             ),
             provenance: None,
         });
