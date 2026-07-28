@@ -29,6 +29,31 @@ pub(crate) fn native_stream(id: &str) -> Option<&str> {
     id.rsplit_once(':').map(|(stream, _)| stream)
 }
 
+/// Return whether two native IDs belong to the same root document or xref occurrence.
+pub(crate) fn same_native_occurrence(left: &str, right: &str) -> bool {
+    const OCCURRENCE_SEGMENT: &str = "/occurrence-";
+
+    fn occurrence(id: &str) -> Option<&str> {
+        let mut occurrence_end = None;
+        for (at, _) in id.match_indices(OCCURRENCE_SEGMENT) {
+            let digits_at = at + OCCURRENCE_SEGMENT.len();
+            let end = id[digits_at..]
+                .find('/')
+                .map_or(id.len(), |end| digits_at + end);
+            if end > digits_at && id[digits_at..end].bytes().all(|byte| byte.is_ascii_digit()) {
+                occurrence_end = Some(end);
+            }
+        }
+        occurrence_end.map(|end| &id[..end])
+    }
+
+    match (occurrence(left), occurrence(right)) {
+        (Some(left), Some(right)) => left == right,
+        (None, None) => !left.contains(OCCURRENCE_SEGMENT) && !right.contains(OCCURRENCE_SEGMENT),
+        _ => false,
+    }
+}
+
 /// Parse the Design segment shared by sibling `MetaStream.dat` and
 /// `BulkStream.dat` entries from a native record identity.
 pub(crate) fn design_segment(id: &str) -> Option<&str> {
@@ -553,7 +578,7 @@ native_record_id!(
 
 #[cfg(test)]
 mod tests {
-    use super::design_segment;
+    use super::{design_segment, same_native_occurrence};
 
     #[test]
     fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {
@@ -565,5 +590,29 @@ mod tests {
             design_segment("f3d:Asset/Design1/Other.dat:record#20"),
             None
         );
+    }
+
+    #[test]
+    fn native_occurrence_scope_isolates_xrefs_and_includes_root_streams() {
+        assert!(same_native_occurrence(
+            "f3d:Asset/Design1/BulkStream.dat:record#1",
+            "f3d:design:persistent-subentity-tag#1",
+        ));
+        assert!(same_native_occurrence(
+            "f3d:xref/root/occurrence-0/Asset/Design1/BulkStream.dat:record#1",
+            "f3d:xref/root/occurrence-0/design:persistent-subentity-tag#1",
+        ));
+        assert!(!same_native_occurrence(
+            "f3d:xref/root/occurrence-0/Asset/Design1/BulkStream.dat:record#1",
+            "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1",
+        ));
+        assert!(!same_native_occurrence(
+            "f3d:xref/root/occurrence-0/xref/child/occurrence-0/design:record#1",
+            "f3d:xref/root/occurrence-0/design:persistent-subentity-tag#1",
+        ));
+        assert!(!same_native_occurrence(
+            "f3d:xref/root/occurrence-invalid/design:record#1",
+            "f3d:design:persistent-subentity-tag#1",
+        ));
     }
 }

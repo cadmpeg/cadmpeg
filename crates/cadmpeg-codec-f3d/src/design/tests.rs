@@ -2673,7 +2673,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     );
     let stream_tags = [
         PersistentSubentityTag {
-            id: "f3d:A/BulkStream.dat:persistent-subentity-tag#1".into(),
+            id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Face(FaceId("face-a".into())),
             selector: 1,
             token: "13".into(),
@@ -2681,7 +2681,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ordinal: 0,
         },
         PersistentSubentityTag {
-            id: "f3d:B/BulkStream.dat:persistent-subentity-tag#1".into(),
+            id: "f3d:xref/B/occurrence-0/design:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Face(FaceId("face-b".into())),
             selector: 1,
             token: "13".into(),
@@ -2693,7 +2693,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         crate::design::decode::dimension_frames::recipe_reference_candidate_faces(
             &references[0],
             &stream_tags,
-            Some("f3d:A/BulkStream.dat"),
+            Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
         ),
         [FaceId("face-a".into())]
     );
@@ -5740,7 +5740,7 @@ fn body_recipe_operand_decodes_counted_reference_table() {
         record_index: 0,
     };
 
-    let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+    let mut operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
         .expect("body recipe operand");
     assert_eq!(operand.references.len(), 2);
     assert_eq!(operand.references[0].design_reference, 2265);
@@ -5750,6 +5750,32 @@ fn body_recipe_operand_decodes_counted_reference_table() {
     assert_eq!(operand.nested_record_index, 103);
     assert_eq!(operand.recipe_id, recipe.id);
     assert_eq!(operand.next_byte_offset, next_at as u64);
+    operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#0".into();
+    crate::design::decode::operands::bind_body_recipe_operand_candidates(
+        std::slice::from_mut(&mut operand),
+        &[
+            PersistentSubentityTag {
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("same-stream".into())),
+                selector: 0,
+                token: String::new(),
+                design_references: vec![2265],
+                ordinal: 0,
+            },
+            PersistentSubentityTag {
+                id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("other-stream".into())),
+                selector: 0,
+                token: String::new(),
+                design_references: vec![2265],
+                ordinal: 0,
+            },
+        ],
+    );
+    assert_eq!(
+        operand.references[0].candidate_faces,
+        [FaceId("same-stream".into())]
+    );
 
     let mut nested = Vec::new();
     header(&mut nested, *b"302", 1);
@@ -6878,14 +6904,24 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     bind_edge_operand_candidates(
         std::slice::from_mut(&mut edge_operand),
         std::slice::from_ref(&recipe),
-        &[PersistentSubentityTag {
-            id: "f3d:asm:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
-            selector: 1,
-            token: "3".into(),
-            design_references: vec![303],
-            ordinal: 0,
-        }],
+        &[
+            PersistentSubentityTag {
+                id: "f3d:asm:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                selector: 1,
+                token: "3".into(),
+                design_references: vec![303],
+                ordinal: 0,
+            },
+            PersistentSubentityTag {
+                id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("f3d:brep:entity#xref".into())),
+                selector: 1,
+                token: "3".into(),
+                design_references: vec![303],
+                ordinal: 0,
+            },
+        ],
     );
     assert_eq!(
         edge_operand.candidate_faces,
@@ -7118,6 +7154,14 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 token: "4".into(),
                 design_references: vec![303],
                 ordinal: 1,
+            },
+            PersistentSubentityTag {
+                id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("f3d:brep:entity#xref".into())),
+                selector: 1,
+                token: "3".into(),
+                design_references: vec![303],
+                ordinal: 0,
             },
         ],
     );

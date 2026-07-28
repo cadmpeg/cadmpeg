@@ -293,11 +293,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
     let edge_identity_records =
         validate_edge_identity_operands(&ctx, &mut findings, &expected_face_operands);
+    let body_recipe_operand_records = validate_body_recipe_operands(&ctx, &mut findings);
     validate_operand_group_identity_chains(
         &ctx,
         &mut findings,
         &operand_identity_groups,
         &edge_identity_records,
+        &body_recipe_operand_records,
     );
     validate_extrude_selection_members(&ctx, &mut findings);
     validate_entity_selection_operands(&ctx, &mut findings);
@@ -1346,10 +1348,21 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }
                 _ => false,
             },
-            Some(records::DesignPathFeatureConstruction::Sweep { .. }) => {
-                groups.len() == 2
-                    && role_count(0x0000_0041_0000_0000) == 1
-                    && role_count(0x0000_0005_0000_0000) == 1
+            Some(records::DesignPathFeatureConstruction::Sweep { operation, .. }) => {
+                let path_count = role_count(0x0000_0005_0000_0000);
+                let common_roles =
+                    role_count(0x0000_0041_0000_0000) == 1 && matches!(path_count, 1 | 2);
+                common_roles
+                    && match operation {
+                        records::DesignExtrudeOperation::NewBody => {
+                            groups.len() == path_count + 1 && role_count(0x0000_0004_0000_0000) == 0
+                        }
+                        records::DesignExtrudeOperation::Join
+                        | records::DesignExtrudeOperation::Cut
+                        | records::DesignExtrudeOperation::Intersect => {
+                            groups.len() == path_count + 2 && role_count(0x0000_0004_0000_0000) == 1
+                        }
+                    }
             }
             None => false,
         };
@@ -1979,12 +1992,116 @@ fn validate_edge_identity_operands<'a>(
     edge_identity_records
 }
 
+/// Validate whole-body recipe operands; returns their backing record set.
+fn validate_body_recipe_operands<'a>(
+    ctx: &Ctx<'a>,
+    findings: &mut Vec<Finding>,
+) -> HashSet<(&'a str, u32)> {
+    let native = ctx.native;
+    let records_by_index = &ctx.records_by_index;
+    let scopes_by_index = &ctx.scopes_by_index;
+    let operand_groups_by_index = &ctx.operand_groups_by_index;
+    let recipes_by_id = &ctx.recipes_by_id;
+    let mut expected_operands = native.design_body_recipe_operands.clone();
+    design::decode::operands::bind_body_recipe_operand_candidates(
+        &mut expected_operands,
+        &native.persistent_subentity_tags,
+    );
+    history::bind_body_recipe_operand_history_candidates(
+        &mut expected_operands,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+    );
+    let expected_operands = expected_operands
+        .iter()
+        .map(|operand| (operand.id.as_str(), operand))
+        .collect::<HashMap<_, _>>();
+    let mut member_slots = HashSet::new();
+    let mut operand_records = HashSet::new();
+    for operand in &native.design_body_recipe_operands {
+        let native_stream = design_stream(&operand.id);
+        let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
+        let group = operand_groups_by_index.get(&(native_stream, operand.group_record_index));
+        let header = records_by_index.get(&(native_stream, operand.record_index));
+        let nested_record_index = u32::try_from(operand.nested_record_index).ok();
+        let recipe = recipes_by_id.get(operand.recipe_id.as_str());
+        let reference_bytes = u64::try_from(operand.references.len())
+            .unwrap_or(u64::MAX)
+            .saturating_mul(12);
+        let nested_record_index_offset = operand
+            .byte_offset
+            .saturating_add(26)
+            .saturating_add(reference_bytes);
+        let valid = operand.class_tag.len() == 3
+            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && scope.is_some()
+            && group.is_some_and(|group| {
+                group.scope_record_index == operand.scope_record_index
+                    && usize::try_from(operand.group_member_ordinal)
+                        .ok()
+                        .and_then(|ordinal| group.members.get(ordinal))
+                        == Some(&operand.record_index)
+            })
+            && header.is_some_and(|header| {
+                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+            })
+            && !operand.references.is_empty()
+            && operand
+                .references
+                .iter()
+                .enumerate()
+                .all(|(ordinal, reference)| {
+                    u64::try_from(ordinal).ok().is_some_and(|ordinal| {
+                        let design_reference_offset = operand
+                            .byte_offset
+                            .saturating_add(25)
+                            .saturating_add(ordinal.saturating_mul(12));
+                        reference.design_reference != 0
+                            && reference.design_reference_offset == design_reference_offset
+                            && reference.form_offset == design_reference_offset.saturating_add(8)
+                    })
+                })
+            && nested_record_index == operand.record_index.checked_add(3)
+            && operand.nested_record_index_offset == nested_record_index_offset
+            && operand.asset_id_offset == nested_record_index_offset.saturating_add(18)
+            && operand.context_id_offset > operand.asset_id_offset
+            && operand.context_id_offset < operand.next_byte_offset
+            && valid_design_guid(&operand.asset_id)
+            && valid_design_guid(&operand.context_id)
+            && recipe.is_some_and(|recipe| {
+                design_stream(&recipe.id) == native_stream
+                    && recipe.kind == records::ConstructionRecipeKind::Body
+                    && recipe.byte_offset > operand.context_id_offset
+                    && recipe.byte_offset < operand.next_byte_offset
+            })
+            && operand.next_record_index == operand.record_index.saturating_add(4)
+            && operand.next_byte_offset > operand.nested_record_index_offset
+            && expected_operands.get(operand.id.as_str()) == Some(&operand)
+            && member_slots.insert((
+                native_stream,
+                operand.group_record_index,
+                operand.group_member_ordinal,
+            ))
+            && operand_records.insert((native_stream, operand.record_index));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design body recipe operand has an invalid nested frame".into(),
+                entity: Some(operand.id.clone()),
+            });
+        }
+    }
+    operand_records
+}
+
 /// Report operand groups lacking an identity chain.
 fn validate_operand_group_identity_chains<'a>(
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
     operand_identity_groups: &HashSet<(&'a str, u32)>,
     edge_identity_records: &HashSet<(&'a str, u32)>,
+    body_recipe_operand_records: &HashSet<(&'a str, u32)>,
 ) {
     let native = ctx.native;
     for group in &native.design_construction_operand_groups {
@@ -1999,7 +2116,8 @@ fn validate_operand_group_identity_chains<'a>(
             })
             .collect::<Vec<_>>();
         identity_members.sort_by_key(|operand| operand.group_member_ordinal);
-        let has_exact_identity_members = identity_members.len() == group.members.len()
+        let has_exact_identity_members = !group.members.is_empty()
+            && identity_members.len() == group.members.len()
             && identity_members
                 .iter()
                 .enumerate()
@@ -2008,8 +2126,8 @@ fn validate_operand_group_identity_chains<'a>(
                         && group.members.get(ordinal) == Some(&operand.record_index)
                         && edge_identity_records.contains(&(native_stream, operand.record_index))
                 });
-        let has_exact_entity_selection_members =
-            group
+        let has_exact_entity_selection_members = !group.members.is_empty()
+            && group
                 .members
                 .iter()
                 .enumerate()
@@ -2027,8 +2145,8 @@ fn validate_operand_group_identity_chains<'a>(
                             })
                     })
                 });
-        let has_exact_face_members =
-            group
+        let has_exact_face_members = !group.members.is_empty()
+            && group
                 .members
                 .iter()
                 .enumerate()
@@ -2043,10 +2161,29 @@ fn validate_operand_group_identity_chains<'a>(
                         })
                     })
                 });
+        let has_exact_body_recipe_members = !group.members.is_empty()
+            && group
+                .members
+                .iter()
+                .enumerate()
+                .all(|(ordinal, record_index)| {
+                    u32::try_from(ordinal).ok().is_some_and(|ordinal| {
+                        native.design_body_recipe_operands.iter().any(|operand| {
+                            design_stream(&operand.id) == native_stream
+                                && operand.scope_record_index == group.scope_record_index
+                                && operand.group_record_index == group.record_index
+                                && operand.group_member_ordinal == ordinal
+                                && operand.record_index == *record_index
+                                && body_recipe_operand_records
+                                    .contains(&(native_stream, operand.record_index))
+                        })
+                    })
+                });
         if !operand_identity_groups.contains(&(native_stream, group.record_index))
             && !has_exact_identity_members
             && !has_exact_entity_selection_members
             && !has_exact_face_members
+            && !has_exact_body_recipe_members
         {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -2313,6 +2450,7 @@ fn validate_edge_operands<'a>(
                 design::decode::operands::edge_operand_candidate_faces(
                     design_reference,
                     &native.persistent_subentity_tags,
+                    Some(&operand.id),
                 )
             })
             .unwrap_or_default();
@@ -2324,7 +2462,7 @@ fn validate_edge_operands<'a>(
             design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
-                Some(native_stream),
+                Some(&operand.id),
             );
         }
         let valid = operand.class_tag.len() == 3
@@ -2468,7 +2606,10 @@ fn validate_face_operands<'a>(
                 native
                     .persistent_subentity_tags
                     .iter()
-                    .filter(|tag| tag.design_references.contains(&design_reference))
+                    .filter(|tag| {
+                        crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                            && tag.design_references.contains(&design_reference)
+                    })
                     .filter_map(|tag| match &tag.target {
                         cadmpeg_ir::attributes::AttributeTarget::Face(id) => Some(id.clone()),
                         _ => None,
@@ -2486,7 +2627,7 @@ fn validate_face_operands<'a>(
             design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
-                Some(native_stream),
+                Some(&operand.id),
             );
         }
         let recipe_design_reference = recipe
@@ -3010,7 +3151,7 @@ fn validate_dimension_recipe_records<'a>(
             design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
-                Some(native_stream),
+                Some(&record.id),
             );
         }
         let references_match = decoded_references == record.references;

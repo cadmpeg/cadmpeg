@@ -344,9 +344,8 @@ pub fn bind_face_operand_candidates(
         .collect::<HashMap<_, _>>();
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
-        let stream = native_stream(&operand.id);
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags, stream);
+            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -357,7 +356,10 @@ pub fn bind_face_operand_candidates(
         };
         operand.candidate_faces = tags
             .iter()
-            .filter(|tag| tag.design_references.contains(&design_reference))
+            .filter(|tag| {
+                crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                    && tag.design_references.contains(&design_reference)
+            })
             .filter_map(|tag| match &tag.target {
                 AttributeTarget::Face(id) => Some(id.clone()),
                 _ => None,
@@ -405,9 +407,8 @@ pub fn bind_edge_operand_candidates(
         .collect::<HashMap<_, _>>();
     for operand in operands {
         operand.candidate_faces.clear();
-        let stream = native_stream(&operand.id);
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags, stream);
+            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -416,19 +417,24 @@ pub fn bind_edge_operand_candidates(
         else {
             continue;
         };
-        operand.candidate_faces = edge_operand_candidate_faces(design_reference, tags);
+        operand.candidate_faces =
+            edge_operand_candidate_faces(design_reference, tags, Some(&operand.id));
     }
 }
 
 pub(crate) fn edge_operand_candidate_faces(
     design_reference: i64,
     tags: &[PersistentSubentityTag],
+    owner_id: Option<&str>,
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut faces = tags
         .iter()
-        .filter(|tag| tag.design_references.contains(&design_reference))
+        .filter(|tag| {
+            owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
+                && tag.design_references.contains(&design_reference)
+        })
         .filter_map(|tag| match &tag.target {
             AttributeTarget::Face(id) => Some(id.clone()),
             _ => None,
@@ -1555,7 +1561,10 @@ pub fn bind_body_recipe_operand_candidates(
             };
             reference.candidate_faces = tags
                 .iter()
-                .filter(|tag| tag.design_references.contains(&design_reference))
+                .filter(|tag| {
+                    crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                        && tag.design_references.contains(&design_reference)
+                })
                 .filter_map(|tag| match &tag.target {
                     AttributeTarget::Face(face) => Some(face.clone()),
                     _ => None,
