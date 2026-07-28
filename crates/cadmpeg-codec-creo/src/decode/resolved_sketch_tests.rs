@@ -10916,6 +10916,76 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
 }
 
 #[test]
+fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets() {
+    let first = NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 2,
+        v_count: 2,
+        control_points: vec![
+            Point3::new(-1.0, 0.0, 0.0),
+            Point3::new(-1.0, 0.0, 1.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 1.0),
+        ],
+        weights: Some(vec![2.0, 2.0, 3.0, 4.0]),
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let second = NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![4.0, 4.0, 8.0, 8.0],
+        u_count: 2,
+        v_count: 2,
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 1.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, 1.0, 1.0),
+        ],
+        weights: Some(vec![6.0, 8.0, 8.0, 8.0]),
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let shared =
+        shared_extrusion_generator_curve(&first, &second).expect("shared generator boundary");
+    let CurveGeometry::Nurbs(shared) = shared else {
+        panic!("shared extrusion generator must retain its NURBS representation");
+    };
+    assert_eq!(shared.degree, 1);
+    assert_eq!(shared.knots, first.v_knots);
+    assert_eq!(
+        shared.control_points,
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)]
+    );
+    assert_eq!(shared.weights, Some(vec![3.0, 4.0]));
+
+    let mut reversed = second.clone();
+    reversed.control_points.swap(0, 1);
+    reversed.control_points.swap(2, 3);
+    reversed.weights.as_mut().expect("weights").swap(0, 1);
+    reversed.weights.as_mut().expect("weights").swap(2, 3);
+    assert!(shared_extrusion_generator_curve(&first, &reversed).is_some());
+
+    let mut same_side = second.clone();
+    same_side.control_points[2] = Point3::new(-2.0, 0.0, 0.0);
+    same_side.control_points[3] = Point3::new(-2.0, 0.0, 1.0);
+    assert!(shared_extrusion_generator_curve(&first, &same_side).is_none());
+
+    let mut periodic_transverse = second.clone();
+    periodic_transverse.u_periodic = true;
+    assert!(shared_extrusion_generator_curve(&first, &periodic_transverse).is_none());
+
+    let mut different_boundary = second;
+    different_boundary.control_points[1].x = 0.1;
+    assert!(shared_extrusion_generator_curve(&first, &different_boundary).is_none());
+}
+
+#[test]
 fn carrier_solver_accepts_two_carrier_tangent_vertices() {
     let plane = CarrierEquation::Plane(PlaneEquation {
         origin: [0.0, 0.0, 2.0],

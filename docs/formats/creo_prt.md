@@ -727,11 +727,22 @@ extrusion vector independently of whether the bytes before `00 0c 9a` form a
 three-scalar sweep-direction frame.
 
 When a tabulated-extrusion NURBS surface is adjacent to a plane, one complete
-surface control edge defines their intersection curve when every control point
-on that edge lies in the plane and every other control point lies strictly on
-one side of the plane. Exactly one of the four control edges must satisfy the
-rule. A constant-U edge retains the surface's V degree, knots, control points,
-weights, and periodicity; a constant-V edge retains the corresponding U data.
+surface control edge defines their intersection curve when the surface is
+nonperiodic transverse to that edge, every control point on the edge lies in
+the plane, and every other control point lies strictly on one side of the
+plane. Exactly one of the four control edges must satisfy the rule. A
+constant-U edge retains the surface's V degree, knots, control points, weights,
+and periodicity; a constant-V edge retains the corresponding U data.
+
+Two adjacent tabulated-extrusion NURBS surfaces share an intersection generator
+when exactly one pair of their control edges encodes the same nonperiodic
+degree-one NURBS curve. The control points are equal in forward or reverse
+order, the knot vectors are equal after affine domain normalization in the same
+orientation, and rational weights are equal up to one positive common scale. A
+plane through that generator strictly separates every other control point of
+the two surfaces, and neither surface is periodic transverse to the edge. The
+shared curve retains one boundary's degree, knots, control points, weights, and
+periodicity.
 
 Layouts whose second and fifth scalar prefixes are `46` require a first-axis
 intercept magnitude of 30, a zero second-axis intercept, and retain the stored

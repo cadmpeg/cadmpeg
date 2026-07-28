@@ -24681,13 +24681,24 @@ fn resolve_curve_candidates(
     Some(candidate.clone())
 }
 
-fn nurbs_plane_boundary_curve(nurbs: &NurbsSurface, plane: PlaneEquation) -> Option<CurveGeometry> {
+#[derive(Clone)]
+struct NurbsSurfaceBoundary {
+    curve: NurbsCurve,
+    control_indices: Vec<usize>,
+    transverse_periodic: bool,
+}
+
+fn nurbs_surface_boundaries(nurbs: &NurbsSurface) -> Option<[NurbsSurfaceBoundary; 4]> {
     let u_count = usize::try_from(nurbs.u_count).ok()?;
     let v_count = usize::try_from(nurbs.v_count).ok()?;
     let pole_count = u_count.checked_mul(v_count)?;
     (u_count >= 2
         && v_count >= 2
         && nurbs.control_points.len() == pole_count
+        && nurbs
+            .control_points
+            .iter()
+            .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
         && nurbs.weights.as_ref().is_none_or(|weights| {
             weights.len() == pole_count
                 && weights
@@ -24695,22 +24706,77 @@ fn nurbs_plane_boundary_curve(nurbs: &NurbsSurface, plane: PlaneEquation) -> Opt
                     .all(|weight| weight.is_finite() && *weight > 0.0)
         }))
     .then_some(())?;
-    let normal = normalized(plane.normal)?;
-    let anchor = nurbs.control_points[0];
-    let extent = nurbs
-        .control_points
+    let boundaries = [
+        (false, (0..v_count).collect::<Vec<_>>()),
+        (
+            false,
+            ((u_count - 1) * v_count..u_count * v_count).collect(),
+        ),
+        (true, (0..u_count).map(|u| u * v_count).collect()),
+        (
+            true,
+            (0..u_count).map(|u| u * v_count + v_count - 1).collect(),
+        ),
+    ];
+    Some(boundaries.map(|(along_u, control_indices)| {
+        let (degree, knots, periodic, transverse_periodic) = if along_u {
+            (
+                nurbs.u_degree,
+                nurbs.u_knots.clone(),
+                nurbs.u_periodic,
+                nurbs.v_periodic,
+            )
+        } else {
+            (
+                nurbs.v_degree,
+                nurbs.v_knots.clone(),
+                nurbs.v_periodic,
+                nurbs.u_periodic,
+            )
+        };
+        NurbsSurfaceBoundary {
+            curve: NurbsCurve {
+                degree,
+                knots,
+                control_points: control_indices
+                    .iter()
+                    .map(|index| nurbs.control_points[*index])
+                    .collect(),
+                weights: nurbs.weights.as_ref().map(|weights| {
+                    control_indices
+                        .iter()
+                        .map(|index| weights[*index])
+                        .collect()
+                }),
+                periodic,
+            },
+            control_indices,
+            transverse_periodic,
+        }
+    }))
+}
+
+fn point_tolerance<'a>(points: impl Iterator<Item = &'a Point3>) -> Option<f64> {
+    let points = points.collect::<Vec<_>>();
+    let anchor = **points.first()?;
+    let extent = points
         .iter()
         .flat_map(|point| [point.x - anchor.x, point.y - anchor.y, point.z - anchor.z])
         .map(f64::abs)
         .fold(1.0, f64::max);
-    let coordinate_scale = nurbs
-        .control_points
+    let coordinate_scale = points
         .iter()
         .flat_map(|point| [point.x, point.y, point.z])
-        .chain(plane.origin)
         .map(f64::abs)
         .fold(1.0, f64::max);
-    let tolerance = (1e-9 * extent).max(32.0 * f64::EPSILON * coordinate_scale);
+    Some((1e-9 * extent).max(32.0 * f64::EPSILON * coordinate_scale))
+}
+
+fn nurbs_plane_boundary_curve(nurbs: &NurbsSurface, plane: PlaneEquation) -> Option<CurveGeometry> {
+    let boundaries = nurbs_surface_boundaries(nurbs)?;
+    let normal = normalized(plane.normal)?;
+    let tolerance = point_tolerance(nurbs.control_points.iter())?
+        .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
     let signed_distances = nurbs
         .control_points
         .iter()
@@ -24729,29 +24795,19 @@ fn nurbs_plane_boundary_curve(nurbs: &NurbsSurface, plane: PlaneEquation) -> Opt
         .iter()
         .all(|distance| distance.is_finite())
         .then_some(())?;
-    let boundaries = [
-        (false, (0..v_count).collect::<Vec<_>>()),
-        (
-            false,
-            ((u_count - 1) * v_count..u_count * v_count).collect(),
-        ),
-        (true, (0..u_count).map(|u| u * v_count).collect()),
-        (
-            true,
-            (0..u_count).map(|u| u * v_count + v_count - 1).collect(),
-        ),
-    ];
     let candidates = boundaries
         .into_iter()
-        .filter(|(_, indices)| {
-            indices
-                .iter()
-                .all(|index| signed_distances[*index].abs() <= tolerance)
+        .filter(|boundary| {
+            !boundary.transverse_periodic
+                && boundary
+                    .control_indices
+                    .iter()
+                    .all(|index| signed_distances[*index].abs() <= tolerance)
                 && {
                     let outside = signed_distances
                         .iter()
                         .enumerate()
-                        .filter(|(index, _)| !indices.contains(index))
+                        .filter(|(index, _)| !boundary.control_indices.contains(index))
                         .map(|(_, distance)| *distance)
                         .collect::<Vec<_>>();
                     !outside.is_empty()
@@ -24760,29 +24816,239 @@ fn nurbs_plane_boundary_curve(nurbs: &NurbsSurface, plane: PlaneEquation) -> Opt
                 }
         })
         .collect::<Vec<_>>();
-    let [(along_u, indices)] = candidates.as_slice() else {
+    let [boundary] = candidates.as_slice() else {
         return None;
     };
-    let (degree, knots, periodic) = if *along_u {
-        (nurbs.u_degree, nurbs.u_knots.clone(), nurbs.u_periodic)
+    Some(CurveGeometry::Nurbs(boundary.curve.clone()))
+}
+
+fn scalar_near(left: f64, right: f64, tolerance: f64) -> bool {
+    (left - right).abs() <= tolerance
+}
+
+fn nurbs_curves_match(
+    left: &NurbsCurve,
+    right: &NurbsCurve,
+    reversed: bool,
+    point_tolerance: f64,
+) -> bool {
+    if left.degree != right.degree
+        || left.periodic != right.periodic
+        || left.control_points.len() != right.control_points.len()
+        || left.knots.len() != right.knots.len()
+        || left.weights.is_some() != right.weights.is_some()
+    {
+        return false;
+    }
+    let right_points = if reversed {
+        right.control_points.iter().rev().collect::<Vec<_>>()
     } else {
-        (nurbs.v_degree, nurbs.v_knots.clone(), nurbs.v_periodic)
+        right.control_points.iter().collect()
     };
-    Some(CurveGeometry::Nurbs(NurbsCurve {
-        degree,
-        knots,
-        control_points: indices
-            .iter()
-            .map(|index| nurbs.control_points[*index])
-            .collect(),
-        weights: nurbs.weights.as_ref().map(|weights| {
-            indices
+    if !left
+        .control_points
+        .iter()
+        .zip(right_points)
+        .all(|(left, right)| {
+            dot(
+                [left.x - right.x, left.y - right.y, left.z - right.z],
+                [left.x - right.x, left.y - right.y, left.z - right.z],
+            )
+            .sqrt()
+                <= point_tolerance
+        })
+    {
+        return false;
+    }
+    let normalize_knots = |curve: &NurbsCurve| {
+        let (&minimum, &maximum) = curve.knots.first().zip(curve.knots.last())?;
+        let span = maximum - minimum;
+        (span.is_finite() && span > 0.0).then(|| {
+            curve
+                .knots
                 .iter()
-                .map(|index| weights[*index])
+                .map(|knot| (knot - minimum) / span)
                 .collect::<Vec<_>>()
-        }),
-        periodic,
-    }))
+        })
+    };
+    let Some(left_knots) = normalize_knots(left) else {
+        return false;
+    };
+    let Some(right_knots) = normalize_knots(right) else {
+        return false;
+    };
+    let knots_match = if reversed {
+        left_knots
+            .iter()
+            .zip(right_knots.iter().rev())
+            .all(|(left, right)| scalar_near(*left, 1.0 - right, 1e-12))
+    } else {
+        left_knots
+            .iter()
+            .zip(&right_knots)
+            .all(|(left, right)| scalar_near(*left, *right, 1e-12))
+    };
+    if !knots_match {
+        return false;
+    }
+    match (&left.weights, &right.weights) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            let right = if reversed {
+                right.iter().rev().collect::<Vec<_>>()
+            } else {
+                right.iter().collect()
+            };
+            let Some(scale) = left
+                .first()
+                .zip(right.first())
+                .map(|(left, right)| left / **right)
+            else {
+                return false;
+            };
+            scale.is_finite()
+                && scale > 0.0
+                && left.iter().zip(right).all(|(left, right)| {
+                    scalar_near(
+                        *left,
+                        scale * right,
+                        1e-12 * left.abs().max((scale * right).abs()).max(1.0),
+                    )
+                })
+        }
+        _ => false,
+    }
+}
+
+fn generator_separates_control_nets(
+    first: &NurbsSurface,
+    first_boundary: &NurbsSurfaceBoundary,
+    second: &NurbsSurface,
+    second_boundary: &NurbsSurfaceBoundary,
+) -> bool {
+    let [origin, end] = first_boundary.curve.control_points.as_slice() else {
+        return false;
+    };
+    let generator = [end.x - origin.x, end.y - origin.y, end.z - origin.z];
+    let Some(generator) = normalized(generator) else {
+        return false;
+    };
+    let seed = if generator[0].abs() < 0.8 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let Some(first_axis) = normalized(cross(generator, seed)) else {
+        return false;
+    };
+    let second_axis = cross(generator, first_axis);
+    let first_outside = first
+        .control_points
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !first_boundary.control_indices.contains(index))
+        .map(|(_, point)| point)
+        .collect::<Vec<_>>();
+    let second_outside = second
+        .control_points
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !second_boundary.control_indices.contains(index))
+        .map(|(_, point)| point)
+        .collect::<Vec<_>>();
+    if first_outside.is_empty() || second_outside.is_empty() {
+        return false;
+    }
+    let offset = |point: &Point3| [point.x - origin.x, point.y - origin.y, point.z - origin.z];
+    let mut boundary_angles = first_outside
+        .iter()
+        .chain(&second_outside)
+        .flat_map(|point| {
+            let offset = offset(point);
+            let angle = dot(second_axis, offset).atan2(dot(first_axis, offset));
+            [
+                (angle + std::f64::consts::FRAC_PI_2).rem_euclid(std::f64::consts::TAU),
+                (angle - std::f64::consts::FRAC_PI_2).rem_euclid(std::f64::consts::TAU),
+            ]
+        })
+        .collect::<Vec<_>>();
+    boundary_angles.sort_by(f64::total_cmp);
+    let tolerance = point_tolerance(first.control_points.iter().chain(&second.control_points))
+        .unwrap_or(f64::INFINITY);
+    (0..boundary_angles.len()).any(|index| {
+        let start = boundary_angles[index];
+        let end = if index + 1 == boundary_angles.len() {
+            boundary_angles[0] + std::f64::consts::TAU
+        } else {
+            boundary_angles[index + 1]
+        };
+        let angle = f64::midpoint(start, end);
+        let normal = [
+            angle.cos() * first_axis[0] + angle.sin() * second_axis[0],
+            angle.cos() * first_axis[1] + angle.sin() * second_axis[1],
+            angle.cos() * first_axis[2] + angle.sin() * second_axis[2],
+        ];
+        let first_distances = first_outside
+            .iter()
+            .map(|point| dot(normal, offset(point)))
+            .collect::<Vec<_>>();
+        let second_distances = second_outside
+            .iter()
+            .map(|point| dot(normal, offset(point)))
+            .collect::<Vec<_>>();
+        (first_distances.iter().all(|distance| *distance > tolerance)
+            && second_distances
+                .iter()
+                .all(|distance| *distance < -tolerance))
+            || (first_distances
+                .iter()
+                .all(|distance| *distance < -tolerance)
+                && second_distances
+                    .iter()
+                    .all(|distance| *distance > tolerance))
+    })
+}
+
+fn shared_extrusion_generator_curve(
+    first: &NurbsSurface,
+    second: &NurbsSurface,
+) -> Option<CurveGeometry> {
+    let first_boundaries = nurbs_surface_boundaries(first)?;
+    let second_boundaries = nurbs_surface_boundaries(second)?;
+    let tolerance = point_tolerance(first.control_points.iter().chain(&second.control_points))?;
+    let candidates = first_boundaries
+        .iter()
+        .flat_map(|first_boundary| {
+            second_boundaries
+                .iter()
+                .filter(|second_boundary| {
+                    first_boundary.curve.degree == 1
+                        && !first_boundary.curve.periodic
+                        && !first_boundary.transverse_periodic
+                        && !second_boundary.transverse_periodic
+                        && first_boundary.curve.control_points.len() == 2
+                        && [false, true].into_iter().any(|reversed| {
+                            nurbs_curves_match(
+                                &first_boundary.curve,
+                                &second_boundary.curve,
+                                reversed,
+                                tolerance,
+                            )
+                        })
+                        && generator_separates_control_nets(
+                            first,
+                            first_boundary,
+                            second,
+                            second_boundary,
+                        )
+                })
+                .map(|_| first_boundary.curve.clone())
+        })
+        .collect::<Vec<_>>();
+    let [curve] = candidates.as_slice() else {
+        return None;
+    };
+    Some(CurveGeometry::Nurbs(curve.clone()))
 }
 
 fn analytic_curve_branches(
@@ -24884,12 +25150,28 @@ fn transfer_carrier_intersection_curves(
     transferred
 }
 
-fn transfer_extrusion_plane_boundary_curves(
+struct TransferredNurbsBoundaryCurves {
+    ids: BTreeSet<CurveId>,
+    extrusion_plane_count: usize,
+    shared_extrusion_generator_count: usize,
+}
+
+#[derive(Clone, Copy)]
+enum NurbsBoundaryKind {
+    ExtrusionPlane,
+    SharedExtrusionGenerator,
+}
+
+fn transfer_nurbs_boundary_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> BTreeSet<CurveId> {
-    let mut transferred = BTreeSet::new();
+) -> TransferredNurbsBoundaryCurves {
+    let mut result = TransferredNurbsBoundaryCurves {
+        ids: BTreeSet::new(),
+        extrusion_plane_count: 0,
+        shared_extrusion_generator_count: 0,
+    };
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
         let Some(first) = crate::surface::unique_surface_row(&scan.surfaces.rows, row.faces[0])
         else {
@@ -24899,42 +25181,50 @@ fn transfer_extrusion_plane_boundary_curves(
         else {
             continue;
         };
-        let (extrusion_id, plane_id) = match (first.kind, second.kind) {
-            (crate::surface::SurfaceKind::Extrusion, crate::surface::SurfaceKind::Plane) => {
-                (first.id, second.id)
-            }
-            (crate::surface::SurfaceKind::Plane, crate::surface::SurfaceKind::Extrusion) => {
-                (second.id, first.id)
-            }
-            _ => continue,
+        let geometry = |surface_id| {
+            let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            ir.model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == id)
+                .map(|surface| &surface.geometry)
         };
-        let extrusion_id = SurfaceId(format!("creo:visibgeom:surface#{extrusion_id}"));
-        let plane_id = SurfaceId(format!("creo:visibgeom:surface#{plane_id}"));
-        let Some(SurfaceGeometry::Nurbs(nurbs)) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == extrusion_id)
-            .map(|surface| &surface.geometry)
-        else {
+        let Some(first_geometry) = geometry(first.id) else {
             continue;
         };
-        let Some(SurfaceGeometry::Plane { origin, normal, .. }) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == plane_id)
-            .map(|surface| &surface.geometry)
-        else {
+        let Some(second_geometry) = geometry(second.id) else {
             continue;
         };
-        let Some(geometry) = nurbs_plane_boundary_curve(
-            nurbs,
-            PlaneEquation {
-                origin: [origin.x, origin.y, origin.z],
-                normal: [normal.x, normal.y, normal.z],
-            },
-        ) else {
+        let resolved = match (first.kind, second.kind, first_geometry, second_geometry) {
+            (
+                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Plane,
+                SurfaceGeometry::Nurbs(nurbs),
+                SurfaceGeometry::Plane { origin, normal, .. },
+            )
+            | (
+                crate::surface::SurfaceKind::Plane,
+                crate::surface::SurfaceKind::Extrusion,
+                SurfaceGeometry::Plane { origin, normal, .. },
+                SurfaceGeometry::Nurbs(nurbs),
+            ) => nurbs_plane_boundary_curve(
+                nurbs,
+                PlaneEquation {
+                    origin: [origin.x, origin.y, origin.z],
+                    normal: [normal.x, normal.y, normal.z],
+                },
+            )
+            .map(|geometry| (geometry, NurbsBoundaryKind::ExtrusionPlane)),
+            (
+                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Extrusion,
+                SurfaceGeometry::Nurbs(first),
+                SurfaceGeometry::Nurbs(second),
+            ) => shared_extrusion_generator_curve(first, second)
+                .map(|geometry| (geometry, NurbsBoundaryKind::SharedExtrusionGenerator)),
+            _ => None,
+        };
+        let Some((geometry, kind)) = resolved else {
             continue;
         };
         let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
@@ -24946,7 +25236,10 @@ fn transfer_extrusion_plane_boundary_curves(
             &id,
             "VisibGeom",
             row.offset as u64,
-            "extrusion_plane_nurbs_boundary",
+            match kind {
+                NurbsBoundaryKind::ExtrusionPlane => "extrusion_plane_nurbs_boundary",
+                NurbsBoundaryKind::SharedExtrusionGenerator => "shared_extrusion_nurbs_generator",
+            },
             Exactness::Derived,
         );
         ir.model.curves.push(Curve {
@@ -24962,9 +25255,15 @@ fn transfer_extrusion_plane_boundary_curves(
                 instance_path: Vec::new(),
             }),
         });
-        transferred.insert(id);
+        result.ids.insert(id);
+        match kind {
+            NurbsBoundaryKind::ExtrusionPlane => result.extrusion_plane_count += 1,
+            NurbsBoundaryKind::SharedExtrusionGenerator => {
+                result.shared_extrusion_generator_count += 1;
+            }
+        }
     }
-    transferred
+    result
 }
 
 fn rowless_round_cylinder_pairs(
@@ -26419,10 +26718,11 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
     let mut derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
-    let extrusion_plane_boundary_curves =
-        transfer_extrusion_plane_boundary_curves(scan, &mut ir, &mut annotations);
-    let extrusion_plane_boundary_curve_count = extrusion_plane_boundary_curves.len();
-    derived_intersection_curves.extend(extrusion_plane_boundary_curves);
+    let nurbs_boundary_curves = transfer_nurbs_boundary_curves(scan, &mut ir, &mut annotations);
+    let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
+    let shared_extrusion_generator_curve_count =
+        nurbs_boundary_curves.shared_extrusion_generator_count;
+    derived_intersection_curves.extend(nurbs_boundary_curves.ids);
     let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
         scan,
         &mut ir,
@@ -26610,6 +26910,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "transferred_extrusion_plane_boundary_curve_count".to_string(),
             extrusion_plane_boundary_curve_count,
+        );
+        coverage.insert(
+            "transferred_shared_extrusion_generator_curve_count".to_string(),
+            shared_extrusion_generator_curve_count,
         );
         coverage.insert(
             "transferred_feature_revolution_surface_count".to_string(),
@@ -29689,6 +29993,22 @@ fn build_report(
                 "Transferred {extrusion_plane_boundary_curve_count} exact NURBS boundary \
                  carrier(s) where one tabulated-extrusion boundary lies in an adjacent plane \
                  and every other control point lies strictly on one side."
+            ),
+            provenance: None,
+        });
+    }
+
+    let shared_extrusion_generator_curve_count =
+        count("transferred_shared_extrusion_generator_curve_count");
+    if !container_only && shared_extrusion_generator_curve_count != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {shared_extrusion_generator_curve_count} exact shared NURBS \
+                 generator carrier(s) whose two tabulated-extrusion control nets meet on the \
+                 same linear boundary and lie strictly on opposite sides of a plane through it."
             ),
             provenance: None,
         });
