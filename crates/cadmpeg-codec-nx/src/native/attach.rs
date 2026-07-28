@@ -36,7 +36,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use crate::decode::Scan;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
-use super::catalogue::{CATALOGUE, NOTE_GROUP_A_END, NOTE_GROUP_B_END};
+use super::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
 
 pub(crate) fn attach(
@@ -109,7 +109,9 @@ pub(crate) fn attach(
         annotations.exactness(&tessellation.id, Exactness::Derived);
         ir.model.tessellations.push(tessellation);
     }
-    for row in &CATALOGUE[..NOTE_GROUP_A_END] {
+    let note_group_a_end = note_group_a_end();
+    let note_group_b_end = note_group_b_end();
+    for row in &CATALOGUE[..note_group_a_end] {
         if let Some(note) = row.note {
             note(model, row, annotations);
         }
@@ -154,7 +156,7 @@ pub(crate) fn attach(
         },
         annotations,
     );
-    for row in &CATALOGUE[NOTE_GROUP_A_END..NOTE_GROUP_B_END] {
+    for row in &CATALOGUE[note_group_a_end..note_group_b_end] {
         if let Some(note) = row.note {
             note(model, row, annotations);
         }

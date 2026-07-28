@@ -207,6 +207,15 @@
                 "xmt": 12
               }
             ],
+            "parasolid_deltas_residual_spans": [
+              {
+                "byte_len": 67,
+                "id": "nx:s1:deltas-residual#0",
+                "inflated_offset": 0,
+                "sha256": "b01e0f1bbecc6116af143073421185dfbddb9b35ec76aa1c8958391ab066efa3",
+                "stream_ordinal": 1
+              }
+            ],
             "parasolid_offset_surface_records": [
               {
                 "discriminator": "V",
@@ -277,7 +286,7 @@
         {
           "category": "topology",
           "code": "decode_diagnostic",
-          "message": "1 Parasolid deltas stream(s) were processed in validated UG_PART segment order. Equal-schema deltas were paired with the preceding partition. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact non-topology replacements and tombstones were applied using the last event for each key. Validated partition topology remained authoritative, including any point, curve, or surface carrier still referenced by surviving topology. Complete ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native attribute extraction. Every completely bounded full record, compact tombstone, and BODY revision prefix was retained as an individually identified native event with its source bounds and decoded identities. Semantic intersection and NURBS records were retained in the semantic lane. Every terminal tombstone resolved to an exact current or earlier-added key.",
+          "message": "1 Parasolid deltas stream(s) were processed in validated UG_PART segment order. Equal-schema deltas were paired with the preceding partition. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact non-topology replacements and tombstones were applied using the last event for each key. Validated partition topology remained authoritative, including any point, curve, or surface carrier still referenced by surviving topology. Complete ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native attribute extraction. Every completely bounded full record, compact tombstone, and BODY revision prefix was retained as an individually identified native event with its source bounds and decoded identities. Maximal spans outside those events were retained with exact inflated-stream bounds and digests. Semantic intersection and NURBS records were retained in the semantic lane. Every terminal tombstone resolved to an exact current or earlier-added key.",
           "severity": "info"
         },
         {

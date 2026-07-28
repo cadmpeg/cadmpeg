@@ -6788,8 +6788,9 @@ fn build_geometry_report(
                  ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
                  attribute extraction. Every completely bounded full record, compact tombstone, \
                  and BODY revision prefix was retained as an individually identified native event \
-                 with its source bounds and decoded identities. Semantic intersection and NURBS \
-                 records were retained in the semantic lane. Every \
+                 with its source bounds and decoded identities. Maximal spans outside those events \
+                 were retained with exact inflated-stream bounds and digests. Semantic intersection \
+                 and NURBS records were retained in the semantic lane. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
                     scan.count(StreamKind::Deltas)
                 )

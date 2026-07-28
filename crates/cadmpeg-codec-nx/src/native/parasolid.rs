@@ -67,10 +67,26 @@ pub struct ParasolidDeltasBodyRevision {
     pub inflated_offset: u64,
 }
 
+/// Maximal inflated-stream span outside every admitted deltas event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasResidualSpan {
+    /// Globally unique residual-span identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Exact residual byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the residual bytes.
+    pub sha256: String,
+    /// First residual byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 pub(crate) struct ParasolidDeltasEvents {
     pub(crate) records: Vec<ParasolidDeltasRecord>,
     pub(crate) tombstones: Vec<ParasolidDeltasTombstone>,
     pub(crate) body_revisions: Vec<ParasolidDeltasBodyRevision>,
+    pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
 }
 
 /// Retain every completely bounded event in every Parasolid deltas stream.
@@ -79,12 +95,61 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         records: Vec::new(),
         tombstones: Vec::new(),
         body_revisions: Vec::new(),
+        residual_spans: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         if stream.kind != crate::parasolid::StreamKind::Deltas {
             continue;
         }
         let census = crate::deltas::walk(&stream.inflated);
+        let mut covered = census
+            .records
+            .iter()
+            .map(|record| (record.offset, record.end))
+            .chain(
+                census
+                    .tombstones
+                    .iter()
+                    .map(|tombstone| (tombstone.offset, tombstone.offset + 6)),
+            )
+            .chain(
+                census
+                    .body_revisions
+                    .iter()
+                    .map(|revision| (revision.offset, revision.prefix_end)),
+            )
+            .collect::<Vec<_>>();
+        covered.sort_unstable();
+        let mut merged = Vec::<(usize, usize)>::new();
+        for (start, end) in covered {
+            if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
+                *merged_end = (*merged_end).max(end);
+            } else {
+                merged.push((start, end));
+            }
+        }
+        let mut residual_start = 0;
+        for (covered_start, covered_end) in merged {
+            if residual_start < covered_start {
+                push_deltas_residual_span(
+                    &mut events.residual_spans,
+                    stream_ordinal,
+                    &stream.inflated,
+                    residual_start,
+                    covered_start,
+                );
+            }
+            residual_start = residual_start.max(covered_end);
+        }
+        if residual_start < stream.inflated.len() {
+            push_deltas_residual_span(
+                &mut events.residual_spans,
+                stream_ordinal,
+                &stream.inflated,
+                residual_start,
+                stream.inflated.len(),
+            );
+        }
         for record in census.records {
             let family = crate::deltas::family_name(record.kind)
                 .expect("the deltas walker admits only named record families");
@@ -142,6 +207,26 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .body_revisions
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
+        .residual_spans
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+}
+
+fn push_deltas_residual_span(
+    residual_spans: &mut Vec<ParasolidDeltasResidualSpan>,
+    stream_ordinal: usize,
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) {
+    let residual = &bytes[start..end];
+    residual_spans.push(ParasolidDeltasResidualSpan {
+        id: format!("nx:s{stream_ordinal}:deltas-residual#{start}"),
+        stream_ordinal: stream_ordinal as u32,
+        byte_len: residual.len() as u64,
+        sha256: cadmpeg_ir::hash::sha256_hex(residual),
+        inflated_offset: start as u64,
+    });
 }
 
 /// Shared skeleton for Parasolid record families read from the cached per-stream
@@ -1405,7 +1490,7 @@ mod tests {
 
     #[test]
     fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
-        let mut bytes = vec![0, 12, 0, 3];
+        let mut bytes = vec![0xaa, 0xbb, 0xcc, 0, 12, 0, 3];
         bytes.extend_from_slice(&9u32.to_be_bytes());
         for reference in [2u16, 3, 4, 5, 6, 7, 8, 9] {
             bytes.extend_from_slice(&reference.to_be_bytes());
@@ -1417,6 +1502,7 @@ mod tests {
         bytes.extend_from_slice(&10u16.to_be_bytes());
         bytes.extend_from_slice(&1.25f64.to_be_bytes());
         bytes.extend_from_slice(&2.5f64.to_be_bytes());
+        bytes.extend_from_slice(&[0xdd, 0xee]);
         let tombstone_offset = bytes.len();
         bytes.extend_from_slice(&[0, 29, 0, 11, 0, 1]);
         let streams = [Stream {
@@ -1448,6 +1534,18 @@ mod tests {
             events.tombstones[0].inflated_offset,
             tombstone_offset as u64
         );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].inflated_offset, 0);
+        assert_eq!(events.residual_spans[0].byte_len, 3);
+        assert_eq!(
+            events.residual_spans[0].sha256,
+            cadmpeg_ir::hash::sha256_hex(&[0xaa, 0xbb, 0xcc])
+        );
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            (type_45_offset + 24) as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
     }
 
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};

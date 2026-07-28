@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative catalogue of the native record families.
 //!
-//! One [`CatalogueRow`] per model field (184 total). Each row names the `nx`
+//! One [`CatalogueRow`] per model field (185 total). Each row names the `nx`
 //! namespace arena the family serializes into, and — for families that also emit
 //! source annotations — the tag, exactness, and a `note` fn. Row order is the
 //! observable annotation-emission order for the note-bearing rows;
-//! [`NOTE_GROUP_A_END`] / [`NOTE_GROUP_B_END`] mark the semantic-island split
+//! [`note_group_a_end`] / [`note_group_b_end`] find the semantic-island split
 //! that [`super::attach`] walks. Arena serialization order is not observable
 //! (arenas live in a `BTreeMap`), so the non-noting tail rows follow the legacy
 //! arena-pass order purely for readability.
@@ -45,8 +45,8 @@ pub(crate) struct CatalogueRow {
     /// Record count for this family, feeding the catalogue-derived emptiness
     /// fold ([`NativeModel::is_empty`]) and inspect counts.
     pub(crate) len: fn(&NativeModel) -> usize,
-    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 138 of
-    /// the 184 families count; the 46 that do not are transcribed verbatim from
+    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 139 of
+    /// the 185 families count; the 46 that do not are transcribed verbatim from
     /// the legacy hand-written all-empty guard, which omitted them. The
     /// exclusions look like oversights (25 of the 26 `display_jt` families are
     /// excluded, for instance) but are frozen observable behavior: flipping any
@@ -54,13 +54,21 @@ pub(crate) struct CatalogueRow {
     pub(crate) counts_toward_emptiness: bool,
 }
 
-/// Index one past the last group-A note row. [`super::attach`] emits notes for
-/// `CATALOGUE[..NOTE_GROUP_A_END]`, then the interleaved semantic islands, then
-/// the group-B notes in `CATALOGUE[NOTE_GROUP_A_END..NOTE_GROUP_B_END]`.
-pub(crate) const NOTE_GROUP_A_END: usize = 82;
-/// Index one past the last group-B note row; rows beyond it are arena-only or
-/// island-noted (`part_attributes`, `configurations`).
-pub(crate) const NOTE_GROUP_B_END: usize = 85;
+/// Find the first group-B note row after the group-A semantic island.
+pub(crate) fn note_group_a_end() -> usize {
+    CATALOGUE
+        .iter()
+        .position(|row| row.arena == "feature_parameter_uses")
+        .expect("feature parameter uses anchor the group-A note boundary")
+}
+
+/// Find the first island-noted or arena-only row after group B.
+pub(crate) fn note_group_b_end() -> usize {
+    CATALOGUE
+        .iter()
+        .position(|row| row.arena == "external_reference_records")
+        .expect("external reference records anchor the group-B note boundary")
+}
 
 /// Serialize a record family into its arena when non-empty. The single shape
 /// every `emit` row shares; each row supplies its family slice and arena name.
@@ -473,6 +481,11 @@ impl StreamNoted for ParasolidDeltasTombstone {
     }
 }
 impl StreamNoted for ParasolidDeltasBodyRevision {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidDeltasResidualSpan {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -983,6 +996,17 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         }),
         emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_body_revisions, r, ns),
         len: |m| m.parasolid.parasolid_deltas_body_revisions.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_deltas_residual_spans",
+        tag: Some("DELTAS_RESIDUAL"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_deltas_residual_spans, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_residual_spans, r, ns),
+        len: |m| m.parasolid.parasolid_deltas_residual_spans.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

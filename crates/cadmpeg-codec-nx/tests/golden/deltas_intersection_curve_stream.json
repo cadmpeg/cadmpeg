@@ -72,6 +72,15 @@
                 "xmt": 12
               }
             ],
+            "parasolid_deltas_residual_spans": [
+              {
+                "byte_len": 84,
+                "id": "nx:s0:deltas-residual#0",
+                "inflated_offset": 0,
+                "sha256": "ad54d17126c3fadc3b98cf676bf73545a88d2dcdf7cbe1df7d85ee4d1ee6793a",
+                "stream_ordinal": 0
+              }
+            ],
             "parasolid_intersection_records": [
               {
                 "construction_references": [
@@ -168,6 +177,11 @@
             "offset": 84,
             "stream": 1,
             "tag": "DELTAS_RECORD"
+          },
+          "nx:s0:deltas-residual#0": {
+            "offset": 0,
+            "stream": 1,
+            "tag": "DELTAS_RESIDUAL"
           },
           "nx:s0:intersection-record#12": {
             "offset": 84,

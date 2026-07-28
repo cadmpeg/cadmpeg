@@ -470,6 +470,12 @@ Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, 
 
 Type 101 has the complete deltas record `0065 [ff], xmt(2), ref_status[12], flag:01, zero[12], ref_status[3]`. Every reference status is `01`. The optional `ff` envelope byte precedes the fixed XMT identity. The record ends after the fifteenth reference status, participates in the deltas byte ledger, and does not replace topology or geometry records. An inline type-101 schema declaration has a printable signature after `0065` and is not an instance of this grammar.
 
+The union of complete record frames, compact tombstones, and validated BODY
+revision prefixes defines the typed deltas-event coverage. Each maximal
+nonempty complement interval in the inflated stream is one residual span.
+Residual spans retain their exact offset, length, and SHA-256 independently of
+the containing compressed stream.
+
 **Full record:**
 
 ```text
