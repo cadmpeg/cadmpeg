@@ -151,19 +151,43 @@ pub struct ParasolidDeltasReferenceMarkerPacket {
     pub inflated_offset: u64,
 }
 
-/// Inline REGION schema declaration in a Parasolid deltas stream.
+/// Body of an inline schema declaration in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidDeltasRegionSchemaDeclaration {
+#[serde(tag = "schema", rename_all = "snake_case")]
+pub enum ParasolidDeltasInlineSchemaFields {
+    /// REGION declaration state.
+    Region {
+        xmt: u32,
+        state_word: u32,
+        references: [u32; 4],
+    },
+    /// `ATTDEF_LIST` declaration state.
+    AttdefList {
+        xmt: u32,
+        slot_count: u32,
+        active_count: u32,
+        references: Vec<u32>,
+    },
+    /// Type 70 declaration state.
+    Type70 {
+        xmt: u32,
+        node_id: u32,
+        references: [u32; 4],
+        count: u16,
+        trailing_reference: u32,
+    },
+}
+
+/// Inline schema declaration in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasInlineSchemaDeclaration {
     /// Globally unique declaration identity.
     pub id: String,
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
-    /// Non-null stream-local declaration XMT identity.
-    pub xmt: u32,
-    /// Serialized big-endian state word.
-    pub state_word: u32,
-    /// Four ordered stream-local XMT references.
-    pub references: [u32; 4],
+    /// Schema-specific declaration body.
+    #[serde(flatten)]
+    pub fields: ParasolidDeltasInlineSchemaFields,
     /// Exact declaration byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact declaration bytes.
@@ -195,7 +219,7 @@ pub(crate) struct ParasolidDeltasEvents {
     pub(crate) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(crate) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
     pub(crate) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
-    pub(crate) region_schema_declarations: Vec<ParasolidDeltasRegionSchemaDeclaration>,
+    pub(crate) inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
     pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
 }
 
@@ -209,7 +233,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         tagged_reference_lanes: Vec::new(),
         reference_state_packets: Vec::new(),
         reference_marker_packets: Vec::new(),
-        region_schema_declarations: Vec::new(),
+        inline_schema_declarations: Vec::new(),
         residual_spans: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -360,19 +384,52 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     inflated_offset: packet.offset as u64,
                 });
         }
-        for declaration in census.region_schema_declarations {
+        for declaration in census.inline_schema_declarations {
             let bytes = &stream.inflated[declaration.offset..declaration.end];
+            let fields = match declaration.fields {
+                crate::deltas::InlineSchemaFields::Region {
+                    xmt,
+                    state_word,
+                    references,
+                } => ParasolidDeltasInlineSchemaFields::Region {
+                    xmt,
+                    state_word,
+                    references,
+                },
+                crate::deltas::InlineSchemaFields::AttdefList {
+                    xmt,
+                    slot_count,
+                    active_count,
+                    references,
+                } => ParasolidDeltasInlineSchemaFields::AttdefList {
+                    xmt,
+                    slot_count,
+                    active_count,
+                    references,
+                },
+                crate::deltas::InlineSchemaFields::Type70 {
+                    xmt,
+                    node_id,
+                    references,
+                    count,
+                    trailing_reference,
+                } => ParasolidDeltasInlineSchemaFields::Type70 {
+                    xmt,
+                    node_id,
+                    references,
+                    count,
+                    trailing_reference,
+                },
+            };
             events
-                .region_schema_declarations
-                .push(ParasolidDeltasRegionSchemaDeclaration {
+                .inline_schema_declarations
+                .push(ParasolidDeltasInlineSchemaDeclaration {
                     id: format!(
-                        "nx:s{stream_ordinal}:deltas-region-schema#{}-{}",
-                        declaration.offset, declaration.xmt
+                        "nx:s{stream_ordinal}:deltas-inline-schema#{}",
+                        declaration.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    xmt: declaration.xmt,
-                    state_word: declaration.state_word,
-                    references: declaration.references,
+                    fields,
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: declaration.offset as u64,
@@ -399,7 +456,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .reference_marker_packets
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
-        .region_schema_declarations
+        .inline_schema_declarations
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .residual_spans
@@ -1937,7 +1994,7 @@ mod tests {
     }
 
     #[test]
-    fn deltas_events_subtract_region_schema_declarations_from_residuals() {
+    fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
         let mut bytes = [0xaa, 0xbb].to_vec();
         bytes.extend(deltas_type_45(10));
         let declaration_offset = bytes.len();
@@ -1966,11 +2023,16 @@ mod tests {
 
         let events = super::parasolid_deltas_events(&streams);
 
-        assert_eq!(events.region_schema_declarations.len(), 1);
-        let declaration = &events.region_schema_declarations[0];
-        assert_eq!(declaration.xmt, 11);
-        assert_eq!(declaration.state_word, 5);
-        assert_eq!(declaration.references, [1, 3, 1, 9]);
+        assert_eq!(events.inline_schema_declarations.len(), 1);
+        let declaration = &events.inline_schema_declarations[0];
+        assert_eq!(
+            declaration.fields,
+            ParasolidDeltasInlineSchemaFields::Region {
+                xmt: 11,
+                state_word: 5,
+                references: [1, 3, 1, 9],
+            }
+        );
         assert_eq!(declaration.byte_len, 51);
         assert_eq!(declaration.inflated_offset, declaration_offset as u64);
         assert_eq!(

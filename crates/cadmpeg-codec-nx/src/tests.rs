@@ -7330,11 +7330,16 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
 
     let census = crate::deltas::walk(&bytes);
 
-    assert_eq!(census.region_schema_declarations.len(), 1);
-    let declaration = &census.region_schema_declarations[0];
-    assert_eq!(declaration.xmt, 40_000);
-    assert_eq!(declaration.state_word, 5);
-    assert_eq!(declaration.references, [1, 3, 1, 9]);
+    assert_eq!(census.inline_schema_declarations.len(), 1);
+    let declaration = &census.inline_schema_declarations[0];
+    assert_eq!(
+        declaration.fields,
+        crate::deltas::InlineSchemaFields::Region {
+            xmt: 40_000,
+            state_word: 5,
+            references: [1, 3, 1, 9],
+        }
+    );
     assert_eq!(declaration.offset, 0);
     assert_eq!(declaration.end, declaration_end);
     assert_eq!(census.reference_marker_packets.len(), 1);
@@ -7345,7 +7350,7 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
     let mut truncated = bytes[..declaration_end - 1].to_vec();
     truncated.extend([0, 7, 1, 0, 1, 1, 0x56, 0, 1, 1]);
     assert!(crate::deltas::walk(&truncated)
-        .region_schema_declarations
+        .inline_schema_declarations
         .is_empty());
 }
 
@@ -10930,7 +10935,7 @@ mod golden {
         "parasolid_deltas_tagged_reference_lanes",
         "parasolid_deltas_reference_state_packets",
         "parasolid_deltas_reference_marker_packets",
-        "parasolid_deltas_region_schema_declarations",
+        "parasolid_deltas_inline_schema_declarations",
         "parasolid_deltas_term_use_numeric_tails",
         "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",

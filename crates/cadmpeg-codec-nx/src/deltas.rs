@@ -107,15 +107,49 @@ pub struct ReferenceMarkerPacket {
     pub end: usize,
 }
 
-/// One inline REGION schema declaration and its four-reference state.
+/// Body of an inline schema declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RegionSchemaDeclaration {
-    /// Non-null stream-local declaration identity.
-    pub xmt: u32,
-    /// Serialized big-endian state word.
-    pub state_word: u32,
-    /// Four ordered stream-local XMT references.
-    pub references: [u32; 4],
+pub enum InlineSchemaFields {
+    /// REGION declaration state.
+    Region {
+        /// Non-null stream-local declaration identity.
+        xmt: u32,
+        /// Serialized big-endian state word.
+        state_word: u32,
+        /// Four ordered stream-local XMT references.
+        references: [u32; 4],
+    },
+    /// `ATTDEF_LIST` declaration state.
+    AttdefList {
+        /// Non-null stream-local declaration identity.
+        xmt: u32,
+        /// Number of serialized reference slots.
+        slot_count: u32,
+        /// Number of leading non-null slots.
+        active_count: u32,
+        /// Slot references, excluding the null sentinel.
+        references: Vec<u32>,
+    },
+    /// Type 70 declaration state.
+    Type70 {
+        /// Non-null stream-local declaration identity.
+        xmt: u32,
+        /// Serialized node identity.
+        node_id: u32,
+        /// Four ordered body references.
+        references: [u32; 4],
+        /// Serialized declaration count.
+        count: u16,
+        /// Repeated terminal non-null reference.
+        trailing_reference: u32,
+    },
+}
+
+/// One complete inline schema declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineSchemaDeclaration {
+    /// Schema-specific declaration body.
+    pub fields: InlineSchemaFields,
     /// First byte of the declaration.
     pub offset: usize,
     /// First byte following the declaration.
@@ -139,8 +173,8 @@ pub struct Census {
     pub reference_state_packets: Vec<ReferenceStatePacket>,
     /// Complete reference-marker packets in source order.
     pub reference_marker_packets: Vec<ReferenceMarkerPacket>,
-    /// Complete inline REGION schema declarations in source order.
-    pub region_schema_declarations: Vec<RegionSchemaDeclaration>,
+    /// Complete inline schema declarations in source order.
+    pub inline_schema_declarations: Vec<InlineSchemaDeclaration>,
     /// Complete-record counts keyed by Parasolid family name.
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
@@ -546,9 +580,9 @@ pub fn walk(stream: &[u8]) -> Census {
         .iter()
         .map(|packet| packet.end - packet.offset)
         .sum::<usize>();
-    census.region_schema_declarations = region_schema_declarations(stream, &census);
+    census.inline_schema_declarations = inline_schema_declarations(stream, &census);
     census.bytes_decoded += census
-        .region_schema_declarations
+        .inline_schema_declarations
         .iter()
         .map(|declaration| declaration.end - declaration.offset)
         .sum::<usize>();
@@ -702,20 +736,88 @@ const REGION_SCHEMA_HEADER: &[u8] = &[
     0x5a,
 ];
 
-fn region_schema_declarations(stream: &[u8], census: &Census) -> Vec<RegionSchemaDeclaration> {
+fn inline_schema_declarations(stream: &[u8], census: &Census) -> Vec<InlineSchemaDeclaration> {
     uncovered_spans(stream.len(), census, true)
-        .filter_map(|(offset, gap_end)| region_schema_declaration(stream, offset, gap_end))
+        .flat_map(|(offset, gap_end)| {
+            let mut declarations = Vec::new();
+            let mut at = offset;
+            while let Some(declaration) = inline_schema_declaration(stream, at, gap_end) {
+                at = declaration.end;
+                declarations.push(declaration);
+            }
+            declarations
+        })
         .collect()
+}
+
+const ATTDEF_LIST_SCHEMA_HEADER: &[u8] = &[
+    0x00, 0x4a, 0x04, 0x43, 0x49, 0x10, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x5f, 0x6d, 0x61, 0x70, 0x5f,
+    0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x00, 0x00, 0x00, 0x01, 0x01, 0x64, 0x43, 0x43, 0x5a,
+];
+
+const TYPE_70_SCHEMA_HEADER: &[u8] = &[
+    0x00, 0x46, 0x0b, 0x43, 0x49, 0x09, 0x6c, 0x69, 0x73, 0x74, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x00,
+    0x00, 0x00, 0x01, 0x01, 0x75, 0x49, 0x0a, 0x6e, 0x6f, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x6d, 0x69,
+    0x74, 0x00, 0x00, 0x00, 0x01, 0x01, 0x6c, 0x43, 0x43, 0x43, 0x44, 0x43, 0x43, 0x44, 0x49, 0x0c,
+    0x66, 0x69, 0x6e, 0x67, 0x65, 0x72, 0x5f, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x00, 0x00, 0x00, 0x01,
+    0x01, 0x64, 0x49, 0x0c, 0x66, 0x69, 0x6e, 0x67, 0x65, 0x72, 0x5f, 0x62, 0x6c, 0x6f, 0x63, 0x6b,
+    0x03, 0xf4, 0x00, 0x01, 0x43, 0x5a,
+];
+
+fn inline_schema_declaration(
+    stream: &[u8],
+    offset: usize,
+    gap_end: usize,
+) -> Option<InlineSchemaDeclaration> {
+    if stream.get(offset..offset.checked_add(REGION_SCHEMA_HEADER.len())?)
+        == Some(REGION_SCHEMA_HEADER)
+    {
+        return region_schema_declaration(stream, offset, gap_end);
+    }
+    if stream.get(offset..offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())?)
+        == Some(ATTDEF_LIST_SCHEMA_HEADER)
+    {
+        let body = offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())?;
+        let (xmt, slot_count, active_count, references, end) = attdef_list_body(stream, body)?;
+        (end <= gap_end).then_some(())?;
+        return Some(InlineSchemaDeclaration {
+            fields: InlineSchemaFields::AttdefList {
+                xmt,
+                slot_count,
+                active_count,
+                references: references.into_iter().skip(1).collect(),
+            },
+            offset,
+            end,
+        });
+    }
+    if stream.get(offset..offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?)
+        == Some(TYPE_70_SCHEMA_HEADER)
+    {
+        let body = offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?;
+        let (xmt, node_id, all_references, count, end) = type_70_body(stream, body)?;
+        (end <= gap_end).then_some(())?;
+        let references = all_references[..4].try_into().ok()?;
+        return Some(InlineSchemaDeclaration {
+            fields: InlineSchemaFields::Type70 {
+                xmt,
+                node_id,
+                references,
+                count,
+                trailing_reference: all_references[4],
+            },
+            offset,
+            end,
+        });
+    }
+    None
 }
 
 fn region_schema_declaration(
     stream: &[u8],
     offset: usize,
     gap_end: usize,
-) -> Option<RegionSchemaDeclaration> {
-    (stream.get(offset..offset.checked_add(REGION_SCHEMA_HEADER.len())?)
-        == Some(REGION_SCHEMA_HEADER))
-    .then_some(())?;
+) -> Option<InlineSchemaDeclaration> {
     let mut at = offset.checked_add(REGION_SCHEMA_HEADER.len())?;
     let (xmt, consumed) = read_xmt(stream, at)?;
     (xmt > 1).then_some(())?;
@@ -730,10 +832,12 @@ fn region_schema_declaration(
         at = at.checked_add(1)?;
         *reference = value;
     }
-    (at <= gap_end).then_some(RegionSchemaDeclaration {
-        xmt,
-        state_word,
-        references,
+    (at <= gap_end).then_some(InlineSchemaDeclaration {
+        fields: InlineSchemaFields::Region {
+            xmt,
+            state_word,
+            references,
+        },
         offset,
         end: at,
     })
@@ -835,7 +939,7 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
         );
         covered.extend(
             census
-                .region_schema_declarations
+                .inline_schema_declarations
                 .iter()
                 .map(|declaration| (declaration.offset, declaration.end)),
         );
@@ -1354,9 +1458,15 @@ fn type_70_layout(
     offset: usize,
     envelope_len: usize,
 ) -> Option<(u32, u32, Vec<u32>, usize)> {
-    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
+    let body = offset.checked_add(2 + envelope_len)?;
+    let (xmt, node_id, references, _, end) = type_70_body(stream, body)?;
+    Some((xmt, node_id, references, end))
+}
+
+fn type_70_body(stream: &[u8], body: usize) -> Option<(u32, u32, Vec<u32>, u16, usize)> {
+    let (xmt, consumed) = read_xmt(stream, body)?;
     (xmt > 1).then_some(())?;
-    let mut at = offset.checked_add(2 + envelope_len + consumed)?;
+    let mut at = body.checked_add(consumed)?;
     let node_id = be::u32_at(stream, at)?;
     at += 4;
     (stream.get(at) == Some(&4)).then_some(())?;
@@ -1385,7 +1495,7 @@ fn type_70_layout(
         references.push(reference);
     }
     (references[4] == references[5]).then_some(())?;
-    Some((xmt, node_id, references, at))
+    Some((xmt, node_id, references, count, at))
 }
 
 fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
@@ -1438,13 +1548,20 @@ fn attdef_list_layout(
     offset: usize,
     envelope_len: usize,
 ) -> Option<(u32, Vec<u32>, usize)> {
-    let count_at = offset.checked_add(2 + envelope_len)?;
-    let slot_count = usize::try_from(be::u32_at(stream, count_at)?).ok()?;
+    let body = offset.checked_add(2 + envelope_len)?;
+    let (xmt, _, _, references, end) = attdef_list_body(stream, body)?;
+    Some((xmt, references, end))
+}
+
+fn attdef_list_body(stream: &[u8], body: usize) -> Option<(u32, u32, u32, Vec<u32>, usize)> {
+    let slot_count_value = be::u32_at(stream, body)?;
+    let slot_count = usize::try_from(slot_count_value).ok()?;
     (slot_count > 0).then_some(())?;
-    let (xmt, consumed) = read_xmt(stream, count_at.checked_add(4)?)?;
+    let (xmt, consumed) = read_xmt(stream, body.checked_add(4)?)?;
     (xmt > 1).then_some(())?;
-    let mut at = count_at.checked_add(4 + consumed)?;
-    let active_count = usize::try_from(be::u32_at(stream, at)?).ok()?;
+    let mut at = body.checked_add(4 + consumed)?;
+    let active_count_value = be::u32_at(stream, at)?;
+    let active_count = usize::try_from(active_count_value).ok()?;
     (active_count <= slot_count).then_some(())?;
     at += 4;
     (be::u32_at(stream, at) == Some(0)).then_some(())?;
@@ -1469,7 +1586,7 @@ fn attdef_list_layout(
         at += 1;
         references.push(reference);
     }
-    Some((xmt, references, at))
+    Some((xmt, slot_count_value, active_count_value, references, at))
 }
 
 fn group_layout(
@@ -1800,4 +1917,74 @@ fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
     let remainder = first.unsigned_abs();
     let quotient = u16::from_be_bytes([*stream.get(at + 2)?, *stream.get(at + 3)?]);
     Some((u32::from(quotient) * 32_767 + u32::from(remainder), 4))
+}
+
+#[cfg(test)]
+mod inline_schema_tests {
+    use super::*;
+
+    fn attdef_list_declaration() -> Vec<u8> {
+        let mut bytes = ATTDEF_LIST_SCHEMA_HEADER.to_vec();
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&[0xe3, 0xbf, 0, 1]);
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        for reference in [1u16, 3, 1] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+            bytes.push(1);
+        }
+        bytes
+    }
+
+    fn type_70_declaration() -> Vec<u8> {
+        let mut bytes = TYPE_70_SCHEMA_HEADER.to_vec();
+        bytes.extend_from_slice(&7u16.to_be_bytes());
+        bytes.extend_from_slice(&19u32.to_be_bytes());
+        bytes.push(4);
+        for reference in [2u16, 3, 1, 9] {
+            bytes.push(1);
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.extend_from_slice(&20u32.to_be_bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        for _ in 0..2 {
+            bytes.extend_from_slice(&11u16.to_be_bytes());
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    #[test]
+    fn adjacent_inline_schema_declarations_allow_either_order() {
+        let attdef_list = attdef_list_declaration();
+        let type_70 = type_70_declaration();
+
+        for stream in [
+            [attdef_list.as_slice(), type_70.as_slice()].concat(),
+            [type_70.as_slice(), attdef_list.as_slice()].concat(),
+        ] {
+            let first = inline_schema_declaration(&stream, 0, stream.len())
+                .expect("first declaration must be complete");
+            let second = inline_schema_declaration(&stream, first.end, stream.len())
+                .expect("second declaration must be complete");
+            assert_eq!(second.end, stream.len());
+            assert!(
+                matches!(first.fields, InlineSchemaFields::AttdefList { .. })
+                    || matches!(second.fields, InlineSchemaFields::AttdefList { .. })
+            );
+            assert!(
+                matches!(first.fields, InlineSchemaFields::Type70 { .. })
+                    || matches!(second.fields, InlineSchemaFields::Type70 { .. })
+            );
+        }
+    }
+
+    #[test]
+    fn truncated_inline_schema_declaration_is_not_admitted() {
+        for mut stream in [attdef_list_declaration(), type_70_declaration()] {
+            stream.pop();
+            assert!(walk(&stream).inline_schema_declarations.is_empty());
+        }
+    }
 }

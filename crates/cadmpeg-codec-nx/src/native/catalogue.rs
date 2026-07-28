@@ -505,7 +505,7 @@ impl StreamNoted for ParasolidDeltasReferenceMarkerPacket {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasRegionSchemaDeclaration {
+impl StreamNoted for ParasolidDeltasInlineSchemaDeclaration {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -1074,26 +1074,26 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "parasolid_deltas_region_schema_declarations",
-        tag: Some("DELTAS_REGION_SCHEMA"),
+        arena: "parasolid_deltas_inline_schema_declarations",
+        tag: Some("DELTAS_INLINE_SCHEMA"),
         exactness: Exactness::ByteExact,
         note: Some(|m, r, a| {
             note_per_stream(
-                &m.parasolid.parasolid_deltas_region_schema_declarations,
+                &m.parasolid.parasolid_deltas_inline_schema_declarations,
                 r,
                 a,
             );
         }),
         emit: |m, r, ns| {
             emit_arena(
-                &m.parasolid.parasolid_deltas_region_schema_declarations,
+                &m.parasolid.parasolid_deltas_inline_schema_declarations,
                 r,
                 ns,
             )
         },
         len: |m| {
             m.parasolid
-                .parasolid_deltas_region_schema_declarations
+                .parasolid_deltas_inline_schema_declarations
                 .len()
         },
         counts_toward_emptiness: true,
