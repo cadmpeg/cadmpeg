@@ -1405,9 +1405,15 @@ fn inline_schema_declaration(
         let (xmt, consumed) = read_xmt(stream, at)?;
         (xmt == 2).then_some(())?;
         at = at.checked_add(consumed)?;
-        (stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?)
-            == Some(TYPE_101_SCHEMA_STATE_PREFIX))
-        .then_some(())?;
+        let prefix = stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?)?;
+        let prefix_state = [prefix[7], prefix[10], prefix[30]];
+        matches!(prefix_state, [3, 4, 1] | [1, 1, 0]).then_some(())?;
+        prefix
+            .iter()
+            .zip(TYPE_101_SCHEMA_STATE_PREFIX)
+            .enumerate()
+            .all(|(index, (actual, expected))| matches!(index, 7 | 10 | 30) || actual == expected)
+            .then_some(())?;
         at = at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?;
         (be::u16_at(stream, at) == Some(4)).then_some(())?;
         at = at.checked_add(2)?;
@@ -1430,7 +1436,11 @@ fn inline_schema_declaration(
             *state_word = be::u32_at(stream, at)?;
             at = at.checked_add(4)?;
         }
-        (state_words[0] == 19 && state_words[1] == 9).then_some(())?;
+        matches!(
+            (prefix_state, state_words[0], state_words[1]),
+            ([3, 4, 1], 19, 9) | ([1, 1, 0], 0, 0)
+        )
+        .then_some(())?;
         let terminal = stream.get(at..at.checked_add(5)?)?;
         let terminal_value = terminal
             .iter()
@@ -2966,6 +2976,35 @@ mod inline_schema_tests {
             }]
         );
         assert_eq!(census.bytes_decoded, bytes.len());
+
+        let mut alternate = TYPE_101_SCHEMA_HEADER.to_vec();
+        push_xmt(&mut alternate, 2);
+        let mut prefix = TYPE_101_SCHEMA_STATE_PREFIX.to_vec();
+        prefix[7] = 1;
+        prefix[10] = 1;
+        prefix[30] = 0;
+        alternate.extend(prefix);
+        alternate.extend_from_slice(&4u16.to_be_bytes());
+        for reference in [7, 6, 8, 1, 1] {
+            push_xmt(&mut alternate, reference);
+        }
+        alternate.extend_from_slice(&0u16.to_be_bytes());
+        push_xmt(&mut alternate, 5);
+        for state_word in [0u32, 0, 9] {
+            alternate.extend_from_slice(&state_word.to_be_bytes());
+        }
+        alternate.extend_from_slice(&[0, 0, 0, 0, 3]);
+
+        let alternate_census = walk(&alternate);
+        assert!(matches!(
+            alternate_census.inline_schema_declarations[0].fields,
+            InlineSchemaFields::Type101 {
+                state_words: [0, 0, 9],
+                terminal_value: 3,
+                ..
+            }
+        ));
+        assert_eq!(alternate_census.bytes_decoded, alternate.len());
     }
 
     #[test]

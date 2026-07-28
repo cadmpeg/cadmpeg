@@ -568,11 +568,13 @@ The type-101 form has a 156-byte header beginning
 including `mesh`, `polyline`, `lattice`, `attdef_list`, `index_map_offset`,
 `index_map`, `schema_embedding_map`, and `mesh_offset_data`. Its bound state is
 `ref(2), prefix[62], count:u16 BE, ref[4], ref(1), zero:u16 BE, anchor_ref,
-state_word[3]:u32 BE, terminal_value:u40 BE`. `prefix` is
-`0001010001010003010004010001010001010001010001010001010001010100010100010100000000000000000000000000010100010100010100010001`,
-`count` is `4`, `anchor_ref` is non-null, and the first two state words are
-`19` and `9`. All references use compact or extended XMT encoding. The
-declaration ends after `terminal_value`.
+state_word[3]:u32 BE, terminal_value:u40 BE`. `prefix` is either
+`0001010001010003010004010001010001010001010001010001010001010100010100010100000000000000000000000000010100010100010100010001`
+or
+`0001010001010001010001010001010001010001010001010001010001010000010100010100000000000000000000000000010100010100010100010001`.
+The first prefix requires leading state words `19, 9`; the second requires
+`0, 0`. `count` is `4` and `anchor_ref` is non-null. All references use
+compact or extended XMT encoding. The declaration ends after `terminal_value`.
 
 The REGION form begins with
 `00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.
