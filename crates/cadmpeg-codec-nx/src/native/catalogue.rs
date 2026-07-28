@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative catalogue of the native record families.
 //!
-//! One [`CatalogueRow`] per model field (179 total). Each row names the `nx`
+//! One [`CatalogueRow`] per model field (184 total). Each row names the `nx`
 //! namespace arena the family serializes into, and — for families that also emit
 //! source annotations — the tag, exactness, and a `note` fn. Row order is the
 //! observable annotation-emission order for the note-bearing rows;
@@ -45,8 +45,8 @@ pub(crate) struct CatalogueRow {
     /// Record count for this family, feeding the catalogue-derived emptiness
     /// fold ([`NativeModel::is_empty`]) and inspect counts.
     pub(crate) len: fn(&NativeModel) -> usize,
-    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 133 of
-    /// the 179 families count; the 46 that do not are transcribed verbatim from
+    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 138 of
+    /// the 184 families count; the 46 that do not are transcribed verbatim from
     /// the legacy hand-written all-empty guard, which omitted them. The
     /// exclusions look like oversights (25 of the 26 `display_jt` families are
     /// excluded, for instance) but are frozen observable behavior: flipping any
@@ -57,10 +57,10 @@ pub(crate) struct CatalogueRow {
 /// Index one past the last group-A note row. [`super::attach`] emits notes for
 /// `CATALOGUE[..NOTE_GROUP_A_END]`, then the interleaved semantic islands, then
 /// the group-B notes in `CATALOGUE[NOTE_GROUP_A_END..NOTE_GROUP_B_END]`.
-pub(crate) const NOTE_GROUP_A_END: usize = 80;
+pub(crate) const NOTE_GROUP_A_END: usize = 82;
 /// Index one past the last group-B note row; rows beyond it are arena-only or
 /// island-noted (`part_attributes`, `configurations`).
-pub(crate) const NOTE_GROUP_B_END: usize = 83;
+pub(crate) const NOTE_GROUP_B_END: usize = 85;
 
 /// Serialize a record family into its arena when non-empty. The single shape
 /// every `emit` row shares; each row supplies its family slice and arena name.
@@ -458,6 +458,21 @@ impl StreamNoted for ParasolidSupportUvRecord {
     }
 }
 impl StreamNoted for ParasolidChartRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidDeltasRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidDeltasTombstone {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidDeltasBodyRevision {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -939,6 +954,35 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.segments.segment_body_lineage_statuses, r, a)),
         emit: |m, r, ns| emit_arena(&m.segments.segment_body_lineage_statuses, r, ns),
         len: |m| m.segments.segment_body_lineage_statuses.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_deltas_records",
+        tag: Some("DELTAS_RECORD"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_per_stream(&m.parasolid.parasolid_deltas_records, r, a)),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_records, r, ns),
+        len: |m| m.parasolid.parasolid_deltas_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_deltas_tombstones",
+        tag: Some("DELTAS_TOMBSTONE"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_per_stream(&m.parasolid.parasolid_deltas_tombstones, r, a)),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_tombstones, r, ns),
+        len: |m| m.parasolid.parasolid_deltas_tombstones.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_deltas_body_revisions",
+        tag: Some("DELTAS_BODY_REVISION"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_deltas_body_revisions, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_body_revisions, r, ns),
+        len: |m| m.parasolid.parasolid_deltas_body_revisions.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

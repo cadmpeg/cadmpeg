@@ -6,6 +6,144 @@ use super::*;
 
 use super::substrate::StreamView;
 
+/// One completely bounded record in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidDeltasRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stable Parasolid record-family name.
+    pub family: String,
+    /// Numeric Parasolid node type.
+    pub kind: u16,
+    /// Stream-local XMT identity.
+    pub xmt: u32,
+    /// Kernel node identity when serialized by this family.
+    pub node_id: Option<u32>,
+    /// Ordered decoded XMT references.
+    pub references: Vec<u32>,
+    /// Model-space point in Parasolid metres when serialized by this family.
+    pub position: Option<[f64; 3]>,
+    /// Exact serialized record length.
+    pub byte_len: u64,
+    /// Record tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// One compact deletion in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTombstone {
+    /// Globally unique event identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stable Parasolid record-family name.
+    pub family: String,
+    /// Numeric Parasolid node type.
+    pub kind: u16,
+    /// Stream-local deleted XMT identity.
+    pub xmt: u32,
+    /// Exact compact tombstone length.
+    pub byte_len: u64,
+    /// Record tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Validated BODY revision prefix in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasBodyRevision {
+    /// Globally unique revision identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Monotonic kernel revision identity.
+    pub node_id: u32,
+    /// Eight ordered BODY references.
+    pub references: [u32; 8],
+    /// Exact validated prefix length.
+    pub byte_len: u64,
+    /// BODY tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+pub(crate) struct ParasolidDeltasEvents {
+    pub(crate) records: Vec<ParasolidDeltasRecord>,
+    pub(crate) tombstones: Vec<ParasolidDeltasTombstone>,
+    pub(crate) body_revisions: Vec<ParasolidDeltasBodyRevision>,
+}
+
+/// Retain every completely bounded event in every Parasolid deltas stream.
+pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
+    let mut events = ParasolidDeltasEvents {
+        records: Vec::new(),
+        tombstones: Vec::new(),
+        body_revisions: Vec::new(),
+    };
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if stream.kind != crate::parasolid::StreamKind::Deltas {
+            continue;
+        }
+        let census = crate::deltas::walk(&stream.inflated);
+        for record in census.records {
+            let family = crate::deltas::family_name(record.kind)
+                .expect("the deltas walker admits only named record families");
+            events.records.push(ParasolidDeltasRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:deltas-record#{}-{}",
+                    record.offset, record.xmt
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                family: family.to_string(),
+                kind: record.kind,
+                xmt: record.xmt,
+                node_id: record.node_id,
+                references: record.references,
+                position: record.position,
+                byte_len: (record.end - record.offset) as u64,
+                inflated_offset: record.offset as u64,
+            });
+        }
+        for tombstone in census.tombstones {
+            let family = crate::deltas::family_name(tombstone.kind)
+                .expect("the deltas walker admits only named tombstone families");
+            events.tombstones.push(ParasolidDeltasTombstone {
+                id: format!(
+                    "nx:s{stream_ordinal}:deltas-tombstone#{}-{}",
+                    tombstone.offset, tombstone.xmt
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                family: family.to_string(),
+                kind: tombstone.kind,
+                xmt: tombstone.xmt,
+                byte_len: 6,
+                inflated_offset: tombstone.offset as u64,
+            });
+        }
+        for revision in census.body_revisions {
+            events.body_revisions.push(ParasolidDeltasBodyRevision {
+                id: format!(
+                    "nx:s{stream_ordinal}:deltas-body-revision#{}-{}",
+                    revision.offset, revision.node_id
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                node_id: revision.node_id,
+                references: revision.references,
+                byte_len: (revision.prefix_end - revision.offset) as u64,
+                inflated_offset: revision.offset as u64,
+            });
+        }
+    }
+    events.records.sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .tombstones
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .body_revisions
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+}
+
 /// Shared skeleton for Parasolid record families read from the cached per-stream
 /// record view. It owns the stream loop, the `nx:s{ordinal}:{ID_STEM}#{xmt}`
 /// identity, and the sort by identity; each family supplies only its cached row
@@ -1262,6 +1400,55 @@ mod tests {
 
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
+
+    use crate::parasolid::Stream;
+
+    #[test]
+    fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
+        let mut bytes = vec![0, 12, 0, 3];
+        bytes.extend_from_slice(&9u32.to_be_bytes());
+        for reference in [2u16, 3, 4, 5, 6, 7, 8, 9] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+            bytes.push(1);
+        }
+        let type_45_offset = bytes.len();
+        bytes.extend_from_slice(&45u16.to_be_bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&1.25f64.to_be_bytes());
+        bytes.extend_from_slice(&2.5f64.to_be_bytes());
+        let tombstone_offset = bytes.len();
+        bytes.extend_from_slice(&[0, 29, 0, 11, 0, 1]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes,
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.body_revisions.len(), 1);
+        assert_eq!(events.body_revisions[0].node_id, 9);
+        assert_eq!(
+            events.body_revisions[0].references,
+            [2, 3, 4, 5, 6, 7, 8, 9]
+        );
+        assert_eq!(events.records.len(), 1);
+        assert_eq!(events.records[0].family, "TYPE_45");
+        assert_eq!(events.records[0].xmt, 10);
+        assert_eq!(events.records[0].inflated_offset, type_45_offset as u64);
+        assert_eq!(events.records[0].byte_len, 24);
+        assert_eq!(events.tombstones.len(), 1);
+        assert_eq!(events.tombstones[0].family, "POINT");
+        assert_eq!(events.tombstones[0].xmt, 11);
+        assert_eq!(events.tombstones[0].byte_len, 6);
+        assert_eq!(
+            events.tombstones[0].inflated_offset,
+            tombstone_offset as u64
+        );
+    }
 
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
     use cadmpeg_ir::geometry::{

@@ -10665,6 +10665,9 @@ mod golden {
         "parasolid_blend_bound_records",
         "parasolid_blend_surface_records",
         "parasolid_chart_records",
+        "parasolid_deltas_body_revisions",
+        "parasolid_deltas_records",
+        "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",
         "parasolid_entity_51_records",
         "parasolid_entity_51_string_uses",
@@ -11396,9 +11399,17 @@ mod golden {
     /// arenas, all of them catalogue-driven, so no non-catalogued arena exists.
     #[test]
     fn catalogue_arenas_match_known_arenas() {
-        use crate::native::catalogue::CATALOGUE;
+        use crate::native::catalogue::{CATALOGUE, NOTE_GROUP_A_END, NOTE_GROUP_B_END};
 
-        assert_eq!(CATALOGUE.len(), 181, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 184, "one catalogue row per model field");
+        assert_eq!(
+            CATALOGUE[NOTE_GROUP_A_END].arena, "feature_parameter_uses",
+            "group A ends immediately before semantic-island parameter notes"
+        );
+        assert_eq!(
+            CATALOGUE[NOTE_GROUP_B_END].arena, "external_reference_records",
+            "group B ends immediately before island-noted or arena-only rows"
+        );
 
         let mut catalogue_arenas = BTreeSet::new();
         for row in CATALOGUE {

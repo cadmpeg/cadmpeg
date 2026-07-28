@@ -46,6 +46,9 @@ pub(crate) struct DisplayJtRecords {
 /// Records extracted from the `parasolid` domain.
 #[allow(clippy::struct_field_names)]
 pub(crate) struct ParasolidRecords {
+    pub(crate) parasolid_deltas_records: Vec<ParasolidDeltasRecord>,
+    pub(crate) parasolid_deltas_tombstones: Vec<ParasolidDeltasTombstone>,
+    pub(crate) parasolid_deltas_body_revisions: Vec<ParasolidDeltasBodyRevision>,
     pub(crate) parasolid_blend_surface_records: Vec<ParasolidBlendSurfaceRecord>,
     pub(crate) parasolid_blend_bound_records: Vec<ParasolidBlendBoundRecord>,
     pub(crate) parasolid_offset_surface_records: Vec<ParasolidOffsetSurfaceRecord>,
@@ -246,6 +249,7 @@ impl NativeModel {
         let segment_om_links = segment_om_links(container);
         let segment_stream_links = segment_stream_links(container, streams);
         let segment_body_bindings = segment_body_bindings(container, streams);
+        let deltas_events = parasolid_deltas_events(streams);
         let parasolid_blend_surface_records = parasolid_blend_surface_records(parsed);
         let parasolid_blend_bound_records = parasolid_blend_bound_records(streams);
         let parasolid_offset_surface_records = parasolid_offset_surface_records(parsed);
@@ -708,6 +712,9 @@ impl NativeModel {
                 display_jt_tri_strip_shape_nodes,
             },
             parasolid: ParasolidRecords {
+                parasolid_deltas_records: deltas_events.records,
+                parasolid_deltas_tombstones: deltas_events.tombstones,
+                parasolid_deltas_body_revisions: deltas_events.body_revisions,
                 parasolid_blend_surface_records,
                 parasolid_blend_bound_records,
                 parasolid_offset_surface_records,

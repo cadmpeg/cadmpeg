@@ -1298,7 +1298,7 @@ fn is_next_kind(kind: u16) -> bool {
     family_name(kind).is_some() || matches!(kind, 70 | 79 | 80)
 }
 
-fn family_name(kind: u16) -> Option<&'static str> {
+pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
     Some(match kind {
         12 => "BODY",
         13 => "SHELL",

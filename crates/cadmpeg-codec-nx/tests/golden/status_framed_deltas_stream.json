@@ -46,13 +46,50 @@
       "native": {
         "nx": {
           "arenas": {
+            "parasolid_deltas_records": [
+              {
+                "byte_len": 50,
+                "family": "FACE",
+                "id": "nx:s0:deltas-record#67-100",
+                "inflated_offset": 67,
+                "kind": 14,
+                "node_id": 7,
+                "position": null,
+                "references": [
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  1
+                ],
+                "stream_ordinal": 0,
+                "xmt": 100
+              }
+            ],
+            "parasolid_deltas_tombstones": [
+              {
+                "byte_len": 6,
+                "family": "EDGE",
+                "id": "nx:s0:deltas-tombstone#117-48303",
+                "inflated_offset": 117,
+                "kind": 16,
+                "stream_ordinal": 0,
+                "xmt": 48303
+              }
+            ],
             "unknowns": [
               {
                 "id": "nx:container:parasolid#0"
               }
             ]
           },
-          "version": 1
+          "version": 155
         }
       },
       "source": {
@@ -113,10 +150,21 @@
             "offset": 76,
             "stream": 0,
             "tag": "deltas"
+          },
+          "nx:s0:deltas-record#67-100": {
+            "offset": 67,
+            "stream": 1,
+            "tag": "DELTAS_RECORD"
+          },
+          "nx:s0:deltas-tombstone#117-48303": {
+            "offset": 117,
+            "stream": 1,
+            "tag": "DELTAS_TOMBSTONE"
           }
         },
         "streams": [
-          "nx:container"
+          "nx:container",
+          "nx:s0"
         ]
       },
       "retained_records": [

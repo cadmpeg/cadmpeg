@@ -6786,10 +6786,10 @@ fn build_geometry_report(
                  each key. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
                  ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
-                 attribute extraction. Complete INTERSECTION, CHART, TERM_USE, BLEND_BOUND, \
-                 SUPPORT_UV, INTERSECTION_DATA, TYPE_45, TYPE_70, TYPE_91, and TYPE_141 records were retained \
-                 in the semantic lane together with complete NURBS descriptor, payload, \
-                 multiplicity, and knot records. Every \
+                 attribute extraction. Every completely bounded full record, compact tombstone, \
+                 and BODY revision prefix was retained as an individually identified native event \
+                 with its source bounds and decoded identities. Semantic intersection and NURBS \
+                 records were retained in the semantic lane. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
                     scan.count(StreamKind::Deltas)
                 )
