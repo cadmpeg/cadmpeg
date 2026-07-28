@@ -2546,6 +2546,12 @@ pub struct CatiaLegacyRelationParameter {
 pub struct CatiaLegacyRelation {
     /// Stored owner identity.
     pub entity_id: u32,
+    /// Selector carried by the expression field's `body` role.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_selector: Option<u32>,
+    /// Selector carried by the type-signature field's `param` role.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_selector: Option<u32>,
     /// Parameter identity selected by exact self-`body` and target-`param` roles.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_entity_id: Option<u32>,
@@ -3031,6 +3037,8 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         };
                         CatiaLegacyRelation {
                             entity_id: relation.entity_id,
+                            body_selector: relation.body_selector,
+                            parameter_selector: relation.parameter_selector,
                             parameter_entity_id: relation.parameter_entity_id,
                             expression_offset: relation.expression_offset as u64,
                             expression: relation.expression,
@@ -3137,7 +3145,19 @@ fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelat
                     .any(|identity| identity.entity_id == parameter.selector))
             .then_some(parameter.selector)
         });
+    let body_selector = expression_field
+        .role
+        .as_ref()
+        .filter(|role| role.name == "body")
+        .map(|role| role.selector);
+    let parameter_selector = signature_field
+        .role
+        .as_ref()
+        .filter(|role| role.name == "param")
+        .map(|role| role.selector);
     relation.expression_offset < relation.signature_offset
+        && relation.body_selector == body_selector
+        && relation.parameter_selector == parameter_selector
         && relation.parameter_entity_id == parameter_entity_id
         && (relation.result_type == "VoidType") == relation.output.is_some()
         && parsed.result_type == relation.result_type

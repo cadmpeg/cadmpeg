@@ -67,6 +67,10 @@ pub struct LegacyRelationSignature {
 pub struct LegacyRelation {
     /// Stored owner identity.
     pub entity_id: u32,
+    /// Selector carried by the expression field's `body` role.
+    pub body_selector: Option<u32>,
+    /// Selector carried by the type-signature field's `param` role.
+    pub parameter_selector: Option<u32>,
     /// Parameter identity selected by exact self-`body` and target-`param` roles.
     pub parameter_entity_id: Option<u32>,
     /// Expression-field opener offset.
@@ -355,11 +359,16 @@ fn parse_relations(
             .map_or(fields.len(), |relative| start + relative);
         if let [expression, type_signature] = &fields[start..end] {
             if let Some(signature) = parse_relation_signature(&type_signature.value) {
+                let body_selector = relation_role_selector(expression, "body");
+                let parameter_selector = relation_role_selector(type_signature, "param");
                 relations.push(LegacyRelation {
                     entity_id,
+                    body_selector,
+                    parameter_selector,
                     parameter_entity_id: relation_parameter_entity(
-                        expression,
-                        type_signature,
+                        entity_id,
+                        body_selector,
+                        parameter_selector,
                         identities,
                     ),
                     expression_offset: expression.offset,
@@ -375,20 +384,26 @@ fn parse_relations(
     relations
 }
 
+fn relation_role_selector(field: &LegacyTextField, role_name: &str) -> Option<u32> {
+    field
+        .role
+        .as_ref()
+        .filter(|role| role.name == role_name)
+        .map(|role| role.selector)
+}
+
 fn relation_parameter_entity(
-    expression: &LegacyTextField,
-    type_signature: &LegacyTextField,
+    entity_id: u32,
+    body_selector: Option<u32>,
+    parameter_selector: Option<u32>,
     identities: &[LegacyEntityIdentity],
 ) -> Option<u32> {
-    let owner = expression.role.as_ref()?;
-    let parameter = type_signature.role.as_ref()?;
-    (owner.name == "body"
-        && owner.selector == expression.entity_id
-        && parameter.name == "param"
+    let parameter_selector = parameter_selector?;
+    (body_selector == Some(entity_id)
         && identities
             .iter()
-            .any(|identity| identity.entity_id == parameter.selector))
-    .then_some(parameter.selector)
+            .any(|identity| identity.entity_id == parameter_selector))
+    .then_some(parameter_selector)
 }
 
 /// Parse a complete legacy relation type signature.
@@ -680,6 +695,8 @@ mod tests {
 
         let relation = &parse_runs(&bytes)[0].relations[0];
         assert_eq!(relation.expression, "#2_ = #1_ + 2");
+        assert_eq!(relation.body_selector, None);
+        assert_eq!(relation.parameter_selector, None);
         assert_eq!(relation.parameter_entity_id, None);
         assert_eq!(
             relation
@@ -714,10 +731,10 @@ mod tests {
         identity(&mut bytes, 4);
         bytes.extend_from_slice(CATALOG_OPEN);
 
-        assert_eq!(
-            parse_runs(&bytes)[0].relations[0].parameter_entity_id,
-            Some(4)
-        );
+        let relation = &parse_runs(&bytes)[0].relations[0];
+        assert_eq!(relation.body_selector, Some(1));
+        assert_eq!(relation.parameter_selector, Some(4));
+        assert_eq!(relation.parameter_entity_id, Some(4));
     }
 
     #[test]
