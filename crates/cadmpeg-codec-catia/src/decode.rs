@@ -627,6 +627,7 @@ fn transfer_formula_parameters(
         let mut transferred = Vec::with_capacity(formula.parameter_dependencies.len() + 1);
         let mut dependencies = Vec::with_capacity(formula.parameter_dependencies.len());
         let mut used_inputs = BTreeSet::new();
+        let mut expression_bindings = BTreeMap::new();
         let mut all_inputs_complete = !formula.parameter_dependencies.is_empty();
         for dependency in &formula.parameter_dependencies {
             let Some(input) = signature.inputs.iter().find(|input| {
@@ -653,6 +654,10 @@ fn transfer_formula_parameters(
                 continue;
             };
             used_inputs.insert(input.parameter.as_str());
+            expression_bindings.insert(
+                input.parameter.as_str(),
+                EvaluatedFormulaScalar::from_parameter_value(&value),
+            );
             let id = neutral_parameter_id(&entity.id);
             if dependencies.contains(&id) {
                 continue;
@@ -685,10 +690,16 @@ fn transfer_formula_parameters(
         let formula_complete = all_inputs_complete
             && used_inputs.len() == signature.inputs.len()
             && dependencies.len() == signature.inputs.len();
+        let evaluated_expression = formula_complete
+            .then(|| {
+                evaluate_formula_expression(&expression.expression.value, &expression_bindings)
+            })
+            .flatten()
+            .filter(|value| value.satisfies_source_type(&signature.result_type));
         if let Some(output) = formula
             .parameter
             .as_deref()
-            .filter(|_| formula_complete)
+            .filter(|_| evaluated_expression.is_some())
             .and_then(|id| entities.get(id))
         {
             if let Some(output_value) = &output.parameter_value {
@@ -697,32 +708,37 @@ fn transfer_formula_parameters(
                     if let Some(value) =
                         typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
                     {
-                        programs.push(FormulaProgramCandidate {
-                            formula_entity: formula_entity.id.clone(),
-                            expression_entity: expression_entity.id.clone(),
-                            output: output_id.clone(),
-                            inputs: dependencies.clone(),
-                        });
-                        transferred.push(FormulaParameterCandidate {
-                            parameter: DesignParameter {
-                                id: output_id,
-                                owner: None,
-                                ordinal: 0,
-                                name: output_value.name.value.clone(),
-                                expression: expression.expression.value.clone(),
-                                display: None,
-                                value: match value {
-                                    TypedParameterEvaluation::Unset => None,
-                                    TypedParameterEvaluation::Value(value) => Some(value),
+                        if evaluated_expression
+                            .as_ref()
+                            .is_some_and(|evaluated| evaluated.agrees_with(&value))
+                        {
+                            programs.push(FormulaProgramCandidate {
+                                formula_entity: formula_entity.id.clone(),
+                                expression_entity: expression_entity.id.clone(),
+                                output: output_id.clone(),
+                                inputs: dependencies.clone(),
+                            });
+                            transferred.push(FormulaParameterCandidate {
+                                parameter: DesignParameter {
+                                    id: output_id,
+                                    owner: None,
+                                    ordinal: 0,
+                                    name: output_value.name.value.clone(),
+                                    expression: expression.expression.value.clone(),
+                                    display: None,
+                                    value: match value {
+                                        TypedParameterEvaluation::Unset => None,
+                                        TypedParameterEvaluation::Value(value) => Some(value),
+                                    },
+                                    dependencies,
+                                    properties: BTreeMap::new(),
+                                    pmi: None,
+                                    native_ref: Some(output.id.clone()),
                                 },
-                                dependencies,
-                                properties: BTreeMap::new(),
-                                pmi: None,
-                                native_ref: Some(output.id.clone()),
-                            },
-                            formula_output: true,
-                            source_order: output.byte_offset,
-                        });
+                                formula_output: true,
+                                source_order: output.byte_offset,
+                            });
+                        }
                     }
                 }
             }
@@ -901,6 +917,279 @@ fn formula_parameter_matches_input(formula: &DesignParameter, input: &DesignPara
 enum TypedParameterEvaluation {
     Unset,
     Value(ParameterValue),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FormulaDimension {
+    Scalar,
+    Length,
+    Angle,
+}
+
+#[derive(Clone, Copy)]
+struct EvaluatedFormulaScalar {
+    value: f64,
+    dimension: FormulaDimension,
+}
+
+impl EvaluatedFormulaScalar {
+    fn from_parameter_value(value: &ParameterValue) -> Self {
+        match value {
+            ParameterValue::Length(Length(value)) => Self {
+                value: *value,
+                dimension: FormulaDimension::Length,
+            },
+            ParameterValue::Angle(Angle(value)) => Self {
+                value: *value,
+                dimension: FormulaDimension::Angle,
+            },
+            ParameterValue::Real(value) => Self {
+                value: *value,
+                dimension: FormulaDimension::Scalar,
+            },
+            ParameterValue::Integer(value) => Self {
+                value: *value as f64,
+                dimension: FormulaDimension::Scalar,
+            },
+            ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
+        }
+    }
+
+    fn satisfies_source_type(self, source_type: &str) -> bool {
+        match source_type {
+            "LENGTH" => self.dimension == FormulaDimension::Length,
+            "ANGLE" => self.dimension == FormulaDimension::Angle,
+            "Real" | "R" => self.dimension == FormulaDimension::Scalar,
+            "Integer" | "I" => {
+                self.dimension == FormulaDimension::Scalar
+                    && self.value.fract() == 0.0
+                    && self.value >= i64::MIN as f64
+                    && self.value < -(i64::MIN as f64)
+            }
+            _ => false,
+        }
+    }
+
+    fn agrees_with(self, evaluation: &TypedParameterEvaluation) -> bool {
+        match evaluation {
+            TypedParameterEvaluation::Unset => true,
+            TypedParameterEvaluation::Value(value) => {
+                let stored = Self::from_parameter_value(value);
+                self.dimension == stored.dimension && self.value == stored.value
+            }
+        }
+    }
+}
+
+struct FormulaExpressionParser<'a, 'b> {
+    source: &'a str,
+    at: usize,
+    bindings: &'b BTreeMap<&'a str, EvaluatedFormulaScalar>,
+}
+
+impl FormulaExpressionParser<'_, '_> {
+    fn parse(mut self) -> Option<EvaluatedFormulaScalar> {
+        let value = self.sum()?;
+        self.skip_whitespace();
+        (self.at == self.source.len() && value.value.is_finite()).then_some(value)
+    }
+
+    fn sum(&mut self) -> Option<EvaluatedFormulaScalar> {
+        let mut value = self.product()?;
+        loop {
+            self.skip_whitespace();
+            let Some(operator) = self.peek() else {
+                return Some(value);
+            };
+            if !matches!(operator, b'+' | b'-') {
+                return Some(value);
+            }
+            self.at += 1;
+            let right = self.product()?;
+            if value.dimension != right.dimension {
+                return None;
+            }
+            value.value = if operator == b'+' {
+                value.value + right.value
+            } else {
+                value.value - right.value
+            };
+            if !value.value.is_finite() {
+                return None;
+            }
+        }
+    }
+
+    fn product(&mut self) -> Option<EvaluatedFormulaScalar> {
+        let mut value = self.unary()?;
+        loop {
+            self.skip_whitespace();
+            let Some(operator) = self.peek() else {
+                return Some(value);
+            };
+            if !matches!(operator, b'*' | b'/') {
+                return Some(value);
+            }
+            self.at += 1;
+            let right = self.unary()?;
+            value = if operator == b'*' {
+                match (value.dimension, right.dimension) {
+                    (FormulaDimension::Scalar, dimension) => EvaluatedFormulaScalar {
+                        value: value.value * right.value,
+                        dimension,
+                    },
+                    (dimension, FormulaDimension::Scalar) => EvaluatedFormulaScalar {
+                        value: value.value * right.value,
+                        dimension,
+                    },
+                    _ => return None,
+                }
+            } else {
+                if right.value == 0.0 {
+                    return None;
+                }
+                match (value.dimension, right.dimension) {
+                    (dimension, FormulaDimension::Scalar) => EvaluatedFormulaScalar {
+                        value: value.value / right.value,
+                        dimension,
+                    },
+                    (left_dimension, right_dimension) if left_dimension == right_dimension => {
+                        EvaluatedFormulaScalar {
+                            value: value.value / right.value,
+                            dimension: FormulaDimension::Scalar,
+                        }
+                    }
+                    _ => return None,
+                }
+            };
+            if !value.value.is_finite() {
+                return None;
+            }
+        }
+    }
+
+    fn unary(&mut self) -> Option<EvaluatedFormulaScalar> {
+        self.skip_whitespace();
+        match self.peek()? {
+            b'+' => {
+                self.at += 1;
+                self.unary()
+            }
+            b'-' => {
+                self.at += 1;
+                let mut value = self.unary()?;
+                value.value = -value.value;
+                Some(value)
+            }
+            _ => self.primary(),
+        }
+    }
+
+    fn primary(&mut self) -> Option<EvaluatedFormulaScalar> {
+        self.skip_whitespace();
+        if self.peek()? == b'(' {
+            self.at += 1;
+            let value = self.sum()?;
+            self.skip_whitespace();
+            (self.peek()? == b')').then_some(())?;
+            self.at += 1;
+            return Some(value);
+        }
+        if self.peek()? == b'#' {
+            return self.symbol();
+        }
+        self.literal()
+    }
+
+    fn symbol(&mut self) -> Option<EvaluatedFormulaScalar> {
+        let start = self.at;
+        self.at += 1;
+        let digits = self.at;
+        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+            self.at += 1;
+        }
+        (self.at > digits && self.peek()? == b'_').then_some(())?;
+        self.at += 1;
+        let name_end = self.at;
+        while self.peek().is_some_and(|byte| byte.is_ascii_whitespace()) {
+            self.at += 1;
+        }
+        (self.peek()? == b'/').then_some(())?;
+        self.at += 1;
+        let ordinal = self.at;
+        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+            self.at += 1;
+        }
+        (self.at > ordinal).then_some(())?;
+        self.bindings.get(&self.source[start..name_end]).copied()
+    }
+
+    fn literal(&mut self) -> Option<EvaluatedFormulaScalar> {
+        let start = self.at;
+        let mut saw_digit = false;
+        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+            saw_digit = true;
+            self.at += 1;
+        }
+        if self.peek() == Some(b'.') {
+            self.at += 1;
+            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+                saw_digit = true;
+                self.at += 1;
+            }
+        }
+        if matches!(self.peek(), Some(b'e' | b'E')) {
+            self.at += 1;
+            if matches!(self.peek(), Some(b'+' | b'-')) {
+                self.at += 1;
+            }
+            let exponent = self.at;
+            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+                self.at += 1;
+            }
+            (self.at > exponent).then_some(())?;
+        }
+        saw_digit.then_some(())?;
+        let value = self.source[start..self.at].parse::<f64>().ok()?;
+        let dimension = if self.remaining().starts_with("mm") {
+            self.at += 2;
+            FormulaDimension::Length
+        } else if self.remaining().starts_with("rad") {
+            self.at += 3;
+            FormulaDimension::Angle
+        } else {
+            FormulaDimension::Scalar
+        };
+        value
+            .is_finite()
+            .then_some(EvaluatedFormulaScalar { value, dimension })
+    }
+
+    fn skip_whitespace(&mut self) {
+        while self.peek().is_some_and(|byte| byte.is_ascii_whitespace()) {
+            self.at += 1;
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.source.as_bytes().get(self.at).copied()
+    }
+
+    fn remaining(&self) -> &str {
+        &self.source[self.at..]
+    }
+}
+
+fn evaluate_formula_expression<'a>(
+    source: &'a str,
+    bindings: &BTreeMap<&'a str, EvaluatedFormulaScalar>,
+) -> Option<EvaluatedFormulaScalar> {
+    FormulaExpressionParser {
+        source,
+        at: 0,
+        bindings,
+    }
+    .parse()
 }
 
 fn typed_parameter_evaluation(

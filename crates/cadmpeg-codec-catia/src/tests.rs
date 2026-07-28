@@ -2126,7 +2126,7 @@ fn standard_catpart_with_formula_chain(cyclic: bool) -> Vec<u8> {
         &expression_value([6, 7, 8, 9, 10, 11]),
     ));
     stream.extend(parameter(3, 12, 13, 1.0));
-    stream.extend(parameter(4, 14, 15, 2.0));
+    stream.extend(parameter(4, 14, 15, if cyclic { 3.0 } else { 2.0 }));
     stream.extend(entity_table_record_with_definition_and_value(
         5,
         &definition(4),
@@ -2148,7 +2148,7 @@ fn standard_catpart_with_formula_chain(cyclic: bool) -> Vec<u8> {
         empty_object(),
         empty_object(),
     ]));
-    let first_expression = if cyclic { "#3_ /4+1mm" } else { "#1_ /2+1mm" };
+    let first_expression = if cyclic { "#3_ /4" } else { "#1_ /2+1mm" };
     let first_placeholder = if cyclic { "#3_ " } else { "#1_ " };
     let first_signature = if cyclic {
         "(#3_ : #In LENGTH) : LENGTH"
@@ -2173,7 +2173,7 @@ fn standard_catpart_with_formula_chain(cyclic: bool) -> Vec<u8> {
         "Intermediate",
         "#2_ /3",
         "#2_ ",
-        "#2_ /3+1mm",
+        if cyclic { "#2_ /3" } else { "#2_ /3+1mm" },
         "(#2_ : #In LENGTH) : LENGTH",
         "Final",
         "#3_ /4",
@@ -7649,6 +7649,85 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
 }
 
 #[test]
+fn decode_keeps_a_mismatched_formula_result_unresolved() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Width", "#1_ /2", 35.0)],
+                "LENGTH",
+                Some(34.0),
+                "#1_ /2-2mm",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode formula with mismatched stored result");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Width");
+    assert!(input.dependencies.is_empty());
+    assert_eq!(
+        decoded.report.coverage["transferred_formula_design_record_count"],
+        1
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 3);
+}
+
+#[test]
+fn decode_evaluates_formula_precedence_and_parentheses() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
+                "LENGTH",
+                Some(30.0),
+                "(#1_ /2+3mm)*2",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode parenthesized formula");
+
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("validated formula parameters")
+    };
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(30.0)
+        ))
+    );
+}
+
+#[test]
+fn decode_rejects_dimensionally_invalid_formula_output() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
+                "LENGTH",
+                Some(12.0),
+                "#1_ /2+1rad",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensionally invalid formula");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Width");
+    assert!(input.dependencies.is_empty());
+}
+
+#[test]
 fn decode_transfers_typed_integer_to_angle_formula() {
     use cadmpeg_ir::features::{Angle, ParameterValue};
 
@@ -7659,9 +7738,9 @@ fn decode_transfers_typed_integer_to_angle_formula() {
                 false,
                 "Integer",
                 "ANGLE",
-                3.0,
+                2.0,
                 0.5,
-                "#1_ /2-2mm",
+                "#1_ /2*0.25rad",
             )),
             &DecodeOptions::default(),
         )
@@ -7670,8 +7749,8 @@ fn decode_transfers_typed_integer_to_angle_formula() {
         panic!("typed formula parameters")
     };
 
-    assert_eq!(input.expression, "3");
-    assert_eq!(input.value, Some(ParameterValue::Integer(3)));
+    assert_eq!(input.expression, "2");
+    assert_eq!(input.value, Some(ParameterValue::Integer(2)));
     assert_eq!(output.value, Some(ParameterValue::Angle(Angle(0.5))));
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
@@ -7686,13 +7765,7 @@ fn decode_transfers_dimensionless_real_formula() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_relation(
-                4,
-                false,
-                "Real",
-                "R",
-                2.5,
-                1.25,
-                "#1_ /2-2mm",
+                4, false, "Real", "R", 2.5, 1.25, "#1_ /2/2",
             )),
             &DecodeOptions::default(),
         )
@@ -7777,7 +7850,7 @@ fn decode_deduplicates_repeated_single_input_formula_symbols() {
 
 #[test]
 fn decode_transfers_ordered_multi_input_formula_dependencies() {
-    use cadmpeg_ir::features::{Angle, Length, ParameterValue};
+    use cadmpeg_ir::features::ParameterValue;
 
     let decoded = CatiaCodec
         .decode(
@@ -7785,28 +7858,28 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
                 5,
                 false,
                 &[
-                    ("#1_", "LENGTH", "Width", "#1_ /2", 12.0),
-                    ("#2_", "ANGLE", "Draft", "#2_ /3", 0.25),
+                    ("#1_", "Real", "Width", "#1_ /2", 12.0),
+                    ("#2_", "Integer", "Count", "#2_ /3", 3.0),
                 ],
                 "Real",
-                Some(3.0),
+                Some(15.0),
                 "#1_ /2+#2_ /3",
             )),
             &DecodeOptions::default(),
         )
         .expect("decode multi-input formula");
-    let [width, draft, output] = decoded.ir.model.parameters.as_slice() else {
+    let [width, count, output] = decoded.ir.model.parameters.as_slice() else {
         panic!("multi-input formula parameters")
     };
 
-    assert_eq!(width.value, Some(ParameterValue::Length(Length(12.0))));
-    assert_eq!([width.ordinal, draft.ordinal, output.ordinal], [0, 1, 2]);
-    assert_eq!(draft.value, Some(ParameterValue::Angle(Angle(0.25))));
+    assert_eq!(width.value, Some(ParameterValue::Real(12.0)));
+    assert_eq!([width.ordinal, count.ordinal, output.ordinal], [0, 1, 2]);
+    assert_eq!(count.value, Some(ParameterValue::Integer(3)));
     assert_eq!(
         output.dependencies,
-        [width.id.clone(), draft.id.clone()].as_slice()
+        [width.id.clone(), count.id.clone()].as_slice()
     );
-    assert_eq!(output.value, Some(ParameterValue::Real(3.0)));
+    assert_eq!(output.value, Some(ParameterValue::Real(15.0)));
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .is_empty());
