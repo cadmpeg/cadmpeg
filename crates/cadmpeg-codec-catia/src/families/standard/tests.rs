@@ -736,7 +736,41 @@ fn incidence_components_join_only_through_shared_face_vertices() {
     ];
     let edge_faces = [[0, 0], [0, 0], [0, 0], [0, 0]];
     assert_eq!(
-        crate::solve::incidence::incidence_choice_components(&choices, &edge_faces, None),
+        crate::solve::incidence::incidence_choice_components(&choices, &edge_faces, None, None),
+        vec![vec![0, 1], vec![2]]
+    );
+}
+
+#[test]
+fn incidence_components_include_overlapping_quotient_domains() {
+    let choices = vec![
+        vec![[0, 1], [0, 2]],
+        vec![[3, 4], [3, 5]],
+        vec![[6, 7], [6, 8]],
+    ];
+    let edge_faces = [[0, 0], [1, 1], [2, 2]];
+    let quotient = MeshQuotient {
+        union: UnionFind::new(6),
+        domains: [
+            HashSet::from([0, 1]),
+            HashSet::from([0, 2]),
+            HashSet::from([1, 3]),
+            HashSet::from([3, 4]),
+            HashSet::from([6, 7]),
+            HashSet::from([6, 8]),
+        ]
+        .map(Arc::new)
+        .to_vec(),
+        members: (0..6).map(|node| vec![node]).collect(),
+    };
+
+    assert_eq!(
+        crate::solve::incidence::incidence_choice_components(
+            &choices,
+            &edge_faces,
+            None,
+            Some(&quotient)
+        ),
         vec![vec![0, 1], vec![2]]
     );
 }
