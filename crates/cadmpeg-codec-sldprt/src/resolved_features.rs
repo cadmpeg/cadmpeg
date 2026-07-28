@@ -1516,7 +1516,7 @@ fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) ->
 fn extended_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(1)
+        || !matches!(marker_native_code(payload, offset), Some(1 | 2))
         || !marker_is_geometry_locus(payload, offset)
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
@@ -7588,6 +7588,12 @@ mod marker_tests {
         let entity = &sketch_input_entities(&payload, "lane")[0];
         assert_eq!(entity.kind, SketchInputKind::Point);
         assert_eq!(entity.coordinates_m, Some([-0.04, 0.0045]));
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        assert!(extended_geometry_locus_profile_vertex(&payload, 0));
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
         payload[37] = 0x05;
         assert!(extended_geometry_locus_profile_vertex(&payload, 0));
         payload[37] = 0x06;
@@ -7612,6 +7618,9 @@ mod marker_tests {
             SketchInputKind::Point
         );
         payload[128..132].copy_from_slice(&3u32.to_le_bytes());
+        assert!(!extended_geometry_locus_profile_vertex(&payload, 0));
+        payload[128..132].copy_from_slice(&2u32.to_le_bytes());
+        payload[17..21].copy_from_slice(&3u32.to_le_bytes());
         assert!(!extended_geometry_locus_profile_vertex(&payload, 0));
     }
 
