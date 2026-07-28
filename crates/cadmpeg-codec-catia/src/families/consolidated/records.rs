@@ -675,9 +675,7 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                 let pcurve = &block.pcurves[side];
                 let mut winners = Vec::new();
                 for cylinder in &standalone {
-                    if cylinder.geometry.is_some()
-                        && pcurve_endpoints_match_vertices(pcurve, cylinder, &points)
-                    {
+                    if pcurve_endpoints_match_vertices(pcurve, cylinder, &points) {
                         winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
                     }
                 }

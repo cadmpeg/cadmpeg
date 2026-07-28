@@ -532,12 +532,12 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     assert_eq!(cylinders[0].u_range, [0.0, 4.0 * std::f64::consts::PI]);
     assert_eq!(cylinders[0].v_range, [-4.0, 5.0]);
     match &cylinders[0].geometry {
-        Some(SurfaceGeometry::Cylinder {
+        SurfaceGeometry::Cylinder {
             origin,
             axis,
             radius,
             ..
-        }) => {
+        } => {
             assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
             assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
             assert_eq!(*radius, 2.0);
@@ -557,7 +557,10 @@ fn consolidated_cylinder_parser_reads_width2_frame() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b3_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].layout, 0x5a);
-    assert!(cylinders[0].geometry.is_some());
+    assert!(matches!(
+        cylinders[0].geometry,
+        SurfaceGeometry::Cylinder { .. }
+    ));
 }
 
 #[test]
@@ -583,7 +586,7 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
     assert_eq!(cylinders[0].layout, 0x52);
     assert!(matches!(
         cylinders[0].geometry,
-        Some(SurfaceGeometry::Cylinder { axis, .. }) if [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
+        SurfaceGeometry::Cylinder { axis, .. } if [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
     ));
 
     let mut malformed = b2_implicit_axis_cylinder_stream();
@@ -592,11 +595,19 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
 }
 
 #[test]
-fn b2_cylinder_parser_preserves_phase_tailed_layout_raw() {
+fn b2_cylinder_parser_resolves_phase_tailed_carrier_and_preserves_chart_phase() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_phase_tailed_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].layout, 0x62);
-    assert!(cylinders[0].geometry.is_none());
+    assert!(matches!(
+        cylinders[0].geometry,
+        SurfaceGeometry::Cylinder {
+            axis,
+            ref_direction,
+            ..
+        } if [axis.x, axis.y, axis.z] == [0.0, 1.0, 0.0]
+            && [ref_direction.x, ref_direction.y, ref_direction.z] == [0.0, 0.0, 1.0]
+    ));
     assert_eq!(cylinders[0].stored_vector, Some([0.0, 1.0]));
     assert_eq!(cylinders[0].phase, Some(0.75));
 

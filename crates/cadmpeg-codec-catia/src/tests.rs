@@ -4272,6 +4272,8 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
         phase_tailed.payload,
         crate::native::CatiaConsolidatedCylinderPayload::PhaseTailed {
             stored_vector: [0.0, 1.0],
+            axis: [0.0, 1.0, 0.0],
+            reference_direction: [0.0, 0.0, 1.0],
             phase: 0.75,
         }
     ));

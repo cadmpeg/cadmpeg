@@ -148,28 +148,21 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
     surfaces.extend(
         crate::families::b2::records::b2_cylinders(data)
             .into_iter()
-            .filter_map(|surface| {
-                surface.geometry.map(|geometry| FreeformSurfaceCarrier {
-                    pos: surface.pos,
-                    geometry,
-                    source_object: cgm_source_key("b2-03-28-frame", format!("{:010}", surface.pos)),
-                    source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
-                })
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: surface.geometry,
+                source_object: cgm_source_key("b2-03-28-frame", format!("{:010}", surface.pos)),
+                source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
             }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_embedded_cylinders(data)
             .into_iter()
-            .filter_map(|surface| {
-                surface
-                    .cylinder
-                    .geometry
-                    .map(|geometry| FreeformSurfaceCarrier {
-                        pos: surface.pos,
-                        geometry,
-                        source_object: cgm_source("surface", surface.object_id),
-                        source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
-                    })
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: surface.cylinder.geometry,
+                source_object: cgm_source("surface", surface.object_id),
+                source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
             }),
     );
     surfaces.extend(
@@ -638,9 +631,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     let Some(cylinder) = standalone.get(pos) else {
                         continue;
                     };
-                    let Some(carrier) = cylinder.geometry.clone() else {
-                        continue;
-                    };
+                    let carrier = cylinder.geometry.clone();
                     let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
                         continue;
                     };
@@ -660,9 +651,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     let Some(value) = embedded.get(pos) else {
                         continue;
                     };
-                    let Some(carrier) = value.cylinder.geometry.clone() else {
-                        continue;
-                    };
+                    let carrier = value.cylinder.geometry.clone();
                     let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
                         continue;
                     };
@@ -909,6 +898,26 @@ mod tests {
                     } if center == Point3::new(1.0, 2.0, 3.0)
                         && axis == Vector3::new(0.0, 0.0, 1.0)
                         && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                )
+        ));
+    }
+
+    #[test]
+    fn freeform_fallback_retains_phase_tailed_cylinder_carriers() {
+        let carriers = freeform_surface_carriers(&crate::tests::b2_phase_tailed_cylinder_stream());
+        assert!(matches!(
+            carriers.as_slice(),
+            [carrier]
+                if matches!(
+                    carrier.geometry,
+                    SurfaceGeometry::Cylinder {
+                        origin,
+                        axis,
+                        ref_direction,
+                        radius: 4.0,
+                    } if origin == Point3::new(0.0, 0.0, 0.0)
+                        && axis == Vector3::new(0.0, 1.0, 0.0)
+                        && ref_direction == Vector3::new(0.0, 0.0, 1.0)
                 )
         ));
     }

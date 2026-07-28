@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 167;
+pub const CATIA_NATIVE_VERSION: u32 = 168;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -219,10 +219,14 @@ pub enum CatiaConsolidatedCylinderPayload {
         /// Unit direction from which the circumferential parameter is measured.
         reference_direction: [f64; 3],
     },
-    /// Layout `0x62` values whose token-to-3D frame mapping is unresolved.
+    /// Complete layout-`0x62` frame and its independent chart phase.
     PhaseTailed {
         /// Stored unit vector in the token-defined carrier plane.
         stored_vector: [f64; 2],
+        /// Cylinder-axis unit direction.
+        axis: [f64; 3],
+        /// Unit direction from which the circumferential parameter is measured.
+        reference_direction: [f64; 3],
         /// Stored finite phase scalar.
         phase: f64,
     },
@@ -3413,23 +3417,36 @@ fn consolidated_cylinders(bytes: &[u8]) -> Vec<CatiaConsolidatedCylinder> {
         .into_iter()
         .enumerate()
         .map(|(index, cylinder)| {
-            let payload = match cylinder.geometry {
-                Some(cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+            let payload = if cylinder.layout == 0x62 {
+                let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                     axis,
                     ref_direction,
                     ..
-                }) => CatiaConsolidatedCylinderPayload::Resolved {
-                    frame_token: cylinder.frame_token,
-                    axis: [axis.x, axis.y, axis.z],
-                    reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                },
-                None => CatiaConsolidatedCylinderPayload::PhaseTailed {
+                } = cylinder.geometry
+                else {
+                    unreachable!("B2 cylinder parser produced a non-cylinder carrier")
+                };
+                CatiaConsolidatedCylinderPayload::PhaseTailed {
                     stored_vector: cylinder
                         .stored_vector
                         .expect("phase-tailed cylinder has its stored vector"),
+                    axis: [axis.x, axis.y, axis.z],
+                    reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
                     phase: cylinder.phase.expect("phase-tailed cylinder has its phase"),
-                },
-                Some(_) => unreachable!("B2 cylinder parser produced a non-cylinder carrier"),
+                }
+            } else {
+                match cylinder.geometry {
+                    cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                        axis,
+                        ref_direction,
+                        ..
+                    } => CatiaConsolidatedCylinderPayload::Resolved {
+                        frame_token: cylinder.frame_token,
+                        axis: [axis.x, axis.y, axis.z],
+                        reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+                    },
+                    _ => unreachable!("B2 cylinder parser produced a non-cylinder carrier"),
+                }
             };
             CatiaConsolidatedCylinder {
                 id: format!("catia:consolidated:cylinder#{index}"),
@@ -4323,6 +4340,8 @@ fn validate_consolidated_cylinders(
             }
             CatiaConsolidatedCylinderPayload::PhaseTailed {
                 stored_vector,
+                axis,
+                reference_direction,
                 phase,
             } => {
                 cylinder.layout == 0x62
@@ -4331,6 +4350,8 @@ fn validate_consolidated_cylinders(
                         .chain(std::iter::once(phase))
                         .all(|value| value.is_finite())
                     && (stored_vector[0].hypot(stored_vector[1]) - 1.0).abs() <= 1e-9
+                    && *axis == [0.0, 1.0, 0.0]
+                    && *reference_direction == [stored_vector[0], 0.0, stored_vector[1]]
                     && cylinder.u_range[1] - cylinder.u_range[0]
                         <= std::f64::consts::TAU * cylinder.radius + 1e-6
             }

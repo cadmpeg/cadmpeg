@@ -837,7 +837,7 @@ pub(crate) fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<P
         axis,
         ref_direction,
         radius,
-    } = cylinder.geometry.as_ref()?
+    } = &cylinder.geometry
     else {
         return None;
     };
@@ -901,8 +901,8 @@ pub struct B2Cylinder {
     pub origin: [f64; 3],
     /// Cylinder radius.
     pub radius: f64,
-    /// Decoded carrier; absent for the unresolved phase-tailed `0x62` frame.
-    pub geometry: Option<SurfaceGeometry>,
+    /// Decoded carrier.
+    pub geometry: SurfaceGeometry,
     /// Arc-length circumferential range.
     pub u_range: [f64; 2],
     /// Axial range.
@@ -1648,12 +1648,12 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 frame_token,
                 origin: origin_values,
                 radius,
-                geometry: Some(SurfaceGeometry::Cylinder {
+                geometry: SurfaceGeometry::Cylinder {
                     origin,
                     axis,
                     ref_direction,
                     radius,
-                }),
+                },
                 u_range,
                 v_range,
                 stored_vector: None,
@@ -1687,12 +1687,12 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 frame_token,
                 origin: origin_values,
                 radius,
-                geometry: Some(SurfaceGeometry::Cylinder {
+                geometry: SurfaceGeometry::Cylinder {
                     origin,
                     axis: Vector3::new(1.0, 0.0, 0.0),
                     ref_direction: Vector3::new(0.0, 1.0, 0.0),
                     radius,
-                }),
+                },
                 u_range,
                 v_range,
                 stored_vector: None,
@@ -1726,7 +1726,12 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 frame_token,
                 origin: origin_values,
                 radius,
-                geometry: None,
+                geometry: SurfaceGeometry::Cylinder {
+                    origin,
+                    axis: Vector3::new(0.0, 1.0, 0.0),
+                    ref_direction: Vector3::new(vector[0], 0.0, vector[1]),
+                    radius,
+                },
                 u_range,
                 v_range,
                 stored_vector: Some(vector),

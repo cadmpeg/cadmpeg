@@ -171,7 +171,7 @@ fn refine_consolidated_analytic_surfaces(
                 radius,
                 ..
             }) => exactly_one(cylinders.iter().filter_map(|cylinder| {
-                let geometry = cylinder.geometry.as_ref()?;
+                let geometry = &cylinder.geometry;
                 let SurfaceGeometry::Cylinder {
                     axis: exact_axis, ..
                 } = geometry
