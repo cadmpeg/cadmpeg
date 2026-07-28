@@ -125,6 +125,8 @@ pub(crate) fn transfer_parameters(
                     pmi: None,
                     native_ref: Some(entity.id.clone()),
                 },
+                parameter_type: canonical_parameter_type(&input.input_type)
+                    .expect("typed evaluation requires a supported type"),
                 formula_output: false,
                 input_fallback: None,
                 source_order: entity.byte_offset,
@@ -141,7 +143,7 @@ pub(crate) fn transfer_parameters(
             .filter(|value| value.satisfies_source_type(&signature.result_type));
         let input_parameters = transferred
             .iter()
-            .map(|candidate| candidate.parameter.clone())
+            .map(|candidate| (candidate.parameter.clone(), candidate.parameter_type))
             .collect::<Vec<_>>();
         if let Some(output) = formula
             .parameter
@@ -187,6 +189,8 @@ pub(crate) fn transfer_parameters(
                                     pmi: None,
                                     native_ref: Some(output.id.clone()),
                                 },
+                                parameter_type: canonical_parameter_type(&signature.result_type)
+                                    .expect("typed evaluation requires a supported type"),
                                 formula_output: true,
                                 input_fallback: None,
                                 source_order: output.byte_offset,
@@ -215,7 +219,8 @@ pub(crate) fn transfer_parameters(
                     }
                 }
                 Some(existing) if !existing.formula_output && candidate.formula_output => {
-                    candidate.input_fallback = Some(existing.parameter.clone());
+                    candidate.input_fallback =
+                        Some((existing.parameter.clone(), existing.parameter_type));
                     candidates.insert(candidate.parameter.id.clone(), candidate);
                 }
                 Some(existing) if existing.formula_output && !candidate.formula_output => {
@@ -223,7 +228,7 @@ pub(crate) fn transfer_parameters(
                         .get_mut(&candidate.parameter.id)
                         .expect("candidate exists")
                         .input_fallback
-                        .get_or_insert(candidate.parameter);
+                        .get_or_insert((candidate.parameter, candidate.parameter_type));
                 }
                 Some(_) => {}
                 None => {
@@ -255,7 +260,7 @@ pub(crate) fn transfer_parameters(
         .iter()
         .filter(|program| {
             program.input_parameters.iter().any(|input| {
-                !candidates.get(&input.id).is_some_and(|candidate| {
+                !candidates.get(&input.0.id).is_some_and(|candidate| {
                     formula_parameter_candidate_accepts_input(candidate, input)
                 })
             })
@@ -464,6 +469,8 @@ fn collect_legacy_parameters(
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
+                    parameter_type: canonical_parameter_type(value_type)
+                        .expect("typed evaluation requires a supported type"),
                     formula_output: false,
                     input_fallback: None,
                     source_order: scalar.byte_offset,
@@ -556,8 +563,9 @@ fn resolved_legacy_type(
 
 struct FormulaParameterCandidate {
     parameter: DesignParameter,
+    parameter_type: &'static str,
     formula_output: bool,
-    input_fallback: Option<DesignParameter>,
+    input_fallback: Option<(DesignParameter, &'static str)>,
     source_order: u64,
 }
 
@@ -566,14 +574,16 @@ struct FormulaProgramCandidate {
     expression_entity: String,
     output: ParameterId,
     inputs: Vec<ParameterId>,
-    input_parameters: Vec<DesignParameter>,
+    input_parameters: Vec<(DesignParameter, &'static str)>,
 }
 
 fn formula_parameter_candidates_agree(
     existing: &FormulaParameterCandidate,
     candidate: &FormulaParameterCandidate,
 ) -> bool {
-    if existing.source_order != candidate.source_order {
+    if existing.source_order != candidate.source_order
+        || existing.parameter_type != candidate.parameter_type
+    {
         return false;
     }
     match (existing.formula_output, candidate.formula_output) {
@@ -597,20 +607,24 @@ fn formula_parameter_matches_input(formula: &DesignParameter, input: &DesignPara
 
 fn formula_parameter_candidate_accepts_input(
     candidate: &FormulaParameterCandidate,
-    input: &DesignParameter,
+    input: &(DesignParameter, &'static str),
 ) -> bool {
+    if candidate.parameter_type != input.1 {
+        return false;
+    }
     if candidate.formula_output {
-        formula_parameter_matches_input(&candidate.parameter, input)
+        formula_parameter_matches_input(&candidate.parameter, &input.0)
     } else {
-        candidate.parameter == *input
+        candidate.parameter == input.0
     }
 }
 
 fn demote_formula_output(candidate: &mut FormulaParameterCandidate) -> bool {
-    let Some(input) = candidate.input_fallback.take() else {
+    let Some((input, parameter_type)) = candidate.input_fallback.take() else {
         return false;
     };
     candidate.parameter = input;
+    candidate.parameter_type = parameter_type;
     candidate.formula_output = false;
     true
 }
@@ -1180,12 +1194,7 @@ fn typed_parameter_evaluation(
     source_type: &str,
     evaluation: &crate::native::CatiaEntityEvaluation,
 ) -> Option<TypedParameterEvaluation> {
-    if !matches!(
-        source_type,
-        "LENGTH" | "ANGLE" | "Real" | "R" | "Integer" | "I"
-    ) {
-        return None;
-    }
+    canonical_parameter_type(source_type)?;
     let bits = match evaluation {
         crate::native::CatiaEntityEvaluation::Unset => {
             return Some(TypedParameterEvaluation::Unset);
@@ -1207,6 +1216,16 @@ fn typed_parameter_evaluation(
     Some(TypedParameterEvaluation::Value(value))
 }
 
+fn canonical_parameter_type(source_type: &str) -> Option<&'static str> {
+    match source_type {
+        "LENGTH" => Some("LENGTH"),
+        "ANGLE" => Some("ANGLE"),
+        "Real" | "R" => Some("Real"),
+        "Integer" | "I" => Some("Integer"),
+        _ => None,
+    }
+}
+
 fn neutral_parameter_id(native_id: &str) -> ParameterId {
     ParameterId(format!("{native_id}:parameter"))
 }
@@ -1214,6 +1233,40 @@ fn neutral_parameter_id(native_id: &str) -> ParameterId {
 #[cfg(test)]
 mod parser_tests {
     use super::*;
+
+    fn unset_candidate(parameter_type: &'static str) -> FormulaParameterCandidate {
+        FormulaParameterCandidate {
+            parameter: DesignParameter {
+                id: ParameterId("parameter".to_string()),
+                owner: None,
+                ordinal: 0,
+                name: "Value".to_string(),
+                expression: String::new(),
+                display: None,
+                value: None,
+                dependencies: Vec::new(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: Some("native-parameter".to_string()),
+            },
+            parameter_type,
+            formula_output: false,
+            input_fallback: None,
+            source_order: 1,
+        }
+    }
+
+    #[test]
+    fn unset_parameter_candidates_require_one_canonical_type() {
+        assert!(formula_parameter_candidates_agree(
+            &unset_candidate("Real"),
+            &unset_candidate("Real")
+        ));
+        assert!(!formula_parameter_candidates_agree(
+            &unset_candidate("LENGTH"),
+            &unset_candidate("Real")
+        ));
+    }
 
     #[test]
     fn formula_function_argument_count_is_bounded() {
