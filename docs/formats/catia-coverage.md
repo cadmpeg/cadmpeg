@@ -79,6 +79,9 @@ current scores require those matrices and representative fixtures.
   references against a complete framed-record identity inventory.
   A complete `5fxx` face roster binds positionally to those support tapes and
   retains each face's counted allocations and ordered loop terminals.
+  Complete `62xx` loop rosters bind to those terminals and retain alternating
+  logical-member and typed-reference lanes, loop class, and absolute member
+  senses.
   Cross-registry physical-edge and incidence binding remains unresolved.
 
 ## Evidence required to raise a score

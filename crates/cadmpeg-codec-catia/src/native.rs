@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 158;
+pub const CATIA_NATIVE_VERSION: u32 = 159;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2621,8 +2621,33 @@ pub struct CatiaZeroEntityFace {
     pub allocations: Vec<u32>,
     /// Ordered loop terminals derived from the allocation lane.
     pub loop_terminals: Vec<u32>,
+    /// Positionally aligned loop records.
+    pub loops: Vec<CatiaZeroEntityLoop>,
     /// Terminal control byte following the allocation lane.
     pub terminal_control: u8,
+}
+
+/// One counted zero-entity `62xx` loop record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntityLoop {
+    /// Byte offset of the framed loop record.
+    pub byte_offset: u64,
+    /// One-based global record ordinal.
+    pub record_ordinal: u32,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// Nonterminal even-lane logical member identifiers.
+    pub member_ids: Vec<u32>,
+    /// Odd-lane typed references in member order.
+    pub typed_references: Vec<u32>,
+    /// Terminal even-lane logical identifier.
+    pub terminal_id: u32,
+    /// Difference between the terminal and first member identifiers.
+    pub gap: u32,
+    /// Stored loop-class byte.
+    pub loop_class: u8,
+    /// Absolute coedge senses in member order; `true` is forward.
+    pub forward_senses: Vec<bool>,
 }
 
 /// One zero-entity surface carrier and its maximal following support run.
@@ -3464,6 +3489,21 @@ fn zero_entity_support_runs(bytes: &[u8]) -> Vec<CatiaZeroEntitySupportRun> {
                 tag: face.tag,
                 allocations: face.allocations,
                 loop_terminals: face.loop_terminals,
+                loops: face
+                    .loops
+                    .into_iter()
+                    .map(|loop_record| CatiaZeroEntityLoop {
+                        byte_offset: loop_record.pos as u64,
+                        record_ordinal: loop_record.record_ordinal,
+                        tag: loop_record.tag,
+                        member_ids: loop_record.member_ids,
+                        typed_references: loop_record.typed_references,
+                        terminal_id: loop_record.terminal_id,
+                        gap: loop_record.gap,
+                        loop_class: loop_record.loop_class,
+                        forward_senses: loop_record.forward_senses,
+                    })
+                    .collect(),
                 terminal_control: face.terminal_control,
             }),
             supports: run
@@ -4385,6 +4425,21 @@ fn validate_zero_entity_support_runs(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let face_count = runs.iter().filter(|run| run.face.is_some()).count();
     let face_roster_valid = face_count == 0 || face_count == runs.len();
+    let expected_loop_count = runs
+        .iter()
+        .filter_map(|run| run.face.as_ref())
+        .map(|face| face.loop_terminals.len())
+        .sum::<usize>();
+    let loops = runs
+        .iter()
+        .filter_map(|run| run.face.as_ref())
+        .flat_map(|face| &face.loops)
+        .collect::<Vec<_>>();
+    let loop_roster_valid = loops.is_empty()
+        || loops.len() == expected_loop_count
+            && loops
+                .windows(2)
+                .all(|pair| pair[0].byte_offset < pair[1].byte_offset);
     for (index, run) in runs.iter().enumerate() {
         let face_valid = run.face.as_ref().is_none_or(|face| {
             let derived_terminals = face.allocations.first().and_then(|first| {
@@ -4402,6 +4457,50 @@ fn validate_zero_entity_support_runs(
                 && face.allocations.len() >= 2
                 && expected_length == Some(usize::from(face.tag[1]) + 12)
                 && derived_terminals.as_ref() == Some(&face.loop_terminals)
+                && (face.loops.is_empty()
+                    || face.loops.len() == face.loop_terminals.len()
+                        && face.loops.iter().zip(&face.loop_terminals).all(
+                            |(loop_record, terminal)| {
+                                let edge_count = loop_record.member_ids.len();
+                                let reference_count = edge_count
+                                    .checked_mul(2)
+                                    .and_then(|count| count.checked_add(1));
+                                let packed_length = edge_count
+                                    .checked_mul(3)
+                                    .and_then(|bits| bits.checked_add(7));
+                                let expected_length = reference_count.zip(packed_length).and_then(
+                                    |(reference_count, packed_length)| {
+                                        reference_count
+                                            .checked_mul(5)?
+                                            .checked_add(16 + packed_length / 8)
+                                    },
+                                );
+                                loop_record.tag[0] == 0x62
+                                    && !loop_record.member_ids.is_empty()
+                                    && loop_record.typed_references.len() == edge_count
+                                    && loop_record.forward_senses.len() == edge_count
+                                    && loop_record.terminal_id == *terminal
+                                    && matches!(loop_record.loop_class, 0x41 | 0x50 | 0xc1)
+                                    && loop_record.member_ids.iter().enumerate().all(
+                                        |(member_index, member)| {
+                                            u32::try_from(member_index).ok().and_then(
+                                                |member_index| {
+                                                    loop_record
+                                                        .terminal_id
+                                                        .checked_sub(loop_record.gap)?
+                                                        .checked_sub(member_index)
+                                                },
+                                            ) == Some(*member)
+                                        },
+                                    )
+                                    && expected_length == Some(usize::from(loop_record.tag[1]) + 12)
+                                    && zero_entity_record(records, loop_record.record_ordinal)
+                                        .is_some_and(|record| {
+                                            record.byte_offset == loop_record.byte_offset
+                                                && record.tag == loop_record.tag
+                                        })
+                            },
+                        ))
                 && zero_entity_record(records, face.record_ordinal).is_some_and(|record| {
                     record.byte_offset == face.byte_offset && record.tag == face.tag
                 })
@@ -4445,6 +4544,7 @@ fn validate_zero_entity_support_runs(
         if run.id != format!("catia:zero-entity:support-run#{index}")
             || !supports_valid
             || !face_roster_valid
+            || !loop_roster_valid
             || !face_valid
             || run.carrier_record_ordinal == 0
             || !zero_entity_record(records, run.carrier_record_ordinal)

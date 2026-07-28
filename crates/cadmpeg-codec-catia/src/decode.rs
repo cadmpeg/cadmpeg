@@ -523,6 +523,25 @@ fn finish_decode(
                 .sum(),
         ),
         (
+            "decoded_zero_entity_loop_record_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .map(|face| face.loops.len())
+                .sum(),
+        ),
+        (
+            "decoded_zero_entity_oriented_loop_member_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .flat_map(|face| &face.loops)
+                .map(|loop_record| loop_record.forward_senses.len())
+                .sum(),
+        ),
+        (
             "decoded_zero_entity_oriented_use_pair_count".to_string(),
             native.zero_entity_oriented_use_pairs.len(),
         ),
@@ -867,6 +886,19 @@ fn finish_decode(
             .filter_map(|run| run.face.as_ref())
             .map(|face| face.loop_terminals.len())
             .sum::<usize>();
+        let loop_record_count = native
+            .zero_entity_support_runs
+            .iter()
+            .filter_map(|run| run.face.as_ref())
+            .map(|face| face.loops.len())
+            .sum::<usize>();
+        let oriented_loop_member_count = native
+            .zero_entity_support_runs
+            .iter()
+            .filter_map(|run| run.face.as_ref())
+            .flat_map(|face| &face.loops)
+            .map(|loop_record| loop_record.forward_senses.len())
+            .sum::<usize>();
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
@@ -875,9 +907,10 @@ fn finish_decode(
                 "{} zero-entity surface-support run(s) retain {support_count} face-local \
                  occurrence(s), including {endpoint_count} with exact UV endpoint pairs; \
                  {face_count} run(s) bind the complete face roster with {loop_terminal_count} \
-                 ordered loop terminal(s); {} edge-stride record(s), {} oriented-use pair(s), \
-                 and {} vertex-incidence record(s) remain separate because their cross-registry \
-                 binding is unresolved.",
+                 ordered loop terminal(s), {loop_record_count} loop record(s), and \
+                 {oriented_loop_member_count} stored member sense(s); {} edge-stride record(s), \
+                 {} oriented-use pair(s), and {} vertex-incidence record(s) remain separate \
+                 because their cross-registry binding is unresolved.",
                 native.zero_entity_support_runs.len(),
                 native.zero_entity_edge_strides.len(),
                 native.zero_entity_oriented_use_pairs.len(),

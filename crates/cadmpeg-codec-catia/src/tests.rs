@@ -1163,6 +1163,21 @@ pub(crate) fn zero_entity_face_support_stream() -> Vec<u8> {
     stream
 }
 
+pub(crate) fn zero_entity_face_loop_support_stream() -> Vec<u8> {
+    let mut stream = zero_entity_face_support_stream();
+    let mut loop_record = vec![0u8; 0x14 + 12];
+    loop_record[..4].copy_from_slice(&[0xa9, 0x03, 0x62, 0x14]);
+    loop_record[12] = 0x83;
+    for (index, value) in [6u32, 1, 7].into_iter().enumerate() {
+        let offset = 13 + index * 5;
+        loop_record[offset] = 0x10;
+        loop_record[offset + 1..offset + 5].copy_from_slice(&value.to_le_bytes());
+    }
+    loop_record[28..].copy_from_slice(&[0x81, 0x41, 0x07, 0x01]);
+    stream.extend(loop_record);
+    stream
+}
+
 pub(crate) fn zero_entity_topology_stream() -> Vec<u8> {
     let write_tagged_u32 = |record: &mut [u8], at: usize, value: u32| {
         record[at] = 0x10;
@@ -4349,7 +4364,7 @@ fn decode_reports_exact_consolidated_line_profiles() {
 
 #[test]
 fn native_namespace_retains_zero_entity_surface_support_runs() {
-    let native = crate::native::CatiaNative::decode(&zero_entity_face_support_stream());
+    let native = crate::native::CatiaNative::decode(&zero_entity_face_loop_support_stream());
     let [run] = native.zero_entity_support_runs.as_slice() else {
         panic!("one zero-entity support run")
     };
@@ -4359,6 +4374,14 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(face.record_ordinal, 3);
     assert_eq!(face.allocations, [10, 3]);
     assert_eq!(face.loop_terminals, [7]);
+    let [loop_record] = face.loops.as_slice() else {
+        panic!("one loop")
+    };
+    assert_eq!(loop_record.member_ids, [6]);
+    assert_eq!(loop_record.typed_references, [1]);
+    assert_eq!(loop_record.terminal_id, 7);
+    assert_eq!(loop_record.loop_class, 0x41);
+    assert_eq!(loop_record.forward_senses, [true]);
     let [support] = run.supports.as_slice() else {
         panic!("one zero-entity support occurrence")
     };
@@ -4387,6 +4410,20 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_face_namespace)
         .expect("store invalid CATIA zero-entity face");
     assert!(crate::native::CatiaNative::load(&invalid_face_namespace).is_err());
+
+    let mut invalid_loop = native.clone();
+    invalid_loop.zero_entity_support_runs[0]
+        .face
+        .as_mut()
+        .expect("face")
+        .loops[0]
+        .forward_senses
+        .clear();
+    let mut invalid_loop_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_loop
+        .store(&mut invalid_loop_namespace)
+        .expect("store invalid CATIA zero-entity loop");
+    assert!(crate::native::CatiaNative::load(&invalid_loop_namespace).is_err());
 
     let mut invalid = native;
     invalid.zero_entity_support_runs[0].supports[0].uv_endpoints = None;
@@ -4453,7 +4490,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
 #[test]
 fn decode_reports_zero_entity_surface_support_runs() {
     let mut file = standard_catpart();
-    file.splice(16..16, zero_entity_face_support_stream());
+    file.splice(16..16, zero_entity_face_loop_support_stream());
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
     file[8..12].copy_from_slice(&be32(file_len));
     let decoded = CatiaCodec
@@ -4465,6 +4502,14 @@ fn decode_reports_zero_entity_surface_support_runs() {
     );
     assert_eq!(
         decoded.report.coverage["decoded_zero_entity_loop_terminal_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_loop_record_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_oriented_loop_member_count"],
         1
     );
     assert_eq!(
@@ -4487,6 +4532,7 @@ fn decode_reports_zero_entity_surface_support_runs() {
             && loss
                 .message
                 .contains("1 run(s) bind the complete face roster")
+            && loss.message.contains("1 stored member sense(s)")
             && loss.message.contains("oriented-use")
     }));
 }

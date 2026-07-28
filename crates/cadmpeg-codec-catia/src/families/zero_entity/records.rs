@@ -59,8 +59,33 @@ pub struct ZeroEntityFace {
     pub allocations: Vec<u32>,
     /// Ordered loop terminals `allocations[0] - allocations[1..]`.
     pub loop_terminals: Vec<u32>,
+    /// Positionally aligned loop records when the complete flattened roster agrees.
+    pub loops: Vec<ZeroEntityLoop>,
     /// Terminal control byte following the allocation lane.
     pub terminal_control: u8,
+}
+
+/// One counted zero-entity `62xx` loop record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityLoop {
+    /// Offset of the framed loop record.
+    pub pos: usize,
+    /// One-based global record ordinal.
+    pub record_ordinal: u32,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// Nonterminal even-lane logical member identifiers.
+    pub member_ids: Vec<u32>,
+    /// Odd-lane typed references in member order.
+    pub typed_references: Vec<u32>,
+    /// Terminal even-lane logical identifier.
+    pub terminal_id: u32,
+    /// Difference between the terminal and first member identifiers.
+    pub gap: u32,
+    /// Stored loop-class byte.
+    pub loop_class: u8,
+    /// Absolute coedge senses in member order; `true` is forward.
+    pub forward_senses: Vec<bool>,
 }
 
 /// One `5e1a` edge-stride record in the global zero-entity reference namespace.
@@ -324,7 +349,25 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
         }
         index = next.max(index + 1);
     }
-    let faces = zero_entity_faces_from_records(data, &records);
+    let mut faces = zero_entity_faces_from_records(data, &records);
+    let loops = zero_entity_loops_from_records(data, &records);
+    let flattened_terminals = faces
+        .iter()
+        .flat_map(|face| face.loop_terminals.iter().copied())
+        .collect::<Vec<_>>();
+    if flattened_terminals
+        == loops
+            .iter()
+            .map(|loop_record| loop_record.terminal_id)
+            .collect::<Vec<_>>()
+    {
+        let mut loop_index = 0;
+        for face in &mut faces {
+            let loop_end = loop_index + face.loop_terminals.len();
+            face.loops.extend_from_slice(&loops[loop_index..loop_end]);
+            loop_index = loop_end;
+        }
+    }
     if faces.len() == runs.len() {
         for (run, face) in runs.iter_mut().zip(faces) {
             run.face = Some(face);
@@ -361,7 +404,90 @@ fn zero_entity_faces_from_records(
                 tag: record.tag,
                 allocations,
                 loop_terminals,
+                loops: Vec::new(),
                 terminal_control: *data.get(record.end - 1)?,
+            })
+        })
+        .collect()
+}
+
+fn zero_entity_loops_from_records(
+    data: &[u8],
+    records: &[ZeroEntityRecord],
+) -> Vec<ZeroEntityLoop> {
+    records
+        .iter()
+        .filter_map(|record| {
+            if record.tag[0] != 0x62 {
+                return None;
+            }
+            let reference_count = usize::from(data.get(record.pos + 12)?.checked_sub(0x80)?);
+            if reference_count < 3 || reference_count % 2 == 0 {
+                return None;
+            }
+            let edge_count = (reference_count - 1) / 2;
+            let references = (0..reference_count)
+                .map(|index| tagged_u32(data, record.pos + 13 + index * 5))
+                .collect::<Option<Vec<_>>>()?;
+            let member_ids = references[..reference_count - 1]
+                .iter()
+                .step_by(2)
+                .copied()
+                .collect::<Vec<_>>();
+            let typed_references = references[1..reference_count - 1]
+                .iter()
+                .step_by(2)
+                .copied()
+                .collect::<Vec<_>>();
+            let terminal_id = *references.last()?;
+            let gap = terminal_id.checked_sub(*member_ids.first()?)?;
+            if !member_ids.iter().enumerate().all(|(index, member)| {
+                u32::try_from(index)
+                    .ok()
+                    .and_then(|index| terminal_id.checked_sub(gap)?.checked_sub(index))
+                    == Some(*member)
+            }) {
+                return None;
+            }
+            let trailer = record
+                .pos
+                .checked_add(13 + reference_count.checked_mul(5)?)?;
+            if data.get(trailer) != Some(&(0x80 + u8::try_from(edge_count).ok()?))
+                || !matches!(data.get(trailer + 1), Some(0x41 | 0x50 | 0xc1))
+            {
+                return None;
+            }
+            let packed_length = edge_count.checked_mul(3)?.checked_add(7)? / 8;
+            if trailer.checked_add(3 + packed_length)? != record.end
+                || data.get(trailer + 2 + packed_length) != Some(&0x01)
+            {
+                return None;
+            }
+            let packed = data.get(trailer + 2..trailer + 2 + packed_length)?;
+            let forward_senses = (0..edge_count)
+                .map(|index| {
+                    let bit = index * 3;
+                    let code = (0..3).fold(0, |code, offset| {
+                        code | (((packed[(bit + offset) / 8] >> ((bit + offset) % 8)) & 1)
+                            << offset)
+                    });
+                    match code {
+                        2 => Some(false),
+                        7 => Some(true),
+                        _ => None,
+                    }
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(ZeroEntityLoop {
+                pos: record.pos,
+                record_ordinal: record.ordinal,
+                tag: record.tag,
+                member_ids,
+                typed_references,
+                terminal_id,
+                gap,
+                loop_class: data[trailer + 1],
+                forward_senses,
             })
         })
         .collect()
@@ -703,7 +829,8 @@ fn u32_tokens(bytes: &[u8], mut at: usize, count: usize) -> Option<(Vec<u32>, us
 mod tests {
     use super::*;
     use crate::tests::{
-        zero_entity_face_support_stream, zero_entity_support_stream, zero_entity_topology_stream,
+        zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
+        zero_entity_support_stream, zero_entity_topology_stream,
     };
 
     fn write_tagged_u32(record: &mut [u8], at: usize, value: u32) {
@@ -841,5 +968,34 @@ mod tests {
             panic!("one support run")
         };
         assert!(run.face.is_none());
+    }
+
+    #[test]
+    fn complete_loop_roster_aligns_to_face_terminals() {
+        let runs = zero_entity_support_runs(&zero_entity_face_loop_support_stream());
+        let [run] = runs.as_slice() else {
+            panic!("one support run")
+        };
+        let face = run.face.as_ref().expect("face");
+        let [loop_record] = face.loops.as_slice() else {
+            panic!("one loop")
+        };
+        assert_eq!(loop_record.record_ordinal, 4);
+        assert_eq!(loop_record.tag, [0x62, 0x14]);
+        assert_eq!(loop_record.member_ids, [6]);
+        assert_eq!(loop_record.typed_references, [1]);
+        assert_eq!(loop_record.terminal_id, 7);
+        assert_eq!(loop_record.gap, 1);
+        assert_eq!(loop_record.loop_class, 0x41);
+        assert_eq!(loop_record.forward_senses, [true]);
+    }
+
+    #[test]
+    fn invalid_loop_tape_does_not_partially_bind_faces() {
+        let mut stream = zero_entity_face_loop_support_stream();
+        *stream.last_mut().expect("loop terminator") = 0;
+        let runs = zero_entity_support_runs(&stream);
+        let face = runs[0].face.as_ref().expect("face");
+        assert!(face.loops.is_empty());
     }
 }
