@@ -6627,6 +6627,12 @@ fn source_meta(scan: &Scan) -> SourceMeta {
                 census.tagged_reference_lanes.len().to_string(),
             );
         }
+        if !census.reference_state_packets.is_empty() {
+            attributes.insert(
+                format!("deltas.{index}.reference_state_packets"),
+                census.reference_state_packets.len().to_string(),
+            );
+        }
         for (name, count) in census.full_counts {
             attributes.insert(format!("deltas.{index}.full.{name}"), count.to_string());
         }
@@ -6803,7 +6809,8 @@ fn build_geometry_report(
                  with its source bounds and decoded identities; BODY state tails retain exact \
                  bounded bytes and digests. Count-selected numeric tails after \
                  term-use endpoints were retained with their ordered finite binary64 values. Maximal \
-                 event gaps containing only typed stream-local references were retained in order. \
+                 event gaps containing only typed stream-local references and complete \
+                 four-reference state packets were retained in order. \
                  Spans outside those events were retained with exact inflated-stream bounds and \
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \

@@ -79,6 +79,21 @@ pub struct TaggedReferenceLane {
     pub end: usize,
 }
 
+/// One deltas packet carrying four references and unassigned state words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceStatePacket {
+    /// Four ordered stream-local XMT references.
+    pub references: [u32; 4],
+    /// Five ordered big-endian state words.
+    pub state_words: [u32; 5],
+    /// Terminal serialized state byte.
+    pub state_byte: u8,
+    /// First byte of the packet.
+    pub offset: usize,
+    /// First byte following the packet.
+    pub end: usize,
+}
+
 /// Result of a deterministic deltas record walk.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Census {
@@ -92,6 +107,8 @@ pub struct Census {
     pub term_use_numeric_tails: Vec<TermUseNumericTail>,
     /// Maximal event gaps composed entirely of typed stream-local references.
     pub tagged_reference_lanes: Vec<TaggedReferenceLane>,
+    /// Complete four-reference state packets in source order.
+    pub reference_state_packets: Vec<ReferenceStatePacket>,
     /// Complete-record counts keyed by Parasolid family name.
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
@@ -491,6 +508,12 @@ pub fn walk(stream: &[u8]) -> Census {
         .iter()
         .map(|lane| lane.end - lane.offset)
         .sum::<usize>();
+    census.reference_state_packets = reference_state_packets(stream, &census);
+    census.bytes_decoded += census
+        .reference_state_packets
+        .iter()
+        .map(|packet| packet.end - packet.offset)
+        .sum::<usize>();
     let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
     census.bytes_decoded += body_revision_state_bytes;
     census
@@ -582,12 +605,53 @@ fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReference
         .collect()
 }
 
+fn reference_state_packets(stream: &[u8], census: &Census) -> Vec<ReferenceStatePacket> {
+    uncovered_spans(stream.len(), census, true)
+        .filter_map(|(offset, end)| reference_state_packet(stream, offset, end))
+        .collect()
+}
+
+fn reference_state_packet(
+    stream: &[u8],
+    offset: usize,
+    expected_end: usize,
+) -> Option<ReferenceStatePacket> {
+    (be::u16_at(stream, offset) == Some(1)
+        && be::u16_at(stream, offset + 2) == Some(1)
+        && be::u16_at(stream, offset + 4) == Some(4))
+    .then_some(())?;
+    let mut at = offset.checked_add(6)?;
+    let mut references = [0; 4];
+    for reference in &mut references {
+        let (value, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        *reference = value;
+    }
+    (references[..3].iter().all(|reference| *reference > 1) && references[3] >= 1).then_some(())?;
+    (be::u16_at(stream, at) == Some(1)).then_some(())?;
+    at = at.checked_add(2)?;
+    let mut state_words = [0; 5];
+    for word in &mut state_words {
+        *word = be::u32_at(stream, at)?;
+        at = at.checked_add(4)?;
+    }
+    let state_byte = *stream.get(at)?;
+    at = at.checked_add(1)?;
+    (at == expected_end).then_some(ReferenceStatePacket {
+        references,
+        state_words,
+        state_byte,
+        offset,
+        end: at,
+    })
+}
+
 fn uncovered_spans(
     stream_len: usize,
     census: &Census,
-    include_tagged_reference_lanes: bool,
+    include_derived_events: bool,
 ) -> impl Iterator<Item = (usize, usize)> {
-    let covered = merged_event_spans(census, include_tagged_reference_lanes);
+    let covered = merged_event_spans(census, include_derived_events);
     let mut gaps = Vec::new();
     let mut at = 0;
     for (start, end) in covered {
@@ -602,10 +666,7 @@ fn uncovered_spans(
     gaps.into_iter()
 }
 
-fn merged_event_spans(
-    census: &Census,
-    include_tagged_reference_lanes: bool,
-) -> Vec<(usize, usize)> {
+fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usize, usize)> {
     let mut covered = census
         .records
         .iter()
@@ -629,12 +690,18 @@ fn merged_event_spans(
                 .map(|tail| (tail.offset, tail.end)),
         )
         .collect::<Vec<_>>();
-    if include_tagged_reference_lanes {
+    if include_derived_events {
         covered.extend(
             census
                 .tagged_reference_lanes
                 .iter()
                 .map(|lane| (lane.offset, lane.end)),
+        );
+        covered.extend(
+            census
+                .reference_state_packets
+                .iter()
+                .map(|packet| (packet.offset, packet.end)),
         );
     }
     covered.sort_unstable();

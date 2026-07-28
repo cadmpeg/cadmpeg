@@ -483,7 +483,13 @@ kind, including type 79 and type 80, and each XMT is a non-null compact or
 extended encoded index. The lane retains pair order and exact byte identity;
 field roles remain unassigned.
 
-The union of those events and tagged-reference lanes defines the typed
+One reference-state packet is `0001, 0001, 0004, ref[4], 0001,
+state_word[5]:u32 BE, state_byte:u8`. Each reference uses compact or extended
+XMT encoding. The first three references are non-null and the fourth admits the
+null XMT value `1`. The packet ends after `state_byte` and retains reference and
+state-word order without assigned field roles.
+
+The union of those events, tagged-reference lanes, and reference-state packets defines the typed
 deltas-event coverage. Each maximal nonempty complement interval in the
 inflated stream is one residual span. Residual spans retain their exact offset,
 length, and SHA-256 independently of the containing compressed stream.

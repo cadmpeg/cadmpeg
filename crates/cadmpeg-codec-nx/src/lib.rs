@@ -213,6 +213,12 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                         census.tagged_reference_lanes.len().to_string(),
                     );
                 }
+                if !census.reference_state_packets.is_empty() {
+                    attributes.insert(
+                        "records.delta.reference_state_packets".to_string(),
+                        census.reference_state_packets.len().to_string(),
+                    );
+                }
                 for (family, count) in census.full_counts {
                     attributes.insert(
                         format!("records.delta.full.{}", family.to_ascii_lowercase()),
