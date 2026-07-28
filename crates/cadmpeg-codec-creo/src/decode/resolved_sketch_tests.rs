@@ -10986,6 +10986,73 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
 }
 
 #[test]
+fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
+    let surface = NurbsSurface {
+        u_degree: 3,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 4,
+        v_count: 2,
+        control_points: [-1.0, -0.5, 0.5, 1.0]
+            .into_iter()
+            .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
+            .collect(),
+        weights: Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let generator = cubic_extrusion_plane_generator_curve(
+        &surface,
+        PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        },
+    )
+    .expect("unique directrix-plane root");
+    let CurveGeometry::Nurbs(generator) = generator else {
+        panic!("plane section generator must retain its NURBS representation");
+    };
+    assert_eq!(generator.degree, 1);
+    assert_eq!(generator.knots, surface.v_knots);
+    assert_eq!(generator.control_points.len(), 2);
+    assert!(generator
+        .control_points
+        .iter()
+        .all(|point| point.x.abs() <= 1e-8));
+    assert_eq!(generator.control_points[0].z, 0.0);
+    assert_eq!(generator.control_points[1].z, 2.0);
+    let weights = generator.weights.expect("rational generator");
+    assert_eq!(weights.len(), 2);
+    assert!((weights[0] - weights[1]).abs() <= 1e-12);
+
+    assert!(cubic_extrusion_plane_generator_curve(
+        &surface,
+        PlaneEquation {
+            origin: [2.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        },
+    )
+    .is_none());
+    assert!(cubic_extrusion_plane_generator_curve(
+        &surface,
+        PlaneEquation {
+            origin: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+        },
+    )
+    .is_none());
+    assert_eq!(
+        cubic_unit_interval_roots(1.0, -1.5, 0.66, -0.08, 1e-12).len(),
+        3
+    );
+    assert_eq!(
+        cubic_unit_interval_roots(1.0, -1.8, 1.05, -0.2, 1e-12).len(),
+        2
+    );
+}
+
+#[test]
 fn carrier_solver_accepts_two_carrier_tangent_vertices() {
     let plane = CarrierEquation::Plane(PlaneEquation {
         origin: [0.0, 0.0, 2.0],

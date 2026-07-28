@@ -734,6 +734,13 @@ plane. Exactly one of the four control edges must satisfy the rule. A
 constant-U edge retains the surface's V degree, knots, control points, weights,
 and periodicity; a constant-V edge retains the corresponding U data.
 
+An adjacent plane that contains the extrusion vector intersects a clamped cubic
+tabulated-extrusion surface along one generator when the four generator vectors
+are equal, each generator's two rational weights are equal, and the weighted
+cubic directrix has exactly one plane root in its parameter domain. Evaluating
+the directrix at that root supplies the two generator control points. The
+generator retains the surface's V degree, knots, rationality, and periodicity.
+
 Two adjacent tabulated-extrusion NURBS surfaces share an intersection generator
 when exactly one pair of their control edges encodes the same nonperiodic
 degree-one NURBS curve. The control points are equal in forward or reverse
