@@ -214,7 +214,7 @@ pub enum InlineSchemaFields {
         /// Terminal unsigned 40-bit state value.
         terminal_value: u64,
     },
-    /// Type 38 intersection-data declaration with a nested term-use schema.
+    /// Type 38 intersection-data declaration state.
     Type38 {
         /// Non-null stream-local declaration identity.
         xmt: u32,
@@ -226,8 +226,8 @@ pub enum InlineSchemaFields {
         marker: u8,
         /// Two non-null status-one XMT references.
         linked_references: [u32; 2],
-        /// Eleven finite binary64 state values.
-        numeric_values: [f64; 11],
+        /// Eleven finite binary64 values from the optional nested term-use state.
+        numeric_values: Option<[f64; 11]>,
     },
 }
 
@@ -1370,17 +1370,39 @@ fn inline_schema_declaration(
             at = at.checked_add(1)?;
             *reference = value;
         }
-        (descending_references
-            == [
-                xmt.checked_add(3)?,
-                xmt.checked_add(2)?,
-                xmt.checked_add(1)?,
-            ])
-        .then_some(())?;
+        let descending_from_xmt = [
+            xmt.checked_add(3)?,
+            xmt.checked_add(2)?,
+            xmt.checked_add(1)?,
+        ];
+        let linked_anchor = linked_references.into_iter().max()?;
+        let ascending_from_link = [
+            linked_anchor.checked_add(1)?,
+            linked_anchor.checked_add(2)?,
+            linked_anchor.checked_add(3)?,
+        ];
         (read_status_one_reference(stream, &mut at) == Some(1)).then_some(())?;
-        (stream.get(at..at.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
-            == Some(TYPE_41_SCHEMA_HEADER))
-        .then_some(())?;
+        if stream.get(at..at.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
+            != Some(TYPE_41_SCHEMA_HEADER)
+        {
+            (descending_references == descending_from_xmt
+                || descending_references == ascending_from_link)
+                .then_some(())?;
+            (at <= gap_end).then_some(())?;
+            return Some(InlineSchemaDeclaration {
+                fields: InlineSchemaFields::Type38 {
+                    xmt,
+                    node_id,
+                    leading_references,
+                    marker,
+                    linked_references,
+                    numeric_values: None,
+                },
+                offset,
+                end: at,
+            });
+        }
+        (descending_references == descending_from_xmt).then_some(())?;
         at = at.checked_add(TYPE_41_SCHEMA_HEADER.len())?;
         (be::u32_at(stream, at) == Some(1)).then_some(())?;
         at = at.checked_add(4)?;
@@ -1403,7 +1425,7 @@ fn inline_schema_declaration(
                 leading_references,
                 marker,
                 linked_references,
-                numeric_values,
+                numeric_values: Some(numeric_values),
             },
             offset,
             end: at,
@@ -2952,13 +2974,55 @@ mod inline_schema_tests {
                     leading_references: [1, 7, 8, 9, 1],
                     marker: 0x2d,
                     linked_references: [11, 12],
-                    numeric_values: [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,],
+                    numeric_values: Some(
+                        [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,]
+                    ),
                 },
                 offset: 0,
                 end: bytes.len(),
             }]
         );
         assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn type_38_schema_declaration_accepts_compact_state_orders() {
+        for (xmt, linked_references, descending_references) in [
+            (80, [87, 12], [83, 82, 81]),
+            (112, [118, 119], [120, 121, 122]),
+        ] {
+            let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+            push_xmt(&mut bytes, xmt);
+            bytes.extend_from_slice(&17u32.to_be_bytes());
+            for reference in [1, 7, 8, 9, 1] {
+                push_xmt(&mut bytes, reference);
+                bytes.push(1);
+            }
+            bytes.push(0x2d);
+            for reference in linked_references {
+                push_xmt(&mut bytes, reference);
+                bytes.push(1);
+            }
+            for reference in descending_references {
+                push_xmt(&mut bytes, reference);
+                bytes.push(0);
+            }
+            push_xmt(&mut bytes, 1);
+            bytes.push(1);
+
+            let census = walk(&bytes);
+
+            assert!(matches!(
+                census.inline_schema_declarations[0].fields,
+                InlineSchemaFields::Type38 {
+                    xmt: parsed_xmt,
+                    linked_references: parsed_links,
+                    numeric_values: None,
+                    ..
+                } if parsed_xmt == xmt && parsed_links == linked_references
+            ));
+            assert_eq!(census.bytes_decoded, bytes.len());
+        }
     }
 
     #[test]

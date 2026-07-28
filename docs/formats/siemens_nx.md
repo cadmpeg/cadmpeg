@@ -543,12 +543,15 @@ independent byte spans.
 
 The type-38 form has the header
 `00260c43434343434343434343434111696e74657273656374696f6e5f6461746100cc00015a`.
-Its state is `xmt, node_id:u32 BE, ref_status[5], marker:u8,
-ref_status[2], descending_ref_status[3], ref_status(1), term_schema[22],
-one:u32 BE, term_ref, 4c3f, value[11]:f64 BE`. `xmt` and the two references
+Its common state is `xmt, node_id:u32 BE, ref_status[5], marker:u8,
+ref_status[2], state_ref_status[3], ref_status(1)`. `xmt` and the two references
 after `marker` are non-null. The first seven reference statuses are `01`.
-`marker` is `2b` or `2d`. The three descending references have status `00`
-and values `xmt + 3`, `xmt + 2`, and `xmt + 1`. `term_schema` is
+`marker` is `2b` or `2d`. The three state references have status `00` and are
+either `xmt + 3, xmt + 2, xmt + 1` or `max(linked_ref) + 1,
+max(linked_ref) + 2, max(linked_ref) + 3`. The compact declaration ends after
+the terminal null reference. The nested form continues with
+`term_schema[22], one:u32 BE, term_ref, 4c3f, value[11]:f64 BE` and requires
+the descending XMT-relative state-reference order. `term_schema` is
 `0029034349087465726d5f757365000000010163435a`, `one` is `1`, and
 `term_ref` equals `xmt + 2`. Every numeric value is finite. The declaration
 ends after the eleventh numeric value.

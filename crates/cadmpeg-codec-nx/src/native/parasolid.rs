@@ -263,14 +263,14 @@ pub enum ParasolidDeltasInlineSchemaFields {
         state_words: [u32; 3],
         terminal_value: u64,
     },
-    /// Type 38 intersection-data declaration with a nested term-use schema.
+    /// Type 38 intersection-data declaration state.
     Type38 {
         xmt: u32,
         node_id: u32,
         leading_references: [u32; 5],
         marker: u8,
         linked_references: [u32; 2],
-        numeric_values: [f64; 11],
+        numeric_values: Option<[f64; 11]>,
     },
 }
 
