@@ -3389,6 +3389,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_record_index, 91);
     assert_eq!(decoded.form, 1);
     assert_eq!(decoded.form_offset, (compact_move_at + 43) as u64);
+    bytes[compact_move_at + 4..compact_move_at + 7].copy_from_slice(b"362");
+    bytes[compact_move_at + 43..compact_move_at + 47].copy_from_slice(&5u32.to_le_bytes());
+    let decoded = crate::design::decode::scopes::exact_move_operation(&bytes, &compact_move_scope)
+        .expect("class-362 Move frame");
+    assert_eq!(decoded.transform, move_transform);
+    assert_eq!(decoded.form, 5);
 
     let scale_at = bytes.len();
     let mut scale = vec![0; 317];
