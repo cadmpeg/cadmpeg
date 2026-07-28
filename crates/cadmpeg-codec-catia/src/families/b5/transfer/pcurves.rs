@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, ProceduralCurveDefinition,
+    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurveDefinition,
 };
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Vector3};
@@ -67,6 +67,21 @@ pub(super) fn sphere_great_circle_geometry(
         ref_direction: vector(ref_direction),
         radius: *radius,
     })
+}
+
+pub(super) fn sphere_great_circle_pcurve(
+    pcurve: &B5SphereGreatCirclePcurve,
+) -> Option<(PcurveGeometry, [f64; 2])> {
+    let parameter_range = pcurve.chart_bounds[0];
+    (pcurve.chart_scale > 0.0 && parameter_range[0] < parameter_range[1]).then_some((
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin: 0.0,
+            azimuth_rate: pcurve.chart_scale.recip(),
+            plane_phase: pcurve.chart_shift / pcurve.chart_scale + pcurve.phase,
+            plane_slope: pcurve.slope,
+        },
+        parameter_range,
+    ))
 }
 
 pub(super) fn oriented_line_plan(

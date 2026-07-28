@@ -38,7 +38,7 @@ use faces::{orient_loop_members, ownership_plan};
 use pcurves::{
     cylinder_helix, isocurve_endpoint_parameters, lifted_curve_geometry, neutral_pcurve_point,
     nurbs_isocurve, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
-    sphere_great_circle_geometry,
+    sphere_great_circle_geometry, sphere_great_circle_pcurve,
 };
 use vertices::transfer_vertex_tolerances;
 
@@ -331,16 +331,19 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                     .get(&pcurve_id)
                     .filter(|pcurve| pcurve.surface == loop_.surface)
                 {
-                    if let Some(geometry) = opaque
+                    if let Some((pcurve_geometry, parameter_range, geometry)) = opaque
                         .sphere_great_circle
                         .as_ref()
                         .and_then(|pcurve| {
-                            sphere_great_circle_geometry(
+                            let (pcurve_geometry, parameter_range) =
+                                sphere_great_circle_pcurve(pcurve)?;
+                            let geometry = sphere_great_circle_geometry(
                                 pcurve,
                                 graph.surfaces.get(&loop_.surface)?,
-                            )
+                            )?;
+                            Some((pcurve_geometry, parameter_range, geometry))
                         })
-                        .filter(|geometry| {
+                        .filter(|(_, _, geometry)| {
                             let endpoints = graph.edge_vertices[&edge_id];
                             let Some(points) = endpoints
                                 .map(|vertex| b5_vertex_point(graph, vertex))
@@ -352,6 +355,24 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                             circle_contains_points(geometry, &points)
                         })
                     {
+                        pcurve_plan.entry(pcurve_id).or_insert((
+                            pcurve_geometry,
+                            false,
+                            parameter_range,
+                        ));
+                        let support_range = edge_pcurve_parameters(graph, edge_id, pcurve_id)
+                            .and_then(|parameters| {
+                                bounded_occurrence_range(parameters, parameter_range)
+                            })
+                            .unwrap_or(parameter_range);
+                        let supports = edge_support_plan.entry(edge_id).or_default();
+                        if !supports.iter().any(|(surface, pcurve, range)| {
+                            *surface == loop_.surface
+                                && *pcurve == pcurve_id
+                                && *range == support_range
+                        }) {
+                            supports.push((loop_.surface, pcurve_id, support_range));
+                        }
                         merge_curve_plan(
                             &mut edge_curve_plan,
                             &mut conflicting_edge_curves,
@@ -907,8 +928,8 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::super::graph::{
         loop_chain_senses, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop,
-        B5OffsetSurface, B5ParameterIncidence, B5Pcurve, B5Profile, B5SphereGreatCirclePcurve,
-        B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
+        B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile,
+        B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
     };
     use super::edges::{
         b5_edge_support_definition, b5_supports_follow_edge, bounded_occurrence_range,
@@ -919,12 +940,13 @@ mod tests {
     use super::pcurves::{
         cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
         neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
-        sphere_great_circle_geometry,
+        sphere_great_circle_geometry, sphere_great_circle_pcurve,
     };
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
     use super::{
-        native_pcurve_parameter_range, referenced_surface_ids, transfer, CurvePlan, SurfacePlan,
+        build_plan, native_pcurve_parameter_range, referenced_surface_ids, transfer, CurvePlan,
+        SurfacePlan,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
@@ -2170,6 +2192,121 @@ mod tests {
         );
         assert!((axis.y + std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
         assert!((axis.z - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
+
+        let (geometry, range) =
+            sphere_great_circle_pcurve(&pcurve).expect("exact parameter-space curve");
+        assert_eq!(range, [0.0, 8.0]);
+        let uv = cadmpeg_ir::eval::pcurve_uv(&geometry, 8.0).expect("chart endpoint");
+        assert_eq!(uv.u, 1.0);
+        assert!((uv.v - (-(1.0 + std::f64::consts::FRAC_PI_2).cos()).atan()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
+        let chart_scale = 8.0;
+        let parameter_range = [0.0, 4.0 * std::f64::consts::PI];
+        let graph = B5Graph {
+            complete: true,
+            faces: vec![B5Face {
+                object_id: 1,
+                surface: 2,
+                loops: vec![3],
+            }],
+            loops: BTreeMap::from([(
+                3,
+                B5Loop {
+                    object_id: 3,
+                    pcurves: vec![4, 4, 4],
+                    edges: vec![5, 6, 7],
+                    surface: 2,
+                },
+            )]),
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::from([(
+                4,
+                B5OpaquePcurve {
+                    object_id: 4,
+                    surface: 2,
+                    class: 0x1d,
+                    payload: Vec::new(),
+                    sphere_great_circle: Some(B5SphereGreatCirclePcurve {
+                        chart_bounds: [parameter_range, [0.0, std::f64::consts::TAU * chart_scale]],
+                        chart_shift: 0.0,
+                        chart_scale,
+                        slope: 0.0,
+                        phase: 0.0,
+                    }),
+                },
+            )]),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::from([(
+                2,
+                B5Surface::Sphere {
+                    center: [0.0, 0.0, 0.0],
+                    direction_x: [1.0, 0.0, 0.0],
+                    direction_y: [0.0, 1.0, 0.0],
+                    axis: [0.0, 0.0, 1.0],
+                    radius: 5.0,
+                    angular_bounds: [
+                        [0.0, std::f64::consts::TAU],
+                        [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
+                    ],
+                    construction_radius: chart_scale,
+                    chart_origin: 0.0,
+                },
+            )]),
+            surface_aliases: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            vertex_points: vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]],
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices: BTreeMap::from([(5, [0, 1]), (6, [1, 2]), (7, [2, 0])]),
+            edge_parameter_incidences: BTreeMap::new(),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+        let payload = UnknownId("catia:test-payload".to_string());
+
+        assert!(ownership_plan(&graph).is_some());
+        let senses =
+            loop_chain_senses(&graph.loops[&3], &graph.edge_vertices).expect("closed edge chain");
+        assert!(orient_loop_members(&graph, BTreeMap::from([(3, senses)])).is_some());
+        let plan = build_plan(&graph, &payload).expect("complete owned graph");
+
+        assert_eq!(
+            plan.pcurve_plan.get(&4),
+            Some(&(
+                PcurveGeometry::SphericalGreatCircle {
+                    azimuth_origin: 0.0,
+                    azimuth_rate: chart_scale.recip(),
+                    plane_phase: 0.0,
+                    plane_slope: 0.0,
+                },
+                false,
+                parameter_range,
+            ))
+        );
+        assert_eq!(
+            plan.edge_support_plan.get(&5),
+            Some(&vec![(2, 4, parameter_range)])
+        );
+        assert!(plan.exact_support_edges.contains(&5));
+
+        let mut ir = CadIr::empty(Units::default());
+        assert!(transfer(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            graph,
+            &payload,
+        ));
+        assert_eq!(ir.model.pcurves.len(), 1);
+        assert!(matches!(
+            ir.model.pcurves[0].geometry,
+            PcurveGeometry::SphericalGreatCircle { .. }
+        ));
     }
 
     #[test]
