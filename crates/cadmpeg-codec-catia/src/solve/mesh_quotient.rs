@@ -2014,6 +2014,9 @@ impl MeshQuotient {
         if assignment.boundaries.iter().any(Vec::is_empty) {
             return Vec::new();
         }
+        // Fix a new edge's direction only while its two endpoint labels remain
+        // exchangeable. Distinct domains or prior quotient merges make the
+        // direction observable and require both orientations.
         let mut direction_union = self.union.clone();
         let gaugeable_edges = assignment
             .boundaries
