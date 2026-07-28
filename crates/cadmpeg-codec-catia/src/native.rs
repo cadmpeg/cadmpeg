@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 171;
+pub const CATIA_NATIVE_VERSION: u32 = 172;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2684,7 +2684,7 @@ pub struct CatiaZeroEntitySupportOccurrence {
 }
 
 /// One counted zero-entity `5fxx` face record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaZeroEntityFace {
     /// Byte offset of the framed face record.
     pub byte_offset: u64,
@@ -2703,7 +2703,7 @@ pub struct CatiaZeroEntityFace {
 }
 
 /// One counted zero-entity `62xx` loop record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaZeroEntityLoop {
     /// Byte offset of the framed loop record.
     pub byte_offset: u64,
@@ -2729,6 +2729,9 @@ pub struct CatiaZeroEntityLoop {
     pub loop_class: u8,
     /// Absolute coedge senses in member order; `true` is forward.
     pub forward_senses: Vec<bool>,
+    /// Complete sense-oriented model-space endpoint pairs in member order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub oriented_model_endpoints: Vec<[cadmpeg_ir::math::Point3; 2]>,
 }
 
 /// One zero-entity surface carrier and its maximal following support run.
@@ -3695,6 +3698,7 @@ fn zero_entity_support_runs(
                             gap: loop_record.gap,
                             loop_class: loop_record.loop_class,
                             forward_senses: loop_record.forward_senses,
+                            oriented_model_endpoints: loop_record.oriented_model_endpoints,
                         }
                     })
                     .collect(),
@@ -4798,6 +4802,27 @@ fn validate_zero_entity_support_runs(
                                     && (loop_record.support_record_ordinals.is_empty()
                                         || loop_record.support_record_ordinals.len() == edge_count)
                                     && loop_record.forward_senses.len() == edge_count
+                                    && {
+                                        let endpoints = loop_record
+                                            .support_record_ordinals
+                                            .iter()
+                                            .map(|ordinal| {
+                                                run.supports
+                                                    .iter()
+                                                    .find(|support| {
+                                                        support.record_ordinal == *ordinal
+                                                    })
+                                                    .and_then(|support| support.model_endpoints)
+                                            })
+                                            .collect::<Vec<_>>();
+                                        let expected = crate::families::zero_entity::records::
+                                            oriented_closed_model_endpoints(
+                                                &endpoints,
+                                                &loop_record.forward_senses,
+                                            )
+                                            .unwrap_or_default();
+                                        loop_record.oriented_model_endpoints == expected
+                                    }
                                     && loop_record.terminal_id == *terminal
                                     && matches!(loop_record.loop_class, 0x41 | 0x50 | 0xc1)
                                     && loop_record.member_ids.iter().enumerate().all(

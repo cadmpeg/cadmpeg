@@ -4735,6 +4735,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(loop_record.loop_class, 0x41);
     assert_eq!(loop_record.forward_senses, [true]);
     assert_eq!(loop_record.support_record_ordinals, [2]);
+    assert!(loop_record.oriented_model_endpoints.is_empty());
     let [support] = run.supports.as_slice() else {
         panic!("one zero-entity support occurrence")
     };
@@ -4811,6 +4812,23 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity loop support binding");
     assert!(crate::native::CatiaNative::load(&invalid_binding_namespace).is_err());
 
+    let mut invalid_oriented_endpoints = native.clone();
+    invalid_oriented_endpoints.zero_entity_support_runs[0]
+        .face
+        .as_mut()
+        .expect("face")
+        .loops[0]
+        .oriented_model_endpoints
+        .push([
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        ]);
+    let mut invalid_oriented_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_oriented_endpoints
+        .store(&mut invalid_oriented_endpoint_namespace)
+        .expect("store invalid CATIA zero-entity oriented endpoints");
+    assert!(crate::native::CatiaNative::load(&invalid_oriented_endpoint_namespace).is_err());
+
     let mut invalid_model_endpoint = native.clone();
     invalid_model_endpoint.zero_entity_support_runs[0].supports[0]
         .model_endpoints
@@ -4830,6 +4848,40 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity support run");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_closed_zero_entity_endpoint_tapes() {
+    let mut stream = zero_entity_face_loop_support_stream();
+    let support = 0x6a + 12;
+    stream[support + 13..support + 17].copy_from_slice(&1u32.to_le_bytes());
+    let first_endpoint: [u8; 16] = stream[support + 93..support + 109]
+        .try_into()
+        .expect("endpoint pair");
+    stream[support + 109..support + 125].copy_from_slice(&first_endpoint);
+
+    let native = crate::native::CatiaNative::decode(&stream);
+    let loop_record = &native.zero_entity_support_runs[0]
+        .face
+        .as_ref()
+        .expect("face")
+        .loops[0];
+    assert_eq!(
+        loop_record.oriented_model_endpoints,
+        [[
+            cadmpeg_ir::math::Point3::new(-1.0, 6.0, 3.0),
+            cadmpeg_ir::math::Point3::new(-1.0, 6.0, 3.0),
+        ]]
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA zero-entity endpoint tape");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA zero-entity endpoint tape"),
+        native
+    );
 }
 
 #[test]

@@ -117,7 +117,10 @@ current scores require those matrices and representative fixtures.
   logical-member and typed-reference lanes, loop class, and absolute member
   senses. Each loop member binds to the unique face-local support occurrence
   whose slot equals the loop terminal minus that member; the complete
-  face-local binding is atomic and retained as support-record ordinals. Every
+  face-local binding is atomic and retained as support-record ordinals. A loop
+  retains its complete sense-oriented model endpoint tape when every support
+  lifts directly or exactly one missing pair is bounded by lifted neighbors
+  and every cyclic join closes within the format tolerance. Every
   in-range odd-lane typed reference retains its selected global record identity
   atomically for the loop.
   Loop-to-oriented-use, oriented-use-to-incidence, and physical endpoint

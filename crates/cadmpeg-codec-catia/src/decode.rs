@@ -590,6 +590,16 @@ fn finish_decode(
                 .sum(),
         ),
         (
+            "decoded_zero_entity_oriented_model_endpoint_pair_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .flat_map(|face| &face.loops)
+                .map(|loop_record| loop_record.oriented_model_endpoints.len())
+                .sum(),
+        ),
+        (
             "decoded_zero_entity_bound_support_member_count".to_string(),
             native
                 .zero_entity_support_runs
@@ -1022,6 +1032,13 @@ fn finish_decode(
             .flat_map(|face| &face.loops)
             .map(|loop_record| loop_record.forward_senses.len())
             .sum::<usize>();
+        let oriented_model_endpoint_count = native
+            .zero_entity_support_runs
+            .iter()
+            .filter_map(|run| run.face.as_ref())
+            .flat_map(|face| &face.loops)
+            .map(|loop_record| loop_record.oriented_model_endpoints.len())
+            .sum::<usize>();
         let bound_support_member_count = native
             .zero_entity_support_runs
             .iter()
@@ -1058,6 +1075,7 @@ fn finish_decode(
                  {face_count} run(s) bind the complete face roster with {loop_terminal_count} \
                  ordered loop terminal(s), {loop_record_count} loop record(s), and \
                  {oriented_loop_member_count} stored member sense(s), including \
+                 {oriented_model_endpoint_count} sense-oriented model-space endpoint pair(s), \
                  {bound_support_member_count} member(s) bound to face-local support records and \
                  {bound_typed_loop_reference_count} typed reference(s) bound to global records; {} \
                  edge-stride record(s) \

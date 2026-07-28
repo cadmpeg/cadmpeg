@@ -53,7 +53,7 @@ pub struct ZeroEntitySupportRun {
 }
 
 /// One counted zero-entity `5fxx` face record.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ZeroEntityFace {
     /// Offset of the framed face record.
     pub pos: usize,
@@ -72,7 +72,7 @@ pub struct ZeroEntityFace {
 }
 
 /// One counted zero-entity `62xx` loop record.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ZeroEntityLoop {
     /// Offset of the framed loop record.
     pub pos: usize,
@@ -94,6 +94,8 @@ pub struct ZeroEntityLoop {
     pub loop_class: u8,
     /// Absolute coedge senses in member order; `true` is forward.
     pub forward_senses: Vec<bool>,
+    /// Complete sense-oriented model-space endpoint pairs in member order.
+    pub oriented_model_endpoints: Vec<[Point3; 2]>,
 }
 
 /// One `5e1a` edge-stride record in the global zero-entity reference namespace.
@@ -432,6 +434,74 @@ fn bind_face_support_occurrences(
     for (loop_record, support_record_ordinals) in face.loops.iter_mut().zip(bindings) {
         loop_record.support_record_ordinals = support_record_ordinals;
     }
+    let supports_by_ordinal = supports
+        .iter()
+        .map(|support| (support.record_ordinal, support))
+        .collect::<HashMap<_, _>>();
+    for loop_record in &mut face.loops {
+        let endpoints = loop_record
+            .support_record_ordinals
+            .iter()
+            .map(|ordinal| {
+                supports_by_ordinal
+                    .get(ordinal)
+                    .and_then(|support| support.model_endpoints)
+            })
+            .collect::<Vec<_>>();
+        if let Some(oriented) =
+            oriented_closed_model_endpoints(&endpoints, &loop_record.forward_senses)
+        {
+            loop_record.oriented_model_endpoints = oriented;
+        }
+    }
+}
+
+pub(crate) fn oriented_closed_model_endpoints(
+    endpoints: &[Option<[Point3; 2]>],
+    forward_senses: &[bool],
+) -> Option<Vec<[Point3; 2]>> {
+    const CLOSURE_TOLERANCE: f64 = 2e-3;
+
+    if endpoints.is_empty() || endpoints.len() != forward_senses.len() {
+        return None;
+    }
+    let mut oriented = endpoints
+        .iter()
+        .zip(forward_senses)
+        .map(|(endpoints, forward)| {
+            endpoints.map(
+                |[start, end]| {
+                    if *forward {
+                        [start, end]
+                    } else {
+                        [end, start]
+                    }
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let missing = oriented
+        .iter()
+        .enumerate()
+        .filter_map(|(index, endpoints)| endpoints.is_none().then_some(index))
+        .collect::<Vec<_>>();
+    match missing.as_slice() {
+        [] => {}
+        [index] if oriented.len() > 1 => {
+            let previous = (*index + oriented.len() - 1) % oriented.len();
+            let next = (*index + 1) % oriented.len();
+            oriented[*index] = Some([oriented[previous]?[1], oriented[next]?[0]]);
+        }
+        _ => return None,
+    }
+    let oriented = oriented.into_iter().collect::<Option<Vec<_>>>()?;
+    oriented
+        .iter()
+        .enumerate()
+        .all(|(index, endpoints)| {
+            endpoints[1].distance(oriented[(index + 1) % oriented.len()][0]) <= CLOSURE_TOLERANCE
+        })
+        .then_some(oriented)
 }
 
 fn zero_entity_faces_from_records(
@@ -547,6 +617,7 @@ fn zero_entity_loops_from_records(
                 gap,
                 loop_class: data[trailer + 1],
                 forward_senses,
+                oriented_model_endpoints: Vec::new(),
             })
         })
         .collect()
@@ -1055,6 +1126,28 @@ mod tests {
         assert!(torus_point.x.abs() < 1e-12);
         assert!((torus_point.y - 4.0).abs() < 1e-12);
         assert_eq!(torus_point.z, 2.0);
+    }
+
+    #[test]
+    fn oriented_endpoint_tape_closes_one_missing_occurrence() {
+        let first = Point3::new(1.0, 0.0, 0.0);
+        let second = Point3::new(0.0, 1.0, 0.0);
+        let third = Point3::new(0.0, 0.0, 1.0);
+        let endpoints = [Some([first, second]), Some([third, second]), None];
+
+        assert_eq!(
+            oriented_closed_model_endpoints(&endpoints, &[true, false, true]),
+            Some(vec![[first, second], [second, third], [third, first],])
+        );
+        assert!(oriented_closed_model_endpoints(&[endpoints[0], None, None], &[true; 3]).is_none());
+        assert!(oriented_closed_model_endpoints(
+            &[
+                Some([first, second]),
+                Some([Point3::new(1.0, 1.0, 0.0), first]),
+            ],
+            &[true; 2],
+        )
+        .is_none());
     }
 
     #[test]
