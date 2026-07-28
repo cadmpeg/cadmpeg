@@ -1602,59 +1602,10 @@ pub(crate) fn parse_parameter_scope(
         extrude_start,
         extrude_start_offset,
     ) = if family == Some(DesignFeatureFamily::Extrude) {
-        let direct_offset = start.checked_add(28)?;
-        let referenced_offset = start.checked_add(38)?;
-        let operation_offset = if bytes.get(start.checked_add(25)?) == Some(&1)
-            && bytes.get(start.checked_add(30)?..start.checked_add(36)?)? == [0; 6]
-        {
-            referenced_offset
-        } else {
-            direct_offset
-        };
-        let operation = match u32_at(bytes, operation_offset)? {
-            1 => DesignExtrudeOperation::Join,
-            2 => DesignExtrudeOperation::Cut,
-            3 => DesignExtrudeOperation::Intersect,
-            4 => DesignExtrudeOperation::NewBody,
-            _ => return None,
-        };
-        let side_offset = operation_offset.checked_add(4)?;
-        let termination_offset = operation_offset.checked_add(8)?;
-        let extent = match (
-            u32_at(bytes, side_offset)?,
-            u32_at(bytes, termination_offset)?,
-        ) {
-            (1, 1) => DesignExtrudeExtent::OneSidedToFace,
-            (1, 2) => DesignExtrudeExtent::OneSidedDistance,
-            (2, 0) => DesignExtrudeExtent::TwoSidedDistance,
-            _ => return None,
-        };
-        let direction_reversed_offset = operation_offset.checked_add(12)?;
-        let direction_reversed = match bytes.get(direction_reversed_offset)? {
-            0 => false,
-            1 => true,
-            _ => return None,
-        };
-        if bytes.get(operation_offset.checked_add(13)?)? != &1 {
-            return None;
-        }
-        let start_offset = operation_offset.checked_add(14)?;
-        let start = match bytes.get(start_offset)? {
-            0 => DesignExtrudeStart::ProfilePlane,
-            1 => DesignExtrudeStart::OffsetProfilePlane,
-            2 => DesignExtrudeStart::FromFace,
-            _ => return None,
-        };
-        (
-            Some(operation),
-            Some(operation_offset as u64),
-            Some(extent),
-            Some([side_offset as u64, termination_offset as u64]),
-            Some(direction_reversed),
-            Some(direction_reversed_offset as u64),
-            Some(start),
-            Some(start_offset as u64),
-        )
+        // The generic scope envelope is independently self-delimiting. An
+        // unrecognized Extrude prologue therefore withholds only the typed
+        // fields, not the scope and its ordered reference table.
+        exact_extrude_scope_fields(bytes, start).unwrap_or_default()
     } else {
         (None, None, None, None, None, None, None, None)
     };
@@ -1799,6 +1750,73 @@ pub(crate) fn parse_parameter_scope(
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
     })
+}
+
+type ExtrudeScopeFields = (
+    Option<DesignExtrudeOperation>,
+    Option<u64>,
+    Option<DesignExtrudeExtent>,
+    Option<[u64; 2]>,
+    Option<bool>,
+    Option<u64>,
+    Option<DesignExtrudeStart>,
+    Option<u64>,
+);
+
+fn exact_extrude_scope_fields(bytes: &[u8], start: usize) -> Option<ExtrudeScopeFields> {
+    let direct_offset = start.checked_add(28)?;
+    let referenced_offset = start.checked_add(38)?;
+    let operation_offset = if bytes.get(start.checked_add(25)?) == Some(&1)
+        && bytes.get(start.checked_add(30)?..start.checked_add(36)?)? == [0; 6]
+    {
+        referenced_offset
+    } else {
+        direct_offset
+    };
+    let operation = match u32_at(bytes, operation_offset)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        4 => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let side_offset = operation_offset.checked_add(4)?;
+    let termination_offset = operation_offset.checked_add(8)?;
+    let extent = match (
+        u32_at(bytes, side_offset)?,
+        u32_at(bytes, termination_offset)?,
+    ) {
+        (1, 1) => DesignExtrudeExtent::OneSidedToFace,
+        (1, 2) => DesignExtrudeExtent::OneSidedDistance,
+        (2, 0) => DesignExtrudeExtent::TwoSidedDistance,
+        _ => return None,
+    };
+    let direction_reversed_offset = operation_offset.checked_add(12)?;
+    let direction_reversed = match bytes.get(direction_reversed_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    if bytes.get(operation_offset.checked_add(13)?)? != &1 {
+        return None;
+    }
+    let start_offset = operation_offset.checked_add(14)?;
+    let start = match bytes.get(start_offset)? {
+        0 => DesignExtrudeStart::ProfilePlane,
+        1 => DesignExtrudeStart::OffsetProfilePlane,
+        2 => DesignExtrudeStart::FromFace,
+        _ => return None,
+    };
+    Some((
+        Some(operation),
+        Some(operation_offset as u64),
+        Some(extent),
+        Some([side_offset as u64, termination_offset as u64]),
+        Some(direction_reversed),
+        Some(direction_reversed_offset as u64),
+        Some(start),
+        Some(start_offset as u64),
+    ))
 }
 
 pub(crate) fn exact_surface_stitch_operation(

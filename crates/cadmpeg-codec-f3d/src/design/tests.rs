@@ -4842,6 +4842,11 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(to_face.extrude_direction_reversed, Some(true));
     assert_eq!(to_face.extrude_start, Some(DesignExtrudeStart::FromFace));
+
+    let unrecognized = scope("Extrude", 2, (3, 0), false, 0, false);
+    assert_eq!(unrecognized.kind, "Extrude");
+    assert_eq!(unrecognized.extrude_operation, None);
+    assert_eq!(unrecognized.extrude_extent, None);
 }
 
 #[test]
