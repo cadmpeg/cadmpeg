@@ -847,7 +847,8 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
                 marker_native_code(payload, offset),
                 payload.get(offset + 19..offset + 23)
             ),
-            (Some(1), Some([0x04, 0x00, 0x02, 0x00])) | (Some(0), Some([0x05, 0x00, 0x01, 0x00]))
+            (Some(0 | 1), Some([0x04, 0x00, 0x02, 0x00]))
+                | (Some(0), Some([0x05, 0x00, 0x01, 0x00]))
         );
         if !coordinate_kind
             || marker_profile_curve_role(payload, offset) != Some(1)
@@ -5538,7 +5539,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn compact_legacy_geometry_locus_carries_profile_coordinates() {
+    fn compact_legacy_profile_coordinate_pairings_carry_points() {
         let mut payload = vec![0; 120 + LEGACY_SKETCH_MARKER.len()];
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[5..13].fill(0xff);
@@ -5555,6 +5556,17 @@ mod marker_tests {
         let entities = sketch_input_entities(&payload, "lane");
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].kind, SketchInputKind::Point);
+
+        payload[19..23].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+
+        payload[13..17].copy_from_slice(&1u32.to_le_bytes());
+        payload[19..23].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        assert_eq!(marker_coordinates(&payload, 0), None);
     }
 
     #[test]
