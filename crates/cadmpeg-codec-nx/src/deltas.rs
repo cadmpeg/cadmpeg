@@ -976,7 +976,7 @@ fn reference_type_map(
             let target_kind = be::u16_at(stream, at)?;
             (target_kind == 1 || is_reference_type_kind(target_kind)).then_some(())?;
             at = at.checked_add(2)?;
-            return (at == expected_end && !entries.is_empty()).then_some(ReferenceTypeMap {
+            return (at <= expected_end && !entries.is_empty()).then_some(ReferenceTypeMap {
                 entries,
                 target_kind: Some(target_kind),
                 offset,
@@ -1764,7 +1764,7 @@ fn is_tagged_reference_kind(kind: u16) -> bool {
 }
 
 fn is_reference_type_kind(kind: u16) -> bool {
-    is_tagged_reference_kind(kind) || matches!(kind, 11 | 35 | 55 | 67 | 100)
+    is_tagged_reference_kind(kind) || matches!(kind, 11 | 35 | 55 | 61 | 67 | 100)
 }
 
 fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Option<Record> {
@@ -3344,7 +3344,7 @@ mod reference_type_map_tests {
 
     #[test]
     fn reference_type_map_accepts_map_only_type_codes() {
-        let bytes = vec![1, 0, 1, 0, 3, 0, 67, 0, 4, 0, 11, 0, 1, 0, 0, 0, 35];
+        let bytes = vec![1, 0, 1, 0, 3, 0, 67, 0, 4, 0, 11, 0, 1, 0, 0, 0, 61];
 
         let census = walk(&bytes);
 
@@ -3352,7 +3352,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(3, 67), (4, 11)],
-                target_kind: Some(35),
+                target_kind: Some(61),
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -3382,19 +3382,33 @@ mod reference_type_map_tests {
     }
 
     #[test]
+    fn target_clause_self_delimits_reference_type_map_prefixes() {
+        let first = map_bytes();
+        let mut bytes = first.clone();
+        bytes.extend(map_bytes());
+
+        let census = walk(&bytes);
+
+        assert_eq!(census.reference_type_maps.len(), 2);
+        assert_eq!(census.reference_type_maps[0].offset, 0);
+        assert_eq!(census.reference_type_maps[0].end, first.len());
+        assert_eq!(census.reference_type_maps[1].offset, first.len());
+        assert_eq!(census.reference_type_maps[1].end, bytes.len());
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
     fn reference_type_map_requires_complete_framing_and_known_types() {
         let bytes = map_bytes();
         let mut unknown_entry_type = bytes.clone();
         unknown_entry_type[9] = 0xfe;
         let mut unknown_target_type = bytes.clone();
         unknown_target_type[19] = 0xfe;
-        let trailing_byte = [bytes.as_slice(), &[0]].concat();
 
         for malformed in [
             &bytes[..bytes.len() - 1],
             unknown_entry_type.as_slice(),
             unknown_target_type.as_slice(),
-            trailing_byte.as_slice(),
         ] {
             assert!(walk(malformed).reference_type_maps.is_empty());
         }
