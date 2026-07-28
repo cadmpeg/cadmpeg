@@ -371,6 +371,8 @@ pub struct B5Pcurve {
 /// Exact great-circle fields carried by a class-`1d` sphere pcurve.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5SphereGreatCirclePcurve {
+    /// Length-valued bounds of the curve in the sphere chart.
+    pub chart_bounds: [[f64; 2]; 2],
     /// Length-valued shift contributing to the great-circle plane phase.
     pub chart_shift: f64,
     /// Sphere radius repeated by the pcurve.
@@ -2797,17 +2799,28 @@ fn parse_sphere_great_circle_pcurve(
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 1e-12 * left.abs().max(right.abs()).max(1.0)
     };
+    let surface_u_bounds = angular_bounds[0].map(|angle| radius * angle);
+    let contains = |outer: [f64; 2], inner: [f64; 2]| {
+        let scale = outer
+            .into_iter()
+            .chain(inner)
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        let tolerance = 1e-12 * scale;
+        inner[0] >= outer[0] - tolerance && inner[1] <= outer[1] + tolerance
+    };
     (direction.abs() == 1.0
         && zero0 == 0.0
         && zero1 == 0.0
         && radius > 0.0
+        && u0 < u1
         && close(radius, *sphere_radius)
         && close(reciprocal_scale, -direction / radius)
-        && close(u0, radius * angular_bounds[0][0])
-        && close(u1, radius * angular_bounds[0][1])
+        && contains(surface_u_bounds, [u0, u1])
         && close(v0, *chart_origin)
         && close(v1, chart_origin + std::f64::consts::TAU * radius))
     .then_some(B5SphereGreatCirclePcurve {
+        chart_bounds: [[u0, u1], [v0, v1]],
         chart_shift,
         radius,
         slope,
@@ -4047,7 +4060,7 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius,
-            angular_bounds: [[0.25, 1.25], [-1.0, 1.0]],
+            angular_bounds: [[0.0, 1.5], [-1.0, 1.0]],
             construction_radius: 8.0,
             chart_origin,
         };
@@ -4055,11 +4068,22 @@ mod tests {
         assert_eq!(
             parse_sphere_great_circle_pcurve(&record, &sphere),
             Some(B5SphereGreatCirclePcurve {
+                chart_bounds: [
+                    [radius * 0.25, radius * 1.25],
+                    [chart_origin, chart_origin + std::f64::consts::TAU * radius],
+                ],
                 chart_shift: 2.0,
                 radius,
                 slope: -0.75,
                 phase: -1.25,
             })
+        );
+
+        let mut outside_surface_chart = record;
+        outside_surface_chart.payload[2..10].copy_from_slice(&(-1.0_f64).to_le_bytes());
+        assert_eq!(
+            parse_sphere_great_circle_pcurve(&outside_surface_chart, &sphere),
+            None
         );
     }
 

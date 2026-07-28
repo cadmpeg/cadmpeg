@@ -2146,6 +2146,7 @@ mod tests {
             chart_origin: 0.0,
         };
         let pcurve = B5SphereGreatCirclePcurve {
+            chart_bounds: [[0.0, 5.0], [0.0, std::f64::consts::TAU * 5.0]],
             chart_shift: 0.0,
             radius: 5.0,
             slope: -1.0,
