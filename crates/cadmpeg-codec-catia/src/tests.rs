@@ -3623,6 +3623,32 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
 }
 
 #[test]
+fn native_namespace_retains_consolidated_reference_lists() {
+    let native = crate::native::CatiaNative::decode(&b2_reference_list_stream());
+    let [list] = native.consolidated_reference_lists.as_slice() else {
+        panic!("one consolidated reference list")
+    };
+    assert_eq!(list.references, (0u32..26).collect::<Vec<_>>());
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA reference list");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA reference list"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_reference_lists[0].references.clear();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA reference list");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_standalone_consolidated_circle_supports() {
     let native = crate::native::CatiaNative::decode(&b2_circle_stream());
     let [circle] = native.consolidated_circles.as_slice() else {

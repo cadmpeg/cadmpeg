@@ -366,6 +366,10 @@ fn finish_decode(
             native.consolidated_pcurves.len(),
         ),
         (
+            "decoded_consolidated_reference_list_count".to_string(),
+            native.consolidated_reference_lists.len(),
+        ),
+        (
             "decoded_consolidated_revolution_count".to_string(),
             native.consolidated_revolutions.len(),
         ),

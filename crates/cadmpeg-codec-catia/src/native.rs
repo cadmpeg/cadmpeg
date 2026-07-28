@@ -19,7 +19,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 138;
+pub const CATIA_NATIVE_VERSION: u32 = 139;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -35,6 +35,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_owner_packets",
     "consolidated_parameter_points",
     "consolidated_pcurves",
+    "consolidated_reference_lists",
     "consolidated_revolutions",
     "consolidated_spheres",
     "consolidated_tori",
@@ -275,6 +276,17 @@ pub struct CatiaConsolidatedParameterPoint {
     pub control: u8,
     /// Layout-specific finite scalar lane.
     pub payload: CatiaConsolidatedParameterPointPayload,
+}
+
+/// One complete consolidated `B:37` persistent-reference list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedReferenceList {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Compact persistent identities in serialization order.
+    pub references: Vec<u32>,
 }
 
 /// One structurally complete consolidated `A/B:20` pcurve jet whose support
@@ -2247,6 +2259,9 @@ pub struct CatiaNative {
     /// Consolidated pcurve jets retained before support resolution.
     #[serde(default)]
     pub consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
+    /// Exact consolidated persistent-reference lists.
+    #[serde(default)]
+    pub consolidated_reference_lists: Vec<CatiaConsolidatedReferenceList>,
     /// Consolidated revolution carriers retained before profile resolution.
     #[serde(default)]
     pub consolidated_revolutions: Vec<CatiaConsolidatedRevolution>,
@@ -2298,6 +2313,7 @@ impl Default for CatiaNative {
             consolidated_owner_packets: Vec::new(),
             consolidated_parameter_points: Vec::new(),
             consolidated_pcurves: Vec::new(),
+            consolidated_reference_lists: Vec::new(),
             consolidated_revolutions: Vec::new(),
             consolidated_spheres: Vec::new(),
             consolidated_tori: Vec::new(),
@@ -2470,6 +2486,18 @@ fn consolidated_parameter_points(bytes: &[u8]) -> Vec<CatiaConsolidatedParameter
                 control: point.control,
                 payload,
             }
+        })
+        .collect()
+}
+
+fn consolidated_reference_lists(bytes: &[u8]) -> Vec<CatiaConsolidatedReferenceList> {
+    crate::families::b2::records::b2_reference_lists(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, list)| CatiaConsolidatedReferenceList {
+            id: format!("catia:consolidated:reference-list#{index}"),
+            byte_offset: list.pos as u64,
+            references: list.references,
         })
         .collect()
 }
@@ -3168,6 +3196,24 @@ fn validate_consolidated_parameter_points(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated parameter point `{}` is structurally invalid",
                 point.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_reference_lists(
+    lists: &[CatiaConsolidatedReferenceList],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, list) in lists.iter().enumerate() {
+        if list.id != format!("catia:consolidated:reference-list#{index}")
+            || list.references.is_empty()
+            || index > 0 && lists[index - 1].byte_offset >= list.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated reference list `{}` is structurally invalid",
+                list.id
             )));
         }
     }
@@ -4120,6 +4166,7 @@ impl CatiaNative {
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_parameter_points = consolidated_parameter_points(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
+        let consolidated_reference_lists = consolidated_reference_lists(bytes);
         let consolidated_revolutions = consolidated_revolutions(bytes);
         let consolidated_spheres = consolidated_spheres(bytes);
         let consolidated_tori = consolidated_tori(bytes);
@@ -4142,6 +4189,7 @@ impl CatiaNative {
             consolidated_owner_packets,
             consolidated_parameter_points,
             consolidated_pcurves,
+            consolidated_reference_lists,
             consolidated_revolutions,
             consolidated_spheres,
             consolidated_tori,
@@ -4543,6 +4591,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_pcurves")?;
         consolidated_pcurves.sort_by_key(|pcurve| pcurve.byte_offset);
         validate_consolidated_pcurves(&consolidated_pcurves)?;
+        let mut consolidated_reference_lists: Vec<CatiaConsolidatedReferenceList> =
+            namespace.arena_as("consolidated_reference_lists")?;
+        consolidated_reference_lists.sort_by_key(|list| list.byte_offset);
+        validate_consolidated_reference_lists(&consolidated_reference_lists)?;
         let mut consolidated_revolutions: Vec<CatiaConsolidatedRevolution> =
             namespace.arena_as("consolidated_revolutions")?;
         consolidated_revolutions.sort_by_key(|revolution| revolution.byte_offset);
@@ -4591,6 +4643,7 @@ impl CatiaNative {
             consolidated_owner_packets,
             consolidated_parameter_points,
             consolidated_pcurves,
+            consolidated_reference_lists,
             consolidated_revolutions,
             consolidated_spheres,
             consolidated_tori,
@@ -4674,6 +4727,10 @@ impl CatiaNative {
             &self.consolidated_parameter_points,
         )?;
         namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
+        namespace.set_arena(
+            "consolidated_reference_lists",
+            &self.consolidated_reference_lists,
+        )?;
         namespace.set_arena("consolidated_revolutions", &self.consolidated_revolutions)?;
         namespace.set_arena("consolidated_spheres", &self.consolidated_spheres)?;
         namespace.set_arena("consolidated_tori", &self.consolidated_tori)?;
@@ -4720,6 +4777,7 @@ impl CatiaNative {
             consolidated_owner_packets,
             consolidated_parameter_points,
             consolidated_pcurves,
+            consolidated_reference_lists,
             consolidated_revolutions,
             consolidated_spheres,
             consolidated_tori,
@@ -4763,6 +4821,10 @@ impl CatiaNative {
             &consolidated_parameter_points,
         )?;
         namespace.set_arena("consolidated_pcurves", &consolidated_pcurves)?;
+        namespace.set_arena(
+            "consolidated_reference_lists",
+            &consolidated_reference_lists,
+        )?;
         namespace.set_arena("consolidated_revolutions", &consolidated_revolutions)?;
         namespace.set_arena("consolidated_spheres", &consolidated_spheres)?;
         namespace.set_arena("consolidated_tori", &consolidated_tori)?;

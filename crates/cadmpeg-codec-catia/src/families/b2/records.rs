@@ -71,7 +71,6 @@ pub enum B2ParameterPointPayload {
 
 /// Persistent-tag reference list stored in a `b2/b3/b4 03 37` record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2ReferenceList {
     /// Record byte offset.
     pub pos: usize,
@@ -386,7 +385,6 @@ pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
 
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
 #[must_use]
-#[cfg(test)]
 pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
     b_family_frames(data, 0x37)
         .into_iter()
