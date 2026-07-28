@@ -549,7 +549,7 @@ An immediately preceding `<inclusive-length:u8> <name:utf8> <selector>` binds a 
 
 An identity interval containing exactly two schema text fields is a typed relation when the second field has the complete form `(<clause>{,<clause>}) : <result-type>` with unique parameter names. A clause is `<parameter> : #In <value-type>` or `<parameter> : #Out <value-type>`. At most one output clause is present. `VoidType` requires one output clause; every other result type requires none. The first field is the exact expression or rule program. Preserve both field offsets and values, ordered inputs, optional output, and result type.
 
-The fixed legacy scalar prefix is `FE 85 88 82 FE`. `E6 <bits:u64le>` follows it for a finite binary64 evaluation; `E7` follows it for an unset evaluation. The complete opcode and payload must remain inside one identity interval. Preserve the prefix offset, containing identity, evaluation state, and exact binary64 bits. This packet does not by itself assign a parameter name or declared type.
+A legacy scalar prefix is `FE <form> 88 82 FE`, where `form=84` is the named form and `form=85` is the standalone form. `E6 <bits:u64le>` follows it for a finite binary64 evaluation; `E7` follows it for an unset evaluation. The complete opcode and payload must remain inside one identity interval. Preserve the prefix offset, form, containing identity, evaluation state, and exact binary64 bits. When an identity interval contains exactly one scalar packet and exactly one role-bound text field named `name`, that field supplies the scalar's stored name; preserve the name-field offset and text. This production does not assign a declared type.
 
 ### 7.2 `7C02` source-schema catalogs
 

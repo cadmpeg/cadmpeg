@@ -9834,7 +9834,9 @@ fn native_round_trips_legacy_entity_identity_runs() {
                 bytes.push(0xfe);
             }
         } else if entity_id == 9 {
-            bytes.extend(b"\xfe\x85\x88\x82\xfe\xe6");
+            bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 9]);
+            bytes.extend(b"\xe8\x00\x12\x01\x07Result\xfe");
+            bytes.extend(b"\xfe\x84\x88\x82\xfe\xe6");
             bytes.extend(3.5_f64.to_bits().to_le_bytes());
         }
     }
@@ -9855,7 +9857,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].catalog_offset,
         catalog_offset as u64
     );
-    assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 2);
+    assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 3);
     assert_eq!(native.legacy_entity_runs[0].text_fields[0].entity_id, 4);
     assert_eq!(native.legacy_entity_runs[0].text_fields[0].value, "#1_ + 2");
     assert_eq!(
@@ -9878,6 +9880,16 @@ fn native_round_trips_legacy_entity_identity_runs() {
         "#1_"
     );
     assert_eq!(native.legacy_entity_runs[0].scalar_values.len(), 1);
+    assert_eq!(
+        native.legacy_entity_runs[0].scalar_values[0]
+            .name
+            .as_deref(),
+        Some("Result")
+    );
+    assert_eq!(
+        native.legacy_entity_runs[0].scalar_values[0].encoding,
+        crate::native::CatiaLegacyScalarEncoding::Named84
+    );
     assert!(matches!(
         native.legacy_entity_runs[0].scalar_values[0].evaluation,
         crate::native::CatiaLegacyScalarEvaluation::Value { bits }
@@ -9890,6 +9902,14 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("store legacy entity run");
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load legacy entity run");
     assert_eq!(loaded.legacy_entity_runs, native.legacy_entity_runs);
+
+    let mut invalid_name = native.clone();
+    invalid_name.legacy_entity_runs[0].scalar_values[0].name = Some("Other".to_string());
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_name
+        .store(&mut namespace)
+        .expect("store invalid legacy scalar name");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
     let mut invalid = native;
     invalid.legacy_entity_runs[0].identities[1].entity_id = 1;

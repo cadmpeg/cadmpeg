@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 145;
+pub const CATIA_NATIVE_VERSION: u32 = 147;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2321,6 +2321,16 @@ pub enum CatiaLegacyScalarEvaluation {
     Unset,
 }
 
+/// Fixed prefix selecting one legacy scalar production.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaLegacyScalarEncoding {
+    /// `FE 84 88 82 FE`.
+    Named84,
+    /// `FE 85 88 82 FE`.
+    Standalone85,
+}
+
 /// One complete typed scalar packet in a legacy identity interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaLegacyScalarValue {
@@ -2328,6 +2338,14 @@ pub struct CatiaLegacyScalarValue {
     pub byte_offset: u64,
     /// Stored containing identity.
     pub entity_id: u32,
+    /// Fixed scalar-prefix production.
+    pub encoding: CatiaLegacyScalarEncoding,
+    /// Unique co-owned `name` text field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_field: Option<u64>,
+    /// Unique co-owned stored name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Stored evaluation.
     pub evaluation: CatiaLegacyScalarEvaluation,
 }
@@ -2565,6 +2583,16 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                     .map(|value| CatiaLegacyScalarValue {
                         byte_offset: value.offset as u64,
                         entity_id: value.entity_id,
+                        encoding: match value.encoding {
+                            legacy_entity::LegacyScalarEncoding::Named84 => {
+                                CatiaLegacyScalarEncoding::Named84
+                            }
+                            legacy_entity::LegacyScalarEncoding::Standalone85 => {
+                                CatiaLegacyScalarEncoding::Standalone85
+                            }
+                        },
+                        name_field: value.name_offset.map(|offset| offset as u64),
+                        name: value.name,
                         evaluation: match value.evaluation {
                             legacy_entity::LegacyScalarEvaluation::Value(bits) => {
                                 CatiaLegacyScalarEvaluation::Value { bits }
@@ -2681,6 +2709,38 @@ fn validate_legacy_entity_runs(
                         .iter()
                         .rfind(|identity| identity.byte_offset < value.byte_offset)
                         .is_some_and(|identity| identity.entity_id == value.entity_id)
+                    && match (&value.name_field, &value.name) {
+                        (Some(name_field), Some(name)) => {
+                            run.scalar_values
+                                .iter()
+                                .filter(|candidate| candidate.entity_id == value.entity_id)
+                                .count()
+                                == 1
+                                && run
+                                    .text_fields
+                                    .iter()
+                                    .filter(|field| {
+                                        field.entity_id == value.entity_id
+                                            && field
+                                                .role
+                                                .as_ref()
+                                                .is_some_and(|role| role.name == "name")
+                                    })
+                                    .count()
+                                    == 1
+                                && run.text_fields.iter().any(|field| {
+                                    field.entity_id == value.entity_id
+                                        && field.byte_offset == *name_field
+                                        && field.value == *name
+                                        && field
+                                            .role
+                                            .as_ref()
+                                            .is_some_and(|role| role.name == "name")
+                                })
+                        }
+                        (None, None) => true,
+                        (Some(_), None) | (None, Some(_)) => false,
+                    }
                     && match value.evaluation {
                         CatiaLegacyScalarEvaluation::Value { bits } => {
                             f64::from_bits(bits).is_finite()

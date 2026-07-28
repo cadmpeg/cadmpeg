@@ -4,6 +4,7 @@
 const CATALOG_OPEN: &[u8] = b"\xde\x04\xfe\xfe\x12CATCatalogManager";
 const TEXT_OPEN: &[u8] = b"\xe8\x00\x12\x01";
 const SCALAR_OPEN: &[u8] = b"\xfe\x85\x88\x82\xfe";
+const NAMED_SCALAR_OPEN: &[u8] = b"\xfe\x84\x88\x82\xfe";
 
 /// Length production used by one legacy schema text field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,13 +87,28 @@ pub enum LegacyScalarEvaluation {
     Unset,
 }
 
-/// One complete typed scalar packet in an identity interval.
+/// Fixed prefix selecting one legacy scalar production.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyScalarEncoding {
+    /// `FE 84 88 82 FE`.
+    Named84,
+    /// `FE 85 88 82 FE`.
+    Standalone85,
+}
+
+/// One complete typed scalar packet in an identity interval.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyScalarValue {
     /// Offset of the fixed packet prefix.
     pub offset: usize,
     /// Stored identity whose interval contains the packet.
     pub entity_id: u32,
+    /// Fixed scalar-prefix production.
+    pub encoding: LegacyScalarEncoding,
+    /// Unique co-owned `name` text-field opener.
+    pub name_offset: Option<usize>,
+    /// Unique co-owned stored name.
+    pub name: Option<String>,
     /// Stored evaluation.
     pub evaluation: LegacyScalarEvaluation,
 }
@@ -162,7 +178,7 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         })
         .collect::<Vec<_>>();
     let relations = parse_relations(&text_fields);
-    let scalar_values = identities
+    let mut scalar_values = identities
         .iter()
         .enumerate()
         .flat_map(|(index, identity)| {
@@ -172,7 +188,8 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
                 .map_or(catalog_offset, |next| next.offset);
             parse_scalar_values(data, start, end, identity.entity_id)
         })
-        .collect();
+        .collect::<Vec<_>>();
+    bind_scalar_names(&text_fields, &mut scalar_values);
     Some(LegacyEntityRun {
         catalog_offset,
         identities,
@@ -188,13 +205,18 @@ fn parse_scalar_values(
     end: usize,
     entity_id: u32,
 ) -> Vec<LegacyScalarValue> {
-    memchr::memmem::find_iter(&data[start..end], SCALAR_OPEN)
-        .filter_map(|relative| {
+    let mut values = [
+        (NAMED_SCALAR_OPEN, LegacyScalarEncoding::Named84),
+        (SCALAR_OPEN, LegacyScalarEncoding::Standalone85),
+    ]
+    .into_iter()
+    .flat_map(|(opener, encoding)| {
+        memchr::memmem::find_iter(&data[start..end], opener).filter_map(move |relative| {
             let offset = start + relative;
             if offset.checked_add(6)? > end {
                 return None;
             }
-            let opcode = *data.get(offset + SCALAR_OPEN.len())?;
+            let opcode = *data.get(offset + opener.len())?;
             let evaluation = match opcode {
                 0xe6 => {
                     if offset.checked_add(14)? > end {
@@ -212,10 +234,39 @@ fn parse_scalar_values(
             Some(LegacyScalarValue {
                 offset,
                 entity_id,
+                encoding,
+                name_offset: None,
+                name: None,
                 evaluation,
             })
         })
-        .collect()
+    })
+    .collect::<Vec<_>>();
+    values.sort_by_key(|value| value.offset);
+    values
+}
+
+fn bind_scalar_names(fields: &[LegacyTextField], values: &mut [LegacyScalarValue]) {
+    let mut counts = std::collections::HashMap::new();
+    for value in values.iter() {
+        *counts.entry(value.entity_id).or_insert(0usize) += 1;
+    }
+    for value in values {
+        if counts.get(&value.entity_id) != Some(&1) {
+            continue;
+        }
+        let mut names = fields.iter().filter(|field| {
+            field.entity_id == value.entity_id
+                && field.role.as_ref().is_some_and(|role| role.name == "name")
+        });
+        let Some(name) = names.next() else {
+            continue;
+        };
+        if names.next().is_none() {
+            value.name_offset = Some(name.offset);
+            value.name = Some(name.value.clone());
+        }
+    }
 }
 
 fn parse_relations(fields: &[LegacyTextField]) -> Vec<LegacyRelation> {
@@ -407,7 +458,7 @@ fn text_value(bytes: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_runs, CATALOG_OPEN, SCALAR_OPEN, TEXT_OPEN};
+    use super::{parse_runs, CATALOG_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, TEXT_OPEN};
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
         bytes.push(0xea);
@@ -559,5 +610,27 @@ mod tests {
                 super::LegacyScalarEvaluation::Unset,
             ]
         );
+        assert!(values
+            .iter()
+            .all(|value| { value.encoding == super::LegacyScalarEncoding::Standalone85 }));
+    }
+
+    #[test]
+    fn binds_a_unique_co_owned_name_role_to_a_scalar() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(&[5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[8, b'L', b'e', b'n', b'g', b't', b'h', b'.', 0xfe]);
+        bytes.extend_from_slice(NAMED_SCALAR_OPEN);
+        bytes.push(0xe6);
+        bytes.extend_from_slice(&12.0_f64.to_bits().to_le_bytes());
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let runs = parse_runs(&bytes);
+        let value = &runs[0].scalar_values[0];
+        assert_eq!(value.encoding, super::LegacyScalarEncoding::Named84);
+        assert_eq!(value.name.as_deref(), Some("Length."));
+        assert_eq!(value.name_offset, Some(runs[0].text_fields[0].offset));
     }
 }
