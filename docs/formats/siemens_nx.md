@@ -589,8 +589,8 @@ non-null. The first four leading reference statuses are `01`; the fifth is
 `00` or `01` and is non-null when its status is `00`. For marker `2b` or
 `2d`, the common `linked_state` is `ref_status[2], state_ref_status[3]`; the
 linked statuses are `01`, and the state statuses are `00`. The three state references are either
-`xmt + 3, xmt + 2, xmt + 1` or `max(linked_ref) + 1,
-max(linked_ref) + 2, max(linked_ref) + 3` when the fifth leading status is
+`xmt + 3, xmt + 2, xmt + 1` or `max(leading_ref, linked_ref) + 1,
+max(leading_ref, linked_ref) + 2, max(leading_ref, linked_ref) + 3` when the fifth leading status is
 `01`. When the fifth leading status is `00`, the three state references are
 that leading reference plus one, two, and three. Marker `2b` also has an alternate
 `linked_state` of `ref_status, state_ref_status[4]`; the linked status is `01`,

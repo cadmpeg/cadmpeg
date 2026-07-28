@@ -1491,11 +1491,15 @@ fn inline_schema_declaration(
                 xmt.checked_add(2)?,
                 xmt.checked_add(1)?,
             ];
-            let linked_anchor = linked_references.iter().copied().max()?;
-            let ascending_from_link = [
-                linked_anchor.checked_add(1)?,
-                linked_anchor.checked_add(2)?,
-                linked_anchor.checked_add(3)?,
+            let prior_anchor = linked_references
+                .iter()
+                .chain(&leading_references)
+                .copied()
+                .max()?;
+            let ascending_from_prior = [
+                prior_anchor.checked_add(1)?,
+                prior_anchor.checked_add(2)?,
+                prior_anchor.checked_add(3)?,
             ];
             if stream.get(state_end..state_end.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
                 != Some(TYPE_41_SCHEMA_HEADER)
@@ -1526,7 +1530,7 @@ fn inline_schema_declaration(
                     });
                 }
                 (state_references.as_slice() == descending_from_xmt
-                    || state_references.as_slice() == ascending_from_link)
+                    || state_references.as_slice() == ascending_from_prior)
                     .then_some(())?;
                 (state_end <= gap_end).then_some(())?;
                 return Some(InlineSchemaDeclaration {
@@ -3550,14 +3554,15 @@ mod inline_schema_tests {
 
     #[test]
     fn type_38_schema_declaration_accepts_compact_state_orders() {
-        for (xmt, linked_references, descending_references) in [
-            (80, [87, 12], [83, 82, 81]),
-            (112, [118, 119], [120, 121, 122]),
+        for (xmt, leading_references, linked_references, expected_state_references) in [
+            (80, [1, 7, 8, 9, 1], [87, 12], [83, 82, 81]),
+            (112, [1, 7, 8, 9, 1], [118, 119], [120, 121, 122]),
+            (10, [1, 13, 47, 1, 1], [45, 9], [48, 49, 50]),
         ] {
             let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
             push_xmt(&mut bytes, xmt);
             bytes.extend_from_slice(&17u32.to_be_bytes());
-            for reference in [1, 7, 8, 9, 1] {
+            for reference in leading_references {
                 push_xmt(&mut bytes, reference);
                 bytes.push(1);
             }
@@ -3566,7 +3571,7 @@ mod inline_schema_tests {
                 push_xmt(&mut bytes, reference);
                 bytes.push(1);
             }
-            for reference in descending_references {
+            for reference in expected_state_references {
                 push_xmt(&mut bytes, reference);
                 bytes.push(0);
             }
@@ -3585,7 +3590,7 @@ mod inline_schema_tests {
                     ..
                 } if *parsed_xmt == xmt
                     && parsed_links == &linked_references
-                    && state_references == &descending_references
+                    && state_references == &expected_state_references
             ));
             assert_eq!(census.bytes_decoded, bytes.len());
         }
