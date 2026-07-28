@@ -1550,6 +1550,13 @@ fn object_graph_record(head: &[u8], payload: &[u8]) -> Vec<u8> {
     bytes
 }
 
+fn inline_object_graph_record(body: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0x7c, 0x09];
+    bytes.extend_from_slice(&(6_u32 + body.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(body);
+    bytes
+}
+
 fn object_graph_from_records(records: &[Vec<u8>]) -> Vec<u8> {
     let total_len = 6 + records.iter().map(Vec::len).sum::<usize>();
     let mut bytes = vec![0x7c, 0x08];
@@ -4769,6 +4776,45 @@ fn outer_object_graph_requires_a_final_payload_terminator() {
 }
 
 #[test]
+fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
+    use crate::object_graph::PayloadField;
+
+    let valid = object_graph_from_records(&[object_graph_record(
+        &[0x04],
+        &[0xe5, 1, 0, 0, 0, 0xaa, 0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&valid).expect("bounded blob");
+    assert!(matches!(
+        graph.records[0].payload.fields.as_slice(),
+        [
+            PayloadField::Blob {
+                declared_len: 1,
+                bytes,
+                ..
+            },
+            PayloadField::Terminator
+        ] if bytes.as_slice() == [0xaa]
+    ));
+
+    let unbounded = object_graph_from_records(&[object_graph_record(
+        &[0x04],
+        &[0xe5, 0xfd, 0xd8, 0xc1, 0x74, 0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&unbounded).expect("literal E5 atom");
+    assert!(matches!(
+        graph.records[0].payload.fields.as_slice(),
+        [
+            PayloadField::Atom {
+                value: 0xe5,
+                offset: 0
+            },
+            ..,
+            PayloadField::Terminator
+        ]
+    ));
+}
+
+#[test]
 fn outer_object_graph_requires_a_stored_head_lead() {
     let bytes = object_graph_from_records(&[object_graph_record(&[], &[0xfe])]);
     assert!(crate::object_graph::parse(&bytes).is_none());
@@ -4786,6 +4832,78 @@ fn outer_object_graph_accepts_one_length_closed_record() {
     assert_eq!(
         graph.records[0].subtype,
         crate::object_graph::PayloadSubtype::Empty
+    );
+}
+
+#[test]
+fn outer_object_graph_preserves_inline_records() {
+    let nested = object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe]);
+    let inline = inline_object_graph_record(&[
+        0x10, 0xfe, 0xd3, 0x77, 0x82, 0xf2, 0xf0, 0x82, 0xd3, 0x5f, 0x81, 0x06,
+    ]);
+    let graph = crate::object_graph::parse(&object_graph_from_records(&[nested, inline]))
+        .expect("inline control record");
+
+    assert_eq!(graph.records.len(), 2);
+    assert_eq!(graph.records[1].lead, 0x10);
+    assert!(graph.records[1].head.is_empty());
+    assert_eq!(
+        graph.records[1].inline_body.as_deref(),
+        Some(&[0x10, 0xfe, 0xd3, 0x77, 0x82, 0xf2, 0xf0, 0x82, 0xd3, 0x5f, 0x81, 0x06,][..])
+    );
+    assert!(graph.records[1].payload.fields.is_empty());
+}
+
+#[test]
+fn outer_object_graph_accepts_each_inline_layout() {
+    let bodies = [
+        vec![
+            0x10, 0xfe, 0xd3, 0x77, 0x82, 0xf2, 0xf0, 0x82, 0xd3, 0x5f, 0x81, 0x06,
+        ],
+        vec![
+            0x10, 0xfe, 0xd3, 0x77, 0x82, 0xf2, 0xf0, 0x82, 0xd3, 0x5f, 0x82, 0xd3, 0x79, 0x06,
+        ],
+        vec![
+            0x10, 0xfe, 0xd4, 0x33, 0x82, 0x32, 0xe6, 0x00, 0x00, 0x00, 0x32, 0xe4, 0x00, 0x00,
+            0x00, 0x82, 0xb1, 0x81, 0x06,
+        ],
+        vec![
+            0x10, 0xfe, 0xd4, 0x32, 0x82, 0x32, 0xe6, 0x00, 0x00, 0x00, 0x32, 0xe4, 0x00, 0x00,
+            0x00, 0x82, 0xd1, 0xfd, 0x82, 0xd4, 0x34, 0x06,
+        ],
+    ];
+
+    for body in bodies {
+        let graph =
+            crate::object_graph::parse(&object_graph_from_records(&[inline_object_graph_record(
+                &body,
+            )]))
+            .expect("assigned inline control layout");
+        assert_eq!(
+            graph.records[0].inline_body.as_deref(),
+            Some(body.as_slice())
+        );
+    }
+}
+
+#[test]
+fn outer_object_graph_rejects_unassigned_childless_records() {
+    let valid = [
+        0x10, 0xfe, 0xd3, 0x77, 0x82, 0xf2, 0xf0, 0x82, 0xd3, 0x5f, 0x81, 0x06,
+    ];
+    for index in [0, 1, 4, 10, 11] {
+        let mut body = valid;
+        body[index] ^= 1;
+        assert!(crate::object_graph::parse(&object_graph_from_records(&[
+            inline_object_graph_record(&body)
+        ]))
+        .is_none());
+    }
+    assert!(
+        crate::object_graph::parse(&object_graph_from_records(&[inline_object_graph_record(
+            &[0x10, 0xfe, 0x81, 0x06]
+        )]))
+        .is_none()
     );
 }
 

@@ -16,11 +16,11 @@ pub struct ObjectGraph {
     pub total_len: usize,
     /// Byte offset of the immediately associated `7C02` schema catalog.
     pub catalog_pos: Option<usize>,
-    /// Consecutive nested `7C09` records.
+    /// Consecutive `7C09` records.
     pub records: Vec<ObjectRecord>,
 }
 
-/// One `7C09` ownership record and its nested `7C0A` payload.
+/// One `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ObjectRecord {
     /// Zero-based serialized record index.
@@ -33,6 +33,10 @@ pub struct ObjectRecord {
     pub lead: u8,
     /// Decoded head tokens.
     pub head: Vec<HeadToken>,
+    /// Complete alternate inline body when the record has no nested `7C0A`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub inline_body: Option<Vec<u8>>,
     /// First head reference, identifying the owner by stored entity identity.
     pub owner_ref: Option<u32>,
     /// Second head reference, identifying the per-file class.
@@ -41,7 +45,7 @@ pub struct ObjectRecord {
     pub class_name: Option<String>,
     /// Third head reference, selecting the class-specific storage form.
     pub storage_ref: Option<u32>,
-    /// Decoded nested payload.
+    /// Decoded nested payload, empty for an inline record.
     pub payload: ObjectPayload,
     /// Counted reference suffix when the payload repeats its reference prefix exactly.
     pub repeated_reference_suffix: Option<RepeatedReferenceSuffix>,
@@ -474,12 +478,33 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                 (child_len >= 6 && child.checked_add(child_len) == Some(record_end))
                     .then_some((child, child_len))
             });
-        let (child, _) = children.next()?;
-        if children.next().is_some() {
+        let child = children.next();
+        if child.is_some() && children.next().is_some() {
             return None;
         }
-        let lead = *data.get(head_start..child)?.first()?;
-        let head = decode_head(&data[head_start..child]);
+        let body = data.get(head_start..record_end)?;
+        let (head_bytes, inline_body, payload) = match child {
+            Some((child, _)) => (
+                data.get(head_start..child)?,
+                None,
+                decode_payload(&data[child + 6..record_end])?,
+            ),
+            None if is_inline_body(body) => (
+                &[][..],
+                Some(body.to_vec()),
+                ObjectPayload {
+                    size: 0,
+                    fields: Vec::new(),
+                },
+            ),
+            None => return None,
+        };
+        let lead = if inline_body.is_some() {
+            body[0]
+        } else {
+            *head_bytes.first()?
+        };
+        let head = decode_head(head_bytes);
         let roles = if matches!(head.get(1), Some(HeadToken::Separator)) {
             &head[2..]
         } else {
@@ -514,7 +539,6 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             Some(HeadToken::Reference(value)) => Some(*value),
             _ => None,
         });
-        let payload = decode_payload(&data[child + 6..record_end])?;
         let repeated_reference_suffix = repeated_reference_suffix(&payload);
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
@@ -523,6 +547,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             total_len: record_len,
             lead,
             head,
+            inline_body,
             owner_ref,
             class_ref,
             class_name: None,
@@ -539,6 +564,45 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         catalog_pos: None,
         records,
     })
+}
+
+pub(crate) fn is_inline_body(body: &[u8]) -> bool {
+    let Some(rest) = body.strip_prefix(&[0x10, 0xfe]) else {
+        return false;
+    };
+    let Some(rest) = strip_reference(rest) else {
+        return false;
+    };
+    let rest = if let Some(rest) = rest.strip_prefix(&[0x82, 0xf2, 0xf0, 0x82]) {
+        rest
+    } else if rest.len() >= 12
+        && rest[0] == 0x82
+        && rest[1] == 0x32
+        && rest[6] == 0x32
+        && rest[11] == 0x82
+    {
+        &rest[12..]
+    } else {
+        return false;
+    };
+    let Some(rest) = strip_reference(rest) else {
+        return false;
+    };
+    if rest == [0x81, 0x06] {
+        return true;
+    }
+    let Some(rest) = rest.strip_prefix(&[0x82]) else {
+        return false;
+    };
+    strip_reference(rest) == Some(&[0x06][..])
+}
+
+fn strip_reference(bytes: &[u8]) -> Option<&[u8]> {
+    match bytes {
+        [0x80..=0xd0, rest @ ..] => Some(rest),
+        [0xd1..=0xe4, _, rest @ ..] => Some(rest),
+        _ => None,
+    }
 }
 
 pub(crate) fn repeated_reference_suffix(
@@ -711,10 +775,12 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 at += 1;
                 break;
             }
-            0xe5 if at + 5 <= bytes.len() => {
-                let declared_len = usize::try_from(u32_le(bytes, at + 1).unwrap_or(0)).unwrap_or(0);
+            0xe5 if blob_end(bytes, at).is_some() => {
+                let declared_len =
+                    usize::try_from(u32_le(bytes, at + 1).expect("checked blob header"))
+                        .expect("u32 fits supported usize");
                 let start = at + 5;
-                let end = start.saturating_add(declared_len).min(bytes.len());
+                let end = blob_end(bytes, at).expect("checked blob extent");
                 fields.push(PayloadField::Blob {
                     declared_len,
                     bytes: bytes[start..end].to_vec(),
@@ -722,6 +788,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 });
                 at = end;
             }
+            0xe5 if blob_declared_end(bytes, at) == Some(bytes.len()) => return None,
             0x3c => {
                 let Some((count, advance)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
@@ -862,6 +929,16 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
             fields,
         },
     )
+}
+
+fn blob_end(bytes: &[u8], at: usize) -> Option<usize> {
+    let end = blob_declared_end(bytes, at)?;
+    (end < bytes.len()).then_some(end)
+}
+
+fn blob_declared_end(bytes: &[u8], at: usize) -> Option<usize> {
+    let declared_len = usize::try_from(u32_le(bytes, at + 1)?).ok()?;
+    at.checked_add(5)?.checked_add(declared_len)
 }
 
 fn classify(fields: &[PayloadField]) -> PayloadSubtype {

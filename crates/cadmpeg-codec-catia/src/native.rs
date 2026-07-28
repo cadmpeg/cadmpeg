@@ -19,7 +19,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 139;
+pub const CATIA_NATIVE_VERSION: u32 = 140;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1183,7 +1183,7 @@ pub struct CatiaObjectGraph {
     pub records: Vec<CatiaObjectRecord>,
 }
 
-/// One `7C09` ownership record and its typed `7C0A` payload.
+/// One `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaObjectRecord {
     /// Globally unique record identity.
@@ -1209,6 +1209,10 @@ pub struct CatiaObjectRecord {
     pub lead: u8,
     /// Decoded head tokens in serialized order.
     pub head: Vec<HeadToken>,
+    /// Complete alternate inline body when the record has no nested `7C0A`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub inline_body: Option<Vec<u8>>,
     /// Head role identifying the owner by stored entity identity.
     pub owner_entity_id: Option<u32>,
     /// Head role identifying the per-file class ordinal.
@@ -1227,7 +1231,7 @@ pub struct CatiaObjectRecord {
     /// Design object containing the selected storage record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_design_object: Option<String>,
-    /// Typed nested payload.
+    /// Typed nested payload, empty for an inline record.
     pub payload: ObjectPayload,
     /// Counted reference suffix when the payload repeats its reference prefix exactly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4464,6 +4468,18 @@ impl CatiaNative {
                     ) != (expected_storage.0.as_ref(), expected_storage.1.as_ref())
                     || record.repeated_reference_suffix
                         != object_graph::repeated_reference_suffix(&record.payload)
+                    || record.inline_body.as_ref().is_some_and(|body| {
+                        !object_graph::is_inline_body(body)
+                            || record.lead != 0x10
+                            || !record.head.is_empty()
+                            || record.owner_entity_id.is_some()
+                            || record.class_ref.is_some()
+                            || record.storage_ref.is_some()
+                            || record.payload.size != 0
+                            || !record.payload.fields.is_empty()
+                            || record.subtype != PayloadSubtype::Empty
+                    })
+                    || record.inline_body.is_none() && record.head.is_empty()
                     || record.references
                         != resolved_payload_references(
                             &record.payload,
@@ -5005,6 +5021,7 @@ fn native_object_graph(
                 byte_len: record.total_len as u64,
                 lead: record.lead,
                 head: record.head,
+                inline_body: record.inline_body,
                 owner_entity_id: record.owner_ref,
                 class_ref: record.class_ref,
                 class_name: record.class_name,
