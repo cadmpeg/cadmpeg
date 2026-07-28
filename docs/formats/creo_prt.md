@@ -2719,7 +2719,12 @@ followed immediately by the unlabeled `segtab_ptr` array body. Its `f8` extent
 bounds the section-entry table. Its first declared entry is the inherited
 prototype closed by `f2 f7 <table-class> e2`; subsequent entries are replay
 rows. Decoded line, arc, and point rows are the entries with segment type `2`,
-`3`, and `5`. Type `25` is a section-reference line. Its two point fields are
+`3`, and `5`. Type `12` is a bounded section curve. Both point fields are
+non-null endpoint references and define its start and end loci, but the type
+does not by itself define an analytic carrier. Its direction, center,
+arc-orientation, vertical/horizontal, and radius fields retain their stored
+state. A type-12 row with a null endpoint remains opaque. Type `25` is a
+section-reference line. Its two point fields are
 nullable endpoint references; its center, radius, and secondary-radius fields
 are null, and its arc-orientation field is zero. Its direction triple and
 vertical/horizontal field retain the stored reference-line state. Other

@@ -935,6 +935,29 @@ pub struct FeatureReferenceLineSegment {
     pub offset: usize,
 }
 
+/// One type `12` bounded section curve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureBoundedCurveSegment {
+    /// Three stored direction fields.
+    pub directions: [Option<u32>; 3],
+    /// Endpoint IDs into the section variable table.
+    pub point_ids: [u32; 2],
+    /// Stored center-point field.
+    pub center_id: Option<u32>,
+    /// Stored arc-orientation field.
+    pub arc_orientation: Option<u32>,
+    /// Stored vertical/horizontal field.
+    pub vertical_horizontal: Option<u32>,
+    /// Stored radius-reference field.
+    pub radius_ref: Option<u32>,
+    /// Stored secondary-radius-reference field.
+    pub radius2_ref: Option<u32>,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
 /// One fully framed `segtab_ptr` row outside the core segment-family enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOpaqueSegment {
@@ -980,6 +1003,8 @@ pub struct FeatureSegmentTable {
     pub centered_line_rows: Vec<FeatureCenteredLineSegment>,
     /// Fully aligned type-25 section-reference lines.
     pub reference_line_rows: Vec<FeatureReferenceLineSegment>,
+    /// Fully aligned type-12 bounded section curves.
+    pub bounded_curve_rows: Vec<FeatureBoundedCurveSegment>,
     /// Fully aligned rows with unsupported segment-family discriminators.
     pub opaque_rows: Vec<FeatureOpaqueSegment>,
     /// Byte offset of the `segtab_ptr` label in the original stream.
@@ -987,18 +1012,21 @@ pub struct FeatureSegmentTable {
 }
 
 impl FeatureSegmentTable {
+    /// Number of decoded rows retained across all segment families.
+    pub(crate) fn retained_row_count(&self) -> usize {
+        self.rows.len()
+            + self.circle_rows.len()
+            + self.point_rows.len()
+            + self.centered_line_rows.len()
+            + self.reference_line_rows.len()
+            + self.bounded_curve_rows.len()
+            + self.opaque_rows.len()
+    }
+
     /// Whether every row declared by the table decoded.
     pub fn is_complete(&self) -> bool {
         usize::try_from(self.declared_count).ok()
-            == Some(
-                usize::from(self.has_elided_prototype)
-                    + self.rows.len()
-                    + self.circle_rows.len()
-                    + self.point_rows.len()
-                    + self.centered_line_rows.len()
-                    + self.reference_line_rows.len()
-                    + self.opaque_rows.len(),
-            )
+            == Some(usize::from(self.has_elided_prototype) + self.retained_row_count())
     }
 
     /// Number of decoded rows carrying one external identifier.
@@ -1010,6 +1038,7 @@ impl FeatureSegmentTable {
             .chain(self.point_rows.iter().map(|row| row.external_id))
             .chain(self.centered_line_rows.iter().map(|row| row.external_id))
             .chain(self.reference_line_rows.iter().map(|row| row.external_id))
+            .chain(self.bounded_curve_rows.iter().map(|row| row.external_id))
             .chain(self.opaque_rows.iter().map(|row| row.external_id))
             .filter(|candidate| *candidate == external_id)
             .count()
@@ -2428,34 +2457,25 @@ fn segment_table_body(
     .filter_map(|label| find_bytes(payload, label, cursor, end))
     .min()
     .unwrap_or(end);
-    let mut rows = Vec::new();
-    let mut circle_rows = Vec::new();
-    let mut point_rows = Vec::new();
-    let mut centered_line_rows = Vec::new();
-    let mut reference_line_rows = Vec::new();
-    let mut opaque_rows = Vec::new();
+    let mut segments = FeatureSegmentTable {
+        declared_count,
+        has_elided_prototype,
+        entity_ref,
+        rows: Vec::new(),
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: table,
+    };
     if let Some(row) = named_row {
-        retain_segment_row(
-            row,
-            &mut rows,
-            &mut circle_rows,
-            &mut point_rows,
-            &mut centered_line_rows,
-            &mut reference_line_rows,
-            &mut opaque_rows,
-        );
+        retain_segment_row(row, &mut segments);
     }
     let first_row = cursor;
     let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
-    while cursor < region_end
-        && rows.len()
-            + circle_rows.len()
-            + point_rows.len()
-            + centered_line_rows.len()
-            + reference_line_rows.len()
-            + opaque_rows.len()
-            < row_limit
-    {
+    while cursor < region_end && segments.retained_row_count() < row_limit {
         let row_start = cursor;
         let kind_offset = if matches!(
             payload.get(cursor..cursor + 2),
@@ -2532,41 +2552,17 @@ fn segment_table_body(
                     external_id,
                     offset: row_start,
                 },
-                &mut rows,
-                &mut circle_rows,
-                &mut point_rows,
-                &mut centered_line_rows,
-                &mut reference_line_rows,
-                &mut opaque_rows,
+                &mut segments,
             );
             cursor = p + 1;
         } else {
             cursor += 1;
         }
     }
-    Some(FeatureSegmentTable {
-        declared_count,
-        has_elided_prototype,
-        entity_ref,
-        rows,
-        circle_rows,
-        point_rows,
-        centered_line_rows,
-        reference_line_rows,
-        opaque_rows,
-        offset: table,
-    })
+    Some(segments)
 }
 
-fn retain_segment_row(
-    row: FeatureOpaqueSegment,
-    rows: &mut Vec<FeatureSegment>,
-    circle_rows: &mut Vec<FeatureCircleSegment>,
-    point_rows: &mut Vec<FeaturePointSegment>,
-    centered_line_rows: &mut Vec<FeatureCenteredLineSegment>,
-    reference_line_rows: &mut Vec<FeatureReferenceLineSegment>,
-    opaque_rows: &mut Vec<FeatureOpaqueSegment>,
-) {
+fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTable) {
     if row.kind == 10
         && row.directions == [Some(0); 3]
         && row.point_ids == [None, Some(1)]
@@ -2575,7 +2571,7 @@ fn retain_segment_row(
         && row.radius2_ref.is_none()
     {
         if let (Some(center_id), Some(radius_ref)) = (row.center_id, row.radius_ref) {
-            circle_rows.push(FeatureCircleSegment {
+            segments.circle_rows.push(FeatureCircleSegment {
                 center_id,
                 radius_ref,
                 external_id: row.external_id,
@@ -2593,7 +2589,7 @@ fn retain_segment_row(
         && row.radius2_ref.is_none()
     {
         if let Some(point_id) = row.center_id {
-            point_rows.push(FeaturePointSegment {
+            segments.point_rows.push(FeaturePointSegment {
                 point_id,
                 external_id: row.external_id,
                 offset: row.offset,
@@ -2610,10 +2606,12 @@ fn retain_segment_row(
         && row.radius_ref == Some(1)
         && row.radius2_ref.is_none()
     {
-        centered_line_rows.push(FeatureCenteredLineSegment {
-            external_id: row.external_id,
-            offset: row.offset,
-        });
+        segments
+            .centered_line_rows
+            .push(FeatureCenteredLineSegment {
+                external_id: row.external_id,
+                offset: row.offset,
+            });
         return;
     }
     if row.kind == 25
@@ -2622,21 +2620,41 @@ fn retain_segment_row(
         && row.radius_ref.is_none()
         && row.radius2_ref.is_none()
     {
-        reference_line_rows.push(FeatureReferenceLineSegment {
-            directions: row.directions,
-            point_ids: row.point_ids,
-            vertical_horizontal: row.vertical_horizontal,
-            external_id: row.external_id,
-            offset: row.offset,
-        });
+        segments
+            .reference_line_rows
+            .push(FeatureReferenceLineSegment {
+                directions: row.directions,
+                point_ids: row.point_ids,
+                vertical_horizontal: row.vertical_horizontal,
+                external_id: row.external_id,
+                offset: row.offset,
+            });
         return;
+    }
+    if row.kind == 12 {
+        if let [Some(first), Some(second)] = row.point_ids {
+            segments
+                .bounded_curve_rows
+                .push(FeatureBoundedCurveSegment {
+                    directions: row.directions,
+                    point_ids: [first, second],
+                    center_id: row.center_id,
+                    arc_orientation: row.arc_orientation,
+                    vertical_horizontal: row.vertical_horizontal,
+                    radius_ref: row.radius_ref,
+                    radius2_ref: row.radius2_ref,
+                    external_id: row.external_id,
+                    offset: row.offset,
+                });
+            return;
+        }
     }
     let kind = match row.kind {
         2 => FeatureSegmentKind::Line,
         3 => FeatureSegmentKind::Arc,
         5 => FeatureSegmentKind::Point,
         _ => {
-            opaque_rows.push(row);
+            segments.opaque_rows.push(row);
             return;
         }
     };
@@ -2651,7 +2669,7 @@ fn retain_segment_row(
         };
         point1
     };
-    rows.push(FeatureSegment {
+    segments.rows.push(FeatureSegment {
         kind,
         directions: row.directions,
         point_ids: [point0, point1],
@@ -8349,6 +8367,43 @@ mod tests {
     }
 
     #[test]
+    fn segment_tables_type_bounded_section_curves() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 12, 0, 0, 0, 2, 3, 0xf6, 1, 0, 2,
+            0xf6, 22, 0xe2,
+        ];
+
+        let segments = segment_table_body(&payload, 0, 0, payload.len(), false)
+            .expect("bounded curve segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.bounded_curve_rows,
+            vec![FeatureBoundedCurveSegment {
+                directions: [Some(0); 3],
+                point_ids: [2, 3],
+                center_id: None,
+                arc_orientation: Some(1),
+                vertical_horizontal: Some(0),
+                radius_ref: Some(2),
+                radius2_ref: None,
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+
+        let mut missing_endpoint = payload;
+        missing_endpoint[14] = 0xf6;
+        let segments = segment_table_body(&missing_endpoint, 0, 0, missing_endpoint.len(), false)
+            .expect("incomplete bounded curve segment table");
+        assert!(segments.is_complete());
+        assert!(segments.bounded_curve_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 12);
+    }
+
+    #[test]
     fn segment_tables_type_complete_circle_rows() {
         let payload = [
             0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 10, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1,
@@ -9307,6 +9362,7 @@ mod tests {
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -10010,6 +10066,7 @@ mod tests {
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -10080,6 +10137,7 @@ mod tests {
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -10139,6 +10197,7 @@ mod tests {
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };

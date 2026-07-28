@@ -4140,11 +4140,12 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
 #[test]
 fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     let mut payload =
-        b"feat_defs_40\0segtab_ptr\0\xf8\x05\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+        b"feat_defs_40\0segtab_ptr\0\xf8\x06\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[10, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1, 0xf6, 20, 0xe2, 0xe3]);
     payload.extend_from_slice(&[1, 0, 0, 0, 0xf6, 1, 3, 0, 0, 0xf6, 0xf6, 21, 0xe2, 0xe3]);
     payload.extend_from_slice(&[47, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1, 0xf6, 22, 0xe2, 0xe3]);
     payload.extend_from_slice(&[25, 0, 1, 0, 10, 11, 0xf6, 0, 0, 0xf6, 0xf6, 24, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[12, 0, 0, 0, 2, 3, 0xf6, 1, 0, 2, 0xf6, 25, 0xe2, 0xe3]);
     payload.extend_from_slice(&[47, 0, 0, 0, 0xf6, 1, 0, 0, 0, 1, 0xf6, 23, 0xe2]);
     payload.extend_from_slice(b"dimtab_ptr\0");
     let data = build_prt("c", &[("FeatDefs", payload)]);
@@ -4159,6 +4160,7 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     assert_eq!(segments.point_rows.len(), 1);
     assert_eq!(segments.centered_line_rows.len(), 1);
     assert_eq!(segments.reference_line_rows.len(), 1);
+    assert_eq!(segments.bounded_curve_rows.len(), 1);
     assert_eq!(segments.opaque_rows.len(), 1);
     assert_eq!(segments.opaque_rows[0].kind, 47);
 
@@ -4189,6 +4191,18 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     assert_eq!(
         sketch.fields["reference_line_segments"][0]["point_ids"][1],
         11
+    );
+    assert_eq!(
+        sketch.fields["bounded_curve_segments"][0]["external_id"],
+        25
+    );
+    assert_eq!(
+        sketch.fields["bounded_curve_segments"][0]["point_ids"][0],
+        2
+    );
+    assert_eq!(
+        sketch.fields["bounded_curve_segments"][0]["point_ids"][1],
+        3
     );
     assert_eq!(sketch.fields["opaque_segments"][0]["external_id"], 23);
     assert_eq!(sketch.fields["opaque_segments"][0]["kind"], 47);
@@ -4556,6 +4570,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         }),

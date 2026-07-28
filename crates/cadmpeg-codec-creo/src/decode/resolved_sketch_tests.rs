@@ -3982,6 +3982,7 @@ fn saved_line_joins_through_order_table() {
         point_rows: Vec::new(),
         centered_line_rows: Vec::new(),
         reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 0,
     });
@@ -4474,6 +4475,7 @@ fn saved_line_joins_through_order_table() {
         point_rows: Vec::new(),
         centered_line_rows: Vec::new(),
         reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -4770,6 +4772,7 @@ fn saved_arc_joins_through_order_table() {
         point_rows: Vec::new(),
         centered_line_rows: Vec::new(),
         reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 38,
     });
@@ -4955,6 +4958,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 20,
         }),
@@ -5181,6 +5185,7 @@ fn arc_carriers_use_trim_vertices() {
         point_rows: Vec::new(),
         centered_line_rows: Vec::new(),
         reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 6,
     });
@@ -5496,6 +5501,7 @@ fn dimension_identity_includes_its_feature_definition() {
         point_rows: Vec::new(),
         centered_line_rows: Vec::new(),
         reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 19,
     });
@@ -6152,6 +6158,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 30,
         }),
@@ -10097,6 +10104,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         point_rows: Vec::new(),
         centered_line_rows: Vec::new(),
         reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 2,
     });
@@ -10159,6 +10167,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         point_rows: Vec::new(),
         centered_line_rows: Vec::new(),
         reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -10201,6 +10210,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         point_rows: Vec::new(),
         centered_line_rows: Vec::new(),
         reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: 4,
     });
@@ -10288,6 +10298,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 2,
         }),
@@ -10471,6 +10482,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
             point_rows: Vec::new(),
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
             opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
                 kind: 25,
                 directions: [None; 3],
