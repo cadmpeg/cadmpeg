@@ -93,7 +93,8 @@ current scores require those matrices and representative fixtures.
   missing and multiply matching records leave the standard carrier unchanged.
 - The freeform fallback transfers complete consolidated cylinder, cone, sphere,
   and torus records as placed analytic surface carriers independently of
-  unresolved topology ownership.
+  unresolved topology ownership. Phase-tailed cylinders subtract their stored
+  arc-length phase before normalizing U to neutral azimuth.
 - Zero-entity surface carriers retain their complete face-local `21xx` support
   tapes. Every occurrence keeps its framed local slot, record family, and
   inline UV endpoint pair when that family stores one. The independent `5e1a`

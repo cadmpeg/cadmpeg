@@ -1031,6 +1031,14 @@ fn retry_rejected_mesh_solution(
     }
 }
 
+fn mesh_retry_work_is_bounded(candidates: &[Vec<[usize; 2]>]) -> bool {
+    candidates
+        .iter()
+        .try_fold(0usize, |total, choices| total.checked_add(choices.len()))
+        .and_then(|choices| choices.checked_mul(candidates.len()))
+        .is_some_and(|work| work <= mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS)
+}
+
 #[derive(Clone, PartialEq)]
 /// Exact two-sided construction evidence keyed by a standard edge identity.
 pub(crate) struct StandardEdgeSupport {
@@ -2198,11 +2206,11 @@ fn attach_standard_topology(
         let has_circle_preference = circle_constraint_edges
             .iter()
             .any(|constrained| *constrained);
-        let outcome = if has_circle_preference {
+        let retry_is_bounded = mesh_retry_work_is_bounded(options);
+        let outcome = if has_circle_preference && retry_is_bounded {
             // Distinct B-rep edges may legally occupy overlapping ranges of the same
             // circular carrier. Treat range separation as a search preference, then
             // accept the unconstrained result only when it is uniquely determined.
-            // Both searches enforce the solver's operation budget internally.
             retry_rejected_mesh_solution(preferred, || {
                 let unconstrained = vec![false; circle_constraint_edges.len()];
                 mesh_quotient::parse_standard_mesh_candidate_outcome(
@@ -2214,6 +2222,12 @@ fn attach_standard_topology(
                 )
             })
         } else {
+            if has_circle_preference
+                && !retry_is_bounded
+                && matches!(&preferred, mesh_quotient::MeshCandidateSolve::Rejected)
+            {
+                mesh_search_exhausted = true;
+            }
             preferred
         };
         match outcome {
@@ -4365,9 +4379,10 @@ mod route_tests {
         bind_ordered_standard_curve_branches, build_standard_edge_curve,
         circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
         combine_propagated_endpoint_pairs, include_native_endpoint_pairs,
-        intersection_line_direction, merge_native_endpoint_evidence, point_on_known_surface,
-        point_on_standard_face, resolve_standard_endpoint_pairs, retry_rejected_mesh_solution,
-        standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
+        intersection_line_direction, merge_native_endpoint_evidence, mesh_retry_work_is_bounded,
+        point_on_known_surface, point_on_standard_face, resolve_standard_endpoint_pairs,
+        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
+        standard_circle_param_range, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, unique_native_identity_points, StandardEdgeSupport,
@@ -4412,6 +4427,12 @@ mod route_tests {
         });
         assert!(matches!(outcome, MeshCandidateSolve::Ambiguous));
         assert!(called.get());
+
+        assert!(mesh_retry_work_is_bounded(&[vec![[0, 1]], vec![[1, 2]]]));
+        assert!(!mesh_retry_work_is_bounded(&vec![
+            vec![[0, 1]; 1_000];
+            1_000
+        ]));
     }
 
     #[test]

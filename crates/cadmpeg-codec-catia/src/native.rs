@@ -227,7 +227,7 @@ pub enum CatiaConsolidatedCylinderPayload {
         axis: [f64; 3],
         /// Unit direction from which the circumferential parameter is measured.
         reference_direction: [f64; 3],
-        /// Stored finite phase scalar.
+        /// Arc-length offset subtracted from U before radius normalization.
         phase: f64,
     },
 }

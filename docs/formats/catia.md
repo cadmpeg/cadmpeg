@@ -360,7 +360,7 @@ Three payload layouts encode cylinder charts. Layout `0x5a` is `<origin:3f64le> 
 
 For both resolved layouts, the radius is positive, both intervals are strictly increasing, and `u1-u0=2π·radius` within `1e-6`. The chart evaluates with `azimuth=U/radius` and `P(U,V)=origin+V·axis+radius·(cos(azimuth)·reference_direction+sin(azimuth)·(axis×reference_direction))`.
 
-Layout `0x62` is `<origin:3f64le> 0e <vector:2f64le> <one:f64le> <radius:f64le> <u_range:2f64le> <v_range:2f64le> 03 <phase:f64le>`. The vector is unit length, `one=1`, the radius is positive, both intervals are strictly increasing, the phase is finite, and `u1-u0≤2π·radius+1e-6`. Its axis is `(0,1,0)` and its reference direction is `(vector_x,0,vector_y)`.
+Layout `0x62` is `<origin:3f64le> 0e <vector:2f64le> <one:f64le> <radius:f64le> <u_range:2f64le> <v_range:2f64le> 03 <phase:f64le>`. The vector is unit length, `one=1`, the radius is positive, both intervals are strictly increasing, the phase is finite, and `u1-u0≤2π·radius+1e-6`. Its axis is `(0,1,0)`, its reference direction is `(vector_x,0,vector_y)`, and its azimuth is `(U-phase)/radius`.
 
 ### 5.12 Cone record `b2 03 29`
 

@@ -846,7 +846,7 @@ pub(crate) fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<P
     {
         return None;
     }
-    let angle = uv[0] / radius;
+    let angle = (uv[0] - cylinder.phase.unwrap_or(0.0)) / radius;
     let perpendicular = (*axis).cross(*ref_direction);
     Some(Point3::new(
         origin.x
@@ -909,7 +909,7 @@ pub struct B2Cylinder {
     pub v_range: [f64; 2],
     /// Stored planar vector for a phase-tailed `0x62` frame.
     pub stored_vector: Option<[f64; 2]>,
-    /// Phase scalar for a phase-tailed `0x62` frame.
+    /// Arc-length offset subtracted from U before radius normalization.
     pub phase: Option<f64>,
 }
 
