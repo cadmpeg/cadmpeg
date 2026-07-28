@@ -6643,6 +6643,27 @@ fn deltas_rejects_denormal_topology_tolerance_payload_coincidences() {
 }
 
 #[test]
+fn deltas_rejects_denormal_point_payload_coincidences() {
+    let mut point = status_framed_deltas_point_stream();
+    let position = point.len() - 24;
+    for (ordinal, value) in [f64::from_bits(1), f64::from_bits(2), f64::from_bits(3)]
+        .into_iter()
+        .enumerate()
+    {
+        point[position + ordinal * 8..position + (ordinal + 1) * 8]
+            .copy_from_slice(&value.to_be_bytes());
+    }
+    assert!(crate::deltas::walk(&point)
+        .records
+        .iter()
+        .all(|record| record.kind != 29));
+
+    point[position..position + 8].copy_from_slice(&1.0e-200f64.to_be_bytes());
+    point[position + 8..].fill(0);
+    assert_eq!(crate::deltas::walk(&point).full_counts["POINT"], 1);
+}
+
+#[test]
 fn deltas_walks_complete_intersection_auxiliary_records() {
     let source = charted_intersection_curve_topology_partition_stream();
     let blend_source = blend_bound_charted_intersection_curve_stream();
