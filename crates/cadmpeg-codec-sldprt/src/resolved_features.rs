@@ -7956,6 +7956,8 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             ["second", "fourth"]
         );
+        payload[72..76].fill(0);
+        assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
 
         payload[56..58].fill(0);
         assert!(!super::extended_marker84_line_uses_point_roster(
@@ -37524,7 +37526,7 @@ fn extended_marker84_line_uses_point_roster(payload: &[u8], offset: usize) -> bo
         && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
         && matches!(
             payload.get(offset + 72..offset + 76),
-            Some([0, 0, 1 | 2, 0])
+            Some([0, 0, 0..=2, 0])
         )
         && payload.get(offset + 76..offset + 80) == Some(&[0; 4])
         && payload
