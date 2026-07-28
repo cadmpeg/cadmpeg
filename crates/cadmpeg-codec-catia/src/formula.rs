@@ -88,6 +88,8 @@ pub(crate) fn transfer_parameters(
                 all_inputs_complete = false;
                 continue;
             };
+            let parameter_type = canonical_parameter_type(&input.input_type)
+                .expect("typed evaluation requires a supported type");
             used_inputs.insert(input.parameter.as_str());
             let id = neutral_parameter_id(&entity.id);
             if dependencies.contains(&id) {
@@ -121,12 +123,11 @@ pub(crate) fn transfer_parameters(
                     display: None,
                     value,
                     dependencies: Vec::new(),
-                    properties: BTreeMap::new(),
+                    properties: parameter_properties(parameter_type),
                     pmi: None,
                     native_ref: Some(entity.id.clone()),
                 },
-                parameter_type: canonical_parameter_type(&input.input_type)
-                    .expect("typed evaluation requires a supported type"),
+                parameter_type,
                 formula_output: false,
                 input_fallback: None,
                 source_order: entity.byte_offset,
@@ -157,6 +158,8 @@ pub(crate) fn transfer_parameters(
                     if let Some(value) =
                         typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
                     {
+                        let parameter_type = canonical_parameter_type(&signature.result_type)
+                            .expect("typed evaluation requires a supported type");
                         if evaluated_expression
                             .as_ref()
                             .is_some_and(|evaluated| evaluated.agrees_with(&value))
@@ -185,12 +188,11 @@ pub(crate) fn transfer_parameters(
                                         TypedParameterEvaluation::Value(value) => Some(value),
                                     },
                                     dependencies,
-                                    properties: BTreeMap::new(),
+                                    properties: parameter_properties(parameter_type),
                                     pmi: None,
                                     native_ref: Some(output.id.clone()),
                                 },
-                                parameter_type: canonical_parameter_type(&signature.result_type)
-                                    .expect("typed evaluation requires a supported type"),
+                                parameter_type,
                                 formula_output: true,
                                 input_fallback: None,
                                 source_order: output.byte_offset,
@@ -439,6 +441,8 @@ fn collect_legacy_parameters(
             let Some(evaluation) = typed_parameter_evaluation(value_type, &evaluation) else {
                 continue;
             };
+            let parameter_type = canonical_parameter_type(value_type)
+                .expect("typed evaluation requires a supported type");
             let (expression, value) = match evaluation {
                 TypedParameterEvaluation::Unset => (String::new(), None),
                 TypedParameterEvaluation::Value(value) => {
@@ -465,12 +469,11 @@ fn collect_legacy_parameters(
                         display: None,
                         value,
                         dependencies: Vec::new(),
-                        properties: BTreeMap::new(),
+                        properties: parameter_properties(parameter_type),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
-                    parameter_type: canonical_parameter_type(value_type)
-                        .expect("typed evaluation requires a supported type"),
+                    parameter_type,
                     formula_output: false,
                     input_fallback: None,
                     source_order: scalar.byte_offset,
@@ -644,6 +647,10 @@ fn parameter_expression(value: &ParameterValue) -> String {
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
     }
+}
+
+fn parameter_properties(parameter_type: &'static str) -> BTreeMap<String, String> {
+    BTreeMap::from([("value_type".to_string(), parameter_type.to_string())])
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

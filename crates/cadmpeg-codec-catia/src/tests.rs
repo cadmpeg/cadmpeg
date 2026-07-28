@@ -3547,6 +3547,7 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
     assert_eq!(parameter.name, "Width");
     assert_eq!(parameter.value, None);
     assert!(parameter.expression.is_empty());
+    assert_eq!(parameter.properties["value_type"], "LENGTH");
     assert_eq!(
         decoded.report.coverage["transferred_legacy_parameter_count"],
         1
@@ -10524,11 +10525,13 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(input.name, "Thickness");
     assert_eq!(input.expression, "35 mm");
     assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(input.properties["value_type"], "LENGTH");
     assert!(input.dependencies.is_empty());
     assert_eq!(output.name, "Result");
     assert_eq!(output.ordinal, 1);
     assert_eq!(output.expression, "#1_ /2-2mm");
     assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
+    assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(decoded.report.coverage["transferred_parameter_count"], 2);
     assert_eq!(
@@ -11582,7 +11585,9 @@ fn decode_transfers_dimensionless_real_formula() {
 
     assert_eq!(input.expression, "2.5");
     assert_eq!(input.value, Some(ParameterValue::Real(2.5)));
+    assert_eq!(input.properties["value_type"], "Real");
     assert_eq!(output.value, Some(ParameterValue::Real(1.25)));
+    assert_eq!(output.properties["value_type"], "Real");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
 }
 
@@ -11608,6 +11613,7 @@ fn decode_transfers_an_unset_typed_formula_result() {
     assert_eq!(output.value, None);
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(output.expression, "#1_ /2+1mm");
+    assert_eq!(output.properties["value_type"], "LENGTH");
 }
 
 #[test]
@@ -11636,6 +11642,7 @@ fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
     assert_eq!(input.value, None);
     assert!(input.expression.is_empty());
     assert!(input.dependencies.is_empty());
+    assert_eq!(input.properties["value_type"], "LENGTH");
 }
 
 #[test]
