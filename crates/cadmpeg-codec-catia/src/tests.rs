@@ -1809,7 +1809,7 @@ fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
     file
 }
 
-fn standard_catpart_with_definition_evaluation(
+fn standard_catpart_with_definition_value(
     definition: &[u8],
     value: &[u8],
     suffix: &[u8],
@@ -7010,8 +7010,11 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
 }
 
 #[test]
-fn native_namespace_binds_and_validates_definition_evaluations() {
-    use crate::native::{CatiaDefinitionEvaluation, CatiaEntityEvaluation, CatiaEntitySchemaValue};
+fn native_namespace_binds_and_validates_definition_values() {
+    use crate::native::{
+        CatiaDefinitionValue, CatiaEntityEvaluation, CatiaEntityEvaluationEncoding,
+        CatiaEntitySchemaValue, CatiaEntitySuffixPayload,
+    };
 
     let bits = 12.5_f64.to_bits();
     let mut suffix = vec![0xd1, 0x53, 0x96, 0x82, 0xa6, 0xe6];
@@ -7019,63 +7022,100 @@ fn native_namespace_binds_and_validates_definition_evaluations() {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0];
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_definition_evaluation(
+            &mut Cursor::new(standard_catpart_with_definition_value(
                 &definition,
                 &[0xfe],
                 &suffix,
             )),
             &DecodeOptions::default(),
         )
-        .expect("decode definition-bound evaluation");
-    assert_eq!(
-        decoded.report.coverage["decoded_definition_evaluation_count"],
-        1
-    );
+        .expect("decode definition-bound value");
+    assert_eq!(decoded.report.coverage["decoded_definition_value_count"], 1);
     let mut native =
         crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
-            .expect("load definition-bound evaluation");
+            .expect("load definition-bound value");
     assert_eq!(
-        native.entity_records[0].definition_evaluation,
-        Some(CatiaDefinitionEvaluation {
+        native.entity_records[0].definition_value,
+        Some(CatiaDefinitionValue {
             definition: CatiaEntitySchemaValue {
                 entry: native.catalogs[0].entries[4].id.clone(),
                 value: "Thickness".to_string(),
             },
-            evaluation: CatiaEntityEvaluation::Scalar { bits },
+            payload: CatiaEntitySuffixPayload::Evaluation {
+                evaluation: CatiaEntityEvaluation::Scalar { bits },
+                encoding: CatiaEntityEvaluationEncoding::Direct,
+            },
+            schema_selection: None,
         })
     );
 
-    native.entity_records[0]
-        .definition_evaluation
+    let definition_value = native.entity_records[0]
+        .definition_value
         .as_mut()
-        .expect("definition-bound evaluation")
-        .evaluation = CatiaEntityEvaluation::Unset;
+        .expect("definition-bound value");
+    definition_value.payload = CatiaEntitySuffixPayload::Evaluation {
+        evaluation: CatiaEntityEvaluation::Unset,
+        encoding: CatiaEntityEvaluationEncoding::Direct,
+    };
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
-        .expect("store malformed definition evaluation");
+        .expect("store malformed definition value");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    for (definition, value, suffix) in [
+    let control = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
+        &definition,
+        &[0xfe],
+        &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
+    ));
+    assert!(matches!(
+        control.entity_records[0]
+            .definition_value
+            .as_ref()
+            .expect("definition-bound control")
+            .payload,
+        CatiaEntitySuffixPayload::ControlE8
+    ));
+
+    let schema_selected =
+        crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
+            &definition,
+            &[0xfe],
+            &[0x84, 0x96, 0x82, 0x32, 4, 0, 0, 0, 0xe7, 0x81, 0x49],
+        ));
+    let definition_value = schema_selected.entity_records[0]
+        .definition_value
+        .as_ref()
+        .expect("definition-bound schema-selected value");
+    assert!(matches!(
+        definition_value.payload,
+        CatiaEntitySuffixPayload::SchemaSelected { selector: 4, .. }
+    ));
+    assert_eq!(
+        definition_value
+            .schema_selection
+            .as_ref()
+            .expect("resolved suffix schema")
+            .name,
+        "Thickness"
+    );
+
+    for (definition, value) in [
         (
             vec![0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0],
             vec![0xfe],
-            suffix.clone(),
         ),
-        (definition.to_vec(), vec![0x80, 0xfe], suffix.clone()),
-        (
-            definition.to_vec(),
-            vec![0xfe],
-            vec![0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
-        ),
+        (definition.to_vec(), vec![0x80, 0xfe]),
     ] {
-        let native = crate::native::CatiaNative::decode(
-            &standard_catpart_with_definition_evaluation(&definition, &value, &suffix),
-        );
-        assert_eq!(native.entity_records[0].definition_evaluation, None);
+        let native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
+            &definition,
+            &value,
+            &suffix,
+        ));
+        assert_eq!(native.entity_records[0].definition_value, None);
     }
 }
 
