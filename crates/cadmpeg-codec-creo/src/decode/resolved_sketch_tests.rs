@@ -1698,6 +1698,35 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
         822,
     )
     .is_none());
+    assert_eq!(
+        unique_feature_profile_definition(
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&transform),
+            822,
+        )
+        .map(|definition| definition.id),
+        Some(822)
+    );
+    assert_eq!(
+        unique_feature_profile_definition(std::slice::from_ref(&definition), &[], 822)
+            .map(|definition| definition.id),
+        Some(822)
+    );
+    assert!(unique_feature_profile_definition(
+        std::slice::from_ref(&definition),
+        &[transform.clone(), transform],
+        822,
+    )
+    .is_none());
+    assert_eq!(
+        unique_feature_profile_definition(
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&mismatched_transform),
+            822,
+        )
+        .map(|definition| definition.id),
+        Some(822)
+    );
 }
 
 #[test]

@@ -4728,7 +4728,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert!(matches!(
         &model_feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
+            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::Termination::Unresolved,
@@ -4737,7 +4737,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             },
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
             ..
-        }
+        } if profile == "creo:featdefs:sketch#917"
     ));
     assert_eq!(
         model_feature.source_properties["native_parameter.dimension_count"],

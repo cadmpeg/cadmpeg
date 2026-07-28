@@ -121,6 +121,22 @@ fn unique_owned_transformed_definition<'a>(
     (transform.feature_id == Some(feature_id)).then_some(definition)
 }
 
+fn unique_feature_profile_definition<'a>(
+    definitions: &'a [crate::feature::FeatureDefinition],
+    transforms: &[crate::placement::FeatureSectionTransform],
+    feature_id: u32,
+) -> Option<&'a crate::feature::FeatureDefinition> {
+    let feature_transforms = transforms
+        .iter()
+        .filter(|transform| transform.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    match feature_transforms.as_slice() {
+        [transform] => unique_feature_definition_for_transform(definitions, transform),
+        [] => unique_owned_feature_definition(definitions, feature_id),
+        _ => None,
+    }
+}
+
 fn unique_feature_datum_plane(
     datums: &[crate::datum::DatumPlane],
     feature_id: u32,
@@ -14666,7 +14682,9 @@ fn named_feature_definition(
         return Some(definition);
     }
     if matches!(kind, "Protrusion" | "Cut") {
-        return Some(unresolved_extrude_feature_definition_with_op(
+        return Some(extrude_feature_definition_with_profile(
+            scan,
+            ir,
             feature_id,
             section_sweep_boolean_operation(
                 feature_recipe_effect(scan, feature_id),
@@ -14703,7 +14721,12 @@ fn named_feature_definition(
         });
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
-        return Some(unresolved_extrude_feature_definition(feature_id));
+        return Some(extrude_feature_definition_with_profile(
+            scan,
+            ir,
+            feature_id,
+            BooleanOp::Unresolved,
+        ));
     }
     if kind == "Revolve" {
         return Some(IrFeatureDefinition::Revolve {
@@ -14753,15 +14776,15 @@ fn named_or_referenced_feature_definition(
 }
 
 fn unresolved_extrude_feature_definition(feature_id: u32) -> IrFeatureDefinition {
-    unresolved_extrude_feature_definition_with_op(feature_id, BooleanOp::Unresolved)
+    extrude_feature_definition(
+        ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
+        BooleanOp::Unresolved,
+    )
 }
 
-fn unresolved_extrude_feature_definition_with_op(
-    feature_id: u32,
-    op: BooleanOp,
-) -> IrFeatureDefinition {
+fn extrude_feature_definition(profile: ProfileRef, op: BooleanOp) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
-        profile: ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
+        profile,
         direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: unresolved_extrude_extent(),
@@ -14773,6 +14796,24 @@ fn unresolved_extrude_feature_definition_with_op(
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
     }
+}
+
+fn extrude_feature_definition_with_profile(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    op: BooleanOp,
+) -> IrFeatureDefinition {
+    let definition = unique_feature_profile_definition(
+        &scan.features.definitions,
+        &scan.features.section_transforms,
+        feature_id,
+    );
+    let profile = definition.map_or_else(
+        || ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
+        |definition| section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition)),
+    );
+    extrude_feature_definition(profile, op)
 }
 
 fn unresolved_extrude_extent() -> ExtrudeExtent {
