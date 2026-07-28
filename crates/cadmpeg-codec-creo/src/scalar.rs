@@ -500,6 +500,37 @@ pub fn decode_feature_local_system_slots(body: &[u8], cache: &ScalarCache) -> Op
     decode_local_system_slots(body, cache, LocalSystemVariant::Feature)
 }
 
+/// Decode the leading `f9 4 3` planar frame of a saved section conic.
+///
+/// Saved conic records may store additional fields after the frame, so the
+/// consumed byte count is returned with the expanded frame.
+pub fn decode_saved_conic_local_system_prefix(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<([f64; 12], usize)> {
+    (body.first() == Some(&0xf9)).then_some(())?;
+    let (rows, cursor) = compact_int(body, 1);
+    let (columns, mut cursor) = compact_int(body, cursor);
+    (rows == 4 && columns == 3).then_some(())?;
+
+    let mut values = [0.0; 12];
+    for (slot, value) in values.iter_mut().enumerate().take(5) {
+        let (decoded, next) = decode_named_local_system_coordinate(body, cursor, slot, cache)?;
+        *value = decoded;
+        cursor = next;
+    }
+    (body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x0f])).then_some(())?;
+    values[5..9].copy_from_slice(&[0.0, 0.0, 0.0, 1.0]);
+    cursor += 3;
+    for value in values.iter_mut().skip(9) {
+        let (decoded, next) = decode_tabulated_cylinder_first_frame_coordinate(body, cursor, cache)
+            .or_else(|| decode_in_row_lane(body, cursor, cache))?;
+        *value = decoded;
+        cursor = next;
+    }
+    Some((values, cursor))
+}
+
 /// Decode a positional plane local system, including its terminal-zero macro.
 pub fn decode_positional_plane_local_system_slots(
     body: &[u8],
@@ -1125,6 +1156,21 @@ mod tests {
         assert_eq!(
             decode_plane_support_local_system_slots(&body, &cache),
             Some(expected)
+        );
+    }
+
+    #[test]
+    fn saved_conic_local_system_expands_its_planar_normal() {
+        let body = [
+            0xf9, 4, 3, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x0f, 0x0f, 0x0f,
+        ];
+
+        assert_eq!(
+            decode_saved_conic_local_system_prefix(&body, &ScalarCache::default()),
+            Some((
+                [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                body.len()
+            ))
         );
     }
 

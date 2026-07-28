@@ -3035,6 +3035,18 @@ vertex exactly when it lies on the saved center/radius carrier.
 The saved center/radius pair defines the circular carrier independently of the
 endpoint fields. Trim incidence may intersect that carrier before either arc
 endpoint is available; bounded arc geometry still requires both endpoints.
+
+A named `entity(conic)` record with `type = 58` stores `end1(3)`, `end2(3)`,
+`t0`, `t1`, `c1`, `c2`, and `local_sys` fields. `c1` and `c2` are the two
+positive ellipse radii. `local_sys` is an `f9 4 3` frame: its first two rows
+are the ordered in-plane unit axes, its compact third row is `(0, 0, 1)`, and
+its fourth row is the section-space center. The frame must be finite,
+right-handed, and orthonormal. The larger coefficient selects the major axis;
+when `c2 > c1`, the second frame row is the major axis and the parameter
+origin shifts by negative one quarter-turn. Equal complete `end1` and `end2`
+triples with `t0 = 0` and an omitted `t1` denote a full ellipse. Otherwise,
+finite increasing `t0` and `t1` delimit an elliptical arc.
+
 In a positional feature definition, these generated-entity rows occur without
 the `p_saved_result` and entity-family labels. The enclosing feature-definition
 boundary limits the row region; a row is a saved entity only when its leading

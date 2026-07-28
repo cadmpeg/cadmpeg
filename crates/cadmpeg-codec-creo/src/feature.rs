@@ -1500,6 +1500,23 @@ pub struct FeatureSavedCircle {
     pub offset: usize,
 }
 
+/// One solved conic retained in section coordinates.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureSavedConic {
+    /// Saved-section entity identifier.
+    pub entity_id: u32,
+    /// Two stored endpoint triples.
+    pub endpoints: [[Option<f64>; 3]; 2],
+    /// Start and end conic parameters.
+    pub parameters: [Option<f64>; 2],
+    /// Semi-axis coefficients.
+    pub coefficients: [Option<f64>; 2],
+    /// Two in-plane axes, positive normal, and origin.
+    pub local_system: Option<[f64; 12]>,
+    /// Byte offset of the entity label in the original stream.
+    pub offset: usize,
+}
+
 /// One saved interpolation spline retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureSavedSpline {
@@ -1535,6 +1552,8 @@ pub enum FeatureSavedEntity {
     Arc(FeatureSavedArc),
     /// Saved full-circle entity.
     Circle(FeatureSavedCircle),
+    /// Saved conic entity.
+    Conic(FeatureSavedConic),
     /// Saved interpolation-spline entity.
     Spline(FeatureSavedSpline),
     /// Saved non-geometric placeholder.
@@ -5457,6 +5476,63 @@ fn saved_circular_entities(
     entities
 }
 
+fn saved_conic_entities(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<FeatureSavedEntity> {
+    let label = b"\xe0\x00entity(conic)\0";
+    let local_system_label = b"\xe0\x02local_sys\0";
+    let mut entities = Vec::new();
+    let mut search = start;
+    while let Some(entity_offset) = find_bytes(payload, label, search, end) {
+        let body_start = entity_offset + label.len();
+        let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
+        let Some(entity_id) = saved_entity_id(payload, body_start, body_end) else {
+            search = body_end;
+            continue;
+        };
+        if named_compact_int(payload, b"\xe0\x01type\0", body_start, body_end) != Some(58) {
+            search = body_end;
+            continue;
+        }
+        let first = saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
+            .unwrap_or([None; 3]);
+        let second = saved_named_scalars::<3>(payload, b"end2", body_start, body_end, cache)
+            .unwrap_or([None; 3]);
+        let start_parameter = saved_named_scalars::<1>(payload, b"t0", body_start, body_end, cache)
+            .unwrap_or([None])[0];
+        let end_parameter = saved_named_scalars::<1>(payload, b"t1", body_start, body_end, cache)
+            .unwrap_or([None])[0];
+        let first_coefficient =
+            saved_named_scalars::<1>(payload, b"c1", body_start, body_end, cache).unwrap_or([None])
+                [0];
+        let second_coefficient =
+            saved_named_scalars::<1>(payload, b"c2", body_start, body_end, cache).unwrap_or([None])
+                [0];
+        let local_system =
+            find_bytes(payload, local_system_label, body_start, body_end).and_then(|offset| {
+                let frame_start = offset + local_system_label.len();
+                scalar::decode_saved_conic_local_system_prefix(
+                    &payload[frame_start..body_end],
+                    cache,
+                )
+                .map(|(frame, _)| frame)
+            });
+        entities.push(FeatureSavedEntity::Conic(FeatureSavedConic {
+            entity_id,
+            endpoints: [first, second],
+            parameters: [start_parameter, end_parameter],
+            coefficients: [first_coefficient, second_coefficient],
+            local_system,
+            offset: entity_offset,
+        }));
+        search = body_end;
+    }
+    entities
+}
+
 fn saved_dummy_entities(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSavedEntity> {
     let label = b"\xe0\x00entity(dummy_ent)\0";
     let mut entities = Vec::new();
@@ -5613,6 +5689,7 @@ fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
         FeatureSavedEntity::Line(entity) => entity.offset,
         FeatureSavedEntity::Arc(entity) => entity.offset,
         FeatureSavedEntity::Circle(entity) => entity.offset,
+        FeatureSavedEntity::Conic(entity) => entity.offset,
         FeatureSavedEntity::Spline(entity) => entity.offset,
         FeatureSavedEntity::Dummy(entity) => entity.offset,
     }
@@ -5639,6 +5716,7 @@ fn saved_section(
         order_table,
         segments,
     ));
+    entities.extend(saved_conic_entities(payload, table, end, cache));
     entities.extend(saved_dummy_entities(payload, table, table_end));
     entities.extend(saved_spline_entities(payload, start, end, cache));
     entities.sort_by_key(saved_entity_offset);
@@ -5658,6 +5736,7 @@ fn positional_saved_section(
 ) -> Option<FeatureSavedSection> {
     let mut entities =
         saved_positional_generated_entities(payload, start, end, cache, order_table, segments);
+    entities.extend(saved_conic_entities(payload, start, end, cache));
     entities.sort_by_key(saved_entity_offset);
     let offset = entities.first().map(saved_entity_offset)?;
     Some(FeatureSavedSection { entities, offset })
@@ -10030,6 +10109,34 @@ mod tests {
         assert_eq!(circle.entity_id, 8);
         assert_eq!(circle.center, [None; 3]);
         assert_eq!(circle.radius, Some(0.0));
+    }
+
+    #[test]
+    fn saved_conic_retains_coefficients_parameters_and_planar_frame() {
+        let payload = b"\xe0\x00entity(conic)\0\
+            \xe0\x01id\0\x02\xe0\x01type\0\x3a\
+            \xe0\x02end1\0\xf8\x03\x18\xe5\
+            \xe0\x02end2\0\xf8\x03\x18\xe5\
+            \xe0\x02t0\0\x0f\xe0\x02t1\0\xf6\
+            \xe0\x02c1\0\xe4\xe0\x02c2\0\xe4\
+            \xe0\x02local_sys\0\xf9\x04\x03\
+            \xe4\x0f\x0f\x0f\xe4\x18\xe5\x0f\x0f\x0f\x0f\
+            \xe0\x01trailing_field\0\x07";
+
+        let entities =
+            saved_conic_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+        let [FeatureSavedEntity::Conic(conic)] = entities.as_slice() else {
+            panic!("one saved conic");
+        };
+
+        assert_eq!(conic.entity_id, 2);
+        assert_eq!(conic.endpoints, [[Some(0.0), Some(1.0), Some(0.0)]; 2]);
+        assert_eq!(conic.parameters, [Some(0.0), None]);
+        assert_eq!(conic.coefficients, [Some(1.0); 2]);
+        assert_eq!(
+            conic.local_system,
+            Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+        );
     }
 
     #[test]

@@ -2004,6 +2004,16 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             offset: circle.offset,
                         }
                     }
+                    crate::feature::FeatureSavedEntity::Conic(conic) => {
+                        CreoSketchSavedEntity::Conic {
+                            entity_id: conic.entity_id,
+                            endpoints: conic.endpoints,
+                            parameters: conic.parameters,
+                            coefficients: conic.coefficients,
+                            local_system: conic.local_system,
+                            offset: conic.offset,
+                        }
+                    }
                     crate::feature::FeatureSavedEntity::Spline(spline) => {
                         CreoSketchSavedEntity::Spline {
                             entity_id: spline.entity_id,

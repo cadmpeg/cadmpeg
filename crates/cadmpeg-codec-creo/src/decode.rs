@@ -270,6 +270,14 @@ enum CreoSketchSavedEntity {
         radius: Option<f64>,
         offset: usize,
     },
+    Conic {
+        entity_id: u32,
+        endpoints: [[Option<f64>; 3]; 2],
+        parameters: [Option<f64>; 2],
+        coefficients: [Option<f64>; 2],
+        local_system: Option<[f64; 12]>,
+        offset: usize,
+    },
     Spline {
         entity_id: Option<u32>,
         declared_point_count: Option<u32>,
@@ -2452,8 +2460,123 @@ fn saved_section_entity_geometry(
                 circle.offset,
             ))
         }
+        crate::feature::FeatureSavedEntity::Conic(conic) => {
+            let (Some(frame), [Some(first_radius), Some(second_radius)]) =
+                (conic.local_system, conic.coefficients)
+            else {
+                return None;
+            };
+            let first_axis = [frame[0], frame[1]];
+            let second_axis = [frame[3], frame[4]];
+            let first_length = first_axis[0].hypot(first_axis[1]);
+            let second_length = second_axis[0].hypot(second_axis[1]);
+            let scale = first_length.max(second_length).max(1.0);
+            if !frame.into_iter().all(f64::is_finite)
+                || first_radius <= 1e-12
+                || second_radius <= 1e-12
+                || (first_length - 1.0).abs() > 1e-9 * scale
+                || (second_length - 1.0).abs() > 1e-9 * scale
+                || (first_axis[0] * second_axis[0] + first_axis[1] * second_axis[1]).abs() > 1e-9
+                || (first_axis[0] * second_axis[1] - first_axis[1] * second_axis[0] - 1.0).abs()
+                    > 1e-9
+                || frame[2].abs() > 1e-9
+                || frame[5].abs() > 1e-9
+                || frame[6].abs() > 1e-9
+                || frame[7].abs() > 1e-9
+                || (frame[8] - 1.0).abs() > 1e-9
+                || frame[11].abs() > 1e-9
+            {
+                return None;
+            }
+            let (major_axis, major_radius, minor_radius, parameter_shift) =
+                if first_radius >= second_radius {
+                    (first_axis, first_radius, second_radius, 0.0)
+                } else {
+                    (
+                        second_axis,
+                        second_radius,
+                        first_radius,
+                        -std::f64::consts::FRAC_PI_2,
+                    )
+                };
+            let coincident_endpoints = conic.endpoints.iter().flatten().all(Option::is_some)
+                && conic.endpoints[0]
+                    .into_iter()
+                    .zip(conic.endpoints[1])
+                    .all(|(first, second)| {
+                        let (Some(first), Some(second)) = (first, second) else {
+                            return false;
+                        };
+                        let scale = first.abs().max(second.abs()).max(1.0);
+                        (first - second).abs() <= 1e-9 * scale
+                    });
+            let (start_angle, end_angle) = match conic.parameters {
+                [Some(start), Some(end)]
+                    if start.is_finite()
+                        && end.is_finite()
+                        && (end - start - std::f64::consts::TAU).abs() <= 1e-9 =>
+                {
+                    (None, None)
+                }
+                [Some(start), Some(end)] if start.is_finite() && end > start => (
+                    Some(Angle(start + parameter_shift)),
+                    Some(Angle(end + parameter_shift)),
+                ),
+                [Some(start), None]
+                    if start.is_finite() && start.abs() <= 1e-9 && coincident_endpoints =>
+                {
+                    (None, None)
+                }
+                _ => return None,
+            };
+            Some((
+                conic.entity_id,
+                SketchGeometry::Ellipse {
+                    center: Point2::new(frame[9], frame[10]),
+                    major_angle: Angle(major_axis[1].atan2(major_axis[0])),
+                    major_radius: Length(major_radius),
+                    minor_radius: Length(minor_radius),
+                    start_angle,
+                    end_angle,
+                },
+                conic.offset,
+            ))
+        }
         crate::feature::FeatureSavedEntity::Spline(_)
         | crate::feature::FeatureSavedEntity::Dummy(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod saved_conic_geometry_tests {
+    use super::*;
+
+    #[test]
+    fn coincident_endpoint_conic_materializes_as_a_full_ellipse() {
+        let entity = crate::feature::FeatureSavedEntity::Conic(crate::feature::FeatureSavedConic {
+            entity_id: 2,
+            endpoints: [[Some(0.0), Some(1.0), Some(0.0)]; 2],
+            parameters: [Some(0.0), None],
+            coefficients: [Some(35.0), Some(27.0)],
+            local_system: Some([
+                0.8, -0.6, 0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 1.0, 128.0, 75.0, 0.0,
+            ]),
+            offset: 40,
+        });
+
+        let Some((
+            2,
+            SketchGeometry::Ellipse {
+                start_angle,
+                end_angle,
+                ..
+            },
+            40,
+        )) = saved_section_entity_geometry(&entity)
+        else {
+            panic!("full ellipse");
+        };
+        assert_eq!((start_angle, end_angle), (None, None));
     }
 }
 
@@ -3630,6 +3753,10 @@ fn saved_section_point(
         (crate::feature::FeatureSavedEntity::Arc(arc), 3) => arc.endpoints[1],
         (crate::feature::FeatureSavedEntity::Arc(arc), 4) => arc.center,
         (crate::feature::FeatureSavedEntity::Circle(circle), 4) => circle.center,
+        (crate::feature::FeatureSavedEntity::Conic(conic), 4) => {
+            let frame = conic.local_system?;
+            [Some(frame[9]), Some(frame[10]), Some(frame[11])]
+        }
         _ => return None,
     };
     let [Some(u), Some(v), _] = coordinates else {
@@ -9858,7 +9985,8 @@ fn section_skamp_locus(
         (crate::feature::FeatureSavedEntity::Arc(_), 3) => Some(SketchLocus::Start(entity)),
         (
             crate::feature::FeatureSavedEntity::Arc(_)
-            | crate::feature::FeatureSavedEntity::Circle(_),
+            | crate::feature::FeatureSavedEntity::Circle(_)
+            | crate::feature::FeatureSavedEntity::Conic(_),
             4,
         ) => Some(SketchLocus::Center(entity)),
         _ => None,
@@ -10205,8 +10333,13 @@ fn section_skamp_curve_entity(
     let is_curve = section_skamp_is_line(definition, item)
         || unique_bounded_curve_segment(definition, item.entity_id).is_some()
         || section_skamp_is_circular(definition, item)
-        || section_saved_entity(definition, item.entity_id)
-            .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Spline(_)));
+        || section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+            matches!(
+                entity,
+                crate::feature::FeatureSavedEntity::Conic(_)
+                    | crate::feature::FeatureSavedEntity::Spline(_)
+            )
+        });
     is_curve.then(|| sketch_entity_id(sketch, item.entity_id))
 }
 
@@ -10249,6 +10382,7 @@ fn section_saved_entity(
             crate::feature::FeatureSavedEntity::Line(line) => line.entity_id == internal_id,
             crate::feature::FeatureSavedEntity::Arc(arc) => arc.entity_id == internal_id,
             crate::feature::FeatureSavedEntity::Circle(circle) => circle.entity_id == internal_id,
+            crate::feature::FeatureSavedEntity::Conic(conic) => conic.entity_id == internal_id,
             crate::feature::FeatureSavedEntity::Spline(spline) => {
                 spline.entity_id == Some(internal_id)
             }
@@ -10903,6 +11037,7 @@ enum SavedSectionEntityKind {
     Line,
     Arc,
     Circle,
+    Conic,
     Spline,
     Dummy,
 }
@@ -10913,6 +11048,7 @@ impl SavedSectionEntityKind {
             Self::Line => "line",
             Self::Arc => "arc",
             Self::Circle => "circle",
+            Self::Conic => "conic",
             Self::Spline => "spline",
             Self::Dummy => "dummy",
         }
@@ -10935,6 +11071,11 @@ fn saved_section_entity_identity(
             Some(circle.entity_id),
             circle.offset,
             SavedSectionEntityKind::Circle,
+        ),
+        crate::feature::FeatureSavedEntity::Conic(conic) => (
+            Some(conic.entity_id),
+            conic.offset,
+            SavedSectionEntityKind::Conic,
         ),
         crate::feature::FeatureSavedEntity::Spline(spline) => (
             spline.entity_id,
@@ -11464,7 +11605,13 @@ fn section_skamp_has_proven_point_locus(
         (section_saved_entity(definition, item.entity_id), item.sense),
         (Some(crate::feature::FeatureSavedEntity::Line(_)), 2 | 3)
             | (Some(crate::feature::FeatureSavedEntity::Arc(_)), 2..=4)
-            | (Some(crate::feature::FeatureSavedEntity::Circle(_)), 4)
+            | (
+                Some(
+                    crate::feature::FeatureSavedEntity::Circle(_)
+                        | crate::feature::FeatureSavedEntity::Conic(_),
+                ),
+                4,
+            )
     )
 }
 
@@ -12236,18 +12383,17 @@ fn transfer_sketches(
             if entities.iter().any(|entity| entity.id == entity_id) {
                 continue;
             }
-            let Some(expected_kinds) = section_generated_profile_surface_kinds(&geometry) else {
-                continue;
-            };
             let generated = external_id.is_some_and(|external_id| {
-                section_entity_is_generated_profile(
-                    complete_segment_table,
-                    definition.owner_feature_id,
-                    external_id,
-                    expected_kinds,
-                    &scan.features.entity_tables,
-                    &scan.surfaces.rows,
-                )
+                section_generated_profile_surface_kinds(&geometry).is_some_and(|expected_kinds| {
+                    section_entity_is_generated_profile(
+                        complete_segment_table,
+                        definition.owner_feature_id,
+                        external_id,
+                        expected_kinds,
+                        &scan.features.entity_tables,
+                        &scan.surfaces.rows,
+                    )
+                })
             });
             let curve_id = CurveId(sketch_section_curve_id(&sketch_id, &suffix));
             annotate(
@@ -28851,6 +28997,16 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .filter_map(|definition| definition.saved_section.as_ref())
             .map(|saved| saved.entities.len())
             .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_saved_conic_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.saved_section.as_ref())
+            .flat_map(|saved| &saved.entities)
+            .filter(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Conic(_)))
+            .count(),
     );
     coverage.insert(
         "decoded_feature_entity_count".to_string(),
