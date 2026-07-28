@@ -2141,7 +2141,6 @@ impl MeshQuotient {
         (solutions.len() == 1).then(|| solutions.remove(0))
     }
 
-    #[cfg(test)]
     pub(crate) fn point_assignment_exists(
         &mut self,
         point_count: usize,

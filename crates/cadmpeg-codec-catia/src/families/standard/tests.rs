@@ -1473,6 +1473,34 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
 }
 
 #[test]
+fn incidence_components_discard_quotient_impossible_complete_solutions() {
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[1, 1]]];
+    let edge_faces = [[0, 0], [1, 1]];
+    let mut union = UnionFind::new(4);
+    union.union(0, 1);
+    union.union(2, 3);
+    let quotient = MeshQuotient {
+        union,
+        domains: (0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect(),
+        members: vec![vec![0, 1], Vec::new(), vec![2, 3], Vec::new()],
+    };
+
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        2,
+        2,
+        None,
+        Some(&quotient),
+        None,
+        &|_| true,
+    )
+    .expect("globally assignable component solution");
+
+    assert_eq!(solutions, vec![vec![[0, 0], [1, 1]]]);
+}
+
+#[test]
 fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
     use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
 
