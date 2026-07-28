@@ -30,6 +30,7 @@
 
 pub mod annotations;
 pub mod appearance;
+pub mod assets;
 pub mod attributes;
 pub mod be;
 pub mod bytes;

@@ -3,11 +3,12 @@
 
 use std::collections::BTreeMap;
 
+use crate::assets::AssetId;
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, HistoricalBodyId, HistoricalEdgeId,
     HistoricalFaceId, SubdId, VertexId,
 };
-use crate::math::{Point3, Vector3};
+use crate::math::{Point2, Point3, Vector3};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -383,6 +384,22 @@ pub enum FeatureDefinition {
         /// Axial extent of the annotation, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extent: Option<CosmeticThreadExtent>,
+    },
+    /// Raster reference image placed in model space.
+    ReferenceImage {
+        /// Embedded or external raster resource.
+        asset: AssetId,
+        /// Origin of the image plane in model space.
+        origin: Point3,
+        /// Unit direction of increasing image u coordinate.
+        u_axis: Vector3,
+        /// Unit direction of increasing image v coordinate.
+        v_axis: Vector3,
+        /// Opposite corners of the image rectangle in plane-local millimeters.
+        bounds: [Point2; 2],
+        /// Normalized image opacity.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opacity: Option<f64>,
     },
     /// Built-in world-origin reference plane.
     DatumPrincipalPlane {

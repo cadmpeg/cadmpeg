@@ -2617,6 +2617,14 @@ pub struct DesignCanvasImage {
     pub label: String,
     /// Byte offset of the label's UTF-16LE code units.
     pub label_offset: u64,
+    /// Normalized raster opacity.
+    pub opacity: f32,
+    /// Image-plane origin in model-space millimeters.
+    pub origin: Point3,
+    /// Unit direction of increasing image u coordinate.
+    pub u_axis: Vector3,
+    /// Unit direction of increasing image v coordinate.
+    pub v_axis: Vector3,
     /// Uninterpreted fixed geometry payload between the plane reference and scope link.
     pub geometry_payload: Vec<u8>,
 }

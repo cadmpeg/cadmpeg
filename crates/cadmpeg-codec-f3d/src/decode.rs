@@ -1164,6 +1164,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 &mut ir.model.features,
                 &ir.model.subds,
             )?;
+            ir.model.assets = crate::design::decode::canvas::project_canvas_images(
+                &scan,
+                &native.design_parameter_scopes,
+                &native.design_canvas_images,
+                &mut ir.model.features,
+            )?;
             crate::design::configurations::bind_configuration_parameter_overrides(
                 &mut ir.model.configurations,
                 &ir.model.parameters,
@@ -1528,6 +1534,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &native.design_record_headers,
         &mut ir.model.features,
         &ir.model.subds,
+    )?;
+    ir.model.assets = crate::design::decode::canvas::project_canvas_images(
+        &scan,
+        &native.design_parameter_scopes,
+        &native.design_canvas_images,
+        &mut ir.model.features,
     )?;
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut ir.model.configurations,

@@ -4268,3 +4268,69 @@ fn current_document_excludes_source_byte_accounting() {
     assert_eq!(json["ir_version"], crate::IR_VERSION);
     assert!(json.get("byte_ledger").is_none());
 }
+
+#[test]
+fn reference_images_require_valid_assets_and_plane_placements() {
+    use crate::assets::{Asset, AssetContent, AssetId};
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::math::Point2;
+
+    let asset_id = AssetId("synthetic:test:asset#reference-image".into());
+    let feature_id = FeatureId("synthetic:test:feature#reference-image".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.assets.push(Asset {
+        id: asset_id.clone(),
+        name: Some("reference.png".into()),
+        media_type: Some("image/png".into()),
+        content: AssetContent::Embedded {
+            data: vec![1, 2, 3],
+        },
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::ReferenceImage {
+            asset: asset_id,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            v_axis: Vector3::new(0.0, 1.0, 0.0),
+            bounds: [Point2::new(-10.0, -5.0), Point2::new(10.0, 5.0)],
+            opacity: Some(0.75),
+        },
+        native_ref: None,
+    });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).is_ok());
+    assert_eq!(
+        serde_json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
+        "AQID"
+    );
+
+    ir.model.assets.clear();
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(feature_id.0.as_str())
+            && finding.message.contains("reference-image asset")
+    }));
+
+    let FeatureDefinition::ReferenceImage { ref mut v_axis, .. } = ir.model.features[0].definition
+    else {
+        unreachable!();
+    };
+    *v_axis = Vector3::new(1.0, 0.0, 0.0);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(feature_id.0.as_str())
+            && finding.message == "reference-image placement is invalid"
+    }));
+}

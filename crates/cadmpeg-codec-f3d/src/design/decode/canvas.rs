@@ -6,9 +6,13 @@ use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
 use crate::records::{DesignCanvasImage, DesignParameterScope};
+use cadmpeg_ir::assets::{Asset, AssetContent};
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{f64_at, u32_at};
-use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::features::{Feature, FeatureDefinition};
+use cadmpeg_ir::le::{f32_at, f64_at, u32_at};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
 pub fn decode_canvas_images(
@@ -35,6 +39,95 @@ pub fn decode_canvas_images(
     images.sort_by_key(|image| image.id.clone());
     images.dedup_by_key(|image| image.id.clone());
     Ok(images)
+}
+
+/// Project uniquely bound Canvas images into neutral raster resources and
+/// model-space reference-image features.
+pub fn project_canvas_images(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    images: &[DesignCanvasImage],
+    features: &mut [Feature],
+) -> Result<Vec<Asset>, CodecError> {
+    let mut assets = Vec::new();
+    for image in images {
+        let Some(scope) = scopes.iter().find(|scope| {
+            scope.kind == "Canvas"
+                && scope.record_index == image.scope_record_index
+                && crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&image.id)
+        }) else {
+            continue;
+        };
+        let Some(feature) = features
+            .iter_mut()
+            .find(|feature| feature.id == crate::ids::neutral_feature_id(scope))
+        else {
+            continue;
+        };
+        let mut entries = scan.entries.iter().filter(|entry| {
+            entry.role == role::IMAGE
+                && entry.name.rsplit('/').next() == Some(image.asset_name.as_str())
+        });
+        let (Some(entry), None) = (entries.next(), entries.next()) else {
+            continue;
+        };
+        let mut u_values = image
+            .boundary_segments
+            .iter()
+            .flatten()
+            .map(|point| point.u);
+        let mut v_values = image
+            .boundary_segments
+            .iter()
+            .flatten()
+            .map(|point| point.v);
+        let (Some(mut u_min), Some(mut v_min)) = (u_values.next(), v_values.next()) else {
+            continue;
+        };
+        let (mut u_max, mut v_max) = (u_min, v_min);
+        for value in u_values {
+            u_min = u_min.min(value);
+            u_max = u_max.max(value);
+        }
+        for value in v_values {
+            v_min = v_min.min(value);
+            v_max = v_max.max(value);
+        }
+        let asset_id = crate::ids::neutral_asset_id(&entry.name);
+        if !assets.iter().any(|asset: &Asset| asset.id == asset_id) {
+            let media_type = std::path::Path::new(&image.asset_name)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .and_then(|extension| match extension.to_ascii_lowercase().as_str() {
+                    "jpg" | "jpeg" => Some("image/jpeg"),
+                    "png" => Some("image/png"),
+                    _ => None,
+                })
+                .map(str::to_owned);
+            assets.push(Asset {
+                id: asset_id.clone(),
+                name: Some(image.asset_name.clone()),
+                media_type,
+                content: AssetContent::Embedded {
+                    data: scan.entry_bytes(&entry.name)?.to_vec(),
+                },
+                native_ref: Some(crate::ids::native_scope(&entry.name)),
+            });
+        }
+        feature.definition = FeatureDefinition::ReferenceImage {
+            asset: asset_id,
+            origin: image.origin,
+            u_axis: image.u_axis,
+            v_axis: image.v_axis,
+            bounds: [
+                Point2::new(u_min * DESIGN_LENGTH_TO_MM, v_min * DESIGN_LENGTH_TO_MM),
+                Point2::new(u_max * DESIGN_LENGTH_TO_MM, v_max * DESIGN_LENGTH_TO_MM),
+            ],
+            opacity: Some(f64::from(image.opacity)),
+        };
+    }
+    assets.sort_by_key(|asset| asset.id.clone());
+    Ok(assets)
 }
 
 fn parse_canvas_image(
@@ -131,6 +224,8 @@ fn parse_canvas_image(
     {
         return None;
     }
+    let geometry_payload = bytes.get(geometry_at + 69..geometry_at + 146)?;
+    let (opacity, origin, u_axis, v_axis) = decode_geometry_payload(geometry_payload)?;
 
     let (label, after_label) = lp_utf16_bounded(bytes, geometry_at + 213, 1..=256)?;
     if after_label != paired_at {
@@ -177,8 +272,48 @@ fn parse_canvas_image(
         asset_name_offset: u64::try_from(asset_record_at + 25).ok()?,
         label,
         label_offset: u64::try_from(geometry_at + 217).ok()?,
-        geometry_payload: bytes.get(geometry_at + 69..geometry_at + 146)?.to_vec(),
+        opacity,
+        origin,
+        u_axis,
+        v_axis,
+        geometry_payload: geometry_payload.to_vec(),
     })
+}
+
+fn decode_geometry_payload(payload: &[u8]) -> Option<(f32, Point3, Vector3, Vector3)> {
+    let opacity = f32_at(payload, 0)?;
+    if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) || payload.get(4) != Some(&0) {
+        return None;
+    }
+    let vector = |offset| {
+        Some([
+            f64_at(payload, offset)?,
+            f64_at(payload, offset + 8)?,
+            f64_at(payload, offset + 16)?,
+        ])
+    };
+    let origin = vector(5)?;
+    let u = vector(29)?;
+    let v = vector(53)?;
+    let u_axis = Vector3::new(u[0], u[1], u[2]);
+    let v_axis = Vector3::new(v[0], v[1], v[2]);
+    if !origin.into_iter().all(f64::is_finite)
+        || (u_axis.norm() - 1.0).abs() > 1.0e-9
+        || (v_axis.norm() - 1.0).abs() > 1.0e-9
+        || u_axis.dot(v_axis).abs() > 1.0e-9
+    {
+        return None;
+    }
+    Some((
+        opacity,
+        Point3::new(
+            origin[0] * DESIGN_LENGTH_TO_MM,
+            origin[1] * DESIGN_LENGTH_TO_MM,
+            origin[2] * DESIGN_LENGTH_TO_MM,
+        ),
+        u_axis,
+        v_axis,
+    ))
 }
 
 fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
@@ -210,8 +345,43 @@ pub(crate) fn opposite_rectangle_edges(segments: [[Point2; 2]; 2]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{opposite_rectangle_edges, valid_geometry_prologue};
-    use cadmpeg_ir::math::Point2;
+    use super::{decode_geometry_payload, opposite_rectangle_edges, valid_geometry_prologue};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+    #[test]
+    fn canvas_geometry_payload_decodes_opacity_and_plane_frame() {
+        let mut payload = [0; 77];
+        payload[..4].copy_from_slice(&0.75f32.to_le_bytes());
+        for (offset, value) in [
+            (5, 1.0f64),
+            (13, 2.0),
+            (21, 3.0),
+            (29, 1.0),
+            (37, 0.0),
+            (45, 0.0),
+            (53, 0.0),
+            (61, 0.0),
+            (69, 1.0),
+        ] {
+            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+
+        assert_eq!(
+            decode_geometry_payload(&payload),
+            Some((
+                0.75,
+                Point3::new(10.0, 20.0, 30.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ))
+        );
+
+        payload[4] = 1;
+        assert!(decode_geometry_payload(&payload).is_none());
+        payload[4] = 0;
+        payload[53..61].copy_from_slice(&1.0f64.to_le_bytes());
+        assert!(decode_geometry_payload(&payload).is_none());
+    }
 
     #[test]
     fn canvas_bounds_require_two_opposite_non_degenerate_edges() {

@@ -44,6 +44,7 @@ macro_rules! arena_registry {
             pcurves: Pcurve, "Pcurve arena.", [] => |e| e.id.0.clone();
             procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [] => |e| e.id.0.clone();
             procedural_curves: ProceduralCurve, "Procedural curve arena.", [] => |e| e.id.0.clone();
+            assets: crate::assets::Asset, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
             features: Feature, "Feature arena.", [] => |e| e.id.0.clone();
             feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
             configurations: DesignConfiguration, "Design configuration arena.", [serde(default)] => |e| e.id.0.clone();

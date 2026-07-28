@@ -26,6 +26,7 @@ use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vert
 use crate::units::LengthUnit;
 
 mod annotations_native;
+mod assets;
 mod carriers_parameterization;
 mod drawings;
 mod geometry_consistency;
@@ -42,6 +43,7 @@ mod subd;
 mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
+use assets::check_assets;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
 use geometry_consistency::{
@@ -76,6 +78,7 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
 
     let ids = IdSets::build(ir);
     check_version(ir, &mut findings);
+    check_assets(ir, &mut findings);
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     let all_ids = check_identity_and_order(ir, &mut findings);

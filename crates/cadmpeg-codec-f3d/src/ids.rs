@@ -116,6 +116,12 @@ pub(crate) fn neutral_feature_id_parts(
     ))
 }
 
+/// The neutral embedded-asset key for one exact archive entry.
+pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId {
+    let entry_name = identity_key_component(entry_name);
+    cadmpeg_ir::assets::AssetId(format!("f3d:model:asset#{}:{entry_name}", entry_name.len()))
+}
+
 /// The neutral parameter key for a design `parameter`.
 pub(crate) fn neutral_parameter_id(
     parameter: &DesignParameter,

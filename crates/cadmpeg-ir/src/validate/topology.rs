@@ -1903,6 +1903,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|parameter| parameter.id.0.as_str())
         .collect::<HashSet<_>>();
+    let asset_ids = ir
+        .model
+        .assets
+        .iter()
+        .map(|asset| asset.id.0.as_str())
+        .collect::<HashSet<_>>();
     let feature_ids = ir
         .model
         .features
@@ -2184,6 +2190,41 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved => {}
+            FeatureDefinition::ReferenceImage {
+                asset,
+                origin,
+                u_axis,
+                v_axis,
+                bounds,
+                opacity,
+            } => {
+                if !asset_ids.contains(asset.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "reference-image asset", &asset.0);
+                }
+                let frame_is_valid = [origin.x, origin.y, origin.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && (u_axis.norm() - 1.0).abs() <= 1.0e-9
+                    && (v_axis.norm() - 1.0).abs() <= 1.0e-9
+                    && u_axis.dot(*v_axis).abs() <= 1.0e-9;
+                let [first, second] = bounds;
+                let bounds_are_valid = [first.u, first.v, second.u, second.v]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && first.u != second.u
+                    && first.v != second.v;
+                if !frame_is_valid
+                    || !bounds_are_valid
+                    || opacity
+                        .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "reference-image placement is invalid",
+                    );
+                }
+            }
             FeatureDefinition::Block { dimensions, .. } => {
                 if dimensions.is_some_and(|values| {
                     values

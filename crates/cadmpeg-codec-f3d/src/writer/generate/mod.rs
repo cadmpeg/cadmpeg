@@ -35,6 +35,11 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             "source-less F3D generation does not support SubD surfaces".into(),
         ));
     }
+    if !target.model.assets.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D generation does not support document assets".into(),
+        ));
+    }
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target)?;
     validate_source_less_auxiliary_geometry(target)?;
