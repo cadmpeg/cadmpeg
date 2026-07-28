@@ -607,39 +607,69 @@ pub fn walk(stream: &[u8]) -> Census {
         .iter()
         .map(|tail| tail.end - tail.offset)
         .sum::<usize>();
-    census.tagged_reference_lanes = tagged_reference_lanes(stream, &census);
-    census.bytes_decoded += census
-        .tagged_reference_lanes
-        .iter()
-        .map(|lane| lane.end - lane.offset)
-        .sum::<usize>();
-    census.reference_type_maps = reference_type_maps(stream, &census);
-    census.bytes_decoded += census
-        .reference_type_maps
-        .iter()
-        .map(|map| map.end - map.offset)
-        .sum::<usize>();
-    census.reference_state_packets = reference_state_packets(stream, &census);
-    census.bytes_decoded += census
-        .reference_state_packets
-        .iter()
-        .map(|packet| packet.end - packet.offset)
-        .sum::<usize>();
-    census.inline_schema_declarations = inline_schema_declarations(stream, &census);
-    census.bytes_decoded += census
-        .inline_schema_declarations
-        .iter()
-        .map(|declaration| declaration.end - declaration.offset)
-        .sum::<usize>();
-    census.reference_marker_packets = reference_marker_packets(stream, &census);
-    census.bytes_decoded += census
-        .reference_marker_packets
-        .iter()
-        .map(|packet| packet.end - packet.offset)
-        .sum::<usize>();
+    populate_gap_events(stream, &mut census);
     let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
     census.bytes_decoded += body_revision_state_bytes;
     census
+}
+
+fn populate_gap_events(stream: &[u8], census: &mut Census) {
+    loop {
+        let mut added_bytes = 0;
+
+        let lanes = tagged_reference_lanes(stream, census);
+        added_bytes += lanes
+            .iter()
+            .map(|lane| lane.end - lane.offset)
+            .sum::<usize>();
+        census.tagged_reference_lanes.extend(lanes);
+
+        let maps = reference_type_maps(stream, census);
+        added_bytes += maps.iter().map(|map| map.end - map.offset).sum::<usize>();
+        census.reference_type_maps.extend(maps);
+
+        let state_packets = reference_state_packets(stream, census);
+        added_bytes += state_packets
+            .iter()
+            .map(|packet| packet.end - packet.offset)
+            .sum::<usize>();
+        census.reference_state_packets.extend(state_packets);
+
+        let declarations = inline_schema_declarations(stream, census);
+        added_bytes += declarations
+            .iter()
+            .map(|declaration| declaration.end - declaration.offset)
+            .sum::<usize>();
+        census.inline_schema_declarations.extend(declarations);
+
+        let marker_packets = reference_marker_packets(stream, census);
+        added_bytes += marker_packets
+            .iter()
+            .map(|packet| packet.end - packet.offset)
+            .sum::<usize>();
+        census.reference_marker_packets.extend(marker_packets);
+
+        census.bytes_decoded += added_bytes;
+        if added_bytes == 0 {
+            break;
+        }
+    }
+
+    census
+        .tagged_reference_lanes
+        .sort_unstable_by_key(|lane| lane.offset);
+    census
+        .reference_type_maps
+        .sort_unstable_by_key(|map| map.offset);
+    census
+        .reference_state_packets
+        .sort_unstable_by_key(|packet| packet.offset);
+    census
+        .inline_schema_declarations
+        .sort_unstable_by_key(|declaration| declaration.offset);
+    census
+        .reference_marker_packets
+        .sort_unstable_by_key(|packet| packet.offset);
 }
 
 fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
@@ -759,7 +789,7 @@ fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericT
 }
 
 fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReferenceLane> {
-    uncovered_spans(stream.len(), census, false)
+    uncovered_spans(stream.len(), census, true)
         .filter_map(|(offset, end)| {
             let mut at = offset;
             let mut references = Vec::new();
@@ -807,7 +837,7 @@ fn reference_type_map(
             (be::u16_at(stream, at) == Some(0)).then_some(())?;
             at = at.checked_add(2)?;
             let target_kind = be::u16_at(stream, at)?;
-            is_reference_type_kind(target_kind).then_some(())?;
+            (target_kind == 1 || is_reference_type_kind(target_kind)).then_some(())?;
             at = at.checked_add(2)?;
             return (at == expected_end && !entries.is_empty()).then_some(ReferenceTypeMap {
                 entries,
@@ -2178,6 +2208,39 @@ mod reference_type_map_tests {
                 end: bytes.len(),
             }]
         );
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_accepts_null_target_kind() {
+        let mut bytes = map_bytes();
+        bytes[18..].copy_from_slice(&[0, 1]);
+
+        let census = walk(&bytes);
+
+        assert_eq!(census.reference_type_maps.len(), 1);
+        assert_eq!(census.reference_type_maps[0].target_kind, 1);
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_is_discovered_after_state_packet_prefix() {
+        let mut bytes = Vec::new();
+        for word in [1u16, 1, 4, 2, 3, 4, 1, 1] {
+            bytes.extend_from_slice(&word.to_be_bytes());
+        }
+        for word in [5u32, 6, 7, 8, 9] {
+            bytes.extend_from_slice(&word.to_be_bytes());
+        }
+        bytes.push(10);
+        let map_offset = bytes.len();
+        bytes.extend(map_bytes());
+
+        let census = walk(&bytes);
+
+        assert_eq!(census.reference_state_packets.len(), 1);
+        assert_eq!(census.reference_type_maps.len(), 1);
+        assert_eq!(census.reference_type_maps[0].offset, map_offset);
         assert_eq!(census.bytes_decoded, bytes.len());
     }
 
