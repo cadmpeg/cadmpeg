@@ -23,6 +23,7 @@ pub(super) struct CreoSketchRecord {
     pub(super) centered_line_segments: Vec<CreoSketchCenteredLineSegment>,
     pub(super) reference_line_segments: Vec<CreoSketchReferenceLineSegment>,
     pub(super) bounded_curve_segments: Vec<CreoSketchBoundedCurveSegment>,
+    pub(super) conic_segments: Vec<CreoSketchConicSegment>,
     pub(super) opaque_segments: Vec<CreoSketchOpaqueSegment>,
     pub(super) trim_entities: Vec<CreoSketchTrimEntity>,
     pub(super) trim_vertices: Vec<CreoSketchTrimVertex>,
@@ -1918,6 +1919,18 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertical_horizontal_constraint: segment.vertical_horizontal,
                     radius_dimension_id: segment.radius_ref,
                     secondary_radius_dimension_id: segment.radius2_ref,
+                    offset: segment.offset,
+                })
+                .collect(),
+            conic_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.conic_rows)
+                .map(|segment| CreoSketchConicSegment {
+                    external_id: segment.external_id,
+                    center_id: segment.center_id,
+                    first_coefficient_ref: segment.first_coefficient_ref,
+                    second_coefficient_ref: segment.second_coefficient_ref,
                     offset: segment.offset,
                 })
                 .collect(),

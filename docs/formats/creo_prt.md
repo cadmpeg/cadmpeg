@@ -3065,6 +3065,13 @@ The `segtab` positional replay stores `type`, three direction fields, two endpoi
 
 For line rows, `verhor = 0` constrains the line vertical in section coordinates and `verhor = 1` constrains it horizontal. Other `verhor` values are not direction selectors.
 
+A type-58 `segtab` row identifies a saved conic. Its direction triple is
+zero, its point fields are absent and one, its center field is present,
+`arcorient = 0`, and `verhor = 2`. The two radius fields are references to
+the saved conic's first and second coefficients, not a circle radius and a
+secondary radius. `ext_id` joins the row through `order_table` to the
+type-58 `entity(conic)` record.
+
 ### 8.3 DEPDB profiles and operations
 
 A `point` record stores a first section coordinate as an IEEE-fill scalar, a point identifier, and a second coordinate as an `18 <index>` reference into the record-local `0x46` cache.

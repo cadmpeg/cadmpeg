@@ -365,6 +365,15 @@ struct CreoSketchBoundedCurveSegment {
 }
 
 #[derive(Serialize)]
+struct CreoSketchConicSegment {
+    external_id: u32,
+    center_id: u32,
+    first_coefficient_ref: u32,
+    second_coefficient_ref: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
 struct CreoSketchOpaqueSegment {
     external_id: u32,
     kind: u32,
@@ -9967,6 +9976,12 @@ fn section_skamp_locus(
                 )
                 .chain(
                     segments
+                        .conic_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    segments
                         .opaque_rows
                         .iter()
                         .map(|segment| segment.external_id),
@@ -11006,6 +11021,7 @@ fn section_segment_external_id_counts(
                 .chain(table.centered_line_rows.iter().map(|row| row.external_id))
                 .chain(table.reference_line_rows.iter().map(|row| row.external_id))
                 .chain(table.bounded_curve_rows.iter().map(|row| row.external_id))
+                .chain(table.conic_rows.iter().map(|row| row.external_id))
                 .chain(table.opaque_rows.iter().map(|row| row.external_id))
                 .fold(BTreeMap::new(), |mut counts, external_id| {
                     *counts.entry(external_id).or_insert(0) += 1;
@@ -11522,6 +11538,7 @@ fn solver_only_section_entities(
                         .iter()
                         .map(|segment| segment.external_id),
                 )
+                .chain(table.conic_rows.iter().map(|segment| segment.external_id))
                 .chain(table.opaque_rows.iter().map(|segment| segment.external_id))
         })
         .collect::<BTreeSet<_>>();
@@ -12289,6 +12306,43 @@ fn transfer_sketches(
                     .collect(),
                 geometry: SketchGeometry::Native {
                     native_kind: "bounded_curve".to_string(),
+                },
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.conic_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
+            let suffix = if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("conic:offset:{}", segment.offset)
+            };
+            let id = sketch_entity_id(&sketch_id, suffix);
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                "unresolved_section_conic",
+                Exactness::ByteExact,
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Native {
+                    native_kind: "conic".to_string(),
                 },
             });
         }
@@ -28933,6 +28987,15 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.bounded_curve_rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_conic_segment_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.conic_rows.len())
             .sum::<usize>(),
     );
     coverage.insert(

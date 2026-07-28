@@ -1420,6 +1420,24 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut segments.rows {
             row.offset += section_offset;
         }
+        for row in &mut segments.circle_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.point_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.centered_line_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.reference_line_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.bounded_curve_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.conic_rows {
+            row.offset += section_offset;
+        }
         for row in &mut segments.opaque_rows {
             row.offset += section_offset;
         }

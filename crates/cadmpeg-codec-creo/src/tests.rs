@@ -4571,6 +4571,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
             bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         }),

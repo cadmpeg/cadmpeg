@@ -958,6 +958,21 @@ pub struct FeatureBoundedCurveSegment {
     pub offset: usize,
 }
 
+/// One type `58` saved-conic section row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureConicSegment {
+    /// Center point reference stored by the section solver.
+    pub center_id: u32,
+    /// First coefficient reference stored by the section solver.
+    pub first_coefficient_ref: u32,
+    /// Second coefficient reference stored by the section solver.
+    pub second_coefficient_ref: u32,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
 /// One fully framed `segtab_ptr` row outside the core segment-family enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOpaqueSegment {
@@ -1005,6 +1020,8 @@ pub struct FeatureSegmentTable {
     pub reference_line_rows: Vec<FeatureReferenceLineSegment>,
     /// Fully aligned type-12 bounded section curves.
     pub bounded_curve_rows: Vec<FeatureBoundedCurveSegment>,
+    /// Fully aligned type-58 saved-conic rows.
+    pub conic_rows: Vec<FeatureConicSegment>,
     /// Fully aligned rows with unsupported segment-family discriminators.
     pub opaque_rows: Vec<FeatureOpaqueSegment>,
     /// Byte offset of the `segtab_ptr` label in the original stream.
@@ -1020,6 +1037,7 @@ impl FeatureSegmentTable {
             + self.centered_line_rows.len()
             + self.reference_line_rows.len()
             + self.bounded_curve_rows.len()
+            + self.conic_rows.len()
             + self.opaque_rows.len()
     }
 
@@ -1039,6 +1057,7 @@ impl FeatureSegmentTable {
             .chain(self.centered_line_rows.iter().map(|row| row.external_id))
             .chain(self.reference_line_rows.iter().map(|row| row.external_id))
             .chain(self.bounded_curve_rows.iter().map(|row| row.external_id))
+            .chain(self.conic_rows.iter().map(|row| row.external_id))
             .chain(self.opaque_rows.iter().map(|row| row.external_id))
             .filter(|candidate| *candidate == external_id)
             .count()
@@ -2486,6 +2505,7 @@ fn segment_table_body(
         centered_line_rows: Vec::new(),
         reference_line_rows: Vec::new(),
         bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
         opaque_rows: Vec::new(),
         offset: table,
     };
@@ -2667,6 +2687,25 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
                     external_id: row.external_id,
                     offset: row.offset,
                 });
+            return;
+        }
+    }
+    if row.kind == 58
+        && row.directions == [Some(0); 3]
+        && row.point_ids == [None, Some(1)]
+        && row.arc_orientation == Some(0)
+        && row.vertical_horizontal == Some(2)
+    {
+        if let (Some(center_id), Some(first_coefficient_ref), Some(second_coefficient_ref)) =
+            (row.center_id, row.radius_ref, row.radius2_ref)
+        {
+            segments.conic_rows.push(FeatureConicSegment {
+                center_id,
+                first_coefficient_ref,
+                second_coefficient_ref,
+                external_id: row.external_id,
+                offset: row.offset,
+            });
             return;
         }
     }
@@ -8519,6 +8558,39 @@ mod tests {
     }
 
     #[test]
+    fn segment_tables_type_saved_conic_rows() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 58, 0, 0, 0, 0xf6, 1, 4, 0, 2, 0, 1,
+            120, 0xe2,
+        ];
+
+        let segments =
+            segment_table_body(&payload, 0, 0, payload.len(), false).expect("conic segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.conic_rows,
+            vec![FeatureConicSegment {
+                center_id: 4,
+                first_coefficient_ref: 0,
+                second_coefficient_ref: 1,
+                external_id: 120,
+                offset: 10,
+            }]
+        );
+
+        let mut malformed = payload;
+        malformed[18] = 0;
+        let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
+            .expect("noncanonical conic segment table");
+        assert!(segments.is_complete());
+        assert!(segments.conic_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 58);
+    }
+
+    #[test]
     fn segment_tables_type_complete_point_rows() {
         let payload = [
             0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 1, 0, 0, 0, 0xf6, 1, 2, 0, 0, 0xf6,
@@ -9445,6 +9517,7 @@ mod tests {
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
             bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -10177,6 +10250,7 @@ mod tests {
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
             bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -10248,6 +10322,7 @@ mod tests {
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
             bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -10308,6 +10383,7 @@ mod tests {
             centered_line_rows: Vec::new(),
             reference_line_rows: Vec::new(),
             bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
