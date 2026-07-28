@@ -5534,6 +5534,190 @@ fn complete_prt_sketch_declaration_transfers_neutral_identity() {
 }
 
 #[test]
+fn complete_zx_plane_declaration_places_the_sketch() {
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "zx-plane",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+
+    assert_eq!(
+        consumed,
+        native.object_graphs[0].records[1..]
+            .iter()
+            .map(|record| record.id.clone())
+            .collect()
+    );
+    assert_eq!(
+        ir.model.sketches[0].placement,
+        cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: cadmpeg_ir::math::Point3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            normal: cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            },
+            u_axis: cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            },
+        }
+    );
+}
+
+#[test]
+fn complete_yz_plane_declaration_places_the_sketch() {
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "yz-plane",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+
+    assert_eq!(
+        consumed,
+        native.object_graphs[0].records[1..]
+            .iter()
+            .map(|record| record.id.clone())
+            .collect()
+    );
+    assert_eq!(
+        ir.model.sketches[0].placement,
+        cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: cadmpeg_ir::math::Point3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            normal: cadmpeg_ir::math::Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            u_axis: cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            },
+        }
+    );
+}
+
+#[test]
+fn repeated_xy_plane_declarations_share_one_sketch_placement() {
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4, 5]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "xy-plane",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+
+    assert_eq!(
+        consumed,
+        native.object_graphs[0].records[1..]
+            .iter()
+            .map(|record| record.id.clone())
+            .collect()
+    );
+    assert_eq!(
+        ir.model.sketches[0].placement,
+        cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: cadmpeg_ir::math::Point3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            normal: cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            },
+            u_axis: cadmpeg_ir::math::Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        }
+    );
+}
+
+#[test]
+fn conflicting_principal_plane_declarations_leave_placement_unresolved() {
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x86], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4, 5]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "xy-plane",
+        "yz-plane",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native);
+
+    assert_eq!(
+        consumed,
+        [native.object_graphs[0].records[1].id.clone()].into()
+    );
+    assert_eq!(
+        ir.model.sketches[0].placement,
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+    );
+}
+
+#[test]
 fn complete_sketch_declaration_transfers_neutral_identity() {
     let records = [
         object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
