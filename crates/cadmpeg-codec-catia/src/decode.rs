@@ -338,6 +338,10 @@ fn finish_decode(
         .sum();
     report.coverage.extend([
         (
+            "decoded_consolidated_circle_count".to_string(),
+            native.consolidated_circles.len(),
+        ),
+        (
             "decoded_consolidated_class61_record_count".to_string(),
             native.consolidated_class61_records.len(),
         ),

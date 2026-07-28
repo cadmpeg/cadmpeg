@@ -411,7 +411,12 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     assert_eq!(circles[0].record_id, 0x1234);
     assert_eq!(circles[0].center_pair, [4.0, -2.0]);
     assert_eq!(circles[0].radius, 3.0);
+    assert_eq!(circles[0].chart_shift, 0.0);
     assert!(circles[0].full_circle);
+
+    let mut malformed = b2_circle_stream();
+    malformed[49..57].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_circles(&malformed).is_empty());
 }
 
 #[test]

@@ -4,6 +4,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+#[cfg(test)]
+use std::mem::size_of;
 
 use crate::catalog;
 use crate::container;
@@ -17,12 +19,13 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 136;
+pub const CATIA_NATIVE_VERSION: u32 = 137;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
+    "consolidated_circles",
     "consolidated_class61_records",
     "consolidated_cones",
     "consolidated_cylinders",
@@ -165,6 +168,31 @@ pub struct CatiaConsolidatedCone {
     pub slant_range: [f64; 2],
     /// Scale from azimuth to stored U parameter.
     pub angular_scale: f64,
+}
+
+/// One complete consolidated `B:19` arc-length circle support.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedCircle {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Payload-layout discriminator (`0x32..=0x34`).
+    pub layout: u8,
+    /// Compact persistent record identity.
+    pub record_id: u32,
+    /// Width-coded frame token.
+    pub frame_token: u8,
+    /// Two centre coordinates in the host-implied carrier plane.
+    pub center_pair: [f64; 2],
+    /// Circle radius in millimetres.
+    pub radius: f64,
+    /// Arc-length parameter interval.
+    pub range: [f64; 2],
+    /// Whether the interval spans one complete circumference.
+    pub full_circle: bool,
+    /// Length-valued angular chart shift.
+    pub chart_shift: f64,
 }
 
 /// Frame-specific payload of one consolidated `B:28` cylinder chart.
@@ -427,7 +455,7 @@ pub struct CatiaConsolidatedEdgeNode {
     pub uses: Option<CatiaConsolidatedEdgeUses>,
     /// Analytic circle carrier structurally bound by an adjacent six-record run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub analytic_circle: Option<CatiaConsolidatedAnalyticCircleCarrier>,
+    pub analytic_circle: Option<CatiaConsolidatedAnalyticCircleBinding>,
     /// Typed class-`0x18` descriptor bound to a class-`0x25` edge run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class25_descriptor: Option<CatiaConsolidatedClass25Descriptor>,
@@ -446,25 +474,13 @@ pub struct CatiaConsolidatedClass25Descriptor {
     pub values: Vec<f64>,
 }
 
-/// Descriptor and circle records structurally bound to an analytic edge.
+/// Descriptor and circle relation structurally bound to an analytic edge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaConsolidatedAnalyticCircleCarrier {
+pub struct CatiaConsolidatedAnalyticCircleBinding {
     /// Exact class-`0x18` descriptor frame.
     pub descriptor: CatiaConsolidatedAnalyticCircleDescriptor,
-    /// Circle record byte offset.
-    pub circle_byte_offset: u64,
-    /// Compact persistent circle-record identity.
-    pub record_id: u32,
-    /// Width-coded circle frame token.
-    pub frame_token: u8,
-    /// Two center coordinates in the host-implied carrier plane.
-    pub center_pair: [f64; 2],
-    /// Circle radius in millimetres.
-    pub radius: f64,
-    /// Arc-length parameter interval.
-    pub range: [f64; 2],
-    /// Whether the interval spans one complete circumference.
-    pub full_circle: bool,
+    /// Referenced consolidated circle support.
+    pub circle: String,
 }
 
 /// Exact class-`0x18` descriptor frame attached to an analytic circle.
@@ -2162,6 +2178,9 @@ pub struct CatiaNative {
     /// Framed source-schema name catalogs.
     #[serde(default)]
     pub catalogs: Vec<CatiaCatalog>,
+    /// Exact consolidated arc-length circle supports.
+    #[serde(default)]
+    pub consolidated_circles: Vec<CatiaConsolidatedCircle>,
     /// Complete consolidated class-`0x61` records.
     #[serde(default)]
     pub consolidated_class61_records: Vec<CatiaConsolidatedClass61Record>,
@@ -2227,6 +2246,7 @@ impl Default for CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
+            consolidated_circles: Vec::new(),
             consolidated_class61_records: Vec::new(),
             consolidated_cones: Vec::new(),
             consolidated_cylinders: Vec::new(),
@@ -2248,6 +2268,25 @@ impl Default for CatiaNative {
             value_blocks: Vec::new(),
         }
     }
+}
+
+fn consolidated_circles(bytes: &[u8]) -> Vec<CatiaConsolidatedCircle> {
+    crate::families::b2::records::b2_circles(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, circle)| CatiaConsolidatedCircle {
+            id: format!("catia:consolidated:circle#{index}"),
+            byte_offset: circle.pos as u64,
+            layout: circle.layout,
+            record_id: circle.record_id,
+            frame_token: circle.frame_token,
+            center_pair: circle.center_pair,
+            radius: circle.radius,
+            range: circle.range,
+            full_circle: circle.full_circle,
+            chart_shift: circle.chart_shift,
+        })
+        .collect()
 }
 
 fn consolidated_class61_records(bytes: &[u8]) -> Vec<CatiaConsolidatedClass61Record> {
@@ -2586,7 +2625,14 @@ fn consolidated_edge_runs(
         .collect()
 }
 
-fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
+fn consolidated_edge_nodes(
+    bytes: &[u8],
+    circles: &[CatiaConsolidatedCircle],
+) -> Vec<CatiaConsolidatedEdgeNode> {
+    let circle_ids = circles
+        .iter()
+        .map(|circle| (circle.byte_offset, circle.id.as_str()))
+        .collect::<HashMap<_, _>>();
     let frames = crate::wire::records::consolidated_records(bytes)
         .into_iter()
         .filter(|record| {
@@ -2613,11 +2659,21 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
         crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(bytes)
             .into_iter()
             .filter(|run| run.identity_chain_consistent)
-            .map(|run| {
-                (
+            .filter_map(|run| {
+                let circle = circle_ids.get(&(run.circle.pos as u64))?;
+                Some((
                     run.node.pos,
-                    native_consolidated_analytic_circle(&run.descriptor, &run.circle),
-                )
+                    CatiaConsolidatedAnalyticCircleBinding {
+                        descriptor: CatiaConsolidatedAnalyticCircleDescriptor {
+                            byte_offset: run.descriptor.pos as u64,
+                            width: run.descriptor.width,
+                            flag: run.descriptor.flag,
+                            header_token: run.descriptor.header_token,
+                            payload: run.descriptor.payload,
+                        },
+                        circle: (*circle).to_string(),
+                    },
+                ))
             })
             .collect::<HashMap<_, _>>();
     let class25_descriptors =
@@ -2659,28 +2715,6 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
             })
         })
         .collect()
-}
-
-fn native_consolidated_analytic_circle(
-    descriptor: &crate::families::consolidated::records::ConsolidatedAnalyticCircleDescriptor,
-    circle: &crate::families::b2::records::B2Circle,
-) -> CatiaConsolidatedAnalyticCircleCarrier {
-    CatiaConsolidatedAnalyticCircleCarrier {
-        descriptor: CatiaConsolidatedAnalyticCircleDescriptor {
-            byte_offset: descriptor.pos as u64,
-            width: descriptor.width,
-            flag: descriptor.flag,
-            header_token: descriptor.header_token,
-            payload: descriptor.payload.clone(),
-        },
-        circle_byte_offset: circle.pos as u64,
-        record_id: circle.record_id,
-        frame_token: circle.frame_token,
-        center_pair: circle.center_pair,
-        radius: circle.radius,
-        range: circle.range,
-        full_circle: circle.full_circle,
-    }
 }
 
 fn native_consolidated_edge_definition(
@@ -2863,6 +2897,42 @@ fn validate_consolidated_pcurves(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated pcurve `{}` is structurally invalid",
                 pcurve.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_circles(
+    circles: &[CatiaConsolidatedCircle],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, circle) in circles.iter().enumerate() {
+        let span = circle.range[1] - circle.range[0];
+        let full_circle = (span - std::f64::consts::TAU * circle.radius).abs() < 1e-9;
+        let compact_len = usize::from(circle.layout).checked_sub(5 * size_of::<f64>() + 9);
+        let record_id_fits_layout = matches!(
+            (compact_len, circle.record_id),
+            (Some(1), 0..=63) | (Some(2), 0..=255) | (Some(3), 0..=65_535)
+        );
+        if circle.id != format!("catia:consolidated:circle#{index}")
+            || !(0x32..=0x34).contains(&circle.layout)
+            || !record_id_fits_layout
+            || circle
+                .center_pair
+                .iter()
+                .chain(&circle.range)
+                .chain(&[circle.radius, circle.chart_shift])
+                .any(|value| !value.is_finite())
+            || circle.center_pair.iter().any(|value| value.abs() > 1e6)
+            || !(0.0..1e6).contains(&circle.radius)
+            || circle.range[0] >= circle.range[1]
+            || circle.full_circle != full_circle
+            || index > 0 && circles[index - 1].byte_offset >= circle.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated circle `{}` is structurally invalid",
+                circle.id
             )));
         }
     }
@@ -3221,6 +3291,7 @@ fn validate_consolidated_owner_packets(
 fn validate_consolidated_edge_runs(
     runs: &[CatiaConsolidatedEdgeRun],
     pcurves: &[CatiaConsolidatedPcurve],
+    circles: &[CatiaConsolidatedCircle],
     nodes: &[CatiaConsolidatedEdgeNode],
     vertex_identities: &[CatiaConsolidatedVertexIdentity],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -3231,6 +3302,10 @@ fn validate_consolidated_edge_runs(
     let nodes_by_id = nodes
         .iter()
         .map(|node| (node.id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    let circles = circles
+        .iter()
+        .map(|circle| (circle.id.as_str(), circle))
         .collect::<HashMap<_, _>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
@@ -3261,8 +3336,9 @@ fn validate_consolidated_edge_runs(
                 && definition.byte_offset < node.byte_offset
                 && definition.data == expected_data
         });
-        let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|carrier| {
+        let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|binding| {
             let definition = node.definition.as_ref();
+            let circle = circles.get(binding.circle.as_str());
             node.uses.is_some()
                 && definition.is_some_and(|definition| {
                     definition.class == 0x23
@@ -3273,20 +3349,17 @@ fn validate_consolidated_edge_runs(
                                 ..
                             }) if values.len() == 8
                         )
-                        && carrier.descriptor.byte_offset < carrier.circle_byte_offset
-                        && carrier.circle_byte_offset < definition.byte_offset
+                        && circle.is_some_and(|circle| {
+                            binding.descriptor.byte_offset < circle.byte_offset
+                                && circle.byte_offset < definition.byte_offset
+                        })
                 })
-                && matches!(carrier.descriptor.width, 1..=3)
-                && matches!(carrier.descriptor.flag, 0x03 | 0x13 | 0x83)
+                && matches!(binding.descriptor.width, 1..=3)
+                && matches!(binding.descriptor.flag, 0x03 | 0x13 | 0x83)
                 && 1u32
-                    .checked_shl(u32::from(carrier.descriptor.width) * 8)
-                    .is_some_and(|limit| carrier.descriptor.header_token < limit)
-                && !carrier.descriptor.payload.is_empty()
-                && carrier.center_pair.iter().all(|value| value.is_finite())
-                && carrier.radius.is_finite()
-                && carrier.radius > 0.0
-                && carrier.range.iter().all(|value| value.is_finite())
-                && carrier.range[0] < carrier.range[1]
+                    .checked_shl(u32::from(binding.descriptor.width) * 8)
+                    .is_some_and(|limit| binding.descriptor.header_token < limit)
+                && !binding.descriptor.payload.is_empty()
         });
         let class25_descriptor_valid = node.class25_descriptor.as_ref().is_none_or(|descriptor| {
             node.uses.is_some()
@@ -3936,6 +4009,7 @@ impl CatiaNative {
             .collect::<Vec<_>>();
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
+        let consolidated_circles = consolidated_circles(bytes);
         let consolidated_class61_records = consolidated_class61_records(bytes);
         let consolidated_cones = consolidated_cones(bytes);
         let consolidated_cylinders = consolidated_cylinders(bytes);
@@ -3945,7 +4019,7 @@ impl CatiaNative {
         let consolidated_revolutions = consolidated_revolutions(bytes);
         let consolidated_spheres = consolidated_spheres(bytes);
         let consolidated_tori = consolidated_tori(bytes);
-        let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes);
+        let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes, &consolidated_circles);
         let consolidated_edge_runs =
             consolidated_edge_runs(bytes, &consolidated_pcurves, &consolidated_edge_nodes);
         let consolidated_vertex_identities =
@@ -3954,6 +4028,7 @@ impl CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
+            consolidated_circles,
             consolidated_class61_records,
             consolidated_cones,
             consolidated_cylinders,
@@ -4331,6 +4406,10 @@ impl CatiaNative {
         }
         let preview_images = expected_preview_images;
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
+        let mut consolidated_circles: Vec<CatiaConsolidatedCircle> =
+            namespace.arena_as("consolidated_circles")?;
+        consolidated_circles.sort_by_key(|circle| circle.byte_offset);
+        validate_consolidated_circles(&consolidated_circles)?;
         let mut consolidated_class61_records: Vec<CatiaConsolidatedClass61Record> =
             namespace.arena_as("consolidated_class61_records")?;
         consolidated_class61_records.sort_by_key(|record| record.byte_offset);
@@ -4378,6 +4457,7 @@ impl CatiaNative {
         validate_consolidated_edge_runs(
             &consolidated_edge_runs,
             &consolidated_pcurves,
+            &consolidated_circles,
             &consolidated_edge_nodes,
             &consolidated_vertex_identities,
         )?;
@@ -4392,6 +4472,7 @@ impl CatiaNative {
             version: namespace.version,
             alias_rows,
             catalogs,
+            consolidated_circles,
             consolidated_class61_records,
             consolidated_cones,
             consolidated_cylinders,
@@ -4464,6 +4545,7 @@ impl CatiaNative {
             .flat_map(|block| block.schema_selections.iter().cloned())
             .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena("consolidated_circles", &self.consolidated_circles)?;
         namespace.set_arena(
             "consolidated_class61_records",
             &self.consolidated_class61_records,
@@ -4514,6 +4596,7 @@ impl CatiaNative {
             version: _,
             alias_rows,
             mut catalogs,
+            consolidated_circles,
             consolidated_class61_records,
             consolidated_cones,
             consolidated_cylinders,
@@ -4549,6 +4632,7 @@ impl CatiaNative {
 
         namespace.version = CATIA_NATIVE_VERSION;
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena("consolidated_circles", &consolidated_circles)?;
         namespace.set_arena(
             "consolidated_class61_records",
             &consolidated_class61_records,

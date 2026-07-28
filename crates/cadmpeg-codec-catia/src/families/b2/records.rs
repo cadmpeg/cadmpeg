@@ -8,6 +8,7 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::le::u16_at as u16_le;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeMap;
+use std::mem::size_of;
 
 use crate::families::a5a8::records::FreeformSurface;
 use crate::wire::bytes::persistent_ref;
@@ -826,6 +827,8 @@ pub(crate) fn point_distance(a: Point3, b: Point3) -> f64 {
 pub struct B2Circle {
     /// Record byte offset.
     pub pos: usize,
+    /// Payload-layout discriminator (`0x32..=0x34`).
+    pub layout: u8,
     /// Compact persistent record identifier.
     pub record_id: u32,
     /// Frame token following the record length.
@@ -838,6 +841,8 @@ pub struct B2Circle {
     pub range: [f64; 2],
     /// Whether the interval spans one complete circumference.
     pub full_circle: bool,
+    /// Length-valued angular chart shift.
+    pub chart_shift: f64,
 }
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
@@ -1601,21 +1606,31 @@ pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
         let Some(values) = read_f64_array::<5>(data, at) else {
             continue;
         };
+        let values_end = at + 5 * size_of::<f64>();
+        if values_end + 9 != frame.end || data.get(values_end) != Some(&0x01) {
+            continue;
+        }
+        let Some(chart_shift) = f64_le(data, values_end + 1) else {
+            continue;
+        };
         let [c1, c2, radius, lo, hi] = values;
         if values.iter().all(|v| v.is_finite())
             && (0.0..1e6).contains(&radius)
             && c1.abs() <= 1e6
             && c2.abs() <= 1e6
             && hi > lo
+            && chart_shift.is_finite()
         {
             out.push(B2Circle {
                 pos,
+                layout: (frame.end - frame.payload) as u8,
                 record_id,
                 frame_token,
                 center_pair: [c1, c2],
                 radius,
                 range: [lo, hi],
                 full_circle: ((hi - lo) - 2.0 * std::f64::consts::PI * radius).abs() < 1e-9,
+                chart_shift,
             });
         }
     }

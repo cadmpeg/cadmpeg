@@ -1415,7 +1415,7 @@ pub(crate) fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
 
 pub(crate) fn b2_circle_stream() -> Vec<u8> {
     let radius = 3.0;
-    let mut record = vec![0xb2, 0x03, 0x19, 0x33, 0x05, 0x08, 0x34, 0x12];
+    let mut record = vec![0xb2, 0x03, 0x19, 0x34, 0x05, 0x08, 0x34, 0x12];
     for value in [
         4.0f64,
         -2.0,
@@ -1425,7 +1425,8 @@ pub(crate) fn b2_circle_stream() -> Vec<u8> {
     ] {
         record.extend_from_slice(&le_f64(value));
     }
-    record.extend_from_slice(&[0; 8]);
+    record.push(0x01);
+    record.extend_from_slice(&le_f64(0.0));
     record
 }
 
@@ -3576,6 +3577,37 @@ fn native_namespace_retains_consolidated_class61_records() {
 }
 
 #[test]
+fn native_namespace_retains_standalone_consolidated_circle_supports() {
+    let native = crate::native::CatiaNative::decode(&b2_circle_stream());
+    let [circle] = native.consolidated_circles.as_slice() else {
+        panic!("one consolidated circle")
+    };
+    assert_eq!(circle.layout, 0x34);
+    assert_eq!(circle.record_id, 0x1234);
+    assert_eq!(circle.frame_token, 0x05);
+    assert_eq!(circle.center_pair, [4.0, -2.0]);
+    assert_eq!(circle.radius, 3.0);
+    assert_eq!(circle.range, [0.0, std::f64::consts::TAU * circle.radius]);
+    assert!(circle.full_circle);
+    assert_eq!(circle.chart_shift, 0.0);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store CATIA circle");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA circle"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_circles[0].full_circle = false;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA circle for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_all_consolidated_cylinder_layouts() {
     let mut stream = b2_cylinder_stream();
     stream.extend_from_slice(&b2_implicit_axis_cylinder_stream());
@@ -4519,7 +4551,8 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     for value in [12.0_f64, 34.0, 5.0, 0.0, 10.0] {
         circle.extend_from_slice(&value.to_le_bytes());
     }
-    circle.extend_from_slice(&[0; 9]);
+    circle.push(0x01);
+    circle.extend_from_slice(&0.0_f64.to_le_bytes());
     let mut definition = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
     for value in [0.0_f64, 10.0, 1e-6, 4.0, 9.0, 1.0, -2.0, 1e-6] {
         definition.extend_from_slice(&value.to_le_bytes());
@@ -4541,12 +4574,34 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     assert!(run.identity_chain_consistent);
 
     let native = crate::native::CatiaNative::decode(&bytes);
-    let carrier = native.consolidated_edge_nodes[0]
+    let binding = native.consolidated_edge_nodes[0]
         .analytic_circle
         .as_ref()
         .expect("native analytic circle");
-    assert_eq!(carrier.center_pair, [12.0, 34.0]);
-    assert_eq!(carrier.range, [0.0, 10.0]);
+    assert_eq!(binding.circle, "catia:consolidated:circle#0");
+    assert_eq!(native.consolidated_circles[0].center_pair, [12.0, 34.0]);
+    assert_eq!(native.consolidated_circles[0].range, [0.0, 10.0]);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store analytic circle binding");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load analytic circle binding"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_edge_nodes[0]
+        .analytic_circle
+        .as_mut()
+        .expect("analytic circle binding")
+        .circle = "missing".to_string();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid analytic circle binding");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let circle_end = parameter.len() + circle.len() + 10;
     let mut broken = bytes[..circle_end].to_vec();
