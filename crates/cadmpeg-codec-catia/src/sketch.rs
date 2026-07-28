@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Transfer of complete CATIA sketch declarations to neutral sketches and history nodes.
+//! Transfer of CATIA sketch identities, complete declarations, and history nodes.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -26,7 +26,7 @@ impl SketchTransfer {
     }
 }
 
-/// Transfer identity-complete sketch declarations and their linked history nodes.
+/// Transfer owner-bound sketch identities and their linked history nodes.
 pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfer {
     let records = native
         .object_graphs
@@ -97,6 +97,9 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchT
         transfer.declaration_records.extend(
             declarations
                 .into_iter()
+                .filter(|declaration| {
+                    complete_empty_declaration(declaration, &object.id, object.owner_entity_id)
+                })
                 .map(|declaration| declaration.id.clone()),
         );
         if resolved_placement.is_some() {
@@ -139,7 +142,7 @@ fn sketch_candidate<'a>(
         .all(|record| {
             record.class_name.as_deref() == Some(declaration_class)
                 && record.class_entry.as_deref() == Some(declaration_entry)
-                && complete_empty_declaration(record, &object.id, object.owner_entity_id)
+                && bound_declaration(record, &object.id, object.owner_entity_id)
         })
         .then_some(SketchCandidate {
             object,
@@ -148,13 +151,21 @@ fn sketch_candidate<'a>(
         })
 }
 
-fn complete_empty_declaration(
+fn bound_declaration(
     record: &CatiaObjectRecord,
     design_object: &str,
     owner_entity_id: u32,
 ) -> bool {
     record.design_object.as_deref() == Some(design_object)
         && record.owner_entity_id == Some(owner_entity_id)
+}
+
+fn complete_empty_declaration(
+    record: &CatiaObjectRecord,
+    design_object: &str,
+    owner_entity_id: u32,
+) -> bool {
+    bound_declaration(record, design_object, owner_entity_id)
         && record.storage_ref.is_none()
         && record.references.is_empty()
         && record.subtype == PayloadSubtype::Empty

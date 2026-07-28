@@ -1698,10 +1698,10 @@ fn standard_catpart_with_nested_design_objects() -> Vec<u8> {
     file
 }
 
-fn standard_catpart_with_prt_sketch() -> Vec<u8> {
+fn standard_catpart_with_prt_sketch_payload(payload: &[u8]) -> Vec<u8> {
     let records = [
         object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
-        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], payload),
     ];
     let mut design = entity_backed_object_graph(&records, &[2, 3]);
     design.extend(catalog_stream(&[
@@ -5556,6 +5556,42 @@ fn complete_prt_sketch_declaration_transfers_neutral_identity() {
 }
 
 #[test]
+fn nonempty_prt_sketch_declaration_transfers_identity_without_consuming_geometry() {
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0x81, 0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_ne!(
+        native.object_graphs[0].records[1].subtype,
+        crate::object_graph::PayloadSubtype::Empty
+    );
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    let consumed = crate::sketch::transfer_sketches(&mut ir, &native).consumed_records();
+
+    assert!(consumed.is_empty());
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert_eq!(ir.model.features.len(), 1);
+    assert_eq!(
+        ir.model.sketches[0].native_ref.as_deref(),
+        Some(native.design_objects[0].id.as_str())
+    );
+    assert_eq!(
+        ir.model.features[0].source_tag.as_deref(),
+        Some("PRTSketch")
+    );
+}
+
+#[test]
 fn complete_zx_plane_declaration_places_the_sketch() {
     let records = [
         object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
@@ -5899,7 +5935,7 @@ fn equal_sketch_names_from_distinct_schema_entries_do_not_merge() {
 fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_prt_sketch()),
+            &mut Cursor::new(standard_catpart_with_prt_sketch_payload(&[0xfe])),
             &DecodeOptions::default(),
         )
         .expect("decode generated sketch declaration");
@@ -5932,6 +5968,32 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
                 .message
                 .contains("0 exact sketch placement field record(s)")
             && loss.message.contains("1 field record(s)")
+    }));
+}
+
+#[test]
+fn catpart_decode_retains_nonempty_sketch_identity_without_consuming_its_payload() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_prt_sketch_payload(&[0x81, 0xfe])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated nonempty sketch declaration");
+
+    assert_eq!(decoded.ir.model.sketches.len(), 1);
+    assert_eq!(decoded.ir.model.features.len(), 1);
+    assert_eq!(decoded.report.coverage["transferred_feature_count"], 1);
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_declaration_record_count"],
+        0
+    );
+    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 2);
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss
+                .message
+                .contains("0 exact sketch declaration field record(s)")
+            && loss.message.contains("2 field record(s)")
     }));
 }
 
