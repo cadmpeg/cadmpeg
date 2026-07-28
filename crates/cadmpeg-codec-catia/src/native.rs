@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 170;
+pub const CATIA_NATIVE_VERSION: u32 = 171;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2678,6 +2678,9 @@ pub struct CatiaZeroEntitySupportOccurrence {
     /// Stored UV endpoints when the record family carries them inline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uv_endpoints: Option<[[f64; 2]; 2]>,
+    /// UV endpoints lifted through the owning surface carrier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
 }
 
 /// One counted zero-entity `5fxx` face record.
@@ -3706,6 +3709,7 @@ fn zero_entity_support_runs(
                     tag: support.tag,
                     face_local_slot: support.face_local_slot,
                     uv_endpoints: support.uv_endpoints,
+                    model_endpoints: support.model_endpoints,
                 })
                 .collect(),
         })
@@ -4840,6 +4844,12 @@ fn validate_zero_entity_support_runs(
                         ([0x21, _], None) => true,
                         _ => false,
                     };
+                    let model_endpoints_valid = support.model_endpoints.is_none_or(|endpoints| {
+                        support.uv_endpoints.is_some()
+                            && endpoints.iter().all(|point| {
+                                [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+                            })
+                    });
                     let expected_ordinal = u32::try_from(support_index)
                         .ok()
                         .and_then(|index| index.checked_add(1))
@@ -4856,6 +4866,7 @@ fn validate_zero_entity_support_runs(
                         && (support_index == 0
                             || run.supports[support_index - 1].byte_offset < support.byte_offset)
                         && endpoints_valid
+                        && model_endpoints_valid
                 });
         if run.id != format!("catia:zero-entity:support-run#{index}")
             || !supports_valid

@@ -4742,6 +4742,13 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(support.record_ordinal, 2);
     assert_eq!(support.face_local_slot, 1);
     assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
+    assert_eq!(
+        support.model_endpoints,
+        Some([
+            cadmpeg_ir::math::Point3::new(-1.0, 6.0, 3.0),
+            cadmpeg_ir::math::Point3::new(7.0, 10.0, 3.0),
+        ])
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -4803,6 +4810,18 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_binding_namespace)
         .expect("store invalid CATIA zero-entity loop support binding");
     assert!(crate::native::CatiaNative::load(&invalid_binding_namespace).is_err());
+
+    let mut invalid_model_endpoint = native.clone();
+    invalid_model_endpoint.zero_entity_support_runs[0].supports[0]
+        .model_endpoints
+        .as_mut()
+        .expect("model endpoints")[0]
+        .x = f64::NAN;
+    let mut invalid_model_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_model_endpoint
+        .store(&mut invalid_model_endpoint_namespace)
+        .expect("store invalid CATIA zero-entity model endpoint");
+    assert!(crate::native::CatiaNative::load(&invalid_model_endpoint_namespace).is_err());
 
     let mut invalid = native;
     invalid.zero_entity_support_runs[0].supports[0].uv_endpoints = None;

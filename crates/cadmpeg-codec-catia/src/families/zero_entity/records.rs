@@ -5,8 +5,10 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_ir::eval::nurbs_surface_point;
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::le::u32_at as u32_le;
+use cadmpeg_ir::math::Point3;
 
 use crate::nurbs::expand_knots;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector};
@@ -33,6 +35,8 @@ pub struct ZeroEntitySupportOccurrence {
     pub face_local_slot: u32,
     /// Stored UV endpoints when this support family carries them inline.
     pub uv_endpoints: Option<[[f64; 2]; 2]>,
+    /// UV endpoints lifted through the owning surface carrier.
+    pub model_endpoints: Option<[Point3; 2]>,
 }
 
 /// One surface carrier and its maximal following `21xx` support run.
@@ -320,7 +324,7 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
     let mut index = 0usize;
     while index + 1 < records.len() {
         let carrier_record = records[index];
-        let Some(_) = zero_entity_surface_at(data, carrier_record.pos) else {
+        let Some(carrier_geometry) = zero_entity_surface_at(data, carrier_record.pos) else {
             index += 1;
             continue;
         };
@@ -336,6 +340,12 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
         {
             let record = records[next];
             if let Some(support) = zero_entity_support_occurrence(data, record) {
+                let mut support = support;
+                support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {
+                    let [first, second] =
+                        endpoints.map(|uv| zero_entity_surface_point(&carrier_geometry, uv));
+                    Some([first?, second?])
+                });
                 supports.push(support);
             } else {
                 supports.clear();
@@ -580,7 +590,100 @@ fn zero_entity_support_occurrence(
         tag: record.tag,
         face_local_slot,
         uv_endpoints,
+        model_endpoints: None,
     })
+}
+
+fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Option<Point3> {
+    let point = match geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let v_axis = normal.cross(*u_axis);
+            Point3::new(
+                origin.x + u * u_axis.x + v * v_axis.x,
+                origin.y + u * u_axis.y + v * v_axis.y,
+                origin.z + u * u_axis.z + v * v_axis.z,
+            )
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let angle = u / radius;
+            let transverse = axis.cross(*ref_direction);
+            Point3::new(
+                origin.x
+                    + radius * (angle.cos() * ref_direction.x + angle.sin() * transverse.x)
+                    + v * axis.x,
+                origin.y
+                    + radius * (angle.cos() * ref_direction.y + angle.sin() * transverse.y)
+                    + v * axis.y,
+                origin.z
+                    + radius * (angle.cos() * ref_direction.z + angle.sin() * transverse.z)
+                    + v * axis.z,
+            )
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } if *ratio == 1.0 => {
+            let transverse = axis.cross(*ref_direction);
+            let axial = v * half_angle.cos();
+            let radial = radius + v * half_angle.sin();
+            Point3::new(
+                origin.x
+                    + radial * (u.cos() * ref_direction.x + u.sin() * transverse.x)
+                    + axial * axis.x,
+                origin.y
+                    + radial * (u.cos() * ref_direction.y + u.sin() * transverse.y)
+                    + axial * axis.y,
+                origin.z
+                    + radial * (u.cos() * ref_direction.z + u.sin() * transverse.z)
+                    + axial * axis.z,
+            )
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let major_angle = u / major_radius;
+            let minor_angle = v / minor_radius;
+            let transverse = axis.cross(*ref_direction);
+            let radial = major_radius + minor_radius * minor_angle.cos();
+            Point3::new(
+                center.x
+                    + radial
+                        * (major_angle.cos() * ref_direction.x + major_angle.sin() * transverse.x)
+                    + minor_radius * minor_angle.sin() * axis.x,
+                center.y
+                    + radial
+                        * (major_angle.cos() * ref_direction.y + major_angle.sin() * transverse.y)
+                    + minor_radius * minor_angle.sin() * axis.y,
+                center.z
+                    + radial
+                        * (major_angle.cos() * ref_direction.z + major_angle.sin() * transverse.z)
+                    + minor_radius * minor_angle.sin() * axis.z,
+            )
+        }
+        SurfaceGeometry::Nurbs(surface) => nurbs_surface_point(surface, u, v)?,
+        _ => return None,
+    };
+    [point.x, point.y, point.z]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(point)
 }
 
 /// Decode complete `5e1a` edge-stride reference records.
@@ -900,6 +1003,58 @@ mod tests {
         assert_eq!(support.tag, [0x21, 0x71]);
         assert_eq!(support.face_local_slot, 42);
         assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
+        assert_eq!(
+            support.model_endpoints,
+            Some([Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)])
+        );
+    }
+
+    #[test]
+    fn analytic_support_endpoints_use_native_surface_charts() {
+        use cadmpeg_ir::math::Vector3;
+
+        let origin = Point3::new(0.0, 0.0, 0.0);
+        let x = Vector3::new(1.0, 0.0, 0.0);
+        let z = Vector3::new(0.0, 0.0, 1.0);
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin,
+            axis: z,
+            ref_direction: x,
+            radius: 2.0,
+        };
+        let cone = SurfaceGeometry::Cone {
+            origin,
+            axis: z,
+            ref_direction: x,
+            radius: 2.0,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let torus = SurfaceGeometry::Torus {
+            center: origin,
+            axis: z,
+            ref_direction: x,
+            major_radius: 4.0,
+            minor_radius: 2.0,
+        };
+
+        let cylinder_point =
+            zero_entity_surface_point(&cylinder, [std::f64::consts::PI, 3.0]).expect("cylinder");
+        let cone_point =
+            zero_entity_surface_point(&cone, [std::f64::consts::FRAC_PI_2, 3.0]).expect("cone");
+        let torus_point =
+            zero_entity_surface_point(&torus, [2.0 * std::f64::consts::PI, std::f64::consts::PI])
+                .expect("torus");
+
+        assert!(cylinder_point.x.abs() < 1e-12);
+        assert!((cylinder_point.y - 2.0).abs() < 1e-12);
+        assert_eq!(cylinder_point.z, 3.0);
+        assert!(cone_point.x.abs() < 1e-12);
+        assert!((cone_point.y - (2.0 + 3.0 / 2.0_f64.sqrt())).abs() < 1e-12);
+        assert!((cone_point.z - 3.0 / 2.0_f64.sqrt()).abs() < 1e-12);
+        assert!(torus_point.x.abs() < 1e-12);
+        assert!((torus_point.y - 4.0).abs() < 1e-12);
+        assert_eq!(torus_point.z, 2.0);
     }
 
     #[test]
