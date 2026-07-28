@@ -2124,13 +2124,22 @@ enum FormulaChainCase {
     DuplicateTerminal,
     DuplicateIntermediate,
     IncompatibleDownstream,
+    AmbiguousIntermediateWithIncompatibleDownstream,
 }
 
 fn standard_catpart_with_formula_chain(case: FormulaChainCase) -> Vec<u8> {
     let cyclic = matches!(case, FormulaChainCase::Cyclic);
     let duplicate_terminal = matches!(case, FormulaChainCase::DuplicateTerminal);
-    let duplicate_intermediate = matches!(case, FormulaChainCase::DuplicateIntermediate);
-    let incompatible_downstream = matches!(case, FormulaChainCase::IncompatibleDownstream);
+    let duplicate_intermediate = matches!(
+        case,
+        FormulaChainCase::DuplicateIntermediate
+            | FormulaChainCase::AmbiguousIntermediateWithIncompatibleDownstream
+    );
+    let incompatible_downstream = matches!(
+        case,
+        FormulaChainCase::IncompatibleDownstream
+            | FormulaChainCase::AmbiguousIntermediateWithIncompatibleDownstream
+    );
     let definition = |ordinal: u32| {
         let mut bytes = vec![0x00, 0x08, 0x32];
         bytes.extend_from_slice(&ordinal.to_le_bytes());
@@ -10273,6 +10282,27 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
     assert_eq!(intermediate.name, "Intermediate");
     assert_eq!(intermediate.expression, "#1_ /2+1mm");
     assert_eq!(intermediate.dependencies, std::slice::from_ref(&input.id));
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+        .findings
+        .is_empty());
+}
+
+#[test]
+fn decode_does_not_infer_a_fallback_from_conflicting_formula_input_types() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_chain(
+                FormulaChainCase::AmbiguousIntermediateWithIncompatibleDownstream,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode conflicting formula input types");
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the unambiguous scalar root")
+    };
+
+    assert_eq!(input.name, "Input");
+    assert!(input.dependencies.is_empty());
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .is_empty());

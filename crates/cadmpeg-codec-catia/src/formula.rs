@@ -29,7 +29,7 @@ pub(crate) fn transfer_parameters(
         .map(|record| (record.id.as_str(), record))
         .collect::<HashMap<_, _>>();
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
-    let mut conflicting = BTreeSet::<ParameterId>::new();
+    let mut conflicting_inputs = BTreeSet::<ParameterId>::new();
     let mut programs = Vec::<FormulaProgramCandidate>::new();
     let formula_definition_counts = native
         .entity_records
@@ -198,18 +198,20 @@ pub(crate) fn transfer_parameters(
             match candidates.get(&candidate.parameter.id) {
                 Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
                     match (existing.formula_output, candidate.formula_output) {
-                        (true, _) => {}
+                        (true, true) => {}
+                        (true, false) => {
+                            conflicting_inputs.insert(candidate.parameter.id);
+                        }
                         (false, true) => {
-                            conflicting.remove(&candidate.parameter.id);
+                            conflicting_inputs.insert(candidate.parameter.id.clone());
                             candidates.insert(candidate.parameter.id.clone(), candidate);
                         }
                         (false, false) => {
-                            conflicting.insert(candidate.parameter.id);
+                            conflicting_inputs.insert(candidate.parameter.id);
                         }
                     }
                 }
                 Some(existing) if !existing.formula_output && candidate.formula_output => {
-                    conflicting.remove(&candidate.parameter.id);
                     candidate.input_fallback = Some(existing.parameter.clone());
                     candidates.insert(candidate.parameter.id.clone(), candidate);
                 }
@@ -228,8 +230,16 @@ pub(crate) fn transfer_parameters(
         }
     }
 
-    for id in &conflicting {
-        candidates.remove(id);
+    for id in &conflicting_inputs {
+        match candidates.get_mut(id) {
+            Some(candidate) if candidate.formula_output => {
+                candidate.input_fallback = None;
+            }
+            Some(_) => {
+                candidates.remove(id);
+            }
+            None => {}
+        }
     }
     candidates.retain(|id, candidate| {
         match (candidate.formula_output, formula_definition_counts.get(id)) {
