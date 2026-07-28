@@ -191,14 +191,31 @@ pub(crate) fn incidence_choice_components(
         }
     }
     if let Some(domains) = boundary_domains {
+        let mut connect = |mut edges: Vec<usize>| {
+            edges.sort_unstable();
+            edges.dedup();
+            let mut ambiguous = edges.into_iter().filter(|edge| choices[*edge].len() > 1);
+            if let Some(first) = ambiguous.next() {
+                for edge in ambiguous {
+                    union.union(first, edge);
+                }
+            }
+        };
         for domain in domains {
-            let mut constrained = match domain {
-                MeshFaceBoundaryDomain::Ordered(assignments) => assignments
-                    .iter()
-                    .flat_map(|assignment| assignment.boundaries.iter().flatten())
-                    .map(|use_| use_.edge)
-                    .collect::<Vec<_>>(),
-                MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.clone(),
+            match domain {
+                MeshFaceBoundaryDomain::Ordered(assignments) if assignments.len() == 1 => {
+                    for boundary in &assignments[0].boundaries {
+                        connect(boundary.iter().map(|use_| use_.edge).collect());
+                    }
+                }
+                MeshFaceBoundaryDomain::Ordered(assignments) => connect(
+                    assignments
+                        .iter()
+                        .flat_map(|assignment| assignment.boundaries.iter().flatten())
+                        .map(|use_| use_.edge)
+                        .collect(),
+                ),
+                MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => connect(edges.clone()),
                 MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                     let mut edges = domain.missing_edges.clone();
                     edges.extend(
@@ -207,17 +224,7 @@ pub(crate) fn incidence_choice_components(
                             .iter()
                             .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
                     );
-                    edges
-                }
-            };
-            constrained.sort_unstable();
-            constrained.dedup();
-            let mut ambiguous = constrained
-                .into_iter()
-                .filter(|edge| choices[*edge].len() > 1);
-            if let Some(first) = ambiguous.next() {
-                for edge in ambiguous {
-                    union.union(first, edge);
+                    connect(edges);
                 }
             }
         }

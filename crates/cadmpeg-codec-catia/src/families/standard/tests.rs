@@ -742,6 +742,55 @@ fn incidence_components_join_only_through_shared_face_vertices() {
 }
 
 #[test]
+fn incidence_components_keep_fixed_face_boundaries_independent() {
+    let choices = vec![
+        vec![[0, 1], [0, 2]],
+        vec![[1, 2], [1, 3]],
+        vec![[4, 5], [4, 6]],
+        vec![[5, 6], [5, 7]],
+    ];
+    let edge_faces = [[0, 0]; 4];
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 1,
+        reversed: None,
+    };
+    let fixed = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)], vec![use_(2), use_(3)]],
+        },
+    ])];
+    assert_eq!(
+        crate::solve::incidence::incidence_choice_components(
+            &choices,
+            &edge_faces,
+            Some(&fixed),
+            None,
+        ),
+        vec![vec![0, 1], vec![2, 3]]
+    );
+
+    let alternatives = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)], vec![use_(2), use_(3)]],
+        },
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(2)], vec![use_(1), use_(3)]],
+        },
+    ])];
+    assert_eq!(
+        crate::solve::incidence::incidence_choice_components(
+            &choices,
+            &edge_faces,
+            Some(&alternatives),
+            None,
+        ),
+        vec![vec![0, 1, 2, 3]]
+    );
+}
+
+#[test]
 fn incidence_components_include_overlapping_quotient_domains() {
     let choices = vec![
         vec![[0, 1], [0, 2]],

@@ -2766,8 +2766,8 @@ pub(crate) fn resolve_standard_endpoint_pairs(
     Some(resolved)
 }
 
-/// Bind same-incidence curve branches when their surviving endpoint relation
-/// and serialized cardinality establish corresponding allocation ranks.
+/// Bind curve branches when their surviving endpoint relation and serialized
+/// cardinality establish corresponding allocation ranks.
 pub(crate) fn bind_ordered_standard_curve_branches(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &mut [Vec<[usize; 2]>],
