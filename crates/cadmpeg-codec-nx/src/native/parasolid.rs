@@ -132,6 +132,25 @@ pub struct ParasolidDeltasReferenceStatePacket {
     pub inflated_offset: u64,
 }
 
+/// Reference-marker packet in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasReferenceMarkerPacket {
+    /// Globally unique packet identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Non-null stream-local XMT reference.
+    pub reference: u32,
+    /// Serialized marker byte.
+    pub marker: u8,
+    /// Exact packet byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact packet bytes.
+    pub sha256: String,
+    /// First packet byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Maximal inflated-stream span outside every admitted deltas event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidDeltasResidualSpan {
@@ -154,6 +173,7 @@ pub(crate) struct ParasolidDeltasEvents {
     pub(crate) term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
     pub(crate) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(crate) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
+    pub(crate) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
     pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
 }
 
@@ -166,6 +186,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         term_use_numeric_tails: Vec::new(),
         tagged_reference_lanes: Vec::new(),
         reference_state_packets: Vec::new(),
+        reference_marker_packets: Vec::new(),
         residual_spans: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -299,6 +320,23 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     inflated_offset: packet.offset as u64,
                 });
         }
+        for packet in census.reference_marker_packets {
+            let bytes = &stream.inflated[packet.offset..packet.end];
+            events
+                .reference_marker_packets
+                .push(ParasolidDeltasReferenceMarkerPacket {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-reference-marker#{}",
+                        packet.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    reference: packet.reference,
+                    marker: packet.marker,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: packet.offset as u64,
+                });
+        }
     }
     events.records.sort_by(|left, right| left.id.cmp(&right.id));
     events
@@ -315,6 +353,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .reference_state_packets
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .reference_marker_packets
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .residual_spans
@@ -1598,6 +1639,15 @@ mod tests {
 
     use crate::parasolid::Stream;
 
+    fn deltas_type_45(xmt: u16) -> Vec<u8> {
+        let mut bytes = 45u16.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        bytes.extend_from_slice(&1.25f64.to_be_bytes());
+        bytes.extend_from_slice(&2.5f64.to_be_bytes());
+        bytes
+    }
+
     #[test]
     fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
         let mut bytes = vec![0xaa, 0xbb, 0xcc, 0, 12, 0, 3];
@@ -1715,24 +1765,15 @@ mod tests {
 
     #[test]
     fn deltas_events_subtract_tagged_reference_lanes_from_residuals() {
-        fn type_45(xmt: u16) -> Vec<u8> {
-            let mut bytes = 45u16.to_be_bytes().to_vec();
-            bytes.extend_from_slice(&1u32.to_be_bytes());
-            bytes.extend_from_slice(&xmt.to_be_bytes());
-            bytes.extend_from_slice(&1.25f64.to_be_bytes());
-            bytes.extend_from_slice(&2.5f64.to_be_bytes());
-            bytes
-        }
-
         let mut bytes = [0xaa, 0xbb, 0xcc].to_vec();
-        bytes.extend(type_45(10));
+        bytes.extend(deltas_type_45(10));
         let lane_offset = bytes.len();
         bytes.extend([
             0x00, 0x4f, 0x00, 0x0a, // direct type-79 reference
             0x00, 0x50, 0xff, 0xff, 0x00, 0x01, // extended type-80 reference
         ]);
         let lane_end = bytes.len();
-        bytes.extend(type_45(11));
+        bytes.extend(deltas_type_45(11));
         let suffix_offset = bytes.len();
         bytes.extend([0xdd, 0xee]);
         let streams = [Stream {
@@ -1766,17 +1807,8 @@ mod tests {
 
     #[test]
     fn deltas_events_subtract_reference_state_packets_from_residuals() {
-        fn type_45(xmt: u16) -> Vec<u8> {
-            let mut bytes = 45u16.to_be_bytes().to_vec();
-            bytes.extend_from_slice(&1u32.to_be_bytes());
-            bytes.extend_from_slice(&xmt.to_be_bytes());
-            bytes.extend_from_slice(&1.25f64.to_be_bytes());
-            bytes.extend_from_slice(&2.5f64.to_be_bytes());
-            bytes
-        }
-
         let mut bytes = [0xaa, 0xbb].to_vec();
-        bytes.extend(type_45(10));
+        bytes.extend(deltas_type_45(10));
         let packet_offset = bytes.len();
         bytes.extend([0, 1, 0, 1, 0, 4]);
         for reference in [2u16, 3, 4, 1] {
@@ -1788,7 +1820,7 @@ mod tests {
         }
         bytes.push(65);
         let packet_end = bytes.len();
-        bytes.extend(type_45(11));
+        bytes.extend(deltas_type_45(11));
         let suffix_offset = bytes.len();
         bytes.extend([0xcc, 0xdd, 0xee]);
         let streams = [Stream {
@@ -1819,6 +1851,45 @@ mod tests {
             suffix_offset as u64
         );
         assert_eq!(events.residual_spans[1].byte_len, 3);
+    }
+
+    #[test]
+    fn deltas_events_subtract_reference_marker_packets_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let packet_offset = bytes.len();
+        bytes.extend([0, 9, 1, 0, 1, 1, 0x53, 0, 1, 1]);
+        let packet_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xcc, 0xdd]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.reference_marker_packets.len(), 1);
+        let packet = &events.reference_marker_packets[0];
+        assert_eq!(packet.reference, 9);
+        assert_eq!(packet.marker, 0x53);
+        assert_eq!(packet.byte_len, 10);
+        assert_eq!(packet.inflated_offset, packet_offset as u64);
+        assert_eq!(
+            packet.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[packet_offset..packet_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
     }
 
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};

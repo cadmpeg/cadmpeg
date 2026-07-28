@@ -94,6 +94,19 @@ pub struct ReferenceStatePacket {
     pub end: usize,
 }
 
+/// One deltas packet carrying a reference and a serialized marker byte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceMarkerPacket {
+    /// Non-null stream-local XMT reference.
+    pub reference: u32,
+    /// Serialized marker byte.
+    pub marker: u8,
+    /// First byte of the packet.
+    pub offset: usize,
+    /// First byte following the packet.
+    pub end: usize,
+}
+
 /// Result of a deterministic deltas record walk.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Census {
@@ -109,6 +122,8 @@ pub struct Census {
     pub tagged_reference_lanes: Vec<TaggedReferenceLane>,
     /// Complete four-reference state packets in source order.
     pub reference_state_packets: Vec<ReferenceStatePacket>,
+    /// Complete reference-marker packets in source order.
+    pub reference_marker_packets: Vec<ReferenceMarkerPacket>,
     /// Complete-record counts keyed by Parasolid family name.
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
@@ -514,6 +529,12 @@ pub fn walk(stream: &[u8]) -> Census {
         .iter()
         .map(|packet| packet.end - packet.offset)
         .sum::<usize>();
+    census.reference_marker_packets = reference_marker_packets(stream, &census);
+    census.bytes_decoded += census
+        .reference_marker_packets
+        .iter()
+        .map(|packet| packet.end - packet.offset)
+        .sum::<usize>();
     let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
     census.bytes_decoded += body_revision_state_bytes;
     census
@@ -646,6 +667,43 @@ fn reference_state_packet(
     })
 }
 
+fn reference_marker_packets(stream: &[u8], census: &Census) -> Vec<ReferenceMarkerPacket> {
+    uncovered_spans(stream.len(), census, true)
+        .filter_map(|(offset, end)| reference_marker_packet(stream, offset, end))
+        .collect()
+}
+
+fn reference_marker_packet(
+    stream: &[u8],
+    offset: usize,
+    expected_end: usize,
+) -> Option<ReferenceMarkerPacket> {
+    let (reference, consumed) = read_xmt(stream, offset)?;
+    (reference > 1).then_some(())?;
+    let mut at = offset.checked_add(consumed)?;
+    (stream.get(at) == Some(&1)).then_some(())?;
+    at = at.checked_add(1)?;
+    let (first_null, consumed) = read_xmt(stream, at)?;
+    (first_null == 1).then_some(())?;
+    at = at.checked_add(consumed)?;
+    (stream.get(at) == Some(&1)).then_some(())?;
+    at = at.checked_add(1)?;
+    let marker = *stream.get(at)?;
+    matches!(marker, 0x53 | 0x56).then_some(())?;
+    at = at.checked_add(1)?;
+    let (second_null, consumed) = read_xmt(stream, at)?;
+    (second_null == 1).then_some(())?;
+    at = at.checked_add(consumed)?;
+    (stream.get(at) == Some(&1)).then_some(())?;
+    at = at.checked_add(1)?;
+    (at == expected_end).then_some(ReferenceMarkerPacket {
+        reference,
+        marker,
+        offset,
+        end: at,
+    })
+}
+
 fn uncovered_spans(
     stream_len: usize,
     census: &Census,
@@ -700,6 +758,12 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
         covered.extend(
             census
                 .reference_state_packets
+                .iter()
+                .map(|packet| (packet.offset, packet.end)),
+        );
+        covered.extend(
+            census
+                .reference_marker_packets
                 .iter()
                 .map(|packet| (packet.offset, packet.end)),
         );

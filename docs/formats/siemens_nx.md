@@ -489,7 +489,13 @@ XMT encoding. The first three references are non-null and the fourth admits the
 null XMT value `1`. The packet ends after `state_byte` and retains reference and
 state-word order without assigned field roles.
 
-The union of those events, tagged-reference lanes, and reference-state packets defines the typed
+One reference-marker packet is `ref 01, ref(1) 01, marker:u8, ref(1) 01`.
+The leading reference is non-null and uses compact or extended XMT encoding.
+`marker` is `53` or `56`. The two remaining references are the null XMT value
+`1`. The packet ends after the final status byte.
+
+The union of those events, tagged-reference lanes, reference-state packets, and
+reference-marker packets defines the typed
 deltas-event coverage. Each maximal nonempty complement interval in the
 inflated stream is one residual span. Residual spans retain their exact offset,
 length, and SHA-256 independently of the containing compressed stream.

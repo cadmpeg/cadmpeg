@@ -7282,6 +7282,37 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references_atomica
 }
 
 #[test]
+fn deltas_reference_marker_packets_decode_extended_references_atomically() {
+    let packet = [
+        0xe3, 0xbf, 0x00, 0x01, 0x01, // extended reference 40_000, status
+        0x00, 0x01, 0x01, // null reference, status
+        0x56, // marker
+        0x00, 0x01, 0x01, // null reference, status
+    ];
+
+    let census = crate::deltas::walk(&packet);
+
+    assert_eq!(census.reference_marker_packets.len(), 1);
+    assert_eq!(census.reference_marker_packets[0].reference, 40_000);
+    assert_eq!(census.reference_marker_packets[0].marker, 0x56);
+    assert_eq!(census.reference_marker_packets[0].offset, 0);
+    assert_eq!(census.reference_marker_packets[0].end, packet.len());
+    assert_eq!(census.bytes_decoded, packet.len());
+
+    let truncated = packet[..packet.len() - 1].to_vec();
+    let trailing_byte = [packet.as_slice(), &[0]].concat();
+    let unknown_marker = [
+        0xe3, 0xbf, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x55, 0x00, 0x01, 0x01,
+    ]
+    .to_vec();
+    for malformed in [&truncated, &trailing_byte, &unknown_marker] {
+        assert!(crate::deltas::walk(malformed)
+            .reference_marker_packets
+            .is_empty());
+    }
+}
+
+#[test]
 fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     let mut bytes = vec![0, 12, 0, 3];
     bytes.extend_from_slice(&223u32.to_be_bytes());
@@ -10861,6 +10892,7 @@ mod golden {
         "parasolid_deltas_residual_spans",
         "parasolid_deltas_tagged_reference_lanes",
         "parasolid_deltas_reference_state_packets",
+        "parasolid_deltas_reference_marker_packets",
         "parasolid_deltas_term_use_numeric_tails",
         "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",
@@ -11587,7 +11619,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (188), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (189), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -11596,7 +11628,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 188, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 189, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",
