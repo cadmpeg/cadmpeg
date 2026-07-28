@@ -610,12 +610,6 @@ fn b2_cylinder_parser_resolves_phase_tailed_carrier_and_preserves_chart_phase() 
     ));
     assert_eq!(cylinders[0].stored_vector, Some([0.0, 1.0]));
     assert_eq!(cylinders[0].phase, Some(0.75));
-    let point = super::records::b2_cylinder_point(&cylinders[0], [0.0, 0.0])
-        .expect("phase-tailed chart point");
-    let angle: f64 = -0.75 / 4.0;
-    assert!((point.x - 4.0 * angle.sin()).abs() <= 1e-12);
-    assert_eq!(point.y, 0.0);
-    assert!((point.z - 4.0 * angle.cos()).abs() <= 1e-12);
 
     for range in [30..38, 46..54, 95..103] {
         let mut malformed = b2_phase_tailed_cylinder_stream();

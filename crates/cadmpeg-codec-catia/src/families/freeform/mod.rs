@@ -453,7 +453,6 @@ pub(crate) enum ConsolidatedCarrierChart<'a> {
     Identity,
     Cylinder {
         radius: f64,
-        phase: f64,
     },
     Cone {
         cone: &'a crate::families::b2::records::B2Cone,
@@ -464,7 +463,7 @@ impl ConsolidatedCarrierChart<'_> {
     fn point(&self, [u, v]: [f64; 2]) -> [f64; 2] {
         match self {
             Self::Identity => [u, v],
-            Self::Cylinder { radius, phase } => [(u - phase) / radius, v],
+            Self::Cylinder { radius } => [u / radius, v],
             Self::Cone { cone } => [
                 u / cone.angular_scale,
                 (v - cone.slant_range[0]) * cone.half_angle.cos(),
@@ -475,7 +474,7 @@ impl ConsolidatedCarrierChart<'_> {
     fn derivative(&self, [u, v]: [f64; 2]) -> [f64; 2] {
         match self {
             Self::Identity => [u, v],
-            Self::Cylinder { radius, .. } => [u / radius, v],
+            Self::Cylinder { radius } => [u / radius, v],
             Self::Cone { cone } => [u / cone.angular_scale, v * cone.half_angle.cos()],
         }
     }
@@ -643,10 +642,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         ConsolidatedCarrierKey::Cylinder(*pos),
                         carrier,
                         None,
-                        ConsolidatedCarrierChart::Cylinder {
-                            radius,
-                            phase: cylinder.phase.unwrap_or(0.0),
-                        },
+                        ConsolidatedCarrierChart::Cylinder { radius },
                         "consolidated_b2_03_28_cylinder",
                         "cylinder",
                     )
@@ -666,10 +662,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         ConsolidatedCarrierKey::EmbeddedCylinder(*pos),
                         carrier,
                         Some(cgm_source("surface", value.object_id)),
-                        ConsolidatedCarrierChart::Cylinder {
-                            radius,
-                            phase: value.cylinder.phase.unwrap_or(0.0),
-                        },
+                        ConsolidatedCarrierChart::Cylinder { radius },
                         "consolidated_b2_03_60_cylinder",
                         "cylinder",
                     )
@@ -864,19 +857,9 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 
 #[cfg(test)]
 mod tests {
-    use super::{freeform_surface_carriers, ConsolidatedCarrierChart};
+    use super::freeform_surface_carriers;
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
-
-    #[test]
-    fn phase_tailed_cylinder_chart_subtracts_arc_length_offset_once() {
-        let chart = ConsolidatedCarrierChart::Cylinder {
-            radius: 5.0,
-            phase: 2.0,
-        };
-        assert_eq!(chart.point([12.0, 3.0]), [2.0, 3.0]);
-        assert_eq!(chart.derivative([10.0, 4.0]), [2.0, 4.0]);
-    }
 
     #[test]
     fn freeform_fallback_retains_exact_consolidated_spheres() {
