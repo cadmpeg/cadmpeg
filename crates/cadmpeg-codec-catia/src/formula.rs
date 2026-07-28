@@ -405,6 +405,13 @@ struct FormulaExpressionParser<'a, 'b> {
     bindings: &'b BTreeMap<&'a str, EvaluatedFormulaScalar>,
 }
 
+fn finite_scalar(value: f64) -> Option<EvaluatedFormulaScalar> {
+    value.is_finite().then_some(EvaluatedFormulaScalar {
+        value,
+        dimension: FormulaDimension::Scalar,
+    })
+}
+
 impl FormulaExpressionParser<'_, '_> {
     fn parse(mut self) -> Option<EvaluatedFormulaScalar> {
         let value = self.sum()?;
@@ -516,6 +523,19 @@ impl FormulaExpressionParser<'_, '_> {
         if self.peek()? == b'#' {
             return self.symbol();
         }
+        if self.remaining().starts_with("PI")
+            && self
+                .source
+                .as_bytes()
+                .get(self.at + 2)
+                .is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')
+        {
+            self.at += 2;
+            return Some(EvaluatedFormulaScalar {
+                value: std::f64::consts::PI,
+                dimension: FormulaDimension::Angle,
+            });
+        }
         if self.peek()?.is_ascii_alphabetic() {
             return self.function_call();
         }
@@ -531,20 +551,44 @@ impl FormulaExpressionParser<'_, '_> {
         self.skip_whitespace();
         (self.peek()? == b'(').then_some(())?;
         self.at += 1;
-        let argument = self.sum()?;
+        let first = self.sum()?;
         self.skip_whitespace();
+        let second = if self.peek()? == b',' {
+            self.at += 1;
+            let second = self.sum()?;
+            self.skip_whitespace();
+            Some(second)
+        } else {
+            None
+        };
         (self.peek()? == b')').then_some(())?;
         self.at += 1;
-        (argument.dimension == FormulaDimension::Angle).then_some(())?;
-        let value = match function {
-            "sin" => argument.value.sin(),
-            "cos" => argument.value.cos(),
-            _ => return None,
-        };
-        value.is_finite().then_some(EvaluatedFormulaScalar {
-            value,
-            dimension: FormulaDimension::Scalar,
-        })
+        match (function, first, second) {
+            ("sin", argument, None) if argument.dimension == FormulaDimension::Angle => {
+                finite_scalar(argument.value.sin())
+            }
+            ("cos", argument, None) if argument.dimension == FormulaDimension::Angle => {
+                finite_scalar(argument.value.cos())
+            }
+            ("log", argument, None)
+                if argument.dimension == FormulaDimension::Scalar && argument.value > 0.0 =>
+            {
+                finite_scalar(argument.value.ln())
+            }
+            ("min", left, Some(right)) if left.dimension == right.dimension => {
+                Some(EvaluatedFormulaScalar {
+                    value: left.value.min(right.value),
+                    dimension: left.dimension,
+                })
+            }
+            ("max", left, Some(right)) if left.dimension == right.dimension => {
+                Some(EvaluatedFormulaScalar {
+                    value: left.value.max(right.value),
+                    dimension: left.dimension,
+                })
+            }
+            _ => None,
+        }
     }
 
     fn symbol(&mut self) -> Option<EvaluatedFormulaScalar> {
@@ -597,6 +641,8 @@ impl FormulaExpressionParser<'_, '_> {
         }
         saw_digit.then_some(())?;
         let mut value = self.source[start..self.at].parse::<f64>().ok()?;
+        let unit_boundary = self.at;
+        self.skip_whitespace();
         let dimension = if self.remaining().starts_with("mm") {
             self.at += 2;
             FormulaDimension::Length
@@ -608,6 +654,7 @@ impl FormulaExpressionParser<'_, '_> {
             value = value.to_radians();
             FormulaDimension::Angle
         } else {
+            self.at = unit_boundary;
             FormulaDimension::Scalar
         };
         value

@@ -7714,7 +7714,7 @@ fn decode_converts_degree_literals_to_radians() {
                 &[("#1_", "Integer", "Count", "#1_ /2", 4.0)],
                 "ANGLE",
                 Some(std::f64::consts::FRAC_PI_2),
-                "360deg/#1_ /2",
+                "360.0*1 deg/#1_ /2",
             )),
             &DecodeOptions::default(),
         )
@@ -7728,6 +7728,35 @@ fn decode_converts_degree_literals_to_radians() {
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
             cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2)
+        ))
+    );
+}
+
+#[test]
+fn decode_evaluates_the_pi_angle_constant() {
+    let output_value = std::f64::consts::PI - 1.0;
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "ANGLE", "Angle", "#1_ /2", 1.0)],
+                "ANGLE",
+                Some(output_value),
+                "PI-#1_ /2",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode formula with PI");
+
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("PI formula parameters")
+    };
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::features::Angle(output_value)
         ))
     );
 }
@@ -7762,6 +7791,84 @@ fn decode_evaluates_dimension_checked_trigonometric_calls() {
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
     );
+}
+
+#[test]
+fn decode_evaluates_nested_logarithm_and_extrema_calls() {
+    let output_value = -(4.0_f64.ln()) / 100.0_f64.ln() / 2.0;
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                5,
+                false,
+                &[
+                    ("#1_", "Real", "Gain", "#1_ /2", 2.0),
+                    ("#2_", "Real", "Reference", "#2_ /3", 10.0),
+                ],
+                "Real",
+                Some(output_value),
+                "-log(min(100,max(20*#1_ /2,#2_ /3)/#2_ /3))/log(100)/2",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode logarithmic formula");
+
+    let [first, second, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("logarithmic formula parameters")
+    };
+    assert_eq!(output.dependencies, [first.id.clone(), second.id.clone()]);
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(output_value))
+    );
+}
+
+#[test]
+fn decode_rejects_a_logarithm_outside_its_dimensionless_positive_domain() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "Real", "Ratio", "#1_ /2", 0.0)],
+                "Real",
+                Some(0.0),
+                "log(#1_ /2)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode out-of-domain logarithm");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Ratio");
+}
+
+#[test]
+fn decode_rejects_extrema_between_different_dimensions() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                5,
+                false,
+                &[
+                    ("#1_", "LENGTH", "Length", "#1_ /2", 2.0),
+                    ("#2_", "ANGLE", "Angle", "#2_ /3", 1.0),
+                ],
+                "LENGTH",
+                Some(2.0),
+                "max(#1_ /2,#2_ /3)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensionally invalid maximum");
+
+    let [first, second] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed inputs")
+    };
+    assert_eq!(first.name, "Length");
+    assert_eq!(second.name, "Angle");
 }
 
 #[test]
