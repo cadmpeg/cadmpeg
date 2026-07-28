@@ -13,6 +13,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 ## Design intent
 
 - The value production and entity binding for typed `String` relation inputs and results are unresolved. Schema-catalog type signatures alone do not carry a named parameter value.
+- The sketch placement frame, construction state, profile membership, remaining sketch-geometry classes, dimensional constraints, and non-dimensional constraints are unresolved.
 
 ## Standard nested `V5_CFV2`
 
