@@ -3326,6 +3326,7 @@ fn sweep_definition(
         linearize: bool_property(properties, "Linearize").unwrap_or(false),
         twist: None,
         path_extent: None,
+        guide_rail: None,
         taper: None,
         scale: None,
         allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {

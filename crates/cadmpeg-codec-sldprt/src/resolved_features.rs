@@ -32176,6 +32176,7 @@ mod profile_join_tests {
             linearize: false,
             twist: None,
             path_extent: None,
+            guide_rail: None,
             taper: None,
             scale: None,
             allow_multi_profile_faces: None,

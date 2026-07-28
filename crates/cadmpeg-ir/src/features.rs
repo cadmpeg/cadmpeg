@@ -801,6 +801,9 @@ pub enum FeatureDefinition {
         /// Fractions of the selected path swept on either side of the profile.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path_extent: Option<SweepPathExtent>,
+        /// Guide rail and its independently consumed extent, when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        guide_rail: Option<SweepGuideRail>,
         /// Profile taper angle over the swept extent, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         taper: Option<Angle>,
@@ -2479,6 +2482,15 @@ pub struct SweepPathExtent {
     pub along_fraction: f64,
     /// Fraction consumed against the profile normal.
     pub against_fraction: f64,
+}
+
+/// Guide rail controlling a sweep, with its directed consumed extent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SweepGuideRail {
+    /// Ordered guide trajectory.
+    pub path: PathRef,
+    /// Fractions consumed on either side of the profile location.
+    pub extent: SweepPathExtent,
 }
 
 /// One directed use of a solved sketch curve in an arrangement boundary.

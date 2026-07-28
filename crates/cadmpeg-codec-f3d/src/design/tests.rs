@@ -4209,7 +4209,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
-            &[profile.clone(), path.clone()]
+            &[profile.clone(), path.clone()],
+            &[],
+            &[],
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
@@ -4220,6 +4222,39 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             taper: None,
             ..
         })
+    ));
+    let rail = sweep_group(2, 0x5_0000_0000);
+    sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: (sweep_start + 25) as u64,
+        values: [0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+        record_indexes: [80, 81, 82, 83, 84, 85],
+        value_offsets: std::array::from_fn(|ordinal| {
+            (sweep_scalar_start + ordinal * 111 + 40) as u64
+        }),
+    });
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile.clone(), path.clone(), rail],
+            &[],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            path: Some(cadmpeg_ir::features::PathRef::Native(path)),
+            path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
+                along_fraction: 0.0,
+                against_fraction: 1.0,
+            }),
+            guide_rail: Some(cadmpeg_ir::features::SweepGuideRail {
+                path: cadmpeg_ir::features::PathRef::Native(rail),
+                extent: cadmpeg_ir::features::SweepPathExtent {
+                    along_fraction: 0.0,
+                    against_fraction: 1.0,
+                },
+            }),
+            ..
+        }) if path == "stream:sweep-group-1" && rail == "stream:sweep-group-2"
     ));
     let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
     sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
@@ -4234,7 +4269,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
-            &[profile.clone(), path.clone()]
+            &[profile.clone(), path.clone()],
+            &[],
+            &[],
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
             mode: cadmpeg_ir::features::SweepMode::Solid {
@@ -4246,7 +4283,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
-            &[profile.clone(), path.clone(), body.clone()]
+            &[profile.clone(), path.clone(), body.clone()],
+            &[],
+            &[],
         ),
         None
     );
@@ -4260,7 +4299,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         }),
     });
     assert!(matches!(
-        crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile, path, body]),
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile, path, body],
+            &[],
+            &[],
+        ),
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
             mode: cadmpeg_ir::features::SweepMode::Solid {
                 op: cadmpeg_ir::features::BooleanOp::Cut

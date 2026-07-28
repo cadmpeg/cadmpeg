@@ -1011,15 +1011,29 @@ pub(crate) fn bind_feature_path_selections(
                 }
             }
             FeatureDefinition::Sweep {
-                path: Some(path), ..
-            } => bind_entity_selection_path(
-                path,
-                &feature_id,
-                previous_state_id,
-                scope,
-                groups,
-                operands,
-            ),
+                path, guide_rail, ..
+            } => {
+                if let Some(path) = path {
+                    bind_entity_selection_path(
+                        path,
+                        &feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        operands,
+                    );
+                }
+                if let Some(guide_rail) = guide_rail {
+                    bind_entity_selection_path(
+                        &mut guide_rail.path,
+                        &feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        operands,
+                    );
+                }
+            }
             _ => {}
         }
     }

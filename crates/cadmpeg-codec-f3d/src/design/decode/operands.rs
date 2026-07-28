@@ -48,6 +48,7 @@ pub fn decode_edge_operands(
                     | DesignFeatureFamily::Chamfer
                     | DesignFeatureFamily::Revolve
                     | DesignFeatureFamily::Loft
+                    | DesignFeatureFamily::Sweep
             )
         ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem")
     }) {

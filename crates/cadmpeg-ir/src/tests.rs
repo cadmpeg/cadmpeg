@@ -893,6 +893,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             linearize: false,
             twist: None,
             path_extent: None,
+            guide_rail: None,
             taper: None,
             scale: None,
             allow_multi_profile_faces: None,
@@ -3962,8 +3963,15 @@ fn feature_operation_geometry_is_validated() {
             linearize: false,
             twist: None,
             path_extent: None,
+            guide_rail: Some(crate::features::SweepGuideRail {
+                path: crate::features::PathRef::Native("native:guide-rail#0".into()),
+                extent: crate::features::SweepPathExtent {
+                    along_fraction: -1.0,
+                    against_fraction: 1.0,
+                },
+            }),
             taper: None,
-            scale: Some(-1.0),
+            scale: None,
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::DatumOffsetPlane {

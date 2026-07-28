@@ -83,7 +83,13 @@ pub(crate) fn bind_sweep_sketch_selections(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let FeatureDefinition::Sweep { profile, path, .. } = &mut feature.definition else {
+        let FeatureDefinition::Sweep {
+            profile,
+            path,
+            guide_rail,
+            ..
+        } = &mut feature.definition
+        else {
             continue;
         };
         if let (Some(ProfileRef::Native(group_id)), Some(profile_operand)) =
@@ -116,72 +122,70 @@ pub(crate) fn bind_sweep_sketch_selections(
                 }
             }
         }
-        let Some(path) = path.as_mut() else {
-            continue;
+        let resolve_path = |path: &mut PathRef| -> Option<()> {
+            let PathRef::Native(group_id) = path else {
+                return None;
+            };
+            let mut matching_groups = groups.iter().filter(|group| {
+                group.id == *group_id
+                    && group.scope_record_index == scope.record_index
+                    && group.role == 0x0000_0005_0000_0000
+                    && native_stream(&group.id) == Some(stream)
+            });
+            let group = matching_groups.next()?;
+            if matching_groups.next().is_some() || group.members.len() != 1 {
+                return None;
+            }
+            let mut matching_operands = operands.iter().filter(|operand| {
+                operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == 0
+                    && operand.record_index == group.members[0]
+                    && native_stream(&operand.id) == Some(stream)
+            });
+            let operand = matching_operands.next()?;
+            if matching_operands.next().is_some() {
+                return None;
+            }
+            let mut matching_placements = placements.iter().filter(|placement| {
+                native_stream(&placement.id) == Some(stream)
+                    && placement.entity_suffix == operand.primary_identity
+            });
+            let placement = matching_placements.next()?;
+            if matching_placements.next().is_some() {
+                return None;
+            }
+            let sketch = neutral_sketch_id(placement);
+            if !sketches.iter().any(|candidate| candidate.id == sketch) {
+                return None;
+            }
+            let owner_reference = u32::try_from(operand.primary_identity).ok()?;
+            let mut matching_curves = curve_identities.iter().filter(|curve| {
+                native_stream(&curve.id) == Some(stream)
+                    && curve.owner_reference == Some(owner_reference)
+                    && curve.primary_id == operand.secondary_identity
+            });
+            let curve = matching_curves.next()?;
+            if matching_curves.next().is_some() {
+                return None;
+            }
+            let selected = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
+            let mut curves = sketch_entities.iter().filter(|entity| {
+                entity.sketch == sketch && !matches!(entity.geometry, SketchGeometry::Point { .. })
+            });
+            if curves.next().is_some_and(|entity| entity.id == selected) && curves.next().is_none()
+            {
+                *path = PathRef::Sketch(sketch);
+                Some(())
+            } else {
+                None
+            }
         };
-        let PathRef::Native(group_id) = path else {
-            continue;
-        };
-        let group_id = group_id.clone();
-        let mut matching_groups = groups.iter().filter(|group| {
-            group.id == group_id
-                && group.scope_record_index == scope.record_index
-                && group.role == 0x0000_0005_0000_0000
-                && native_stream(&group.id) == Some(stream)
-        });
-        let Some(group) = matching_groups.next() else {
-            continue;
-        };
-        if matching_groups.next().is_some() || group.members.len() != 1 {
-            continue;
+        if let Some(path) = path {
+            let _ = resolve_path(path);
         }
-        let mut matching_operands = operands.iter().filter(|operand| {
-            operand.scope_record_index == scope.record_index
-                && operand.group_record_index == group.record_index
-                && operand.group_member_ordinal == 0
-                && operand.record_index == group.members[0]
-                && native_stream(&operand.id) == Some(stream)
-        });
-        let Some(operand) = matching_operands.next() else {
-            continue;
-        };
-        if matching_operands.next().is_some() {
-            continue;
-        }
-        let mut matching_placements = placements.iter().filter(|placement| {
-            native_stream(&placement.id) == Some(stream)
-                && placement.entity_suffix == operand.primary_identity
-        });
-        let Some(placement) = matching_placements.next() else {
-            continue;
-        };
-        if matching_placements.next().is_some() {
-            continue;
-        }
-        let sketch = neutral_sketch_id(placement);
-        if !sketches.iter().any(|candidate| candidate.id == sketch) {
-            continue;
-        }
-        let Ok(owner_reference) = u32::try_from(operand.primary_identity) else {
-            continue;
-        };
-        let mut matching_curves = curve_identities.iter().filter(|curve| {
-            native_stream(&curve.id) == Some(stream)
-                && curve.owner_reference == Some(owner_reference)
-                && curve.primary_id == operand.secondary_identity
-        });
-        let Some(curve) = matching_curves.next() else {
-            continue;
-        };
-        if matching_curves.next().is_some() {
-            continue;
-        }
-        let selected = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
-        let mut curves = sketch_entities.iter().filter(|entity| {
-            entity.sketch == sketch && !matches!(entity.geometry, SketchGeometry::Point { .. })
-        });
-        if curves.next().is_some_and(|entity| entity.id == selected) && curves.next().is_none() {
-            *path = PathRef::Sketch(sketch);
+        if let Some(guide_rail) = guide_rail {
+            let _ = resolve_path(&mut guide_rail.path);
         }
     }
 }

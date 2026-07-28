@@ -5659,6 +5659,7 @@ fn project_sweep(
         linearize: false,
         twist,
         path_extent: None,
+        guide_rail: None,
         taper: None,
         scale,
         allow_multi_profile_faces: None,
@@ -12566,6 +12567,7 @@ pub fn sync_neutral_features(
                 linearize,
                 twist,
                 path_extent,
+                guide_rail,
                 taper,
                 scale,
                 allow_multi_profile_faces,
@@ -12577,6 +12579,7 @@ pub fn sync_neutral_features(
                     || *path_tangent
                     || *linearize
                     || path_extent.is_some()
+                    || guide_rail.is_some()
                     || taper.is_some()
                     || allow_multi_profile_faces.is_some()
                 {

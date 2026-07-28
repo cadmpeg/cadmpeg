@@ -618,7 +618,12 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     edge_selection(&group.edges);
                 }
             }
-            FeatureDefinition::Sweep { profile, path, .. } => {
+            FeatureDefinition::Sweep {
+                profile,
+                path,
+                guide_rail,
+                ..
+            } => {
                 if profile.as_ref().is_some_and(|profile| {
                     matches!(
                         profile,
@@ -633,6 +638,16 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 if path.as_ref().is_some_and(|path| {
                     matches!(
                         path,
+                        PathRef::Native(_)
+                            | PathRef::Unresolved(_)
+                            | PathRef::SpatialSketchSelection { .. }
+                    )
+                }) {
+                    gaps.path_selections += 1;
+                }
+                if guide_rail.as_ref().is_some_and(|guide| {
+                    matches!(
+                        &guide.path,
                         PathRef::Native(_)
                             | PathRef::Unresolved(_)
                             | PathRef::SpatialSketchSelection { .. }

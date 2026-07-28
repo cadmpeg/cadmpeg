@@ -2518,6 +2518,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 orientation,
                 twist,
                 path_extent,
+                guide_rail,
                 taper,
                 scale,
                 ..
@@ -2525,6 +2526,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 profiles.extend(profile);
                 profiles.extend(sections);
                 paths.extend(path);
+                if let Some(guide_rail) = guide_rail {
+                    paths.push(&guide_rail.path);
+                }
                 if let Some(crate::features::SweepOrientation::Auxiliary { path, .. }) = orientation
                 {
                     paths.push(path);
@@ -2534,6 +2538,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     || path_extent.is_some_and(|extent| {
                         !(0.0..=1.0).contains(&extent.along_fraction)
                             || !(0.0..=1.0).contains(&extent.against_fraction)
+                    })
+                    || guide_rail.as_ref().is_some_and(|guide| {
+                        !(0.0..=1.0).contains(&guide.extent.along_fraction)
+                            || !(0.0..=1.0).contains(&guide.extent.against_fraction)
                     })
                     || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
                     || matches!(orientation, Some(crate::features::SweepOrientation::Binormal { direction }) if !valid_feature_direction(*direction))
@@ -4362,9 +4370,17 @@ fn check_feature_sketch_references(
                 profiles.extend(&construction.profile);
                 paths.extend(&construction.axis_reference);
             }
-            FeatureDefinition::Sweep { profile, path, .. } => {
+            FeatureDefinition::Sweep {
+                profile,
+                path,
+                guide_rail,
+                ..
+            } => {
                 profiles.extend(profile);
                 paths.extend(path);
+                if let Some(guide_rail) = guide_rail {
+                    paths.push(&guide_rail.path);
+                }
             }
             FeatureDefinition::HelicalSweep { construction, .. } => {
                 profiles.push(&construction.profile);

@@ -218,12 +218,17 @@ pub fn project_parameter_design_with_edge_identities(
                     parameters: BTreeMap::new(),
                     properties: native_scope_properties(scope, native_scope),
                 }),
-                Some(DesignFeatureFamily::Sweep) => project_fixed_sweep(scope, construction_groups)
-                    .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }),
+                Some(DesignFeatureFamily::Sweep) => project_fixed_sweep(
+                    scope,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: BTreeMap::new(),
+                    properties: native_scope_properties(scope, native_scope),
+                }),
                 Some(DesignFeatureFamily::SurfacePatch) => {
                     project_surface_patch(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
@@ -2416,9 +2421,11 @@ pub(crate) fn project_circular_pattern(
 pub(crate) fn project_fixed_sweep(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        Angle, FeatureDefinition, PathRef, ProfileRef, SweepMode, SweepPathExtent,
+        Angle, FeatureDefinition, ProfileRef, SweepGuideRail, SweepMode, SweepPathExtent,
     };
 
     let DesignPathFeatureConstruction::Sweep {
@@ -2439,32 +2446,56 @@ pub(crate) fn project_fixed_sweep(
         .iter()
         .filter(|group| group.role == 0x41_0000_0000)
         .collect::<Vec<_>>();
-    let path = groups
+    let mut paths = groups
         .iter()
         .filter(|group| group.role == ROLE_0X5)
         .collect::<Vec<_>>();
+    paths.sort_by_key(|group| group.scope_reference_ordinal);
     let bodies = groups
         .iter()
         .filter(|group| group.role == ROLE_0X4)
         .collect::<Vec<_>>();
-    let ([profile], [path]) = (profile.as_slice(), path.as_slice()) else {
+    let [profile] = profile.as_slice() else {
         return None;
     };
+    let ([path] | [path, _]) = paths.as_slice() else {
+        return None;
+    };
+    let expected_group_count = 1 + paths.len() + bodies.len();
     if bodies.len() > 1
-        || groups.len() != 2 + bodies.len()
+        || groups.len() != expected_group_count
         || (*operation == DesignExtrudeOperation::NewBody && !bodies.is_empty())
-        || values[2..4] != [1.0; 2]
-        || !(0.0..=1.0).contains(&values[0])
-        || !(0.0..=1.0).contains(&values[1])
+        || values[..4].iter().any(|value| !(0.0..=1.0).contains(value))
+        || (paths.len() == 1 && values[2..4] != [1.0; 2])
         || !values[4].is_finite()
         || !values[5].is_finite()
     {
         return None;
     }
+    let path = resolved_loft_path(
+        path,
+        construction_groups,
+        edge_operands,
+        edge_identity_operands,
+        scope,
+    );
+    let guide_rail = paths.get(1).map(|rail| SweepGuideRail {
+        path: resolved_loft_path(
+            rail,
+            construction_groups,
+            edge_operands,
+            edge_identity_operands,
+            scope,
+        ),
+        extent: SweepPathExtent {
+            along_fraction: values[2],
+            against_fraction: values[3],
+        },
+    });
     Some(FeatureDefinition::Sweep {
         profile: Some(ProfileRef::Native(profile.id.clone())),
         sections: Vec::new(),
-        path: Some(PathRef::Native(path.id.clone())),
+        path: Some(path),
         mode: SweepMode::Solid {
             op: fixed_boolean_operation(*operation),
         },
@@ -2478,6 +2509,7 @@ pub(crate) fn project_fixed_sweep(
             along_fraction: values[0],
             against_fraction: values[1],
         }),
+        guide_rail,
         taper: (values[5] != 0.0).then_some(Angle(values[5])),
         scale: None,
         allow_multi_profile_faces: None,
