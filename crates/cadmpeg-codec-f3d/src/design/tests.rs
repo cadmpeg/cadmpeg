@@ -3297,6 +3297,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(compact.kind, "Sketch");
     assert_eq!(compact.frame_length, paired_at as u64 - 1);
     assert_eq!(compact.previous_history_state_id, Some(2));
+    assert!(
+        !crate::design::decode::scopes::parameter_scope_tail_length_is_valid("CopyPasteBodies", 78,)
+    );
 
     let mut copy_scope = Vec::new();
     copy_scope.extend_from_slice(&3u32.to_le_bytes());

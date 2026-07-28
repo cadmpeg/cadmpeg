@@ -904,14 +904,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && scope.kind_offset > scope.byte_offset
             && scope.kind_offset < scope.paired_byte_offset.saturating_sub(78)
             && scope.feature_ordinal > 0
-            && scope.feature_ordinal_offset
-                == scope
-                    .paired_byte_offset
-                    .saturating_sub(if scope.kind == "CopyPasteBodies" {
-                        110
-                    } else {
-                        78
-                    })
+            && scope
+                .paired_byte_offset
+                .checked_sub(scope.feature_ordinal_offset)
+                .and_then(|length| usize::try_from(length).ok())
+                .is_some_and(|length| {
+                    design::decode::scopes::parameter_scope_tail_length_is_valid(
+                        &scope.kind,
+                        length,
+                    )
+                })
             && scope.history_state_id_offset == scope.kind_offset.saturating_sub(8)
             && scope.previous_history_state_id_offset
                 == scope.feature_ordinal_offset.saturating_add(

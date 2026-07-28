@@ -1480,6 +1480,14 @@ pub(crate) fn parameter_scope_candidate_headers(bytes: &[u8]) -> Vec<DesignRecor
         .collect()
 }
 
+pub(crate) fn parameter_scope_tail_length_is_valid(kind: &str, tail_length: usize) -> bool {
+    if kind == "CopyPasteBodies" {
+        tail_length == 110
+    } else {
+        matches!(tail_length, 77 | 78)
+    }
+}
+
 pub(crate) fn parse_parameter_scope(
     bytes: &[u8],
     header: &DesignRecordHeader,
@@ -1500,7 +1508,7 @@ pub(crate) fn parse_parameter_scope(
             let Some(tail_length) = paired_at.checked_sub(end) else {
                 continue;
             };
-            if (matches!(tail_length, 77 | 78) || (tail_length == 110 && kind == "CopyPasteBodies"))
+            if parameter_scope_tail_length_is_valid(&kind, tail_length)
                 && kind.chars().all(|character| !character.is_control())
             {
                 candidates.push((at, end, kind));
