@@ -1871,9 +1871,33 @@ fn standard_catpart_with_parser_version_relation_expression(
     prefix_role: &str,
     parser_version_role: &str,
 ) -> Vec<u8> {
+    standard_catpart_with_parser_version_relation_expression_roles(
+        prefix_role,
+        parser_version_role,
+        None,
+    )
+}
+
+fn standard_catpart_with_opened_parser_version_relation_expression(
+    prefix_role: &str,
+    parser_version_role: &str,
+    state_role: &str,
+) -> Vec<u8> {
+    standard_catpart_with_parser_version_relation_expression_roles(
+        prefix_role,
+        parser_version_role,
+        Some(state_role),
+    )
+}
+
+fn standard_catpart_with_parser_version_relation_expression_roles(
+    prefix_role: &str,
+    parser_version_role: &str,
+    state_role: Option<&str>,
+) -> Vec<u8> {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
     let mut value = Vec::new();
-    for ordinal in 5u32..=10 {
+    for ordinal in 5u32..=10 + u32::from(state_role.is_some()) {
         value.push(0x32);
         value.extend_from_slice(&ordinal.to_le_bytes());
     }
@@ -1882,7 +1906,7 @@ fn standard_catpart_with_parser_version_relation_expression(
     let mut stream = entity_table_record_with_definition_and_value(1, &definition, &value);
     stream.push(0xde);
     stream.extend(object_graph_from_records(&records));
-    stream.extend(catalog_stream(&[
+    let mut entries = vec![
         "CATCatalogManager",
         "catalogManager",
         "catalogLinks",
@@ -1893,8 +1917,10 @@ fn standard_catpart_with_parser_version_relation_expression(
         parser_version_role,
         "param",
         "(#1_ : #In LENGTH,#2_ : #In LENGTH) : Real\n",
-        "RelationExpFct",
-    ]));
+    ];
+    entries.extend(state_role);
+    entries.push("RelationExpFct");
+    stream.extend(catalog_stream(&entries));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
@@ -8025,6 +8051,82 @@ fn parser_version_relation_expression_retains_its_distinct_framing() {
         [("#1_", "LENGTH"), ("#2_", "LENGTH")]
     );
     assert_eq!(signature.result_type, "Real");
+}
+
+#[test]
+fn opened_parser_version_relation_expression_retains_its_distinct_framing() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_opened_parser_version_relation_expression(
+            "Boolean",
+            "ParserVersion",
+            "opened",
+        ),
+    );
+    let expression = native.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .expect("opened parser-version relation expression");
+
+    let crate::native::CatiaRelationExpressionFraming::OpenedBooleanParserVersion {
+        prefix_role,
+        parser_version_role,
+        state_role,
+    } = &expression.framing
+    else {
+        panic!("opened parser-version framing")
+    };
+    assert_eq!(prefix_role.value, "Boolean");
+    assert_eq!(parser_version_role.value, "ParserVersion");
+    assert_eq!(state_role.value, "opened");
+    assert_eq!(
+        expression.expression.value,
+        "log(min(100,max(20*#1_,#2_)/#2_))/log(100)/2"
+    );
+    assert_eq!(expression.parameter_role.value, "param");
+    assert!(expression.signature.is_some());
+}
+
+#[test]
+fn opened_parser_version_relation_expression_requires_every_exact_role() {
+    for (prefix_role, parser_version_role, state_role) in [
+        ("Real", "ParserVersion", "opened"),
+        ("Boolean", "ParserRevision", "opened"),
+        ("Boolean", "ParserVersion", "closed"),
+    ] {
+        let native = crate::native::CatiaNative::decode(
+            &standard_catpart_with_opened_parser_version_relation_expression(
+                prefix_role,
+                parser_version_role,
+                state_role,
+            ),
+        );
+
+        assert!(native.entity_records[0].relation_expression.is_none());
+    }
+}
+
+#[test]
+fn decode_retains_an_opened_parser_version_expression_without_formula_incidence() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(
+                standard_catpart_with_opened_parser_version_relation_expression(
+                    "Boolean",
+                    "ParserVersion",
+                    "opened",
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("decode opened parser-version expression");
+
+    assert!(decoded.ir.model.parameters.is_empty());
+    assert_eq!(
+        decoded.report.coverage["decoded_relation_expression_count"],
+        1
+    );
+    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
+    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
 }
 
 #[test]

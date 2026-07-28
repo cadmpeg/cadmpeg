@@ -905,6 +905,15 @@ pub enum CatiaRelationExpressionFraming {
         /// Exact `ParserVersion` selector.
         parser_version_role: CatiaEntitySchemaValue,
     },
+    /// Exact `Boolean`, `ParserVersion`, and `opened` role selectors.
+    OpenedBooleanParserVersion {
+        /// Exact `Boolean` prefix selector.
+        prefix_role: CatiaEntitySchemaValue,
+        /// Exact `ParserVersion` selector.
+        parser_version_role: CatiaEntitySchemaValue,
+        /// Exact `opened` selector.
+        state_role: CatiaEntitySchemaValue,
+    },
 }
 
 /// Typed roles in a relation-expression source signature.
@@ -1780,6 +1789,26 @@ fn relation_expression(
     };
     let (framing, expression, parameter_role, type_signature, function_role, signature) =
         match values {
+            [prefix_role, expression, parser_version_role, parameter_role, type_signature, state_role, function_role]
+                if prefix_role.name == "Boolean"
+                    && parser_version_role.name == "ParserVersion"
+                    && parameter_role.name == "param"
+                    && state_role.name == "opened"
+                    && function_role.name == "RelationExpFct" =>
+            {
+                (
+                    CatiaRelationExpressionFraming::OpenedBooleanParserVersion {
+                        prefix_role: schema_value(prefix_role),
+                        parser_version_role: schema_value(parser_version_role),
+                        state_role: schema_value(state_role),
+                    },
+                    expression,
+                    parameter_role,
+                    type_signature,
+                    function_role,
+                    relation_type_signature(None, &type_signature.name),
+                )
+            }
             [placeholder, expression, parameter_role, type_signature, state_role, function_role]
                 if parameter_role.name == "param"
                     && state_role.name == "opened"
