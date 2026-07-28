@@ -9834,6 +9834,8 @@ fn native_round_trips_legacy_entity_identity_runs() {
                 bytes.push(0xfe);
             }
         } else if entity_id == 9 {
+            bytes.extend(b"\xfe\x84\x92\x82\x08Boolean\x83");
+            bytes.extend(b"\xfe\x84\x92\x82\x96\x83");
             bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 9]);
             bytes.extend(b"\xe8\x00\x12\x01\x07Result\xfe");
             bytes.extend(b"\xfe\x84\x88\x82\xfe\xe6");
@@ -9879,6 +9881,17 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].relations[0].inputs[0].parameter,
         "#1_"
     );
+    assert_eq!(native.legacy_entity_runs[0].type_descriptors.len(), 2);
+    assert_eq!(
+        native.legacy_entity_runs[0].type_descriptors[0].value,
+        crate::native::CatiaLegacyTypeValue::Name {
+            value: "Boolean".to_string()
+        }
+    );
+    assert_eq!(
+        native.legacy_entity_runs[0].type_descriptors[1].value,
+        crate::native::CatiaLegacyTypeValue::Selector { value: 22 }
+    );
     assert_eq!(native.legacy_entity_runs[0].scalar_values.len(), 1);
     assert_eq!(
         native.legacy_entity_runs[0].scalar_values[0]
@@ -9902,6 +9915,17 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("store legacy entity run");
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load legacy entity run");
     assert_eq!(loaded.legacy_entity_runs, native.legacy_entity_runs);
+
+    let mut invalid_type_name = native.clone();
+    invalid_type_name.legacy_entity_runs[0].type_descriptors[0].value =
+        crate::native::CatiaLegacyTypeValue::Name {
+            value: "1Boolean".to_string(),
+        };
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_type_name
+        .store(&mut namespace)
+        .expect("store invalid legacy type name");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
     let mut invalid_name = native.clone();
     invalid_name.legacy_entity_runs[0].scalar_values[0].name = Some("Other".to_string());

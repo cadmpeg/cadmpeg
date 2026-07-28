@@ -5,6 +5,7 @@ const CATALOG_OPEN: &[u8] = b"\xde\x04\xfe\xfe\x12CATCatalogManager";
 const TEXT_OPEN: &[u8] = b"\xe8\x00\x12\x01";
 const SCALAR_OPEN: &[u8] = b"\xfe\x85\x88\x82\xfe";
 const NAMED_SCALAR_OPEN: &[u8] = b"\xfe\x84\x88\x82\xfe";
+const TYPE_OPEN: &[u8] = b"\xfe\x84\x92\x82";
 
 /// Length production used by one legacy schema text field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +79,26 @@ pub struct LegacyRelation {
     pub signature: LegacyRelationSignature,
 }
 
+/// Value selected by one legacy type descriptor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LegacyTypeValue {
+    /// Inclusive-length UTF-8 type name.
+    Name(String),
+    /// Compact selector identity.
+    Selector(u32),
+}
+
+/// One complete legacy type descriptor in an identity interval.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyTypeDescriptor {
+    /// Offset of the fixed descriptor prefix.
+    pub offset: usize,
+    /// Stored identity whose interval contains the descriptor.
+    pub entity_id: u32,
+    /// Stored literal name or unresolved selector.
+    pub value: LegacyTypeValue,
+}
+
 /// Evaluation stored by a complete legacy scalar packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegacyScalarEvaluation {
@@ -133,6 +154,8 @@ pub struct LegacyEntityRun {
     pub text_fields: Vec<LegacyTextField>,
     /// Complete expression/signature pairs.
     pub relations: Vec<LegacyRelation>,
+    /// Complete literal or selector type descriptors.
+    pub type_descriptors: Vec<LegacyTypeDescriptor>,
     /// Complete typed scalar packets.
     pub scalar_values: Vec<LegacyScalarValue>,
 }
@@ -178,6 +201,17 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         })
         .collect::<Vec<_>>();
     let relations = parse_relations(&text_fields);
+    let type_descriptors = identities
+        .iter()
+        .enumerate()
+        .flat_map(|(index, identity)| {
+            let start = identity.offset + 6;
+            let end = identities
+                .get(index + 1)
+                .map_or(catalog_offset, |next| next.offset);
+            parse_type_descriptors(data, start, end, identity.entity_id)
+        })
+        .collect();
     let mut scalar_values = identities
         .iter()
         .enumerate()
@@ -195,8 +229,44 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         identities,
         text_fields,
         relations,
+        type_descriptors,
         scalar_values,
     })
+}
+
+fn parse_type_descriptors(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    entity_id: u32,
+) -> Vec<LegacyTypeDescriptor> {
+    memchr::memmem::find_iter(&data[start..end], TYPE_OPEN)
+        .filter_map(|relative| {
+            let offset = start + relative;
+            let payload = offset.checked_add(TYPE_OPEN.len())?;
+            let first = *data.get(payload)?;
+            let value = if (2..=0x7f).contains(&first) {
+                let name_end = payload.checked_add(usize::from(first))?;
+                if name_end >= end || data.get(name_end) != Some(&0x83) {
+                    return None;
+                }
+                let name = text_value(data.get(payload + 1..name_end)?)?;
+                valid_role_name(&name).then_some(LegacyTypeValue::Name(name))?
+            } else if (0x81..=0xd0).contains(&first)
+                && payload.checked_add(1)? < end
+                && data.get(payload + 1) == Some(&0x83)
+            {
+                LegacyTypeValue::Selector(u32::from(first - 0x80))
+            } else {
+                return None;
+            };
+            Some(LegacyTypeDescriptor {
+                offset,
+                entity_id,
+                value,
+            })
+        })
+        .collect()
 }
 
 fn parse_scalar_values(
@@ -458,7 +528,7 @@ fn text_value(bytes: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_runs, CATALOG_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, TEXT_OPEN};
+    use super::{parse_runs, CATALOG_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, TEXT_OPEN, TYPE_OPEN};
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
         bytes.push(0xea);
@@ -481,6 +551,7 @@ mod tests {
         assert_eq!(runs[0].catalog_offset, catalog_offset);
         assert!(runs[0].text_fields.is_empty());
         assert!(runs[0].relations.is_empty());
+        assert!(runs[0].type_descriptors.is_empty());
         assert!(runs[0].scalar_values.is_empty());
         assert_eq!(
             runs[0]
@@ -632,5 +703,43 @@ mod tests {
         assert_eq!(value.encoding, super::LegacyScalarEncoding::Named84);
         assert_eq!(value.name.as_deref(), Some("Length."));
         assert_eq!(value.name_offset, Some(runs[0].text_fields[0].offset));
+    }
+
+    #[test]
+    fn parses_literal_and_compact_legacy_type_descriptors() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(TYPE_OPEN);
+        bytes.extend_from_slice(&[8, b'B', b'o', b'o', b'l', b'e', b'a', b'n', 0x83]);
+        bytes.extend_from_slice(TYPE_OPEN);
+        bytes.extend_from_slice(&[0x96, 0x83]);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let descriptors = &parse_runs(&bytes)[0].type_descriptors;
+        assert_eq!(
+            descriptors
+                .iter()
+                .map(|descriptor| descriptor.value.clone())
+                .collect::<Vec<_>>(),
+            [
+                super::LegacyTypeValue::Name("Boolean".to_string()),
+                super::LegacyTypeValue::Selector(22),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_unclosed_and_nonidentifier_type_descriptors() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(TYPE_OPEN);
+        bytes.extend_from_slice(&[5, b'R', b'e', b'a', b'l', 0xfe]);
+        bytes.extend_from_slice(TYPE_OPEN);
+        bytes.extend_from_slice(&[5, b'1', b'b', b'i', b't', 0x83]);
+        bytes.extend_from_slice(TYPE_OPEN);
+        bytes.extend_from_slice(&[0x96, 0xfe]);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        assert!(parse_runs(&bytes)[0].type_descriptors.is_empty());
     }
 }

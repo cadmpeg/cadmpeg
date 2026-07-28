@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 147;
+pub const CATIA_NATIVE_VERSION: u32 = 148;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2309,6 +2309,32 @@ pub struct CatiaLegacyRelation {
     pub result_type: String,
 }
 
+/// Value selected by one complete legacy type descriptor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaLegacyTypeValue {
+    /// Inclusive-length UTF-8 type name.
+    Name {
+        /// Stored type name.
+        value: String,
+    },
+    /// Compact unresolved selector identity.
+    Selector {
+        /// Stored selector identity.
+        value: u32,
+    },
+}
+
+/// One complete type descriptor in a legacy identity interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyTypeDescriptor {
+    /// Offset of the fixed descriptor prefix.
+    pub byte_offset: u64,
+    /// Stored containing identity.
+    pub entity_id: u32,
+    /// Stored literal name or unresolved selector.
+    pub value: CatiaLegacyTypeValue,
+}
+
 /// Evaluation stored by a complete legacy scalar packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum CatiaLegacyScalarEvaluation {
@@ -2367,6 +2393,8 @@ pub struct CatiaLegacyEntityRun {
     pub text_fields: Vec<CatiaLegacyTextField>,
     /// Complete expression/signature pairs.
     pub relations: Vec<CatiaLegacyRelation>,
+    /// Complete literal or selector type descriptors.
+    pub type_descriptors: Vec<CatiaLegacyTypeDescriptor>,
     /// Complete typed scalar packets.
     pub scalar_values: Vec<CatiaLegacyScalarValue>,
 }
@@ -2577,6 +2605,22 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         }
                     })
                     .collect(),
+                type_descriptors: run
+                    .type_descriptors
+                    .into_iter()
+                    .map(|descriptor| CatiaLegacyTypeDescriptor {
+                        byte_offset: descriptor.offset as u64,
+                        entity_id: descriptor.entity_id,
+                        value: match descriptor.value {
+                            legacy_entity::LegacyTypeValue::Name(value) => {
+                                CatiaLegacyTypeValue::Name { value }
+                            }
+                            legacy_entity::LegacyTypeValue::Selector(value) => {
+                                CatiaLegacyTypeValue::Selector { value }
+                            }
+                        },
+                    })
+                    .collect(),
                 scalar_values: run
                     .scalar_values
                     .into_iter()
@@ -2606,6 +2650,15 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+fn valid_legacy_identifier(value: &str) -> bool {
+    let mut characters = value.chars();
+    characters
+        .next()
+        .is_some_and(|character| character == '_' || character.is_alphabetic())
+        && characters.all(|character| character == '_' || character.is_alphanumeric())
 }
 
 #[cfg(test)]
@@ -2650,14 +2703,7 @@ fn validate_legacy_entity_runs(
                         role.byte_offset >= run.byte_offset
                             && role.byte_offset < field.byte_offset
                             && role.selector != 0
-                            && {
-                                let mut characters = role.name.chars();
-                                characters.next().is_some_and(|character| {
-                                    character == '_' || character.is_alphabetic()
-                                }) && characters.all(|character| {
-                                    character == '_' || character.is_alphanumeric()
-                                })
-                            }
+                            && valid_legacy_identifier(&role.name)
                             && run
                                 .identities
                                 .iter()
@@ -2696,6 +2742,23 @@ fn validate_legacy_entity_runs(
                             && field.byte_offset == relation.signature_offset
                             && field.value == relation.type_signature
                     })
+            })
+            && run
+                .type_descriptors
+                .windows(2)
+                .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
+            && run.type_descriptors.iter().all(|descriptor| {
+                descriptor.byte_offset >= run.byte_offset
+                    && descriptor.byte_offset < run.catalog_offset
+                    && run
+                        .identities
+                        .iter()
+                        .rfind(|identity| identity.byte_offset < descriptor.byte_offset)
+                        .is_some_and(|identity| identity.entity_id == descriptor.entity_id)
+                    && match &descriptor.value {
+                        CatiaLegacyTypeValue::Name { value } => valid_legacy_identifier(value),
+                        CatiaLegacyTypeValue::Selector { value } => *value != 0,
+                    }
             })
             && run
                 .scalar_values
