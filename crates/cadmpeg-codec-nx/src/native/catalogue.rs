@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative catalogue of the native record families.
 //!
-//! One [`CatalogueRow`] per model field (192 total). Each row names the `nx`
+//! One [`CatalogueRow`] per model field (193 total). Each row names the `nx`
 //! namespace arena the family serializes into, and — for families that also emit
 //! source annotations — the tag, exactness, and a `note` fn. Row order is the
 //! observable annotation-emission order for the note-bearing rows;
@@ -45,8 +45,8 @@ pub(crate) struct CatalogueRow {
     /// Record count for this family, feeding the catalogue-derived emptiness
     /// fold ([`NativeModel::is_empty`]) and inspect counts.
     pub(crate) len: fn(&NativeModel) -> usize,
-    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 146 of
-    /// the 192 families count; the 46 that do not are transcribed verbatim from
+    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 147 of
+    /// the 193 families count; the 46 that do not are transcribed verbatim from
     /// the legacy hand-written all-empty guard, which omitted them. The
     /// exclusions look like oversights (25 of the 26 `display_jt` families are
     /// excluded, for instance) but are frozen observable behavior: flipping any
@@ -506,6 +506,11 @@ impl StreamNoted for ParasolidDeltasReferenceTypeMap {
     }
 }
 impl StreamNoted for ParasolidDeltasReferenceStatePacket {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidDeltasSchemaReferencePreamble {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -1086,6 +1091,31 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         }),
         emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_reference_state_packets, r, ns),
         len: |m| m.parasolid.parasolid_deltas_reference_state_packets.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_deltas_schema_reference_preambles",
+        tag: Some("DELTAS_SCHEMA_REFERENCE_PREAMBLE"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(
+                &m.parasolid.parasolid_deltas_schema_reference_preambles,
+                r,
+                a,
+            );
+        }),
+        emit: |m, r, ns| {
+            emit_arena(
+                &m.parasolid.parasolid_deltas_schema_reference_preambles,
+                r,
+                ns,
+            )
+        },
+        len: |m| {
+            m.parasolid
+                .parasolid_deltas_schema_reference_preambles
+                .len()
+        },
         counts_toward_emptiness: true,
     },
     CatalogueRow {

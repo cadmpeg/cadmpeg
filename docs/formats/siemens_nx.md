@@ -504,6 +504,16 @@ XMT encoding. The first three references are non-null and the fourth admits the
 null XMT value `1`. The packet ends after `state_byte` and retains reference and
 state-word order without assigned field roles.
 
+A schema reference preamble is `identity:u16 BE, 0004, ff, ref[2], ref(1)[3],
+state_word[4]:u32 BE, 000000, identity, ref(1)[2], count:u16 BE, entry[n],
+0052, ref(1), 0000, terminal_value:u16 BE`, where `identity > 1`, `n > 0`,
+and `count > 0`. The repeated `identity` equals the leading value. The two
+leading references are consecutive non-null compact or extended XMT indices.
+The four state words have the form `(0|2), 0, 1, value`. Each
+entry is `entry_kind:u16 BE, ref`, `entry_kind` is type 81 or type 82, and its
+reference is non-null. The type-82 entry carrying the null XMT value terminates
+the entry lane. The preamble ends after `terminal_value`.
+
 One reference-marker packet is `ref 01, ref(1) 01, marker:u8, ref(1) 01`.
 The leading reference is non-null and uses compact or extended XMT encoding.
 `marker` is `53` or `56`. The two remaining references are the null XMT value

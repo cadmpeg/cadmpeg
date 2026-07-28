@@ -120,6 +120,27 @@ pub struct ReferenceStatePacket {
     pub end: usize,
 }
 
+/// One deltas schema preamble carrying typed references and unassigned state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaReferencePreamble {
+    /// Repeated serialized identity.
+    pub identity: u16,
+    /// Two consecutive non-null stream-local XMT references.
+    pub references: [u32; 2],
+    /// Four ordered big-endian state words.
+    pub state_words: [u32; 4],
+    /// Serialized state count.
+    pub count: u16,
+    /// Ordered `(Parasolid record kind, XMT identity)` entries.
+    pub entries: Vec<(u16, u32)>,
+    /// Terminal serialized state value.
+    pub terminal_value: u16,
+    /// First byte of the preamble.
+    pub offset: usize,
+    /// First byte following the preamble.
+    pub end: usize,
+}
+
 /// One deltas packet carrying a reference and a serialized marker byte.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceMarkerPacket {
@@ -201,6 +222,8 @@ pub struct Census {
     pub reference_type_maps: Vec<ReferenceTypeMap>,
     /// Complete four-reference state packets in source order.
     pub reference_state_packets: Vec<ReferenceStatePacket>,
+    /// Complete schema reference preambles in source order.
+    pub schema_reference_preambles: Vec<SchemaReferencePreamble>,
     /// Complete reference-marker packets in source order.
     pub reference_marker_packets: Vec<ReferenceMarkerPacket>,
     /// Complete inline schema declarations in source order.
@@ -635,6 +658,13 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
             .sum::<usize>();
         census.reference_state_packets.extend(state_packets);
 
+        let preambles = schema_reference_preambles(stream, census);
+        added_bytes += preambles
+            .iter()
+            .map(|preamble| preamble.end - preamble.offset)
+            .sum::<usize>();
+        census.schema_reference_preambles.extend(preambles);
+
         let declarations = inline_schema_declarations(stream, census);
         added_bytes += declarations
             .iter()
@@ -664,6 +694,9 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
     census
         .reference_state_packets
         .sort_unstable_by_key(|packet| packet.offset);
+    census
+        .schema_reference_preambles
+        .sort_unstable_by_key(|preamble| preamble.offset);
     census
         .inline_schema_declarations
         .sort_unstable_by_key(|declaration| declaration.offset);
@@ -903,6 +936,90 @@ fn reference_state_packet(
     })
 }
 
+fn schema_reference_preambles(stream: &[u8], census: &Census) -> Vec<SchemaReferencePreamble> {
+    uncovered_spans(stream.len(), census, true)
+        .flat_map(|(offset, gap_end)| {
+            let mut preambles = Vec::new();
+            let mut at = offset;
+            while let Some(preamble) = schema_reference_preamble(stream, at, gap_end) {
+                at = preamble.end;
+                preambles.push(preamble);
+            }
+            preambles
+        })
+        .collect()
+}
+
+fn schema_reference_preamble(
+    stream: &[u8],
+    offset: usize,
+    gap_end: usize,
+) -> Option<SchemaReferencePreamble> {
+    let identity = be::u16_at(stream, offset)?;
+    (identity > 1
+        && be::u16_at(stream, offset.checked_add(2)?) == Some(4)
+        && stream.get(offset.checked_add(4)?) == Some(&0xff))
+    .then_some(())?;
+    let mut at = offset.checked_add(5)?;
+    let mut references = [0; 2];
+    for reference in &mut references {
+        let (value, consumed) = read_xmt(stream, at)?;
+        (value > 1).then_some(())?;
+        *reference = value;
+        at = at.checked_add(consumed)?;
+    }
+    (references[1] == references[0].checked_add(1)?).then_some(())?;
+    for _ in 0..3 {
+        let (reference, consumed) = read_xmt(stream, at)?;
+        (reference == 1).then_some(())?;
+        at = at.checked_add(consumed)?;
+    }
+    let mut state_words = [0; 4];
+    for state_word in &mut state_words {
+        *state_word = be::u32_at(stream, at)?;
+        at = at.checked_add(4)?;
+    }
+    (matches!(state_words[0], 0 | 2) && state_words[1] == 0 && state_words[2] == 1).then_some(())?;
+    (stream.get(at..at.checked_add(3)?) == Some(&[0, 0, 0])).then_some(())?;
+    at = at.checked_add(3)?;
+    (be::u16_at(stream, at) == Some(identity)).then_some(())?;
+    at = at.checked_add(2)?;
+    for _ in 0..2 {
+        let (reference, consumed) = read_xmt(stream, at)?;
+        (reference == 1).then_some(())?;
+        at = at.checked_add(consumed)?;
+    }
+    let count = be::u16_at(stream, at)?;
+    (count > 0).then_some(())?;
+    at = at.checked_add(2)?;
+    let mut entries = Vec::new();
+    loop {
+        let entry_kind = be::u16_at(stream, at)?;
+        matches!(entry_kind, 81 | 82).then_some(())?;
+        at = at.checked_add(2)?;
+        let (reference, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        if entry_kind == 82 && reference == 1 {
+            (be::u16_at(stream, at) == Some(0)).then_some(())?;
+            at = at.checked_add(2)?;
+            let terminal_value = be::u16_at(stream, at)?;
+            at = at.checked_add(2)?;
+            return (at <= gap_end && !entries.is_empty()).then_some(SchemaReferencePreamble {
+                identity,
+                references,
+                state_words,
+                count,
+                entries,
+                terminal_value,
+                offset,
+                end: at,
+            });
+        }
+        (reference > 1).then_some(())?;
+        entries.push((entry_kind, reference));
+    }
+}
+
 fn reference_marker_packets(stream: &[u8], census: &Census) -> Vec<ReferenceMarkerPacket> {
     uncovered_spans(stream.len(), census, true)
         .filter_map(|(offset, end)| reference_marker_packet(stream, offset, end))
@@ -1121,6 +1238,12 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
                 .reference_state_packets
                 .iter()
                 .map(|packet| (packet.offset, packet.end)),
+        );
+        covered.extend(
+            census
+                .schema_reference_preambles
+                .iter()
+                .map(|preamble| (preamble.offset, preamble.end)),
         );
         covered.extend(
             census
@@ -2112,6 +2235,83 @@ fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
     let remainder = first.unsigned_abs();
     let quotient = u16::from_be_bytes([*stream.get(at + 2)?, *stream.get(at + 3)?]);
     Some((u32::from(quotient) * 32_767 + u32::from(remainder), 4))
+}
+
+#[cfg(test)]
+mod schema_reference_preamble_tests {
+    use super::*;
+
+    fn push_xmt(bytes: &mut Vec<u8>, reference: u32) {
+        if reference <= i16::MAX as u32 {
+            bytes.extend_from_slice(&(reference as u16).to_be_bytes());
+            return;
+        }
+        let quotient = reference / 32_767;
+        let remainder = reference % 32_767;
+        bytes.extend_from_slice(&(-(remainder as i16)).to_be_bytes());
+        bytes.extend_from_slice(&(quotient as u16).to_be_bytes());
+    }
+
+    fn preamble() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&300u16.to_be_bytes());
+        bytes.extend_from_slice(&4u16.to_be_bytes());
+        bytes.push(0xff);
+        for reference in [40_000, 40_001, 1, 1, 1] {
+            push_xmt(&mut bytes, reference);
+        }
+        for state_word in [2u32, 0, 1, 55] {
+            bytes.extend_from_slice(&state_word.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0, 0, 0]);
+        bytes.extend_from_slice(&300u16.to_be_bytes());
+        for reference in [1, 1] {
+            push_xmt(&mut bytes, reference);
+        }
+        bytes.extend_from_slice(&7u16.to_be_bytes());
+        for (kind, reference) in [(81u16, 4u32), (82, 40_000), (81, 5)] {
+            bytes.extend_from_slice(&kind.to_be_bytes());
+            push_xmt(&mut bytes, reference);
+        }
+        bytes.extend_from_slice(&82u16.to_be_bytes());
+        push_xmt(&mut bytes, 1);
+        bytes.extend_from_slice(&0u16.to_be_bytes());
+        bytes.extend_from_slice(&9u16.to_be_bytes());
+        bytes
+    }
+
+    #[test]
+    fn schema_reference_preamble_retains_variable_reference_lane() {
+        let bytes = preamble();
+        let parsed = schema_reference_preamble(&bytes, 0, bytes.len())
+            .expect("complete preamble must be admitted");
+
+        assert_eq!(
+            parsed,
+            SchemaReferencePreamble {
+                identity: 300,
+                references: [40_000, 40_001],
+                state_words: [2, 0, 1, 55],
+                count: 7,
+                entries: vec![(81, 4), (82, 40_000), (81, 5)],
+                terminal_value: 9,
+                offset: 0,
+                end: bytes.len(),
+            }
+        );
+    }
+
+    #[test]
+    fn schema_reference_preamble_requires_complete_consistent_framing() {
+        let bytes = preamble();
+        let mut mismatched_kind = bytes.clone();
+        let repeated_kind = 5 + 2 * 4 + 3 * 2 + 16 + 3;
+        mismatched_kind[repeated_kind + 1] ^= 1;
+
+        for malformed in [&bytes[..bytes.len() - 1], mismatched_kind.as_slice()] {
+            assert!(schema_reference_preamble(malformed, 0, malformed.len()).is_none());
+        }
+    }
 }
 
 #[cfg(test)]

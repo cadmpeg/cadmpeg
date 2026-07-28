@@ -54,6 +54,8 @@ pub(crate) struct ParasolidRecords {
     pub(crate) parasolid_deltas_tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(crate) parasolid_deltas_reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
     pub(crate) parasolid_deltas_reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
+    pub(crate) parasolid_deltas_schema_reference_preambles:
+        Vec<ParasolidDeltasSchemaReferencePreamble>,
     pub(crate) parasolid_deltas_reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
     pub(crate) parasolid_deltas_inline_schema_declarations:
         Vec<ParasolidDeltasInlineSchemaDeclaration>,
@@ -729,6 +731,8 @@ impl NativeModel {
                 parasolid_deltas_tagged_reference_lanes: deltas_events.tagged_reference_lanes,
                 parasolid_deltas_reference_type_maps: deltas_events.reference_type_maps,
                 parasolid_deltas_reference_state_packets: deltas_events.reference_state_packets,
+                parasolid_deltas_schema_reference_preambles: deltas_events
+                    .schema_reference_preambles,
                 parasolid_deltas_reference_marker_packets: deltas_events.reference_marker_packets,
                 parasolid_deltas_inline_schema_declarations: deltas_events
                     .inline_schema_declarations,

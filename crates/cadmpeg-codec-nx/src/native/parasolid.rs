@@ -172,6 +172,33 @@ pub struct ParasolidDeltasReferenceStatePacket {
     pub inflated_offset: u64,
 }
 
+/// Schema reference preamble in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasSchemaReferencePreamble {
+    /// Globally unique preamble identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Repeated serialized identity.
+    pub identity: u16,
+    /// Two consecutive non-null stream-local XMT references.
+    pub references: [u32; 2],
+    /// Four ordered big-endian state words.
+    pub state_words: [u32; 4],
+    /// Serialized state count.
+    pub count: u16,
+    /// Ordered `(Parasolid record kind, XMT identity)` entries.
+    pub entries: Vec<(u16, u32)>,
+    /// Terminal serialized state value.
+    pub terminal_value: u16,
+    /// Exact preamble byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact preamble bytes.
+    pub sha256: String,
+    /// First preamble byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Reference-marker packet in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidDeltasReferenceMarkerPacket {
@@ -260,6 +287,7 @@ pub(crate) struct ParasolidDeltasEvents {
     pub(crate) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(crate) reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
     pub(crate) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
+    pub(crate) schema_reference_preambles: Vec<ParasolidDeltasSchemaReferencePreamble>,
     pub(crate) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
     pub(crate) inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
     pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
@@ -276,6 +304,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         tagged_reference_lanes: Vec::new(),
         reference_type_maps: Vec::new(),
         reference_state_packets: Vec::new(),
+        schema_reference_preambles: Vec::new(),
         reference_marker_packets: Vec::new(),
         inline_schema_declarations: Vec::new(),
         residual_spans: Vec::new(),
@@ -441,6 +470,27 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     inflated_offset: packet.offset as u64,
                 });
         }
+        for preamble in census.schema_reference_preambles {
+            let bytes = &stream.inflated[preamble.offset..preamble.end];
+            events
+                .schema_reference_preambles
+                .push(ParasolidDeltasSchemaReferencePreamble {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-schema-reference-preamble#{}",
+                        preamble.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    identity: preamble.identity,
+                    references: preamble.references,
+                    state_words: preamble.state_words,
+                    count: preamble.count,
+                    entries: preamble.entries,
+                    terminal_value: preamble.terminal_value,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: preamble.offset as u64,
+                });
+        }
         for packet in census.reference_marker_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
             events
@@ -531,6 +581,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .reference_state_packets
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .schema_reference_preambles
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .reference_marker_packets
@@ -2112,6 +2165,62 @@ mod tests {
             suffix_offset as u64
         );
         assert_eq!(events.residual_spans[1].byte_len, 3);
+    }
+
+    #[test]
+    fn deltas_events_retain_schema_reference_preambles() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let preamble_offset = bytes.len();
+        bytes.extend_from_slice(&300u16.to_be_bytes());
+        bytes.extend_from_slice(&4u16.to_be_bytes());
+        bytes.push(0xff);
+        for reference in [2u16, 3, 1, 1, 1] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        for state_word in [2u32, 0, 1, 55] {
+            bytes.extend_from_slice(&state_word.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0, 0, 0]);
+        bytes.extend_from_slice(&300u16.to_be_bytes());
+        for reference in [1u16, 1] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.extend_from_slice(&5u16.to_be_bytes());
+        for (kind, reference) in [(81u16, 4u16), (82, 5), (81, 6)] {
+            bytes.extend_from_slice(&kind.to_be_bytes());
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.extend_from_slice(&82u16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.extend_from_slice(&0u16.to_be_bytes());
+        bytes.extend_from_slice(&9u16.to_be_bytes());
+        let preamble_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.schema_reference_preambles.len(), 1);
+        let preamble = &events.schema_reference_preambles[0];
+        assert_eq!(preamble.identity, 300);
+        assert_eq!(preamble.references, [2, 3]);
+        assert_eq!(preamble.state_words, [2, 0, 1, 55]);
+        assert_eq!(preamble.count, 5);
+        assert_eq!(preamble.entries, [(81, 4), (82, 5), (81, 6)]);
+        assert_eq!(preamble.terminal_value, 9);
+        assert_eq!(preamble.inflated_offset, preamble_offset as u64);
+        assert_eq!(preamble.byte_len, (preamble_end - preamble_offset) as u64);
+        assert_eq!(
+            preamble.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[preamble_offset..preamble_end])
+        );
     }
 
     #[test]
