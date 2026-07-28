@@ -246,8 +246,10 @@ pub enum InlineSchemaFields {
         xmt: u32,
         /// Serialized node identity.
         node_id: u32,
-        /// Five leading status-one XMT references.
+        /// Five leading XMT references.
         leading_references: [u32; 5],
+        /// Serialized statuses of the five leading references.
+        leading_statuses: [u8; 5],
         /// Intersection-state discriminator.
         marker: u8,
         /// Non-null status-one XMT references selected by the marker.
@@ -1462,9 +1464,16 @@ fn inline_schema_declaration(
         let node_id = be::u32_at(stream, at)?;
         at = at.checked_add(4)?;
         let mut leading_references = [0; 5];
-        for reference in &mut leading_references {
-            *reference = read_status_one_reference(stream, &mut at)?;
+        let mut leading_statuses = [0; 5];
+        for (reference, status) in leading_references.iter_mut().zip(&mut leading_statuses) {
+            let (value, consumed) = read_xmt(stream, at)?;
+            at = at.checked_add(consumed)?;
+            *reference = value;
+            *status = *stream.get(at)?;
+            at = at.checked_add(1)?;
         }
+        (leading_statuses[..4] == [1; 4] && matches!(leading_statuses[4], 0 | 1)).then_some(())?;
+        (leading_statuses[4] == 1 || leading_references[4] > 1).then_some(())?;
         let marker = *stream.get(at)?;
         matches!(marker, 0x2b | 0x2d).then_some(())?;
         at = at.checked_add(1)?;
@@ -1485,6 +1494,31 @@ fn inline_schema_declaration(
             if stream.get(state_end..state_end.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
                 != Some(TYPE_41_SCHEMA_HEADER)
             {
+                if leading_statuses[4] == 0 {
+                    let anchor = leading_references[4];
+                    (state_references.as_slice()
+                        == [
+                            anchor.checked_add(1)?,
+                            anchor.checked_add(2)?,
+                            anchor.checked_add(3)?,
+                        ])
+                    .then_some(())?;
+                    (state_end <= gap_end).then_some(())?;
+                    return Some(InlineSchemaDeclaration {
+                        fields: InlineSchemaFields::Type38 {
+                            xmt,
+                            node_id,
+                            leading_references,
+                            leading_statuses,
+                            marker,
+                            linked_references,
+                            state_references,
+                            numeric_values: None,
+                        },
+                        offset,
+                        end: state_end,
+                    });
+                }
                 (state_references.as_slice() == descending_from_xmt
                     || state_references.as_slice() == ascending_from_link)
                     .then_some(())?;
@@ -1494,6 +1528,7 @@ fn inline_schema_declaration(
                         xmt,
                         node_id,
                         leading_references,
+                        leading_statuses,
                         marker,
                         linked_references,
                         state_references,
@@ -1503,6 +1538,7 @@ fn inline_schema_declaration(
                     end: state_end,
                 });
             }
+            (leading_statuses == [1; 5]).then_some(())?;
             (state_references.as_slice() == descending_from_xmt).then_some(())?;
             let (term_reference, numeric_values, end) =
                 type_41_schema_state(stream, state_end, gap_end)?;
@@ -1512,6 +1548,7 @@ fn inline_schema_declaration(
                     xmt,
                     node_id,
                     leading_references,
+                    leading_statuses,
                     marker,
                     linked_references,
                     state_references,
@@ -1523,6 +1560,7 @@ fn inline_schema_declaration(
         }
         let (linked_references, state_references, state_end) =
             type_38_reference_lanes(stream, at, 1, 4)?;
+        (leading_statuses == [1; 5]).then_some(())?;
         (state_references[2] == state_references[1].checked_add(1)?
             && state_references[3] == state_references[2].checked_add(1)?)
         .then_some(())?;
@@ -1532,6 +1570,7 @@ fn inline_schema_declaration(
                 xmt,
                 node_id,
                 leading_references,
+                leading_statuses,
                 marker,
                 linked_references,
                 state_references,
@@ -3464,6 +3503,7 @@ mod inline_schema_tests {
                     xmt: 40_000,
                     node_id: 17,
                     leading_references: [1, 7, 8, 9, 1],
+                    leading_statuses: [1; 5],
                     marker: 0x2d,
                     linked_references: vec![11, 12],
                     state_references: vec![40_003, 40_002, 40_001],
@@ -3555,6 +3595,57 @@ mod inline_schema_tests {
                 && state_references == &[765, 803, 804, 805]
         ));
         assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn type_38_schema_declaration_retains_status_zero_anchor() {
+        let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+        push_xmt(&mut bytes, 1_118);
+        bytes.extend_from_slice(&3_178u32.to_be_bytes());
+        let mut fifth_status_offset = 0;
+        for (index, (reference, status)) in [(1, 1), (3, 1), (907, 1), (1_082, 1), (1_119, 0)]
+            .into_iter()
+            .enumerate()
+        {
+            push_xmt(&mut bytes, reference);
+            if index == 4 {
+                fifth_status_offset = bytes.len();
+            }
+            bytes.push(status);
+        }
+        bytes.push(0x2d);
+        for reference in [1_070, 1_063] {
+            push_xmt(&mut bytes, reference);
+            bytes.push(1);
+        }
+        let first_state_offset = bytes.len();
+        for reference in [1_120, 1_121, 1_122] {
+            push_xmt(&mut bytes, reference);
+            bytes.push(0);
+        }
+        push_xmt(&mut bytes, 1);
+        bytes.push(1);
+
+        let census = walk(&bytes);
+
+        assert!(matches!(
+            &census.inline_schema_declarations[0].fields,
+            InlineSchemaFields::Type38 {
+                leading_references: [1, 3, 907, 1_082, 1_119],
+                leading_statuses: [1, 1, 1, 1, 0],
+                state_references,
+                ..
+            } if state_references == &[1_120, 1_121, 1_122]
+        ));
+        assert_eq!(census.bytes_decoded, bytes.len());
+
+        let mut invalid_status = bytes.clone();
+        invalid_status[fifth_status_offset] = 2;
+        assert!(walk(&invalid_status).inline_schema_declarations.is_empty());
+
+        let mut invalid_anchor = bytes;
+        invalid_anchor[first_state_offset + 1] ^= 1;
+        assert!(walk(&invalid_anchor).inline_schema_declarations.is_empty());
     }
 
     #[test]

@@ -583,11 +583,14 @@ The type-38 form has the header
 `00260c43434343434343434343434111696e74657273656374696f6e5f6461746100cc00015a`.
 Its common state is `xmt, node_id:u32 BE, ref_status[5], marker:u8,
 linked_state, ref_status(1)`. `xmt` and every reference after `marker` are
-non-null. The five leading reference statuses are `01`. For marker `2b` or
+non-null. The first four leading reference statuses are `01`; the fifth is
+`00` or `01` and is non-null when its status is `00`. For marker `2b` or
 `2d`, the common `linked_state` is `ref_status[2], state_ref_status[3]`; the
 linked statuses are `01`, and the state statuses are `00`. The three state references are either
 `xmt + 3, xmt + 2, xmt + 1` or `max(linked_ref) + 1,
-max(linked_ref) + 2, max(linked_ref) + 3`. Marker `2b` also has an alternate
+max(linked_ref) + 2, max(linked_ref) + 3` when the fifth leading status is
+`01`. When the fifth leading status is `00`, the three state references are
+that leading reference plus one, two, and three. Marker `2b` also has an alternate
 `linked_state` of `ref_status, state_ref_status[4]`; the linked status is `01`,
 every state status is `00`, and the final three state references are
 consecutive ascending indices. The compact declaration ends after the terminal
