@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 165;
+pub const CATIA_NATIVE_VERSION: u32 = 166;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1031,6 +1031,8 @@ pub enum CatiaEntitySuffixPayload {
     },
     /// One zero-payload `E8` control state.
     ControlE8,
+    /// One zero-payload `E9` control state.
+    ControlE9,
     /// One zero-payload `37` separator.
     Separator37,
 }
@@ -2226,6 +2228,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
                 payload_offset + 1,
             ),
             0xe8 => (CatiaEntitySuffixPayload::ControlE8, payload_offset + 1),
+            0xe9 => (CatiaEntitySuffixPayload::ControlE9, payload_offset + 1),
             0x37 => (CatiaEntitySuffixPayload::Separator37, payload_offset + 1),
             0xe6 => {
                 let bits = u64::from_le_bytes(

@@ -9408,6 +9408,50 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         CatiaEntitySuffixPayload::ControlE8
     ));
 
+    let control_e9 = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_parameter_value(&[
+                0x84, 0x88, 0x82, 0xf0, 0xe9, 0x81, 0x4a,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode E9 control entity suffix");
+    assert_eq!(
+        control_e9.report.coverage["decoded_control_entity_suffix_value_count"],
+        1
+    );
+    let control_e9 = crate::native::CatiaNative::load(
+        control_e9.ir.native.namespace("catia").expect("namespace"),
+    )
+    .expect("load E9 control suffix");
+    assert!(matches!(
+        control_e9.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete E9 control suffix")
+            .payload,
+        CatiaEntitySuffixPayload::ControlE9
+    ));
+    let mut malformed_control_e9 = control_e9.clone();
+    malformed_control_e9.entity_records[0]
+        .suffix_value
+        .as_mut()
+        .expect("complete E9 control suffix")
+        .payload = CatiaEntitySuffixPayload::ControlE8;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_control_e9
+        .store(&mut namespace)
+        .expect("store malformed E9 control suffix");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+    let malformed_control_e9 =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+            0x84, 0x88, 0x82, 0xf0, 0xe9, 0x81, 0x4a, 0x00,
+        ]));
+    assert_eq!(malformed_control_e9.entity_records[0].suffix_value, None);
+
     let malformed_control =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x84, 0x96, 0x81, 0xa6, 0xe8, 0x81,

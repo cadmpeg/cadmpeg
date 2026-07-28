@@ -318,6 +318,7 @@ fn finish_decode(
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::ControlE8
+                        | crate::native::CatiaEntitySuffixPayload::ControlE9
                 )
             })
         })
