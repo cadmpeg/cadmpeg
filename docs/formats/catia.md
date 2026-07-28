@@ -545,6 +545,8 @@ A legacy schema catalog opens with `DE 04 FE FE 12 CATCatalogManager`. The desig
 
 Within one identity interval, `E8 00 12 01` opens a UTF-8 schema text field. A nonzero following byte is an inclusive one-byte-header-plus-text length. Zero selects a following `u32le` text-byte length. Text is nonempty and contains no control characters other than horizontal tab, line feed, and carriage return, and `FE` immediately follows the declared text bytes. The field must close before the next identity delimiter or catalog opener. Preserve its opener offset, containing identity, framing production, and value. A payload that does not satisfy either complete length production is not a text field.
 
+An identity interval containing exactly two schema text fields is a typed relation when the second field has the complete form `(<clause>{,<clause>}) : <result-type>` with unique parameter names. A clause is `<parameter> : #In <value-type>` or `<parameter> : #Out <value-type>`. At most one output clause is present. `VoidType` requires one output clause; every other result type requires none. The first field is the exact expression or rule program. Preserve both field offsets and values, ordered inputs, optional output, and result type.
+
 ### 7.2 `7C02` source-schema catalogs
 
 ```text

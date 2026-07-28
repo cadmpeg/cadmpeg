@@ -9821,7 +9821,12 @@ fn native_round_trips_legacy_entity_identity_runs() {
         bytes.extend(entity_id.to_le_bytes());
         bytes.extend([0x81, 0xfd, 0x8c]);
         if entity_id == 4 {
-            bytes.extend(b"\xe8\x00\x12\x01\x05name\xfe");
+            for value in ["#1_ + 2", "(#1_ : #In Real) : Real\n"] {
+                bytes.extend(b"\xe8\x00\x12\x01");
+                bytes.push(u8::try_from(value.len() + 1).expect("short text"));
+                bytes.extend(value.as_bytes());
+                bytes.push(0xfe);
+            }
         }
     }
     let catalog_offset = bytes.len();
@@ -9841,9 +9846,14 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].catalog_offset,
         catalog_offset as u64
     );
-    assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 1);
+    assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 2);
     assert_eq!(native.legacy_entity_runs[0].text_fields[0].entity_id, 4);
-    assert_eq!(native.legacy_entity_runs[0].text_fields[0].value, "name");
+    assert_eq!(native.legacy_entity_runs[0].text_fields[0].value, "#1_ + 2");
+    assert_eq!(native.legacy_entity_runs[0].relations.len(), 1);
+    assert_eq!(
+        native.legacy_entity_runs[0].relations[0].inputs[0].parameter,
+        "#1_"
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

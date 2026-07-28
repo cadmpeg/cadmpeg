@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 142;
+pub const CATIA_NATIVE_VERSION: u32 = 143;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2264,6 +2264,37 @@ pub struct CatiaLegacyTextField {
     pub value: String,
 }
 
+/// One typed parameter role in a legacy relation signature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyRelationParameter {
+    /// Expression-local parameter.
+    pub parameter: String,
+    /// Source value type.
+    pub value_type: String,
+}
+
+/// One complete legacy expression and type-signature pair.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyRelation {
+    /// Stored owner identity.
+    pub entity_id: u32,
+    /// Expression-field opener offset.
+    pub expression_offset: u64,
+    /// Exact expression or rule program.
+    pub expression: String,
+    /// Signature-field opener offset.
+    pub signature_offset: u64,
+    /// Exact stored type signature.
+    pub type_signature: String,
+    /// Ordered input parameters.
+    pub inputs: Vec<CatiaLegacyRelationParameter>,
+    /// Output parameter for a `VoidType` relation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<CatiaLegacyRelationParameter>,
+    /// Source result type.
+    pub result_type: String,
+}
+
 /// A monotonically identified pre-`7C05` run and its terminating catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaLegacyEntityRun {
@@ -2279,6 +2310,8 @@ pub struct CatiaLegacyEntityRun {
     pub identities: Vec<CatiaLegacyEntityIdentity>,
     /// Complete schema text fields in identity-interval order.
     pub text_fields: Vec<CatiaLegacyTextField>,
+    /// Complete expression/signature pairs.
+    pub relations: Vec<CatiaLegacyRelation>,
 }
 
 /// CATIA-native records retained outside the format-neutral model.
@@ -2455,6 +2488,33 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         value: field.value,
                     })
                     .collect(),
+                relations: run
+                    .relations
+                    .into_iter()
+                    .map(|relation| {
+                        let parameter = |parameter: legacy_entity::LegacyRelationParameter| {
+                            CatiaLegacyRelationParameter {
+                                parameter: parameter.parameter,
+                                value_type: parameter.value_type,
+                            }
+                        };
+                        CatiaLegacyRelation {
+                            entity_id: relation.entity_id,
+                            expression_offset: relation.expression_offset as u64,
+                            expression: relation.expression,
+                            signature_offset: relation.signature_offset as u64,
+                            type_signature: relation.type_signature,
+                            inputs: relation
+                                .signature
+                                .inputs
+                                .into_iter()
+                                .map(parameter)
+                                .collect(),
+                            output: relation.signature.output.map(parameter),
+                            result_type: relation.signature.result_type,
+                        }
+                    })
+                    .collect(),
             }
         })
         .collect()
@@ -2498,6 +2558,38 @@ fn validate_legacy_entity_runs(
                         .iter()
                         .rfind(|identity| identity.byte_offset < field.byte_offset)
                         .is_some_and(|identity| identity.entity_id == field.entity_id)
+            })
+            && run.relations.iter().all(|relation| {
+                let parsed = legacy_entity::parse_relation_signature(&relation.type_signature);
+                relation.expression_offset < relation.signature_offset
+                    && (relation.result_type == "VoidType") == relation.output.is_some()
+                    && parsed.as_ref().is_some_and(|parsed| {
+                        parsed.result_type == relation.result_type
+                            && parsed.inputs.len() == relation.inputs.len()
+                            && parsed
+                                .inputs
+                                .iter()
+                                .zip(&relation.inputs)
+                                .all(|(parsed, stored)| {
+                                    parsed.parameter == stored.parameter
+                                        && parsed.value_type == stored.value_type
+                                })
+                            && parsed.output.as_ref().map(|output| {
+                                (output.parameter.as_str(), output.value_type.as_str())
+                            }) == relation.output.as_ref().map(|output| {
+                                (output.parameter.as_str(), output.value_type.as_str())
+                            })
+                    })
+                    && run.text_fields.iter().any(|field| {
+                        field.entity_id == relation.entity_id
+                            && field.byte_offset == relation.expression_offset
+                            && field.value == relation.expression
+                    })
+                    && run.text_fields.iter().any(|field| {
+                        field.entity_id == relation.entity_id
+                            && field.byte_offset == relation.signature_offset
+                            && field.value == relation.type_signature
+                    })
             });
         if !valid {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
