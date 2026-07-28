@@ -274,6 +274,11 @@ pub enum ParasolidDeltasInlineSchemaFields {
         linked_references: [u32; 2],
         numeric_values: Option<[f64; 11]>,
     },
+    /// Type 41 term-use declaration state.
+    Type41 {
+        reference: u32,
+        numeric_values: [f64; 11],
+    },
 }
 
 /// Inline schema declaration in a Parasolid deltas stream.
@@ -652,6 +657,13 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     leading_references,
                     marker,
                     linked_references,
+                    numeric_values,
+                },
+                crate::deltas::InlineSchemaFields::Type41 {
+                    reference,
+                    numeric_values,
+                } => ParasolidDeltasInlineSchemaFields::Type41 {
+                    reference,
                     numeric_values,
                 },
             };

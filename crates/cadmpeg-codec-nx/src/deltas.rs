@@ -231,6 +231,13 @@ pub enum InlineSchemaFields {
         /// Eleven finite binary64 values from the optional nested term-use state.
         numeric_values: Option<[f64; 11]>,
     },
+    /// Type 41 term-use declaration state.
+    Type41 {
+        /// Non-null stream-local term-use reference.
+        reference: u32,
+        /// Eleven finite binary64 state values.
+        numeric_values: [f64; 11],
+    },
 }
 
 /// One complete inline schema declaration.
@@ -1405,21 +1412,8 @@ fn inline_schema_declaration(
             });
         }
         (descending_references == descending_from_xmt).then_some(())?;
-        at = at.checked_add(TYPE_41_SCHEMA_HEADER.len())?;
-        (be::u32_at(stream, at) == Some(1)).then_some(())?;
-        at = at.checked_add(4)?;
-        let (term_reference, consumed) = read_xmt(stream, at)?;
+        let (term_reference, numeric_values, end) = type_41_schema_state(stream, at, gap_end)?;
         (term_reference == descending_references[1]).then_some(())?;
-        at = at.checked_add(consumed)?;
-        (stream.get(at..at.checked_add(2)?) == Some(&[0x4c, 0x3f])).then_some(())?;
-        at = at.checked_add(2)?;
-        let mut numeric_values = [0.0; 11];
-        for value in &mut numeric_values {
-            *value = be::f64_at(stream, at)?;
-            value.is_finite().then_some(())?;
-            at = at.checked_add(8)?;
-        }
-        (at <= gap_end).then_some(())?;
         return Some(InlineSchemaDeclaration {
             fields: InlineSchemaFields::Type38 {
                 xmt,
@@ -1430,7 +1424,20 @@ fn inline_schema_declaration(
                 numeric_values: Some(numeric_values),
             },
             offset,
-            end: at,
+            end,
+        });
+    }
+    if stream.get(offset..offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
+        == Some(TYPE_41_SCHEMA_HEADER)
+    {
+        let (reference, numeric_values, end) = type_41_schema_state(stream, offset, gap_end)?;
+        return Some(InlineSchemaDeclaration {
+            fields: InlineSchemaFields::Type41 {
+                reference,
+                numeric_values,
+            },
+            offset,
+            end,
         });
     }
     if stream.get(offset..offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?)
@@ -1494,6 +1501,32 @@ fn inline_schema_declaration(
         });
     }
     None
+}
+
+fn type_41_schema_state(
+    stream: &[u8],
+    offset: usize,
+    gap_end: usize,
+) -> Option<(u32, [f64; 11], usize)> {
+    (stream.get(offset..offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
+        == Some(TYPE_41_SCHEMA_HEADER))
+    .then_some(())?;
+    let mut at = offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?;
+    (be::u32_at(stream, at) == Some(1)).then_some(())?;
+    at = at.checked_add(4)?;
+    let (reference, consumed) = read_xmt(stream, at)?;
+    (reference > 1).then_some(())?;
+    at = at.checked_add(consumed)?;
+    (stream.get(at..at.checked_add(2)?) == Some(&[0x4c, 0x3f])).then_some(())?;
+    at = at.checked_add(2)?;
+    let mut numeric_values = [0.0; 11];
+    for value in &mut numeric_values {
+        *value = be::f64_at(stream, at)?;
+        value.is_finite().then_some(())?;
+        at = at.checked_add(8)?;
+    }
+    (at <= gap_end).then_some(())?;
+    Some((reference, numeric_values, at))
 }
 
 fn inline_body_states(stream: &[u8], census: &Census) -> Vec<InlineBodyState> {
@@ -2963,6 +2996,17 @@ mod inline_schema_tests {
         bytes
     }
 
+    fn type_41_declaration() -> Vec<u8> {
+        let mut bytes = TYPE_41_SCHEMA_HEADER.to_vec();
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        push_xmt(&mut bytes, 86);
+        bytes.extend_from_slice(&[0x4c, 0x3f]);
+        for value in [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0] {
+            bytes.extend_from_slice(&f64::to_be_bytes(value));
+        }
+        bytes
+    }
+
     #[test]
     fn type_38_schema_declaration_retains_nested_term_state() {
         let bytes = type_38_declaration();
@@ -3026,6 +3070,25 @@ mod inline_schema_tests {
             ));
             assert_eq!(census.bytes_decoded, bytes.len());
         }
+    }
+
+    #[test]
+    fn type_41_schema_declaration_retains_term_state() {
+        let bytes = type_41_declaration();
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.inline_schema_declarations,
+            [InlineSchemaDeclaration {
+                fields: InlineSchemaFields::Type41 {
+                    reference: 86,
+                    numeric_values: [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,],
+                },
+                offset: 0,
+                end: bytes.len(),
+            }]
+        );
+        assert_eq!(census.bytes_decoded, bytes.len());
     }
 
     #[test]
@@ -3165,6 +3228,7 @@ mod inline_schema_tests {
             attdef_list_declaration(),
             type_70_declaration(),
             type_38_declaration(),
+            type_41_declaration(),
             type_100_declaration(),
             type_101_declaration(),
         ] {
