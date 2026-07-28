@@ -1758,14 +1758,17 @@ fn decode_variable_scalar(
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7, false);
     }
-    if matches!(prefix, 0x19 | 0x28 | 0x32 | 0x41) && offset + 8 <= end {
+    if prefix == 0x4f && offset + 7 <= end {
+        let mut raw = [0; 8];
+        raw[0] = 0x3f;
+        raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
+        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+    }
+    if matches!(prefix, 0x19 | 0x28 | 0x32 | 0x37 | 0x41) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
         return (Some(f64::from_be_bytes(raw)), offset + 8, false);
-    }
-    if prefix == 0x34 && offset + 3 <= end {
-        return (None, offset + 3, false);
     }
     if prefix == 0x31 && offset + 7 <= end {
         let mut raw = [0; 8];
@@ -1774,17 +1777,18 @@ fn decode_variable_scalar(
         return (Some(f64::from_be_bytes(raw)), offset + 7, false);
     }
     let variable_dict = match prefix {
+        0x51 => Some([0x3f, 0xc6]),
         0x53..=0xa3 => Some((0x3f75_u16 + u16::from(prefix)).to_be_bytes()),
         0xad => Some([0x3f, 0xd9]),
         0xb3 => Some([0xbf, 0xe0]),
-        0xc6 => Some([0xbf, 0xf3]),
-        0xc7 => Some([0xbf, 0xf4]),
-        0xc8 => Some([0xbf, 0xf5]),
-        0xcb => Some([0xbf, 0xf8]),
-        0xcc => Some([0xbf, 0xf9]),
+        0xbd => Some([0xbf, 0xea]),
+        0xc3 => Some([0xbf, 0xf0]),
+        0xc6..=0xce => Some([0xbf, prefix.wrapping_add(0x2d)]),
         0xd0 => Some([0xbf, 0xfe]),
         0xd2 => Some([0xc0, 0x00]),
+        0xd4 => Some([0xc0, 0x02]),
         0xd6 => Some([0xc0, 0x04]),
+        0xd8 => Some([0xc0, 0x06]),
         0xda => Some([0xc0, 0x08]),
         0xdd => Some([0xc0, 0x0c]),
         _ => None,
@@ -1820,6 +1824,11 @@ fn decode_section_coordinate_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize, bool) {
+    match payload.get(offset) {
+        Some(0x00 | 0x34) if offset + 3 <= end => return (None, offset + 3, false),
+        Some(0x01) if offset + 4 <= end => return (None, offset + 4, false),
+        _ => {}
+    }
     if payload.get(offset) == Some(&0x2d) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x40;
@@ -9264,6 +9273,17 @@ mod tests {
     }
 
     #[test]
+    fn decodes_var_arr_positive_subunit_form() {
+        let bytes = [0x4f, 0xdf, 0x46, 0xa2, 0x52, 0x96, 0xd1];
+        let (value, next, dimension_driven) =
+            decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
+
+        assert_eq!(value, Some(0.488_686_161_664_432_46));
+        assert_eq!(next, bytes.len());
+        assert!(!dimension_driven);
+    }
+
+    #[test]
     fn variable_row_bounds_an_unresolved_guess_from_its_fixed_suffix() {
         let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
             \x00\x41\x18\x20\x96\x61\x01\x01\x82\x06\xe2";
@@ -9315,6 +9335,7 @@ mod tests {
     #[test]
     fn decodes_var_arr_positional_dict_lattice() {
         for (bytes, head) in [
+            ([0x51, 1, 2, 3, 4, 5, 6], [0x3f, 0xc6]),
             ([0x64, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0x69, 1, 2, 3, 4, 5, 6], [0x3f, 0xde]),
             ([0x9c, 1, 2, 3, 4, 5, 6], [0x40, 0x11]),
@@ -9323,11 +9344,19 @@ mod tests {
             ([0xa0, 1, 2, 3, 4, 5, 6], [0x40, 0x15]),
             ([0xad, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0xb3, 1, 2, 3, 4, 5, 6], [0xbf, 0xe0]),
+            ([0xbd, 1, 2, 3, 4, 5, 6], [0xbf, 0xea]),
+            ([0xc3, 1, 2, 3, 4, 5, 6], [0xbf, 0xf0]),
+            ([0xc9, 1, 2, 3, 4, 5, 6], [0xbf, 0xf6]),
+            ([0xca, 1, 2, 3, 4, 5, 6], [0xbf, 0xf7]),
             ([0xcb, 1, 2, 3, 4, 5, 6], [0xbf, 0xf8]),
             ([0xcc, 1, 2, 3, 4, 5, 6], [0xbf, 0xf9]),
+            ([0xcd, 1, 2, 3, 4, 5, 6], [0xbf, 0xfa]),
+            ([0xce, 1, 2, 3, 4, 5, 6], [0xbf, 0xfb]),
             ([0xd0, 1, 2, 3, 4, 5, 6], [0xbf, 0xfe]),
             ([0xd2, 1, 2, 3, 4, 5, 6], [0xc0, 0x00]),
+            ([0xd4, 1, 2, 3, 4, 5, 6], [0xc0, 0x02]),
             ([0xd6, 1, 2, 3, 4, 5, 6], [0xc0, 0x04]),
+            ([0xd8, 1, 2, 3, 4, 5, 6], [0xc0, 0x06]),
             ([0xda, 1, 2, 3, 4, 5, 6], [0xc0, 0x08]),
         ] {
             let (value, next, dimension_driven) =
@@ -9350,7 +9379,7 @@ mod tests {
                 false,
             )
         );
-        for prefix in [0x19, 0x32, 0x41] {
+        for prefix in [0x19, 0x32, 0x37, 0x41] {
             let bytes = [prefix, 1, 2, 3, 4, 5, 6, 7];
             assert_eq!(
                 decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
@@ -9362,8 +9391,31 @@ mod tests {
             );
         }
         assert_eq!(
-            decode_variable_scalar(&[0x34, 0xd0, 0x00], 0, 3, &scalar::ScalarCache::default()),
+            decode_section_coordinate_scalar(
+                &[0x34, 0xd0, 0x00],
+                0,
+                3,
+                &scalar::ScalarCache::default()
+            ),
             (None, 3, false)
+        );
+        assert_eq!(
+            decode_section_coordinate_scalar(
+                &[0x00, 0x04, 0xa6],
+                0,
+                3,
+                &scalar::ScalarCache::default()
+            ),
+            (None, 3, false)
+        );
+        assert_eq!(
+            decode_section_coordinate_scalar(
+                &[0x01, 0x04, 0xfe, 0xf2],
+                0,
+                4,
+                &scalar::ScalarCache::default()
+            ),
+            (None, 4, false)
         );
     }
 

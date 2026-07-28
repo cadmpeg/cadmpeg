@@ -58,8 +58,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   the dimension relation that drives that solver variable is unspecified.
   `uvar_id`, point key, relation identifier, relation dimension selector, and
   external dimension identifier occupy distinct namespaces.
-- The numeric interpretation of the three-byte `var_arr` scalar form
-  `34 XX YY` is unspecified.
+- The numeric interpretations of the `var_arr` scalar forms `00 XX YY`,
+  `01 XX YY ZZ`, and `34 XX YY` are unspecified.
 - The semantics of the multi-valued `relat_ptr` `used` field are unspecified.
   It is solver state, not a Boolean constraint-activation flag.
 - The neutral semantics of a unary type-one or type-two `skamp_ptr` incidence

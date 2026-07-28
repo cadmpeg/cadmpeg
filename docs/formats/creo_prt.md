@@ -162,12 +162,18 @@ The `var_arr` coordinate lane also defines the sign pairs
 `7e→3F F3`/`c6→BF F3`, `7f→3F F4`/`c7→BF F4`,
 `80→3F F5`/`c8→BF F5`, and
 `97→40 0C`/`dd→C0 0C`. Each prefix is followed by the remaining six IEEE
-bytes. Its negative sub-unit form `d5 <tail6>` reconstructs
-`BF <tail6> 00`. Its eight-byte world-coordinate form `2d <tail7>`
+bytes. Prefix `51` maps to `3F C6`. The defined negative DICT members are
+`b3→BF E0`, `bd→BF EA`, `c3→BF F0`, `c6..ce→BF F3..FB`,
+`d0→BF FE`, `d2→C0 00`, `d4→C0 02`, `d6→C0 04`, `d8→C0 06`, and
+`da→C0 08`. Prefix `d5` instead
+uses the lane-specific negative sub-unit form and reconstructs
+`BF <tail6> 00`. The positive sub-unit form `4f <tail6>` reconstructs
+`3F <tail6> 00`. Its eight-byte world-coordinate form `2d <tail7>`
 reconstructs `40 <tail7>`; the same form is positive in the saved-section
-coordinate lane. Its `19 <tail7>`, `32 <tail7>`, and `41 <tail7>` forms
-reconstruct `3F <tail7>`, and its `da <tail6>` form reconstructs
-`C0 08 <tail6>`. The `34 XX YY` form occupies three bytes.
+coordinate lane. Its `19 <tail7>`, `32 <tail7>`, `37 <tail7>`, and
+`41 <tail7>` forms reconstruct `3F <tail7>`. The unresolved `00 XX YY` and
+`34 XX YY` forms occupy three bytes; the unresolved `01 XX YY ZZ` form
+occupies four.
 
 Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `9e <tail6>` and `a3 <tail6>` for positive and negative forms paired with the section-local `46` cache; `b9`, `d1`, `d3`, `de`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`. A paired form finds the `46 <byte1> <tail6>` token with the same six-byte tail and reconstructs `40 <byte1> <tail6>` for `9e` or `C0 <byte1> <tail6>` for `a3`.
 
