@@ -9075,6 +9075,48 @@ fn decode_rejects_a_cyclic_formula_component() {
 }
 
 #[test]
+fn decode_rejects_a_formula_exceeding_the_expression_depth_limit() {
+    let boundary_expression = format!("{}#1_ /2", "+".repeat(128));
+    let boundary = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_relation(
+                4,
+                false,
+                "LENGTH",
+                "LENGTH",
+                12.0,
+                12.0,
+                &boundary_expression,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode formula at depth limit");
+    assert_eq!(boundary.ir.model.parameters.len(), 2);
+
+    let expression = format!("{}#1_ /2", "+".repeat(129));
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_relation(
+                4,
+                false,
+                "LENGTH",
+                "LENGTH",
+                12.0,
+                12.0,
+                &expression,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode depth-limited formula");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Thickness");
+    assert!(input.dependencies.is_empty());
+}
+
+#[test]
 fn decode_rejects_a_formula_with_ambiguous_input_binding() {
     let decoded = CatiaCodec
         .decode(

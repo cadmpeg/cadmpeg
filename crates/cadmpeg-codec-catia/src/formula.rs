@@ -444,6 +444,8 @@ struct FormulaExpressionParser<'a, 'b> {
     bindings: &'b BTreeMap<&'a str, EvaluatedFormulaScalar>,
 }
 
+const MAX_FORMULA_EXPRESSION_DEPTH: usize = 128;
+
 fn finite_scalar(value: f64) -> Option<EvaluatedFormulaScalar> {
     value.is_finite().then_some(EvaluatedFormulaScalar {
         value,
@@ -453,13 +455,13 @@ fn finite_scalar(value: f64) -> Option<EvaluatedFormulaScalar> {
 
 impl FormulaExpressionParser<'_, '_> {
     fn parse(mut self) -> Option<EvaluatedFormulaScalar> {
-        let value = self.sum()?;
+        let value = self.sum(0)?;
         self.skip_whitespace();
         (self.at == self.source.len() && value.value.is_finite()).then_some(value)
     }
 
-    fn sum(&mut self) -> Option<EvaluatedFormulaScalar> {
-        let mut value = self.product()?;
+    fn sum(&mut self, depth: usize) -> Option<EvaluatedFormulaScalar> {
+        let mut value = self.product(depth)?;
         loop {
             self.skip_whitespace();
             let Some(operator) = self.peek() else {
@@ -469,7 +471,7 @@ impl FormulaExpressionParser<'_, '_> {
                 return Some(value);
             }
             self.at += 1;
-            let right = self.product()?;
+            let right = self.product(depth)?;
             if value.dimension != right.dimension {
                 return None;
             }
@@ -484,8 +486,8 @@ impl FormulaExpressionParser<'_, '_> {
         }
     }
 
-    fn product(&mut self) -> Option<EvaluatedFormulaScalar> {
-        let mut value = self.unary()?;
+    fn product(&mut self, depth: usize) -> Option<EvaluatedFormulaScalar> {
+        let mut value = self.unary(depth)?;
         loop {
             self.skip_whitespace();
             let Some(operator) = self.peek() else {
@@ -495,7 +497,7 @@ impl FormulaExpressionParser<'_, '_> {
                 return Some(value);
             }
             self.at += 1;
-            let right = self.unary()?;
+            let right = self.unary(depth)?;
             value = if operator == b'*' {
                 EvaluatedFormulaScalar {
                     value: value.value * right.value,
@@ -516,28 +518,28 @@ impl FormulaExpressionParser<'_, '_> {
         }
     }
 
-    fn unary(&mut self) -> Option<EvaluatedFormulaScalar> {
+    fn unary(&mut self, depth: usize) -> Option<EvaluatedFormulaScalar> {
         self.skip_whitespace();
         match self.peek()? {
             b'+' => {
                 self.at += 1;
-                self.unary()
+                self.unary(Self::nested_depth(depth)?)
             }
             b'-' => {
                 self.at += 1;
-                let mut value = self.unary()?;
+                let mut value = self.unary(Self::nested_depth(depth)?)?;
                 value.value = -value.value;
                 Some(value)
             }
-            _ => self.primary(),
+            _ => self.primary(depth),
         }
     }
 
-    fn primary(&mut self) -> Option<EvaluatedFormulaScalar> {
+    fn primary(&mut self, depth: usize) -> Option<EvaluatedFormulaScalar> {
         self.skip_whitespace();
         if self.peek()? == b'(' {
             self.at += 1;
-            let value = self.sum()?;
+            let value = self.sum(Self::nested_depth(depth)?)?;
             self.skip_whitespace();
             (self.peek()? == b')').then_some(())?;
             self.at += 1;
@@ -560,12 +562,12 @@ impl FormulaExpressionParser<'_, '_> {
             });
         }
         if self.peek()?.is_ascii_alphabetic() {
-            return self.function_call();
+            return self.function_call(depth);
         }
         self.literal()
     }
 
-    fn function_call(&mut self) -> Option<EvaluatedFormulaScalar> {
+    fn function_call(&mut self, depth: usize) -> Option<EvaluatedFormulaScalar> {
         let function_start = self.at;
         while self.peek().is_some_and(|byte| byte.is_ascii_alphabetic()) {
             self.at += 1;
@@ -574,11 +576,12 @@ impl FormulaExpressionParser<'_, '_> {
         self.skip_whitespace();
         (self.peek()? == b'(').then_some(())?;
         self.at += 1;
-        let first = self.sum()?;
+        let argument_depth = Self::nested_depth(depth)?;
+        let first = self.sum(argument_depth)?;
         self.skip_whitespace();
         let second = if self.peek()? == b',' {
             self.at += 1;
-            let second = self.sum()?;
+            let second = self.sum(argument_depth)?;
             self.skip_whitespace();
             Some(second)
         } else {
@@ -711,6 +714,10 @@ impl FormulaExpressionParser<'_, '_> {
 
     fn remaining(&self) -> &str {
         &self.source[self.at..]
+    }
+
+    fn nested_depth(depth: usize) -> Option<usize> {
+        (depth < MAX_FORMULA_EXPRESSION_DEPTH).then_some(depth + 1)
     }
 }
 
