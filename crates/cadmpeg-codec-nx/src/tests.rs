@@ -6944,9 +6944,30 @@ fn deltas_walks_complete_type_45_records() {
         [(45, 0, counted_end), (125, counted_end, counted.len())]
     );
 
+    let mut counted = record(false, 41_001, &[1.0, 2.0, 3.0], 0);
+    let counted_end = counted.len();
+    let mut curve_header = 135u16.to_be_bytes().to_vec();
+    curve_header.extend(encoded_xmt(42_001));
+    curve_header.push(2);
+    curve_header.extend(encoded_xmt(1));
+    curve_header.push(1);
+    counted.extend_from_slice(&curve_header);
+    let census = crate::deltas::walk(&counted);
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| (record.kind, record.offset, record.end))
+            .collect::<Vec<_>>(),
+        [(45, 0, counted_end), (135, counted_end, counted.len())]
+    );
+
     let mut nonfinite = record(false, 12, &[1.0, 2.0, 3.0, 4.0, f64::NAN], 1);
     nonfinite.extend_from_slice(&[0xfe, 0xdc]);
     assert!(crate::deltas::walk(&nonfinite).records.is_empty());
+
+    let subnormal = record(false, 12, &[1.0, 2.0, f64::from_bits(1)], 0);
+    assert!(crate::deltas::walk(&subnormal).records.is_empty());
 }
 
 #[test]

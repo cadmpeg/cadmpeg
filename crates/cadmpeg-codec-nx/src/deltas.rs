@@ -2533,17 +2533,23 @@ fn type_45_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(
             .get(data_at..end)?
             .chunks_exact(8)
             .all(|raw| {
-                f64::from_be_bytes(
+                let value = f64::from_be_bytes(
                     raw.try_into()
                         .expect("chunks_exact(8) yields eight-byte slices"),
-                )
-                .is_finite()
+                );
+                value.is_finite() && (value == 0.0 || value.is_normal())
             })
             .then_some(end)
     };
     let exact_end = finite_end(count);
     let successor_end = count.checked_add(1).and_then(finite_end);
     let end = match (exact_end, successor_end) {
+        (Some(exact), Some(successor))
+            if crate::nurbs::auxiliary_record_at(stream, exact)
+                .is_some_and(|record| record.end == successor) =>
+        {
+            exact
+        }
         (Some(exact), Some(successor))
             if plausible_next(stream, exact) && !plausible_next(stream, successor) =>
         {

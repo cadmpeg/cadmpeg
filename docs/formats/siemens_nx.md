@@ -472,7 +472,9 @@ Type 70 has the complete deltas record `0046 [ff], xmt, node_id:u32 BE, 04, (01 
 Type 45 has the complete deltas record
 `002d [ff], count:u32 BE, xmt, value[n]:f64 BE`, where `n` is `count` or
 `count + 1`. The count is nonzero, the XMT identity is non-null, and every
-value is finite. When both cardinalities fit the remaining bytes, a complete
+value is finite and either zero or normal. When both cardinalities fit the
+remaining bytes, a complete NURBS auxiliary record occupying the candidate
+extra value owns those bytes and selects the shorter form. Otherwise, a complete
 admitted record beginning after `count` values selects the shorter form unless
 the longer form also ends at an admitted record boundary. The optional `ff`
 envelope byte precedes the count. The record ends after its selected value
