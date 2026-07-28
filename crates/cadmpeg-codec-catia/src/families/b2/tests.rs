@@ -10,8 +10,8 @@ use crate::tests::{
     b2_link_5f_stream, b2_linked_counted_owner_stream, b2_linked_owner_stream, b2_long_61_stream,
     b2_offset_support_stream, b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream,
     b2_phase_tailed_cylinder_stream, b2_reference_list_stream, b2_revolution_stream,
-    b2_topology_metadata_stream, b2_torus_stream, b2_width_coded_owner_packet_stream,
-    b3_cylinder_stream, b3_offset_support_stream,
+    b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
+    b2_width_coded_owner_packet_stream, b3_cylinder_stream, b3_offset_support_stream,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -330,6 +330,38 @@ fn b2_torus_parser_rejects_invalid_frames_and_nonpositive_scales() {
     let mut stream = b2_torus_stream();
     stream[5 + 15 * 8..5 + 16 * 8].copy_from_slice(&f64::NAN.to_le_bytes());
     assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+}
+
+#[test]
+fn b2_sphere_parser_reads_radius_scaled_frame_bounds_and_construction_values() {
+    let records = crate::families::b2::records::b2_spheres(&b2_sphere_stream());
+    let [sphere] = records.as_slice() else {
+        panic!("one B2 sphere")
+    };
+    assert_eq!(sphere.pos, 0);
+    assert_eq!(sphere.center, [1.0, 2.0, 3.0]);
+    assert_eq!(sphere.direction_x, [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.direction_y, [0.0, 1.0, 0.0]);
+    assert_eq!(sphere.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(sphere.radius, 5.0);
+    assert_eq!(sphere.angular_bounds, [[-2.0, 4.0], [-1.0, 3.0]]);
+    assert_eq!(sphere.construction_radius, 7.0);
+    assert_eq!(sphere.chart_origin, 0.25);
+}
+
+#[test]
+fn b2_sphere_parser_rejects_invalid_scaled_frames_and_bounds() {
+    let mut stream = b2_sphere_stream();
+    stream[5 + 3 * 8..5 + 4 * 8].copy_from_slice(&4.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+
+    let mut stream = b2_sphere_stream();
+    stream[5 + 14 * 8..5 + 15 * 8].copy_from_slice(&(-3.0f64).to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+
+    let mut stream = b2_sphere_stream();
+    stream[5 + 18 * 8..5 + 19 * 8].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
 }
 
 #[test]

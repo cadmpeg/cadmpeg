@@ -908,6 +908,29 @@ pub struct B2Revolution {
     pub angular_scale: f64,
 }
 
+/// Radius-scaled sphere chart stored in a `b2 03 2a` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2Sphere {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Sphere centre.
+    pub center: [f64; 3],
+    /// First transverse unit direction.
+    pub direction_x: [f64; 3],
+    /// Second transverse unit direction.
+    pub direction_y: [f64; 3],
+    /// Sphere-axis unit direction.
+    pub axis: [f64; 3],
+    /// Sphere radius.
+    pub radius: f64,
+    /// Stored angular U and V intervals.
+    pub angular_bounds: [[f64; 2]; 2],
+    /// Positive construction radius.
+    pub construction_radius: f64,
+    /// Stored chart-origin scalar.
+    pub chart_origin: f64,
+}
+
 /// Doubly periodic torus chart stored in a `b2 03 2b` record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B2Torus {
@@ -1291,6 +1314,72 @@ pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
                     minor_radius,
                     major_scale,
                     minor_scale,
+                })
+        })
+        .collect()
+}
+
+/// Decode `b2 03 2a` radius-scaled sphere charts.
+#[must_use]
+pub fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
+    b_family_frames(data, 0x2a)
+        .into_iter()
+        .filter_map(|frame| {
+            let p = frame.payload;
+            (frame.end.checked_sub(p) == Some(152)).then_some(())?;
+            let values = read_f64_array::<19>(data, p)?;
+            let center: [f64; 3] = values[0..3].try_into().expect("three centre values");
+            let stored_x: [f64; 3] = values[3..6]
+                .try_into()
+                .expect("three first-direction values");
+            let stored_y: [f64; 3] = values[6..9]
+                .try_into()
+                .expect("three second-direction values");
+            let stored_axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
+            let radius = values[12];
+            let angular_bounds = [[values[13], values[14]], [values[15], values[16]]];
+            let construction_radius = values[17];
+            let chart_origin = values[18];
+            let squared_length = |value: [f64; 3]| {
+                value
+                    .iter()
+                    .map(|component| component * component)
+                    .sum::<f64>()
+            };
+            let scaled_length_is_radius = |value: [f64; 3]| {
+                (squared_length(value).sqrt() - radius).abs() <= 1e-12 * radius.abs().max(1.0)
+            };
+            (values.iter().all(|value| value.is_finite())
+                && radius > 0.0
+                && construction_radius > 0.0
+                && angular_bounds[0][0] < angular_bounds[0][1]
+                && angular_bounds[1][0] < angular_bounds[1][1]
+                && scaled_length_is_radius(stored_x)
+                && scaled_length_is_radius(stored_y)
+                && scaled_length_is_radius(stored_axis))
+            .then_some(())?;
+            let direction_x = stored_x.map(|value| value / radius);
+            let direction_y = stored_y.map(|value| value / radius);
+            let axis = stored_axis.map(|value| value / radius);
+            let cross = [
+                direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+                direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+                direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
+            ];
+            cross
+                .iter()
+                .zip(axis)
+                .all(|(cross, axis)| (cross - axis).abs() <= 1e-12)
+                .then_some(B2Sphere {
+                    pos: frame.pos,
+                    center,
+                    direction_x,
+                    direction_y,
+                    axis,
+                    radius,
+                    angular_bounds,
+                    construction_radius,
+                    chart_origin,
                 })
         })
         .collect()

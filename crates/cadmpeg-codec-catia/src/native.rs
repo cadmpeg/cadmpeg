@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 133;
+pub const CATIA_NATIVE_VERSION: u32 = 134;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -30,6 +30,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_owner_packets",
     "consolidated_pcurves",
     "consolidated_revolutions",
+    "consolidated_spheres",
     "consolidated_tori",
     "consolidated_vertex_identities",
     "design_objects",
@@ -169,6 +170,31 @@ pub struct CatiaConsolidatedPcurve {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub tail: Vec<u8>,
+}
+
+/// One structurally complete consolidated `B:2a` sphere chart.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedSphere {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Sphere centre.
+    pub center: [f64; 3],
+    /// First transverse unit direction.
+    pub direction_x: [f64; 3],
+    /// Second transverse unit direction.
+    pub direction_y: [f64; 3],
+    /// Sphere-axis unit direction.
+    pub axis: [f64; 3],
+    /// Sphere radius.
+    pub radius: f64,
+    /// Stored angular U and V intervals.
+    pub angular_bounds: [[f64; 2]; 2],
+    /// Positive construction radius.
+    pub construction_radius: f64,
+    /// Stored chart-origin scalar.
+    pub chart_origin: f64,
 }
 
 /// One structurally complete consolidated `B:2b` torus chart.
@@ -2087,6 +2113,9 @@ pub struct CatiaNative {
     /// Consolidated revolution carriers retained before profile resolution.
     #[serde(default)]
     pub consolidated_revolutions: Vec<CatiaConsolidatedRevolution>,
+    /// Exact consolidated sphere charts.
+    #[serde(default)]
+    pub consolidated_spheres: Vec<CatiaConsolidatedSphere>,
     /// Exact consolidated torus charts.
     #[serde(default)]
     pub consolidated_tori: Vec<CatiaConsolidatedTorus>,
@@ -2129,6 +2158,7 @@ impl Default for CatiaNative {
             consolidated_owner_packets: Vec::new(),
             consolidated_pcurves: Vec::new(),
             consolidated_revolutions: Vec::new(),
+            consolidated_spheres: Vec::new(),
             consolidated_tori: Vec::new(),
             consolidated_vertex_identities: Vec::new(),
             design_objects: Vec::new(),
@@ -2246,6 +2276,25 @@ fn consolidated_revolutions(bytes: &[u8]) -> Vec<CatiaConsolidatedRevolution> {
             angular_range: revolution.angular_range,
             profile_range: revolution.profile_range,
             angular_scale: revolution.angular_scale,
+        })
+        .collect()
+}
+
+fn consolidated_spheres(bytes: &[u8]) -> Vec<CatiaConsolidatedSphere> {
+    crate::families::b2::records::b2_spheres(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, sphere)| CatiaConsolidatedSphere {
+            id: format!("catia:consolidated:sphere#{index}"),
+            byte_offset: sphere.pos as u64,
+            center: sphere.center,
+            direction_x: sphere.direction_x,
+            direction_y: sphere.direction_y,
+            axis: sphere.axis,
+            radius: sphere.radius,
+            angular_bounds: sphere.angular_bounds,
+            construction_radius: sphere.construction_radius,
+            chart_origin: sphere.chart_origin,
         })
         .collect()
 }
@@ -2742,6 +2791,64 @@ fn validate_consolidated_revolutions(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated revolution `{}` is structurally invalid",
                 revolution.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_spheres(
+    spheres: &[CatiaConsolidatedSphere],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, sphere) in spheres.iter().enumerate() {
+        let expected_id = format!("catia:consolidated:sphere#{index}");
+        let dot = |first: [f64; 3], second: [f64; 3]| {
+            first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
+        };
+        let cross = [
+            sphere.direction_x[1] * sphere.direction_y[2]
+                - sphere.direction_x[2] * sphere.direction_y[1],
+            sphere.direction_x[2] * sphere.direction_y[0]
+                - sphere.direction_x[0] * sphere.direction_y[2],
+            sphere.direction_x[0] * sphere.direction_y[1]
+                - sphere.direction_x[1] * sphere.direction_y[0],
+        ];
+        if sphere.id != expected_id
+            || sphere
+                .center
+                .iter()
+                .chain(&sphere.direction_x)
+                .chain(&sphere.direction_y)
+                .chain(&sphere.axis)
+                .chain(sphere.angular_bounds.iter().flatten())
+                .chain(&[
+                    sphere.radius,
+                    sphere.construction_radius,
+                    sphere.chart_origin,
+                ])
+                .any(|value| !value.is_finite())
+            || [sphere.direction_x, sphere.direction_y, sphere.axis]
+                .into_iter()
+                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1e-12)
+            || dot(sphere.direction_x, sphere.direction_y).abs() > 1e-12
+            || dot(sphere.direction_x, sphere.axis).abs() > 1e-12
+            || dot(sphere.direction_y, sphere.axis).abs() > 1e-12
+            || cross
+                .iter()
+                .zip(sphere.axis)
+                .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
+            || sphere.radius <= 0.0
+            || sphere.construction_radius <= 0.0
+            || sphere
+                .angular_bounds
+                .iter()
+                .any(|range| range[0] >= range[1])
+            || index > 0 && spheres[index - 1].byte_offset >= sphere.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated sphere `{}` is structurally invalid",
+                sphere.id
             )));
         }
     }
@@ -3568,6 +3675,7 @@ impl CatiaNative {
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
         let consolidated_revolutions = consolidated_revolutions(bytes);
+        let consolidated_spheres = consolidated_spheres(bytes);
         let consolidated_tori = consolidated_tori(bytes);
         let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes);
         let consolidated_edge_runs =
@@ -3585,6 +3693,7 @@ impl CatiaNative {
             consolidated_owner_packets,
             consolidated_pcurves,
             consolidated_revolutions,
+            consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
             design_objects,
@@ -3972,6 +4081,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_revolutions")?;
         consolidated_revolutions.sort_by_key(|revolution| revolution.byte_offset);
         validate_consolidated_revolutions(&consolidated_revolutions)?;
+        let mut consolidated_spheres: Vec<CatiaConsolidatedSphere> =
+            namespace.arena_as("consolidated_spheres")?;
+        consolidated_spheres.sort_by_key(|sphere| sphere.byte_offset);
+        validate_consolidated_spheres(&consolidated_spheres)?;
         let mut consolidated_tori: Vec<CatiaConsolidatedTorus> =
             namespace.arena_as("consolidated_tori")?;
         consolidated_tori.sort_by_key(|torus| torus.byte_offset);
@@ -4008,6 +4121,7 @@ impl CatiaNative {
             consolidated_owner_packets,
             consolidated_pcurves,
             consolidated_revolutions,
+            consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
             design_objects,
@@ -4083,6 +4197,7 @@ impl CatiaNative {
         )?;
         namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
         namespace.set_arena("consolidated_revolutions", &self.consolidated_revolutions)?;
+        namespace.set_arena("consolidated_spheres", &self.consolidated_spheres)?;
         namespace.set_arena("consolidated_tori", &self.consolidated_tori)?;
         namespace.set_arena(
             "consolidated_vertex_identities",
@@ -4124,6 +4239,7 @@ impl CatiaNative {
             consolidated_owner_packets,
             consolidated_pcurves,
             consolidated_revolutions,
+            consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
             design_objects,
@@ -4159,6 +4275,7 @@ impl CatiaNative {
         namespace.set_arena("consolidated_owner_packets", &consolidated_owner_packets)?;
         namespace.set_arena("consolidated_pcurves", &consolidated_pcurves)?;
         namespace.set_arena("consolidated_revolutions", &consolidated_revolutions)?;
+        namespace.set_arena("consolidated_spheres", &consolidated_spheres)?;
         namespace.set_arena("consolidated_tori", &consolidated_tori)?;
         namespace.set_arena(
             "consolidated_vertex_identities",

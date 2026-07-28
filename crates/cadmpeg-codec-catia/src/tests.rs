@@ -1161,6 +1161,23 @@ pub(crate) fn b2_torus_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn b2_sphere_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x2a, 152, 0x05];
+    let mut values = [0.0f64; 19];
+    values[0..3].copy_from_slice(&[1.0, 2.0, 3.0]);
+    values[3..6].copy_from_slice(&[5.0, 0.0, 0.0]);
+    values[6..9].copy_from_slice(&[0.0, 5.0, 0.0]);
+    values[9..12].copy_from_slice(&[0.0, 0.0, 5.0]);
+    values[12] = 5.0;
+    values[13..17].copy_from_slice(&[-2.0, 4.0, -1.0, 3.0]);
+    values[17] = 7.0;
+    values[18] = 0.25;
+    for value in values {
+        record.extend_from_slice(&le_f64(value));
+    }
+    record
+}
+
 pub(crate) fn b2_group_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x65, 0x04, 0x05, 0x81, 0x03, 0x05, 0x0d, 0xb2, 0x03, 0x60, 0x02, 0x05, 0x81,
@@ -3618,6 +3635,37 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA torus for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_exact_consolidated_sphere_charts() {
+    let native = crate::native::CatiaNative::decode(&b2_sphere_stream());
+    let [sphere] = native.consolidated_spheres.as_slice() else {
+        panic!("one consolidated sphere")
+    };
+    assert_eq!(sphere.center, [1.0, 2.0, 3.0]);
+    assert_eq!(sphere.direction_x, [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.direction_y, [0.0, 1.0, 0.0]);
+    assert_eq!(sphere.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(sphere.radius, 5.0);
+    assert_eq!(sphere.angular_bounds, [[-2.0, 4.0], [-1.0, 3.0]]);
+    assert_eq!(sphere.construction_radius, 7.0);
+    assert_eq!(sphere.chart_origin, 0.25);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store CATIA sphere");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA sphere"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_spheres[0].angular_bounds[1].reverse();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA sphere for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 

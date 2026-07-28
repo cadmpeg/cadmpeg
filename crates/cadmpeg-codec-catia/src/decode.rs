@@ -354,6 +354,10 @@ fn finish_decode(
             native.consolidated_revolutions.len(),
         ),
         (
+            "decoded_consolidated_sphere_count".to_string(),
+            native.consolidated_spheres.len(),
+        ),
+        (
             "decoded_consolidated_torus_count".to_string(),
             native.consolidated_tori.len(),
         ),
