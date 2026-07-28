@@ -18,6 +18,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The semantic binding among complete two-scalar numeric tuples, `2DPoint` field labels, and `PRTSketch` field labels is unresolved. Field-class labels and inter-object references do not establish coordinate units, geometry identity, or sketch membership.
 - The semantic roles of nonempty `PRTSketch` and `Sketch` atom, list, and reference payloads are unresolved.
 - Constructed and support-face sketch placement frames, construction state, profile membership, sketch-geometry classes, dimensional constraints, and non-dimensional constraints are unresolved.
+- The feature-instance grammar that binds empty mainstream operation fields, definition-bound values, and structurally owned operand objects into one ordered operation is unresolved. Operation-named field classes and structural ownership alone do not establish feature identity, operands, outputs, or replay order.
 
 ## Standard nested `V5_CFV2`
 

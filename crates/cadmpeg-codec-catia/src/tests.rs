@@ -10925,35 +10925,37 @@ fn visualization_values_do_not_assert_missing_design_intent() {
 }
 
 #[test]
-fn decode_does_not_promote_field_class_names_to_features() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_design_class("Groove")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode field-class vocabulary");
+fn decode_does_not_promote_operation_field_class_names_to_features() {
+    for class in ["Groove", "GSMHelix"] {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_design_class(class)),
+                &DecodeOptions::default(),
+            )
+            .expect("decode field-class vocabulary");
 
-    assert!(decoded.ir.model.features.is_empty());
-    let native = crate::native::CatiaNative::load(
-        decoded
-            .ir
-            .native
-            .namespace("catia")
-            .expect("CATIA native namespace"),
-    )
-    .expect("load retained field-class vocabulary");
-    assert_eq!(
-        native.design_objects[0]
-            .field_classes
-            .iter()
-            .map(|class| class.name.as_str())
-            .collect::<Vec<_>>(),
-        ["CurrentFeature", "Groove"]
-    );
-    assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains("neutral features")
-    }));
+        assert!(decoded.ir.model.features.is_empty());
+        let native = crate::native::CatiaNative::load(
+            decoded
+                .ir
+                .native
+                .namespace("catia")
+                .expect("CATIA native namespace"),
+        )
+        .expect("load retained field-class vocabulary");
+        assert_eq!(
+            native.design_objects[0]
+                .field_classes
+                .iter()
+                .map(|class| class.name.as_str())
+                .collect::<Vec<_>>(),
+            ["CurrentFeature", class]
+        );
+        assert!(decoded.report.losses.iter().any(|loss| {
+            loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+                && loss.message.contains("neutral features")
+        }));
+    }
 }
 
 #[test]
