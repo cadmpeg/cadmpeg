@@ -107,6 +107,21 @@ pub struct ReferenceMarkerPacket {
     pub end: usize,
 }
 
+/// One inline REGION schema declaration and its four-reference state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegionSchemaDeclaration {
+    /// Non-null stream-local declaration identity.
+    pub xmt: u32,
+    /// Serialized big-endian state word.
+    pub state_word: u32,
+    /// Four ordered stream-local XMT references.
+    pub references: [u32; 4],
+    /// First byte of the declaration.
+    pub offset: usize,
+    /// First byte following the declaration.
+    pub end: usize,
+}
+
 /// Result of a deterministic deltas record walk.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Census {
@@ -124,6 +139,8 @@ pub struct Census {
     pub reference_state_packets: Vec<ReferenceStatePacket>,
     /// Complete reference-marker packets in source order.
     pub reference_marker_packets: Vec<ReferenceMarkerPacket>,
+    /// Complete inline REGION schema declarations in source order.
+    pub region_schema_declarations: Vec<RegionSchemaDeclaration>,
     /// Complete-record counts keyed by Parasolid family name.
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
@@ -529,6 +546,12 @@ pub fn walk(stream: &[u8]) -> Census {
         .iter()
         .map(|packet| packet.end - packet.offset)
         .sum::<usize>();
+    census.region_schema_declarations = region_schema_declarations(stream, &census);
+    census.bytes_decoded += census
+        .region_schema_declarations
+        .iter()
+        .map(|declaration| declaration.end - declaration.offset)
+        .sum::<usize>();
     census.reference_marker_packets = reference_marker_packets(stream, &census);
     census.bytes_decoded += census
         .reference_marker_packets
@@ -673,6 +696,49 @@ fn reference_marker_packets(stream: &[u8], census: &Census) -> Vec<ReferenceMark
         .collect()
 }
 
+const REGION_SCHEMA_HEADER: &[u8] = &[
+    0x00, 0x13, 0x09, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x05, 0x66, 0x72, 0x61, 0x6d, 0x65,
+    0x00, 0xe6, 0x00, 0x01, 0x43, 0x41, 0x05, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x00, 0x0c, 0x00, 0x01,
+    0x5a,
+];
+
+fn region_schema_declarations(stream: &[u8], census: &Census) -> Vec<RegionSchemaDeclaration> {
+    uncovered_spans(stream.len(), census, true)
+        .filter_map(|(offset, gap_end)| region_schema_declaration(stream, offset, gap_end))
+        .collect()
+}
+
+fn region_schema_declaration(
+    stream: &[u8],
+    offset: usize,
+    gap_end: usize,
+) -> Option<RegionSchemaDeclaration> {
+    (stream.get(offset..offset.checked_add(REGION_SCHEMA_HEADER.len())?)
+        == Some(REGION_SCHEMA_HEADER))
+    .then_some(())?;
+    let mut at = offset.checked_add(REGION_SCHEMA_HEADER.len())?;
+    let (xmt, consumed) = read_xmt(stream, at)?;
+    (xmt > 1).then_some(())?;
+    at = at.checked_add(consumed)?;
+    let state_word = be::u32_at(stream, at)?;
+    at = at.checked_add(4)?;
+    let mut references = [0; 4];
+    for reference in &mut references {
+        let (value, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        (stream.get(at) == Some(&1)).then_some(())?;
+        at = at.checked_add(1)?;
+        *reference = value;
+    }
+    (at <= gap_end).then_some(RegionSchemaDeclaration {
+        xmt,
+        state_word,
+        references,
+        offset,
+        end: at,
+    })
+}
+
 fn reference_marker_packet(
     stream: &[u8],
     offset: usize,
@@ -766,6 +832,12 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
                 .reference_marker_packets
                 .iter()
                 .map(|packet| (packet.offset, packet.end)),
+        );
+        covered.extend(
+            census
+                .region_schema_declarations
+                .iter()
+                .map(|declaration| (declaration.offset, declaration.end)),
         );
     }
     covered.sort_unstable();

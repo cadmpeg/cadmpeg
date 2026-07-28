@@ -494,8 +494,14 @@ The leading reference is non-null and uses compact or extended XMT encoding.
 `marker` is `53` or `56`. The two remaining references are the null XMT value
 `1`. The packet ends after the final status byte.
 
-The union of those events, tagged-reference lanes, reference-state packets, and
-reference-marker packets defines the typed
+An inline REGION schema declaration begins with the exact header
+`00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.
+The header is followed by `xmt, state_word:u32 BE, ref_status[4]`. `xmt` is
+non-null. Each reference uses compact or extended XMT encoding and is followed
+by status `01`. The declaration ends after the fourth status byte.
+
+The union of those events, tagged-reference lanes, reference-state packets,
+reference-marker packets, and inline REGION schema declarations defines the typed
 deltas-event coverage. Each maximal nonempty complement interval in the
 inflated stream is one residual span. Residual spans retain their exact offset,
 length, and SHA-256 independently of the containing compressed stream.

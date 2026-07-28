@@ -225,6 +225,12 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                         census.reference_marker_packets.len().to_string(),
                     );
                 }
+                if !census.region_schema_declarations.is_empty() {
+                    attributes.insert(
+                        "records.delta.region_schema_declarations".to_string(),
+                        census.region_schema_declarations.len().to_string(),
+                    );
+                }
                 for (family, count) in census.full_counts {
                     attributes.insert(
                         format!("records.delta.full.{}", family.to_ascii_lowercase()),

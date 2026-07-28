@@ -151,6 +151,27 @@ pub struct ParasolidDeltasReferenceMarkerPacket {
     pub inflated_offset: u64,
 }
 
+/// Inline REGION schema declaration in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasRegionSchemaDeclaration {
+    /// Globally unique declaration identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Non-null stream-local declaration XMT identity.
+    pub xmt: u32,
+    /// Serialized big-endian state word.
+    pub state_word: u32,
+    /// Four ordered stream-local XMT references.
+    pub references: [u32; 4],
+    /// Exact declaration byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact declaration bytes.
+    pub sha256: String,
+    /// First declaration byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Maximal inflated-stream span outside every admitted deltas event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidDeltasResidualSpan {
@@ -174,6 +195,7 @@ pub(crate) struct ParasolidDeltasEvents {
     pub(crate) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(crate) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
     pub(crate) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
+    pub(crate) region_schema_declarations: Vec<ParasolidDeltasRegionSchemaDeclaration>,
     pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
 }
 
@@ -187,6 +209,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         tagged_reference_lanes: Vec::new(),
         reference_state_packets: Vec::new(),
         reference_marker_packets: Vec::new(),
+        region_schema_declarations: Vec::new(),
         residual_spans: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -337,6 +360,24 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     inflated_offset: packet.offset as u64,
                 });
         }
+        for declaration in census.region_schema_declarations {
+            let bytes = &stream.inflated[declaration.offset..declaration.end];
+            events
+                .region_schema_declarations
+                .push(ParasolidDeltasRegionSchemaDeclaration {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-region-schema#{}-{}",
+                        declaration.offset, declaration.xmt
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: declaration.xmt,
+                    state_word: declaration.state_word,
+                    references: declaration.references,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: declaration.offset as u64,
+                });
+        }
     }
     events.records.sort_by(|left, right| left.id.cmp(&right.id));
     events
@@ -356,6 +397,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .reference_marker_packets
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .region_schema_declarations
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .residual_spans
@@ -1882,6 +1926,56 @@ mod tests {
         assert_eq!(
             packet.sha256,
             cadmpeg_ir::hash::sha256_hex(&bytes[packet_offset..packet_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_subtract_region_schema_declarations_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let declaration_offset = bytes.len();
+        bytes.extend([
+            0x00, 0x13, 0x09, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x05, 0x66, 0x72, 0x61,
+            0x6d, 0x65, 0x00, 0xe6, 0x00, 0x01, 0x43, 0x41, 0x05, 0x6f, 0x77, 0x6e, 0x65, 0x72,
+            0x00, 0x0c, 0x00, 0x01, 0x5a,
+        ]);
+        bytes.extend_from_slice(&11u16.to_be_bytes());
+        bytes.extend_from_slice(&5u32.to_be_bytes());
+        for reference in [1u16, 3, 1, 9] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+            bytes.push(1);
+        }
+        let declaration_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xcc, 0xdd]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.region_schema_declarations.len(), 1);
+        let declaration = &events.region_schema_declarations[0];
+        assert_eq!(declaration.xmt, 11);
+        assert_eq!(declaration.state_word, 5);
+        assert_eq!(declaration.references, [1, 3, 1, 9]);
+        assert_eq!(declaration.byte_len, 51);
+        assert_eq!(declaration.inflated_offset, declaration_offset as u64);
+        assert_eq!(
+            declaration.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[declaration_offset..declaration_end])
         );
         assert_eq!(events.residual_spans.len(), 2);
         assert_eq!(events.residual_spans[0].byte_len, 2);

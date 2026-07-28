@@ -7313,6 +7313,43 @@ fn deltas_reference_marker_packets_decode_extended_references_atomically() {
 }
 
 #[test]
+fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
+    let mut bytes = vec![
+        0x00, 0x13, 0x09, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x05, 0x66, 0x72, 0x61, 0x6d,
+        0x65, 0x00, 0xe6, 0x00, 0x01, 0x43, 0x41, 0x05, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x00, 0x0c,
+        0x00, 0x01, 0x5a,
+    ];
+    bytes.extend_from_slice(&[0xe3, 0xbf, 0, 1]);
+    bytes.extend_from_slice(&5u32.to_be_bytes());
+    for reference in [1u16, 3, 1, 9] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    let declaration_end = bytes.len();
+    bytes.extend([0, 7, 1, 0, 1, 1, 0x56, 0, 1, 1]);
+
+    let census = crate::deltas::walk(&bytes);
+
+    assert_eq!(census.region_schema_declarations.len(), 1);
+    let declaration = &census.region_schema_declarations[0];
+    assert_eq!(declaration.xmt, 40_000);
+    assert_eq!(declaration.state_word, 5);
+    assert_eq!(declaration.references, [1, 3, 1, 9]);
+    assert_eq!(declaration.offset, 0);
+    assert_eq!(declaration.end, declaration_end);
+    assert_eq!(census.reference_marker_packets.len(), 1);
+    assert_eq!(census.reference_marker_packets[0].offset, declaration_end);
+    assert_eq!(census.reference_marker_packets[0].reference, 7);
+    assert_eq!(census.bytes_decoded, bytes.len());
+
+    let mut truncated = bytes[..declaration_end - 1].to_vec();
+    truncated.extend([0, 7, 1, 0, 1, 1, 0x56, 0, 1, 1]);
+    assert!(crate::deltas::walk(&truncated)
+        .region_schema_declarations
+        .is_empty());
+}
+
+#[test]
 fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     let mut bytes = vec![0, 12, 0, 3];
     bytes.extend_from_slice(&223u32.to_be_bytes());
@@ -10893,6 +10930,7 @@ mod golden {
         "parasolid_deltas_tagged_reference_lanes",
         "parasolid_deltas_reference_state_packets",
         "parasolid_deltas_reference_marker_packets",
+        "parasolid_deltas_region_schema_declarations",
         "parasolid_deltas_term_use_numeric_tails",
         "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",
@@ -11619,7 +11657,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (189), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (190), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -11628,7 +11666,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 189, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 190, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

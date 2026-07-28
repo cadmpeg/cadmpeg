@@ -22,6 +22,7 @@ This document records unresolved NX `.prt` byte semantics.
 - The field roles and owners of deltas tagged-reference lanes are unspecified.
 - The field roles and owners of deltas four-reference state packets are unspecified.
 - The field roles, marker meaning, and owners of deltas reference-marker packets are unspecified.
+- The field roles of inline deltas REGION schema declarations are unspecified.
 
 ## Object model and body composition
 

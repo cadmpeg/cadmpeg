@@ -6639,6 +6639,12 @@ fn source_meta(scan: &Scan) -> SourceMeta {
                 census.reference_marker_packets.len().to_string(),
             );
         }
+        if !census.region_schema_declarations.is_empty() {
+            attributes.insert(
+                format!("deltas.{index}.region_schema_declarations"),
+                census.region_schema_declarations.len().to_string(),
+            );
+        }
         for (name, count) in census.full_counts {
             attributes.insert(format!("deltas.{index}.full.{name}"), count.to_string());
         }
@@ -6816,7 +6822,8 @@ fn build_geometry_report(
                  bounded bytes and digests. Count-selected numeric tails after \
                  term-use endpoints were retained with their ordered finite binary64 values. Maximal \
                  event gaps containing only typed stream-local references and complete \
-                 four-reference state packets and reference-marker packets were retained in order. \
+                 four-reference state packets, reference-marker packets, and inline REGION schema \
+                 declarations were retained in order. \
                  Spans outside those events were retained with exact inflated-stream bounds and \
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
