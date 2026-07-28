@@ -3295,6 +3295,27 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (compact_at + 49) as u64);
     assert_eq!(decoded.reference, None);
 
+    let compact_450_at = bytes.len();
+    let mut compact_450 = vec![0; 326];
+    compact_450[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_450[4..7].copy_from_slice(b"450");
+    compact_450[7..11].copy_from_slice(&59u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 50 + ordinal * 8;
+        compact_450[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact_450.extend_from_slice(&3u32.to_le_bytes());
+    compact_450.extend_from_slice(b"259");
+    compact_450.extend_from_slice(&59u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_450);
+    let mut compact_450_scope = scope.clone();
+    compact_450_scope.reference_members = vec![59];
+    let decoded = exact_work_plane_frame(&bytes, &compact_450_scope)
+        .expect("class-450 compact direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (compact_450_at + 50) as u64);
+    assert_eq!(decoded.reference, None);
+
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
     move_frame[0..4].copy_from_slice(&3u32.to_le_bytes());
