@@ -53,10 +53,9 @@ and emits loops, coedges, edges, and endpoint assignments when the trim,
 support, and vertex tables form a complete unambiguous graph. FBB-only,
 zero-entity, E5, and object-stream layouts can yield analytic or NURBS carriers
 and selected edge bindings. Complete scalar formula graphs transfer typed
-parameters. Exact two-coordinate `2DPoint` records with one `PRTSketch` owner
-transfer as isolated planar sketch points with unresolved placement. Unresolved
-native bytes remain attached to the IR as unknown records, and the report
-describes missing geometry, topology, design intent, or attributes.
+parameters. Unresolved native bytes remain attached to the IR as unknown
+records, and the report describes missing geometry, topology, design intent, or
+attributes.
 
 Use `CatiaCodec::inspect` to identify the storage variant and list catalogued
 logical streams without decoding entities. Set `DecodeOptions::container_only`

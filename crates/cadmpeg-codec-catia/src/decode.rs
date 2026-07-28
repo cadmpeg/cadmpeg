@@ -17,11 +17,7 @@ use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
-use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
-};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, Exactness, SourceFidelity};
 
@@ -71,7 +67,6 @@ fn finish_decode(
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
     let formula_transfer = transfer_formula_parameters(&mut ir, &native, &mut annotations);
-    let sketch_transfer = transfer_sketch_points(&mut ir, &native);
     let object_record_count: usize = native
         .object_graphs
         .iter()
@@ -314,17 +309,8 @@ fn finish_decode(
         .intersection(&structurally_owned_records)
         .cloned()
         .collect::<HashSet<_>>();
-    let transferred_sketch_design_records = sketch_transfer
-        .consumed_object_records
-        .intersection(&structurally_owned_records)
-        .cloned()
-        .collect::<HashSet<_>>();
-    let transferred_design_records = transferred_formula_design_records
-        .union(&transferred_sketch_design_records)
-        .cloned()
-        .collect::<HashSet<_>>();
     let unresolved_object_record_count =
-        object_record_count.saturating_sub(transferred_design_records.len());
+        object_record_count.saturating_sub(transferred_formula_design_records.len());
     let unresolved_design_object_count = native
         .design_objects
         .iter()
@@ -332,7 +318,7 @@ fn finish_decode(
             object
                 .fields
                 .iter()
-                .any(|field| !transferred_design_records.contains(field))
+                .any(|field| !transferred_formula_design_records.contains(field))
         })
         .count();
     let value_field_count = native
@@ -552,10 +538,7 @@ fn finish_decode(
             "transferred_formula_design_record_count".to_string(),
             transferred_formula_design_records.len(),
         ),
-        (
-            "transferred_sketch_design_record_count".to_string(),
-            transferred_sketch_design_records.len(),
-        ),
+        ("transferred_sketch_design_record_count".to_string(), 0),
         (
             "unresolved_design_record_count".to_string(),
             unresolved_object_record_count,
@@ -587,7 +570,7 @@ fn finish_decode(
                 native.design_objects.len(),
                 formula_transfer.parameter_count,
                 transferred_formula_design_records.len(),
-                transferred_sketch_design_records.len(),
+                0,
             ),
             provenance: None,
         });
@@ -606,207 +589,6 @@ fn finish_decode(
     }
     native.store_owned(ir.native.namespace_mut("catia"))?;
     decode_result(ir, report, annotations, unknowns)
-}
-
-fn transfer_sketch_points(ir: &mut CadIr, native: &CatiaNative) -> SketchTransfer {
-    let entities = native
-        .entity_records
-        .iter()
-        .map(|entity| (entity.object_record.as_str(), entity))
-        .collect::<HashMap<_, _>>();
-    let records = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record))
-        .collect::<HashMap<_, _>>();
-    let design_objects = native
-        .design_objects
-        .iter()
-        .map(|object| (object.id.as_str(), object))
-        .collect::<HashMap<_, _>>();
-    let sketch_declarations = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .filter(|record| {
-            record.class_name.as_deref() == Some("PRTSketch")
-                && record.subtype == crate::object_graph::PayloadSubtype::Empty
-                && record.storage_ref.is_none()
-                && record.references.is_empty()
-        })
-        .filter_map(|record| Some((record.design_object.as_deref()?, record.id.clone())))
-        .fold(
-            HashMap::<&str, BTreeSet<String>>::new(),
-            |mut declarations, (object, field)| {
-                declarations.entry(object).or_default().insert(field);
-                declarations
-            },
-        );
-    let existing_sketch_ids = ir
-        .model
-        .sketches
-        .iter()
-        .map(|sketch| sketch.id.clone())
-        .collect::<HashSet<_>>();
-    let existing_entity_ids = ir
-        .model
-        .sketch_entities
-        .iter()
-        .map(|entity| entity.id.clone())
-        .collect::<HashSet<_>>();
-    let mut points_by_sketch = HashMap::<String, (u64, Vec<SketchPointCandidate>)>::new();
-    let mut transfer = SketchTransfer::default();
-
-    for object in &native.design_objects {
-        let Some(owner_record) = object.owner_record.as_deref() else {
-            continue;
-        };
-        let Some(entity) = entities.get(owner_record) else {
-            continue;
-        };
-        let Some(position) = exact_point2(entity.numeric_tuple.as_ref()) else {
-            continue;
-        };
-        let Some(coordinate_record) = records.get(owner_record) else {
-            continue;
-        };
-        let mut sketch_targets = BTreeMap::<&str, bool>::new();
-        for relation in &object.relations {
-            if relation
-                .source_class
-                .as_ref()
-                .is_none_or(|class| class.name != "2DPoint")
-            {
-                continue;
-            }
-            let Some(target) = design_objects.get(relation.target_design_object.as_str()) else {
-                continue;
-            };
-            let Some(declarations) = sketch_declarations.get(target.id.as_str()) else {
-                continue;
-            };
-            if declarations.contains(&relation.target_field) {
-                let closes_coordinate_field = relation.source_field == owner_record
-                    && exact_single_field_reference(coordinate_record, relation.target_entity_id);
-                sketch_targets
-                    .entry(target.id.as_str())
-                    .and_modify(|complete| *complete |= closes_coordinate_field)
-                    .or_insert(closes_coordinate_field);
-            }
-        }
-        let mut sketch_targets = sketch_targets.into_iter();
-        let Some((sketch_target, coordinate_field_complete)) = sketch_targets.next() else {
-            continue;
-        };
-        if sketch_targets.next().is_some() {
-            continue;
-        }
-        let declaration_fields = sketch_declarations
-            .get(sketch_target)
-            .expect("sketch target was selected from the declaration map")
-            .clone();
-        let sketch_object = design_objects
-            .get(sketch_target)
-            .expect("sketch target was selected from the design-object map");
-        points_by_sketch
-            .entry(sketch_object.id.clone())
-            .or_insert_with(|| (sketch_object.first_field_byte_offset, Vec::new()))
-            .1
-            .push(SketchPointCandidate {
-                design_object: object.id.clone(),
-                native_entity: entity.id.clone(),
-                coordinate_field: coordinate_field_complete.then(|| owner_record.to_string()),
-                declaration_fields,
-                source_order: object.first_field_byte_offset,
-                position,
-            });
-    }
-
-    let mut sketch_groups = points_by_sketch.into_iter().collect::<Vec<_>>();
-    sketch_groups.sort_by_key(|(_, (source_order, _))| *source_order);
-    for (native_sketch, (_, mut points)) in sketch_groups {
-        let sketch_id = SketchId(format!("{native_sketch}:sketch"));
-        if existing_sketch_ids.contains(&sketch_id) {
-            continue;
-        }
-        points.sort_by_key(|point| point.source_order);
-        let mut entities = Vec::new();
-        for point in points {
-            let id = SketchEntityId(format!("{}:sketch-point", point.design_object));
-            if existing_entity_ids.contains(&id) {
-                continue;
-            }
-            transfer
-                .consumed_object_records
-                .extend(point.coordinate_field);
-            transfer
-                .consumed_object_records
-                .extend(point.declaration_fields);
-            entities.push(SketchEntity {
-                id,
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: Some(point.native_entity),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Point {
-                    position: point.position,
-                },
-            });
-        }
-        if entities.is_empty() {
-            continue;
-        }
-        ir.model.sketches.push(Sketch {
-            id: sketch_id,
-            name: None,
-            configuration: None,
-            placement: SketchPlacement::Unresolved,
-            profiles: Vec::new(),
-            native_ref: Some(native_sketch),
-        });
-        ir.model.sketch_entities.extend(entities);
-    }
-    transfer
-}
-
-fn exact_point2(tuple: Option<&entity_table::NumericTuple>) -> Option<Point2> {
-    let tuple = tuple?;
-    let [entity_table::NumericTupleItem::Binary64 { bits: x, .. }, entity_table::NumericTupleItem::Binary64 { bits: y, .. }] =
-        tuple.items.as_slice()
-    else {
-        return None;
-    };
-    let (x, y) = (f64::from_bits(*x), f64::from_bits(*y));
-    (x.is_finite() && y.is_finite()).then(|| Point2::new(x, y))
-}
-
-fn exact_single_field_reference(
-    record: &crate::native::CatiaObjectRecord,
-    target_entity_id: u32,
-) -> bool {
-    matches!(
-        record.payload.fields.as_slice(),
-        [
-            crate::object_graph::PayloadField::Reference { value, .. },
-            crate::object_graph::PayloadField::Terminator
-        ] if *value == target_entity_id
-    )
-}
-
-struct SketchPointCandidate {
-    design_object: String,
-    native_entity: String,
-    coordinate_field: Option<String>,
-    declaration_fields: BTreeSet<String>,
-    source_order: u64,
-    position: Point2,
-}
-
-#[derive(Default)]
-struct SketchTransfer {
-    consumed_object_records: HashSet<String>,
 }
 
 fn transfer_formula_parameters(
