@@ -6098,6 +6098,22 @@ mod marker_tests {
             extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]),
             Some([[0.014, 0.016], [0.0165, 0.029]])
         );
+        payload[96..98].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(
+            extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]),
+            Some([[0.014, 0.016], [0.0165, 0.029]])
+        );
+        payload[96..98].fill(0);
+        assert_eq!(
+            extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]),
+            None
+        );
+        payload[96..98].fill(0xff);
+        assert_eq!(
+            extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]),
+            None
+        );
+        payload[96..98].copy_from_slice(&8u16.to_le_bytes());
         payload[110] = 0;
         assert_eq!(
             extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]),
@@ -36727,6 +36743,8 @@ fn extended_declared_inline_line_endpoints(
     markers: &[&SketchInputEntity],
 ) -> Option<[[f64; 2]; 2]> {
     let offset = usize::try_from(curve.offset).ok()?;
+    let declaration = payload.get(offset + 96..offset + 106)?;
+    let declaration_id = u16::from_le_bytes(declaration[..2].try_into().ok()?);
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
@@ -36742,8 +36760,9 @@ fn extended_declared_inline_line_endpoints(
         || payload.get(offset + 74..offset + 78) != Some(&[0x00, 0x00, 0x02, 0x00])
         || payload.get(offset + 78..offset + 84) != Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
         || payload.get(offset + 84..offset + 96) != Some(b"sgLineHandle")
-        || payload.get(offset + 96..offset + 106)
-            != Some(&[0x08, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
+        || matches!(declaration_id, 0 | u16::MAX)
+        || declaration[2..6] != [0xff; 4]
+        || declaration[6..10] != [0; 4]
         || payload.get(offset + 110..offset + 114) != Some(&[0xff; 4])
         || payload.get(offset + 114..offset + 118) != Some(&[0; 4])
         || payload.get(offset + 118..offset + 124) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
