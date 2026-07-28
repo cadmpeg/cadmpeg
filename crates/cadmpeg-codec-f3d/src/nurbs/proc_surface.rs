@@ -2931,6 +2931,11 @@ fn decode_revision_surface_tail(
     int_width: usize,
 ) -> Option<(i64, f64, [Vec<f64>; 6], bool)> {
     let tail_enum = take_tagged_int(span, position, 0x15, int_width)?;
+    // Only the selector-zero grammar, in which a solved cache follows, is
+    // defined. A non-zero selector has no known tail grammar; fail so the
+    // containing record is retained verbatim through the native-preservation
+    // path rather than misparsed against the cache layout.
+    (tail_enum == 0).then_some(())?;
     let cache = decode_surface_block(span, *position, int_width)?;
     *position = cache.end;
     let fit_tolerance = take_f64(span, position)? * LEN_TO_MM;
@@ -2972,9 +2977,14 @@ fn decode_off_spl_sur(
         )?;
         let support = support?;
         let distance = take_f64(span, &mut position)? * LEN_TO_MM;
-        let mut flags = Vec::with_capacity(4);
-        for _ in 0..4 {
-            flags.push(take_bool(span, &mut position)?);
+        // The four booleans split into a leading pair occupying the slots the
+        // pre-revision layout reads as the U/V sense enums, followed by a
+        // two-boolean ASM extension prefix.
+        let u_sense = i64::from(take_bool(span, &mut position)?);
+        let v_sense = i64::from(take_bool(span, &mut position)?);
+        let mut extension_flags = Vec::with_capacity(2);
+        for _ in 0..2 {
+            extension_flags.push(take_bool(span, &mut position)?);
         }
         let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
             decode_revision_surface_tail(span, &mut position, int_width)?;
@@ -2982,15 +2992,15 @@ fn decode_off_spl_sur(
             definition: DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
-                u_sense: 0,
-                v_sense: 0,
-                extension_flags: Vec::new(),
+                u_sense,
+                v_sense,
+                extension_flags,
                 revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
                     revision,
                     support_bounds,
                     reference_endpoints: [None; 2],
                     second_endpoints: [None; 2],
-                    flags,
+                    flags: Vec::new(),
                     tail_enum,
                     discontinuities,
                     tail_flag,
@@ -3951,4 +3961,24 @@ fn decode_procedural_resolving_refs(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tail_selector_tests {
+    use super::*;
+
+    /// A shared revision-gated surface tail whose opening selector is non-zero
+    /// has no defined grammar. The helper must reject it so the containing
+    /// record is retained verbatim rather than misparsed against the
+    /// selector-zero solved-cache layout.
+    #[test]
+    fn nonzero_tail_selector_is_rejected_for_verbatim_retention() {
+        // 0x15-tagged four-byte selector with value 1, followed by bytes that
+        // could otherwise be mistaken for a solved cache block.
+        let span = [
+            0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let mut position = 0usize;
+        assert_eq!(decode_revision_surface_tail(&span, &mut position, 4), None,);
+    }
 }
