@@ -4279,7 +4279,7 @@ fn saved_line_joins_through_order_table() {
     }];
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
-        Some(SectionEntityIncidenceFamily::Line)
+        None
     );
     let solver_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),

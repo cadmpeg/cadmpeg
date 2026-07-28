@@ -10211,6 +10211,9 @@ fn section_skamp_oriented_line(
     {
         return None;
     }
+    if solver_only_section_entities(definition).contains_key(&item.entity_id) {
+        return Some(entity);
+    }
     let line_role_evidence = complete_section_skamps(definition).any(|skamp| {
         skamp.items.iter().any(|candidate| {
             candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3)
@@ -11724,14 +11727,6 @@ fn solver_only_section_entity_family(
             .any(|item| item.entity_id == entity_id && item.sense == 4)
     }) {
         evidence.insert(SectionEntityIncidenceFamily::Circular);
-    }
-    if complete_section_skamps(definition).any(|skamp| {
-        matches!(
-            (skamp.kind, skamp.items.as_slice()),
-            (1 | 2, [item]) if item.entity_id == entity_id && item.sense == 0
-        )
-    }) {
-        evidence.insert(SectionEntityIncidenceFamily::Line);
     }
     if complete_section_skamps(definition).any(|skamp| {
         let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
