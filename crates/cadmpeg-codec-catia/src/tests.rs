@@ -8817,6 +8817,31 @@ fn decode_evaluates_integer_part_as_an_integer_result() {
 }
 
 #[test]
+fn decode_evaluates_variadic_extrema_and_integer_remainder() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "Real",
+                Some(9.0),
+                "min(8,5,7,3)+max(1,4,2)+mod(7.8,3)+max(1)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode variadic extrema and remainder formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("variadic extrema and remainder formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(9.0))
+    );
+}
+
+#[test]
 fn decode_evaluates_a_square_root_of_a_dimensioned_product() {
     let decoded = CatiaCodec
         .decode(
@@ -9126,6 +9151,27 @@ fn decode_rejects_nonfinite_exponential_results() {
         .expect("decode overflowing exponential formula");
 
     assert!(decoded.ir.model.parameters.is_empty());
+}
+
+#[test]
+fn decode_rejects_invalid_remainder_divisors() {
+    for expression in ["mod(7,0)", "mod(7,2.5)", "mod(7,1mm)"] {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                    3,
+                    false,
+                    &[],
+                    "Real",
+                    Some(0.0),
+                    expression,
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode invalid remainder formula");
+
+        assert!(decoded.ir.model.parameters.is_empty(), "{expression}");
+    }
 }
 
 #[test]

@@ -452,6 +452,7 @@ struct FormulaExpressionParser<'a, 'b> {
 }
 
 const MAX_FORMULA_EXPRESSION_DEPTH: usize = 128;
+const MAX_FORMULA_FUNCTION_ARGUMENTS: usize = 128;
 
 fn finite_scalar(value: f64) -> Option<EvaluatedFormulaScalar> {
     value.is_finite().then_some(EvaluatedFormulaScalar {
@@ -630,18 +631,40 @@ impl FormulaExpressionParser<'_, '_> {
         (self.peek()? == b'(').then_some(())?;
         self.at += 1;
         let argument_depth = Self::nested_depth(depth)?;
-        let first = self.sum(argument_depth)?;
-        self.skip_whitespace();
-        let second = if self.peek()? == b',' {
-            self.at += 1;
-            let second = self.sum(argument_depth)?;
+        let mut arguments = Vec::with_capacity(2);
+        loop {
+            arguments.push(self.sum(argument_depth)?);
             self.skip_whitespace();
-            Some(second)
-        } else {
-            None
+            if self.peek()? == b')' {
+                self.at += 1;
+                break;
+            }
+            (self.peek()? == b',' && arguments.len() < MAX_FORMULA_FUNCTION_ARGUMENTS)
+                .then_some(())?;
+            self.at += 1;
+        }
+
+        if matches!(function, "min" | "max") {
+            let mut arguments = arguments.into_iter();
+            let mut result = arguments.next()?;
+            for argument in arguments {
+                if result.dimension != argument.dimension {
+                    return None;
+                }
+                result.value = if function == "min" {
+                    result.value.min(argument.value)
+                } else {
+                    result.value.max(argument.value)
+                };
+            }
+            return Some(result);
+        }
+
+        let (first, second) = match arguments.as_slice() {
+            [first] => (*first, None),
+            [first, second] => (*first, Some(*second)),
+            _ => return None,
         };
-        (self.peek()? == b')').then_some(())?;
-        self.at += 1;
         match (function, first, second) {
             ("sin", argument, None)
                 if matches!(
@@ -719,6 +742,13 @@ impl FormulaExpressionParser<'_, '_> {
             ("round", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
                 finite_scalar(argument.value.round_ties_even())
             }
+            ("mod", dividend, Some(divisor))
+                if dividend.dimension == FormulaDimension::SCALAR
+                    && divisor.satisfies_source_type("Integer")
+                    && divisor.value != 0.0 =>
+            {
+                finite_scalar(dividend.value.trunc() % divisor.value)
+            }
             ("abs", argument, None) => Some(EvaluatedFormulaScalar {
                 value: argument.value.abs(),
                 dimension: argument.dimension,
@@ -727,18 +757,6 @@ impl FormulaExpressionParser<'_, '_> {
                 value: argument.value.sqrt(),
                 dimension: argument.dimension.square_root()?,
             }),
-            ("min", left, Some(right)) if left.dimension == right.dimension => {
-                Some(EvaluatedFormulaScalar {
-                    value: left.value.min(right.value),
-                    dimension: left.dimension,
-                })
-            }
-            ("max", left, Some(right)) if left.dimension == right.dimension => {
-                Some(EvaluatedFormulaScalar {
-                    value: left.value.max(right.value),
-                    dimension: left.dimension,
-                })
-            }
             _ => None,
         }
     }
@@ -881,4 +899,22 @@ fn typed_parameter_evaluation(
 
 fn neutral_parameter_id(native_id: &str) -> ParameterId {
     ParameterId(format!("{native_id}:parameter"))
+}
+
+#[cfg(test)]
+mod parser_tests {
+    use super::*;
+
+    #[test]
+    fn formula_function_argument_count_is_bounded() {
+        let bindings = BTreeMap::new();
+        for (argument_count, accepted) in [(128, true), (129, false)] {
+            let expression = format!("max({})", vec!["1"; argument_count].join(","));
+            assert_eq!(
+                evaluate_formula_expression(&expression, &bindings).is_some(),
+                accepted,
+                "{argument_count}"
+            );
+        }
+    }
 }
