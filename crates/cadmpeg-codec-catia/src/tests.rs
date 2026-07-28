@@ -8601,7 +8601,7 @@ fn decode_converts_degree_literals_to_radians() {
 }
 
 #[test]
-fn decode_evaluates_the_pi_angle_constant() {
+fn decode_evaluates_the_dimensionless_pi_constant_in_an_angle_expression() {
     let output_value = std::f64::consts::PI - 1.0;
     let decoded = CatiaCodec
         .decode(
@@ -8611,7 +8611,7 @@ fn decode_evaluates_the_pi_angle_constant() {
                 &[("#1_", "ANGLE", "Angle", "#1_ /2", 1.0)],
                 "ANGLE",
                 Some(output_value),
-                "PI-#1_ /2",
+                "PI*1rad-#1_ /2",
             )),
             &DecodeOptions::default(),
         )
@@ -8626,6 +8626,31 @@ fn decode_evaluates_the_pi_angle_constant() {
         Some(cadmpeg_ir::features::ParameterValue::Angle(
             cadmpeg_ir::features::Angle(output_value)
         ))
+    );
+}
+
+#[test]
+fn decode_evaluates_dimensionless_trigonometric_arguments_as_radians() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "Real",
+                Some(0.0),
+                "sin(0)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode scalar-radian trigonometric formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("scalar-radian trigonometric formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(0.0))
     );
 }
 
@@ -8663,7 +8688,7 @@ fn decode_evaluates_dimension_checked_trigonometric_calls() {
 
 #[test]
 fn decode_evaluates_nested_logarithm_and_extrema_calls() {
-    let output_value = -(4.0_f64.ln()) / 100.0_f64.ln() / 2.0;
+    let output_value = -(4.0_f64.log10()) / 100.0_f64.log10() / 2.0;
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
@@ -8688,6 +8713,31 @@ fn decode_evaluates_nested_logarithm_and_extrema_calls() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(output_value))
+    );
+}
+
+#[test]
+fn decode_distinguishes_common_and_natural_logarithms() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "Real",
+                Some(3.0),
+                "log(100)+ln(E)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode logarithm formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("logarithm formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(3.0))
     );
 }
 
@@ -8990,13 +9040,13 @@ fn decode_rejects_extrema_between_different_dimensions() {
 }
 
 #[test]
-fn decode_rejects_trigonometric_calls_with_dimensionless_arguments() {
+fn decode_rejects_trigonometric_calls_with_length_arguments() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
                 4,
                 false,
-                &[("#1_", "Real", "Ratio", "#1_ /2", 0.0)],
+                &[("#1_", "LENGTH", "Offset", "#1_ /2", 0.0)],
                 "Real",
                 Some(0.0),
                 "sin(#1_ /2)",
@@ -9008,7 +9058,7 @@ fn decode_rejects_trigonometric_calls_with_dimensionless_arguments() {
     let [input] = decoded.ir.model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
-    assert_eq!(input.name, "Ratio");
+    assert_eq!(input.name, "Offset");
     assert!(input.dependencies.is_empty());
 }
 

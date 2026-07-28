@@ -601,8 +601,18 @@ impl FormulaExpressionParser<'_, '_> {
             self.at += 2;
             return Some(EvaluatedFormulaScalar {
                 value: std::f64::consts::PI,
-                dimension: FormulaDimension::ANGLE,
+                dimension: FormulaDimension::SCALAR,
             });
+        }
+        if self.remaining().starts_with('E')
+            && self
+                .source
+                .as_bytes()
+                .get(self.at + 1)
+                .is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')
+        {
+            self.at += 1;
+            return finite_scalar(std::f64::consts::E);
         }
         if self.peek()?.is_ascii_alphabetic() {
             return self.function_call(depth);
@@ -633,13 +643,28 @@ impl FormulaExpressionParser<'_, '_> {
         (self.peek()? == b')').then_some(())?;
         self.at += 1;
         match (function, first, second) {
-            ("sin", argument, None) if argument.dimension == FormulaDimension::ANGLE => {
+            ("sin", argument, None)
+                if matches!(
+                    argument.dimension,
+                    FormulaDimension::ANGLE | FormulaDimension::SCALAR
+                ) =>
+            {
                 finite_scalar(argument.value.sin())
             }
-            ("cos", argument, None) if argument.dimension == FormulaDimension::ANGLE => {
+            ("cos", argument, None)
+                if matches!(
+                    argument.dimension,
+                    FormulaDimension::ANGLE | FormulaDimension::SCALAR
+                ) =>
+            {
                 finite_scalar(argument.value.cos())
             }
-            ("tan", argument, None) if argument.dimension == FormulaDimension::ANGLE => {
+            ("tan", argument, None)
+                if matches!(
+                    argument.dimension,
+                    FormulaDimension::ANGLE | FormulaDimension::SCALAR
+                ) =>
+            {
                 finite_scalar(argument.value.tan())
             }
             ("asin", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
@@ -652,6 +677,11 @@ impl FormulaExpressionParser<'_, '_> {
                 finite_angle(argument.value.atan())
             }
             ("log", argument, None)
+                if argument.dimension == FormulaDimension::SCALAR && argument.value > 0.0 =>
+            {
+                finite_scalar(argument.value.log10())
+            }
+            ("ln", argument, None)
                 if argument.dimension == FormulaDimension::SCALAR && argument.value > 0.0 =>
             {
                 finite_scalar(argument.value.ln())
