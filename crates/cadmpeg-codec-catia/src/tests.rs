@@ -8742,6 +8742,81 @@ fn decode_distinguishes_common_and_natural_logarithms() {
 }
 
 #[test]
+fn decode_evaluates_exponential_and_hyperbolic_functions() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "Real",
+                Some(2.0),
+                "exp(0)+sinh(0)+cosh(0)+tanh(0)+asinh(0)+acosh(1)+atanh(0)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode exponential and hyperbolic formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("exponential and hyperbolic formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(2.0))
+    );
+}
+
+#[test]
+fn decode_evaluates_scalar_rounding_functions() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "Real",
+                Some(8.0),
+                "ceil(1.2)+floor(1.8)+int(-1.8)+round(2.5)+round(3.5)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode scalar rounding formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("scalar rounding formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(8.0))
+    );
+}
+
+#[test]
+fn decode_evaluates_integer_part_as_an_integer_result() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "Integer",
+                Some(-1.0),
+                "int(-1.8)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode integer-part formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("integer-part formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Integer(-1))
+    );
+}
+
+#[test]
 fn decode_evaluates_a_square_root_of_a_dimensioned_product() {
     let decoded = CatiaCodec
         .decode(
@@ -8987,6 +9062,68 @@ fn decode_rejects_inverse_trigonometry_outside_its_numeric_domain() {
             &DecodeOptions::default(),
         )
         .expect("decode out-of-domain inverse trigonometric formula");
+
+    assert!(decoded.ir.model.parameters.is_empty());
+}
+
+#[test]
+fn decode_rejects_scalar_functions_with_dimensioned_arguments() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Width", "#1_ /2", 1.0)],
+                "Real",
+                Some(1.0),
+                "exp(#1_ /2)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensionally invalid exponential formula");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Width");
+}
+
+#[test]
+fn decode_rejects_invalid_inverse_hyperbolic_domains() {
+    for expression in ["acosh(0.5)", "atanh(1)"] {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                    3,
+                    false,
+                    &[],
+                    "Real",
+                    Some(0.0),
+                    expression,
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode out-of-domain inverse hyperbolic formula");
+
+        assert!(decoded.ir.model.parameters.is_empty(), "{expression}");
+    }
+}
+
+#[test]
+fn decode_rejects_nonfinite_exponential_results() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "Real",
+                Some(0.0),
+                "exp(1000)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode overflowing exponential formula");
 
     assert!(decoded.ir.model.parameters.is_empty());
 }

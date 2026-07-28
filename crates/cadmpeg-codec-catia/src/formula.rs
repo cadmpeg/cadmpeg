@@ -686,6 +686,39 @@ impl FormulaExpressionParser<'_, '_> {
             {
                 finite_scalar(argument.value.ln())
             }
+            ("exp", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.exp())
+            }
+            ("sinh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.sinh())
+            }
+            ("cosh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.cosh())
+            }
+            ("tanh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.tanh())
+            }
+            ("asinh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.asinh())
+            }
+            ("acosh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.acosh())
+            }
+            ("atanh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.atanh())
+            }
+            ("ceil", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.ceil())
+            }
+            ("floor", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.floor())
+            }
+            ("int", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.trunc())
+            }
+            ("round", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+                finite_scalar(argument.value.round_ties_even())
+            }
             ("abs", argument, None) => Some(EvaluatedFormulaScalar {
                 value: argument.value.abs(),
                 dimension: argument.dimension,
