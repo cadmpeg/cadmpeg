@@ -2447,6 +2447,22 @@ fn decode_types_named_mirror_with_unresolved_operands() {
         }
     );
     assert_eq!(
+        result.report.coverage["transferred_pattern_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_pattern_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_pattern_seed_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_pattern_transform_feature_count"],
+        1
+    );
+    assert_eq!(
         feature
             .source_properties
             .get("mdl_stored_name_prefix")
@@ -5551,6 +5567,19 @@ fn decode_preserves_counted_curve_expression_programs() {
             ..
         }
     ));
+    assert_eq!(
+        result.report.coverage["transferred_native_axis_helix_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_incomplete_other_construction_feature_count"],
+        1
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("native-axis helix=1")));
     assert_eq!(result.ir.model.parameters.len(), 4);
     assert_eq!(result.ir.model.parameters[0].name, "r");
     assert_eq!(

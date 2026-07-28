@@ -24905,6 +24905,30 @@ fn surface_boundary_has_unresolved_operands(boundary: &SurfaceBoundary) -> bool 
     }
 }
 
+fn pattern_kind_has_unresolved_operands(pattern: &PatternKind) -> bool {
+    match pattern {
+        PatternKind::Unresolved { .. } => true,
+        PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
+            direction.is_none()
+        }
+        PatternKind::CurveDriven { path, .. } => {
+            path.as_ref().is_none_or(path_has_unresolved_operands)
+        }
+        PatternKind::Scale { center, .. } => {
+            matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
+        }
+        PatternKind::Composite { stages } => {
+            stages.is_empty()
+                || stages
+                    .iter()
+                    .any(|stage| pattern_kind_has_unresolved_operands(&stage.pattern))
+        }
+        PatternKind::Circular { .. }
+        | PatternKind::CircularAngles { .. }
+        | PatternKind::Mirror { .. } => false,
+    }
+}
+
 fn termination_has_unresolved_operands(termination: &Termination) -> bool {
     match termination {
         Termination::Unresolved => true,
@@ -26949,6 +26973,11 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut unresolved_thicken_faces_feature_count = 0;
     let mut unresolved_thicken_thickness_feature_count = 0;
     let mut unresolved_thicken_side_feature_count = 0;
+    let mut pattern_feature_count = 0;
+    let mut incomplete_pattern_feature_count = 0;
+    let mut unresolved_pattern_seed_feature_count = 0;
+    let mut unresolved_pattern_transform_feature_count = 0;
+    let mut native_axis_helix_feature_count = 0;
     for feature in &ir.model.features {
         match &feature.definition {
             IrFeatureDefinition::DatumPlaneUnresolved => {
@@ -27233,6 +27262,31 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 incomplete_thicken_feature_count +=
                     usize::from(unresolved_faces || unresolved_thickness || unresolved_side);
             }
+            IrFeatureDefinition::Pattern { seeds, pattern } => {
+                pattern_feature_count += 1;
+                let unresolved_seeds = seeds.is_empty()
+                    || seeds.iter().any(|seed| match seed {
+                        cadmpeg_ir::features::PatternSeed::Feature(_) => false,
+                        cadmpeg_ir::features::PatternSeed::Faces(faces) => {
+                            face_selection_has_unresolved_operands(faces)
+                        }
+                        cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
+                            matches!(
+                                bodies,
+                                cadmpeg_ir::features::BodySelection::Unresolved
+                                    | cadmpeg_ir::features::BodySelection::Native(_)
+                            )
+                        }
+                    });
+                let unresolved_transform = pattern_kind_has_unresolved_operands(pattern);
+                unresolved_pattern_seed_feature_count += usize::from(unresolved_seeds);
+                unresolved_pattern_transform_feature_count += usize::from(unresolved_transform);
+                incomplete_pattern_feature_count +=
+                    usize::from(unresolved_seeds || unresolved_transform);
+            }
+            IrFeatureDefinition::HelixNativeAxis { .. } => {
+                native_axis_helix_feature_count += 1;
+            }
             _ => {}
         }
     }
@@ -27249,6 +27303,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let incomplete_surface_operation_feature_count = incomplete_filled_surface_feature_count
         + incomplete_knit_surface_feature_count
         + incomplete_thicken_feature_count;
+    let incomplete_other_construction_feature_count =
+        incomplete_pattern_feature_count + native_axis_helix_feature_count;
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
@@ -27532,6 +27588,30 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_unresolved_thicken_side_feature_count".to_string(),
         unresolved_thicken_side_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_other_construction_feature_count".to_string(),
+        incomplete_other_construction_feature_count,
+    );
+    coverage.insert(
+        "transferred_pattern_feature_count".to_string(),
+        pattern_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_pattern_feature_count".to_string(),
+        incomplete_pattern_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_pattern_seed_feature_count".to_string(),
+        unresolved_pattern_seed_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_pattern_transform_feature_count".to_string(),
+        unresolved_pattern_transform_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_axis_helix_feature_count".to_string(),
+        native_axis_helix_feature_count,
     );
     Ok((ir, annotations.build(), unknowns, coverage))
 }
@@ -28652,6 +28732,34 @@ fn build_report(
             message: format!(
                 "{incomplete_surface_operations} surface construction history feature(s) retain \
                  incomplete required operands ({families})."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_other_constructions =
+        count("transferred_incomplete_other_construction_feature_count");
+    if incomplete_other_constructions != 0 {
+        let families = [
+            (
+                "pattern",
+                count("transferred_incomplete_pattern_feature_count"),
+            ),
+            (
+                "native-axis helix",
+                count("transferred_native_axis_helix_feature_count"),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_other_constructions} construction history feature(s) retain \
+                 unresolved neutral operands ({families})."
             ),
             provenance: None,
         });
