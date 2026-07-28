@@ -1194,19 +1194,20 @@ pub(crate) fn project_fixed_fillet(
 
     let fixed = scope.fixed_fillet_parameters.as_ref()?;
     let stream = native_stream(&scope.id)?;
-    let radius = match fixed.radii.as_slice() {
-        [radius] if *radius > 0.0 => RadiusSpec::Constant {
+    let radius_spec = |group: &crate::records::DesignFixedFilletGroup| match group.radii.as_slice()
+    {
+        [radius] if *radius > 0.0 => Some(RadiusSpec::Constant {
             radius: Length(*radius * 10.0),
-        },
+        }),
         [first, second, intermediate @ ..]
-            if intermediate.len() == fixed.intermediate_parameters.len() =>
+            if intermediate.len() == group.intermediate_parameters.len() =>
         {
             let mut points = Vec::with_capacity(intermediate.len() + 2);
             points.push(VariableRadius {
                 parameter: 0.0,
                 radius: Length(*first * 10.0),
             });
-            points.extend(intermediate.iter().zip(&fixed.intermediate_parameters).map(
+            points.extend(intermediate.iter().zip(&group.intermediate_parameters).map(
                 |(radius, parameter)| VariableRadius {
                     parameter: *parameter,
                     radius: Length(*radius * 10.0),
@@ -1216,16 +1217,11 @@ pub(crate) fn project_fixed_fillet(
                 parameter: 1.0,
                 radius: Length(*second * 10.0),
             });
-            RadiusSpec::Variable { points }
+            Some(RadiusSpec::Variable { points })
         }
-        _ => return None,
-    };
-    let edge_radius = match radius {
-        RadiusSpec::Constant { radius } => Some(radius.0),
-        RadiusSpec::Chordal { .. } => None,
         _ => None,
     };
-    let scope_groups = construction_groups
+    let mut scope_groups = construction_groups
         .iter()
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
@@ -1233,6 +1229,7 @@ pub(crate) fn project_fixed_fillet(
                 && !group.members.is_empty()
         })
         .collect::<Vec<_>>();
+    scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
     let complete_edge_groups = scope_groups
         .iter()
         .copied()
@@ -1246,9 +1243,10 @@ pub(crate) fn project_fixed_fillet(
             })
         })
         .collect::<Vec<_>>();
-    let group = match complete_edge_groups.as_slice() {
-        [group] => *group,
-        [] => {
+    let edge_groups = if complete_edge_groups.len() == fixed.groups.len() {
+        complete_edge_groups
+    } else if fixed.groups.len() == 1 && complete_edge_groups.is_empty() {
+        let group = {
             // Support-face operands share the compact persistent-identity
             // prefix. A sole construction group cannot be a support group
             // alongside an unrepresented edge group: it is the Fillet's edge
@@ -1257,7 +1255,10 @@ pub(crate) fn project_fixed_fillet(
             let [group] = scope_groups.as_slice() else {
                 return None;
             };
-            let radius = edge_radius?;
+            let radius = radius_spec(&fixed.groups[0])?;
+            let RadiusSpec::Constant { radius } = radius else {
+                return None;
+            };
             let identities = group
                 .members
                 .iter()
@@ -1277,30 +1278,45 @@ pub(crate) fn project_fixed_fillet(
                     Some(*operand)
                 })
                 .collect::<Option<Vec<_>>>()?;
-            radius_edge_identity_group_candidates(&identities, radius)?;
+            radius_edge_identity_group_candidates(&identities, radius.0)?;
             *group
-        }
-        _ => return None,
+        };
+        vec![group]
+    } else {
+        return None;
     };
-    let edges = resolved_edge_group(
-        group,
-        construction_groups,
-        edge_operands,
-        edge_identity_operands,
-        scope.previous_history_state_id,
-        &neutral_feature_id(scope),
-        edge_radius,
-    );
-    Some(FeatureDefinition::Fillet {
-        groups: vec![FilletGroup {
-            edges,
-            radius,
-            tangency_weight: fixed
-                .tangency_weight
-                .as_ref()
-                .map(|tangency| tangency.value),
-        }],
-    })
+    let groups = fixed
+        .groups
+        .iter()
+        .zip(edge_groups)
+        .map(|(fixed_group, edge_group)| {
+            let radius = radius_spec(fixed_group)?;
+            let edge_radius = match radius {
+                RadiusSpec::Constant { radius } => Some(radius.0),
+                RadiusSpec::Chordal { .. }
+                | RadiusSpec::Variable { .. }
+                | RadiusSpec::Unresolved { .. } => None,
+            };
+            let edges = resolved_edge_group(
+                edge_group,
+                construction_groups,
+                edge_operands,
+                edge_identity_operands,
+                scope.previous_history_state_id,
+                &neutral_feature_id(scope),
+                edge_radius,
+            );
+            Some(FilletGroup {
+                edges,
+                radius,
+                tangency_weight: fixed_group
+                    .tangency_weight
+                    .as_ref()
+                    .map(|tangency| tangency.value),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(FeatureDefinition::Fillet { groups })
 }
 
 #[cfg(test)]
@@ -1373,17 +1389,19 @@ mod radius_identity_tests {
             "reference_members": [2],
             "reference_member_offsets": [0],
             "fixed_fillet_parameters": {
-                "tangency_weight": {
-                    "value": 1.0,
-                    "record_index": 4,
-                    "value_offset": 0
-                },
-                "radii": [0.3],
-                "radius_record_indexes": [5],
-                "radius_offsets": [0],
-                "intermediate_parameters": [],
-                "intermediate_parameter_record_indexes": [],
-                "intermediate_parameter_offsets": []
+                "groups": [{
+                    "tangency_weight": {
+                        "value": 1.0,
+                        "record_index": 4,
+                        "value_offset": 0
+                    },
+                    "radii": [0.3],
+                    "radius_record_indexes": [5],
+                    "radius_offsets": [0],
+                    "intermediate_parameters": [],
+                    "intermediate_parameter_record_indexes": [],
+                    "intermediate_parameter_offsets": []
+                }]
             },
             "paired_class_tag": "261",
             "paired_byte_offset": 200

@@ -13,10 +13,10 @@ use crate::records::{
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement,
     DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignEdgeFlangeOperation,
     DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudeStart,
-    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
-    DesignHemOperation, DesignMoveOperation, DesignObjectKind, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation, DesignSolidPrimitive,
-    DesignSurfaceStitchOperation,
+    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletGroup,
+    DesignFixedFilletParameters, DesignHemOperation, DesignMoveOperation, DesignObjectKind,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation,
+    DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -667,8 +667,7 @@ fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<FixedScalarFram
                     return None;
                 }
                 if frame_length == 103
-                    && (class_tag != "354"
-                        || marked_record_reference(bytes, start + 24).is_none()
+                    && (marked_record_reference(bytes, start + 24).is_none()
                         || marked_record_reference(bytes, start + 48).is_none()
                         || marked_record_reference(bytes, start + 67) != u32_at(bytes, start + 25)
                         || bytes.get(start + 78..start + 80) != Some(&[0; 2])
@@ -949,82 +948,80 @@ pub(crate) fn exact_fixed_fillet_parameters(
     {
         return None;
     }
-    let (tangency_weight, radius_lanes) = if lanes.len() == 1 {
-        (None, lanes.iter().collect::<Vec<_>>())
-    } else {
-        let (tangency_weight_record_index, tangency) = lanes[0];
-        if tangency.value <= 0.0 {
+    let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>,
+                 radius_lanes: Vec<&(u32, FixedScalarFrame)>,
+                 parameter_lanes: Vec<&(u32, FixedScalarFrame)>| {
+        let tangency_weight = match tangency_lane {
+            Some((record_index, scalar)) if scalar.value > 0.0 => {
+                Some(crate::records::DesignFixedFilletTangencyWeight {
+                    value: scalar.value,
+                    record_index: *record_index,
+                    value_offset: scalar.value_offset,
+                })
+            }
+            Some(_) => return None,
+            None => None,
+        };
+        let radii = radius_lanes
+            .iter()
+            .map(|(_, scalar)| scalar.value)
+            .collect::<Vec<_>>();
+        let intermediate_parameters = parameter_lanes
+            .iter()
+            .map(|(_, scalar)| scalar.value)
+            .collect::<Vec<_>>();
+        if radii.iter().any(|radius| *radius < 0.0)
+            || radii.iter().all(|radius| *radius == 0.0)
+            || intermediate_parameters
+                .iter()
+                .any(|parameter| !(0.0..1.0).contains(parameter))
+            || intermediate_parameters
+                .windows(2)
+                .any(|pair| pair[0] >= pair[1])
+        {
             return None;
         }
-        let radius_lanes = if lanes.len() <= 3 {
-            lanes[1..].iter().collect::<Vec<_>>()
-        } else {
-            if lanes.len() % 2 == 0 {
-                return None;
-            }
-            lanes[1..3]
+        Some(DesignFixedFilletGroup {
+            tangency_weight,
+            radii,
+            radius_record_indexes: radius_lanes
                 .iter()
-                .chain(lanes[3..].chunks_exact(2).map(|pair| &pair[0]))
-                .collect::<Vec<_>>()
-        };
-        (
-            Some(crate::records::DesignFixedFilletTangencyWeight {
-                value: tangency.value,
-                record_index: tangency_weight_record_index,
-                value_offset: tangency.value_offset,
-            }),
-            radius_lanes,
-        )
+                .map(|(record_index, _)| *record_index)
+                .collect(),
+            radius_offsets: radius_lanes
+                .iter()
+                .map(|(_, scalar)| scalar.value_offset)
+                .collect(),
+            intermediate_parameters,
+            intermediate_parameter_record_indexes: parameter_lanes
+                .iter()
+                .map(|(record_index, _)| *record_index)
+                .collect(),
+            intermediate_parameter_offsets: parameter_lanes
+                .iter()
+                .map(|(_, scalar)| scalar.value_offset)
+                .collect(),
+        })
     };
-    let parameter_lanes = if tangency_weight.is_some() {
+    let groups = if lanes.len() == 1 {
+        vec![group(None, vec![&lanes[0]], Vec::new())?]
+    } else if lanes.len() % 2 == 0 {
         lanes
-            .get(3..)
-            .into_iter()
-            .flat_map(|lanes| lanes.chunks_exact(2).map(|pair| &pair[1]))
-            .collect::<Vec<_>>()
+            .chunks_exact(2)
+            .map(|pair| group(Some(&pair[0]), vec![&pair[1]], Vec::new()))
+            .collect::<Option<Vec<_>>>()?
     } else {
-        Vec::new()
+        let radius_lanes = lanes[1..3]
+            .iter()
+            .chain(lanes[3..].chunks_exact(2).map(|pair| &pair[0]))
+            .collect::<Vec<_>>();
+        let parameter_lanes = lanes[3..]
+            .chunks_exact(2)
+            .map(|pair| &pair[1])
+            .collect::<Vec<_>>();
+        vec![group(Some(&lanes[0]), radius_lanes, parameter_lanes)?]
     };
-    let radii = radius_lanes
-        .iter()
-        .map(|(_, scalar)| scalar.value)
-        .collect::<Vec<_>>();
-    let intermediate_parameters = parameter_lanes
-        .iter()
-        .map(|(_, scalar)| scalar.value)
-        .collect::<Vec<_>>();
-    if radii.iter().any(|radius| *radius < 0.0)
-        || radii.iter().all(|radius| *radius == 0.0)
-        || intermediate_parameters
-            .iter()
-            .any(|parameter| !(0.0..1.0).contains(parameter))
-        || intermediate_parameters
-            .windows(2)
-            .any(|pair| pair[0] >= pair[1])
-    {
-        return None;
-    }
-    Some(DesignFixedFilletParameters {
-        tangency_weight,
-        radii,
-        radius_record_indexes: radius_lanes
-            .iter()
-            .map(|(record_index, _)| *record_index)
-            .collect(),
-        radius_offsets: radius_lanes
-            .iter()
-            .map(|(_, scalar)| scalar.value_offset)
-            .collect(),
-        intermediate_parameters,
-        intermediate_parameter_record_indexes: parameter_lanes
-            .iter()
-            .map(|(record_index, _)| *record_index)
-            .collect(),
-        intermediate_parameter_offsets: parameter_lanes
-            .iter()
-            .map(|(_, scalar)| scalar.value_offset)
-            .collect(),
-    })
+    Some(DesignFixedFilletParameters { groups })
 }
 
 pub(crate) fn exact_fixed_chamfer_parameters(

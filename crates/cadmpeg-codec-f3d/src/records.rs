@@ -888,6 +888,13 @@ pub struct DesignFixedExtrudeParameters {
 /// Exact fixed scalar lanes carried by a Fillet scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignFixedFilletParameters {
+    /// Radius laws in scalar-lane order.
+    pub groups: Vec<DesignFixedFilletGroup>,
+}
+
+/// One Fillet radius law carried by fixed scalar lanes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedFilletGroup {
     /// Optional explicit dimensionless tangency-weight lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tangency_weight: Option<DesignFixedFilletTangencyWeight>,

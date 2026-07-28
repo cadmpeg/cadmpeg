@@ -1683,50 +1683,55 @@ fn validate_fillet_operand_groups<'a>(
                     .map(|fixed| (scope, fixed))
             })
             .is_some_and(|(scope, fixed)| {
-                let radius_count = fixed.radii.len();
-                let intermediate_count = fixed.intermediate_parameters.len();
-                let valid_law_shape = (radius_count == 1 && intermediate_count == 0)
-                    || (radius_count >= 2 && radius_count == intermediate_count.saturating_add(2));
-                fixed
-                    .tangency_weight
-                    .as_ref()
-                    .is_none_or(|tangency| tangency.value.is_finite() && tangency.value > 0.0)
-                    && valid_law_shape
-                    && fixed
-                        .radii
-                        .iter()
-                        .all(|radius| radius.is_finite() && *radius >= 0.0)
-                    && fixed.radii.iter().any(|radius| *radius > 0.0)
-                    && fixed.radius_record_indexes.len() == radius_count
-                    && fixed.radius_offsets.len() == radius_count
-                    && fixed.intermediate_parameter_record_indexes.len() == intermediate_count
-                    && fixed.intermediate_parameter_offsets.len() == intermediate_count
-                    && fixed
-                        .intermediate_parameters
-                        .iter()
-                        .all(|parameter| parameter.is_finite() && (0.0..1.0).contains(parameter))
-                    && fixed
-                        .intermediate_parameters
-                        .windows(2)
-                        .all(|parameters| parameters[0] < parameters[1])
-                    && native.design_parameter_owners.iter().all(|owner| {
-                        design_stream(&owner.id) != native_stream
-                            || owner.scope_record_index != scope.record_index
-                    })
-                    && fixed
+                fixed.groups.iter().all(|group| {
+                    let radius_count = group.radii.len();
+                    let intermediate_count = group.intermediate_parameters.len();
+                    let valid_law_shape = (radius_count == 1 && intermediate_count == 0)
+                        || (radius_count >= 2
+                            && radius_count == intermediate_count.saturating_add(2));
+                    group
                         .tangency_weight
-                        .iter()
-                        .map(|tangency| tangency.record_index)
-                        .chain(fixed.radius_record_indexes.iter().copied())
-                        .chain(fixed.intermediate_parameter_record_indexes.iter().copied())
-                        .all(|record_index| {
-                            scope
-                                .reference_members
-                                .iter()
-                                .filter(|member| **member == record_index)
-                                .count()
-                                == 1
+                        .as_ref()
+                        .is_none_or(|tangency| tangency.value.is_finite() && tangency.value > 0.0)
+                        && valid_law_shape
+                        && group
+                            .radii
+                            .iter()
+                            .all(|radius| radius.is_finite() && *radius >= 0.0)
+                        && group.radii.iter().any(|radius| *radius > 0.0)
+                        && group.radius_record_indexes.len() == radius_count
+                        && group.radius_offsets.len() == radius_count
+                        && group.intermediate_parameter_record_indexes.len() == intermediate_count
+                        && group.intermediate_parameter_offsets.len() == intermediate_count
+                        && group.intermediate_parameters.iter().all(|parameter| {
+                            parameter.is_finite() && (0.0..1.0).contains(parameter)
                         })
+                        && group
+                            .intermediate_parameters
+                            .windows(2)
+                            .all(|parameters| parameters[0] < parameters[1])
+                }) && native.design_parameter_owners.iter().all(|owner| {
+                    design_stream(&owner.id) != native_stream
+                        || owner.scope_record_index != scope.record_index
+                }) && fixed
+                    .groups
+                    .iter()
+                    .flat_map(|group| {
+                        group
+                            .tangency_weight
+                            .iter()
+                            .map(|tangency| tangency.record_index)
+                            .chain(group.radius_record_indexes.iter().copied())
+                            .chain(group.intermediate_parameter_record_indexes.iter().copied())
+                    })
+                    .all(|record_index| {
+                        scope
+                            .reference_members
+                            .iter()
+                            .filter(|member| **member == record_index)
+                            .count()
+                            == 1
+                    })
                     && native
                         .design_construction_operand_groups
                         .iter()
@@ -1735,7 +1740,7 @@ fn validate_fillet_operand_groups<'a>(
                                 && candidate.scope_record_index == scope.record_index
                         })
                         .count()
-                        == 1
+                        == fixed.groups.len()
             });
         if is_fillet
             && !has_fixed_assignment

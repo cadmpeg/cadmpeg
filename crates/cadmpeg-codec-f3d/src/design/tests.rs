@@ -3808,35 +3808,110 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &fillet_scope),
         Some(DesignFixedFilletParameters {
-            tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
-                value: 1.0,
-                record_index: 77,
-                value_offset: (fillet_start + 40) as u64,
-            }),
-            radii: vec![0.0, 0.65, 0.4],
-            radius_record_indexes: vec![78, 79, 87],
-            radius_offsets: vec![
-                (fillet_start + 115 + 40) as u64,
-                (fillet_start + 230 + 40) as u64,
-                (fillet_start + 345 + 40) as u64,
-            ],
-            intermediate_parameters: vec![0.2],
-            intermediate_parameter_record_indexes: vec![88],
-            intermediate_parameter_offsets: vec![(fillet_start + 460 + 40) as u64],
+            groups: vec![crate::records::DesignFixedFilletGroup {
+                tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
+                    value: 1.0,
+                    record_index: 77,
+                    value_offset: (fillet_start + 40) as u64,
+                }),
+                radii: vec![0.0, 0.65, 0.4],
+                radius_record_indexes: vec![78, 79, 87],
+                radius_offsets: vec![
+                    (fillet_start + 115 + 40) as u64,
+                    (fillet_start + 230 + 40) as u64,
+                    (fillet_start + 345 + 40) as u64,
+                ],
+                intermediate_parameters: vec![0.2],
+                intermediate_parameter_record_indexes: vec![88],
+                intermediate_parameter_offsets: vec![(fillet_start + 460 + 40) as u64],
+            }],
         })
     );
     fillet_scope.reference_members = vec![50, 77];
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &fillet_scope),
         Some(DesignFixedFilletParameters {
-            tangency_weight: None,
-            radii: vec![1.0],
-            radius_record_indexes: vec![77],
-            radius_offsets: vec![(fillet_start + 40) as u64],
-            intermediate_parameters: Vec::new(),
-            intermediate_parameter_record_indexes: Vec::new(),
-            intermediate_parameter_offsets: Vec::new(),
+            groups: vec![crate::records::DesignFixedFilletGroup {
+                tangency_weight: None,
+                radii: vec![1.0],
+                radius_record_indexes: vec![77],
+                radius_offsets: vec![(fillet_start + 40) as u64],
+                intermediate_parameters: Vec::new(),
+                intermediate_parameter_record_indexes: Vec::new(),
+                intermediate_parameter_offsets: Vec::new(),
+            }],
         })
+    );
+
+    let dynamic_scalar_at = bytes.len();
+    let mut dynamic_scalar = vec![0; 103];
+    dynamic_scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+    dynamic_scalar[4..7].copy_from_slice(b"406");
+    dynamic_scalar[7..11].copy_from_slice(&89u32.to_le_bytes());
+    dynamic_scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    dynamic_scalar[24] = 1;
+    dynamic_scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+    dynamic_scalar[40..48].copy_from_slice(&0.5f64.to_le_bytes());
+    dynamic_scalar[48] = 1;
+    dynamic_scalar[49..53].copy_from_slice(&90u32.to_le_bytes());
+    dynamic_scalar[67] = 1;
+    dynamic_scalar[68..72].copy_from_slice(&scope.record_index.to_le_bytes());
+    dynamic_scalar[80] = 1;
+    dynamic_scalar[81..85].copy_from_slice(&91u32.to_le_bytes());
+    dynamic_scalar[92] = 1;
+    dynamic_scalar[93..97].copy_from_slice(&scope.record_index.to_le_bytes());
+    bytes.extend_from_slice(&dynamic_scalar);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&89u32.to_le_bytes());
+    fillet_scope.reference_members = vec![89];
+    assert_eq!(
+        exact_fixed_fillet_parameters(&bytes, &fillet_scope),
+        Some(DesignFixedFilletParameters {
+            groups: vec![crate::records::DesignFixedFilletGroup {
+                tangency_weight: None,
+                radii: vec![0.5],
+                radius_record_indexes: vec![89],
+                radius_offsets: vec![(dynamic_scalar_at + 40) as u64],
+                intermediate_parameters: Vec::new(),
+                intermediate_parameter_record_indexes: Vec::new(),
+                intermediate_parameter_offsets: Vec::new(),
+            }],
+        })
+    );
+
+    let second_group_at = bytes.len();
+    for (record_index, ordinal, value) in [
+        (92u32, 0u8, 1.0f64),
+        (93, 1, 0.5),
+        (94, 2, 0.75),
+        (95, 3, 0.25),
+    ] {
+        let mut scalar = vec![0; 104];
+        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        scalar[4..7].copy_from_slice(b"406");
+        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+        scalar[24] = 1;
+        scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        scalar[35] = ordinal;
+        scalar[40..48].copy_from_slice(&value.to_le_bytes());
+        scalar.extend_from_slice(&3u32.to_le_bytes());
+        scalar.extend_from_slice(b"259");
+        scalar.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&scalar);
+    }
+    fillet_scope.reference_members = vec![92, 93, 94, 95];
+    let fixed = exact_fixed_fillet_parameters(&bytes, &fillet_scope)
+        .expect("two constant-radius Fillet scalar groups");
+    assert_eq!(fixed.groups.len(), 2);
+    assert_eq!(fixed.groups[0].radii, [0.5]);
+    assert_eq!(fixed.groups[1].radii, [0.25]);
+    assert_eq!(
+        fixed.groups[1]
+            .tangency_weight
+            .as_ref()
+            .map(|weight| (weight.value, weight.value_offset)),
+        Some((0.75, (second_group_at + 2 * 115 + 40) as u64))
     );
 
     let chamfer_scalar_start = bytes.len();
@@ -12014,17 +12089,19 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ];
     let mut indexed_scope = scope.clone();
     indexed_scope.fixed_fillet_parameters = Some(crate::records::DesignFixedFilletParameters {
-        tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
-            value: 1.0,
-            record_index: 10,
-            value_offset: 100,
-        }),
-        radii: vec![0.5],
-        radius_record_indexes: vec![20],
-        radius_offsets: vec![200],
-        intermediate_parameters: Vec::new(),
-        intermediate_parameter_record_indexes: Vec::new(),
-        intermediate_parameter_offsets: Vec::new(),
+        groups: vec![crate::records::DesignFixedFilletGroup {
+            tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
+                value: 1.0,
+                record_index: 10,
+                value_offset: 100,
+            }),
+            radii: vec![0.5],
+            radius_record_indexes: vec![20],
+            radius_offsets: vec![200],
+            intermediate_parameters: Vec::new(),
+            intermediate_parameter_record_indexes: Vec::new(),
+            intermediate_parameter_offsets: Vec::new(),
+        }],
     });
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         std::slice::from_mut(&mut indexed_scope),
