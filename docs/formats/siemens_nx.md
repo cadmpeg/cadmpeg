@@ -1357,7 +1357,7 @@ A type-135 curve-data header is `0087 [ff], xmt, mode, ref 01`, where `mode`
 is `01` or `02`. Its XMT is non-null. A type-135 counted control payload is
 distinct and ends after its declared finite-double lane.
 
-A type-126 B-surface descriptor stores U and V degrees, pole counts, form codes, distinct-knot counts, multiplicity references, knot references, and a control-payload reference. It has short and large-index layouts.
+A type-126 B-surface descriptor stores U and V degrees, pole counts, form codes, distinct-knot counts, multiplicity references, and knot references. It has a short layout with two-byte references and a large-index layout with variable-width references, a `007d` payload-kind marker, and a control-payload reference. A deltas layout instead terminates after five non-null variable-width references, each followed by status `00`; its control-payload reference is carried by the owning type-124 wrapper.
 
 A type-135 B-curve control payload stores `double_count:u32`, `first_index`, and `double_count` doubles. Type 136 stores degree, pole count, dimension, distinct-knot count, form, control-data index, multiplicity reference, and knot reference.
 

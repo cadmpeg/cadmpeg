@@ -56,7 +56,10 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
             let descriptor = descriptors.get(&refs[0])?;
-            (descriptor.payload == refs[1]).then_some(())?;
+            descriptor
+                .payload
+                .is_none_or(|payload| payload == refs[1])
+                .then_some(())?;
             let payload = payloads.get(&refs[1])?;
             let u_mult = arrays.u16s.get(&descriptor.u_mult)?;
             let v_mult = arrays.u16s.get(&descriptor.v_mult)?;
@@ -438,7 +441,7 @@ struct SurfaceDescriptor {
     v_mult: u32,
     u_knots: u32,
     v_knots: u32,
-    payload: u32,
+    payload: Option<u32>,
 }
 
 fn surface_descriptors(bytes: &[u8]) -> BTreeMap<u32, SurfaceDescriptor> {
@@ -472,16 +475,19 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
         && (2..2000).contains(&v_distinct))
     .then_some(())?;
     let short = be_u16(bytes, pos + 44 + shift) == Some(125);
-    let (u_mult, v_mult, u_knots, v_knots, payload_at) = if short {
+    let (u_mult, v_mult, u_knots, v_knots, payload, end) = if short {
+        let payload_at = pos + 46 + shift;
+        let (payload, payload_len) = read_xmt(bytes, payload_at)?;
+        (payload > 1).then_some(())?;
         (
             u32::from(be_u16(bytes, pos + 36 + shift)?),
             u32::from(be_u16(bytes, pos + 38 + shift)?),
             u32::from(be_u16(bytes, pos + 40 + shift)?),
             u32::from(be_u16(bytes, pos + 42 + shift)?),
-            pos + 46 + shift,
+            Some(payload),
+            payload_at + payload_len,
         )
     } else {
-        (be_u16(bytes, pos + 54 + shift) == Some(125)).then_some(())?;
         let mut at = pos + 34 + shift;
         let mut refs = [0u32; 5];
         for reference in &mut refs {
@@ -489,11 +495,31 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             *reference = value;
             at += len;
         }
-        (at == pos + 54 + shift).then_some(())?;
-        (refs[1], refs[2], refs[3], refs[4], pos + 56 + shift)
+        if at == pos + 54 + shift && be_u16(bytes, at) == Some(125) {
+            let payload_at = at + 2;
+            let (payload, payload_len) = read_xmt(bytes, payload_at)?;
+            (payload > 1).then_some(())?;
+            (
+                refs[1],
+                refs[2],
+                refs[3],
+                refs[4],
+                Some(payload),
+                payload_at + payload_len,
+            )
+        } else {
+            at = pos + 34 + shift;
+            for reference in &mut refs {
+                let (value, len) = read_xmt(bytes, at)?;
+                (value > 1).then_some(())?;
+                *reference = value;
+                at += len;
+                (bytes.get(at) == Some(&0)).then_some(())?;
+                at += 1;
+            }
+            (refs[1], refs[2], refs[3], refs[4], None, at)
+        }
     };
-    let (payload, payload_len) = read_xmt(bytes, payload_at)?;
-    (payload > 1).then_some(())?;
     Some((
         xmt,
         SurfaceDescriptor {
@@ -511,7 +537,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             v_knots,
             payload,
         },
-        payload_at + payload_len,
+        end,
     ))
 }
 

@@ -6697,6 +6697,40 @@ fn deltas_walks_complete_nurbs_auxiliary_records() {
 }
 
 #[test]
+fn deltas_walks_complete_status_framed_surface_descriptors() {
+    let mut descriptor = 126u16.to_be_bytes().to_vec();
+    descriptor.push(0xff);
+    descriptor.extend(encoded_xmt(98));
+    descriptor.extend_from_slice(&5u32.to_be_bytes());
+    descriptor.extend_from_slice(&3u16.to_be_bytes());
+    descriptor.extend_from_slice(&30u32.to_be_bytes());
+    descriptor.extend_from_slice(&4u32.to_be_bytes());
+    descriptor.extend_from_slice(&[6, 5]);
+    descriptor.extend_from_slice(&10u32.to_be_bytes());
+    descriptor.extend_from_slice(&2u32.to_be_bytes());
+    descriptor.extend_from_slice(&1u32.to_be_bytes());
+    descriptor.extend_from_slice(&3u16.to_be_bytes());
+    for reference in [106u32, 107, 108, 109, 110] {
+        descriptor.extend(encoded_xmt(reference));
+        descriptor.push(0);
+    }
+    let descriptor_len = descriptor.len();
+    descriptor.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&descriptor);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 126);
+    assert_eq!(census.records[0].xmt, 98);
+    assert_eq!(census.records[0].end, descriptor_len);
+    assert_eq!(census.full_counts["B_SURFACE_DESCRIPTOR"], 1);
+    assert_eq!(census.bytes_decoded, descriptor_len);
+
+    let mut invalid_status = descriptor[..descriptor_len].to_vec();
+    *invalid_status.last_mut().expect("final reference status") = 1;
+    assert!(crate::deltas::walk(&invalid_status).records.is_empty());
+}
+
+#[test]
 fn deltas_walks_complete_surface_data_headers() {
     fn record(escape: bool, xmt: u32, marker: u8) -> Vec<u8> {
         let mut bytes = 125u16.to_be_bytes().to_vec();
