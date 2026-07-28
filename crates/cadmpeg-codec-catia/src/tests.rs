@@ -3148,13 +3148,10 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         .unwrap();
     assert!(result.report.geometry_transferred);
     assert_eq!(result.ir.model.surfaces.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 1);
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.shells.len(), 1);
-    assert_eq!(
-        result.ir.model.shells[0].free_vertices,
-        [result.ir.model.vertices[0].id.clone()]
-    );
+    assert!(result.ir.model.points.is_empty());
+    assert!(result.ir.model.vertices.is_empty());
+    assert!(result.ir.model.bodies.is_empty());
+    assert!(result.ir.model.shells.is_empty());
     match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Cylinder {
             origin,
