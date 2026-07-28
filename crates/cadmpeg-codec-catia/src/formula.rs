@@ -516,7 +516,35 @@ impl FormulaExpressionParser<'_, '_> {
         if self.peek()? == b'#' {
             return self.symbol();
         }
+        if self.peek()?.is_ascii_alphabetic() {
+            return self.function_call();
+        }
         self.literal()
+    }
+
+    fn function_call(&mut self) -> Option<EvaluatedFormulaScalar> {
+        let function_start = self.at;
+        while self.peek().is_some_and(|byte| byte.is_ascii_alphabetic()) {
+            self.at += 1;
+        }
+        let function = &self.source[function_start..self.at];
+        self.skip_whitespace();
+        (self.peek()? == b'(').then_some(())?;
+        self.at += 1;
+        let argument = self.sum()?;
+        self.skip_whitespace();
+        (self.peek()? == b')').then_some(())?;
+        self.at += 1;
+        (argument.dimension == FormulaDimension::Angle).then_some(())?;
+        let value = match function {
+            "sin" => argument.value.sin(),
+            "cos" => argument.value.cos(),
+            _ => return None,
+        };
+        value.is_finite().then_some(EvaluatedFormulaScalar {
+            value,
+            dimension: FormulaDimension::Scalar,
+        })
     }
 
     fn symbol(&mut self) -> Option<EvaluatedFormulaScalar> {
@@ -568,12 +596,16 @@ impl FormulaExpressionParser<'_, '_> {
             (self.at > exponent).then_some(())?;
         }
         saw_digit.then_some(())?;
-        let value = self.source[start..self.at].parse::<f64>().ok()?;
+        let mut value = self.source[start..self.at].parse::<f64>().ok()?;
         let dimension = if self.remaining().starts_with("mm") {
             self.at += 2;
             FormulaDimension::Length
         } else if self.remaining().starts_with("rad") {
             self.at += 3;
+            FormulaDimension::Angle
+        } else if self.remaining().starts_with("deg") {
+            self.at += 3;
+            value = value.to_radians();
             FormulaDimension::Angle
         } else {
             FormulaDimension::Scalar

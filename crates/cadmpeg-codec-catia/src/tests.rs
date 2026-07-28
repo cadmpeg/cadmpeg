@@ -7705,6 +7705,89 @@ fn decode_evaluates_formula_precedence_and_parentheses() {
 }
 
 #[test]
+fn decode_converts_degree_literals_to_radians() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "Integer", "Count", "#1_ /2", 4.0)],
+                "ANGLE",
+                Some(std::f64::consts::FRAC_PI_2),
+                "360deg/#1_ /2",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode degree formula");
+
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("degree formula parameters")
+    };
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2)
+        ))
+    );
+}
+
+#[test]
+fn decode_evaluates_dimension_checked_trigonometric_calls() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[(
+                    "#1_",
+                    "ANGLE",
+                    "Sweep",
+                    "#1_ /2",
+                    std::f64::consts::FRAC_PI_2,
+                )],
+                "Real",
+                Some(1.0),
+                "sin(#1_ /2)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode trigonometric formula");
+
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("trigonometric formula parameters")
+    };
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
+    );
+}
+
+#[test]
+fn decode_rejects_trigonometric_calls_with_dimensionless_arguments() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "Real", "Ratio", "#1_ /2", 0.0)],
+                "Real",
+                Some(0.0),
+                "sin(#1_ /2)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensionally invalid trigonometric formula");
+
+    let [input] = decoded.ir.model.parameters.as_slice() else {
+        panic!("only the independently typed input")
+    };
+    assert_eq!(input.name, "Ratio");
+    assert!(input.dependencies.is_empty());
+}
+
+#[test]
 fn decode_rejects_dimensionally_invalid_formula_output() {
     let decoded = CatiaCodec
         .decode(
