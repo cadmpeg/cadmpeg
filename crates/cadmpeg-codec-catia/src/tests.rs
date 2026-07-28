@@ -3241,6 +3241,66 @@ fn decode_rejects_a_legacy_parameter_with_multiple_type_descriptors() {
 }
 
 #[test]
+fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
+    fn selected_type(terminal: Option<&str>) -> Vec<u8> {
+        let mut bytes = zero_entity_catpart();
+        bytes.push(0xea);
+        bytes.extend(1_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.extend([6, b'W', b'i', b'd', b't', b'h', 0xfe]);
+        bytes.extend(b"\xfe\x84\x92\x82\x84\x83");
+        bytes.extend(b"\xfe\x84\x88\x82\xfe\xe6");
+        bytes.extend(8.0_f64.to_bits().to_le_bytes());
+        bytes.push(0xea);
+        bytes.extend(4_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        bytes.extend(b"\xfe\x84\x92\x82");
+        if let Some(value_type) = terminal {
+            bytes.push(u8::try_from(value_type.len() + 1).expect("short type"));
+            bytes.extend(value_type.as_bytes());
+            bytes.push(0x83);
+        } else {
+            bytes.extend([0x81, 0x83]);
+        }
+        bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+        bytes
+    }
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(selected_type(Some("LENGTH"))),
+            &DecodeOptions::default(),
+        )
+        .expect("decode selected legacy type");
+    assert_eq!(
+        decoded.ir.model.parameters[0].value,
+        Some(cadmpeg_ir::ParameterValue::Length(
+            cadmpeg_ir::features::Length(8.0)
+        ))
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_legacy_selector_parameter_count"],
+        1
+    );
+
+    let cyclic = CatiaCodec
+        .decode(
+            &mut Cursor::new(selected_type(None)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode cyclic legacy type");
+    assert!(cyclic.ir.model.parameters.is_empty());
+    assert_eq!(
+        cyclic.report.coverage["transferred_legacy_selector_parameter_count"],
+        0
+    );
+}
+
+#[test]
 fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     fn legacy_constant(stored: f64) -> Vec<u8> {
         let mut bytes = zero_entity_catpart();

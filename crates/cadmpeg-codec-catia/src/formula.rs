@@ -287,9 +287,10 @@ pub(crate) fn transfer_parameters(
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
     FormulaTransfer {
-        formula_parameter_count: transferred.saturating_sub(legacy_transfer.parameter_count),
-        legacy_parameter_count: legacy_transfer.parameter_count,
-        legacy_formula_count: legacy_transfer.formula_count,
+        formula_parameter_count: transferred.saturating_sub(legacy_transfer.parameters),
+        legacy_parameter_count: legacy_transfer.parameters,
+        legacy_selector_parameter_count: legacy_transfer.selector_parameters,
+        legacy_formula_count: legacy_transfer.formulas,
         consumed_object_records,
     }
 }
@@ -298,14 +299,16 @@ pub(crate) fn transfer_parameters(
 pub(crate) struct FormulaTransfer {
     pub(crate) formula_parameter_count: usize,
     pub(crate) legacy_parameter_count: usize,
+    pub(crate) legacy_selector_parameter_count: usize,
     pub(crate) legacy_formula_count: usize,
     pub(crate) consumed_object_records: HashSet<String>,
 }
 
 #[derive(Default)]
 struct LegacyParameterTransfer {
-    parameter_count: usize,
-    formula_count: usize,
+    parameters: usize,
+    selector_parameters: usize,
+    formulas: usize,
 }
 
 fn collect_legacy_parameters(
@@ -324,18 +327,9 @@ fn collect_legacy_parameters(
             else {
                 continue;
             };
-            let mut descriptors = run
-                .type_descriptors
-                .iter()
-                .filter(|descriptor| descriptor.entity_id == scalar.entity_id);
-            let Some(crate::native::CatiaLegacyTypeValue::Name { value: value_type }) =
-                descriptors.next().map(|descriptor| &descriptor.value)
-            else {
+            let Some((value_type, selected)) = resolved_legacy_type(run, scalar.entity_id) else {
                 continue;
             };
-            if descriptors.next().is_some() {
-                continue;
-            }
             let evaluation = crate::native::CatiaEntityEvaluation::Scalar { bits: *bits };
             let Some(TypedParameterEvaluation::Value(value)) =
                 typed_parameter_evaluation(value_type, &evaluation)
@@ -381,7 +375,8 @@ fn collect_legacy_parameters(
                 .entry(scalar.entity_id)
                 .or_default()
                 .push(id);
-            transfer.parameter_count += 1;
+            transfer.parameters += 1;
+            transfer.selector_parameters += usize::from(selected);
         }
         let mut relations_by_parameter =
             HashMap::<u32, Vec<&crate::native::CatiaLegacyRelation>>::new();
@@ -425,10 +420,40 @@ fn collect_legacy_parameters(
                 .expression
                 .clone_from(&relation.expression);
             candidate.formula_output = true;
-            transfer.formula_count += 1;
+            transfer.formulas += 1;
         }
     }
     transfer
+}
+
+fn resolved_legacy_type(
+    run: &crate::native::CatiaLegacyEntityRun,
+    mut entity_id: u32,
+) -> Option<(&str, bool)> {
+    let mut visited = HashSet::new();
+    let mut selected = false;
+    loop {
+        if !visited.insert(entity_id) {
+            return None;
+        }
+        let mut descriptors = run
+            .type_descriptors
+            .iter()
+            .filter(|descriptor| descriptor.entity_id == entity_id);
+        let descriptor = descriptors.next()?;
+        if descriptors.next().is_some() {
+            return None;
+        }
+        match &descriptor.value {
+            crate::native::CatiaLegacyTypeValue::Name { value } => {
+                return Some((value, selected));
+            }
+            crate::native::CatiaLegacyTypeValue::Selector { value } => {
+                entity_id = *value;
+                selected = true;
+            }
+        }
+    }
 }
 
 struct FormulaParameterCandidate {
