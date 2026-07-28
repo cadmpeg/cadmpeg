@@ -502,6 +502,27 @@ fn finish_decode(
             native.consolidated_tori.len(),
         ),
         (
+            "decoded_zero_entity_support_run_count".to_string(),
+            native.zero_entity_support_runs.len(),
+        ),
+        (
+            "decoded_zero_entity_support_occurrence_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .map(|run| run.supports.len())
+                .sum(),
+        ),
+        (
+            "decoded_zero_entity_uv_endpoint_pair_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .flat_map(|run| &run.supports)
+                .filter(|support| support.uv_endpoints.is_some())
+                .count(),
+        ),
+        (
             "decoded_object_graph_count".to_string(),
             native.object_graphs.len(),
         ),
@@ -782,6 +803,31 @@ fn finish_decode(
                  direction, metric scalar, and parameter interval, but their owner bindings and \
                  metric-scalar parameter semantics remain unresolved.",
                 native.consolidated_line_profiles.len(),
+            ),
+            provenance: None,
+        });
+    }
+    if !native.zero_entity_support_runs.is_empty() {
+        let support_count = native
+            .zero_entity_support_runs
+            .iter()
+            .map(|run| run.supports.len())
+            .sum::<usize>();
+        let endpoint_count = native
+            .zero_entity_support_runs
+            .iter()
+            .flat_map(|run| &run.supports)
+            .filter(|support| support.uv_endpoints.is_some())
+            .count();
+        report.losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
+            category: LossCategory::Topology,
+            severity: Severity::Warning,
+            message: format!(
+                "{} zero-entity surface-support run(s) retain {support_count} face-local \
+                 occurrence(s), including {endpoint_count} with exact UV endpoint pairs; the \
+                 oriented-use and vertex-incidence registries remain unresolved.",
+                native.zero_entity_support_runs.len(),
             ),
             provenance: None,
         });

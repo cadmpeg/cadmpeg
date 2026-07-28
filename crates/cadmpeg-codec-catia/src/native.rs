@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 155;
+pub const CATIA_NATIVE_VERSION: u32 = 156;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -52,6 +52,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "preview_images",
     "value_blocks",
     "value_schema_selections",
+    "zero_entity_support_runs",
 ];
 
 /// Consolidated pcurve framing family.
@@ -2587,6 +2588,31 @@ pub struct CatiaLegacyEntityRun {
     pub scalar_values: Vec<CatiaLegacyScalarValue>,
 }
 
+/// One zero-entity face-local surface-support occurrence.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntitySupportOccurrence {
+    /// Byte offset of the framed `21xx` record.
+    pub byte_offset: u64,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// Face-local support slot stored at record offset 12.
+    pub face_local_slot: u32,
+    /// Stored UV endpoints when the record family carries them inline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uv_endpoints: Option<[[f64; 2]; 2]>,
+}
+
+/// One zero-entity surface carrier and its maximal following support run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntitySupportRun {
+    /// Stable native-run identity.
+    pub id: String,
+    /// Byte offset of the owning surface-carrier record.
+    pub carrier_byte_offset: u64,
+    /// Face-local support occurrences in storage order.
+    pub supports: Vec<CatiaZeroEntitySupportOccurrence>,
+}
+
 /// CATIA-native records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaNative {
@@ -2670,6 +2696,9 @@ pub struct CatiaNative {
     /// Framed value blocks adjacent to source-schema catalogs.
     #[serde(default)]
     pub value_blocks: Vec<CatiaValueBlock>,
+    /// Zero-entity surface carriers and their face-local support tapes.
+    #[serde(default)]
+    pub zero_entity_support_runs: Vec<CatiaZeroEntitySupportRun>,
 }
 
 impl Default for CatiaNative {
@@ -2702,6 +2731,7 @@ impl Default for CatiaNative {
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
             value_blocks: Vec::new(),
+            zero_entity_support_runs: Vec::new(),
         }
     }
 }
@@ -3299,6 +3329,27 @@ fn consolidated_tori(bytes: &[u8]) -> Vec<CatiaConsolidatedTorus> {
             minor_radius: torus.minor_radius,
             major_scale: torus.major_scale,
             minor_scale: torus.minor_scale,
+        })
+        .collect()
+}
+
+fn zero_entity_support_runs(bytes: &[u8]) -> Vec<CatiaZeroEntitySupportRun> {
+    crate::families::zero_entity::records::zero_entity_support_runs(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, run)| CatiaZeroEntitySupportRun {
+            id: format!("catia:zero-entity:support-run#{index}"),
+            carrier_byte_offset: run.carrier_pos as u64,
+            supports: run
+                .supports
+                .into_iter()
+                .map(|support| CatiaZeroEntitySupportOccurrence {
+                    byte_offset: support.pos as u64,
+                    tag: support.tag,
+                    face_local_slot: support.face_local_slot,
+                    uv_endpoints: support.uv_endpoints,
+                })
+                .collect(),
         })
         .collect()
 }
@@ -4141,6 +4192,44 @@ fn validate_consolidated_tori(
 }
 
 #[cfg(test)]
+fn validate_zero_entity_support_runs(
+    runs: &[CatiaZeroEntitySupportRun],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, run) in runs.iter().enumerate() {
+        let supports_valid = !run.supports.is_empty()
+            && run
+                .supports
+                .iter()
+                .enumerate()
+                .all(|(support_index, support)| {
+                    let endpoints_valid = match (support.tag, support.uv_endpoints) {
+                        ([0x21, 0x71 | 0x91 | 0x99 | 0xd6 | 0xe8], Some(endpoints)) => {
+                            endpoints.iter().flatten().all(|value| value.is_finite())
+                        }
+                        ([0x21, 0x71 | 0x91 | 0x99 | 0xd6 | 0xe8], None) => false,
+                        ([0x21, _], None) => true,
+                        _ => false,
+                    };
+                    support.tag[0] == 0x21
+                        && support.byte_offset > run.carrier_byte_offset
+                        && (support_index == 0
+                            || run.supports[support_index - 1].byte_offset < support.byte_offset)
+                        && endpoints_valid
+                });
+        if run.id != format!("catia:zero-entity:support-run#{index}")
+            || !supports_valid
+            || index > 0 && runs[index - 1].carrier_byte_offset >= run.carrier_byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "zero-entity support run `{}` is structurally invalid",
+                run.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 fn validate_consolidated_owner_packets(
     packets: &[CatiaConsolidatedOwnerPacket],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -4921,6 +5010,7 @@ impl CatiaNative {
         let consolidated_revolutions = consolidated_revolutions(bytes);
         let consolidated_spheres = consolidated_spheres(bytes);
         let consolidated_tori = consolidated_tori(bytes);
+        let zero_entity_support_runs = zero_entity_support_runs(bytes);
         let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes, &consolidated_circles);
         let consolidated_edge_runs =
             consolidated_edge_runs(bytes, &consolidated_pcurves, &consolidated_edge_nodes);
@@ -4954,6 +5044,7 @@ impl CatiaNative {
             object_graphs,
             preview_images,
             value_blocks,
+            zero_entity_support_runs,
         }
     }
 
@@ -5400,6 +5491,10 @@ impl CatiaNative {
         consolidated_edge_nodes.sort_by_key(|node| node.byte_offset);
         let consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity> =
             namespace.arena_as("consolidated_vertex_identities")?;
+        let mut zero_entity_support_runs: Vec<CatiaZeroEntitySupportRun> =
+            namespace.arena_as("zero_entity_support_runs")?;
+        zero_entity_support_runs.sort_by_key(|run| run.carrier_byte_offset);
+        validate_zero_entity_support_runs(&zero_entity_support_runs)?;
         validate_consolidated_edge_runs(
             &consolidated_edge_runs,
             &consolidated_pcurves,
@@ -5442,6 +5537,7 @@ impl CatiaNative {
             object_graphs: graphs,
             preview_images,
             value_blocks,
+            zero_entity_support_runs,
         })
     }
 
@@ -5541,6 +5637,7 @@ impl CatiaNative {
         namespace.set_arena("preview_images", &self.preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
+        namespace.set_arena("zero_entity_support_runs", &self.zero_entity_support_runs)?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));
@@ -5583,6 +5680,7 @@ impl CatiaNative {
             mut object_graphs,
             preview_images,
             mut value_blocks,
+            zero_entity_support_runs,
         } = self;
         let entries = catalogs
             .iter_mut()
@@ -5639,6 +5737,7 @@ impl CatiaNative {
         namespace.set_arena("preview_images", &preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
+        namespace.set_arena("zero_entity_support_runs", &zero_entity_support_runs)?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));

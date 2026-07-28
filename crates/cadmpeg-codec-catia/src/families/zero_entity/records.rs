@@ -18,28 +18,154 @@ pub struct ZeroEntitySurface {
     pub geometry: SurfaceGeometry,
 }
 
+/// One face-local support occurrence owned by a zero-entity surface carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZeroEntitySupportOccurrence {
+    /// Offset of the framed `21xx` record.
+    pub pos: usize,
+    /// Complete two-byte record tag.
+    pub tag: [u8; 2],
+    /// Face-local support slot stored by the framed token at record offset 12.
+    pub face_local_slot: u32,
+    /// Stored UV endpoints when this support family carries them inline.
+    pub uv_endpoints: Option<[[f64; 2]; 2]>,
+}
+
+/// One surface carrier and its maximal following `21xx` support run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZeroEntitySupportRun {
+    /// Offset of the owning surface-carrier record.
+    pub carrier_pos: usize,
+    /// Face-local support occurrences in storage order.
+    pub supports: Vec<ZeroEntitySupportOccurrence>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ZeroEntityRecord {
+    pos: usize,
+    end: usize,
+    tag: [u8; 2],
+}
+
+fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
+    let mut records = Vec::new();
+    let mut position = 0usize;
+    while position + 4 <= data.len() {
+        if data[position..position + 2] != [0xa9, 0x03] {
+            position += 1;
+            continue;
+        }
+        let Some(end) = position.checked_add(usize::from(data[position + 3]) + 12) else {
+            break;
+        };
+        if end > data.len() {
+            break;
+        }
+        records.push(ZeroEntityRecord {
+            pos: position,
+            end,
+            tag: [data[position + 2], data[position + 3]],
+        });
+        position = end;
+    }
+    records
+}
+
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
 /// record's second tag byte is also its length code (`length = tag + 12`), so
 /// the decoder walks framed records.
 pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
-    let mut out = Vec::new();
-    let mut p = 0usize;
-    while p + 4 <= data.len() {
-        if data[p..p + 2] != [0xa9, 0x03] {
-            p += 1;
+    zero_entity_records(data)
+        .into_iter()
+        .filter_map(|record| {
+            zero_entity_surface_at(data, record.pos).map(|geometry| ZeroEntitySurface {
+                pos: record.pos,
+                geometry,
+            })
+        })
+        .collect()
+}
+
+/// Decode surface-carrier ownership and exact face-local support occurrences.
+#[must_use]
+pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
+    let records = zero_entity_records(data);
+    let mut runs = Vec::new();
+    let mut index = 0usize;
+    while index + 1 < records.len() {
+        let carrier_record = records[index];
+        let Some(_) = zero_entity_surface_at(data, carrier_record.pos) else {
+            index += 1;
+            continue;
+        };
+        if records[index + 1].tag[0] != 0x21 {
+            index += 1;
             continue;
         }
-        let end = p.saturating_add(data[p + 3] as usize + 12);
-        if end > data.len() {
-            break;
+        let mut supports = Vec::new();
+        let mut next = index + 1;
+        while records
+            .get(next)
+            .is_some_and(|record| record.tag[0] == 0x21)
+        {
+            let record = records[next];
+            if let Some(support) = zero_entity_support_occurrence(data, record) {
+                supports.push(support);
+            } else {
+                supports.clear();
+                break;
+            }
+            next += 1;
         }
-        let geometry = zero_entity_surface_at(data, p);
-        if let Some(geometry) = geometry {
-            out.push(ZeroEntitySurface { pos: p, geometry });
+        if !supports.is_empty() {
+            runs.push(ZeroEntitySupportRun {
+                carrier_pos: carrier_record.pos,
+                supports,
+            });
         }
-        p = end;
+        index = next.max(index + 1);
     }
-    out
+    runs
+}
+
+fn zero_entity_support_occurrence(
+    data: &[u8],
+    record: ZeroEntityRecord,
+) -> Option<ZeroEntitySupportOccurrence> {
+    if data.get(record.pos + 12) != Some(&0x10) {
+        return None;
+    }
+    let face_local_slot = u32_le(data, record.pos + 13)?;
+    let uv_offsets = match record.tag {
+        [0x21, 0x71] => Some([93, 109]),
+        [0x21, 0x91] => Some([93, 141]),
+        [0x21, 0x99] => Some([93, 125]),
+        [0x21, 0xd6] => Some([106, 170]),
+        [0x21, 0xe8] => Some([132, 228]),
+        _ => None,
+    };
+    let uv_endpoints = if let Some(offsets) = uv_offsets {
+        let mut values = [[0.0; 2]; 2];
+        for (index, offset) in offsets.into_iter().enumerate() {
+            let absolute = record.pos.checked_add(offset)?;
+            if absolute.checked_add(16)? > record.end {
+                return None;
+            }
+            values[index] = [
+                f64_le(data, absolute)?,
+                f64_le(data, absolute.checked_add(8)?)?,
+            ];
+        }
+        Some(values)
+    } else {
+        None
+    };
+    Some(ZeroEntitySupportOccurrence {
+        pos: record.pos,
+        tag: record.tag,
+        face_local_slot,
+        uv_endpoints,
+    })
 }
 
 pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
@@ -215,4 +341,32 @@ fn u32_tokens(bytes: &[u8], mut at: usize, count: usize) -> Option<(Vec<u32>, us
         at = at.checked_add(5)?;
     }
     Some((values, at))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::zero_entity_support_stream;
+
+    #[test]
+    fn support_run_binds_maximal_21xx_lane_to_preceding_surface() {
+        let runs = zero_entity_support_runs(&zero_entity_support_stream());
+        let [run] = runs.as_slice() else {
+            panic!("one support run")
+        };
+        assert_eq!(run.carrier_pos, 0);
+        let [support] = run.supports.as_slice() else {
+            panic!("one support occurrence")
+        };
+        assert_eq!(support.tag, [0x21, 0x71]);
+        assert_eq!(support.face_local_slot, 42);
+        assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
+    }
+
+    #[test]
+    fn malformed_support_invalidates_its_structural_run() {
+        let mut stream = zero_entity_support_stream();
+        stream[0x6a + 12 + 12] = 0;
+        assert!(zero_entity_support_runs(&stream).is_empty());
+    }
 }

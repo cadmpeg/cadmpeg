@@ -1120,6 +1120,33 @@ pub(crate) fn b2_line_profile_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn zero_entity_support_stream() -> Vec<u8> {
+    let mut plane = vec![0u8; 0x6a + 12];
+    plane[..4].copy_from_slice(&[0xa9, 0x03, 0x27, 0x6a]);
+    for (offset, value) in [
+        (14, 1.0f64),
+        (22, 2.0),
+        (30, 3.0),
+        (38, 1.0),
+        (46, 0.0),
+        (54, 0.0),
+        (62, 0.0),
+        (70, 1.0),
+        (78, 0.0),
+    ] {
+        plane[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let mut support = vec![0u8; 0x71 + 12];
+    support[..4].copy_from_slice(&[0xa9, 0x03, 0x21, 0x71]);
+    support[12] = 0x10;
+    support[13..17].copy_from_slice(&42u32.to_le_bytes());
+    for (offset, value) in [(93, -2.0f64), (101, 4.0), (109, 6.0), (117, 8.0)] {
+        support[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    plane.extend(support);
+    plane
+}
+
 pub(crate) fn b2_revolution_stream() -> Vec<u8> {
     let scale = 2.0;
     let angular_lo = scale * 0.5;
@@ -4254,6 +4281,68 @@ fn decode_reports_exact_consolidated_line_profiles() {
                 .message
                 .contains("1 consolidated line-profile record(s)")
             && loss.message.contains("owner bindings")
+    }));
+}
+
+#[test]
+fn native_namespace_retains_zero_entity_surface_support_runs() {
+    let native = crate::native::CatiaNative::decode(&zero_entity_support_stream());
+    let [run] = native.zero_entity_support_runs.as_slice() else {
+        panic!("one zero-entity support run")
+    };
+    assert_eq!(run.carrier_byte_offset, 0);
+    let [support] = run.supports.as_slice() else {
+        panic!("one zero-entity support occurrence")
+    };
+    assert_eq!(support.tag, [0x21, 0x71]);
+    assert_eq!(support.face_local_slot, 42);
+    assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA zero-entity support run");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA zero-entity support run"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.zero_entity_support_runs[0].supports[0].uv_endpoints = None;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA zero-entity support run");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn decode_reports_zero_entity_surface_support_runs() {
+    let mut file = standard_catpart();
+    file.splice(16..16, zero_entity_support_stream());
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode zero-entity support run");
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_support_run_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_support_occurrence_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_uv_endpoint_pair_count"],
+        1
+    );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Topology
+            && loss
+                .message
+                .contains("1 zero-entity surface-support run(s)")
+            && loss.message.contains("oriented-use")
     }));
 }
 
