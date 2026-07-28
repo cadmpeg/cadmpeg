@@ -3592,7 +3592,6 @@ pub(crate) struct MeshSelectionSearch<'a> {
     pub(crate) selected: Vec<MeshFaceSelection>,
     pub(crate) states: usize,
     pub(crate) solution: Option<(StandardTopology, Vec<usize>)>,
-    pub(crate) stop_after_first_solution: bool,
     pub(crate) ambiguous: bool,
     pub(crate) exhausted: bool,
     pub(crate) face_equation_cache: MeshFaceEquationCache,
@@ -4164,9 +4163,7 @@ pub(crate) fn uses_canonical_edge_direction_gauge(
 
 impl MeshSelectionSearch<'_> {
     pub(crate) fn should_stop(&self) -> bool {
-        self.ambiguous
-            || self.exhausted
-            || (self.stop_after_first_solution && self.solution.is_some())
+        self.ambiguous || self.exhausted
     }
 
     #[cfg(test)]
@@ -5156,7 +5153,6 @@ fn resolve_standard_mesh_endpoint_candidates(
         selected: vec![None; face_count],
         states: 0,
         solution: None,
-        stop_after_first_solution: edge_candidates.iter().all(|pairs| pairs.len() == 1),
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
