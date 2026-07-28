@@ -163,7 +163,8 @@ The `var_arr` coordinate lane also defines the sign pairs
 `80→3F F5`/`c8→BF F5`, and
 `97→40 0C`/`dd→C0 0C`. Each prefix is followed by the remaining six IEEE
 bytes. Prefix `51` maps to `3F C6`. The defined negative DICT members are
-`b3→BF E0`, `bd→BF EA`, `c3→BF F0`, `c6..ce→BF F3..FB`,
+`a7..ac→BF D3..D8`, `ae→BF DA`, `b3→BF E0`, `bd→BF EA`, `c3→BF F0`,
+`c6..ce→BF F3..FB`,
 `d0→BF FE`, `d2→C0 00`, `d4→C0 02`, `d6→C0 04`, `d8→C0 06`, and
 `da→C0 08`. Prefix `d5` instead
 uses the lane-specific negative sub-unit form and reconstructs
