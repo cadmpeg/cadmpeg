@@ -470,8 +470,13 @@ Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, 
 
 Type 101 has the complete deltas record `0065 [ff], xmt(2), ref_status[12], flag:01, zero[12], ref_status[3]`. Every reference status is `01`. The optional `ff` envelope byte precedes the fixed XMT identity. The record ends after the fifteenth reference status, participates in the deltas byte ledger, and does not replace topology or geometry records. An inline type-101 schema declaration has a printable signature after `0065` and is not an instance of this grammar.
 
-After complete record frames, compact tombstones, validated BODY revision
-prefixes, and count-selected `term_use` numeric tails are bounded, each maximal
+The state tail of a validated BODY revision begins immediately after its
+eight-reference prefix and ends at the next admitted deltas event or at the end
+of the inflated stream. The tail belongs to the revision envelope and retains
+its exact byte sequence independently of assigned field roles.
+
+After complete record frames, compact tombstones, complete BODY revision
+envelopes, and count-selected `term_use` numeric tails are bounded, each maximal
 complement interval that consists entirely of one or more `kind:u16 BE, xmt`
 pairs is a tagged-reference lane. Each `kind` is a defined Parasolid record
 kind, including type 79 and type 80, and each XMT is a non-null compact or
@@ -1171,7 +1176,7 @@ live = partition ∪ delta_full − tombstones
 - A full record with `xmt ∉ partition` (high range) adds a new entity.
 - The deltas stream adds entities through explicit high-range records.
 
-BODY (`00 0c`, xmt=3) records delimit body revisions. The record prefix is `type:u16 BE`, XMT `3`, `node_id:u32 BE`, and eight ordered status-framed XMT references. `node_id` is a monotonic per-body revision counter. The final validated BODY envelope begins the current revision; preceding fixed records, tombstones, and procedural records are historical and do not contribute to the current image. A partition containing a validated body-shape SHELL is the authoritative current topology image. BODY through REGION records in its paired deltas stream do not replace or delete that topology image.
+BODY (`00 0c`, xmt=3) records delimit body revisions. The record prefix is `type:u16 BE`, XMT `3`, `node_id:u32 BE`, and eight ordered status-framed XMT references. Its bounded state tail extends to the next admitted deltas event or the end of the inflated stream. `node_id` is a monotonic per-body revision counter. The final validated BODY envelope begins the current revision; preceding fixed records, tombstones, and procedural records are historical and do not contribute to the current image. A partition containing a validated body-shape SHELL is the authoritative current topology image. BODY through REGION records in its paired deltas stream do not replace or delete that topology image.
 
 `RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table is a little-endian `count:u32` followed by exactly `count` ordered `object_id:u32` words. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 

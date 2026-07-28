@@ -50,7 +50,7 @@ pub struct ParasolidDeltasTombstone {
     pub inflated_offset: u64,
 }
 
-/// Validated BODY revision prefix in a Parasolid deltas stream.
+/// BODY revision envelope in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidDeltasBodyRevision {
     /// Globally unique revision identity.
@@ -61,8 +61,14 @@ pub struct ParasolidDeltasBodyRevision {
     pub node_id: u32,
     /// Eight ordered BODY references.
     pub references: [u32; 8],
-    /// Exact validated prefix length.
+    /// Exact complete envelope length.
     pub byte_len: u64,
+    /// Exact validated prefix length.
+    pub prefix_byte_len: u64,
+    /// Exact bounded state-tail length.
+    pub state_tail_byte_len: u64,
+    /// SHA-256 of the exact bounded state-tail bytes.
+    pub state_tail_sha256: String,
     /// BODY tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -202,6 +208,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
             });
         }
         for revision in census.body_revisions {
+            let state_tail = &stream.inflated[revision.prefix_end..revision.end];
             events.body_revisions.push(ParasolidDeltasBodyRevision {
                 id: format!(
                     "nx:s{stream_ordinal}:deltas-body-revision#{}-{}",
@@ -210,7 +217,10 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                 stream_ordinal: stream_ordinal as u32,
                 node_id: revision.node_id,
                 references: revision.references,
-                byte_len: (revision.prefix_end - revision.offset) as u64,
+                byte_len: (revision.end - revision.offset) as u64,
+                prefix_byte_len: (revision.prefix_end - revision.offset) as u64,
+                state_tail_byte_len: state_tail.len() as u64,
+                state_tail_sha256: cadmpeg_ir::hash::sha256_hex(state_tail),
                 inflated_offset: revision.offset as u64,
             });
         }
@@ -1552,6 +1562,9 @@ mod tests {
             bytes.extend_from_slice(&reference.to_be_bytes());
             bytes.push(1);
         }
+        let revision_prefix_end = bytes.len();
+        let revision_state_tail = [0xde, 0xad, 0xbe, 0xef];
+        bytes.extend_from_slice(&revision_state_tail);
         let type_45_offset = bytes.len();
         bytes.extend_from_slice(&45u16.to_be_bytes());
         bytes.extend_from_slice(&1u32.to_be_bytes());
@@ -1576,6 +1589,17 @@ mod tests {
         assert_eq!(
             events.body_revisions[0].references,
             [2, 3, 4, 5, 6, 7, 8, 9]
+        );
+        assert_eq!(events.body_revisions[0].prefix_byte_len, 32);
+        assert_eq!(events.body_revisions[0].state_tail_byte_len, 4);
+        assert_eq!(events.body_revisions[0].byte_len, 36);
+        assert_eq!(
+            events.body_revisions[0].state_tail_sha256,
+            cadmpeg_ir::hash::sha256_hex(&revision_state_tail)
+        );
+        assert_eq!(
+            events.body_revisions[0].inflated_offset + events.body_revisions[0].prefix_byte_len,
+            revision_prefix_end as u64
         );
         assert_eq!(events.records.len(), 1);
         assert_eq!(events.records[0].family, "TYPE_45");

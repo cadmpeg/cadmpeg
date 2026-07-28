@@ -38,7 +38,7 @@ pub struct Tombstone {
     pub offset: usize,
 }
 
-/// Validated prefix of one deltas BODY revision envelope.
+/// One deltas BODY revision envelope.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BodyRevision {
     /// Monotonic kernel revision identity.
@@ -49,6 +49,8 @@ pub struct BodyRevision {
     pub offset: usize,
     /// First byte after the validated prefix.
     pub prefix_end: usize,
+    /// First byte following the complete revision envelope.
+    pub end: usize,
 }
 
 /// Count-selected binary64 lane immediately following one deltas `term_use`.
@@ -84,7 +86,7 @@ pub struct Census {
     pub records: Vec<Record>,
     /// Compact tombstones in source order.
     pub tombstones: Vec<Tombstone>,
-    /// BODY revision prefixes in source order.
+    /// BODY revision envelopes in source order.
     pub body_revisions: Vec<BodyRevision>,
     /// Complete count-selected numeric tails following `term_use` records.
     pub term_use_numeric_tails: Vec<TermUseNumericTail>,
@@ -489,7 +491,28 @@ pub fn walk(stream: &[u8]) -> Census {
         .iter()
         .map(|lane| lane.end - lane.offset)
         .sum::<usize>();
+    let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
+    census.bytes_decoded += body_revision_state_bytes;
     census
+}
+
+fn populate_body_revision_state_tails(stream: &[u8], census: &mut Census) -> usize {
+    let tails = uncovered_spans(stream.len(), census, true)
+        .filter_map(|(start, end)| {
+            census
+                .body_revisions
+                .iter()
+                .position(|revision| revision.prefix_end == start)
+                .map(|index| (index, start, end))
+        })
+        .collect::<Vec<_>>();
+    let mut byte_len = 0;
+    for (index, start, end) in tails {
+        let revision = &mut census.body_revisions[index];
+        revision.end = end;
+        byte_len += end - start;
+    }
+    byte_len
 }
 
 fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericTail> {
@@ -537,7 +560,7 @@ fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericT
 }
 
 fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReferenceLane> {
-    uncovered_spans(stream.len(), census)
+    uncovered_spans(stream.len(), census, false)
         .filter_map(|(offset, end)| {
             let mut at = offset;
             let mut references = Vec::new();
@@ -559,8 +582,12 @@ fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReference
         .collect()
 }
 
-fn uncovered_spans(stream_len: usize, census: &Census) -> impl Iterator<Item = (usize, usize)> {
-    let covered = merged_event_spans(census, false);
+fn uncovered_spans(
+    stream_len: usize,
+    census: &Census,
+    include_tagged_reference_lanes: bool,
+) -> impl Iterator<Item = (usize, usize)> {
+    let covered = merged_event_spans(census, include_tagged_reference_lanes);
     let mut gaps = Vec::new();
     let mut at = 0;
     for (start, end) in covered {
@@ -593,7 +620,7 @@ fn merged_event_spans(
             census
                 .body_revisions
                 .iter()
-                .map(|revision| (revision.offset, revision.prefix_end)),
+                .map(|revision| (revision.offset, revision.end)),
         )
         .chain(
             census
@@ -683,6 +710,7 @@ fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
         references,
         offset,
         prefix_end: at,
+        end: at,
     })
 }
 

@@ -7214,7 +7214,7 @@ fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
 }
 
 #[test]
-fn deltas_body_revision_prefix_retains_node_and_reference_identities() {
+fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
     let mut bytes = vec![0, 12, 0, 3];
     bytes.extend_from_slice(&223u32.to_be_bytes());
     bytes.extend_from_slice(&[0xe3, 0xbf, 0, 1, 1]);
@@ -7234,6 +7234,38 @@ fn deltas_body_revision_prefix_retains_node_and_reference_identities() {
         [40_000, 6, 1, 1, 1, 1, 1, 1]
     );
     assert_eq!(census.body_revisions[0].prefix_end, 34);
+    assert_eq!(
+        &bytes[census.body_revisions[0].prefix_end..census.body_revisions[0].end],
+        [0x40, 0x8f, 0x40, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(census.body_revisions[0].end, bytes.len());
+    assert_eq!(census.bytes_decoded, bytes.len());
+}
+
+#[test]
+fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
+    let mut bytes = vec![0, 12, 0, 3];
+    bytes.extend_from_slice(&223u32.to_be_bytes());
+    for reference in [2u16, 3, 4, 5, 6, 7, 8, 9] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    let lane_offset = bytes.len();
+    bytes.extend_from_slice(&29u16.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+
+    let census = crate::deltas::walk(&bytes);
+
+    assert_eq!(census.body_revisions.len(), 1);
+    assert_eq!(
+        census.body_revisions[0].prefix_end,
+        census.body_revisions[0].end
+    );
+    assert_eq!(census.body_revisions[0].end, lane_offset);
+    assert_eq!(census.tagged_reference_lanes.len(), 1);
+    assert_eq!(census.tagged_reference_lanes[0].offset, lane_offset);
+    assert_eq!(census.tagged_reference_lanes[0].references, [(29, 10)]);
+    assert_eq!(census.bytes_decoded, bytes.len());
 }
 
 #[test]

@@ -6799,8 +6799,9 @@ fn build_geometry_report(
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
                  ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
                  attribute extraction. Every completely bounded full record, compact tombstone, \
-                 and BODY revision prefix was retained as an individually identified native event \
-                 with its source bounds and decoded identities. Count-selected numeric tails after \
+                 and BODY revision envelope was retained as an individually identified native event \
+                 with its source bounds and decoded identities; BODY state tails retain exact \
+                 bounded bytes and digests. Count-selected numeric tails after \
                  term-use endpoints were retained with their ordered finite binary64 values. Maximal \
                  event gaps containing only typed stream-local references were retained in order. \
                  Spans outside those events were retained with exact inflated-stream bounds and \
