@@ -9141,6 +9141,87 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
 }
 
 #[test]
+fn circular_pattern_resolves_independently_of_member_role_values() {
+    let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let center = entity(
+        "generated:point#center",
+        SketchGeometry::Point {
+            position: Point2::new(2.0, -3.0),
+        },
+    );
+    let circle = |id: &str, angle: f64| {
+        entity(
+            id,
+            SketchGeometry::Circle {
+                center: Point2::new(2.0 + 5.0 * angle.cos(), -3.0 + 5.0 * angle.sin()),
+                radius: cadmpeg_ir::features::Length(0.75),
+            },
+        )
+    };
+    let seed = circle("generated:circle#seed", 0.0);
+    let middle = circle("generated:circle#middle", std::f64::consts::TAU / 3.0);
+    let last = circle("generated:circle#last", 2.0 * std::f64::consts::TAU / 3.0);
+    // Role codes are deliberately uninformative here: all zero. The geometry
+    // must still resolve the center/seed/generated partition.
+    let relation = SketchRelation {
+        id: "f3d:native:sketch-relation#circular".into(),
+        record_index: 10,
+        class_tag: "300".into(),
+        byte_offset: 0,
+        state_offset: 0,
+        owner_reference: 1,
+        owner_entity_id: "0_1".into(),
+        auxiliary_references: vec![20, 21],
+        auxiliary_reference_offsets: Vec::new(),
+        members: vec![1, 2, 3, 4],
+        resolved_members: Vec::new(),
+        member_offsets: Vec::new(),
+        owner_reference_offset: 0,
+        state: 0x1000_0000,
+        constraint_kinds: vec![SketchConstraintKind::CircularPattern],
+        unknown_constraint_bits: 0,
+        member_roles: vec![0, 0, 0, 0],
+        entity_genesis: None,
+        pattern: Some(crate::records::SketchPatternDefinition::Circular {
+            angle_parameter: 20,
+            count_parameter: 21,
+            evaluated_angle: std::f64::consts::TAU,
+            evaluated_count: 3,
+        }),
+        return_members: vec![2, 3, 4, 1],
+        resolved_return_members: Vec::new(),
+        return_member_offsets: Vec::new(),
+        raw_bytes: Vec::new(),
+    };
+    let members = [&center, &seed, &middle, &last];
+    let returned = [&seed, &middle, &last, &center];
+    let Some(SketchConstraintDefinition::CircularPattern {
+        center: actual_center,
+        count,
+        ..
+    }) = crate::design::constraints::exact_circular_pattern(
+        &relation,
+        "native",
+        &[],
+        &members,
+        &returned,
+    )
+    else {
+        panic!("role-agnostic circular pattern did not resolve");
+    };
+    assert_eq!(actual_center, center.id);
+    assert_eq!(count, 3);
+}
+
+#[test]
 fn counted_linear_graph_selects_one_parameter_backed_direction() {
     let entity = |id: &str, position| cadmpeg_ir::sketches::SketchEntity {
         id: SketchEntityId(id.into()),
