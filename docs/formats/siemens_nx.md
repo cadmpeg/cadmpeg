@@ -475,6 +475,14 @@ Direct and escaped type-125 through type-128 and type-135 through type-136 NURBS
 
 Type 141 has the complete deltas record `008d [ff], xmt, ref status, ref 00, ref 00, ref status`, where the first and fourth statuses are binary. Each XMT field uses the compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity and selects the escaped layout when the same byte also begins a coincidental direct large-index identity. The record ends after the fourth status byte, participates in the deltas byte ledger, and remains in the semantic lane.
 
+Type 67 has the complete deltas record
+`0043 [ff], xmt, node_id:u32 BE, ref(1) 01, ref(3) 01, ref 01, ref 01,
+ref 00, 2b, ref 01, value[4]:f64 BE`. The XMT identity and the final four
+non-null references are non-null. Every value is finite and either zero or
+normal. The optional `ff` envelope byte precedes the XMT identity. The record
+ends after the fourth value at an admitted record boundary, participates in
+the deltas byte ledger, and remains in the semantic lane.
+
 Type 70 has the complete deltas record `0046 [ff], xmt, node_id:u32 BE, 04, (01 ref)[4], count:u16 BE, 00000014, 00000001, ref 00, ref 00`. The XMT identity and duplicated trailing reference are non-null, the count is nonzero, and the two trailing references are equal. Each reference uses compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity. The record ends after the second trailing status byte and participates in the deltas byte ledger.
 
 Type 45 has the complete deltas record

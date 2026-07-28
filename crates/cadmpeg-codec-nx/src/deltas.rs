@@ -668,6 +668,13 @@ pub fn walk(stream: &[u8]) -> Census {
             census.records.push(record);
             continue;
         }
+        if let Some(record) = consume_type_67(stream, offset) {
+            census.bytes_decoded += record.end - record.offset;
+            *census.full_counts.entry("TYPE_67").or_default() += 1;
+            offset = record.end;
+            census.records.push(record);
+            continue;
+        }
         if let Some(record) = consume_type_70(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("TYPE_70").or_default() += 1;
@@ -2731,6 +2738,65 @@ fn consume_type_45(stream: &[u8], offset: usize) -> Option<Record> {
     })
 }
 
+fn consume_type_67(stream: &[u8], offset: usize) -> Option<Record> {
+    (be::u16_at(stream, offset) == Some(67)).then_some(())?;
+    let direct =
+        type_67_layout(stream, offset, 0).filter(|(_, _, _, end)| plausible_next(stream, *end));
+    let escaped = (stream.get(offset + 2) == Some(&0xff))
+        .then(|| type_67_layout(stream, offset, 1))
+        .flatten()
+        .filter(|(_, _, _, end)| plausible_next(stream, *end));
+    let (xmt, node_id, references, end) = unique_layout(direct, escaped)?;
+    Some(Record {
+        kind: 67,
+        xmt,
+        node_id: Some(node_id),
+        references,
+        position: None,
+        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        offset,
+        end,
+    })
+}
+
+fn type_67_layout(
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Option<(u32, u32, Vec<u32>, usize)> {
+    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
+    (xmt > 1).then_some(())?;
+    let mut at = offset.checked_add(2 + envelope_len + consumed)?;
+    let node_id = be::u32_at(stream, at)?;
+    at += 4;
+    let mut references = Vec::new();
+    for expected_status in [1, 1, 1, 1, 0] {
+        let (reference, consumed) = read_xmt(stream, at)?;
+        at += consumed;
+        (stream.get(at) == Some(&expected_status)).then_some(())?;
+        at += 1;
+        references.push(reference);
+    }
+    (references[0] == 1
+        && references[1] == 3
+        && references[2..].iter().all(|reference| *reference > 1))
+    .then_some(())?;
+    (stream.get(at) == Some(&0x2b)).then_some(())?;
+    at += 1;
+    let (linked_reference, consumed) = read_xmt(stream, at)?;
+    (linked_reference > 1).then_some(())?;
+    at += consumed;
+    (stream.get(at) == Some(&1)).then_some(())?;
+    at += 1;
+    references.push(linked_reference);
+    for _ in 0..4 {
+        let value = be::f64_at(stream, at)?;
+        (value == 0.0 || value.is_normal()).then_some(())?;
+        at += 8;
+    }
+    Some((xmt, node_id, references, at))
+}
+
 fn type_45_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(u32, usize)> {
     let count_at = offset.checked_add(2 + envelope_len)?;
     let count = usize::try_from(be::u32_at(stream, count_at)?).ok()?;
@@ -2905,6 +2971,7 @@ pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
         56 => "BLEND_SURF",
         59 => "BLEND_BOUND",
         60 => "OFFSET_SURF",
+        67 => "TYPE_67",
         70 => "TYPE_70",
         74 => "ATTDEF_LIST",
         81 => "ENTITY_51",
@@ -2967,6 +3034,72 @@ fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
     let remainder = first.unsigned_abs();
     let quotient = u16::from_be_bytes([*stream.get(at + 2)?, *stream.get(at + 3)?]);
     Some((u32::from(quotient) * 32_767 + u32::from(remainder), 4))
+}
+
+#[cfg(test)]
+mod type_67_record_tests {
+    use super::*;
+
+    fn record(escaped: bool) -> Vec<u8> {
+        let mut bytes = 67u16.to_be_bytes().to_vec();
+        if escaped {
+            bytes.push(0xff);
+        }
+        bytes.extend_from_slice(&67u16.to_be_bytes());
+        bytes.extend_from_slice(&1_061u32.to_be_bytes());
+        for (reference, status) in [(1u16, 1), (3, 1), (440, 1), (10, 1), (149, 0)] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+            bytes.push(status);
+        }
+        bytes.push(0x2b);
+        bytes.extend_from_slice(&71u16.to_be_bytes());
+        bytes.push(1);
+        for value in [0.0, -0.0, 1.0, 2.0] {
+            bytes.extend_from_slice(&f64::to_be_bytes(value));
+        }
+        bytes
+    }
+
+    #[test]
+    fn retains_direct_and_escaped_type_67_records() {
+        for escaped in [false, true] {
+            let bytes = record(escaped);
+            let census = walk(&bytes);
+
+            assert!(matches!(
+                census.records.as_slice(),
+                [Record {
+                    kind: 67,
+                    xmt: 67,
+                    node_id: Some(1_061),
+                    references,
+                    canonical_bytes,
+                    end,
+                    ..
+                }] if references == &[1, 3, 440, 10, 149, 71]
+                    && canonical_bytes == &bytes
+                    && *end == bytes.len()
+            ));
+            assert_eq!(census.bytes_decoded, bytes.len());
+        }
+    }
+
+    #[test]
+    fn rejects_incomplete_or_noncanonical_type_67_records() {
+        let bytes = record(true);
+        for end in 0..bytes.len() {
+            assert!(consume_type_67(&bytes[..end], 0).is_none());
+        }
+
+        let mut invalid_status = bytes.clone();
+        invalid_status[11] = 0;
+        assert!(consume_type_67(&invalid_status, 0).is_none());
+
+        let mut subnormal_value = bytes;
+        let value_at = subnormal_value.len() - 32;
+        subnormal_value[value_at..value_at + 8].copy_from_slice(&1u64.to_be_bytes());
+        assert!(consume_type_67(&subnormal_value, 0).is_none());
+    }
 }
 
 #[cfg(test)]
