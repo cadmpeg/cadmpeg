@@ -5192,6 +5192,151 @@ fn generated_nurbs_translation_extent(
     blind_extrusion_from_carriers(&carriers, &planes, transform)
 }
 
+struct RectilinearPlaneStation {
+    coordinate: f64,
+    reversed: bool,
+}
+
+struct RectilinearPlaneFamily {
+    normal: [f64; 3],
+    stations: Vec<RectilinearPlaneStation>,
+}
+
+fn generated_rectilinear_plane_extent(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    op: BooleanOp,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (rows.len() >= 4
+        && rows
+            .iter()
+            .all(|row| row.kind == crate::surface::SurfaceKind::Plane))
+    .then_some(())?;
+
+    let mut planes = Vec::with_capacity(rows.len());
+    for row in rows {
+        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        let [Surface {
+            geometry: SurfaceGeometry::Plane { origin, normal, .. },
+            ..
+        }] = surfaces.as_slice()
+        else {
+            return None;
+        };
+        let plane = canonical_plane(PlaneEquation {
+            origin: [origin.x, origin.y, origin.z],
+            normal: [normal.x, normal.y, normal.z],
+        })?;
+        planes.push((plane, row.reversed));
+    }
+
+    let coordinate_scale = planes
+        .iter()
+        .flat_map(|(plane, _)| plane.origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let station_tolerance = 1e-9 * coordinate_scale;
+    let mut families: Vec<RectilinearPlaneFamily> = Vec::new();
+    for (plane, reversed) in planes {
+        let station = dot(plane.origin, plane.normal);
+        if let Some(family) = families.iter_mut().find(|family| {
+            family
+                .normal
+                .iter()
+                .zip(plane.normal)
+                .all(|(left, right)| (left - right).abs() <= 1e-10)
+        }) {
+            if let Some(known) = family
+                .stations
+                .iter()
+                .find(|known| (station - known.coordinate).abs() <= station_tolerance)
+            {
+                (known.reversed == reversed).then_some(())?;
+            } else {
+                family.stations.push(RectilinearPlaneStation {
+                    coordinate: station,
+                    reversed,
+                });
+            }
+        } else {
+            families
+                .iter()
+                .all(|family| dot(family.normal, plane.normal).abs() <= 1e-10)
+                .then_some(())?;
+            families.push(RectilinearPlaneFamily {
+                normal: plane.normal,
+                stations: vec![RectilinearPlaneStation {
+                    coordinate: station,
+                    reversed,
+                }],
+            });
+        }
+    }
+    (families.len() >= 2
+        && families
+            .iter()
+            .filter(|family| family.stations.len() >= 2)
+            .count()
+            >= 2)
+        .then_some(())?;
+
+    let start_reversed = match op {
+        BooleanOp::Join | BooleanOp::NewBody => true,
+        BooleanOp::Cut => false,
+        BooleanOp::Unresolved | BooleanOp::Intersect => return None,
+    };
+    let candidates = families
+        .iter()
+        .filter_map(|family| {
+            let [first, second] = family.stations.as_slice() else {
+                return None;
+            };
+            (first.reversed != second.reversed).then_some(())?;
+            let (start, end) = if first.reversed == start_reversed {
+                (first.coordinate, second.coordinate)
+            } else {
+                (second.coordinate, first.coordinate)
+            };
+            let signed_length = end - start;
+            (signed_length.abs() > station_tolerance).then_some((
+                family.normal.map(|component| component * signed_length),
+                signed_length.abs(),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let [(vector, length)] = candidates.as_slice() else {
+        return None;
+    };
+    let direction = normalized(*vector)?;
+    Some((
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(*length),
+                },
+                draft: None,
+                offset: None,
+            },
+        },
+        direction,
+    ))
+}
+
 fn directed_blind_extrusion_span(
     profile_direction: [f64; 3],
     extrusion_direction: [f64; 3],
@@ -14872,6 +15017,13 @@ fn schema_feature_definition(
         let profile = definition.map(|definition| {
             section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
+        let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
+        let op = section_sweep_boolean_operation(
+            feature_recipe_effect(scan, feature_id),
+            kind,
+            output_kind.is_some(),
+            preceding_features_establish_body(ir),
+        );
         let unique_transform = match transforms.as_slice() {
             [] => Some(None),
             [transform] => Some(Some(*transform)),
@@ -14898,6 +15050,11 @@ fn schema_feature_definition(
                 unique_transform.and_then(|transform| {
                     generated_nurbs_translation_extent(scan, ir, feature_id, transform)
                 })
+            })
+            .or_else(|| {
+                (transforms.is_empty())
+                    .then_some(())
+                    .and_then(|()| generated_rectilinear_plane_extent(scan, ir, feature_id, op))
             });
         let construction = extent_and_direction.map(|(extent, direction)| {
             (
@@ -14908,7 +15065,6 @@ fn schema_feature_definition(
         let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
         let profile = profile
             .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
-        let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
         return IrFeatureDefinition::Extrude {
             profile,
             direction: direction.map_or(
@@ -14917,12 +15073,7 @@ fn schema_feature_definition(
             ),
             start: cadmpeg_ir::features::ExtrudeStart::default(),
             extent,
-            op: section_sweep_boolean_operation(
-                feature_recipe_effect(scan, feature_id),
-                kind,
-                output_kind.is_some(),
-                preceding_features_establish_body(ir),
-            ),
+            op,
             direction_source: None,
             solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
             face_maker: None,

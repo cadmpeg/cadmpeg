@@ -3180,6 +3180,88 @@ fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
 }
 
 #[test]
+fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
+    let row = |id, reversed| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 7,
+        reversed,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([
+        row(31, false),
+        row(32, true),
+        row(33, true),
+        row(34, true),
+        row(35, true),
+    ]);
+    let plane = |id, origin, normal| Surface {
+        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        geometry: SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    };
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.extend([
+        plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+        plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+        plane(33, Point3::new(4.0, 48.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+        plane(
+            34,
+            Point3::new(-4.0, 48.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        plane(35, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+    ]);
+
+    assert_eq!(
+        generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Cut),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(42.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, 1.0, 0.0],
+        ))
+    );
+    assert_eq!(
+        generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Join),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(42.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, -1.0, 0.0],
+        ))
+    );
+    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Unresolved).is_none());
+    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Intersect).is_none());
+
+    scan.surfaces.rows[3].reversed = false;
+    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Cut).is_none());
+    scan.surfaces.rows[3].reversed = true;
+    ir.model.surfaces.pop();
+    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Cut).is_none());
+}
+
+#[test]
 fn generated_nurbs_translations_define_a_blind_extrusion() {
     let translated_surface = |last_z| NurbsSurface {
         u_degree: 2,
