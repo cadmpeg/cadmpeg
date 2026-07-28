@@ -298,7 +298,8 @@ pub enum ParasolidDeltasInlineSchemaFields {
         node_id: u32,
         leading_references: [u32; 5],
         marker: u8,
-        linked_references: [u32; 2],
+        linked_references: Vec<u32>,
+        state_references: Vec<u32>,
         numeric_values: Option<[f64; 11]>,
     },
     /// Type 41 term-use declaration state.
@@ -706,6 +707,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     leading_references,
                     marker,
                     linked_references,
+                    state_references,
                     numeric_values,
                 } => ParasolidDeltasInlineSchemaFields::Type38 {
                     xmt,
@@ -713,6 +715,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     leading_references,
                     marker,
                     linked_references,
+                    state_references,
                     numeric_values,
                 },
                 crate::deltas::InlineSchemaFields::Type41 {
