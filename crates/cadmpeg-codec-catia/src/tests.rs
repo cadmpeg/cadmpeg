@@ -9197,6 +9197,62 @@ fn decode_rejects_a_logarithm_outside_its_dimensionless_positive_domain() {
 }
 
 #[test]
+fn decode_transfers_linear_interpolation_formula() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                6,
+                false,
+                &[
+                    ("#1_", "Real", "Start", "#1_ /2", 2.0),
+                    ("#2_", "Real", "End", "#2_ /3", 10.0),
+                    ("#3_", "Real", "Fraction", "#3_ /4", 0.25),
+                ],
+                "Real",
+                Some(4.0),
+                "LinearInterpolation(#1_ /2,#2_ /3,#3_ /4)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode linear interpolation formula");
+
+    let [start, end, fraction, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("linear interpolation parameters")
+    };
+    assert_eq!(start.value, Some(cadmpeg_ir::ParameterValue::Real(2.0)));
+    assert_eq!(end.value, Some(cadmpeg_ir::ParameterValue::Real(10.0)));
+    assert_eq!(fraction.value, Some(cadmpeg_ir::ParameterValue::Real(0.25)));
+    assert_eq!(output.value, Some(cadmpeg_ir::ParameterValue::Real(4.0)));
+    assert_eq!(
+        output.dependencies,
+        vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
+    );
+}
+
+#[test]
+fn decode_rejects_dimensioned_linear_interpolation_arguments() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                6,
+                false,
+                &[
+                    ("#1_", "LENGTH", "Start", "#1_ /2", 2.0),
+                    ("#2_", "Real", "End", "#2_ /3", 10.0),
+                    ("#3_", "Real", "Fraction", "#3_ /4", 0.25),
+                ],
+                "Real",
+                Some(4.0),
+                "LinearInterpolation(#1_ /2,#2_ /3,#3_ /4)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensionally invalid linear interpolation");
+
+    assert_eq!(decoded.ir.model.parameters.len(), 3);
+}
+
+#[test]
 fn decode_rejects_extrema_between_different_dimensions() {
     let decoded = CatiaCodec
         .decode(

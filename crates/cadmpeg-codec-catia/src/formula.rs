@@ -660,6 +660,19 @@ impl FormulaExpressionParser<'_, '_> {
             return Some(result);
         }
 
+        if function == "LinearInterpolation" {
+            let [start, end, fraction] = arguments.as_slice() else {
+                return None;
+            };
+            if [start, end, fraction]
+                .into_iter()
+                .any(|argument| argument.dimension != FormulaDimension::SCALAR)
+            {
+                return None;
+            }
+            return finite_scalar(start.value + (end.value - start.value) * fraction.value);
+        }
+
         let (first, second) = match arguments.as_slice() {
             [first] => (*first, None),
             [first, second] => (*first, Some(*second)),
