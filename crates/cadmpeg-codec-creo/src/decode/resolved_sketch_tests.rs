@@ -7144,6 +7144,63 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         ),
         Some(SketchLocus::Start(entity)) if entity.0.ends_with(":100")
     ));
+    let centered_midpoint = crate::feature::FeatureSkamp {
+        id: 35,
+        kind: 35,
+        flags: 0,
+        status: 34,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 100,
+                sense: 4,
+            },
+        ],
+        offset: 83,
+    };
+    let centered_midpoint_relations = opaque_line.relations.as_mut().expect("relations");
+    centered_midpoint_relations.skamps = vec![centered_midpoint];
+    centered_midpoint_relations
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 1;
+    assert_eq!(
+        solver_only_section_entity_family(&opaque_line, 101),
+        Some(SectionEntityIncidenceFamily::Point)
+    );
+    assert_eq!(
+        section_skamp_constraints_for_geometry(
+            &opaque_line,
+            &SketchId("creo:model:sketch#917".into()),
+            Some(&BTreeMap::from([
+                (
+                    SketchEntityId("creo:featdefs:sketch_entity#917:100".to_string()),
+                    SketchGeometry::Line {
+                        start: Point2::new(3.0, -1.0),
+                        end: Point2::new(3.0, 5.0),
+                    },
+                ),
+                (
+                    SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
+                    SketchGeometry::Native {
+                        native_kind: "point".to_string(),
+                    },
+                ),
+            ])),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Midpoint {
+            point: SketchLocus::Entity(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:101".to_string()
+            )),
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:100".to_string()),
+        }
+    );
     let mut opaque_family_collision = opaque_point.clone();
     opaque_family_collision
         .segments

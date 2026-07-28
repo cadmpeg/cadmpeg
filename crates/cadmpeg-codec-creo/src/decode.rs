@@ -9473,6 +9473,11 @@ fn section_skamp_midpoint(
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let target = |item: &crate::feature::FeatureSkampItem| {
+        if item.sense == 4
+            && unique_opaque_section_segment(definition, item.entity_id, 47).is_some()
+        {
+            return Some(sketch_entity_id(sketch, item.entity_id));
+        }
         (item.sense == 0).then_some(())?;
         if section_skamp_is_arc(definition, item) {
             return Some(sketch_entity_id(sketch, item.entity_id));
@@ -10764,6 +10769,21 @@ fn solver_only_section_entity_family(
             .any(|item| item.entity_id == entity_id && item.sense == 4)
     }) {
         evidence.insert(SectionEntityIncidenceFamily::Circular);
+    }
+    if complete_section_skamps(definition).any(|skamp| {
+        let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
+            return false;
+        };
+        [(first, second), (second, first)]
+            .into_iter()
+            .any(|(point, target)| {
+                point.entity_id == entity_id
+                    && point.sense == 0
+                    && target.sense == 4
+                    && unique_opaque_section_segment(definition, target.entity_id, 47).is_some()
+            })
+    }) {
+        evidence.insert(SectionEntityIncidenceFamily::Point);
     }
     for skamp in definition
         .relations
