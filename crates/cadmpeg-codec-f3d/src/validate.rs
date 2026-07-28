@@ -2303,6 +2303,7 @@ fn validate_edge_operands<'a>(
             design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
+                Some(native_stream),
             );
         }
         let valid = operand.class_tag.len() == 3
@@ -2464,6 +2465,7 @@ fn validate_face_operands<'a>(
             design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
+                Some(native_stream),
             );
         }
         let recipe_design_reference = recipe
@@ -2987,33 +2989,38 @@ fn validate_dimension_recipe_records<'a>(
             design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
+                Some(native_stream),
             );
         }
+        let references_match = decoded_references == record.references;
+        let edge_operands_match =
+            design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
+                record,
+                &native.design_edge_operands,
+            ) == record.matching_edge_operand_ids;
+        let recipe_frame_matches = recipe.is_some_and(|recipe| {
+            design_stream(&recipe.id) == native_stream
+                && recipe.byte_offset >= record.byte_offset.saturating_add(11)
+                && frame_end.is_some_and(|end| recipe.byte_offset < end)
+                && prefix_end == recipe.byte_offset.checked_sub(4)
+                && record.program_offset
+                    == recipe.byte_offset.saturating_add(
+                        design::construction_recipe_family_name_len(recipe.kind) as u64,
+                    )
+        });
         let valid = record.class_tag.len() == 3
             && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && record.frame_length >= 11
             && !record.prefix_bytes.is_empty()
-            && decoded_references == record.references
-            && design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
-                record,
-                &native.design_edge_operands,
-            ) == record.matching_edge_operand_ids
+            && references_match
+            && edge_operands_match
             && record.prefix_offset == record.byte_offset.saturating_add(11)
             && !record.program.is_empty()
             && record.program_offset >= record.byte_offset.saturating_add(11)
             && program_end == frame_end
             && dimension_companion
             && companion_order_matches
-            && recipe.is_some_and(|recipe| {
-                design_stream(&recipe.id) == native_stream
-                    && recipe.byte_offset >= record.byte_offset.saturating_add(11)
-                    && frame_end.is_some_and(|end| recipe.byte_offset < end)
-                    && prefix_end == recipe.byte_offset.checked_sub(4)
-                    && record.program_offset
-                        == recipe.byte_offset.saturating_add(
-                            design::construction_recipe_family_name_len(recipe.kind) as u64,
-                        )
-            })
+            && recipe_frame_matches
             && dimension_recipe_ids.insert((native_stream, record.recipe_id.as_str()));
         if !valid {
             findings.push(Finding {

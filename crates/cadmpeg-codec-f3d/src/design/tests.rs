@@ -2622,6 +2622,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
                     ordinal: 0,
                 },
             ],
+            None,
         ),
         [FaceId("face-b".into())]
     );
@@ -2636,6 +2637,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
                 design_references: vec![331],
                 ordinal: 0,
             }],
+            None,
         ),
         [EdgeId("edge-b".into())]
     );
@@ -2650,6 +2652,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
                 design_references: vec![331],
                 ordinal: 0,
             }],
+            None,
         ),
         [FaceId("face-c".into())]
     );
@@ -2664,8 +2667,35 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
                 design_references: vec![331],
                 ordinal: 0,
             }],
+            None,
         ),
         [EdgeId("edge-c".into())]
+    );
+    let stream_tags = [
+        PersistentSubentityTag {
+            id: "f3d:A/BulkStream.dat:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(FaceId("face-a".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "f3d:B/BulkStream.dat:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(FaceId("face-b".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+    ];
+    assert_eq!(
+        crate::design::decode::dimension_frames::recipe_reference_candidate_faces(
+            &references[0],
+            &stream_tags,
+            Some("f3d:A/BulkStream.dat"),
+        ),
+        [FaceId("face-a".into())]
     );
 }
 
@@ -6877,7 +6907,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     embedded_program.extend_from_slice(&edge_operand.recipe_program[7..]);
     embedded_program.push(88);
     let dimension_recipe = DesignDimensionRecipeRecord {
-        id: "dimension-recipe".into(),
+        id: "f3d:Design/BulkStream.dat:dimension-recipe#1".into(),
         companion_record_index: 1,
         recipe_ordinal: 0,
         recipe_id: "recipe".into(),
@@ -6896,6 +6926,15 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
             &dimension_recipe,
             std::slice::from_ref(&edge_operand),
+        ),
+        [edge_operand.id.clone()]
+    );
+    let mut other_stream_operand = edge_operand.clone();
+    other_stream_operand.id = "f3d:Other/BulkStream.dat:edge-operand#100".into();
+    assert_eq!(
+        crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
+            &dimension_recipe,
+            &[edge_operand.clone(), other_stream_operand],
         ),
         [edge_operand.id.clone()]
     );
@@ -7062,7 +7101,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&face_recipe),
         &[
             PersistentSubentityTag {
-                id: "f3d:asm:persistent-subentity-tag#1".into(),
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
                 selector: 1,
                 token: "3".into(),
@@ -7070,7 +7109,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ordinal: 0,
             },
             PersistentSubentityTag {
-                id: "f3d:asm:persistent-subentity-tag#2".into(),
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
                 target: AttributeTarget::Face(FaceId("f3d:brep:entity#51".into())),
                 selector: 1,
                 token: "4".into(),

@@ -270,19 +270,25 @@ pub fn bind_dimension_recipe_reference_candidates(
     records: &mut [DesignDimensionRecipeRecord],
     tags: &[PersistentSubentityTag],
 ) {
-    for reference in records.iter_mut().flat_map(|record| &mut record.references) {
-        bind_recipe_reference_candidates(reference, tags);
+    for record in records {
+        let stream = native_stream(&record.id);
+        for reference in &mut record.references {
+            bind_recipe_reference_candidates(reference, tags, stream);
+        }
     }
 }
 
 pub(crate) fn bind_recipe_reference_candidates(
     reference: &mut crate::records::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
+    stream: Option<&str>,
 ) {
-    reference.candidate_faces = recipe_reference_candidate_faces(reference, tags);
-    reference.candidate_edges = recipe_reference_candidate_edges(reference, tags);
-    reference.alternate_selector_faces = recipe_reference_alternate_selector_faces(reference, tags);
-    reference.alternate_selector_edges = recipe_reference_alternate_selector_edges(reference, tags);
+    reference.candidate_faces = recipe_reference_candidate_faces(reference, tags, stream);
+    reference.candidate_edges = recipe_reference_candidate_edges(reference, tags, stream);
+    reference.alternate_selector_faces =
+        recipe_reference_alternate_selector_faces(reference, tags, stream);
+    reference.alternate_selector_edges =
+        recipe_reference_alternate_selector_edges(reference, tags, stream);
 }
 
 /// Join dimension programs to byte-identical edge-recipe program tails.
@@ -303,6 +309,9 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     let mut ids = operands
         .iter()
         .filter(|operand| {
+            if native_stream(&operand.id) != native_stream(&record.id) {
+                return false;
+            }
             let Some(tail) = operand
                 .recipe_program
                 .get(7..)
@@ -325,13 +334,15 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
 pub(crate) fn recipe_reference_candidate_edges(
     reference: &crate::records::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
+    stream: Option<&str>,
 ) -> Vec<cadmpeg_ir::ids::EdgeId> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut edges = tags
         .iter()
         .filter(|tag| {
-            tag.selector == reference.selector
+            stream.is_none_or(|stream| native_stream(&tag.id) == Some(stream))
+                && tag.selector == reference.selector
                 && tag.token == reference.token
                 && tag.design_references.contains(&reference.design_reference)
         })
@@ -348,13 +359,15 @@ pub(crate) fn recipe_reference_candidate_edges(
 pub(crate) fn recipe_reference_candidate_faces(
     reference: &crate::records::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
+    stream: Option<&str>,
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut faces = tags
         .iter()
         .filter(|tag| {
-            tag.selector == reference.selector
+            stream.is_none_or(|stream| native_stream(&tag.id) == Some(stream))
+                && tag.selector == reference.selector
                 && tag.token == reference.token
                 && tag.design_references.contains(&reference.design_reference)
         })
@@ -371,13 +384,15 @@ pub(crate) fn recipe_reference_candidate_faces(
 pub(crate) fn recipe_reference_alternate_selector_edges(
     reference: &crate::records::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
+    stream: Option<&str>,
 ) -> Vec<cadmpeg_ir::ids::EdgeId> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut edges = tags
         .iter()
         .filter(|tag| {
-            tag.selector != reference.selector
+            stream.is_none_or(|stream| native_stream(&tag.id) == Some(stream))
+                && tag.selector != reference.selector
                 && tag.token == reference.token
                 && tag.design_references.contains(&reference.design_reference)
         })
@@ -394,13 +409,15 @@ pub(crate) fn recipe_reference_alternate_selector_edges(
 pub(crate) fn recipe_reference_alternate_selector_faces(
     reference: &crate::records::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
+    stream: Option<&str>,
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut faces = tags
         .iter()
         .filter(|tag| {
-            tag.selector != reference.selector
+            stream.is_none_or(|stream| native_stream(&tag.id) == Some(stream))
+                && tag.selector != reference.selector
                 && tag.token == reference.token
                 && tag.design_references.contains(&reference.design_reference)
         })

@@ -344,8 +344,9 @@ pub fn bind_face_operand_candidates(
         .collect::<HashMap<_, _>>();
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
+        let stream = native_stream(&operand.id);
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags);
+            bind_recipe_reference_candidates(reference, tags, stream);
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -404,8 +405,9 @@ pub fn bind_edge_operand_candidates(
         .collect::<HashMap<_, _>>();
     for operand in operands {
         operand.candidate_faces.clear();
+        let stream = native_stream(&operand.id);
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags);
+            bind_recipe_reference_candidates(reference, tags, stream);
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
