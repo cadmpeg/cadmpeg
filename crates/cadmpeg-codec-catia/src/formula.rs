@@ -52,7 +52,9 @@ pub(crate) fn transfer_parameters(
                 dependency
                     .symbol
                     .strip_prefix(&input.parameter)
-                    .is_some_and(|suffix| suffix.starts_with(char::is_whitespace))
+                    .is_some_and(|suffix| {
+                        suffix.is_empty() || suffix.starts_with(char::is_whitespace)
+                    })
             }) else {
                 all_inputs_complete = false;
                 continue;
@@ -606,13 +608,16 @@ impl FormulaExpressionParser<'_, '_> {
         while self.peek().is_some_and(|byte| byte.is_ascii_whitespace()) {
             self.at += 1;
         }
-        (self.peek()? == b'/').then_some(())?;
-        self.at += 1;
-        let ordinal = self.at;
-        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+        if self.peek() == Some(b'/') {
             self.at += 1;
+            let ordinal = self.at;
+            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+                self.at += 1;
+            }
+            (self.at > ordinal).then_some(())?;
+        } else {
+            self.at = name_end;
         }
-        (self.at > ordinal).then_some(())?;
         self.bindings.get(&self.source[start..name_end]).copied()
     }
 

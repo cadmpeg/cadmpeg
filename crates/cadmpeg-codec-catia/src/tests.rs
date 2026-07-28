@@ -7768,6 +7768,30 @@ fn formula_parameter_dependency_requires_a_unique_binding() {
 }
 
 #[test]
+fn formula_relation_resolves_bare_expression_symbols() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    ));
+
+    assert_eq!(
+        native.entity_records[0]
+            .formula_relation
+            .as_ref()
+            .expect("complete formula relation")
+            .parameter_dependencies,
+        [crate::native::CatiaFormulaParameterDependency {
+            symbol: "#1_".to_string(),
+            parameter: native.entity_records[2].id.clone(),
+        }]
+    );
+}
+
+#[test]
 fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 
@@ -8345,6 +8369,33 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .is_empty());
+}
+
+#[test]
+fn decode_transfers_a_closed_formula_with_bare_symbols() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                4,
+                false,
+                &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+                "LENGTH",
+                Some(33.0),
+                "#1_-2mm",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode bare-symbol formula");
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("closed bare-symbol formula parameters")
+    };
+
+    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(output.expression, "#1_-2mm");
+    assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
 }
 
 #[test]

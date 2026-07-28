@@ -2165,11 +2165,13 @@ fn relation_symbols(source: &str) -> Vec<String> {
             continue;
         }
         at += 1;
+        let bare_end = at;
         while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
             at += 1;
         }
         if bytes.get(at) != Some(&b'/') {
-            at = start + 1;
+            symbols.push(source[start..bare_end].to_string());
+            at = bare_end;
             continue;
         }
         at += 1;
