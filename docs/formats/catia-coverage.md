@@ -54,14 +54,15 @@ current scores require those matrices and representative fixtures.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, trigonometric calls, absolute values, and
   square roots.
-- Owner-bound `PRTSketch` and `Sketch` class fields transfer one neutral planar
+- Owner-bound `PRTSketch` class fields transfer one neutral planar
   sketch identity and its linked ordered sketch-history feature independently
   of unresolved geometry payloads. Complete empty declaration records are
   consumed separately. Structural ownership among transferred sketches
   supplies feature containment. Exact principal-plane declarations resolve the
   corresponding origin frame. Design objects consisting entirely of one exact
   empty principal-plane declaration class transfer the corresponding built-in
-  reference-plane history node.
+  reference-plane history node. Plain `Sketch` fields are properties and do not
+  declare sketch identities.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.

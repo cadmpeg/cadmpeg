@@ -324,7 +324,7 @@ fn sketch_candidate<'a>(
         .fields
         .iter()
         .filter_map(|field| records.get(field.as_str()).copied())
-        .filter(|record| matches!(record.class_name.as_deref(), Some("PRTSketch" | "Sketch")))
+        .filter(|record| record.class_name.as_deref() == Some("PRTSketch"))
         .collect::<Vec<_>>();
     let (declaration_class, declaration_entry) = declarations.first().and_then(|record| {
         record

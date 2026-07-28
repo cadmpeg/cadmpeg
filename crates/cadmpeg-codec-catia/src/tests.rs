@@ -6194,67 +6194,35 @@ fn conflicting_principal_plane_declarations_leave_placement_unresolved() {
 }
 
 #[test]
-fn complete_sketch_declaration_transfers_neutral_identity() {
-    let records = [
-        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
-        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
-    ];
-    let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
-    bytes.extend(catalog_stream(&[
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "Sketch",
-    ]));
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+fn plain_sketch_properties_do_not_declare_sketch_history() {
+    for payload in [
+        vec![0xfe],
+        vec![0x04, 0x05, 0xfe],
+        vec![0x3b, 0x83, 0x81, 0x82, 0xfe],
+        vec![0x81, 0x04, 0xfe],
+    ] {
+        let records = [
+            object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
+            object_graph_record(&[0x12, 0x82, 0x84], &payload),
+        ];
+        let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
+        bytes.extend(catalog_stream(&[
+            "CATCatalogManager",
+            "catalogManager",
+            "catalogLinks",
+            "",
+            "Sketch",
+        ]));
+        let native = crate::native::CatiaNative::decode(&bytes);
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-    let consumed =
-        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
+        let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
 
-    assert_eq!(
-        consumed,
-        [native.object_graphs[0].records[1].id.clone()].into()
-    );
-    assert_eq!(ir.model.sketches.len(), 1);
-    assert_eq!(
-        ir.model.sketches[0].native_ref.as_deref(),
-        Some(native.design_objects[0].id.as_str())
-    );
-}
-
-#[test]
-fn repeated_complete_sketch_declarations_transfer_one_identity() {
-    let records = [
-        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
-        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
-        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
-    ];
-    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4]);
-    bytes.extend(catalog_stream(&[
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "Sketch",
-    ]));
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-
-    let consumed =
-        crate::design_feature::transfer_design_features(&mut ir, &native).consumed_records();
-
-    assert_eq!(
-        consumed,
-        native.object_graphs[0].records[1..]
-            .iter()
-            .map(|record| record.id.clone())
-            .collect()
-    );
-    assert_eq!(ir.model.sketches.len(), 1);
-    assert_eq!(ir.model.features.len(), 1);
-    assert_eq!(ir.model.features[0].source_tag.as_deref(), Some("Sketch"));
+        assert!(transfer.consumed_records().is_empty());
+        assert!(transfer.features_by_design_object.is_empty());
+        assert!(ir.model.sketches.is_empty());
+        assert!(ir.model.features.is_empty());
+    }
 }
 
 #[test]
