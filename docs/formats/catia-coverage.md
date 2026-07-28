@@ -49,8 +49,10 @@ current scores require those matrices and representative fixtures.
   expressions remain native when their formula-instance incidence does not
   resolve.
   Parameters structurally contained by a transferred feature retain that
-  feature ownership. Structurally owned child features and parameters share
-  one object-field-ordered source-content sequence; other parameters remain
+  feature ownership. Structurally owned sketches are ordered after their
+  transferred sketch ancestors independently of field serialization; cyclic
+  owner sets remain unparented. Child features and parameters share one
+  object-field-ordered source-content sequence; other parameters remain
   document-scoped.
   Legacy named scalar packets also transfer when a unique acyclic descriptor
   chain resolves their literal numeric type. A uniquely bound zero-input

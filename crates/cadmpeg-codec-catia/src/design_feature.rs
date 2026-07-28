@@ -47,8 +47,19 @@ pub(crate) fn transfer_design_features(
         .iter()
         .filter_map(|object| design_feature_candidate(object, &records))
         .collect::<Vec<_>>();
+    let sketch_feature_ids = candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.definition, DesignFeatureDefinition::Sketch { .. }))
+        .map(|candidate| {
+            (
+                candidate.object.id.as_str(),
+                FeatureId(format!("{}:feature", candidate.object.id)),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let (candidates, blocked_parent_objects) =
+        order_design_feature_candidates(candidates, &sketch_feature_ids);
     let mut transfer = DesignFeatureTransfer::default();
-    let mut sketch_features_by_design_object = HashMap::<String, FeatureId>::new();
 
     for candidate in candidates {
         let object = candidate.object;
@@ -99,11 +110,15 @@ pub(crate) fn transfer_design_features(
                     object.owner_entity_id,
                 );
                 let placement = resolved_placement.unwrap_or(SketchPlacement::Unresolved);
-                let parent = object
-                    .owner_design_object
-                    .as_deref()
-                    .and_then(|owner| sketch_features_by_design_object.get(owner))
-                    .cloned();
+                let parent = if blocked_parent_objects.contains(object.id.as_str()) {
+                    None
+                } else {
+                    object
+                        .owner_design_object
+                        .as_deref()
+                        .and_then(|owner| sketch_feature_ids.get(owner))
+                        .cloned()
+                };
 
                 let sketch_id = SketchId(format!("{}:sketch", object.id));
                 ir.model.sketches.push(Sketch {
@@ -151,7 +166,6 @@ pub(crate) fn transfer_design_features(
                             .map(|declaration| declaration.id.clone()),
                     );
                 }
-                sketch_features_by_design_object.insert(object.id.clone(), feature_id.clone());
             }
         }
         transfer
@@ -160,6 +174,43 @@ pub(crate) fn transfer_design_features(
     }
 
     transfer
+}
+
+fn order_design_feature_candidates<'a>(
+    candidates: Vec<DesignFeatureCandidate<'a>>,
+    sketch_feature_ids: &HashMap<&str, FeatureId>,
+) -> (Vec<DesignFeatureCandidate<'a>>, HashSet<String>) {
+    let mut remaining = candidates;
+    let mut ordered = Vec::with_capacity(remaining.len());
+    let mut blocked_parent_objects = HashSet::new();
+    while !remaining.is_empty() {
+        let remaining_ids = remaining
+            .iter()
+            .map(|candidate| candidate.object.id.as_str())
+            .collect::<HashSet<_>>();
+        let next = remaining.iter().position(|candidate| {
+            if !matches!(candidate.definition, DesignFeatureDefinition::Sketch { .. }) {
+                return true;
+            }
+            candidate
+                .object
+                .owner_design_object
+                .as_deref()
+                .filter(|owner| sketch_feature_ids.contains_key(owner))
+                .is_none_or(|owner| !remaining_ids.contains(owner))
+        });
+        let Some(next) = next else {
+            blocked_parent_objects.extend(
+                remaining
+                    .iter()
+                    .map(|candidate| candidate.object.id.clone()),
+            );
+            ordered.extend(remaining);
+            break;
+        };
+        ordered.push(remaining.remove(next));
+    }
+    (ordered, blocked_parent_objects)
 }
 
 /// Project exact design-object membership into ordered feature source content.

@@ -7205,7 +7205,7 @@ fn feature_source_content_interleaves_parameters_and_children_by_object_field_of
 }
 
 #[test]
-fn later_structural_sketch_owner_does_not_become_a_forward_parent() {
+fn later_structural_sketch_owner_is_ordered_before_its_child() {
     let records = [
         object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
         object_graph_record(&[0x12, 0x83, 0x85], &[0xfe]),
@@ -7231,17 +7231,62 @@ fn later_structural_sketch_owner_does_not_become_a_forward_parent() {
     crate::design_feature::transfer_design_features(&mut ir, &native);
 
     assert_eq!(ir.model.features.len(), 2);
+    assert_eq!(
+        ir.model.features[0].native_ref.as_deref(),
+        Some(native.design_objects[1].id.as_str())
+    );
+    assert_eq!(
+        ir.model.features[1].native_ref.as_deref(),
+        Some(native.design_objects[0].id.as_str())
+    );
+    assert_eq!(ir.model.features[0].parent, None);
+    assert_eq!(
+        ir.model.features[1].parent.as_ref(),
+        Some(&ir.model.features[0].id)
+    );
+    crate::design_feature::project_feature_source_content(&mut ir, &native);
+    assert_eq!(
+        ir.model.features[0].source_content,
+        [cadmpeg_ir::features::FeatureSourceContent::Feature(
+            ir.model.features[1].id.clone()
+        )]
+    );
+}
+
+#[test]
+fn cyclic_structural_sketch_ownership_does_not_create_feature_parents() {
+    let records = [
+        object_graph_record(&[0x12, 0x83, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.design_objects.len(), 2);
+    assert_eq!(
+        native.design_objects[0].owner_design_object.as_deref(),
+        Some(native.design_objects[1].id.as_str())
+    );
+    assert_eq!(
+        native.design_objects[1].owner_design_object.as_deref(),
+        Some(native.design_objects[0].id.as_str())
+    );
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    crate::design_feature::transfer_design_features(&mut ir, &native);
+
+    assert_eq!(ir.model.features.len(), 2);
     assert!(ir
         .model
         .features
         .iter()
         .all(|feature| feature.parent.is_none()));
-    crate::design_feature::project_feature_source_content(&mut ir, &native);
-    assert!(ir
-        .model
-        .features
-        .iter()
-        .all(|feature| feature.source_content.is_empty()));
 }
 
 #[test]
