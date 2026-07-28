@@ -1808,12 +1808,12 @@ mod marker_tests {
         current_linked_semicircle_record, current_long_full_circle_radial_index,
         current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
         current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
-        enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, extended_compact_84_construction_line_endpoint_indices,
-        extended_compact_endpoint_markers, extended_compact_linked_profile_point_coordinates,
-        extended_declared_inline_line_endpoints, extended_geometry_locus_profile_vertex,
-        extended_identity_inline_line_endpoints, extended_linked_inline_line_endpoints,
-        extended_profile_point_coordinates,
+        enrich_history_revolution_inputs, equal_index_coordinate_roster_full_circle,
+        explicit_reference_axis_frame, explicit_reference_plane_frame,
+        extended_compact_84_construction_line_endpoint_indices, extended_compact_endpoint_markers,
+        extended_compact_linked_profile_point_coordinates, extended_declared_inline_line_endpoints,
+        extended_geometry_locus_profile_vertex, extended_identity_inline_line_endpoints,
+        extended_linked_inline_line_endpoints, extended_profile_point_coordinates,
         extended_profile_roster_construction_line_endpoint_indices, extended_radial_circle_index,
         extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
         extended_terminal_repeated_radial_circle_index,
@@ -7104,6 +7104,55 @@ mod marker_tests {
         assert_eq!(
             super::compact_profile_full_circle(&payload, &conflicting[3], &markers),
             None
+        );
+    }
+
+    #[test]
+    fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
+        let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x01, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..60].copy_from_slice(&[2, 0, 2, 0]);
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&1u32.to_le_bytes());
+        for cell in payload[78..94].chunks_exact_mut(4) {
+            cell.copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        let marker = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let circle = marker("circle", 0, None, SketchInputKind::Arc);
+        let points = [
+            marker("first", 10, Some([0.0, 0.0]), SketchInputKind::Point),
+            marker("center", 20, Some([1.0, 1.0]), SketchInputKind::Point),
+            marker("radial", 30, Some([1.0, 3.0]), SketchInputKind::Point),
+        ];
+        let markers = std::iter::once(&circle)
+            .chain(points.iter())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+            Some(([1.0, 1.0], 2.0))
         );
     }
 
@@ -27284,25 +27333,34 @@ pub(crate) fn project_marker_backed_sketches(
                                 &markers_by_id,
                                 &object_markers,
                             );
-                            if let Some((center, radius)) = compact_profile_full_circle(
-                                &lane.native_payload,
-                                marker,
-                                &object_markers,
-                            )
-                            .or_else(|| {
-                                coordinate_roster_full_circle(
+                            if let Some((center, radius)) =
+                                equal_index_coordinate_roster_full_circle(
                                     &lane.native_payload,
                                     marker,
                                     &object_markers,
                                 )
-                            })
-                            .or_else(|| {
-                                wide_coordinate_roster_full_circle(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )
-                            }) {
+                                .or_else(|| {
+                                    compact_profile_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    )
+                                })
+                                .or_else(|| {
+                                    coordinate_roster_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    )
+                                })
+                                .or_else(|| {
+                                    wide_coordinate_roster_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    )
+                                })
+                            {
                                 let point = transform.apply(quantize(
                                     Point2::new(center[0] * NATIVE_TO_IR, center[1] * NATIVE_TO_IR),
                                     QUANTUM,
@@ -37692,6 +37750,63 @@ fn current_long_full_circle_radial_index(payload: &[u8], offset: usize) -> Optio
         && payload.get(offset + 66..offset + 68)
             == Some(&u16::try_from(radial_index).ok()?.to_le_bytes()))
     .then_some(radial_index)
+}
+
+fn equal_index_coordinate_roster_full_circle(
+    payload: &[u8],
+    circle: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Option<([f64; 2], f64)> {
+    let offset = usize::try_from(circle.offset).ok()?;
+    if circle.kind != SketchInputKind::Arc
+        || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+            != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(0)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x01, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 72..offset + 76) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 78..offset + 94)
+            != Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        || payload.get(offset + 94..offset + 96) != Some(&[0; 2])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(104)?)
+    {
+        return None;
+    }
+    let center_index = u16::from_le_bytes(payload.get(offset + 56..offset + 58)?.try_into().ok()?);
+    if center_index == 0
+        || payload.get(offset + 58..offset + 60) != Some(&center_index.to_le_bytes())
+    {
+        return None;
+    }
+    let mut points = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == circle.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    points.sort_unstable_by_key(|marker| marker.offset);
+    let center_index = usize::from(center_index.checked_sub(1)?);
+    let center = points.get(center_index)?.coordinates_m?;
+    let radial = points.get(center_index.checked_add(1)?)?.coordinates_m?;
+    let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+    (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
 
 fn compact_profile_full_circle(
