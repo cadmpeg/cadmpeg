@@ -7243,7 +7243,7 @@ fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
 }
 
 #[test]
-fn deltas_reference_state_packets_decode_compact_and_extended_references_atomically() {
+fn deltas_reference_state_packets_decode_compact_and_extended_references() {
     let mut packet = vec![0, 1, 0, 1, 0, 4];
     packet.extend_from_slice(&2u16.to_be_bytes());
     packet.extend_from_slice(&3u16.to_be_bytes());
@@ -7274,11 +7274,15 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references_atomica
     let truncated = packet[..packet.len() - 1].to_vec();
     let null_required_reference = [&packet[..6], &[0, 1], &packet[8..]].concat();
     let trailing_byte = [packet.as_slice(), &[0]].concat();
-    for malformed in [&truncated, &null_required_reference, &trailing_byte] {
+    for malformed in [&truncated, &null_required_reference] {
         assert!(crate::deltas::walk(malformed)
             .reference_state_packets
             .is_empty());
     }
+    let trailing_census = crate::deltas::walk(&trailing_byte);
+    assert_eq!(trailing_census.reference_state_packets.len(), 1);
+    assert_eq!(trailing_census.reference_state_packets[0].end, packet.len());
+    assert_eq!(trailing_census.bytes_decoded, packet.len());
 }
 
 #[test]

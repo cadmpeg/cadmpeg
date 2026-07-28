@@ -826,14 +826,22 @@ fn reference_type_map(
 
 fn reference_state_packets(stream: &[u8], census: &Census) -> Vec<ReferenceStatePacket> {
     uncovered_spans(stream.len(), census, true)
-        .filter_map(|(offset, end)| reference_state_packet(stream, offset, end))
+        .flat_map(|(offset, gap_end)| {
+            let mut packets = Vec::new();
+            let mut at = offset;
+            while let Some(packet) = reference_state_packet(stream, at, gap_end) {
+                at = packet.end;
+                packets.push(packet);
+            }
+            packets
+        })
         .collect()
 }
 
 fn reference_state_packet(
     stream: &[u8],
     offset: usize,
-    expected_end: usize,
+    gap_end: usize,
 ) -> Option<ReferenceStatePacket> {
     (be::u16_at(stream, offset) == Some(1)
         && be::u16_at(stream, offset + 2) == Some(1)
@@ -856,7 +864,7 @@ fn reference_state_packet(
     }
     let state_byte = *stream.get(at)?;
     at = at.checked_add(1)?;
-    (at == expected_end).then_some(ReferenceStatePacket {
+    (at <= gap_end).then_some(ReferenceStatePacket {
         references,
         state_words,
         state_byte,
