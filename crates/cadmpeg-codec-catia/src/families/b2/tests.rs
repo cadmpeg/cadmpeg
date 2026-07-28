@@ -10,8 +10,8 @@ use crate::tests::{
     b2_link_5f_stream, b2_linked_counted_owner_stream, b2_linked_owner_stream, b2_long_61_stream,
     b2_offset_support_stream, b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream,
     b2_phase_tailed_cylinder_stream, b2_reference_list_stream, b2_revolution_stream,
-    b2_topology_metadata_stream, b2_width_coded_owner_packet_stream, b3_cylinder_stream,
-    b3_offset_support_stream,
+    b2_topology_metadata_stream, b2_torus_stream, b2_width_coded_owner_packet_stream,
+    b3_cylinder_stream, b3_offset_support_stream,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -298,6 +298,38 @@ fn b2_revolution_parser_requires_an_ordered_profile_and_right_handed_unit_frame(
         stream[start + 8 * index..start + 8 * (index + 1)].copy_from_slice(&value.to_le_bytes());
     }
     assert!(crate::families::b2::records::b2_revolutions(&stream).is_empty());
+}
+
+#[test]
+fn b2_torus_parser_reads_exact_frame_radii_and_parameter_scales() {
+    let records = crate::families::b2::records::b2_tori(&b2_torus_stream());
+    let [torus] = records.as_slice() else {
+        panic!("one B2 torus")
+    };
+    assert_eq!(torus.pos, 0);
+    assert_eq!(torus.center, [1.0, 2.0, 3.0]);
+    assert_eq!(torus.direction_x, [1.0, 0.0, 0.0]);
+    assert_eq!(torus.direction_y, [0.0, 1.0, 0.0]);
+    assert_eq!(torus.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(torus.major_radius, 7.0);
+    assert_eq!(torus.minor_radius, 2.0);
+    assert_eq!(torus.major_scale, 14.0);
+    assert_eq!(torus.minor_scale, 4.0);
+}
+
+#[test]
+fn b2_torus_parser_rejects_invalid_frames_and_nonpositive_scales() {
+    let mut stream = b2_torus_stream();
+    stream[5 + 6 * 8..5 + 7 * 8].copy_from_slice(&1.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+
+    let mut stream = b2_torus_stream();
+    stream[5 + 23 * 8..5 + 24 * 8].copy_from_slice(&0.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+
+    let mut stream = b2_torus_stream();
+    stream[5 + 15 * 8..5 + 16 * 8].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
 }
 
 #[test]

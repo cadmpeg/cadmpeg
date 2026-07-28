@@ -1144,6 +1144,23 @@ pub(crate) fn b2_revolution_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn b2_torus_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x2b, 200, 0x05];
+    let mut values = [0.0f64; 25];
+    values[0..3].copy_from_slice(&[1.0, 2.0, 3.0]);
+    values[3..6].copy_from_slice(&[1.0, 0.0, 0.0]);
+    values[6..9].copy_from_slice(&[0.0, 1.0, 0.0]);
+    values[9..12].copy_from_slice(&[0.0, 0.0, 1.0]);
+    values[12] = 7.0;
+    values[13] = 2.0;
+    values[22] = 14.0;
+    values[23] = 4.0;
+    for value in values {
+        record.extend_from_slice(&le_f64(value));
+    }
+    record
+}
+
 pub(crate) fn b2_group_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x65, 0x04, 0x05, 0x81, 0x03, 0x05, 0x0d, 0xb2, 0x03, 0x60, 0x02, 0x05, 0x81,
@@ -3570,6 +3587,37 @@ fn native_namespace_retains_unbound_consolidated_revolution_carriers() {
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA revolution for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_exact_consolidated_torus_charts() {
+    let native = crate::native::CatiaNative::decode(&b2_torus_stream());
+    let [torus] = native.consolidated_tori.as_slice() else {
+        panic!("one consolidated torus")
+    };
+    assert_eq!(torus.center, [1.0, 2.0, 3.0]);
+    assert_eq!(torus.direction_x, [1.0, 0.0, 0.0]);
+    assert_eq!(torus.direction_y, [0.0, 1.0, 0.0]);
+    assert_eq!(torus.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(torus.major_radius, 7.0);
+    assert_eq!(torus.minor_radius, 2.0);
+    assert_eq!(torus.major_scale, 14.0);
+    assert_eq!(torus.minor_scale, 4.0);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store CATIA torus");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA torus"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_tori[0].direction_y = [0.0, -1.0, 0.0];
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA torus for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 

@@ -346,6 +346,18 @@ fn finish_decode(
             native.consolidated_groups.len(),
         ),
         (
+            "decoded_consolidated_pcurve_count".to_string(),
+            native.consolidated_pcurves.len(),
+        ),
+        (
+            "decoded_consolidated_revolution_count".to_string(),
+            native.consolidated_revolutions.len(),
+        ),
+        (
+            "decoded_consolidated_torus_count".to_string(),
+            native.consolidated_tori.len(),
+        ),
+        (
             "decoded_object_graph_count".to_string(),
             native.object_graphs.len(),
         ),

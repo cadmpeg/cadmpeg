@@ -908,6 +908,29 @@ pub struct B2Revolution {
     pub angular_scale: f64,
 }
 
+/// Doubly periodic torus chart stored in a `b2 03 2b` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2Torus {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Torus centre.
+    pub center: [f64; 3],
+    /// First transverse unit direction.
+    pub direction_x: [f64; 3],
+    /// Second transverse unit direction.
+    pub direction_y: [f64; 3],
+    /// Torus-axis unit direction.
+    pub axis: [f64; 3],
+    /// Major radius.
+    pub major_radius: f64,
+    /// Minor radius.
+    pub minor_radius: f64,
+    /// Scale from major angle to stored U parameter.
+    pub major_scale: f64,
+    /// Scale from minor angle to stored V parameter.
+    pub minor_scale: f64,
+}
+
 /// Constant `b2 03 65` separator preceding a typed group opener.
 #[derive(Debug, Clone)]
 #[cfg(test)]
@@ -1207,6 +1230,70 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
         });
     }
     out
+}
+
+/// Decode `b2 03 2b` doubly periodic torus charts.
+#[must_use]
+pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
+    b_family_frames(data, 0x2b)
+        .into_iter()
+        .filter_map(|frame| {
+            let p = frame.payload;
+            (frame.end.checked_sub(p) == Some(200)).then_some(())?;
+            let values = read_f64_array::<25>(data, p)?;
+            let center: [f64; 3] = values[0..3].try_into().expect("three centre values");
+            let direction_x: [f64; 3] = values[3..6]
+                .try_into()
+                .expect("three first-direction values");
+            let direction_y: [f64; 3] = values[6..9]
+                .try_into()
+                .expect("three second-direction values");
+            let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
+            let major_radius = values[12];
+            let minor_radius = values[13];
+            let major_scale = values[22];
+            let minor_scale = values[23];
+            let dot = |first: [f64; 3], second: [f64; 3]| {
+                first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
+            };
+            let unit = |value: [f64; 3]| (dot(value, value) - 1.0).abs() <= 1e-12;
+            let cross = [
+                direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+                direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+                direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
+            ];
+            (values.iter().all(|value| value.is_finite())
+                && unit(direction_x)
+                && unit(direction_y)
+                && unit(axis)
+                && dot(direction_x, direction_y).abs() <= 1e-12
+                && dot(direction_x, axis).abs() <= 1e-12
+                && dot(direction_y, axis).abs() <= 1e-12
+                && cross
+                    .iter()
+                    .zip(axis)
+                    .map(|(first, second)| (first - second).powi(2))
+                    .sum::<f64>()
+                    .sqrt()
+                    <= 1e-12
+                && major_radius > 0.0
+                && minor_radius > 0.0
+                && major_scale > 0.0
+                && minor_scale > 0.0
+                && values[24] == 0.0)
+                .then_some(B2Torus {
+                    pos: frame.pos,
+                    center,
+                    direction_x,
+                    direction_y,
+                    axis,
+                    major_radius,
+                    minor_radius,
+                    major_scale,
+                    minor_scale,
+                })
+        })
+        .collect()
 }
 
 /// Decode constant `b2 03 65` group separators.
