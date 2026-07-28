@@ -2157,6 +2157,16 @@ identical sequences are distinct stored regeneration states with the same
 full-turn extent. A neutral angular extent exists only when every decoded
 termination state for the feature selects the same extent; state order does not
 select one termination over another.
+For a complete full-turn revolution, every `srf_array` row whose `feat_id`
+selects the feature must transfer to one carrier before generated carriers can
+define the revolution axis. Cylinder, cone, and torus carriers contribute their
+axis lines; plane carriers contribute their normal directions; sphere carriers
+contribute their centers but no direction. All contributed lines must be
+coaxial, all plane normals must be parallel to them, and every sphere center
+must lie on the common line. The common unoriented line is the revolution axis.
+Its origin is the point on the line nearest the model origin, and its direction
+is sign-canonicalized by the first nonzero component. A partial angular extent
+does not use this unoriented-axis reconstruction.
 
 When a class-911 hole owns exactly two complete outline-backed plane rows, their
 stored order is the entry and termination order. The planes are parallel.

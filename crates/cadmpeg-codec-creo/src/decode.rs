@@ -13489,6 +13489,121 @@ fn resolved_revolution_axis(
     Some(*axis)
 }
 
+fn full_turn_revolution_carrier_axis(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    extent: Option<&RevolveExtent>,
+) -> Option<RevolutionAxis> {
+    let Some(RevolveExtent::OneSided {
+        termination: Termination::Angle {
+            angle: Angle(angle),
+        },
+    }) = extent
+    else {
+        return None;
+    };
+    if (angle.abs() - std::f64::consts::TAU).abs() > 1e-12 {
+        return None;
+    }
+
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!rows.is_empty()).then_some(())?;
+    let mut axes = Vec::new();
+    let mut plane_normals = Vec::new();
+    let mut sphere_centers = Vec::new();
+    for row in rows {
+        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        let [surface] = surfaces.as_slice() else {
+            return None;
+        };
+        match surface.geometry {
+            SurfaceGeometry::Cylinder { origin, axis, .. }
+            | SurfaceGeometry::Cone { origin, axis, .. } => {
+                axes.push((origin, axis));
+            }
+            SurfaceGeometry::Torus { center, axis, .. } => {
+                axes.push((center, axis));
+            }
+            SurfaceGeometry::Plane { normal, .. } => plane_normals.push(normal),
+            SurfaceGeometry::Sphere { center, .. } => sphere_centers.push(center),
+            _ => return None,
+        }
+    }
+    let [(first_origin, first_direction), rest @ ..] = axes.as_slice() else {
+        return None;
+    };
+    let mut direction = normalized([first_direction.x, first_direction.y, first_direction.z])?;
+    if direction
+        .iter()
+        .find(|component| component.abs() > 1e-12)
+        .is_some_and(|component| component.is_sign_negative())
+    {
+        direction = direction.map(|component| -component);
+    }
+    let first_origin = [first_origin.x, first_origin.y, first_origin.z];
+    let axial = dot(first_origin, direction);
+    let origin: [f64; 3] = std::array::from_fn(|axis| first_origin[axis] - axial * direction[axis]);
+    let scale = first_origin
+        .into_iter()
+        .chain(
+            rest.iter()
+                .flat_map(|(origin, _)| [origin.x, origin.y, origin.z]),
+        )
+        .chain(
+            sphere_centers
+                .iter()
+                .flat_map(|center| [center.x, center.y, center.z]),
+        )
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    for (candidate_origin, candidate_direction) in rest {
+        let candidate_direction = normalized([
+            candidate_direction.x,
+            candidate_direction.y,
+            candidate_direction.z,
+        ])?;
+        ((dot(direction, candidate_direction).abs() - 1.0).abs() <= 1e-10).then_some(())?;
+        let displacement = [
+            candidate_origin.x - origin[0],
+            candidate_origin.y - origin[1],
+            candidate_origin.z - origin[2],
+        ];
+        let radial = cross(displacement, direction);
+        (dot(radial, radial).sqrt() <= 1e-9 * scale).then_some(())?;
+    }
+    for normal in plane_normals {
+        let normal = normalized([normal.x, normal.y, normal.z])?;
+        ((dot(direction, normal).abs() - 1.0).abs() <= 1e-10).then_some(())?;
+    }
+    for center in sphere_centers {
+        let displacement = [
+            center.x - origin[0],
+            center.y - origin[1],
+            center.z - origin[2],
+        ];
+        let radial = cross(displacement, direction);
+        (dot(radial, radial).sqrt() <= 1e-9 * scale).then_some(())?;
+    }
+    Some(RevolutionAxis {
+        origin: Point3::new(origin[0], origin[1], origin[2]),
+        direction: Vector3::new(direction[0], direction[1], direction[2]),
+    })
+}
+
 fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
     let sketch_id = SketchId(native_ref.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1));
     let Some(sketch) = ir
@@ -14277,7 +14392,8 @@ fn schema_feature_definition(
         };
         let axis = definition
             .zip(transform)
-            .and_then(|(definition, transform)| resolved_revolution_axis(definition, transform));
+            .and_then(|(definition, transform)| resolved_revolution_axis(definition, transform))
+            .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent.as_ref()));
         let output_kind = evaluated_sweep_body_kind(ir, "revolution", feature_id);
         return IrFeatureDefinition::Revolve {
             construction: RevolutionConstruction {

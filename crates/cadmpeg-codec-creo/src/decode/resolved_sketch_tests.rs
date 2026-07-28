@@ -9866,6 +9866,91 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
 }
 
 #[test]
+fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for (id, kind) in [
+        (31, crate::surface::SurfaceKind::Cylinder),
+        (32, crate::surface::SurfaceKind::Cone),
+        (33, crate::surface::SurfaceKind::TorusOrSphere),
+    ] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: 0,
+            kind,
+            feature_id: 7,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: id as usize,
+        });
+    }
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.extend([
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#31".to_string()),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(2.0, 3.0, 0.0),
+                axis: Vector3::new(0.0, -1.0, 0.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#32".to_string()),
+            geometry: SurfaceGeometry::Cone {
+                origin: Point3::new(2.0, -5.0, 0.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 0.0,
+                ratio: 1.0,
+                half_angle: 0.5,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#33".to_string()),
+            geometry: SurfaceGeometry::Sphere {
+                center: Point3::new(2.0, 8.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+    ]);
+    let full_turn = RevolveExtent::OneSided {
+        termination: Termination::Angle {
+            angle: Angle(std::f64::consts::TAU),
+        },
+    };
+
+    assert_eq!(
+        full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)),
+        Some(RevolutionAxis {
+            origin: Point3::new(2.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 1.0, 0.0),
+        })
+    );
+    let partial = RevolveExtent::OneSided {
+        termination: Termination::Angle { angle: Angle(1.0) },
+    };
+    assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&partial)).is_none());
+    if let SurfaceGeometry::Cone { origin, .. } = &mut ir.model.surfaces[1].geometry {
+        origin.x = 3.0;
+    }
+    assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
+    if let SurfaceGeometry::Cone { origin, .. } = &mut ir.model.surfaces[1].geometry {
+        origin.x = 2.0;
+    }
+    let SurfaceGeometry::Sphere { center, .. } = &mut ir.model.surfaces[2].geometry else {
+        unreachable!();
+    };
+    center.z = 1.0;
+    assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
+}
+
+#[test]
 fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
     let spline = crate::feature::FeatureSavedSpline {
         entity_id: Some(7),
