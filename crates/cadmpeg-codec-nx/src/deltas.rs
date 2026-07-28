@@ -205,6 +205,36 @@ pub struct InlineSchemaDeclaration {
     pub end: usize,
 }
 
+/// Schema-bound type-12 `BODY` instance state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InlineBodyStateFields {
+    /// Compact reference form followed by status zero.
+    Compact {
+        /// Non-null stream-local XMT reference.
+        reference: u32,
+    },
+    /// Revision form with a bounded opaque state tail.
+    Revision {
+        /// Monotonic kernel revision identity.
+        node_id: u32,
+        /// Eight ordered status-framed XMT references.
+        references: [u32; 8],
+        /// Exact state bytes following the reference prefix.
+        state_bytes: Vec<u8>,
+    },
+}
+
+/// One complete schema-bound type-12 `BODY` instance state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineBodyState {
+    /// Serialized state form.
+    pub fields: InlineBodyStateFields,
+    /// First state byte following a type-12 schema header.
+    pub offset: usize,
+    /// First byte following the state.
+    pub end: usize,
+}
+
 /// Result of a deterministic deltas record walk.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Census {
@@ -230,6 +260,8 @@ pub struct Census {
     pub reference_marker_packets: Vec<ReferenceMarkerPacket>,
     /// Complete inline schema declarations in source order.
     pub inline_schema_declarations: Vec<InlineSchemaDeclaration>,
+    /// Complete schema-bound type-12 BODY states in source order.
+    pub inline_body_states: Vec<InlineBodyState>,
     /// Complete-record counts keyed by Parasolid family name.
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
@@ -674,6 +706,13 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
             .sum::<usize>();
         census.inline_schema_declarations.extend(declarations);
 
+        let body_states = inline_body_states(stream, census);
+        added_bytes += body_states
+            .iter()
+            .map(|state| state.end - state.offset)
+            .sum::<usize>();
+        census.inline_body_states.extend(body_states);
+
         let marker_packets = reference_marker_packets(stream, census);
         added_bytes += marker_packets
             .iter()
@@ -702,6 +741,9 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
     census
         .inline_schema_declarations
         .sort_unstable_by_key(|declaration| declaration.offset);
+    census
+        .inline_body_states
+        .sort_unstable_by_key(|state| state.offset);
     census
         .reference_marker_packets
         .sort_unstable_by_key(|packet| packet.offset);
@@ -1142,6 +1184,65 @@ fn inline_schema_declaration(
     None
 }
 
+fn inline_body_states(stream: &[u8], census: &Census) -> Vec<InlineBodyState> {
+    uncovered_spans(stream.len(), census, true)
+        .filter(|(offset, _)| {
+            census.inline_schema_declarations.iter().any(|declaration| {
+                declaration.end == *offset && declaration.fields == InlineSchemaFields::BodyHeader
+            })
+        })
+        .filter_map(|(offset, gap_end)| inline_body_state(stream, offset, gap_end))
+        .collect()
+}
+
+fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<InlineBodyState> {
+    let next_header = ((offset + 1)..gap_end).find(|candidate| {
+        [
+            BODY_SCHEMA_HEADER,
+            REGION_SCHEMA_HEADER,
+            ATTDEF_LIST_SCHEMA_HEADER,
+            TYPE_70_SCHEMA_HEADER,
+        ]
+        .iter()
+        .any(|header| {
+            stream.get(*candidate..candidate.saturating_add(header.len())) == Some(*header)
+        })
+    });
+    let expected_end = next_header.unwrap_or(gap_end);
+    let (first, consumed) = read_xmt(stream, offset)?;
+    let mut at = offset.checked_add(consumed)?;
+    if first > 1 && stream.get(at) == Some(&0) && at.checked_add(1) == Some(expected_end) {
+        return Some(InlineBodyState {
+            fields: InlineBodyStateFields::Compact { reference: first },
+            offset,
+            end: expected_end,
+        });
+    }
+    (first == 3).then_some(())?;
+
+    let node_id = be::u32_at(stream, at)?;
+    at = at.checked_add(4)?;
+    let mut references = [0; 8];
+    for reference in &mut references {
+        let (value, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        (stream.get(at) == Some(&1)).then_some(())?;
+        at = at.checked_add(1)?;
+        *reference = value;
+    }
+    (at < expected_end).then_some(())?;
+    let state_bytes = stream.get(at..expected_end)?.to_vec();
+    Some(InlineBodyState {
+        fields: InlineBodyStateFields::Revision {
+            node_id,
+            references,
+            state_bytes,
+        },
+        offset,
+        end: expected_end,
+    })
+}
+
 fn region_schema_declaration(
     stream: &[u8],
     offset: usize,
@@ -1289,6 +1390,12 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
                 .inline_schema_declarations
                 .iter()
                 .map(|declaration| (declaration.offset, declaration.end)),
+        );
+        covered.extend(
+            census
+                .inline_body_states
+                .iter()
+                .map(|state| (state.offset, state.end)),
         );
     }
     covered.sort_unstable();
@@ -2367,6 +2474,56 @@ mod inline_schema_tests {
             BODY_SCHEMA_HEADER.len() - 1,
         )
         .is_none());
+    }
+
+    #[test]
+    fn body_schema_header_binds_compact_and_revision_instance_states() {
+        for reference in [3u16, 9] {
+            let mut compact = BODY_SCHEMA_HEADER.to_vec();
+            compact.extend_from_slice(&reference.to_be_bytes());
+            compact.push(0);
+            let compact_census = walk(&compact);
+            assert_eq!(
+                compact_census.inline_body_states,
+                [InlineBodyState {
+                    fields: InlineBodyStateFields::Compact {
+                        reference: u32::from(reference),
+                    },
+                    offset: BODY_SCHEMA_HEADER.len(),
+                    end: compact.len(),
+                }]
+            );
+            let compact_status = compact.len() - 1;
+            compact[compact_status] = 1;
+            assert!(walk(&compact).inline_body_states.is_empty());
+        }
+
+        let mut revision = BODY_SCHEMA_HEADER.to_vec();
+        let state_offset = revision.len();
+        revision.extend_from_slice(&3u16.to_be_bytes());
+        revision.extend_from_slice(&7u32.to_be_bytes());
+        for reference in [8u16, 1, 2, 3, 4, 5, 6, 7] {
+            revision.extend_from_slice(&reference.to_be_bytes());
+            revision.push(1);
+        }
+        revision.extend_from_slice(&[0xaa, 0xbb]);
+        let state_end = revision.len();
+        revision.extend_from_slice(TYPE_70_SCHEMA_HEADER);
+
+        let revision_census = walk(&revision);
+        assert_eq!(revision_census.inline_body_states.len(), 1);
+        assert_eq!(
+            revision_census.inline_body_states[0],
+            InlineBodyState {
+                fields: InlineBodyStateFields::Revision {
+                    node_id: 7,
+                    references: [8, 1, 2, 3, 4, 5, 6, 7],
+                    state_bytes: vec![0xaa, 0xbb],
+                },
+                offset: state_offset,
+                end: state_end,
+            }
+        );
     }
 
     fn attdef_list_declaration() -> Vec<u8> {

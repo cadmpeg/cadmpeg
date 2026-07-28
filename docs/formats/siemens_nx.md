@@ -528,6 +528,14 @@ An inline schema declaration begins with one of four exact headers. The type-12
 that order. The header ends at `5a`; following instance-state bytes are not
 part of the declaration.
 
+A type-12 `BODY` header binds the immediately following instance state. The
+compact state is `ref, 00`, where `ref` is a non-null compact or extended XMT.
+The revision state is `ref(3), node_id:u32 BE, ref_status[8], state_bytes`.
+Every reference status is `01`. Its nonempty `state_bytes` tail ends at the
+next exact inline-schema header, the next admitted deltas event, or the end of
+the inflated stream, whichever comes first. Header and instance state retain
+independent byte spans.
+
 The REGION form begins with
 `00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.
 The header is followed by `xmt, state_word:u32 BE, ref_status[4]`. `xmt` is

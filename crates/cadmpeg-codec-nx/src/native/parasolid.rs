@@ -265,6 +265,43 @@ pub struct ParasolidDeltasInlineSchemaDeclaration {
     pub inflated_offset: u64,
 }
 
+/// Schema-bound type-12 `BODY` instance-state fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub enum ParasolidDeltasInlineBodyStateFields {
+    /// Compact reference form followed by status zero.
+    Compact {
+        /// Non-null stream-local XMT reference.
+        reference: u32,
+    },
+    /// Revision form with a bounded opaque state tail.
+    Revision {
+        /// Monotonic kernel revision identity.
+        node_id: u32,
+        /// Eight ordered status-framed XMT references.
+        references: [u32; 8],
+        /// Exact state bytes following the reference prefix.
+        state_bytes: Vec<u8>,
+    },
+}
+
+/// Schema-bound type-12 `BODY` instance state in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasInlineBodyState {
+    /// Globally unique state identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Serialized state form.
+    pub fields: ParasolidDeltasInlineBodyStateFields,
+    /// Exact state byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact state bytes.
+    pub sha256: String,
+    /// First state byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Maximal inflated-stream span outside every admitted deltas event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidDeltasResidualSpan {
@@ -292,6 +329,7 @@ pub(crate) struct ParasolidDeltasEvents {
     pub(crate) schema_reference_preambles: Vec<ParasolidDeltasSchemaReferencePreamble>,
     pub(crate) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
     pub(crate) inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
+    pub(crate) inline_body_states: Vec<ParasolidDeltasInlineBodyState>,
     pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
 }
 
@@ -309,6 +347,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         schema_reference_preambles: Vec::new(),
         reference_marker_packets: Vec::new(),
         inline_schema_declarations: Vec::new(),
+        inline_body_states: Vec::new(),
         residual_spans: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -564,6 +603,36 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     inflated_offset: declaration.offset as u64,
                 });
         }
+        for state in census.inline_body_states {
+            let bytes = &stream.inflated[state.offset..state.end];
+            let fields = match state.fields {
+                crate::deltas::InlineBodyStateFields::Compact { reference } => {
+                    ParasolidDeltasInlineBodyStateFields::Compact { reference }
+                }
+                crate::deltas::InlineBodyStateFields::Revision {
+                    node_id,
+                    references,
+                    state_bytes,
+                } => ParasolidDeltasInlineBodyStateFields::Revision {
+                    node_id,
+                    references,
+                    state_bytes,
+                },
+            };
+            events
+                .inline_body_states
+                .push(ParasolidDeltasInlineBodyState {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-inline-body-state#{}",
+                        state.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    fields,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: state.offset as u64,
+                });
+        }
     }
     events
         .transmit_headers
@@ -595,6 +664,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .inline_schema_declarations
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .inline_body_states
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .residual_spans

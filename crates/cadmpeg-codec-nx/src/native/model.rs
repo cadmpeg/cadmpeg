@@ -59,6 +59,7 @@ pub(crate) struct ParasolidRecords {
     pub(crate) parasolid_deltas_reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
     pub(crate) parasolid_deltas_inline_schema_declarations:
         Vec<ParasolidDeltasInlineSchemaDeclaration>,
+    pub(crate) parasolid_deltas_inline_body_states: Vec<ParasolidDeltasInlineBodyState>,
     pub(crate) parasolid_deltas_residual_spans: Vec<ParasolidDeltasResidualSpan>,
     pub(crate) parasolid_blend_surface_records: Vec<ParasolidBlendSurfaceRecord>,
     pub(crate) parasolid_blend_bound_records: Vec<ParasolidBlendBoundRecord>,
@@ -736,6 +737,7 @@ impl NativeModel {
                 parasolid_deltas_reference_marker_packets: deltas_events.reference_marker_packets,
                 parasolid_deltas_inline_schema_declarations: deltas_events
                     .inline_schema_declarations,
+                parasolid_deltas_inline_body_states: deltas_events.inline_body_states,
                 parasolid_deltas_residual_spans: deltas_events.residual_spans,
                 parasolid_blend_surface_records,
                 parasolid_blend_bound_records,
