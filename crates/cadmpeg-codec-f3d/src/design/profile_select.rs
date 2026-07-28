@@ -34,8 +34,8 @@ pub(crate) struct ExtrudeProfileResolution<'a> {
     pub linear_tolerance: f64,
 }
 
-/// Native and neutral arenas required to resolve Sweep sketch selections.
-pub(crate) struct SweepSketchResolution<'a> {
+/// Native and neutral arenas required to resolve curve selections in sketches.
+pub(crate) struct SketchCurveSelectionResolution<'a> {
     /// Decoded Design feature scopes.
     pub scopes: &'a [DesignParameterScope],
     /// Counted construction-operand groups.
@@ -55,12 +55,12 @@ pub(crate) struct SweepSketchResolution<'a> {
 /// Bind exact Sweep sketch-profile and sole-curve path carriers.
 pub(crate) fn bind_sweep_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
-    resolution: &SweepSketchResolution<'_>,
+    resolution: &SketchCurveSelectionResolution<'_>,
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, PathRef, ProfileRef};
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let SweepSketchResolution {
+    let SketchCurveSelectionResolution {
         scopes,
         groups,
         operands,
@@ -182,6 +182,122 @@ pub(crate) fn bind_sweep_sketch_selections(
         });
         if curves.next().is_some_and(|entity| entity.id == selected) && curves.next().is_none() {
             *path = PathRef::Sketch(sketch);
+        }
+    }
+}
+
+/// Resolve `SplitFace` curve-tool groups to ordered curves in one planar sketch.
+pub(crate) fn bind_split_face_sketch_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    resolution: &SketchCurveSelectionResolution<'_>,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef};
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    for feature in features {
+        let FeatureDefinition::SplitFace { tool, .. } = &mut feature.definition else {
+            continue;
+        };
+        let PathRef::Native(group_id) = tool else {
+            continue;
+        };
+        let mut matching_groups = resolution.groups.iter().filter(|group| {
+            group.id == *group_id
+                && group.role == 0x0000_0021_0000_0000
+                && !group.members.is_empty()
+        });
+        let Some(group) = matching_groups.next() else {
+            continue;
+        };
+        if matching_groups.next().is_some() {
+            continue;
+        }
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let mut selected_sketch = None;
+        let mut selected_curves = Vec::with_capacity(group.members.len());
+        let mut complete = true;
+        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                complete = false;
+                break;
+            };
+            let mut matching_operands = resolution.operands.iter().filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == ordinal
+                    && operand.record_index == record_index
+            });
+            let Some(operand) = matching_operands.next() else {
+                complete = false;
+                break;
+            };
+            if matching_operands.next().is_some() {
+                complete = false;
+                break;
+            }
+            let mut matching_placements = resolution.placements.iter().filter(|placement| {
+                native_stream(&placement.id) == Some(stream)
+                    && placement.entity_suffix == operand.primary_identity
+            });
+            let Some(placement) = matching_placements.next() else {
+                complete = false;
+                break;
+            };
+            if matching_placements.next().is_some() {
+                complete = false;
+                break;
+            }
+            let sketch = neutral_sketch_id(placement);
+            if !resolution
+                .sketches
+                .iter()
+                .any(|candidate| candidate.id == sketch)
+                || selected_sketch
+                    .as_ref()
+                    .is_some_and(|selected| selected != &sketch)
+            {
+                complete = false;
+                break;
+            }
+            let Ok(owner_reference) = u32::try_from(operand.primary_identity) else {
+                complete = false;
+                break;
+            };
+            let mut matching_curves = resolution.curve_identities.iter().filter(|curve| {
+                native_stream(&curve.id) == Some(stream)
+                    && curve.owner_reference == Some(owner_reference)
+                    && curve.primary_id == operand.secondary_identity
+            });
+            let Some(curve) = matching_curves.next() else {
+                complete = false;
+                break;
+            };
+            if matching_curves.next().is_some() {
+                complete = false;
+                break;
+            }
+            let curve_id = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
+            if !resolution.sketch_entities.iter().any(|entity| {
+                entity.sketch == sketch
+                    && entity.id == curve_id
+                    && !matches!(entity.geometry, SketchGeometry::Point { .. })
+            }) {
+                complete = false;
+                break;
+            }
+            selected_sketch = Some(sketch);
+            selected_curves.push(curve_id);
+        }
+        if complete {
+            if let Some(sketch) = selected_sketch {
+                *tool = PathRef::SketchCurves {
+                    sketch,
+                    curves: selected_curves,
+                };
+            }
         }
     }
 }

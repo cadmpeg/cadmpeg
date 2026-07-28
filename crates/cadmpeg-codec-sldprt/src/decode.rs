@@ -823,6 +823,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         PathRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
+        PathRef::SketchCurves { curves, .. } => curves.is_empty(),
     };
     let incomplete_termination = |termination: &Termination| {
         matches!(termination, Termination::Unresolved)

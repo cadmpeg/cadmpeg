@@ -211,12 +211,14 @@ pub fn decode_face_operands(
         let is_circular_pattern_seed = design_feature_family(&scope.kind)
             == Some(DesignFeatureFamily::CircularPattern)
             && group.role == 0x0000_0008_0000_0000;
+        let is_split_face_operand = scope.kind == "SplitFace";
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
             && !is_loft_profile
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
+            && !is_split_face_operand
         {
             continue;
         }
@@ -283,7 +285,7 @@ pub fn decode_face_operands(
                     | DesignFeatureFamily::Thicken
                     | DesignFeatureFamily::Split
             )
-        )
+        ) || scope.kind == "SplitFace"
     }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -548,6 +550,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
+            || scope.kind == "SplitFace"
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)
             || scope.kind == "RemoveBody"
@@ -788,7 +791,9 @@ pub(crate) fn parse_construction_operand_group(
     header: &DesignRecordHeader,
 ) -> Option<DesignConstructionOperandGroup> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let count_at = if scope.kind == "SurfaceStitch" {
+    let count_at = if bytes.get(start + 11..start + 21)? == [0; 10] {
+        start.checked_add(21)?
+    } else {
         if bytes.get(start + 11..start + 20)? != [0; 9]
             || bytes.get(start + 20) != Some(&1)
             || u32_at(bytes, start + 21)? != 1
@@ -803,11 +808,6 @@ pub(crate) fn parse_construction_operand_group(
             return None;
         }
         after_property_type.checked_add(8)?
-    } else {
-        if bytes.get(start + 11..start + 21)? != [0; 10] {
-            return None;
-        }
-        start.checked_add(21)?
     };
     let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
     if count == 0 {

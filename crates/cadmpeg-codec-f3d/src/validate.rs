@@ -1142,6 +1142,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    None if scope.kind == "SplitFace" => {
+                        matches!(group.role, 0x0000_0010_0000_0000 | 0x0000_0021_0000_0000)
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     None if scope.kind == "BaseFlange" => {
                         group.role == 0x0000_0041_0000_0000
                             && group.extrude_role.is_none()
@@ -1161,7 +1166,12 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 (design::design_feature_family(&scope.kind).is_some()
                     || matches!(
                         scope.kind.as_str(),
-                        "RemoveBody" | "SurfaceStitch" | "BaseFlange" | "EdgeFlange" | "Hem"
+                        "RemoveBody"
+                            | "SurfaceStitch"
+                            | "SplitFace"
+                            | "BaseFlange"
+                            | "EdgeFlange"
+                            | "Hem"
                     ))
                     && role_is_valid
                     && usize::try_from(group.scope_reference_ordinal)
@@ -1178,7 +1188,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             })
             && group.member_count_offset
                 == group.byte_offset.saturating_add(
-                    if scope.is_some_and(|scope| scope.kind == "SurfaceStitch") {
+                    if scope.is_some_and(|scope| {
+                        scope.kind == "SurfaceStitch"
+                            || (scope.kind == "SplitFace" && group.role == 0x0000_0021_0000_0000)
+                    }) {
                         88
                     } else {
                         21
@@ -1202,7 +1215,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             && group.opaque_index_offset == tail_offset.saturating_add(35)
             && group.opaque_scalar.is_finite()
             && group.opaque_scalar_offset == tail_offset.saturating_add(39)
-            && group.paired_byte_offset == tail_offset.saturating_add(88)
+            && matches!(
+                group.paired_byte_offset.saturating_sub(tail_offset),
+                85 | 87 | 88
+            )
             && operand_group_slots.insert((
                 native_stream,
                 group.scope_record_index,
@@ -1934,8 +1950,45 @@ fn validate_operand_group_identity_chains<'a>(
                         && group.members.get(ordinal) == Some(&operand.record_index)
                         && edge_identity_records.contains(&(native_stream, operand.record_index))
                 });
+        let has_exact_entity_selection_members =
+            group
+                .members
+                .iter()
+                .enumerate()
+                .all(|(ordinal, record_index)| {
+                    u32::try_from(ordinal).ok().is_some_and(|ordinal| {
+                        native
+                            .design_entity_selection_operands
+                            .iter()
+                            .any(|operand| {
+                                design_stream(&operand.id) == native_stream
+                                    && operand.scope_record_index == group.scope_record_index
+                                    && operand.group_record_index == group.record_index
+                                    && operand.group_member_ordinal == ordinal
+                                    && operand.record_index == *record_index
+                            })
+                    })
+                });
+        let has_exact_face_members =
+            group
+                .members
+                .iter()
+                .enumerate()
+                .all(|(ordinal, record_index)| {
+                    u32::try_from(ordinal).ok().is_some_and(|ordinal| {
+                        native.design_face_operands.iter().any(|operand| {
+                            design_stream(&operand.id) == native_stream
+                                && operand.scope_record_index == group.scope_record_index
+                                && operand.group_record_index == Some(group.record_index)
+                                && operand.group_member_ordinal == Some(ordinal)
+                                && operand.record_index == *record_index
+                        })
+                    })
+                });
         if !operand_identity_groups.contains(&(native_stream, group.record_index))
             && !has_exact_identity_members
+            && !has_exact_entity_selection_members
+            && !has_exact_face_members
         {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -2520,6 +2573,11 @@ fn validate_face_operands<'a>(
                                                         == u64::from(operand.recipe_record_index)
                                             },
                                         )
+                                }
+                                None if scope.kind == "SplitFace" => {
+                                    group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
+                                        && operand.recipe_kind
+                                            == records::ConstructionRecipeKind::BoundedFace
                                 }
                                 _ => false,
                             }

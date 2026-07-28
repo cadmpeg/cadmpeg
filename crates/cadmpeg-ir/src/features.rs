@@ -1127,6 +1127,14 @@ pub enum FeatureDefinition {
         /// Surface faces extended as necessary to partition the targets.
         tools: FaceSelection,
     },
+    /// Partitions selected faces along selected sketch curves while retaining
+    /// every resulting face region.
+    SplitFace {
+        /// Faces partitioned by the operation.
+        targets: FaceSelection,
+        /// Sketch curves projected onto the target faces.
+        tool: PathRef,
+    },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
         /// Bodies selected by the operation.
@@ -2852,6 +2860,13 @@ pub enum PathRef {
     Native(String),
     /// Ordered geometry from a neutral sketch.
     Sketch(crate::sketches::SketchId),
+    /// Ordered selected curves from one neutral planar sketch.
+    SketchCurves {
+        /// Sketch containing every selected curve.
+        sketch: crate::sketches::SketchId,
+        /// Selected curve identities in source order.
+        curves: Vec<crate::sketches::SketchEntityId>,
+    },
     /// Source-native curve selection within a known neutral spatial sketch.
     SpatialSketchSelection {
         /// Spatial sketch containing the selected curves.

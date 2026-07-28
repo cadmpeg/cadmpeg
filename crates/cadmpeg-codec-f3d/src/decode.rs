@@ -1230,7 +1230,19 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 );
             crate::design::profile_select::bind_sweep_sketch_selections(
                 &mut ir.model.features,
-                &crate::design::profile_select::SweepSketchResolution {
+                &crate::design::profile_select::SketchCurveSelectionResolution {
+                    scopes: &native.design_parameter_scopes,
+                    groups: &native.design_construction_operand_groups,
+                    operands: &native.design_entity_selection_operands,
+                    placements: &native.design_sketch_placements,
+                    curve_identities: &native.sketch_curve_identities,
+                    sketches: &ir.model.sketches,
+                    sketch_entities: &ir.model.sketch_entities,
+                },
+            );
+            crate::design::profile_select::bind_split_face_sketch_selections(
+                &mut ir.model.features,
+                &crate::design::profile_select::SketchCurveSelectionResolution {
                     scopes: &native.design_parameter_scopes,
                     groups: &native.design_construction_operand_groups,
                     operands: &native.design_entity_selection_operands,
@@ -1601,7 +1613,19 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         );
     crate::design::profile_select::bind_sweep_sketch_selections(
         &mut ir.model.features,
-        &crate::design::profile_select::SweepSketchResolution {
+        &crate::design::profile_select::SketchCurveSelectionResolution {
+            scopes: &native.design_parameter_scopes,
+            groups: &native.design_construction_operand_groups,
+            operands: &native.design_entity_selection_operands,
+            placements: &native.design_sketch_placements,
+            curve_identities: &native.sketch_curve_identities,
+            sketches: &ir.model.sketches,
+            sketch_entities: &ir.model.sketch_entities,
+        },
+    );
+    crate::design::profile_select::bind_split_face_sketch_selections(
+        &mut ir.model.features,
+        &crate::design::profile_select::SketchCurveSelectionResolution {
             scopes: &native.design_parameter_scopes,
             groups: &native.design_construction_operand_groups,
             operands: &native.design_entity_selection_operands,

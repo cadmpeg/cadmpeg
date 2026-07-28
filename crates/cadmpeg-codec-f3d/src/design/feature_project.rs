@@ -521,6 +521,14 @@ pub fn project_parameter_design_with_edge_identities(
                                 properties: native_scope_properties(scope, native_scope),
                             }
                         })
+                    } else if scope.kind == "SplitFace" {
+                        project_split_face(scope, construction_groups).unwrap_or_else(|| {
+                            FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: BTreeMap::new(),
+                                properties: native_scope_properties(scope, native_scope),
+                            }
+                        })
                     } else if scope.kind == "CopyPasteBodies" {
                         scope.copy_paste_bodies_operation.as_ref().map_or_else(
                             || FeatureDefinition::Native {
@@ -2608,6 +2616,54 @@ fn project_split(
     Some(FeatureDefinition::SplitBody {
         targets: BodySelection::Native(targets.id.clone()),
         tools,
+    })
+}
+
+fn project_split_face(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef};
+
+    let reference_count = scope.reference_members.len();
+    if scope.kind != "SplitFace"
+        || reference_count < 4
+        || scope.frame_length
+            != 290_u64.checked_add(
+                11_u64.checked_mul(u64::try_from(reference_count.checked_sub(1)?).ok()?)?,
+            )?
+    {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let mut groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let [tool, targets] = groups.as_slice() else {
+        return None;
+    };
+    let target_ordinal = tool.members.len().checked_add(1)?;
+    if tool.scope_reference_ordinal != 0
+        || tool.record_index != scope.reference_members[0]
+        || tool.role != 0x0000_0021_0000_0000
+        || tool.members.is_empty()
+        || tool.members.as_slice() != &scope.reference_members[1..target_ordinal]
+        || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
+        || targets.record_index != scope.reference_members[target_ordinal]
+        || targets.role != 0x0000_0010_0000_0000
+        || targets.members.is_empty()
+        || targets.members.as_slice() != &scope.reference_members[target_ordinal + 1..]
+    {
+        return None;
+    }
+    Some(FeatureDefinition::SplitFace {
+        targets: FaceSelection::Native(targets.id.clone()),
+        tool: PathRef::Native(tool.id.clone()),
     })
 }
 

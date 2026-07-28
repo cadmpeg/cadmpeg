@@ -7277,6 +7277,7 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::HistoricalEdges { edges, .. } => selection_ids_are_incomplete(edges),
         PathRef::Sketch(_) => false,
+        PathRef::SketchCurves { curves, .. } => selection_ids_are_incomplete(curves),
         PathRef::SpatialSketchSelection { selections, .. } => {
             selection_ids_are_incomplete(selections)
         }

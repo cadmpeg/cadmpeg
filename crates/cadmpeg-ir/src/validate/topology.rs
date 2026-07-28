@@ -1987,6 +1987,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|feature| (feature.id.0.as_str(), feature.ordinal))
         .collect::<HashMap<_, _>>();
+    let sketch_entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| entity.id.0.clone())
+        .collect::<HashSet<_>>();
     let parameters_by_id = ir
         .model
         .parameters
@@ -2806,6 +2812,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::SplitBody { targets, tools } => {
                 body_selections.push(targets);
                 face_selections.push(tools);
+            }
+            FeatureDefinition::SplitFace { targets, tool } => {
+                face_selections.push(targets);
+                paths.push(tool);
             }
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
@@ -3809,6 +3819,13 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     curves.iter().map(|id| id.0.as_str()),
                     &ids.curves,
                 ),
+                PathRef::SketchCurves { curves, .. } => check_ids(
+                    findings,
+                    &feature.id.0,
+                    "sketch path curve",
+                    curves.iter().map(|id| id.0.as_str()),
+                    &sketch_entities,
+                ),
                 PathRef::HistoricalEdges {
                     state,
                     edges,
@@ -4293,6 +4310,12 @@ fn check_feature_sketch_references(
         .iter()
         .map(|sketch| sketch.id.0.as_str())
         .collect::<HashSet<_>>();
+    let sketch_entity_owners = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .collect::<HashMap<_, _>>();
     let mut owners = HashMap::new();
     for feature in &ir.model.features {
         let sketch = match &feature.definition {
@@ -4560,8 +4583,27 @@ fn check_feature_sketch_references(
             }
         }
         for path in paths {
+            if let PathRef::SketchCurves { sketch, curves } = path {
+                let invalid = curves.is_empty()
+                    || curves.iter().collect::<HashSet<_>>().len() != curves.len()
+                    || curves.iter().any(|curve| {
+                        sketch_entity_owners
+                            .get(curve.0.as_str())
+                            .is_none_or(|owner| *owner != sketch.0.as_str())
+                    });
+                if invalid {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sketch path curves are empty, repeated, or owned by another sketch",
+                    );
+                }
+            }
             let (sketch, known_sketches, description, selections) = match path {
                 PathRef::Sketch(sketch) => (sketch.0.as_str(), sketches, "sketch path", None),
+                PathRef::SketchCurves { sketch, .. } => {
+                    (sketch.0.as_str(), sketches, "sketch curve path", None)
+                }
                 PathRef::SpatialSketchSelection { sketch, selections } => (
                     sketch.0.as_str(),
                     &spatial_sketches,

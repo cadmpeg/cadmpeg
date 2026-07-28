@@ -13521,7 +13521,9 @@ fn path_source(
         PathRef::Unresolved(_) => None,
         PathRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         PathRef::Sketch(id) => sketches.get(id).cloned(),
-        PathRef::SpatialSketchSelection { .. } | PathRef::HistoricalEdges { .. } => None,
+        PathRef::SketchCurves { .. }
+        | PathRef::SpatialSketchSelection { .. }
+        | PathRef::HistoricalEdges { .. } => None,
         PathRef::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()

@@ -4731,6 +4731,26 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
     assert!(group.variant);
     assert_eq!(group.paired_byte_offset, paired_at as u64);
 
+    let mut flagged = bytes[..11].to_vec();
+    flagged.extend_from_slice(&[0; 9]);
+    flagged.push(1);
+    flagged.extend_from_slice(&1u32.to_le_bytes());
+    for value in [
+        b"DcFeatureOperationIdFlag".as_slice(),
+        b"IntrinsicMetaTypeuint64".as_slice(),
+    ] {
+        flagged.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
+        flagged.extend_from_slice(value);
+    }
+    flagged.extend_from_slice(&445u64.to_le_bytes());
+    let flagged_count_at = flagged.len();
+    flagged.extend_from_slice(&bytes[21..]);
+    let flagged = parse_construction_operand_group(&flagged, &scope, 0, &record)
+        .expect("operation-flagged counted operand group");
+    assert_eq!(flagged.member_count_offset, flagged_count_at as u64);
+    assert_eq!(flagged.members, [200, 201]);
+    assert_eq!(flagged.role, 0x0000_0008_0000_0000);
+
     bytes.drain(paired_at - 3..paired_at);
     let compact = parse_construction_operand_group(&bytes, &scope, 0, &record)
         .expect("compact counted operand group");
@@ -4758,6 +4778,39 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         flagless.paired_byte_offset,
         u64::try_from(flagless_paired_at).unwrap()
     );
+
+    let mut split_scope = scope.clone();
+    split_scope.kind = "SplitFace".into();
+    split_scope.frame_length = 334;
+    split_scope.reference_members = vec![100, 200, 201, 400, 500];
+    split_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118, 1129];
+    let mut tool_group = group.clone();
+    tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    tool_group.role = 0x0000_0021_0000_0000;
+    let mut target_group = group.clone();
+    target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
+    target_group.record_index = 400;
+    target_group.scope_reference_ordinal = 3;
+    target_group.members = vec![500];
+    target_group.member_offsets = vec![1129];
+    target_group.role = 0x0000_0010_0000_0000;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&split_scope),
+        &[tool_group, target_group],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::SplitFace {
+            targets: cadmpeg_ir::features::FaceSelection::Native(targets),
+            tool: cadmpeg_ir::features::PathRef::Native(tool),
+        } if targets.ends_with("#400") && tool.ends_with("#100")
+    ));
 
     let mut remove_scope = scope.clone();
     remove_scope.kind = "RemoveBody".into();
