@@ -111,6 +111,25 @@ pub struct ParasolidDeltasTaggedReferenceLane {
     pub inflated_offset: u64,
 }
 
+/// Framed reference/type map in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasReferenceTypeMap {
+    /// Globally unique map identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Ordered `(XMT identity, Parasolid type code)` entries.
+    pub entries: Vec<(u32, u16)>,
+    /// Type code of the map target.
+    pub target_kind: u16,
+    /// Exact map byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact map bytes.
+    pub sha256: String,
+    /// First map byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Four-reference state packet in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidDeltasReferenceStatePacket {
@@ -217,6 +236,7 @@ pub(crate) struct ParasolidDeltasEvents {
     pub(crate) body_revisions: Vec<ParasolidDeltasBodyRevision>,
     pub(crate) term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
     pub(crate) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
+    pub(crate) reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
     pub(crate) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
     pub(crate) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
     pub(crate) inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
@@ -231,6 +251,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         body_revisions: Vec::new(),
         term_use_numeric_tails: Vec::new(),
         tagged_reference_lanes: Vec::new(),
+        reference_type_maps: Vec::new(),
         reference_state_packets: Vec::new(),
         reference_marker_packets: Vec::new(),
         inline_schema_declarations: Vec::new(),
@@ -349,6 +370,23 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                     inflated_offset: lane.offset as u64,
                 });
         }
+        for map in census.reference_type_maps {
+            let bytes = &stream.inflated[map.offset..map.end];
+            events
+                .reference_type_maps
+                .push(ParasolidDeltasReferenceTypeMap {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-reference-type-map#{}",
+                        map.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    entries: map.entries,
+                    target_kind: map.target_kind,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: map.offset as u64,
+                });
+        }
         for packet in census.reference_state_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
             events
@@ -448,6 +486,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .tagged_reference_lanes
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .reference_type_maps
         .sort_by(|left, right| left.id.cmp(&right.id));
     events
         .reference_state_packets
@@ -1899,6 +1940,47 @@ mod tests {
         assert_eq!(events.residual_spans.len(), 2);
         assert_eq!(events.residual_spans[0].inflated_offset, 0);
         assert_eq!(events.residual_spans[0].byte_len, 3);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_subtract_reference_type_maps_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let map_offset = bytes.len();
+        bytes.extend([
+            0, 1, 0, 1, 0xe3, 0xbf, 0, 1, 0, 81, 0, 3, 0, 100, 0, 1, 0, 0, 0, 55,
+        ]);
+        let map_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xcc, 0xdd]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.reference_type_maps.len(), 1);
+        let map = &events.reference_type_maps[0];
+        assert_eq!(map.entries, [(40_000, 81), (3, 100)]);
+        assert_eq!(map.target_kind, 55);
+        assert_eq!(map.byte_len, 20);
+        assert_eq!(map.inflated_offset, map_offset as u64);
+        assert_eq!(
+            map.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[map_offset..map_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
         assert_eq!(
             events.residual_spans[1].inflated_offset,
             suffix_offset as u64

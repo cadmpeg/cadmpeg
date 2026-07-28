@@ -213,6 +213,12 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                         census.tagged_reference_lanes.len().to_string(),
                     );
                 }
+                if !census.reference_type_maps.is_empty() {
+                    attributes.insert(
+                        "records.delta.reference_type_maps".to_string(),
+                        census.reference_type_maps.len().to_string(),
+                    );
+                }
                 if !census.reference_state_packets.is_empty() {
                     attributes.insert(
                         "records.delta.reference_state_packets".to_string(),

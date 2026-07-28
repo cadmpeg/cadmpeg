@@ -483,6 +483,13 @@ kind, including type 79 and type 80, and each XMT is a non-null compact or
 extended encoded index. The lane retains pair order and exact byte identity;
 field roles remain unassigned.
 
+A reference/type map is `ref(1), 0001, entry[n], ref(1), 0000,
+target_kind:u16 BE`, where `n > 0` and each entry is `ref, kind:u16 BE`.
+Every entry reference is a non-null compact or extended XMT. Every entry kind
+is a defined Parasolid record kind, type 79, type 80, type 55, or type 100.
+`target_kind` uses the same type-code set. The terminal null reference
+distinguishes the suffix from the non-null entry lane.
+
 One reference-state packet is `0001, 0001, 0004, ref[4], 0001,
 state_word[5]:u32 BE, state_byte:u8`. Each reference uses compact or extended
 XMT encoding. The first three references are non-null and the fourth admits the
@@ -494,17 +501,29 @@ The leading reference is non-null and uses compact or extended XMT encoding.
 `marker` is `53` or `56`. The two remaining references are the null XMT value
 `1`. The packet ends after the final status byte.
 
-An inline REGION schema declaration begins with the exact header
+An inline schema declaration begins with one of three exact headers. The
+REGION form begins with
 `00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.
 The header is followed by `xmt, state_word:u32 BE, ref_status[4]`. `xmt` is
 non-null. Each reference uses compact or extended XMT encoding and is followed
 by status `01`. The declaration ends after the fourth status byte.
 
+The `ATTDEF_LIST` form begins with
+`004a04434910696e6465785f6d61705f6f666673657400000001016443435a`.
+Its body is the type-74 body without the leading type tag or optional escaped
+envelope: `slot_count:u32 BE, xmt, active_count:u32 BE, zero:u32 BE,
+ref(1) 01, slot[slot_count]`. The type-70 form begins with
+`00460b4349096c6973745f74797065000000010175490a6e6f7472616e736d697400000001016c43434344434344490c66696e6765725f696e646578000000010164490c66696e6765725f626c6f636b03f40001435a`.
+Its body is the type-70 body without the leading type tag or optional escaped
+envelope. Adjacent inline declarations are independently framed and may occur
+in either order.
+
 The union of those events, tagged-reference lanes, reference-state packets,
-reference-marker packets, and inline REGION schema declarations defines the typed
-deltas-event coverage. Each maximal nonempty complement interval in the
-inflated stream is one residual span. Residual spans retain their exact offset,
-length, and SHA-256 independently of the containing compressed stream.
+reference/type maps, reference-marker packets, and inline schema declarations
+defines the typed deltas-event coverage. Each maximal nonempty complement
+interval in the inflated stream is one residual span. Residual spans retain
+their exact offset, length, and SHA-256 independently of the containing
+compressed stream.
 
 **Full record:**
 

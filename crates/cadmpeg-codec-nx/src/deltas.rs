@@ -79,6 +79,19 @@ pub struct TaggedReferenceLane {
     pub end: usize,
 }
 
+/// One framed map from stream-local references to Parasolid type codes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceTypeMap {
+    /// Ordered `(reference, type_code)` entries.
+    pub entries: Vec<(u32, u16)>,
+    /// Type code of the map target.
+    pub target_kind: u16,
+    /// First byte of the map.
+    pub offset: usize,
+    /// First byte following the map.
+    pub end: usize,
+}
+
 /// One deltas packet carrying four references and unassigned state words.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceStatePacket {
@@ -169,6 +182,8 @@ pub struct Census {
     pub term_use_numeric_tails: Vec<TermUseNumericTail>,
     /// Maximal event gaps composed entirely of typed stream-local references.
     pub tagged_reference_lanes: Vec<TaggedReferenceLane>,
+    /// Complete framed reference/type maps in source order.
+    pub reference_type_maps: Vec<ReferenceTypeMap>,
     /// Complete four-reference state packets in source order.
     pub reference_state_packets: Vec<ReferenceStatePacket>,
     /// Complete reference-marker packets in source order.
@@ -179,7 +194,7 @@ pub struct Census {
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
     pub tombstone_counts: BTreeMap<&'static str, usize>,
-    /// Sum of all accepted record, revision, tombstone, numeric-tail, and reference-lane bytes.
+    /// Sum of all admitted event bytes.
     pub bytes_decoded: usize,
 }
 
@@ -574,6 +589,12 @@ pub fn walk(stream: &[u8]) -> Census {
         .iter()
         .map(|lane| lane.end - lane.offset)
         .sum::<usize>();
+    census.reference_type_maps = reference_type_maps(stream, &census);
+    census.bytes_decoded += census
+        .reference_type_maps
+        .iter()
+        .map(|map| map.end - map.offset)
+        .sum::<usize>();
     census.reference_state_packets = reference_state_packets(stream, &census);
     census.bytes_decoded += census
         .reference_state_packets
@@ -681,6 +702,49 @@ fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReference
             })
         })
         .collect()
+}
+
+fn reference_type_maps(stream: &[u8], census: &Census) -> Vec<ReferenceTypeMap> {
+    uncovered_spans(stream.len(), census, true)
+        .filter_map(|(offset, end)| reference_type_map(stream, offset, end))
+        .collect()
+}
+
+fn reference_type_map(
+    stream: &[u8],
+    offset: usize,
+    expected_end: usize,
+) -> Option<ReferenceTypeMap> {
+    let (leading_null, consumed) = read_xmt(stream, offset)?;
+    (leading_null == 1).then_some(())?;
+    let mut at = offset.checked_add(consumed)?;
+    (be::u16_at(stream, at) == Some(1)).then_some(())?;
+    at = at.checked_add(2)?;
+    let mut entries = Vec::new();
+    loop {
+        (at < expected_end).then_some(())?;
+        let (reference, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        (at <= expected_end).then_some(())?;
+        if reference == 1 {
+            (be::u16_at(stream, at) == Some(0)).then_some(())?;
+            at = at.checked_add(2)?;
+            let target_kind = be::u16_at(stream, at)?;
+            is_reference_type_kind(target_kind).then_some(())?;
+            at = at.checked_add(2)?;
+            return (at == expected_end && !entries.is_empty()).then_some(ReferenceTypeMap {
+                entries,
+                target_kind,
+                offset,
+                end: at,
+            });
+        }
+        let kind = be::u16_at(stream, at)?;
+        is_reference_type_kind(kind).then_some(())?;
+        at = at.checked_add(2)?;
+        (at <= expected_end).then_some(())?;
+        entries.push((reference, kind));
+    }
 }
 
 fn reference_state_packets(stream: &[u8], census: &Census) -> Vec<ReferenceStatePacket> {
@@ -927,6 +991,12 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
         );
         covered.extend(
             census
+                .reference_type_maps
+                .iter()
+                .map(|map| (map.offset, map.end)),
+        );
+        covered.extend(
+            census
                 .reference_state_packets
                 .iter()
                 .map(|packet| (packet.offset, packet.end)),
@@ -958,6 +1028,10 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
 
 fn is_tagged_reference_kind(kind: u16) -> bool {
     family_name(kind).is_some() || matches!(kind, 79 | 80)
+}
+
+fn is_reference_type_kind(kind: u16) -> bool {
+    is_tagged_reference_kind(kind) || matches!(kind, 55 | 100)
 }
 
 fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Option<Record> {
@@ -1985,6 +2059,53 @@ mod inline_schema_tests {
         for mut stream in [attdef_list_declaration(), type_70_declaration()] {
             stream.pop();
             assert!(walk(&stream).inline_schema_declarations.is_empty());
+        }
+    }
+}
+
+#[cfg(test)]
+mod reference_type_map_tests {
+    use super::*;
+
+    fn map_bytes() -> Vec<u8> {
+        vec![
+            0, 1, 0, 1, 0xe3, 0xbf, 0, 1, 0, 81, 0, 3, 0, 100, 0, 1, 0, 0, 0, 55,
+        ]
+    }
+
+    #[test]
+    fn reference_type_map_accepts_compact_and_extended_references() {
+        let bytes = map_bytes();
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.reference_type_maps,
+            [ReferenceTypeMap {
+                entries: vec![(40_000, 81), (3, 100)],
+                target_kind: 55,
+                offset: 0,
+                end: bytes.len(),
+            }]
+        );
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_requires_complete_framing_and_known_types() {
+        let bytes = map_bytes();
+        let mut unknown_entry_type = bytes.clone();
+        unknown_entry_type[9] = 0xfe;
+        let mut unknown_target_type = bytes.clone();
+        unknown_target_type[19] = 0xfe;
+        let trailing_byte = [bytes.as_slice(), &[0]].concat();
+
+        for malformed in [
+            &bytes[..bytes.len() - 1],
+            unknown_entry_type.as_slice(),
+            unknown_target_type.as_slice(),
+            trailing_byte.as_slice(),
+        ] {
+            assert!(walk(malformed).reference_type_maps.is_empty());
         }
     }
 }
