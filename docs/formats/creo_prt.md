@@ -2783,6 +2783,19 @@ positive finite length. The stored cylinder length takes precedence over
 unbound same-feature plane offsets. A missing length or disagreement in start
 plane, direction, or length leaves the extent unresolved.
 
+Without a section transform, the complete set of same-feature generated planes
+and positional cylinders defines a blind linear sweep when every generated row
+transfers uniquely, every cylinder has one complete positional frame, and all
+cylinder frames have the same directed axis, start station, and positive finite
+length. Generated planes normal to that axis define exactly two distinct cap
+stations; generated planes parallel to the axis are side carriers. Oblique
+planes reject the construction. Every cylinder begins at one cap and ends at
+the other, and the cap separation equals the common cylinder length. The
+directed cylinder axis is the extrusion direction and the common length is the
+blind extent. Duplicate rows, duplicate parameter records, other generated
+surface families, missing transfers, or inconsistent transferred cylinder
+carriers leave direction and extent unresolved.
+
 The generated-table source identifier remains part of the owning feature's design record even when the corresponding positional section entity is not decoded. It identifies the source section entity; it is not a global geometry identifier or a generated-table ordinal.
 
 The positional `order_table` opener is `f8 <count> f7 <table_class> fb e2 f7

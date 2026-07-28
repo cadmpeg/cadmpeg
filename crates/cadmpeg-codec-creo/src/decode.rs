@@ -4752,6 +4752,159 @@ fn agreed_generated_cylinder_extent(
     ))
 }
 
+fn generated_cylinder_cap_extent(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!rows.is_empty()
+        && rows.iter().all(|row| {
+            matches!(
+                row.kind,
+                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Cylinder
+            )
+        }))
+    .then_some(())?;
+
+    let mut frames = Vec::new();
+    let mut planes = Vec::new();
+    for row in rows {
+        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        let [surface] = surfaces.as_slice() else {
+            return None;
+        };
+        match (&row.kind, &surface.geometry) {
+            (crate::surface::SurfaceKind::Plane, SurfaceGeometry::Plane { origin, normal, .. }) => {
+                planes.push((*origin, *normal));
+            }
+            (
+                crate::surface::SurfaceKind::Cylinder,
+                SurfaceGeometry::Cylinder { origin, axis, .. },
+            ) => {
+                let parameters =
+                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?;
+                let frame = parameters.positional_cylinder_frame?;
+                let transferred_origin = [origin.x, origin.y, origin.z];
+                let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
+                let frame_axis = normalized(frame.axis)?;
+                let scale = transferred_origin
+                    .into_iter()
+                    .chain(frame.origin)
+                    .map(f64::abs)
+                    .fold(1.0, f64::max);
+                (transferred_origin
+                    .into_iter()
+                    .zip(frame.origin)
+                    .all(|(left, right)| (left - right).abs() <= 1e-9 * scale)
+                    && transferred_axis
+                        .into_iter()
+                        .zip(frame_axis)
+                        .all(|(left, right)| (left - right).abs() <= 1e-10))
+                .then_some(())?;
+                frames.push(frame);
+            }
+            _ => return None,
+        }
+    }
+    let first = *frames.first()?;
+    let direction = normalized(first.axis)?;
+    let length = first
+        .length
+        .filter(|length| length.is_finite() && *length > 0.0)?;
+    let coordinate_scale = frames
+        .iter()
+        .flat_map(|frame| frame.origin)
+        .chain(
+            planes
+                .iter()
+                .flat_map(|(origin, _)| [origin.x, origin.y, origin.z]),
+        )
+        .map(f64::abs)
+        .fold(length.max(1.0), f64::max);
+    let tolerance = 1e-9 * coordinate_scale;
+    frames
+        .iter()
+        .all(|frame| {
+            frame
+                .length
+                .is_some_and(|candidate| (candidate - length).abs() <= tolerance)
+                && normalized(frame.axis).is_some_and(|axis| {
+                    axis.into_iter()
+                        .zip(direction)
+                        .all(|(left, right)| (left - right).abs() <= 1e-10)
+                })
+        })
+        .then_some(())?;
+    let cap_stations = planes
+        .into_iter()
+        .map(|(origin, normal)| {
+            let normal = normalized([normal.x, normal.y, normal.z])?;
+            let alignment = dot(normal, direction).abs();
+            if alignment >= 1.0 - 1e-10 {
+                Some(Some(dot([origin.x, origin.y, origin.z], direction)))
+            } else if alignment <= 1e-10 {
+                Some(None)
+            } else {
+                None
+            }
+        })
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let first_station = *cap_stations.first()?;
+    let mut unique_stations = vec![first_station];
+    for station in cap_stations.into_iter().skip(1) {
+        if unique_stations
+            .iter()
+            .all(|existing| (station - existing).abs() > tolerance)
+        {
+            unique_stations.push(station);
+        }
+    }
+    let [first_cap, second_cap] = unique_stations.as_slice() else {
+        return None;
+    };
+    let start_station = dot(first.origin, direction);
+    let end_station = start_station + length;
+    let cap_matches = |station: f64| {
+        (*first_cap - station).abs() <= tolerance || (*second_cap - station).abs() <= tolerance
+    };
+    (cap_matches(start_station)
+        && cap_matches(end_station)
+        && ((first_cap - second_cap).abs() - length).abs() <= tolerance
+        && frames
+            .iter()
+            .all(|frame| (dot(frame.origin, direction) - start_station).abs() <= tolerance))
+    .then_some(())?;
+    Some((
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(length),
+                },
+                draft: None,
+                offset: None,
+            },
+        },
+        direction,
+    ))
+}
+
 fn directed_blind_extrusion_span(
     profile_direction: [f64; 3],
     extrusion_direction: [f64; 3],
@@ -14432,34 +14585,36 @@ fn schema_feature_definition(
         let profile = definition.map(|definition| {
             section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
-        let construction = if let ([transform], Some(profile), Some(definition)) =
-            (transforms.as_slice(), profile.clone(), definition)
-        {
-            generated_arc_cylinder_extent(scan, definition, transform)
-                .or_else(|| {
-                    extrusion_extent_and_direction(
-                        transform.origin,
-                        transform.normal,
-                        feature_plane_equations(scan, feature_id),
-                    )
-                })
-                .map(|(extent, direction)| {
+        let construction =
+            if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
+                generated_arc_cylinder_extent(scan, definition, transform)
+                    .or_else(|| {
+                        extrusion_extent_and_direction(
+                            transform.origin,
+                            transform.normal,
+                            feature_plane_equations(scan, feature_id),
+                        )
+                    })
+                    .map(|(extent, direction)| {
+                        (
+                            Some(Vector3::new(direction[0], direction[1], direction[2])),
+                            extent,
+                        )
+                    })
+            } else {
+                None
+            }
+            .or_else(|| {
+                generated_cylinder_cap_extent(scan, ir, feature_id).map(|(extent, direction)| {
                     (
-                        profile,
                         Some(Vector3::new(direction[0], direction[1], direction[2])),
                         extent,
                     )
                 })
-        } else {
-            None
-        };
-        let (profile, direction, extent) = construction.unwrap_or((
-            profile.unwrap_or_else(|| {
-                ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}"))
-            }),
-            None,
-            unresolved_extrude_extent(),
-        ));
+            });
+        let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
+        let profile = profile
+            .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
         let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
         return IrFeatureDefinition::Extrude {
             profile,

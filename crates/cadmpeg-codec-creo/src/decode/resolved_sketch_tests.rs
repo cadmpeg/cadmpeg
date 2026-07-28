@@ -2932,6 +2932,123 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
 }
 
 #[test]
+fn generated_cylinder_caps_define_a_blind_extrusion_without_a_section_transform() {
+    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+        id,
+        type_byte: kind.canonical_type_byte(),
+        kind,
+        feature_id: 7,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([
+        row(31, crate::surface::SurfaceKind::Plane),
+        row(32, crate::surface::SurfaceKind::Plane),
+        row(33, crate::surface::SurfaceKind::Cylinder),
+    ]);
+    let parameter = crate::surface::SurfaceParameterRecord {
+        surface_id: 33,
+        body: Vec::new(),
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: Some(crate::surface::PositionalCylinderFrame {
+            origin: [2.0, 4.0, 0.0],
+            axis: [0.0, -1.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 1.0,
+            length: Some(8.0),
+        }),
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: 33,
+        body_offset: 34,
+    };
+    scan.surfaces.parameters.push(parameter);
+    let plane = |id, y, normal| Surface {
+        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, y, 0.0),
+            normal,
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    };
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.extend([
+        plane(31, 4.0, Vector3::new(0.0, 1.0, 0.0)),
+        plane(32, -4.0, Vector3::new(0.0, -1.0, 0.0)),
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#33".to_string()),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(2.0, 4.0, 0.0),
+                axis: Vector3::new(0.0, -1.0, 0.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+            source_object: None,
+        },
+    ]);
+
+    assert_eq!(
+        generated_cylinder_cap_extent(&scan, &ir, 7),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(8.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, -1.0, 0.0],
+        ))
+    );
+
+    let mut oblique = ir.clone();
+    let SurfaceGeometry::Plane { normal, .. } = &mut oblique.model.surfaces[0].geometry else {
+        panic!("plane");
+    };
+    *normal = Vector3::new(0.0, 1.0, 1.0);
+    assert!(generated_cylinder_cap_extent(&scan, &oblique, 7).is_none());
+
+    scan.surfaces.parameters[0]
+        .positional_cylinder_frame
+        .as_mut()
+        .expect("cylinder frame")
+        .length = Some(7.0);
+    assert!(generated_cylinder_cap_extent(&scan, &ir, 7).is_none());
+    scan.surfaces.parameters[0]
+        .positional_cylinder_frame
+        .as_mut()
+        .expect("cylinder frame")
+        .length = Some(8.0);
+
+    scan.surfaces.rows.push(scan.surfaces.rows[0].clone());
+    assert!(generated_cylinder_cap_extent(&scan, &ir, 7).is_none());
+    scan.surfaces.rows.pop();
+
+    scan.surfaces
+        .parameters
+        .push(scan.surfaces.parameters[0].clone());
+    assert!(generated_cylinder_cap_extent(&scan, &ir, 7).is_none());
+    scan.surfaces.parameters.pop();
+
+    let mut missing_transfer = ir.clone();
+    missing_transfer.model.surfaces.pop();
+    assert!(generated_cylinder_cap_extent(&scan, &missing_transfer, 7).is_none());
+}
+
+#[test]
 fn section_line_requires_two_solved_points() {
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,
