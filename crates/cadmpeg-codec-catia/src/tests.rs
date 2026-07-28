@@ -5802,6 +5802,75 @@ fn repeated_complete_sketch_declarations_transfer_one_identity() {
 }
 
 #[test]
+fn structurally_owned_sketch_feature_retains_its_parent() {
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4, 5]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "OwnerAnchor",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.design_objects.len(), 2);
+    assert_eq!(
+        native.design_objects[1].owner_design_object.as_deref(),
+        Some(native.design_objects[0].id.as_str())
+    );
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    crate::sketch::transfer_sketches(&mut ir, &native);
+
+    assert_eq!(ir.model.features.len(), 2);
+    assert_eq!(ir.model.features[0].parent, None);
+    assert_eq!(
+        ir.model.features[1].parent.as_ref(),
+        Some(&ir.model.features[0].id)
+    );
+}
+
+#[test]
+fn later_structural_sketch_owner_does_not_become_a_forward_parent() {
+    let records = [
+        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x83, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x83, 0x84], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "PRTSketch",
+        "OwnerAnchor",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.design_objects.len(), 2);
+    assert_eq!(
+        native.design_objects[0].owner_design_object.as_deref(),
+        Some(native.design_objects[1].id.as_str())
+    );
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    crate::sketch::transfer_sketches(&mut ir, &native);
+
+    assert_eq!(ir.model.features.len(), 2);
+    assert!(ir
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.parent.is_none()));
+}
+
+#[test]
 fn equal_sketch_names_from_distinct_schema_entries_do_not_merge() {
     let records = [
         object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),

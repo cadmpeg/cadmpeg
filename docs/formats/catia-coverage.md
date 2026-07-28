@@ -42,7 +42,8 @@ current scores require those matrices and representative fixtures.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, value, expression, and dependency identities resolve exactly.
 - Empty `PRTSketch` and `Sketch` declarations transfer one neutral planar
-  sketch identity and its linked ordered sketch-history feature. Exact
+  sketch identity and its linked ordered sketch-history feature. Structural
+  ownership among transferred sketches supplies feature containment. Exact
   principal-plane declarations resolve the corresponding origin frame.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every

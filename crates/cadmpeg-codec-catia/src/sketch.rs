@@ -8,7 +8,7 @@ use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
-use crate::native::{CatiaNative, CatiaObjectRecord};
+use crate::native::{CatiaDesignObject, CatiaNative, CatiaObjectRecord};
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -34,35 +34,19 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchT
         .flat_map(|graph| &graph.records)
         .map(|record| (record.id.as_str(), record))
         .collect::<HashMap<_, _>>();
+    let candidates = native
+        .design_objects
+        .iter()
+        .filter_map(|object| sketch_candidate(object, &records))
+        .collect::<Vec<_>>();
+    let mut emitted_features = HashMap::<&str, FeatureId>::new();
     let mut transfer = SketchTransfer::default();
 
-    for object in &native.design_objects {
-        if object.owner_record.is_none() {
-            continue;
-        }
-        let declarations = object
-            .fields
-            .iter()
-            .filter_map(|field| records.get(field.as_str()).copied())
-            .filter(|record| matches!(record.class_name.as_deref(), Some("PRTSketch" | "Sketch")))
-            .collect::<Vec<_>>();
-        let Some((declaration_class, declaration_entry)) =
-            declarations.first().and_then(|record| {
-                record
-                    .class_name
-                    .as_deref()
-                    .zip(record.class_entry.as_deref())
-            })
-        else {
-            continue;
-        };
-        if declarations.iter().any(|record| {
-            record.class_name.as_deref() != Some(declaration_class)
-                || record.class_entry.as_deref() != Some(declaration_entry)
-                || !complete_empty_declaration(record, &object.id, object.owner_entity_id)
-        }) {
-            continue;
-        }
+    for candidate in candidates {
+        let object = candidate.object;
+        let declarations = candidate.declarations;
+        let declaration_class = candidate.declaration_class;
+        let feature_id = FeatureId(format!("{}:feature", object.id));
         let plane_declarations = object
             .fields
             .iter()
@@ -88,11 +72,15 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchT
             native_ref: Some(object.id.clone()),
         });
         ir.model.features.push(Feature {
-            id: FeatureId(format!("{}:feature", object.id)),
+            id: feature_id.clone(),
             ordinal: ir.model.features.len() as u64,
             name: None,
             suppressed: None,
-            parent: None,
+            parent: object
+                .owner_design_object
+                .as_deref()
+                .and_then(|owner| emitted_features.get(owner))
+                .cloned(),
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: Some(declaration_class.to_string()),
@@ -105,6 +93,7 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchT
             },
             native_ref: Some(object.id.clone()),
         });
+        emitted_features.insert(object.id.as_str(), feature_id);
         transfer.declaration_records.extend(
             declarations
                 .into_iter()
@@ -120,6 +109,43 @@ pub(crate) fn transfer_sketches(ir: &mut CadIr, native: &CatiaNative) -> SketchT
     }
 
     transfer
+}
+
+struct SketchCandidate<'a> {
+    object: &'a CatiaDesignObject,
+    declarations: Vec<&'a CatiaObjectRecord>,
+    declaration_class: &'a str,
+}
+
+fn sketch_candidate<'a>(
+    object: &'a CatiaDesignObject,
+    records: &HashMap<&str, &'a CatiaObjectRecord>,
+) -> Option<SketchCandidate<'a>> {
+    object.owner_record.as_ref()?;
+    let declarations = object
+        .fields
+        .iter()
+        .filter_map(|field| records.get(field.as_str()).copied())
+        .filter(|record| matches!(record.class_name.as_deref(), Some("PRTSketch" | "Sketch")))
+        .collect::<Vec<_>>();
+    let (declaration_class, declaration_entry) = declarations.first().and_then(|record| {
+        record
+            .class_name
+            .as_deref()
+            .zip(record.class_entry.as_deref())
+    })?;
+    declarations
+        .iter()
+        .all(|record| {
+            record.class_name.as_deref() == Some(declaration_class)
+                && record.class_entry.as_deref() == Some(declaration_entry)
+                && complete_empty_declaration(record, &object.id, object.owner_entity_id)
+        })
+        .then_some(SketchCandidate {
+            object,
+            declarations,
+            declaration_class,
+        })
 }
 
 fn complete_empty_declaration(
