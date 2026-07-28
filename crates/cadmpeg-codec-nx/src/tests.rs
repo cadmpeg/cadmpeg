@@ -11196,6 +11196,7 @@ mod golden {
         "parasolid_deltas_reference_state_packets",
         "parasolid_deltas_schema_reference_preambles",
         "parasolid_deltas_reference_marker_packets",
+        "parasolid_deltas_type_150_state_packets",
         "parasolid_deltas_inline_schema_declarations",
         "parasolid_deltas_inline_body_states",
         "parasolid_deltas_term_use_numeric_tails",
@@ -11924,7 +11925,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (194), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (195), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -11933,7 +11934,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 194, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 195, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

@@ -520,6 +520,11 @@ impl StreamNoted for ParasolidDeltasReferenceMarkerPacket {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
+impl StreamNoted for ParasolidDeltasType150StatePacket {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
 impl StreamNoted for ParasolidDeltasInlineSchemaDeclaration {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
@@ -1138,6 +1143,17 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             )
         },
         len: |m| m.parasolid.parasolid_deltas_reference_marker_packets.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_deltas_type_150_state_packets",
+        tag: Some("DELTAS_TYPE_150_STATE"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_deltas_type_150_state_packets, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_type_150_state_packets, r, ns),
+        len: |m| m.parasolid.parasolid_deltas_type_150_state_packets.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

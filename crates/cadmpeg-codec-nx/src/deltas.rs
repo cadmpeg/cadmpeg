@@ -165,6 +165,21 @@ pub struct ReferenceMarkerPacket {
     pub end: usize,
 }
 
+/// One single-byte type-150 deltas state packet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Type150StatePacket {
+    /// Five ordered stream-local XMT references.
+    pub references: [u32; 5],
+    /// Serialized state discriminator.
+    pub marker: u8,
+    /// Nine finite binary64 state values.
+    pub values: [f64; 9],
+    /// First byte of the packet.
+    pub offset: usize,
+    /// First byte following the packet.
+    pub end: usize,
+}
+
 /// Body of an inline schema declaration.
 #[derive(Debug, Clone, PartialEq)]
 pub enum InlineSchemaFields {
@@ -313,6 +328,8 @@ pub struct Census {
     pub schema_reference_preambles: Vec<SchemaReferencePreamble>,
     /// Complete reference-marker packets in source order.
     pub reference_marker_packets: Vec<ReferenceMarkerPacket>,
+    /// Complete single-byte type-150 state packets in source order.
+    pub type_150_state_packets: Vec<Type150StatePacket>,
     /// Complete inline schema declarations in source order.
     pub inline_schema_declarations: Vec<InlineSchemaDeclaration>,
     /// Complete schema-bound type-12 BODY states in source order.
@@ -753,6 +770,9 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
         let marker_packets = reference_marker_packets(stream, census);
         census.reference_marker_packets.extend(marker_packets);
 
+        let type_150_packets = type_150_state_packets(stream, census);
+        census.type_150_state_packets.extend(type_150_packets);
+
         let covered_after = merged_event_spans(census, true)
             .into_iter()
             .map(|(start, end)| end - start)
@@ -784,6 +804,9 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
         .sort_unstable_by_key(|state| state.offset);
     census
         .reference_marker_packets
+        .sort_unstable_by_key(|packet| packet.offset);
+    census
+        .type_150_state_packets
         .sort_unstable_by_key(|packet| packet.offset);
 }
 
@@ -1712,6 +1735,46 @@ fn reference_marker_packet(
     })
 }
 
+fn type_150_state_packets(stream: &[u8], census: &Census) -> Vec<Type150StatePacket> {
+    uncovered_spans(stream.len(), census, true)
+        .filter_map(|(offset, end)| type_150_state_packet(stream, offset, end))
+        .collect()
+}
+
+fn type_150_state_packet(
+    stream: &[u8],
+    offset: usize,
+    expected_end: usize,
+) -> Option<Type150StatePacket> {
+    (stream.get(offset) == Some(&150)).then_some(())?;
+    let mut at = offset.checked_add(1)?;
+    let mut references = [0; 5];
+    for (reference, required_status) in references.iter_mut().zip([1, 1, 0, 1, 0]) {
+        let (value, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        (stream.get(at) == Some(&required_status)).then_some(())?;
+        at = at.checked_add(1)?;
+        *reference = value;
+    }
+    (references[0] == 1 && references[1..].iter().all(|reference| *reference > 1)).then_some(())?;
+    let marker = *stream.get(at)?;
+    matches!(marker, 0x2b | 0x2d).then_some(())?;
+    at = at.checked_add(1)?;
+    let mut values = [0.0; 9];
+    for value in &mut values {
+        *value = be::f64_at(stream, at)?;
+        value.is_finite().then_some(())?;
+        at = at.checked_add(8)?;
+    }
+    (at == expected_end).then_some(Type150StatePacket {
+        references,
+        marker,
+        values,
+        offset,
+        end: at,
+    })
+}
+
 fn uncovered_spans(
     stream_len: usize,
     census: &Census,
@@ -1790,6 +1853,12 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
         covered.extend(
             census
                 .reference_marker_packets
+                .iter()
+                .map(|packet| (packet.offset, packet.end)),
+        );
+        covered.extend(
+            census
+                .type_150_state_packets
                 .iter()
                 .map(|packet| (packet.offset, packet.end)),
         );
@@ -2839,6 +2908,50 @@ fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
     let remainder = first.unsigned_abs();
     let quotient = u16::from_be_bytes([*stream.get(at + 2)?, *stream.get(at + 3)?]);
     Some((u32::from(quotient) * 32_767 + u32::from(remainder), 4))
+}
+
+#[cfg(test)]
+mod type_150_state_packet_tests {
+    use super::*;
+
+    fn packet() -> Vec<u8> {
+        let mut bytes = vec![150];
+        for (reference, status) in [(1u16, 1), (3, 1), (6_192, 0), (6_193, 1), (6_194, 0)] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+            bytes.push(status);
+        }
+        bytes.push(0x2b);
+        for value in [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0] {
+            bytes.extend_from_slice(&f64::to_be_bytes(value));
+        }
+        bytes
+    }
+
+    #[test]
+    fn retains_complete_type_150_state() {
+        let bytes = packet();
+        let census = walk(&bytes);
+
+        assert_eq!(census.type_150_state_packets.len(), 1);
+        let packet = &census.type_150_state_packets[0];
+        assert_eq!(packet.references, [1, 3, 6_192, 6_193, 6_194]);
+        assert_eq!(packet.marker, 0x2b);
+        assert_eq!(
+            packet.values,
+            [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0]
+        );
+        assert_eq!((packet.offset, packet.end), (0, bytes.len()));
+        assert_eq!(census.bytes_decoded, bytes.len());
+
+        let mut malformed = bytes.clone();
+        malformed[6] = 0;
+        assert!(walk(&malformed).type_150_state_packets.is_empty());
+
+        let mut nonfinite = bytes;
+        let value_offset = nonfinite.len() - 9 * 8;
+        nonfinite[value_offset..value_offset + 8].copy_from_slice(&f64::NAN.to_be_bytes());
+        assert!(walk(&nonfinite).type_150_state_packets.is_empty());
+    }
 }
 
 #[cfg(test)]

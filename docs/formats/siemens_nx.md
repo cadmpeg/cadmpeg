@@ -546,6 +546,11 @@ The leading reference is non-null and uses compact or extended XMT encoding.
 `marker` is `53` or `56`. The two remaining references are the null XMT value
 `1`. The packet ends after the final status byte.
 
+A type-150 state packet is `96, ref_status[5], marker:u8, value[9]:f64 BE`.
+The reference statuses are `01, 01, 00, 01, 00`. The first reference is the
+null XMT value `1`; the remaining references are non-null. `marker` is `2b` or
+`2d`, every numeric value is finite, and the packet ends after the ninth value.
+
 An inline schema declaration begins with one of eight exact headers. The type-12
 `BODY` form is a 282-byte header beginning `000c2443434349` and ending
 `6d6573685f6f66667365745f6461746100ce00015a`. It declares `lattice`, `mesh`,

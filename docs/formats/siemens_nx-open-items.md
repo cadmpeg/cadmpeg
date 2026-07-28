@@ -25,6 +25,7 @@ This document records unresolved NX `.prt` byte semantics.
 - The field roles and owners of deltas four-reference state packets are unspecified.
 - The field roles and owners of deltas schema reference preambles are unspecified.
 - The field roles, marker meaning, and owners of deltas reference-marker packets are unspecified.
+- The field roles and marker meaning of deltas type-150 state packets are unspecified.
 - The field roles of inline deltas schema declarations are unspecified.
 - The field roles and cardinality relations of inline type-12 `BODY` instance state are unspecified.
 
