@@ -2474,7 +2474,9 @@ fn segment_table_body(
         retain_segment_row(row, &mut segments);
     }
     let first_row = cursor;
-    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
+    let row_limit = usize::try_from(declared_count)
+        .unwrap_or(usize::MAX)
+        .saturating_sub(usize::from(has_elided_prototype));
     while cursor < region_end && segments.retained_row_count() < row_limit {
         let row_start = cursor;
         let kind_offset = if matches!(
@@ -8275,7 +8277,7 @@ mod tests {
     }
 
     #[test]
-    fn positional_segment_extent_counts_the_elided_prototype() {
+    fn positional_segment_extent_excludes_rows_after_the_declared_extent() {
         let mut payload = b"\xe3S2D0004\0\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2".to_vec();
         payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
         payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
@@ -8284,8 +8286,9 @@ mod tests {
             positional_segment_table(&payload, 0, payload.len()).expect("positional segtab");
 
         assert!(segments.has_elided_prototype);
-        assert_eq!(segments.rows.len(), 2);
-        assert!(!segments.is_complete());
+        assert_eq!(segments.rows.len(), 1);
+        assert_eq!(segments.rows[0].external_id, 42);
+        assert!(segments.is_complete());
     }
 
     #[test]
