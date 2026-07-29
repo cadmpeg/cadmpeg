@@ -825,7 +825,11 @@ shifts every subsequent logical field by one byte. Type 135 may place a second
 `ff` escape before its control-value count; the count and control-reference tail
 shift by one additional byte. Multiplicity and knot references in type 136 are
 sequential encoded xmts, so an extended multiplicity reference shifts the knot
-reference.
+reference. Type 136 admits dimensions 2, 3, and 4; dimension 4 is homogeneous
+three-dimensional control data. Its status-framed form continues after the form
+byte with `00 00 01 04` and three `ref, 00` entries ordered as term-use,
+multiplicity, and knot references. Every reference is non-null. The complete
+form ends after the knot-reference status.
 
 Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. Each support-record XMT is unique within its stream. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
 

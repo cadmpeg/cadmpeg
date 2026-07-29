@@ -3000,7 +3000,7 @@ fn consume_nurbs_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
         kind: auxiliary.kind,
         xmt: auxiliary.xmt,
         node_id: None,
-        references: Vec::new(),
+        references: auxiliary.references,
         position: None,
         canonical_bytes: stream.get(offset..auxiliary.end)?.to_vec(),
         offset,
@@ -4006,6 +4006,51 @@ mod inline_schema_tests {
                 walk(&stream).inline_schema_declarations.is_empty(),
                 "truncated declaration {name}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod nurbs_auxiliary_tests {
+    use super::*;
+
+    fn status_framed_curve_descriptor() -> Vec<u8> {
+        vec![
+            0, 136, 0x0d, 0xd1, // type and XMT
+            0, 3, // degree
+            0, 0, 0, 4, // pole count
+            0, 4, // homogeneous dimension
+            0, 0, 0, 2, // distinct-knot count
+            1, 0, 0, 1, 4, // form and reference-lane prefix
+            0x0d, 0xd4, 0, // term-use reference
+            0x0d, 0xd3, 0, // multiplicity reference
+            0x0d, 0xd2, 0, // knot reference
+        ]
+    }
+
+    #[test]
+    fn retains_status_framed_rational_curve_descriptor() {
+        let bytes = status_framed_curve_descriptor();
+        let census = walk(&bytes);
+
+        assert_eq!(census.records.len(), 1);
+        assert_eq!(census.records[0].kind, 136);
+        assert_eq!(census.records[0].xmt, 3_537);
+        assert_eq!(census.records[0].references, [3_540, 3_539, 3_538]);
+        assert_eq!(census.records[0].end, bytes.len());
+        assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn rejects_incomplete_or_noncanonical_curve_descriptor_state() {
+        let bytes = status_framed_curve_descriptor();
+        let mut bad_status = bytes.clone();
+        bad_status[23] = 1;
+        let mut bad_dimension = bytes.clone();
+        bad_dimension[11] = 5;
+
+        for malformed in [&bytes[..bytes.len() - 1], &bad_status, &bad_dimension] {
+            assert!(walk(malformed).records.is_empty());
         }
     }
 }

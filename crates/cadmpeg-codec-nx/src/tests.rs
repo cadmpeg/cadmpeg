@@ -10060,6 +10060,40 @@ fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
 }
 
 #[test]
+fn nurbs_decodes_dimension_four_rational_curve() {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    put_ref(&mut stream, descriptor + 10, 4);
+
+    let payload = stream
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("curve payload");
+    let old_payload_len = 15 + 6 * 8;
+    let mut rational_payload = record(135, 15 + 8 * 8);
+    put_ref(&mut rational_payload, 2, 41);
+    rational_payload[9..13].copy_from_slice(&8u32.to_be_bytes());
+    for (index, value) in [0.0, 0.0, 0.0, 1.0, 0.04, 0.0, 0.0, 2.0]
+        .into_iter()
+        .enumerate()
+    {
+        put_f64(&mut rational_payload, 15 + index * 8, value);
+    }
+    stream.splice(payload..payload + old_payload_len, rational_payload);
+
+    let curves = crate::nurbs::curves(&stream);
+    assert_eq!(curves.len(), 1);
+    let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
+        panic!("expected NURBS curve");
+    };
+    assert_eq!(curve.weights.as_deref(), Some([1.0, 2.0].as_slice()));
+    assert_eq!(curve.control_points[1].x, 20.0);
+}
+
+#[test]
 fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
     let partition = bspline_surface_replacement_partition_stream();
     let deltas = deltas_bspline_surface_wrapper_stream();

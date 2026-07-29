@@ -174,7 +174,7 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
             let descriptor = descriptors.get(&refs[0])?;
-            (descriptor.dimension == 3).then_some(())?;
+            matches!(descriptor.dimension, 3 | 4).then_some(())?;
             let control = controls.get(&refs[1])?;
             let mult = arrays
                 .u16s
@@ -187,7 +187,9 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
             let knots = expand_knots(distinct, mult)?;
             valid_basis(descriptor.degree, descriptor.poles, &knots)?;
             let stride = control.values.len().checked_div(descriptor.poles)?;
-            if !(stride == 3 || stride == 4) || control.values.len() != descriptor.poles * stride {
+            if !matches!((descriptor.dimension, stride), (3, 3 | 4) | (4, 4))
+                || control.values.len() != descriptor.poles * stride
+            {
                 return None;
             }
             let mut control_points = Vec::new();
@@ -549,6 +551,7 @@ struct CurveDescriptor {
     form: u8,
     mult: u32,
     knots: u32,
+    references: Vec<u32>,
 }
 
 fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u32, CurveDescriptor> {
@@ -571,10 +574,36 @@ fn curve_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, CurveDescriptor
     let form = *bytes.get(pos + 16 + shift)?;
     ((1..=10).contains(&degree)
         && (2..=2000).contains(&poles)
-        && matches!(dimension, 2 | 3)
+        && matches!(dimension, 2..=4)
         && (2..=2000).contains(&distinct)
         && [1, 4, 5, 6].contains(&form))
     .then_some(())?;
+    if bytes.get(pos + 17 + shift..pos + 21 + shift) == Some(&[0, 0, 1, 4]) {
+        let mut at = pos + 21 + shift;
+        let mut references = [0; 3];
+        for reference in &mut references {
+            let (value, consumed) = read_xmt(bytes, at)?;
+            (value > 1).then_some(())?;
+            *reference = value;
+            at = at.checked_add(consumed)?;
+            (bytes.get(at) == Some(&0)).then_some(())?;
+            at = at.checked_add(1)?;
+        }
+        return Some((
+            xmt,
+            CurveDescriptor {
+                degree,
+                poles,
+                dimension,
+                distinct,
+                form,
+                mult: references[1],
+                knots: references[2],
+                references: references.to_vec(),
+            },
+            at,
+        ));
+    }
     let (mult, mult_len) = read_xmt(bytes, pos + 23 + shift)?;
     let (knots, knots_len) = read_xmt(bytes, pos + 23 + shift + mult_len)?;
     Some((
@@ -587,18 +616,21 @@ fn curve_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, CurveDescriptor
             form,
             mult,
             knots,
+            references: vec![mult, knots],
         },
         pos + 23 + shift + mult_len + knots_len,
     ))
 }
 
 /// Exact frame of one NURBS descriptor, payload, knot, or multiplicity record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AuxiliaryRecord {
     /// Parasolid record type.
     pub(crate) kind: u16,
     /// Stream-local record identity.
     pub(crate) xmt: u32,
+    /// Ordered stream-local references retained by the record.
+    pub(crate) references: Vec<u32>,
     /// First byte after the complete record.
     pub(crate) end: usize,
 }
@@ -606,28 +638,35 @@ pub(crate) struct AuxiliaryRecord {
 /// Decode one complete NURBS auxiliary record at `pos`.
 pub(crate) fn auxiliary_record_at(bytes: &[u8], pos: usize) -> Option<AuxiliaryRecord> {
     let kind = be_u16(bytes, pos)?;
-    let (xmt, end) = match kind {
+    let (xmt, references, end) = match kind {
         125 => surface_payload_at(bytes, pos)
             .map(|(xmt, _, end)| (xmt, end))
-            .or_else(|| surface_data_header_at(bytes, pos))?,
+            .or_else(|| surface_data_header_at(bytes, pos))
+            .map(|(xmt, end)| (xmt, Vec::new(), end))?,
         126 => {
             let (xmt, _, end) = surface_descriptor_at(bytes, pos)?;
-            (xmt, end)
+            (xmt, Vec::new(), end)
         }
         127 | 128 => {
             let record = array_record_at(bytes, pos)?;
-            (record.reference, record.end)
+            (record.reference, Vec::new(), record.end)
         }
         135 => curve_payload_at(bytes, pos)
             .map(|(xmt, _, end)| (xmt, end))
-            .or_else(|| curve_data_header_at(bytes, pos))?,
+            .or_else(|| curve_data_header_at(bytes, pos))
+            .map(|(xmt, end)| (xmt, Vec::new(), end))?,
         136 => {
-            let (xmt, _, end) = curve_descriptor_at(bytes, pos)?;
-            (xmt, end)
+            let (xmt, descriptor, end) = curve_descriptor_at(bytes, pos)?;
+            (xmt, descriptor.references, end)
         }
         _ => return None,
     };
-    Some(AuxiliaryRecord { kind, xmt, end })
+    Some(AuxiliaryRecord {
+        kind,
+        xmt,
+        references,
+        end,
+    })
 }
 
 fn unique_records<T>(records: impl IntoIterator<Item = (u32, T)>) -> BTreeMap<u32, T> {
