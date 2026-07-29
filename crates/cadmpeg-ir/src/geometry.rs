@@ -2162,6 +2162,16 @@ pub enum LawExpression {
         /// Three ordered transform enums.
         enums: [i64; 3],
     },
+    /// Vector-serialized transform-law payload: four ordered vectors, a scale,
+    /// and three flags, in place of the thirteen-scalar/three-enum form.
+    TransformVec {
+        /// Four ordered transform vectors.
+        vectors: [Vector3; 4],
+        /// Trailing transform scale.
+        scale: f64,
+        /// Three ordered transform flags.
+        flags: [bool; 3],
+    },
     /// Curve-backed edge law.
     Edge {
         /// Embedded curve carrier.
@@ -2535,7 +2545,20 @@ impl IntcurveSupportSide {
     }
 }
 
-/// Shared prefix carried by surface-related native intcurve constructions.
+/// Version-stamp prefix and unbounded interval carried by the stamped
+/// `law_int_cur` serializer form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LawCurveVersionForm {
+    /// Serializer version stamp emitted after the subtype name.
+    pub stamp: i64,
+    /// Native enum following the version stamp.
+    pub post_enum: i64,
+    /// Solved-curve interval endpoints; `None` records an unbounded bound.
+    pub parameter_range: [Option<f64>; 2],
+}
+
+/// Shared support surfaces, UV curves, interval, and discontinuity arrays of a
+/// native intcurve subtype.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct IntcurveSupportContext {
     /// Two ordered `(surface, pcurve)` support sides.
@@ -2664,6 +2687,9 @@ pub enum ProceduralCurveDefinition {
     Law {
         /// Shared support surfaces, UV curves, interval, and discontinuities.
         context: IntcurveSupportContext,
+        /// Version-stamped serializer form, absent for the legacy layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        version: Option<LawCurveVersionForm>,
         /// Native ASM extension integer.
         extension: i64,
         /// Primary recursive law formula.

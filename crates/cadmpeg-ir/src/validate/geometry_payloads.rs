@@ -770,6 +770,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
                     }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
+                    }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
                     }
@@ -859,6 +865,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
                     }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
@@ -960,6 +972,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
                     }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
+                    }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
                     }
@@ -1048,6 +1066,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
                     }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())

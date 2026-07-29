@@ -10,8 +10,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::native_bytes::{
-    native_curve_base, native_enum, native_f64, native_i64, native_ident, native_point, native_ref,
-    native_string, native_subident, native_surface_base, native_u16_string, native_vector,
+    native_curve_base, native_enum, native_f64, native_i64, native_ident,
+    native_length_prefixed_string, native_point, native_ref, native_string, native_subident,
+    native_surface_base, native_u16_string, native_vector,
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{finite_point, finite_vector, native_bool, unique_knot_count};
@@ -2109,6 +2110,20 @@ fn native_law_expression(
                 native_enum(bytes, *value);
             }
         }
+        LawExpression::TransformVec {
+            vectors,
+            scale,
+            flags,
+        } => {
+            native_string(bytes, "TRANS")?;
+            for vector in vectors {
+                native_vector(bytes, [vector.x, vector.y, vector.z]);
+            }
+            native_f64(bytes, *scale);
+            for flag in flags {
+                bytes.push(native_bool(*flag));
+            }
+        }
         LawExpression::Edge {
             curve,
             endpoints,
@@ -2193,7 +2208,7 @@ fn native_law_formula(
     target: &CadIr,
     formula: &cadmpeg_ir::geometry::LawFormula,
 ) -> Result<(), CodecError> {
-    native_string(bytes, &formula.name)?;
+    native_length_prefixed_string(bytes, &formula.name)?;
     if formula.name == "null_law" {
         if !formula.variables.is_empty() {
             return Err(CodecError::Malformed(
@@ -4524,6 +4539,7 @@ pub(crate) fn native_procedural_curve(
     }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
         context,
+        version,
         extension,
         primary,
         additional,
@@ -4532,9 +4548,17 @@ pub(crate) fn native_procedural_curve(
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "law_int_cur")?;
+        if let Some(version) = version {
+            native_i64(bytes, version.stamp);
+            native_enum(bytes, version.post_enum);
+        }
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);
-        native_intcurve_support_context(bytes, target, context)?;
+        if let Some(version) = version {
+            native_law_version_context(bytes, target, context, &version.parameter_range)?;
+        } else {
+            native_intcurve_support_context(bytes, target, context)?;
+        }
         native_i64(bytes, *extension);
         native_law_formula(bytes, target, primary)?;
         native_i64(
@@ -5398,6 +5422,66 @@ fn native_intcurve_support_context(
     }
     for value in context.parameter_range {
         native_f64(bytes, value);
+    }
+    for discontinuities in &context.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                CodecError::NotImplemented("discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in discontinuities {
+            native_f64(bytes, *value);
+        }
+    }
+    Ok(())
+}
+
+/// Emit the stamped `law_int_cur` support context: two support surfaces (or the
+/// `null_surface` sentinel), two nullable pcurves, the version-form interval as
+/// `0x0a`/`0x0b` optional bounds, and three discontinuity arrays.
+fn native_law_version_context(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    context: &cadmpeg_ir::geometry::IntcurveSupportContext,
+    parameter_range: &[Option<f64>; 2],
+) -> Result<(), CodecError> {
+    if context
+        .sides
+        .iter()
+        .any(|side| side.pcurve_parameter_range.is_some())
+    {
+        return Err(CodecError::NotImplemented(
+            "F3D intcurve writing does not encode independent support-pcurve parameter intervals"
+                .into(),
+        ));
+    }
+    for side in &context.sides {
+        if let Some(surface_id) = &side.surface {
+            let surface = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *surface_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "intcurve references missing support {surface_id}"
+                    ))
+                })?;
+            native_embedded_surface(bytes, &surface.geometry)?;
+        } else {
+            native_ident(bytes, "null_surface")?;
+        }
+    }
+    for side in &context.sides {
+        if let Some(pcurve) = &side.pcurve {
+            native_nurbs_pcurve_block(bytes, pcurve)?;
+        } else {
+            native_ident(bytes, "nullbs")?;
+        }
+    }
+    for bound in parameter_range {
+        native_optional_f64(bytes, *bound);
     }
     for discontinuities in &context.discontinuities {
         native_i64(

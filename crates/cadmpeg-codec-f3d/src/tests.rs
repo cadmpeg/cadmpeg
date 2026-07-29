@@ -1267,6 +1267,232 @@ fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     bytes
 }
 
+/// Push a `0x15` enum token carrying the signed `int_width`-8 value.
+fn push_native_enum(bytes: &mut Vec<u8>, value: i64) {
+    bytes.push(0x15);
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+/// Append a vector-serialized `TRANS` law variable: the operator string, four
+/// `0x14` vectors, a `0x06` scale, and three bare boolean flags.
+fn append_transform_vec_variable(bytes: &mut Vec<u8>) {
+    push_u8_string(bytes, "TRANS");
+    for vector in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0],
+    ] {
+        t_vec(bytes, vector);
+    }
+    t_dbl(bytes, 0.1);
+    bytes.push(0x0b); // false
+    bytes.push(0x0b); // false
+    bytes.push(0x0a); // true
+}
+
+/// Build the version-stamped `law_int_cur` subtype span (opening `0x0f` through
+/// the `0x10` terminator): a `04 <20900> 15 <0>` version prefix, solved cache,
+/// two `null_surface` and two `nullbs` carriers, bare-`0b` unbounded interval
+/// bounds, three empty discontinuity arrays, and primary/additional formulas —
+/// the primary carrying a vector-form `TRANS`, the additional list the fixed
+/// four-slot `[null_law, null_law, raw-law, TRANS-wrapped]` shape.
+fn stamped_law_curve_subtype(primary_name: &str, raw_name: &str) -> Vec<u8> {
+    let mut c = Vec::new();
+    c.push(0x0f);
+    t_ident(&mut c, "law_int_cur");
+    t_long(&mut c, 20900);
+    push_native_enum(&mut c, 0);
+    c.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut c, 0.0005);
+    t_ident(&mut c, "null_surface");
+    t_ident(&mut c, "null_surface");
+    t_ident(&mut c, "nullbs");
+    t_ident(&mut c, "nullbs");
+    c.push(0x0b);
+    c.push(0x0b);
+    for _ in 0..3 {
+        append_generated_float_array(&mut c, &[]);
+    }
+    t_long(&mut c, 0);
+    t_u16_string(&mut c, primary_name);
+    t_long(&mut c, 1);
+    append_transform_vec_variable(&mut c);
+    t_long(&mut c, 4);
+    push_u8_string(&mut c, "null_law");
+    push_u8_string(&mut c, "null_law");
+    t_u16_string(&mut c, raw_name);
+    t_long(&mut c, 0);
+    push_u8_string(&mut c, "TRANS(VEC(X,X2,X3),TRANS1)");
+    t_long(&mut c, 1);
+    append_transform_vec_variable(&mut c);
+    c.push(0x10);
+    c
+}
+
+fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.extend_from_slice(subtype);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
+#[test]
+fn stamped_law_intcurve_round_trips_byte_exactly() {
+    use cadmpeg_ir::geometry::{CurveGeometry, LawExpression, ProceduralCurveDefinition};
+
+    // Formula names exceed 255 bytes to exercise the u16 (`0x08`) length prefix
+    // the serializer selects for long law text.
+    let primary_name = format!("TRANS({},TRANS1)", "VEC(X,X2,X3)*COS(X)+".repeat(20));
+    let raw_name = "VEC(X,X2,X3)*COS(X)+".repeat(20);
+    assert!(primary_name.len() > 255 && raw_name.len() > 255);
+    let subtype = stamped_law_curve_subtype(&primary_name, &raw_name);
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_stamped_law_curve_smbh(&subtype),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("stamped law intcurve decode");
+    let procedural = decoded
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| matches!(curve.definition, ProceduralCurveDefinition::Law { .. }))
+        .expect("stamped law construction");
+    let ProceduralCurveDefinition::Law {
+        version,
+        primary,
+        additional,
+        ..
+    } = &procedural.definition
+    else {
+        unreachable!()
+    };
+    let version = version.as_ref().expect("version stamp");
+    assert_eq!(version.stamp, 20900);
+    assert_eq!(version.post_enum, 0);
+    assert_eq!(version.parameter_range, [None, None]);
+    assert_eq!(primary.name, primary_name);
+    assert!(matches!(
+        primary.variables[0],
+        LawExpression::TransformVec { .. }
+    ));
+    assert_eq!(additional.len(), 4);
+    assert_eq!(additional[0].name, "null_law");
+    assert_eq!(additional[1].name, "null_law");
+    assert_eq!(additional[2].name, raw_name);
+    assert_eq!(additional[3].name, "TRANS(VEC(X,X2,X3),TRANS1)");
+    assert!(matches!(
+        additional[3].variables[0],
+        LawExpression::TransformVec { .. }
+    ));
+
+    // Byte-exact re-emission of the subtype span. The solved cache uses
+    // integer-valued control points so the cm->mm scaling round-trip is exact.
+    let solved = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == procedural.curve)
+        .and_then(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => Some(nurbs.clone()),
+            _ => None,
+        })
+        .expect("solved cache");
+    let mut regenerated = Vec::new();
+    crate::writer::generate::native_geometry::native_procedural_curve(
+        &mut regenerated,
+        &decoded.ir,
+        &procedural.curve,
+        &solved,
+    )
+    .expect("regenerate stamped law curve");
+    let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
+    let span = crate::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    assert_eq!(span, subtype.as_slice());
+}
+
+#[test]
+fn legacy_law_intcurve_round_trips_byte_exactly() {
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition};
+
+    // The pre-stamp layout must keep decoding and re-emitting without regression.
+    let smbh = synthetic_geometry_with_law_curve_smbh();
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("legacy law intcurve decode");
+    let procedural = decoded
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| matches!(curve.definition, ProceduralCurveDefinition::Law { .. }))
+        .expect("legacy law construction");
+    let ProceduralCurveDefinition::Law { version, .. } = &procedural.definition else {
+        unreachable!()
+    };
+    assert!(version.is_none());
+
+    let original = {
+        let marker = smbh
+            .windows(b"law_int_cur".len())
+            .position(|window| window == b"law_int_cur")
+            .unwrap()
+            - 3;
+        crate::nurbs::subtypes::subtype_span(&smbh, marker, 8)
+            .unwrap()
+            .to_vec()
+    };
+    let solved = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == procedural.curve)
+        .and_then(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => Some(nurbs.clone()),
+            _ => None,
+        })
+        .expect("solved cache");
+    let mut regenerated = Vec::new();
+    crate::writer::generate::native_geometry::native_procedural_curve(
+        &mut regenerated,
+        &decoded.ir,
+        &procedural.curve,
+        &solved,
+    )
+    .expect("regenerate legacy law curve");
+    let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
+    let span = crate::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    assert_eq!(span, original.as_slice());
+}
+
 fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -17933,6 +18159,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
         extension,
         primary,
         additional,
+        ..
     } = &procedural.definition
     else {
         unreachable!()

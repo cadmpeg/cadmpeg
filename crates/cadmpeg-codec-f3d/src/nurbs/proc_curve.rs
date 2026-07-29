@@ -113,9 +113,19 @@ pub(crate) struct EmbeddedSpring {
 
 pub(crate) struct EmbeddedLawCurve {
     pub(crate) context: EmbeddedIntersection,
+    /// Version-stamped serializer form; `None` for the legacy layout.
+    pub(crate) version: Option<EmbeddedLawVersion>,
     pub(crate) extension: i64,
     pub(crate) primary: EmbeddedLawFormula,
     pub(crate) additional: Vec<EmbeddedLawFormula>,
+}
+
+/// Version stamp, trailing enum, and unbounded parameter interval of the
+/// stamped `law_int_cur` serializer form.
+pub(crate) struct EmbeddedLawVersion {
+    pub(crate) stamp: i64,
+    pub(crate) post_enum: i64,
+    pub(crate) parameter_range: [Option<f64>; 2],
 }
 
 pub(crate) enum EmbeddedDeformableData {
@@ -372,24 +382,88 @@ fn decode_embedded_deformable(bytes: &[u8], int_width: usize) -> Option<Embedded
     })
 }
 
+/// Decode one law support surface, mapping the `null_surface` sentinel to an
+/// absent side.
+#[allow(clippy::option_option)] // Outer None is parse failure; inner None is a null carrier.
+fn decode_nullable_law_surface(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<Option<SurfaceGeometry>> {
+    let saved = *position;
+    if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
+        return Some(None);
+    }
+    *position = saved;
+    Some(Some(decode_embedded_surface(bytes, position, int_width)?))
+}
+
+/// Consume one version-form interval bound: a bare `0x0b` unbounded sentinel or
+/// a `0x0a`-prefixed double. Any other encoding fails the strict match so the
+/// record falls back to verbatim retention.
+#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an unbounded bound.
+fn take_law_version_bound(bytes: &[u8], position: &mut usize) -> Option<Option<f64>> {
+    match bytes.get(*position)? {
+        0x0b => {
+            *position += 1;
+            Some(None)
+        }
+        0x0a => {
+            *position += 1;
+            take_f64(bytes, position).map(Some)
+        }
+        _ => None,
+    }
+}
+
 fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedLawCurve> {
     let (marker, name_len) = find_intcurve_subtype(bytes, b"law_int_cur")?;
     let mut position = marker + name_len + 3;
+    // The stamped serializer form opens with `04 <stamp> 15 <enum>` before the
+    // solved cache; the legacy form opens directly with the cache marker.
+    let stamp = (bytes.get(position) == Some(&0x04))
+        .then(|| {
+            let stamp = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+            let post_enum = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
+            Some((stamp, post_enum))
+        })
+        .flatten();
     let solved = decode_curve_block(bytes, position, int_width)?;
     position = solved.end;
     take_f64(bytes, &mut position)?;
     let surfaces = [
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-        decode_embedded_surface(bytes, &mut position, int_width)?,
+        decode_nullable_law_surface(bytes, &mut position, int_width)?,
+        decode_nullable_law_surface(bytes, &mut position, int_width)?,
     ];
-    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = first_end;
-    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = second_end;
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
+    let pcurves = [
+        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
+        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
     ];
+    let (parameter_range, version) = if let Some((stamp, post_enum)) = stamp {
+        let bounds = [
+            take_law_version_bound(bytes, &mut position)?,
+            take_law_version_bound(bytes, &mut position)?,
+        ];
+        let domain = nurbs_curve_parameter_domain(&solved.curve).unwrap_or([0.0, 0.0]);
+        let parameter_range = [
+            bounds[0].unwrap_or(domain[0]),
+            bounds[1].unwrap_or(domain[1]),
+        ];
+        (
+            parameter_range,
+            Some(EmbeddedLawVersion {
+                stamp,
+                post_enum,
+                parameter_range: bounds,
+            }),
+        )
+    } else {
+        let parameter_range = [
+            take_range_value(bytes, &mut position)?,
+            take_range_value(bytes, &mut position)?,
+        ];
+        (parameter_range, None)
+    };
     let discontinuities = [
         take_float_array(bytes, &mut position, int_width)?,
         take_float_array(bytes, &mut position, int_width)?,
@@ -406,11 +480,12 @@ fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedL
         .collect::<Option<Vec<_>>>()?;
     Some(EmbeddedLawCurve {
         context: EmbeddedIntersection {
-            surfaces: surfaces.map(Some),
-            pcurves: [Some(first_pcurve), Some(second_pcurve)],
+            surfaces,
+            pcurves,
             parameter_range,
             discontinuities,
         },
+        version,
         extension,
         primary,
         additional,

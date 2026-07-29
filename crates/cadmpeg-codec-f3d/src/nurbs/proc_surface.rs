@@ -754,6 +754,11 @@ pub(crate) enum EmbeddedLawExpression {
         scalars: [f64; 13],
         enums: [i64; 3],
     },
+    TransformVec {
+        vectors: [Vector3; 4],
+        scale: f64,
+        flags: [bool; 3],
+    },
     Edge {
         curve: NurbsCurve,
         endpoints: Option<[Option<f64>; 2]>,
@@ -1967,6 +1972,24 @@ fn decode_law_expression_resolving(
     match operator.as_str() {
         "null_law" => Some(EmbeddedLawExpression::Null),
         "TRANS" => {
+            if bytes.get(*position) == Some(&0x14) {
+                let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
+                for vector in &mut vectors {
+                    let value = take_native_vec3(bytes, position, 0x14)?;
+                    *vector = Vector3::new(value[0], value[1], value[2]);
+                }
+                let scale = take_f64(bytes, position)?;
+                let flags = [
+                    take_bool(bytes, position)?,
+                    take_bool(bytes, position)?,
+                    take_bool(bytes, position)?,
+                ];
+                return Some(EmbeddedLawExpression::TransformVec {
+                    vectors,
+                    scale,
+                    flags,
+                });
+            }
             let mut scalars = [0.0; 13];
             for scalar in &mut scalars {
                 *scalar = take_f64(bytes, position)?;

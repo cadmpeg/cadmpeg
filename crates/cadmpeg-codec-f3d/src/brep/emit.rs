@@ -965,6 +965,15 @@ fn emit_law_surface(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -1069,6 +1078,15 @@ fn emit_skin_surface(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -1265,6 +1283,15 @@ fn emit_net_surface(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -1469,6 +1496,15 @@ fn emit_sweep_surface(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -2981,6 +3017,15 @@ fn emit_law_curve(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -3072,6 +3117,13 @@ fn emit_law_curve(
             parameter_range: embedded.context.parameter_range,
             discontinuities: embedded.context.discontinuities,
         },
+        version: embedded
+            .version
+            .map(|version| cadmpeg_ir::geometry::LawCurveVersionForm {
+                stamp: version.stamp,
+                post_enum: version.post_enum,
+                parameter_range: version.parameter_range,
+            }),
         extension: embedded.extension,
         primary: map_formula("primary", embedded.primary),
         additional: embedded
