@@ -2740,6 +2740,22 @@ fn pcurve_surface_mismatch_is_flagged() {
         "procedural UVs must not be evaluated on the solved cache, got: {:?}",
         procedural_report.findings
     );
+    procedural.model.procedural_surfaces[0].definition = ProceduralSurfaceDefinition::Exact {
+        parameters: crate::geometry::SplineSurfaceParameters::OrderedRanges {
+            ranges: [[0.0, 1.0], [0.0, 1.0]],
+        },
+        extension: 0,
+        revision_form: None,
+    };
+    let exact_report = validate(&procedural, Vec::new());
+    assert!(
+        !exact_report
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::GeometricConsistency),
+        "exact procedural UVs must not be evaluated on the solved cache, got: {:?}",
+        exact_report.findings
+    );
 
     let mut negative_parameterization = unit_cube();
     negative_parameterization
