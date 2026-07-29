@@ -5,9 +5,9 @@ This document records unresolved NX `.prt` byte semantics.
 ## Parasolid streams
 
 - Compact tombstones whose explicit `(type, xmt)` key does not match a partition entity have no specified target relation. Exact-key tombstones delete that entity; unmatched range or revision semantics remain unspecified.
-- Finite parameter domains and branch selection for rank-deficient or terminal type-38/`0x5a` procedural intersections and BLEND_SURF carriers are unspecified. This includes tangential support pairs, offset-surface intersections with multiple branches, blend-section rail domains, and terminal cases where distinct endpoints map to one procedural-curve parameter.
+- Finite branch selection remains unspecified for terminal type-38/`0x5a` procedural intersections with no usable support-parameter lane and for terminal cases where distinct endpoints map to one procedural-curve parameter.
 - The relation between graph-only `OFFSET_SURF` constructions and NURBS carriers owned by the topology of the same partition is unspecified when the NURBS surfaces are not geometrically equivalent to the procedural surfaces within the document tolerance. Common signed distance and partition identity do not establish that the NURBS faces are solved caches of those constructions.
-- Terminal folds and selection among multiple corrected branches remain unspecified for procedural curves with degenerate support-0 arrays, sentinel-truncated marker-4 plane-support arrays, and NURBS-offset blend spines.
+- Terminal folds and selection among multiple corrected branches remain unspecified for procedural curves with degenerate support-0 arrays, sentinel-truncated marker-4 plane-support arrays, and NURBS-offset spines whose graph-only offset supports have no established saved-carrier identity.
 - Full-record layouts for deltas-stream node types outside the topology and procedural families defined in the specification are unspecified.
 - The field roles of the two consecutive XMT identities in a deltas transmit header are unspecified.
 - The field roles within the bounded state tail following the eight-reference deltas BODY revision prefix are unspecified.
