@@ -468,7 +468,7 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
         let radius = distance3(center, limit1);
         let other = distance3(center, limit2);
         let chord = distance3(limit1, limit2);
-        if radius <= f64::EPSILON
+        if radius <= 0.0
             || (radius - other).abs() > 1e-9 * radius.max(1.0)
             || (v[9] - 2.0 * (chord / (2.0 * radius)).clamp(-1.0, 1.0).asin()).abs() > 1e-9
         {
@@ -486,7 +486,7 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
 }
 
 fn distance3(a: [f64; 3], b: [f64; 3]) -> f64 {
-    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    (a[0] - b[0]).hypot(a[1] - b[1]).hypot(a[2] - b[2])
 }
 
 /// Decode framed `a8 03 20` UV jet records.

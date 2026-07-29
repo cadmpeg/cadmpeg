@@ -352,6 +352,27 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
 }
 
 #[test]
+fn rolling_ball_parsers_accept_finite_nonzero_radii() {
+    for radius in [1e-200, 1e200] {
+        let mut a5 = a5_freeform_curve_stream();
+        a5[28..36].copy_from_slice(&le_f64(radius));
+        a5[60..68].copy_from_slice(&le_f64(radius));
+        let [curve] = crate::families::a5a8::records::a5_freeform_curves(&a5)
+            .try_into()
+            .expect("one consolidated rolling-ball jet");
+        assert_eq!(curve.sites[0].radius, radius);
+
+        let mut a8 = a8_freeform_curve_stream();
+        a8[36..44].copy_from_slice(&le_f64(radius));
+        a8[68..76].copy_from_slice(&le_f64(radius));
+        let [curve] = crate::families::a5a8::records::a8_freeform_curves(&a8)
+            .try_into()
+            .expect("one common-form rolling-ball jet");
+        assert_eq!(curve.sites[0].radius, radius);
+    }
+}
+
+#[test]
 fn consolidated_curve_parser_reads_width2_frame() {
     let curves = crate::families::a5a8::records::a5_freeform_curves(&a6_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
