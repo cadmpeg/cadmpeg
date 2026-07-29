@@ -916,9 +916,12 @@ fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool
     let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
         return false;
     };
-    (first[1] - last[1]).abs() <= 1e-6
-        && (first[0].min(last[0]) - circle.range[0]).abs() < 1e-9
-        && (first[0].max(last[0]) - circle.range[1]).abs() < 1e-9
+    let span = circle.range[1] - circle.range[0];
+    span.is_finite()
+        && span > 0.0
+        && (first[1] - last[1]).abs() <= 1e-6 * span
+        && (first[0].min(last[0]) - circle.range[0]).abs() <= 1e-9 * span
+        && (first[0].max(last[0]) - circle.range[1]).abs() <= 1e-9 * span
 }
 
 fn pcurve_endpoints_match_cone(
@@ -998,7 +1001,10 @@ mod tests {
     use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
     use cadmpeg_ir::math::Point3;
 
-    use super::nurbs_carrier_offset;
+    use crate::families::b2::records::B2Circle;
+    use crate::wire::records::ConsolidatedPcurve;
+
+    use super::{nurbs_carrier_offset, pcurve_matches_circle};
 
     #[test]
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
@@ -1043,5 +1049,46 @@ mod tests {
             nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],),
             None
         );
+    }
+
+    #[test]
+    fn circle_binding_is_relative_to_the_arc_length_span() {
+        let span = 1e-200_f64;
+        let circle = B2Circle {
+            pos: 0,
+            layout: 0x32,
+            record_id: 1,
+            frame_token: 0,
+            center_pair: [0.0; 2],
+            radius: span,
+            range: [0.0, span],
+            full_circle: false,
+            chart_shift: 0.0,
+        };
+        let pcurve = |points| ConsolidatedPcurve {
+            pos: 0,
+            support_id: 1,
+            degree: 1,
+            extrapolation_sites: 0,
+            knots: vec![0.0, span],
+            points,
+            first_derivatives: Vec::new(),
+            second_derivatives: Vec::new(),
+            range: [0.0, span],
+            tail: Vec::new(),
+        };
+
+        assert!(pcurve_matches_circle(
+            &pcurve(vec![[0.0, span], [span, span]]),
+            &circle
+        ));
+        assert!(!pcurve_matches_circle(
+            &pcurve(vec![[0.0, span], [span, 2.0 * span]]),
+            &circle
+        ));
+        assert!(!pcurve_matches_circle(
+            &pcurve(vec![[0.0, span], [2.0 * span, span]]),
+            &circle
+        ));
     }
 }
