@@ -734,6 +734,9 @@ fn zero_entity_loops_from_records(
                 .step_by(2)
                 .copied()
                 .collect::<Vec<_>>();
+            if typed_references.contains(&0) {
+                return None;
+            }
             let terminal_id = *references.last()?;
             let gap = terminal_id.checked_sub(*member_ids.first()?)?;
             if gap == 0
@@ -2356,6 +2359,14 @@ mod tests {
         let mut stream = zero_entity_face_loop_support_stream();
         let loop_record = zero_entity_records(&stream)[3];
         write_tagged_u32(&mut stream, loop_record.pos + 23, 6);
+        assert!(zero_entity_loops_from_records(&stream, &zero_entity_records(&stream)).is_empty());
+    }
+
+    #[test]
+    fn loop_typed_lane_requires_one_based_record_references() {
+        let mut stream = zero_entity_face_loop_support_stream();
+        let loop_record = zero_entity_records(&stream)[3];
+        write_tagged_u32(&mut stream, loop_record.pos + 18, 0);
         assert!(zero_entity_loops_from_records(&stream, &zero_entity_records(&stream)).is_empty());
     }
 

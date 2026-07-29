@@ -4962,6 +4962,7 @@ fn validate_zero_entity_support_runs(
                                 loop_record.tag[0] == 0x62
                                     && !loop_record.member_ids.is_empty()
                                     && loop_record.typed_references.len() == edge_count
+                                    && !loop_record.typed_references.contains(&0)
                                     && (loop_record.typed_records.is_empty()
                                         || loop_record.typed_records.len() == edge_count
                                             && loop_record
