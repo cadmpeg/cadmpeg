@@ -3986,7 +3986,11 @@ pub(crate) fn b5_linear_pcurve_payload(surface: u16, start: [f64; 2], end: [f64;
         payload.extend_from_slice(&le_f64(uv[0]));
         payload.extend_from_slice(&le_f64(uv[1]));
     }
-    payload.extend_from_slice(&[0x05, 0x05, 0x07]);
+    payload.extend_from_slice(&[0x05, 0x05]);
+    for value in [0.0, 1.0, 1.0, 0.0] {
+        payload.extend_from_slice(&le_f64(value));
+    }
+    payload.extend_from_slice(&[0x00, 0x07]);
     payload
 }
 

@@ -2875,8 +2875,14 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         control_points.push([u, v]);
         position += 16;
     }
-    if record.payload.get(position..position + 2) != Some(&[0x05, 0x05])
-        || record.payload.last() != Some(&0x07)
+    let tail = record.payload.get(position..)?;
+    if tail.len() != 36
+        || tail.get(..2) != Some(&[0x05, 0x05])
+        || scalar(tail, 2)? != 0.0
+        || scalar(tail, 10)? <= 0.0
+        || scalar(tail, 18)? != 1.0
+        || scalar(tail, 26)? != 0.0
+        || tail.get(34..) != Some(&[0x00, 0x07])
     {
         return None;
     }
@@ -3755,6 +3761,43 @@ mod tests {
         merge_pcurve_candidate(&mut pcurves, &mut conflicts, test_pcurve(1, 10));
         assert!(!pcurves.contains_key(&1));
         assert!(conflicts.contains(&1));
+    }
+
+    #[test]
+    fn pcurve_requires_its_complete_finite_positive_tail() {
+        let payload = crate::tests::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
+        let record = |payload| B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x21,
+            object_id: 2,
+            payload,
+        };
+        assert!(parse_pcurve(&record(payload.clone())).is_some());
+
+        let mut truncated = payload.clone();
+        truncated.pop();
+        assert!(parse_pcurve(&record(truncated)).is_none());
+
+        let mut residual = payload.clone();
+        residual.push(0);
+        assert!(parse_pcurve(&record(residual)).is_none());
+
+        let tail = payload.len() - 36;
+        for (offset, value) in [
+            (tail + 2, 1.0_f64),
+            (tail + 10, 0.0),
+            (tail + 18, 0.0),
+            (tail + 26, 1.0),
+        ] {
+            let mut malformed = payload.clone();
+            malformed[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+            assert!(parse_pcurve(&record(malformed)).is_none());
+        }
+
+        let mut non_finite = payload;
+        non_finite[tail + 10..tail + 18].copy_from_slice(&f64::INFINITY.to_le_bytes());
+        assert!(parse_pcurve(&record(non_finite)).is_none());
     }
 
     #[test]
