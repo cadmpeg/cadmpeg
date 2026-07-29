@@ -4746,7 +4746,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     let support_slot = 0x6a + 12 + 13;
     stream[support_slot..support_slot + 4].copy_from_slice(&1u32.to_le_bytes());
     let native = crate::native::CatiaNative::decode(&stream);
-    assert!(native.zero_entity_physical_edge_candidates.is_empty());
+    assert!(native.zero_entity_endpoint_pair_candidates.is_empty());
     let [run] = native.zero_entity_support_runs.as_slice() else {
         panic!("one zero-entity support run")
     };
@@ -4863,11 +4863,11 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity oriented endpoints");
     assert!(crate::native::CatiaNative::load(&invalid_oriented_endpoint_namespace).is_err());
 
-    let mut invalid_physical_edge = native.clone();
-    invalid_physical_edge
-        .zero_entity_physical_edge_candidates
-        .push(crate::native::CatiaZeroEntityPhysicalEdgeCandidate {
-            id: "catia:zero-entity:physical-edge-candidate#0".to_string(),
+    let mut invalid_endpoint_pair = native.clone();
+    invalid_endpoint_pair
+        .zero_entity_endpoint_pair_candidates
+        .push(crate::native::CatiaZeroEntityEndpointPairCandidate {
+            id: "catia:zero-entity:endpoint-pair-candidate#0".to_string(),
             face_records: [
                 "catia:zero-entity:record#3".to_string(),
                 "catia:zero-entity:record#3".to_string(),
@@ -4881,44 +4881,31 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             ],
         });
-    let mut invalid_physical_edge_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_physical_edge
-        .store(&mut invalid_physical_edge_namespace)
-        .expect("store invalid CATIA zero-entity physical edge");
-    assert!(crate::native::CatiaNative::load(&invalid_physical_edge_namespace).is_err());
+    let mut invalid_endpoint_pair_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_endpoint_pair
+        .store(&mut invalid_endpoint_pair_namespace)
+        .expect("store invalid CATIA zero-entity endpoint pair");
+    assert!(crate::native::CatiaNative::load(&invalid_endpoint_pair_namespace).is_err());
 
-    let mut invalid_vertex = native.clone();
-    invalid_vertex.zero_entity_vertex_candidates.push(
-        crate::native::CatiaZeroEntityVertexCandidate {
-            id: "catia:zero-entity:vertex-candidate#0".to_string(),
-            incident_edge_endpoints: vec![crate::native::CatiaZeroEntityEdgeEndpoint {
-                physical_edge: "catia:zero-entity:physical-edge-candidate#0".to_string(),
-                endpoint_index: 0,
-            }],
+    let mut invalid_endpoint_locus = native.clone();
+    invalid_endpoint_locus
+        .zero_entity_endpoint_locus_candidates
+        .push(crate::native::CatiaZeroEntityEndpointLocusCandidate {
+            id: "catia:zero-entity:endpoint-locus-candidate#0".to_string(),
+            incident_endpoint_pair_endpoints: vec![
+                crate::native::CatiaZeroEntityEndpointPairEndpoint {
+                    endpoint_pair: "catia:zero-entity:endpoint-pair-candidate#0".to_string(),
+                    endpoint_index: 0,
+                },
+            ],
             representative_point: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             maximum_deviation: 0.0,
-        },
-    );
-    let mut invalid_vertex_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_vertex
-        .store(&mut invalid_vertex_namespace)
-        .expect("store invalid CATIA zero-entity vertex candidate");
-    assert!(crate::native::CatiaNative::load(&invalid_vertex_namespace).is_err());
-
-    let mut invalid_component = native.clone();
-    invalid_component
-        .zero_entity_edge_component_candidates
-        .push(crate::native::CatiaZeroEntityEdgeComponentCandidate {
-            id: "catia:zero-entity:edge-component-candidate#0".to_string(),
-            physical_edges: vec!["catia:zero-entity:physical-edge-candidate#0".to_string()],
-            vertices: vec!["catia:zero-entity:vertex-candidate#0".to_string()],
-            boundary_vertex_count: 1,
         });
-    let mut invalid_component_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_component
-        .store(&mut invalid_component_namespace)
-        .expect("store invalid CATIA zero-entity edge component");
-    assert!(crate::native::CatiaNative::load(&invalid_component_namespace).is_err());
+    let mut invalid_endpoint_locus_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_endpoint_locus
+        .store(&mut invalid_endpoint_locus_namespace)
+        .expect("store invalid CATIA zero-entity endpoint-locus candidate");
+    assert!(crate::native::CatiaNative::load(&invalid_endpoint_locus_namespace).is_err());
 
     let mut invalid_model_endpoint = native.clone();
     invalid_model_endpoint.zero_entity_support_runs[0].supports[0]

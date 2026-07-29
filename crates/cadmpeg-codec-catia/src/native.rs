@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 175;
+pub const CATIA_NATIVE_VERSION: u32 = 176;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -53,13 +53,12 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "preview_images",
     "value_blocks",
     "value_schema_selections",
-    "zero_entity_edge_component_candidates",
     "zero_entity_edge_strides",
     "zero_entity_oriented_use_pairs",
-    "zero_entity_physical_edge_candidates",
+    "zero_entity_endpoint_pair_candidates",
     "zero_entity_records",
     "zero_entity_support_runs",
-    "zero_entity_vertex_candidates",
+    "zero_entity_endpoint_locus_candidates",
     "zero_entity_vertex_incidences",
 ];
 
@@ -531,7 +530,7 @@ pub struct CatiaConsolidatedEdgeRun {
     /// Index-aligned 3D loci shared by every resolved support side.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shared_loci: Option<Vec<[f64; 3]>>,
-    /// First and last shared loci in physical edge direction.
+    /// First and last shared loci in endpoint pair direction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint_loci: Option<[[f64; 3]; 2]>,
 }
@@ -2799,10 +2798,12 @@ pub struct CatiaZeroEntityOrientedUsePair {
     pub uses: [CatiaZeroEntityOrientedUse; 2],
 }
 
-/// One zero-entity physical edge established by two radial support occurrences.
+/// Two zero-entity radial support occurrences with matching unordered endpoints.
+///
+/// This relation does not establish curve coincidence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaZeroEntityPhysicalEdgeCandidate {
-    /// Stable derived-edge identity.
+pub struct CatiaZeroEntityEndpointPairCandidate {
+    /// Stable derived-pair identity.
     pub id: String,
     /// Two face-record identities in support-record order.
     pub face_records: [String; 2],
@@ -2812,39 +2813,26 @@ pub struct CatiaZeroEntityPhysicalEdgeCandidate {
     pub model_endpoints: [cadmpeg_ir::math::Point3; 2],
 }
 
-/// One physical-edge endpoint incident to a geometric vertex candidate.
+/// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaZeroEntityEdgeEndpoint {
-    /// Derived physical-edge candidate.
-    pub physical_edge: String,
+pub struct CatiaZeroEntityEndpointPairEndpoint {
+    /// Derived endpoint-pair candidate.
+    pub endpoint_pair: String,
     /// Zero-based endpoint index in that candidate's oriented endpoint pair.
     pub endpoint_index: u8,
 }
 
-/// One geometric vertex candidate established by a complete endpoint clique.
+/// One geometric endpoint-locus candidate established by a complete endpoint clique.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaZeroEntityVertexCandidate {
-    /// Stable derived-vertex identity.
+pub struct CatiaZeroEntityEndpointLocusCandidate {
+    /// Stable derived-locus identity.
     pub id: String,
-    /// Incident physical-edge endpoints in edge and endpoint order.
-    pub incident_edge_endpoints: Vec<CatiaZeroEntityEdgeEndpoint>,
+    /// Incident endpoints in endpoint-pair and endpoint order.
+    pub incident_endpoint_pair_endpoints: Vec<CatiaZeroEntityEndpointPairEndpoint>,
     /// Model-space point from the first incident endpoint.
     pub representative_point: cadmpeg_ir::math::Point3,
     /// Maximum pairwise distance between incident endpoint coordinates.
     pub maximum_deviation: f64,
-}
-
-/// One connected physical-edge network with complete endpoint incidence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaZeroEntityEdgeComponentCandidate {
-    /// Stable derived-component identity.
-    pub id: String,
-    /// Physical-edge candidates in deterministic source-derived order.
-    pub physical_edges: Vec<String>,
-    /// Geometric vertex candidates incident to those edges.
-    pub vertices: Vec<String>,
-    /// Vertices incident to exactly one physical edge.
-    pub boundary_vertex_count: usize,
 }
 
 /// One counted zero-entity `05xx` vertex-incidence record.
@@ -2966,27 +2954,24 @@ pub struct CatiaNative {
     /// Framed value blocks adjacent to source-schema catalogs.
     #[serde(default)]
     pub value_blocks: Vec<CatiaValueBlock>,
-    /// Connected zero-entity edge networks with complete endpoint incidence.
-    #[serde(default)]
-    pub zero_entity_edge_component_candidates: Vec<CatiaZeroEntityEdgeComponentCandidate>,
     /// Zero-entity edge-stride reference records.
     #[serde(default)]
     pub zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride>,
     /// Zero-entity side-pair headers and positional oriented uses.
     #[serde(default)]
     pub zero_entity_oriented_use_pairs: Vec<CatiaZeroEntityOrientedUsePair>,
-    /// Zero-entity physical edges established by radial support occurrences.
+    /// Zero-entity endpoint pairs established by radial support occurrences.
     #[serde(default)]
-    pub zero_entity_physical_edge_candidates: Vec<CatiaZeroEntityPhysicalEdgeCandidate>,
+    pub zero_entity_endpoint_pair_candidates: Vec<CatiaZeroEntityEndpointPairCandidate>,
     /// Complete zero-entity framed-record identity namespace.
     #[serde(default)]
     pub zero_entity_records: Vec<CatiaZeroEntityRecord>,
     /// Zero-entity surface carriers and their face-local support tapes.
     #[serde(default)]
     pub zero_entity_support_runs: Vec<CatiaZeroEntitySupportRun>,
-    /// Geometric vertices established by complete physical-edge endpoint cliques.
+    /// Geometric endpoint loci established by complete endpoint-pair endpoint cliques.
     #[serde(default)]
-    pub zero_entity_vertex_candidates: Vec<CatiaZeroEntityVertexCandidate>,
+    pub zero_entity_endpoint_locus_candidates: Vec<CatiaZeroEntityEndpointLocusCandidate>,
     /// Zero-entity counted vertex-incidence records.
     #[serde(default)]
     pub zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence>,
@@ -3023,13 +3008,12 @@ impl Default for CatiaNative {
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
             value_blocks: Vec::new(),
-            zero_entity_edge_component_candidates: Vec::new(),
             zero_entity_edge_strides: Vec::new(),
             zero_entity_oriented_use_pairs: Vec::new(),
-            zero_entity_physical_edge_candidates: Vec::new(),
+            zero_entity_endpoint_pair_candidates: Vec::new(),
             zero_entity_records: Vec::new(),
             zero_entity_support_runs: Vec::new(),
-            zero_entity_vertex_candidates: Vec::new(),
+            zero_entity_endpoint_locus_candidates: Vec::new(),
             zero_entity_vertex_incidences: Vec::new(),
         }
     }
@@ -3782,14 +3766,14 @@ fn zero_entity_support_runs(
         .collect()
 }
 
-fn zero_entity_physical_edge_candidates(
-    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityPhysicalEdgeCandidate>,
-) -> Vec<CatiaZeroEntityPhysicalEdgeCandidate> {
+fn zero_entity_endpoint_pair_candidates(
+    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate>,
+) -> Vec<CatiaZeroEntityEndpointPairCandidate> {
     candidates
         .into_iter()
         .enumerate()
-        .map(|(index, candidate)| CatiaZeroEntityPhysicalEdgeCandidate {
-            id: format!("catia:zero-entity:physical-edge-candidate#{index}"),
+        .map(|(index, candidate)| CatiaZeroEntityEndpointPairCandidate {
+            id: format!("catia:zero-entity:endpoint-pair-candidate#{index}"),
             face_records: candidate
                 .face_record_ordinals
                 .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
@@ -3801,50 +3785,27 @@ fn zero_entity_physical_edge_candidates(
         .collect()
 }
 
-fn zero_entity_vertex_candidates(
-    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityVertexCandidate>,
-    edges: &[CatiaZeroEntityPhysicalEdgeCandidate],
-) -> Vec<CatiaZeroEntityVertexCandidate> {
+fn zero_entity_endpoint_locus_candidates(
+    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointLocusCandidate>,
+    endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
+) -> Vec<CatiaZeroEntityEndpointLocusCandidate> {
     candidates
         .into_iter()
         .enumerate()
-        .map(|(index, candidate)| CatiaZeroEntityVertexCandidate {
-            id: format!("catia:zero-entity:vertex-candidate#{index}"),
-            incident_edge_endpoints: candidate
-                .incident_edge_endpoints
+        .map(|(index, candidate)| CatiaZeroEntityEndpointLocusCandidate {
+            id: format!("catia:zero-entity:endpoint-locus-candidate#{index}"),
+            incident_endpoint_pair_endpoints: candidate
+                .incident_endpoint_pair_endpoints
                 .into_iter()
-                .map(|(edge, endpoint_index)| CatiaZeroEntityEdgeEndpoint {
-                    physical_edge: edges[edge].id.clone(),
-                    endpoint_index,
-                })
+                .map(
+                    |(pair, endpoint_index)| CatiaZeroEntityEndpointPairEndpoint {
+                        endpoint_pair: endpoint_pairs[pair].id.clone(),
+                        endpoint_index,
+                    },
+                )
                 .collect(),
             representative_point: candidate.representative_point,
             maximum_deviation: candidate.maximum_deviation,
-        })
-        .collect()
-}
-
-fn zero_entity_edge_component_candidates(
-    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEdgeComponentCandidate>,
-    edges: &[CatiaZeroEntityPhysicalEdgeCandidate],
-    vertices: &[CatiaZeroEntityVertexCandidate],
-) -> Vec<CatiaZeroEntityEdgeComponentCandidate> {
-    candidates
-        .into_iter()
-        .enumerate()
-        .map(|(index, candidate)| CatiaZeroEntityEdgeComponentCandidate {
-            id: format!("catia:zero-entity:edge-component-candidate#{index}"),
-            physical_edges: candidate
-                .edges
-                .into_iter()
-                .map(|edge| edges[edge].id.clone())
-                .collect(),
-            vertices: candidate
-                .vertices
-                .into_iter()
-                .map(|vertex| vertices[vertex].id.clone())
-                .collect(),
-            boundary_vertex_count: candidate.boundary_vertex_count,
         })
         .collect()
 }
@@ -5044,14 +5005,14 @@ fn validate_zero_entity_support_runs(
 }
 
 #[cfg(test)]
-fn validate_zero_entity_physical_edge_candidates(
-    edges: &[CatiaZeroEntityPhysicalEdgeCandidate],
+fn validate_zero_entity_endpoint_pair_candidates(
+    endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let expected = zero_entity_physical_edge_candidates(derived_zero_entity_physical_edges(runs));
-    if edges != expected {
+    let expected = zero_entity_endpoint_pair_candidates(derived_zero_entity_endpoint_pairs(runs));
+    if endpoint_pairs != expected {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-            "zero-entity physical-edge candidates disagree with their radial support occurrences"
+            "zero-entity endpoint-pair candidates disagree with their radial support occurrences"
                 .to_string(),
         ));
     }
@@ -5059,9 +5020,9 @@ fn validate_zero_entity_physical_edge_candidates(
 }
 
 #[cfg(test)]
-fn derived_zero_entity_physical_edges(
+fn derived_zero_entity_endpoint_pairs(
     runs: &[CatiaZeroEntitySupportRun],
-) -> Vec<crate::families::zero_entity::topology::ZeroEntityPhysicalEdgeCandidate> {
+) -> Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate> {
     let occurrences = runs
         .iter()
         .filter_map(|run| run.face.as_ref())
@@ -5082,49 +5043,23 @@ fn derived_zero_entity_physical_edges(
             })
         })
         .collect::<Vec<_>>();
-    crate::families::zero_entity::topology::physical_edge_candidates(&occurrences)
+    crate::families::zero_entity::topology::endpoint_pair_candidates(&occurrences)
 }
 
 #[cfg(test)]
-fn validate_zero_entity_vertex_candidates(
-    vertices: &[CatiaZeroEntityVertexCandidate],
-    edges: &[CatiaZeroEntityPhysicalEdgeCandidate],
+fn validate_zero_entity_endpoint_locus_candidates(
+    endpoint_loci: &[CatiaZeroEntityEndpointLocusCandidate],
+    endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let derived_edges = derived_zero_entity_physical_edges(runs);
-    let expected = zero_entity_vertex_candidates(
-        crate::families::zero_entity::topology::vertex_candidates(&derived_edges),
-        edges,
+    let derived_pairs = derived_zero_entity_endpoint_pairs(runs);
+    let expected = zero_entity_endpoint_locus_candidates(
+        crate::families::zero_entity::topology::endpoint_locus_candidates(&derived_pairs),
+        endpoint_pairs,
     );
-    if vertices != expected {
+    if endpoint_loci != expected {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-            "zero-entity vertex candidates disagree with their physical-edge endpoints".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-fn validate_zero_entity_edge_component_candidates(
-    components: &[CatiaZeroEntityEdgeComponentCandidate],
-    edges: &[CatiaZeroEntityPhysicalEdgeCandidate],
-    vertices: &[CatiaZeroEntityVertexCandidate],
-    runs: &[CatiaZeroEntitySupportRun],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let derived_edges = derived_zero_entity_physical_edges(runs);
-    let derived_vertices =
-        crate::families::zero_entity::topology::vertex_candidates(&derived_edges);
-    let expected = zero_entity_edge_component_candidates(
-        crate::families::zero_entity::topology::edge_component_candidates(
-            &derived_edges,
-            &derived_vertices,
-        ),
-        edges,
-        vertices,
-    );
-    if components != expected {
-        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-            "zero-entity edge-component candidates disagree with their endpoint incidence"
+            "zero-entity endpoint-locus candidates disagree with their endpoint-pair endpoints"
                 .to_string(),
         ));
     }
@@ -6067,26 +6002,19 @@ impl CatiaNative {
         let zero_entity_oriented_use_pairs = zero_entity_oriented_use_pairs(bytes);
         let parsed_zero_entity_support_runs =
             crate::families::zero_entity::records::zero_entity_support_runs(bytes);
-        let parsed_zero_entity_physical_edges =
-            crate::families::zero_entity::topology::zero_entity_physical_edge_candidates(
+        let parsed_zero_entity_endpoint_pairs =
+            crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
                 &parsed_zero_entity_support_runs,
             );
-        let zero_entity_physical_edge_candidates =
-            zero_entity_physical_edge_candidates(parsed_zero_entity_physical_edges.clone());
-        let parsed_zero_entity_vertices = crate::families::zero_entity::topology::vertex_candidates(
-            &parsed_zero_entity_physical_edges,
-        );
-        let zero_entity_vertex_candidates = zero_entity_vertex_candidates(
-            parsed_zero_entity_vertices.clone(),
-            &zero_entity_physical_edge_candidates,
-        );
-        let zero_entity_edge_component_candidates = zero_entity_edge_component_candidates(
-            crate::families::zero_entity::topology::edge_component_candidates(
-                &parsed_zero_entity_physical_edges,
-                &parsed_zero_entity_vertices,
-            ),
-            &zero_entity_physical_edge_candidates,
-            &zero_entity_vertex_candidates,
+        let zero_entity_endpoint_pair_candidates =
+            zero_entity_endpoint_pair_candidates(parsed_zero_entity_endpoint_pairs.clone());
+        let parsed_zero_entity_endpoint_loci =
+            crate::families::zero_entity::topology::endpoint_locus_candidates(
+                &parsed_zero_entity_endpoint_pairs,
+            );
+        let zero_entity_endpoint_locus_candidates = zero_entity_endpoint_locus_candidates(
+            parsed_zero_entity_endpoint_loci,
+            &zero_entity_endpoint_pair_candidates,
         );
         let zero_entity_support_runs =
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
@@ -6126,13 +6054,12 @@ impl CatiaNative {
             object_graphs,
             preview_images,
             value_blocks,
-            zero_entity_edge_component_candidates,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
-            zero_entity_physical_edge_candidates,
+            zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
-            zero_entity_vertex_candidates,
+            zero_entity_endpoint_locus_candidates,
             zero_entity_vertex_incidences,
         }
     }
@@ -6584,16 +6511,14 @@ impl CatiaNative {
         consolidated_edge_nodes.sort_by_key(|node| node.byte_offset);
         let consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity> =
             namespace.arena_as("consolidated_vertex_identities")?;
-        let zero_entity_edge_component_candidates: Vec<CatiaZeroEntityEdgeComponentCandidate> =
-            namespace.arena_as("zero_entity_edge_component_candidates")?;
         let mut zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride> =
             namespace.arena_as("zero_entity_edge_strides")?;
         zero_entity_edge_strides.sort_by_key(|record| record.byte_offset);
         let mut zero_entity_oriented_use_pairs: Vec<CatiaZeroEntityOrientedUsePair> =
             namespace.arena_as("zero_entity_oriented_use_pairs")?;
         zero_entity_oriented_use_pairs.sort_by_key(|pair| pair.header_byte_offset);
-        let zero_entity_physical_edge_candidates: Vec<CatiaZeroEntityPhysicalEdgeCandidate> =
-            namespace.arena_as("zero_entity_physical_edge_candidates")?;
+        let zero_entity_endpoint_pair_candidates: Vec<CatiaZeroEntityEndpointPairCandidate> =
+            namespace.arena_as("zero_entity_endpoint_pair_candidates")?;
         let mut zero_entity_records: Vec<CatiaZeroEntityRecord> =
             namespace.arena_as("zero_entity_records")?;
         zero_entity_records.sort_by_key(|record| record.record_ordinal);
@@ -6602,21 +6527,15 @@ impl CatiaNative {
             namespace.arena_as("zero_entity_support_runs")?;
         zero_entity_support_runs.sort_by_key(|run| run.carrier_byte_offset);
         validate_zero_entity_support_runs(&zero_entity_support_runs, &zero_entity_records)?;
-        let zero_entity_vertex_candidates: Vec<CatiaZeroEntityVertexCandidate> =
-            namespace.arena_as("zero_entity_vertex_candidates")?;
-        validate_zero_entity_physical_edge_candidates(
-            &zero_entity_physical_edge_candidates,
+        let zero_entity_endpoint_locus_candidates: Vec<CatiaZeroEntityEndpointLocusCandidate> =
+            namespace.arena_as("zero_entity_endpoint_locus_candidates")?;
+        validate_zero_entity_endpoint_pair_candidates(
+            &zero_entity_endpoint_pair_candidates,
             &zero_entity_support_runs,
         )?;
-        validate_zero_entity_vertex_candidates(
-            &zero_entity_vertex_candidates,
-            &zero_entity_physical_edge_candidates,
-            &zero_entity_support_runs,
-        )?;
-        validate_zero_entity_edge_component_candidates(
-            &zero_entity_edge_component_candidates,
-            &zero_entity_physical_edge_candidates,
-            &zero_entity_vertex_candidates,
+        validate_zero_entity_endpoint_locus_candidates(
+            &zero_entity_endpoint_locus_candidates,
+            &zero_entity_endpoint_pair_candidates,
             &zero_entity_support_runs,
         )?;
         let mut zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence> =
@@ -6671,13 +6590,12 @@ impl CatiaNative {
             object_graphs: graphs,
             preview_images,
             value_blocks,
-            zero_entity_edge_component_candidates,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
-            zero_entity_physical_edge_candidates,
+            zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
-            zero_entity_vertex_candidates,
+            zero_entity_endpoint_locus_candidates,
             zero_entity_vertex_incidences,
         })
     }
@@ -6779,24 +6697,20 @@ impl CatiaNative {
         namespace.set_arena("preview_images", &self.preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
-        namespace.set_arena(
-            "zero_entity_edge_component_candidates",
-            &self.zero_entity_edge_component_candidates,
-        )?;
         namespace.set_arena("zero_entity_edge_strides", &self.zero_entity_edge_strides)?;
         namespace.set_arena(
             "zero_entity_oriented_use_pairs",
             &self.zero_entity_oriented_use_pairs,
         )?;
         namespace.set_arena(
-            "zero_entity_physical_edge_candidates",
-            &self.zero_entity_physical_edge_candidates,
+            "zero_entity_endpoint_pair_candidates",
+            &self.zero_entity_endpoint_pair_candidates,
         )?;
         namespace.set_arena("zero_entity_records", &self.zero_entity_records)?;
         namespace.set_arena("zero_entity_support_runs", &self.zero_entity_support_runs)?;
         namespace.set_arena(
-            "zero_entity_vertex_candidates",
-            &self.zero_entity_vertex_candidates,
+            "zero_entity_endpoint_locus_candidates",
+            &self.zero_entity_endpoint_locus_candidates,
         )?;
         namespace.set_arena(
             "zero_entity_vertex_incidences",
@@ -6845,13 +6759,12 @@ impl CatiaNative {
             mut object_graphs,
             preview_images,
             mut value_blocks,
-            zero_entity_edge_component_candidates,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
-            zero_entity_physical_edge_candidates,
+            zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
-            zero_entity_vertex_candidates,
+            zero_entity_endpoint_locus_candidates,
             zero_entity_vertex_incidences,
         } = self;
         let entries = catalogs
@@ -6910,24 +6823,20 @@ impl CatiaNative {
         namespace.set_arena("preview_images", &preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
-        namespace.set_arena(
-            "zero_entity_edge_component_candidates",
-            &zero_entity_edge_component_candidates,
-        )?;
         namespace.set_arena("zero_entity_edge_strides", &zero_entity_edge_strides)?;
         namespace.set_arena(
             "zero_entity_oriented_use_pairs",
             &zero_entity_oriented_use_pairs,
         )?;
         namespace.set_arena(
-            "zero_entity_physical_edge_candidates",
-            &zero_entity_physical_edge_candidates,
+            "zero_entity_endpoint_pair_candidates",
+            &zero_entity_endpoint_pair_candidates,
         )?;
         namespace.set_arena("zero_entity_records", &zero_entity_records)?;
         namespace.set_arena("zero_entity_support_runs", &zero_entity_support_runs)?;
         namespace.set_arena(
-            "zero_entity_vertex_candidates",
-            &zero_entity_vertex_candidates,
+            "zero_entity_endpoint_locus_candidates",
+            &zero_entity_endpoint_locus_candidates,
         )?;
         namespace.set_arena(
             "zero_entity_vertex_incidences",

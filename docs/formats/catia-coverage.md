@@ -83,13 +83,13 @@ current scores require those matrices and representative fixtures.
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
 - Zero-entity face-local support occurrences with complete lifted endpoint
-  tapes form radial physical-edge candidates. Their endpoint coordinates form
-  geometric vertex candidates only when each coincidence component is a
-  complete pairwise clique within tolerance; ambiguous tolerance chains remain
-  unresolved. Physical edges form connected edge-network candidates only when
-  both endpoints of every edge in the component belong to those complete
-  vertex candidates; endpoint ambiguity suppresses the affected component
-  atomically.
+  tapes form radial endpoint-pair candidates only when two occurrences have
+  matching unordered model-space endpoints and the surrounding face-incidence
+  partition is unambiguous. This relation does not assert curve coincidence:
+  distinct curved supports may share both endpoints. Candidate endpoint
+  coordinates form geometric endpoint-locus candidates only when each tolerance
+  component is a complete pairwise clique; ambiguous tolerance chains remain
+  unresolved.
 - Complete consolidated cone-face chart records retain their reference-and-
   control program, angular scale, and cone half-angle before the program's
   higher-level roles resolve. Consolidated parameter-space points retain all
@@ -131,11 +131,11 @@ current scores require those matrices and representative fixtures.
   face-local binding is atomic and retained as support-record ordinals. A loop
   retains its complete sense-oriented model endpoint tape when every support
   lifts directly or exactly one missing pair is bounded by lifted neighbors
-  and every cyclic join closes within the format tolerance. Coincident
-  occurrence pairs establish face-incidence components only when each
-  occurrence has one geometric match. Coincident groups partition by those
-  components, and every two-occurrence partition retains one physical-edge
-  candidate. Every
+  and every cyclic join closes within the format tolerance. Matching occurrence
+  endpoint pairs establish face-incidence components only when each occurrence
+  has one endpoint match. Matching groups partition by those components, and
+  every two-occurrence partition retains one radial endpoint-pair candidate.
+  The candidate does not establish curve coincidence or a physical edge. Every
   in-range odd-lane typed reference retains its selected global record identity
   atomically for the loop.
   Loop-to-oriented-use, oriented-use-to-incidence, physical endpoint identity,

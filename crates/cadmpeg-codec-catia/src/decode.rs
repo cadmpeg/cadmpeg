@@ -624,16 +624,12 @@ fn finish_decode(
             native.zero_entity_oriented_use_pairs.len(),
         ),
         (
-            "decoded_zero_entity_physical_edge_candidate_count".to_string(),
-            native.zero_entity_physical_edge_candidates.len(),
+            "decoded_zero_entity_endpoint_pair_candidate_count".to_string(),
+            native.zero_entity_endpoint_pair_candidates.len(),
         ),
         (
-            "decoded_zero_entity_edge_component_candidate_count".to_string(),
-            native.zero_entity_edge_component_candidates.len(),
-        ),
-        (
-            "decoded_zero_entity_vertex_candidate_count".to_string(),
-            native.zero_entity_vertex_candidates.len(),
+            "decoded_zero_entity_endpoint_locus_candidate_count".to_string(),
+            native.zero_entity_endpoint_locus_candidates.len(),
         ),
         (
             "decoded_zero_entity_record_count".to_string(),
@@ -1093,17 +1089,16 @@ fn finish_decode(
                  edge-stride record(s) \
                  bind {edge_support_binding_count} adjacent support record(s), and \
                  {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
-                 adjacent vertex owner; {} radial physical-edge candidate(s), {} complete \
-                 endpoint-clique vertex candidate(s), and {} complete edge-network component \
-                 candidate(s) are established; {} \
-                 oriented-use pair(s) remain separate because the \
-                 loop-to-use and use-to-incidence bindings are unresolved.",
+                 adjacent vertex owner; {} radial occurrence endpoint-pair candidate(s) and {} \
+                 complete endpoint-locus candidate(s) are established from matching model-space \
+                 endpoint pairs; curve coincidence, loop-to-use, use-to-incidence, physical \
+                 endpoint identity, and body/shell binding remain unresolved; {} oriented-use \
+                 pair(s) remain separate.",
                 native.zero_entity_support_runs.len(),
                 native.zero_entity_edge_strides.len(),
                 native.zero_entity_vertex_incidences.len(),
-                native.zero_entity_physical_edge_candidates.len(),
-                native.zero_entity_vertex_candidates.len(),
-                native.zero_entity_edge_component_candidates.len(),
+                native.zero_entity_endpoint_pair_candidates.len(),
+                native.zero_entity_endpoint_locus_candidates.len(),
                 native.zero_entity_oriented_use_pairs.len(),
             ),
             provenance: None,
