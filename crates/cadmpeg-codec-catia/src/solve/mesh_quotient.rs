@@ -1069,7 +1069,7 @@ impl MeshQuotient {
                     || (0..domains.len()).collect::<Vec<_>>(),
                     |roots| roots.into_iter().collect(),
                 );
-                scanned_roots.sort_unstable_by_key(|root| domains[*root].len());
+                scanned_roots.sort_unstable_by_key(|root| (domains[*root].len(), *root));
                 let partial_scan = scanned_roots.len() < domains.len();
                 let bounded_scan = !partial_scan
                     && budget.is_some_and(|budget| {
@@ -1565,11 +1565,13 @@ impl MeshQuotient {
         let domains = roots
             .iter()
             .map(|root| {
-                self.domains[*root]
+                let mut domain = self.domains[*root]
                     .iter()
                     .copied()
                     .filter(|point| *point < point_count)
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                domain.sort_unstable();
+                domain
             })
             .collect::<Vec<_>>();
         if domains.iter().any(Vec::is_empty) {
