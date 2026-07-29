@@ -7,7 +7,7 @@
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::le::u16_at as u16_le;
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
@@ -1649,9 +1649,14 @@ pub fn b2_torus_geometry(torus: &B2Torus) -> SurfaceGeometry {
 /// Decode standalone `b2 03 28` analytic cylinder supports.
 #[must_use]
 pub fn b2_cylinders(data: &[u8]) -> Vec<B2Cylinder> {
+    let embedded_offsets = b2_embedded_cylinders(data)
+        .into_iter()
+        .map(|embedded| embedded.pos)
+        .collect::<HashSet<_>>();
     b_family_frames(data, 0x28)
         .into_iter()
         .filter_map(|frame| parse_b2_cylinder(data, frame))
+        .filter(|cylinder| !embedded_offsets.contains(&cylinder.pos))
         .collect()
 }
 

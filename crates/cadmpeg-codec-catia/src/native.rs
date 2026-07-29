@@ -3573,13 +3573,8 @@ fn consolidated_cones(bytes: &[u8]) -> Vec<CatiaConsolidatedCone> {
 }
 
 fn consolidated_cylinders(bytes: &[u8]) -> Vec<CatiaConsolidatedCylinder> {
-    let embedded_offsets = crate::families::b2::records::b2_embedded_cylinders(bytes)
-        .into_iter()
-        .map(|embedded| embedded.pos)
-        .collect::<HashSet<_>>();
     crate::families::b2::records::b2_cylinders(bytes)
         .into_iter()
-        .filter(|cylinder| !embedded_offsets.contains(&cylinder.pos))
         .enumerate()
         .map(|(index, cylinder)| {
             let payload = if cylinder.layout == 0x62 {

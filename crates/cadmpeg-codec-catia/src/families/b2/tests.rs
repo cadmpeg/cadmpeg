@@ -884,8 +884,8 @@ fn b2_offset_support_parser_ignores_other_construction_kinds() {
 
 #[test]
 fn b2_composite_parser_reads_embedded_cylinder_frame() {
-    let cylinders =
-        crate::families::b2::records::b2_embedded_cylinders(&b2_embedded_cylinder_stream());
+    let bytes = b2_embedded_cylinder_stream();
+    let cylinders = crate::families::b2::records::b2_embedded_cylinders(&bytes);
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].object_id, 0x5678);
     assert_eq!(cylinders[0].wrapper_pos, 0);
@@ -893,4 +893,5 @@ fn b2_composite_parser_reads_embedded_cylinder_frame() {
         cylinders[0].cylinder.u_range,
         [0.0, 4.0 * std::f64::consts::PI]
     );
+    assert!(crate::families::b2::records::b2_cylinders(&bytes).is_empty());
 }

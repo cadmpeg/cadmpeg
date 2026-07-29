@@ -862,6 +862,17 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     #[test]
+    fn freeform_fallback_distinguishes_grouped_and_standalone_cylinders() {
+        let mut bytes = crate::tests::b2_cylinder_stream();
+        bytes.extend_from_slice(&crate::tests::b2_embedded_cylinder_stream());
+
+        let carriers = freeform_surface_carriers(&bytes);
+        assert_eq!(carriers.len(), 2);
+        assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
+        assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
+    }
+
+    #[test]
     fn freeform_fallback_retains_exact_consolidated_spheres() {
         let carriers = freeform_surface_carriers(&crate::tests::b2_sphere_stream());
         assert!(matches!(
