@@ -121,8 +121,10 @@ current scores require those matrices and representative fixtures.
   validate the right-handed frame, fixed controls, positive angular gauge, and
   exact half-turn relation. Their exact NURBS cache uses the stored ranges
   directly rather than deriving a patch from available pcurves.
-  A consolidated torus retains independent active major- and minor-angle
-  intervals and their centered full-turn chart domains; malformed range/domain
+  Consolidated and object-stream tori retain independent active major- and
+  minor-angle intervals and their centered full-turn chart domains.
+  Object-stream tori additionally require the complete lead, right-handed
+  orthonormal frame, and zero tail; malformed frame, tail, or range/domain
   relations reject the complete record.
   Consolidated and object-stream cones retain their active azimuth interval,
   centered full-turn domain, slant interval, and fixed chart-tail scalars;

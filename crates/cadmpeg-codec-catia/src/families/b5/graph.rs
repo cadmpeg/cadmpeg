@@ -1828,6 +1828,15 @@ fn directions_are_unit_and_orthogonal(first: [f64; 3], second: [f64; 3]) -> bool
         && dot.abs() <= 1e-12
 }
 
+fn directions_form_right_handed_orthonormal_frame(
+    direction_x: [f64; 3],
+    direction_y: [f64; 3],
+    axis: [f64; 3],
+) -> bool {
+    directions_are_unit_and_orthogonal(direction_x, direction_y)
+        && distance_squared(cross(direction_x, direction_y), axis) <= 1e-24
+}
+
 fn parse_surface(record: &B5Record) -> Option<B5Surface> {
     match record.class {
         0x27 => {
@@ -1958,20 +1967,27 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && [stored_x, stored_y, stored_axis].iter().all(|direction| {
                     (vector_length(*direction) - radius).abs() <= 1e-12 * radius.abs().max(1.0)
                 })
-                && distance_squared(cross(direction_x, direction_y), axis) <= 1e-24)
-                .then_some(B5Surface::Sphere {
-                    center,
-                    direction_x,
-                    direction_y,
-                    axis,
-                    radius,
-                    azimuth_range,
-                    latitude_range,
-                    construction_radius,
-                    chart_origin,
-                })
+                && directions_form_right_handed_orthonormal_frame(direction_x, direction_y, axis))
+            .then_some(B5Surface::Sphere {
+                center,
+                direction_x,
+                direction_y,
+                axis,
+                radius,
+                azimuth_range,
+                latitude_range,
+                construction_radius,
+                chart_origin,
+            })
         }
         0x2b => {
+            (record.payload.len() == 201
+                && record.payload.first() == Some(&0x80)
+                && record.payload.get(193..201) == Some(&[0; 8]))
+            .then_some(())?;
+            let direction_x = point(&record.payload, 25)?;
+            let direction_y = point(&record.payload, 49)?;
+            let axis = point(&record.payload, 73)?;
             let major_radius = scalar(&record.payload, 97)?;
             let minor_radius = scalar(&record.payload, 105)?;
             let major_angular_range =
@@ -1984,7 +2000,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 [scalar(&record.payload, 161)?, scalar(&record.payload, 169)?];
             let major_scale = scalar(&record.payload, 177)?;
             let minor_scale = scalar(&record.payload, 185)?;
-            (record.payload.len() == 201
+            (directions_form_right_handed_orthonormal_frame(direction_x, direction_y, axis)
                 && major_radius > 0.0
                 && minor_radius > 0.0
                 && periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
@@ -1994,9 +2010,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 .then_some(())?;
             Some(B5Surface::Torus {
                 center: point(&record.payload, 1)?,
-                direction_x: unit(point(&record.payload, 25)?)?,
-                direction_y: unit(point(&record.payload, 49)?)?,
-                axis: unit(point(&record.payload, 73)?)?,
+                direction_x,
+                direction_y,
+                axis,
                 major_radius,
                 minor_radius,
                 major_angular_range,
@@ -2028,9 +2044,12 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let axis_direction = point(&record.payload, position.checked_add(72)?)?;
             (record.payload.get(position + 128..position + 130) == Some(&[0x05, 0x05])
                 && angular_scale > 0.0
-                && directions_are_unit_and_orthogonal(reference_x, reference_y)
-                && distance_squared(cross(reference_x, reference_y), axis_direction) <= 1e-24)
-                .then_some(())?;
+                && directions_form_right_handed_orthonormal_frame(
+                    reference_x,
+                    reference_y,
+                    axis_direction,
+                ))
+            .then_some(())?;
             (angular_range[0] < angular_range[1]
                 && angular_range[0] >= 0.0
                 && angular_range[1] <= 2.0 * angular_half_turn
@@ -4313,9 +4332,18 @@ mod tests {
             })
         );
 
-        let mut malformed = record;
+        let mut malformed = record.clone();
         malformed.payload[129..137].copy_from_slice(&0.5f64.to_le_bytes());
         assert_eq!(parse_surface(&malformed), None);
+        let mut left_handed = record.clone();
+        left_handed.payload[89..97].copy_from_slice(&(-1.0f64).to_le_bytes());
+        assert_eq!(parse_surface(&left_handed), None);
+        let mut wrong_lead = record.clone();
+        wrong_lead.payload[0] = 0x81;
+        assert_eq!(parse_surface(&wrong_lead), None);
+        let mut nonzero_tail = record;
+        nonzero_tail.payload[200] = 1;
+        assert_eq!(parse_surface(&nonzero_tail), None);
     }
 
     #[test]
