@@ -4111,7 +4111,7 @@ mod tests {
                 .namespace("nx")
                 .expect("required invariant")
                 .version,
-            178
+            179
         );
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, Some(0x102));

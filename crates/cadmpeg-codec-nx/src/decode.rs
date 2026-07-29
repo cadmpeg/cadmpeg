@@ -7068,7 +7068,19 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "extract body"
             }
             FeatureDefinition::Sketch { space, sketch }
-                if !matches!(space, SketchSpace::Planar) || sketch.is_none() =>
+                if !matches!(space, SketchSpace::Planar)
+                    || sketch.as_ref().is_none_or(|sketch| {
+                        ir.model
+                            .sketches
+                            .iter()
+                            .find(|candidate| candidate.id == *sketch)
+                            .is_none_or(|sketch| {
+                                matches!(
+                                    sketch.placement,
+                                    cadmpeg_ir::sketches::SketchPlacement::Unresolved
+                                )
+                            })
+                    }) =>
             {
                 "sketch"
             }

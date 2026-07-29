@@ -25,9 +25,12 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AttributeId, BodyId, LoopId, SurfaceId, UnknownId};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::semantic_annotations::{
     SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+};
+use cadmpeg_ir::sketches::{
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
 };
 use cadmpeg_ir::topology::{BodyKind, Coedge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -272,7 +275,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(178);
+    namespace.version = namespace.version.max(179);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -2073,6 +2076,20 @@ fn attach_feature_operations(
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
         let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
+        let sketch = (label.value == "SKETCH")
+            .then(|| {
+                attach_solved_sketch_points(
+                    ir,
+                    label,
+                    sketch_point_uses_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
+                    sketch_point_groups,
+                    annotations,
+                    stream,
+                )
+            })
+            .flatten();
         let definition = booleans.get(label.id.as_str()).map_or_else(
             || {
                 trim_body_projection
@@ -2083,6 +2100,12 @@ fn attach_feature_operations(
                     .or_else(|| thicken_projection.map(|(definition, _)| definition))
                     .or_else(|| offset_projection.map(|(definition, _)| definition))
                     .unwrap_or_else(|| {
+                        if let Some(sketch) = sketch {
+                            return FeatureDefinition::Sketch {
+                                space: SketchSpace::Planar,
+                                sketch: Some(sketch),
+                            };
+                        }
                         non_boolean_feature_definition_with_parameters(
                             &label.value,
                             &operation_payload_strings,
@@ -2164,6 +2187,84 @@ fn attach_feature_operations(
             }
         }
     }
+}
+
+fn attach_solved_sketch_points(
+    ir: &mut CadIr,
+    label: &crate::native::features::FeatureOperationLabel,
+    point_uses: &[&crate::native::features::FeatureSketchPointUse],
+    point_groups: &[crate::native::features::FeatureSketchPointGroup],
+    annotations: &mut AnnotationBuilder,
+    stream: cadmpeg_ir::annotations::StreamHandle,
+) -> Option<SketchId> {
+    if point_uses.is_empty() {
+        return None;
+    }
+    let groups = point_groups
+        .iter()
+        .map(|group| (group.id.as_str(), group))
+        .collect::<BTreeMap<_, _>>();
+    let operation_key = label
+        .id
+        .strip_prefix("nx:feature-history:operation-label#")
+        .unwrap_or(label.id.as_str());
+    let sketch_id = SketchId(format!("nx:feature-history:sketch#{operation_key}"));
+    let mut entities = Vec::new();
+    let mut represented_groups = BTreeSet::new();
+    for point_use in point_uses {
+        let group = groups.get(point_use.sketch_point_group.as_str())?;
+        if group.operation_label != label.id
+            || !represented_groups.insert(group.id.as_str())
+            || group
+                .coordinates
+                .iter()
+                .any(|coordinate| !coordinate.is_finite())
+        {
+            return None;
+        }
+        let entity_key = point_use
+            .id
+            .strip_prefix("nx:feature-history:sketch-point-use#")
+            .unwrap_or(point_use.id.as_str());
+        entities.push((
+            point_use.source_offsets.iter().copied().min()?,
+            SketchEntity {
+                id: SketchEntityId(format!(
+                    "nx:feature-history:sketch-entity#point-{entity_key}"
+                )),
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: Some(point_use.id.clone()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(group.coordinates[0], group.coordinates[1]),
+                },
+            },
+        ));
+    }
+    for (source_offset, entity) in &entities {
+        annotations
+            .note(&entity.id.0, stream, *source_offset)
+            .tag("SKETCH_POINT");
+        annotations.exactness(&entity.id.0, Exactness::Derived);
+    }
+    annotations
+        .note(&sketch_id.0, stream, label.source_offset)
+        .tag("SKETCH");
+    annotations.exactness(&sketch_id.0, Exactness::Derived);
+    ir.model
+        .sketch_entities
+        .extend(entities.into_iter().map(|(_, entity)| entity));
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: Some(label.value.clone()),
+        configuration: None,
+        placement: SketchPlacement::Unresolved,
+        profiles: Vec::new(),
+        native_ref: Some(label.id.clone()),
+    });
+    Some(sketch_id)
 }
 
 fn records_by_operation<'a, T>(
@@ -5106,6 +5207,69 @@ mod tests {
             ),
             BTreeMap::from([("operation_record".into(), "record".into())])
         );
+    }
+
+    #[test]
+    fn solved_sketch_points_require_unique_exact_ownership_atomically() {
+        let label = crate::native::features::FeatureOperationLabel {
+            id: "nx:feature-history:operation-label#section-7".to_string(),
+            section_link: "section".to_string(),
+            ordinal: 7,
+            value: "SKETCH".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: Default::default(),
+            source_offset: 40,
+        };
+        let group = crate::native::features::FeatureSketchPointGroup {
+            id: "point-group".to_string(),
+            operation_label: label.id.clone(),
+            name: "Point1".to_string(),
+            points: vec!["payload-point".to_string()],
+            coordinates: [12.5, -3.0],
+        };
+        let point_use = crate::native::features::FeatureSketchPointUse {
+            id: "nx:feature-history:sketch-point-use#section-7-0".to_string(),
+            operation_label: label.id.clone(),
+            sketch_references: vec!["reference".to_string()],
+            block_uses: vec!["block-use".to_string()],
+            sketch_point_group: group.id.clone(),
+            named_point: "named-point".to_string(),
+            source_offsets: vec![52],
+        };
+        let mut ir = CadIr::empty(Default::default());
+        let mut annotations = AnnotationBuilder::new();
+        let stream = annotations.stream("nx:container");
+        let sketch = super::attach_solved_sketch_points(
+            &mut ir,
+            &label,
+            &[&point_use],
+            std::slice::from_ref(&group),
+            &mut annotations,
+            stream,
+        )
+        .expect("one exact point use projects a sketch");
+        assert_eq!(ir.model.sketches[0].id, sketch);
+        assert!(matches!(
+            ir.model.sketch_entities[0].geometry,
+            SketchGeometry::Point {
+                position: Point2 { u: 12.5, v: -3.0 }
+            }
+        ));
+
+        let mut rejected_ir = CadIr::empty(Default::default());
+        let mut rejected_annotations = AnnotationBuilder::new();
+        let rejected_stream = rejected_annotations.stream("nx:container");
+        assert!(super::attach_solved_sketch_points(
+            &mut rejected_ir,
+            &label,
+            &[&point_use, &point_use],
+            &[group],
+            &mut rejected_annotations,
+            rejected_stream,
+        )
+        .is_none());
+        assert!(rejected_ir.model.sketches.is_empty());
+        assert!(rejected_ir.model.sketch_entities.is_empty());
     }
 
     #[test]
