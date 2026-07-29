@@ -638,6 +638,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         solution_filter: None,
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
+            assignment_predecessors: None,
             valid: &valid,
         }),
         dead_states: HashSet::new(),
@@ -649,6 +650,59 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     assert_eq!(
         search.branch_options(),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
+    );
+}
+
+#[test]
+fn incidence_component_assigns_canonical_class_members_in_order() {
+    let choices = vec![
+        vec![[0, 1], [0, 2]],
+        vec![[0, 1], [0, 2]],
+        vec![[3, 4], [3, 5]],
+    ];
+    let edge_faces = [[0, 0]; 3];
+    let face_edges = vec![vec![0, 1, 2]];
+    let active_edges = [false; 3];
+    let assignment_predecessors = [None, Some(0), Some(0)];
+    let valid = |_: &[Option<[usize; 2]>]| true;
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        mesh_quotient: None,
+        active: vec![true, true, false],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 3],
+        degrees: vec![vec![0; 6]],
+        solutions: Vec::new(),
+        solution_filter: None,
+        partial_solution_filter: Some(MeshPartialEndpointConstraint {
+            active_edges: &active_edges,
+            assignment_predecessors: Some(&assignment_predecessors),
+            valid: &valid,
+        }),
+        dead_states: HashSet::new(),
+        budget: &budget,
+        states: 0,
+        exhausted: false,
+    };
+
+    assert_eq!(
+        search.branch_options(),
+        Some(vec![(0, [0, 1]), (0, [0, 2])])
+    );
+
+    let independent = crate::solve::incidence::IncidenceComponentSearch {
+        active: vec![false, false, true],
+        edges: &[2],
+        ..search
+    };
+    assert_eq!(
+        independent.branch_options(),
+        Some(vec![(2, [3, 4]), (2, [3, 5])])
     );
 }
 
@@ -1598,6 +1652,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
         None,
         Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
+            assignment_predecessors: None,
             valid: &partial,
         }),
         &|_| true,

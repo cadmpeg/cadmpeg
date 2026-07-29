@@ -3800,6 +3800,7 @@ type MeshPartialEndpointSolutionFilter<'a> = &'a dyn Fn(&[Option<[usize; 2]>]) -
 #[derive(Clone, Copy)]
 pub(crate) struct MeshPartialEndpointConstraint<'a> {
     pub(crate) active_edges: &'a [bool],
+    pub(crate) assignment_predecessors: Option<&'a [Option<usize>]>,
     pub(crate) valid: MeshPartialEndpointSolutionFilter<'a>,
 }
 type MeshFaceEndpointConfiguration = Vec<MeshEndpointPair>;
@@ -5715,6 +5716,12 @@ where
         .zip(&class_constraint.active)
         .map(|(explicit, class)| *explicit || *class)
         .collect::<Vec<_>>();
+    let mut assignment_predecessors = vec![None; completed_edge_candidates.len()];
+    for &(left, right) in &class_constraint.ordered {
+        assignment_predecessors[right] = Some(
+            assignment_predecessors[right].map_or(left, |predecessor: usize| predecessor.max(left)),
+        );
+    }
     let constrained_pair_solution_valid = |pairs: &[Option<[usize; 2]>]| {
         pair_solution_valid(pairs)
             && edge_class_assignment_is_canonical(&class_constraint.ordered, pairs)
@@ -5732,6 +5739,7 @@ where
         Some(&mesh_quotient),
         Some(MeshPartialEndpointConstraint {
             active_edges: &constraint_edges,
+            assignment_predecessors: Some(&assignment_predecessors),
             valid: &constrained_pair_solution_valid,
         }),
         &|pairs| {

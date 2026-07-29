@@ -593,6 +593,15 @@ impl IncidenceComponentSearch<'_> {
         })
     }
 
+    fn branch_edge_ready(&self, edge: usize) -> bool {
+        self.partial_solution_filter
+            .and_then(|constraint| constraint.assignment_predecessors)
+            .and_then(|predecessors| predecessors.get(edge).copied().flatten())
+            .is_none_or(|predecessor| {
+                !self.active[predecessor] || self.assignment[predecessor].is_some()
+            })
+    }
+
     fn degree_support_preserved(&self, edge: usize, pair: [usize; 2]) -> bool {
         let selected_faces = self.edge_faces[edge];
         let selected_degree = |face: usize, point: usize| {
@@ -701,7 +710,7 @@ impl IncidenceComponentSearch<'_> {
 
     pub(crate) fn branch_options(&self) -> Option<Vec<(usize, [usize; 2])>> {
         for &edge in self.edges {
-            if self.assignment[edge].is_some() {
+            if self.assignment[edge].is_some() || !self.branch_edge_ready(edge) {
                 continue;
             }
             let mut viable = self.choices[edge]
@@ -721,6 +730,7 @@ impl IncidenceComponentSearch<'_> {
                 .filter(|&edge| {
                     constraint.active_edges.get(edge) == Some(&true)
                         && self.assignment[edge].is_none()
+                        && self.branch_edge_ready(edge)
                 })
                 .min_by_key(|&edge| {
                     self.choices[edge]
@@ -747,6 +757,13 @@ impl IncidenceComponentSearch<'_> {
             if options.is_empty() {
                 return None;
             }
+            let options = options
+                .into_iter()
+                .filter(|(edge, _)| self.branch_edge_ready(*edge))
+                .collect::<Vec<_>>();
+            if options.is_empty() {
+                continue;
+            }
             if constrained
                 .as_ref()
                 .is_none_or(|stored| options.len() < stored.len())
@@ -761,7 +778,7 @@ impl IncidenceComponentSearch<'_> {
             .edges
             .iter()
             .copied()
-            .filter(|&edge| self.assignment[edge].is_none())
+            .filter(|&edge| self.assignment[edge].is_none() && self.branch_edge_ready(edge))
             .min_by_key(|&edge| {
                 self.choices[edge]
                     .iter()
