@@ -6447,21 +6447,10 @@ fn orient_edge_range(
     };
     let (start_position, start_tolerance) = vertex_position(start)?;
     let (end_position, end_tolerance) = vertex_position(end)?;
-    let cache_tolerance = ir
-        .model
-        .procedural_curves
-        .iter()
-        .find(|procedural| procedural.curve == *curve)
-        .and_then(|procedural| procedural.cache_fit_tolerance);
-    let allowance = [
-        edge_tolerance,
-        start_tolerance,
-        end_tolerance,
-        cache_tolerance,
-    ]
-    .into_iter()
-    .flatten()
-    .fold(0.01_f64, f64::max);
+    let allowance = [edge_tolerance, start_tolerance, end_tolerance]
+        .into_iter()
+        .flatten()
+        .fold(0.01_f64, f64::max);
     let distance = |a: cadmpeg_ir::math::Point3, b: cadmpeg_ir::math::Point3| {
         ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
     };
@@ -7948,4 +7937,88 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
         );
     }
     notes
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve,
+        ProceduralCurve, ProceduralCurveDefinition,
+    };
+    use cadmpeg_ir::ids::{CurveId, PointId, ProceduralCurveId, VertexId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::{Point, Vertex};
+
+    #[test]
+    fn edge_range_incidence_does_not_inherit_procedural_cache_fit_tolerance() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let curve_id = CurveId("nx:test:curve#0".into());
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        });
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId("nx:test:intersection#0".into()),
+            curve: curve_id.clone(),
+            definition: ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: Some(2.0),
+        });
+
+        let start_point = PointId("nx:test:point#0".into());
+        let end_point = PointId("nx:test:point#1".into());
+        ir.model.points.extend([
+            Point {
+                id: start_point.clone(),
+                position: Point3::new(0.0, 0.0, 0.0),
+                source_object: None,
+            },
+            Point {
+                id: end_point.clone(),
+                position: Point3::new(1.0, 1.0, 0.0),
+                source_object: None,
+            },
+        ]);
+        let start = VertexId("nx:test:vertex#0".into());
+        let end = VertexId("nx:test:vertex#1".into());
+        ir.model.vertices.extend([
+            Vertex {
+                id: start.clone(),
+                point: start_point,
+                tolerance: None,
+            },
+            Vertex {
+                id: end.clone(),
+                point: end_point,
+                tolerance: None,
+            },
+        ]);
+
+        assert!(super::orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
+    }
 }
