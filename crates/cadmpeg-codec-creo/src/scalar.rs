@@ -625,6 +625,11 @@ fn decode_local_system_slot_prefix(
             return Some(frame);
         }
     }
+    if matches!(variant, LocalSystemVariant::PositionalCylinder) {
+        if let Some(frame) = decode_reflected_xy_cylinder_local_system(body, cache) {
+            return Some(frame);
+        }
+    }
     if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
         return Some((
             [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -661,6 +666,21 @@ fn decode_local_system_slot_prefix(
             cursor += 1;
             continue;
         }
+        if matches!(variant, LocalSystemVariant::PositionalCylinder)
+            && body.get(cursor) == Some(&0x18)
+            && values.len() < 11
+            && decode_positional_cylinder_support_coordinate(
+                body,
+                cursor + 1,
+                values.len() + 1,
+                cache,
+            )
+            .is_some()
+        {
+            values.push(0.0);
+            cursor += 1;
+            continue;
+        }
         if body.get(cursor) == Some(&0x10) {
             values.push(0.0);
             cursor += 1;
@@ -688,6 +708,9 @@ fn decode_local_system_slot_prefix(
             (LocalSystemVariant::PositionalPlane | LocalSystemVariant::PlaneSupport, 10 | 11) => {
                 row.or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))?
             }
+            (LocalSystemVariant::PositionalCylinder, 0..=8) => {
+                decode_positional_cylinder_support_coordinate(body, cursor, values.len(), cache)?
+            }
             (LocalSystemVariant::PositionalCylinder, 9..=11) => {
                 decode_tabulated_cylinder_first_coordinate(body, cursor, cache).or(row)?
             }
@@ -713,6 +736,60 @@ fn decode_local_system_slot_prefix(
             cursor,
         )
     })
+}
+
+fn decode_reflected_xy_cylinder_local_system(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<([f64; 12], usize)> {
+    let (first_x, cursor) = decode_positional_cylinder_support_coordinate(body, 0, 0, cache)?;
+    let (first_y, cursor) = decode_positional_cylinder_support_coordinate(body, cursor, 1, cache)?;
+    (body.get(cursor) == Some(&0x18)).then_some(())?;
+    let (stored_first_y, cursor) =
+        decode_positional_cylinder_support_coordinate(body, cursor + 1, 3, cache)?;
+    let (stored_first_x, cursor) =
+        decode_positional_cylinder_support_coordinate(body, cursor, 4, cache)?;
+    (body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x0f])).then_some(())?;
+    let mut cursor = cursor + 3;
+
+    [first_x, first_y, stored_first_y, stored_first_x]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(())?;
+    let scale = first_x.abs().max(first_y.abs()).max(1.0);
+    ((first_x.mul_add(first_x, first_y * first_y) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
+    ((stored_first_y - first_y).abs() <= 1e-9 * scale).then_some(())?;
+    ((stored_first_x - first_x).abs() <= 1e-9 * scale).then_some(())?;
+
+    let mut origin = [0.0; 3];
+    for value in &mut origin {
+        let (decoded, next) = decode_tabulated_cylinder_first_coordinate(body, cursor, cache)
+            .or_else(|| decode_in_row_lane(body, cursor, cache))?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    Some((
+        [
+            first_x, first_y, 0.0, first_y, -first_x, 0.0, 1.0, 0.0, 0.0, origin[0], origin[1],
+            origin[2],
+        ],
+        cursor,
+    ))
+}
+
+fn decode_positional_cylinder_support_coordinate(
+    body: &[u8],
+    cursor: usize,
+    slot: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if slot.is_multiple_of(3) {
+        decode_tabulated_cylinder_first_coordinate(body, cursor, cache)
+    } else {
+        decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
+    }
+    .or_else(|| decode_in_row_lane(body, cursor, cache))
 }
 
 fn decode_compact_axis_plane_support(

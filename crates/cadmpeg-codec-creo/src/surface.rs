@@ -2899,6 +2899,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_axial_endpoint_radial_sample_cylinder_frame(body, cache))
         .or_else(|| decode_precise_center_edge_cylinder_frame(body, cache))
         .or_else(|| decode_precise_held_center_cylinder_frame(body, cache))
+        .or_else(|| decode_compound_local_system_cylinder_frame(body, cache))
         .or_else(|| decode_local_system_suffix_cylinder_frame(body, cache))
         .or_else(|| decode_referenced_planar_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_held_axis_cylinder_frame(body, cache))
@@ -4166,26 +4167,68 @@ fn decode_local_system_suffix_cylinder_frame(
     let [slots] = frames.as_slice() else {
         return None;
     };
+    cylinder_frame_from_local_system(slots, *radius)
+}
+
+fn decode_compound_local_system_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    let radius_frames = (1..body.len())
+        .filter_map(|radius_start| {
+            let (radius, radius_end) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, radius_start, cache)
+                    .or_else(|| scalar::decode(body, radius_start))?;
+            (radius.is_finite()
+                && radius > 0.0
+                && body.get(radius_end) == Some(&psb::token::COMPOUND_CLOSE))
+            .then_some((radius_start, radius))
+        })
+        .collect::<Vec<_>>();
+    let candidates = (1..body.len())
+        .filter(|start| body[start - 1] == psb::token::COMPOUND_CLOSE)
+        .flat_map(|start| {
+            radius_frames
+                .iter()
+                .filter(move |(radius_start, _)| *radius_start > start)
+                .filter_map(move |(radius_start, radius)| {
+                    let slots = scalar::decode_positional_cylinder_local_system_slots(
+                        body.get(start..*radius_start)?,
+                        cache,
+                    )?;
+                    Some((slots, *radius))
+                })
+        })
+        .collect::<Vec<_>>();
+    let [(slots, radius)] = candidates.as_slice() else {
+        return None;
+    };
+    cylinder_frame_from_local_system(slots, *radius)
+}
+
+fn cylinder_frame_from_local_system(
+    slots: &[f64; 12],
+    radius: f64,
+) -> Option<PositionalCylinderFrame> {
+    (radius.is_finite() && radius > 0.0).then_some(())?;
     let normalize = |vector: [f64; 3]| {
         let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
-        (magnitude.is_finite() && magnitude > 0.0).then(|| vector.map(|value| value / magnitude))
+        (magnitude.is_finite() && magnitude > 0.0)
+            .then(|| (vector.map(|value| value / magnitude), magnitude))
     };
-    let first = normalize(slots[0..3].try_into().ok()?)?;
-    let second = normalize(slots[3..6].try_into().ok()?)?;
-    let scale = slots
-        .iter()
-        .chain(std::iter::once(radius))
-        .map(|value| value.abs())
-        .fold(1.0, f64::max);
+    let (first, first_magnitude) = normalize(slots[0..3].try_into().ok()?)?;
+    let (second, second_magnitude) = normalize(slots[3..6].try_into().ok()?)?;
+    let scale = first_magnitude.max(second_magnitude).max(1.0);
+    ((first_magnitude - second_magnitude).abs() <= 1e-9 * scale).then_some(())?;
     (first
         .iter()
         .zip(second)
         .map(|(left, right)| left * right)
         .sum::<f64>()
         .abs()
-        <= 1e-9 * scale)
+        <= 1e-9)
         .then_some(())?;
-    let axis = normalize([
+    let (axis, _) = normalize([
         first[1] * second[2] - first[2] * second[1],
         first[2] * second[0] - first[0] * second[2],
         first[0] * second[1] - first[1] * second[0],
@@ -4194,7 +4237,7 @@ fn decode_local_system_suffix_cylinder_frame(
         origin: slots[9..12].try_into().ok()?,
         axis,
         ref_direction: first,
-        radius: *radius,
+        radius,
         length: None,
     })
 }
@@ -5653,6 +5696,38 @@ mod tests {
         );
         assert_eq!(systems[0].normal, Some([1.0, 0.0, 0.0]));
         assert_eq!(systems[0].body.len(), 52);
+    }
+
+    #[test]
+    fn compound_bounded_cylinder_local_system_retains_its_terminal_radius() {
+        let body = [
+            0xe3, // preceding envelope close
+            0xc2, 0xc2, 0xf0, 0x25, 0xa2, 0x3e, 0x8e, 0x41, 0xbf, 0x32, 0xd4, 0x4c, 0x4f, 0x62,
+            0x28, 0x18, 0x28, 0xbf, 0x32, 0xd4, 0x4c, 0x4f, 0x62, 0x28, 0xc2, 0xc2, 0xf0, 0x25,
+            0xa2, 0x3e, 0x8e, 0x18, 0xe5, 0x0f, 0x45, 0x40, 0x15, 0xaa, 0x6c, 0xe9, 0x90, 0x2d,
+            0x37, 0x64, 0xc9, 0x7b, 0x47, 0x11, 0xb1, 0x46, 0x30, 0x0d, 0x52, 0x7e, 0x52, 0x15,
+            0x76, 0x6e, 0x66, 0xd0, 0x97, 0x1d, 0xc9, 0xe3, 0xe3, // radius and close
+            0x82, 0x52, 0x01, // following row-local control payload
+        ];
+
+        let frame =
+            decode_compound_local_system_cylinder_frame(&body, &scalar::ScalarCache::default())
+                .expect("complete compound-bounded frame");
+        assert_eq!(
+            frame.origin,
+            [
+                -0.000_490_864_005_609_825_7,
+                23.393_699_364_519_936,
+                -16.052_039_999_999_998
+            ]
+        );
+        assert_eq!(frame.axis, [0.0, 0.0, -1.0]);
+        assert_eq!(
+            frame.ref_direction,
+            [-0.992_546_151_641_322_3, 0.121_869_343_405_145_1, 0.0]
+        );
+        assert_eq!(frame.radius, 0.606_300_635_480_064_5);
+        assert_eq!(frame.length, None);
     }
 
     #[test]

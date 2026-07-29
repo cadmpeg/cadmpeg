@@ -512,6 +512,16 @@ signed `46` form. The terminal scalar is the radius. This body defines an
 unbounded carrier and no axial extent. Prefix bytes before the unique complete
 suffix do not contribute carrier geometry.
 
+A compound-local-system positional cylinder stores one complete twelve-slot
+support frame and one positive radius between two compound closes. Row-local
+control bytes can follow the second close. In its reflected XY support form,
+the stored triples are `(a, b, 0)`, `(b, a, 0)`, and `(1, 0, 0)`, with
+`a² + b² = 1`. The second stored `a` is reflected across zero, producing the
+orthogonal support pair `(a, b, 0)` and `(b, -a, 0)`. The normalized cross
+product is the cylinder axis, the normalized first vector is the reference
+direction, slots 9 through 11 are the origin, and the following scalar is the
+radius. This body defines an unbounded carrier.
+
 A referenced planar-envelope positional cylinder begins `11 18 13` and stores
 positive axial length, first radial bound, first axial bound, one complete
 `19` or `32` model-reference token, second radial bound, second axial bound,
