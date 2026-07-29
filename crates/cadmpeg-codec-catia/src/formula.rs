@@ -13,6 +13,7 @@ pub(crate) fn transfer_parameters(
     ir: &mut CadIr,
     native: &CatiaNative,
     annotations: &mut Annotations,
+    graph_scope: Option<&HashSet<String>>,
 ) -> FormulaTransfer {
     let entities = native
         .entity_records
@@ -31,6 +32,9 @@ pub(crate) fn transfer_parameters(
     let formula_definition_counts = native
         .entity_records
         .iter()
+        .filter(|entity| {
+            graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
+        })
         .filter_map(|entity| entity.formula_relation.as_ref()?.parameter.as_deref())
         .fold(
             HashMap::<ParameterId, usize>::new(),
@@ -41,7 +45,9 @@ pub(crate) fn transfer_parameters(
         );
     let legacy_transfer = collect_legacy_parameters(native, &mut candidates);
 
-    for formula_entity in &native.entity_records {
+    for formula_entity in native.entity_records.iter().filter(|entity| {
+        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
+    }) {
         let Some(formula) = &formula_entity.formula_relation else {
             continue;
         };

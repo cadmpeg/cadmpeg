@@ -24,6 +24,7 @@ impl DesignFeatureTransfer {
 pub(crate) fn transfer_design_features(
     ir: &mut CadIr,
     native: &CatiaNative,
+    graph_scope: Option<&HashSet<String>>,
 ) -> DesignFeatureTransfer {
     let records = native
         .object_graphs
@@ -34,6 +35,7 @@ pub(crate) fn transfer_design_features(
     let candidates = native
         .design_objects
         .iter()
+        .filter(|object| graph_scope.is_none_or(|scope| scope.contains(object.parent.as_str())))
         .filter_map(|object| principal_plane_candidate(object, &records))
         .collect::<Vec<_>>();
     let mut transfer = DesignFeatureTransfer::default();

@@ -42,6 +42,8 @@ current scores require those matrices and representative fixtures.
   and base model-container classes and source ordinals. Inspection exposes these
   bindings on the selected outer stream descriptors. Alias-row ordinals resolve
   only through the unique object graph contained by the declared part stream.
+  Feature and formula authorship and unresolved design accounting use that same
+  modeling scope without restricting cross-graph reference targets.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
   occurrences. Each graph retains its exact containing FINJPL segment when one

@@ -8079,7 +8079,7 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
     native.object_graphs[0].records[0].class_name = Some("Element1".to_string());
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
+    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
     assert!(ir.model.features.is_empty());
     assert!(transfer.consumed_records().is_empty());
 }
@@ -8105,7 +8105,7 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
     );
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
+    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
     assert!(ir.model.features.is_empty());
     assert!(ir.model.sketches.is_empty());
@@ -8136,7 +8136,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         let native = crate::native::CatiaNative::decode(&bytes);
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-        let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
+        let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
         assert!(ir.model.sketches.is_empty());
         assert_eq!(ir.model.features.len(), 1);
@@ -8149,6 +8149,15 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
             transfer.principal_plane_records,
             native.design_objects[0].fields.iter().cloned().collect()
         );
+
+        let mut excluded_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let excluded = crate::design_feature::transfer_design_features(
+            &mut excluded_ir,
+            &native,
+            Some(&std::collections::HashSet::new()),
+        );
+        assert!(excluded_ir.model.features.is_empty());
+        assert!(excluded.consumed_records().is_empty());
     }
 }
 
@@ -8188,7 +8197,7 @@ fn mixed_or_payload_bearing_principal_plane_fields_do_not_transfer() {
         let native = crate::native::CatiaNative::decode(&bytes);
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
 
-        let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
+        let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
         assert!(ir.model.features.is_empty());
         assert!(transfer.principal_plane_records.is_empty());
@@ -13008,18 +13017,16 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
 fn decode_transfers_a_closed_formula_with_bare_symbols() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
     let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
-                4,
-                false,
-                &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
-                "LENGTH",
-                Some(33.0),
-                "#1_-2mm",
-            )),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .expect("decode bare-symbol formula");
     let [input, output] = decoded.ir.model.parameters.as_slice() else {
         panic!("closed bare-symbol formula parameters")
@@ -13029,6 +13036,18 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
     assert_eq!(output.expression, "#1_-2mm");
     assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut excluded_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::Annotations::default();
+    let excluded = crate::formula::transfer_parameters(
+        &mut excluded_ir,
+        &native,
+        &mut annotations,
+        Some(&std::collections::HashSet::new()),
+    );
+    assert!(excluded_ir.model.parameters.is_empty());
+    assert!(excluded.consumed_object_records.is_empty());
 }
 
 #[test]
@@ -13076,7 +13095,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
-            && loss.message.contains("4 field record(s)")
+            && loss.message.contains("4 modeling-scope field record(s)")
     }));
 }
 
