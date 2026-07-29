@@ -3909,6 +3909,17 @@ pub(crate) fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
         .collect()
 }
 
+/// Read every structurally complete parameter incidence independently of
+/// curve, edge, and topology resolution.
+pub(crate) fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidence> {
+    records(bytes)
+        .into_iter()
+        .filter_map(|record| {
+            parameter_incidence(&record).map(|incidence| (record.object_id, incidence))
+        })
+        .collect()
+}
+
 /// Read each face's leading surface reference independently of its loop grammar.
 pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     records(bytes)

@@ -236,6 +236,10 @@ current scores require those matrices and representative fixtures.
   graph retains the roster identity and exact control; decode coverage counts
   the two structurally typed controls independently, including when no topology
   graph closes.
+  Object-stream parameter incidences retain the count-aligned curve references,
+  finite stations, and compact controls independently of curve and edge
+  resolution. Decode coverage counts complete incidences and their members,
+  including when no topology graph closes.
   Object-stream class-`18` pcurves require one complete finite line production:
   general parametric, constant-U, or constant-V. Object-stream class-`19`
   pcurves require the complete finite arc-length circle grammar. Both transfer

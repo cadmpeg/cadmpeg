@@ -14050,6 +14050,10 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         &[0x85, 0x81, 0xe9, 0x83, 0x84, 0x85, 0x21],
     );
     append_b5_record(&mut stream, 0x5d, 105, &[0x81, 0x86, 0x04]);
+    let mut incidence_payload = vec![0x81, 0x89, 0x81];
+    incidence_payload.extend_from_slice(&le_f64(0.0));
+    incidence_payload.push(0x81);
+    append_b5_record(&mut stream, 0x06, 4, &incidence_payload);
     assert!(crate::families::b5::graph::parse(&stream).is_none());
     assert_eq!(
         crate::families::b5::graph::typed_face_records(&stream).len(),
@@ -14069,6 +14073,10 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     );
     assert_eq!(
         crate::families::b5::graph::typed_class_21_pcurves(&stream).len(),
+        1
+    );
+    assert_eq!(
+        crate::families::b5::graph::typed_parameter_incidences(&stream).len(),
         1
     );
 
@@ -14104,6 +14112,14 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     );
     assert_eq!(
         result.report.coverage["typed_object_stream_class_21_pcurve_suffix_scalar_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["typed_object_stream_parameter_incidence_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["typed_object_stream_parameter_incidence_member_count"],
         1
     );
 }

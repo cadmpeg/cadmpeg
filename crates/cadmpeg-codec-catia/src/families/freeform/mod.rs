@@ -151,6 +151,12 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     });
     let typed_class_21_pcurve_count =
         crate::families::b5::graph::typed_class_21_pcurves(&scan.data).len();
+    let typed_parameter_incidences =
+        crate::families::b5::graph::typed_parameter_incidences(&scan.data);
+    let typed_parameter_incidence_member_count = typed_parameter_incidences
+        .values()
+        .map(|incidence| incidence.curves.len())
+        .sum();
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
@@ -336,6 +342,16 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         coverage.insert(
             "typed_object_stream_class_21_pcurve_suffix_scalar_count".to_string(),
             typed_class_21_pcurve_count,
+        );
+    }
+    if !typed_parameter_incidences.is_empty() {
+        coverage.insert(
+            "typed_object_stream_parameter_incidence_count".to_string(),
+            typed_parameter_incidences.len(),
+        );
+        coverage.insert(
+            "typed_object_stream_parameter_incidence_member_count".to_string(),
+            typed_parameter_incidence_member_count,
         );
     }
     Some(FamilyOutput {
