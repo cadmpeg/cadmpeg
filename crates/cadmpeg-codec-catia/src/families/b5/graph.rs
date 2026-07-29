@@ -3104,36 +3104,25 @@ fn parse_sphere_great_circle_pcurve(
     let [chart_scale, slope, reciprocal_scale, phase, zero1] =
         line_values::<5>(&record.payload, position + 1)?;
 
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= 1e-12 * left.abs().max(right.abs()).max(1.0)
-    };
     let surface_u_bounds = azimuth_range.map(|angle| chart_scale * angle);
-    let contains = |outer: [f64; 2], inner: [f64; 2]| {
-        let scale = outer
-            .into_iter()
-            .chain(inner)
-            .map(f64::abs)
-            .fold(1.0, f64::max);
-        let tolerance = 1e-12 * scale;
-        inner[0] >= outer[0] - tolerance && inner[1] <= outer[1] + tolerance
-    };
     (direction.abs() == 1.0
         && zero0 == 0.0
         && zero1 == 0.0
         && chart_scale > 0.0
         && u0 < u1
-        && close(chart_scale, *sphere_chart_scale)
-        && close(reciprocal_scale, -direction / chart_scale)
-        && contains(surface_u_bounds, [u0, u1])
-        && close(v0, *chart_origin)
-        && close(v1, chart_origin + std::f64::consts::TAU * chart_scale))
-    .then_some(B5SphereGreatCirclePcurve {
-        chart_bounds: [[u0, u1], [v0, v1]],
-        chart_shift,
-        chart_scale,
-        slope,
-        phase,
-    })
+        && chart_scale == *sphere_chart_scale
+        && reciprocal_scale == -direction / chart_scale
+        && u0 >= surface_u_bounds[0]
+        && u1 <= surface_u_bounds[1]
+        && v0 == *chart_origin
+        && v1 == chart_origin + std::f64::consts::TAU * chart_scale)
+        .then_some(B5SphereGreatCirclePcurve {
+            chart_bounds: [[u0, u1], [v0, v1]],
+            chart_shift,
+            chart_scale,
+            slope,
+            phase,
+        })
 }
 
 fn circle_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
@@ -5001,6 +4990,26 @@ mod tests {
         outside_surface_chart.payload[2..10].copy_from_slice(&(-1.0_f64).to_le_bytes());
         assert_eq!(
             parse_sphere_great_circle_pcurve(&outside_surface_chart, &sphere),
+            None
+        );
+
+        let mut approximate_reciprocal = outside_surface_chart.clone();
+        approximate_reciprocal.payload[2..10].copy_from_slice(&(chart_scale * 0.25).to_le_bytes());
+        let reciprocal_offset = 2 + 32 + 2 + 24 + 1 + 16;
+        approximate_reciprocal.payload[reciprocal_offset..reciprocal_offset + 8]
+            .copy_from_slice(&f64::from_bits((1.0 / chart_scale).to_bits() + 1).to_le_bytes());
+        assert_eq!(
+            parse_sphere_great_circle_pcurve(&approximate_reciprocal, &sphere),
+            None
+        );
+
+        let mut approximate_chart_scale = outside_surface_chart;
+        approximate_chart_scale.payload[2..10].copy_from_slice(&(chart_scale * 0.25).to_le_bytes());
+        let scale_offset = 2 + 32 + 2 + 24 + 1;
+        approximate_chart_scale.payload[scale_offset..scale_offset + 8]
+            .copy_from_slice(&f64::from_bits(chart_scale.to_bits() + 1).to_le_bytes());
+        assert_eq!(
+            parse_sphere_great_circle_pcurve(&approximate_chart_scale, &sphere),
             None
         );
     }

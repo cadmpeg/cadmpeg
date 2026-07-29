@@ -195,6 +195,10 @@ current scores require those matrices and representative fixtures.
   Bézier grammar, complete finite suffix, and positive scalar domain.
   Object-stream class-`1a` pcurves require the exact circular diameter-period
   grammar and transfer as rational quadratic arcs over their stored intervals.
+  Object-stream class-`1d` pcurves require the complete sphere great-circle
+  grammar, exact redundant chart relations, and a support resolving to the
+  exact class-`2a` sphere chart. They transfer as analytic spherical
+  great-circle pcurves and exact model-space circles.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.
