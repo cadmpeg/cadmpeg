@@ -828,8 +828,17 @@ pub struct B2Class25Descriptor {
     pub values: Vec<f64>,
 }
 
+fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
+    let span = range[1] - range[0];
+    if !span.is_finite() || span <= 0.0 {
+        return false;
+    }
+    let tolerance = 1e-6 * span;
+    range[0] - tolerance <= value && value <= range[1] + tolerance
+}
+
 pub(crate) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
-    if !(cone.slant_range[0] - 1e-6..=cone.slant_range[1] + 1e-6).contains(&uv[1]) {
+    if !parameter_in_closed_range(uv[1], cone.slant_range) {
         return None;
     }
     let phi = uv[0] / cone.angular_scale;
@@ -857,8 +866,8 @@ pub(crate) fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<P
     else {
         return None;
     };
-    if !(cylinder.u_range[0] - 1e-6..=cylinder.u_range[1] + 1e-6).contains(&uv[0])
-        || !(cylinder.v_range[0] - 1e-6..=cylinder.v_range[1] + 1e-6).contains(&uv[1])
+    if !parameter_in_closed_range(uv[0], cylinder.u_range)
+        || !parameter_in_closed_range(uv[1], cylinder.v_range)
     {
         return None;
     }

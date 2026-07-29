@@ -657,6 +657,26 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
 }
 
 #[test]
+fn analytic_point_lifts_bound_tiny_parameter_domains_by_span() {
+    let tiny = 1e-200_f64;
+    let mut cylinder = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream()).remove(0);
+    cylinder.u_range = [0.0, tiny];
+    cylinder.v_range = [0.0, tiny];
+    assert!(crate::families::b2::records::b2_cylinder_point(&cylinder, [tiny, tiny]).is_some());
+    assert!(
+        crate::families::b2::records::b2_cylinder_point(&cylinder, [2.0 * tiny, tiny]).is_none()
+    );
+    assert!(
+        crate::families::b2::records::b2_cylinder_point(&cylinder, [tiny, 2.0 * tiny]).is_none()
+    );
+
+    let mut cone = crate::families::b2::records::b2_cones(&b2_cone_stream()).remove(0);
+    cone.slant_range = [0.0, tiny];
+    assert!(crate::families::b2::records::b2_cone_point(&cone, [0.0, tiny]).is_some());
+    assert!(crate::families::b2::records::b2_cone_point(&cone, [0.0, 2.0 * tiny]).is_none());
+}
+
+#[test]
 fn consolidated_cylinder_parser_reads_width2_frame() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b3_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
