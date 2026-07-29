@@ -8065,9 +8065,9 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             &BTreeMap::from([(7, [-4.0, 2.0]), (8, [6.0, 2.0])]),
             &reference_line,
         ),
-        Some(SketchGeometry::Line {
-            start: Point2::new(-4.0, 2.0),
-            end: Point2::new(6.0, 2.0),
+        Some(SketchGeometry::ReferenceLine {
+            origin: Point2::new(-4.0, 2.0),
+            direction: Point2::new(10.0, 0.0),
         })
     );
     assert_eq!(

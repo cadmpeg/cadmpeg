@@ -2184,10 +2184,11 @@ fn section_reference_line_geometry(
         .chain(end)
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    ((end[0] - start[0]).hypot(end[1] - start[1]) > 1e-12 * scale).then_some(())?;
-    Some(SketchGeometry::Line {
-        start: Point2::new(start[0], start[1]),
-        end: Point2::new(end[0], end[1]),
+    let direction = [end[0] - start[0], end[1] - start[1]];
+    (direction[0].hypot(direction[1]) > 1e-12 * scale).then_some(())?;
+    Some(SketchGeometry::ReferenceLine {
+        origin: Point2::new(start[0], start[1]),
+        direction: Point2::new(direction[0], direction[1]),
     })
 }
 
