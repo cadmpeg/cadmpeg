@@ -311,10 +311,13 @@ current scores require those matrices and representative fixtures.
   its parameter origin when the wrapper interval, native tail span, and
   extrusion V span agree. Class-`2c` controls `05 11` map four uniform
   class-`21` knot spans onto one V interval by an exact affine
-  reparameterization. For a class-`30`
-  construction, the class-`14` result directrix validates the result carrier
-  against the source extrusion and signed surface distance; the neutral surface
-  offset retains the defining source extrusion directly. Face-local class-`30`
+  reparameterization. Controls `01 09` and `01 15` use the class-`14` result
+  interval as V bounds only when at least one class-`30` kind-`21` construction
+  names the carrier and every such construction matches the source directrix
+  identity, source extrusion, signed distance, plane-normal direction, and both
+  result-chart bound pairs. The class-`14` source and result intervals define an
+  affine parameter map. The neutral surface offset retains the defining source
+  extrusion directly. Face-local class-`30`
   analytic offsets also resolve from length-closed surface frames when their
   result carrier, source carrier, kind code, and signed distance equation agree,
   without requiring the surrounding topology run to close.
