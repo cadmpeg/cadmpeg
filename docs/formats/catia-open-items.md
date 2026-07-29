@@ -12,6 +12,9 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 ## Design intent
 
+- The relation between application-specific `CATFeatCont` object graphs and the
+  core `CATPrtCont` design history is unresolved. Container class names and
+  structural owner groups do not establish shared feature authorship.
 - The semantic roles of the references, fixed-width words, and control bytes in inline `7C09` bodies are unresolved.
 - The entity-identity binding from compound formula-instance roles such as `expression`, ordered inputs, and `paramout` to parser-version relation-expression and parameter entities is unresolved. Record adjacency and repeated compact value-packet selectors do not establish incidence.
 - The referents of nonlocal `body` and `param` selectors on legacy typed relations are unresolved. The selectors do not use the containing legacy run's entity-identity space.

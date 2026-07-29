@@ -1809,7 +1809,7 @@ fn finish_decode(
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
-            message: "CATIA outer declarations do not unambiguously select any object graph physically contained by a declared part or application modeling stream; modeling feature, formula, sketch, constraint, configuration, and history authorship remains unresolved.".to_string(),
+            message: "CATIA outer declarations do not unambiguously select one object graph physically contained by the declared CATPrtCont stream; modeling feature, formula, sketch, constraint, configuration, and history authorship remains unresolved.".to_string(),
             provenance: None,
         });
     }
@@ -1863,12 +1863,6 @@ fn modeling_graph_scope(
     has_outer_declarations: bool,
     graphs: &[CatiaObjectGraph],
 ) -> Option<HashSet<String>> {
-    const MODELING_CONTAINERS: &[&str] = &[
-        "CATPrtCont",
-        "CATSm_Nom_User_Container",
-        "CATSmd_Nom_User_Container",
-    ];
-
     if !has_outer_declarations {
         return None;
     }
@@ -1878,7 +1872,7 @@ fn modeling_graph_scope(
         graph
             .outer_container
             .as_ref()
-            .is_some_and(|container| MODELING_CONTAINERS.contains(&container.class_name.as_str()))
+            .is_some_and(|container| container.class_name == "CATPrtCont")
     }) {
         let container = graph
             .outer_container
@@ -1936,7 +1930,7 @@ mod tests {
     }
 
     #[test]
-    fn modeling_scope_includes_part_and_application_feature_graphs() {
+    fn modeling_scope_includes_only_the_declared_part_graph() {
         let graphs = vec![
             graph("part-graph", "part", "CATPrtCont"),
             graph("shape-graph", "shape", "CATSm_Nom_User_Container"),
@@ -1946,35 +1940,25 @@ mod tests {
 
         assert_eq!(
             modeling_graph_scope(true, &graphs),
-            Some(HashSet::from([
-                "part-graph".to_string(),
-                "shape-graph".to_string(),
-                "design-graph".to_string(),
-            ]))
+            Some(HashSet::from(["part-graph".to_string()]))
         );
     }
 
     #[test]
-    fn modeling_scope_accepts_empty_part_stream_with_application_graphs() {
+    fn modeling_scope_does_not_promote_application_extension_graphs() {
         let graphs = vec![
             graph("shape-graph", "shape", "CATSm_Nom_User_Container"),
             graph("design-graph", "design", "CATSmd_Nom_User_Container"),
         ];
 
-        assert_eq!(
-            modeling_graph_scope(true, &graphs),
-            Some(HashSet::from([
-                "shape-graph".to_string(),
-                "design-graph".to_string(),
-            ]))
-        );
+        assert_eq!(modeling_graph_scope(true, &graphs), Some(HashSet::new()));
     }
 
     #[test]
-    fn modeling_scope_rejects_multiple_graphs_in_one_modeling_stream() {
+    fn modeling_scope_rejects_multiple_graphs_in_one_part_stream() {
         let graphs = vec![
-            graph("first", "shape", "CATSm_Nom_User_Container"),
-            graph("second", "shape", "CATSm_Nom_User_Container"),
+            graph("first", "part", "CATPrtCont"),
+            graph("second", "part", "CATPrtCont"),
         ];
 
         assert_eq!(modeling_graph_scope(true, &graphs), Some(HashSet::new()));
