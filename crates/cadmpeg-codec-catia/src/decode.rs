@@ -74,7 +74,6 @@ fn finish_decode(
         &design_feature_transfer.features_by_design_object,
         &mut annotations,
     );
-    design_feature::project_feature_source_content(&mut ir, &native);
     let object_record_count: usize = native
         .object_graphs
         .iter()

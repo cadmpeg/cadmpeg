@@ -65,11 +65,7 @@ current scores require those matrices and representative fixtures.
   expressions remain native when their formula-instance incidence does not
   resolve.
   Parameters structurally contained by a transferred feature retain that
-  feature ownership. Structurally owned sketches are ordered after their
-  transferred sketch ancestors independently of field serialization; cyclic
-  owner sets remain unparented. Child features and parameters share one
-  object-field-ordered source-content sequence; other parameters remain
-  document-scoped.
+  feature ownership; other parameters remain document-scoped.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not
   transfer as values of either type.
