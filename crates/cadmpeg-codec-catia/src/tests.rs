@@ -11411,8 +11411,34 @@ fn native_namespace_types_and_validates_formula_relations() {
         formula.parameter_dependencies,
         [crate::native::CatiaFormulaParameterDependency {
             symbol: "#1_ /2".to_string(),
-            parameter: native.entity_records[2].id.clone(),
+            candidates: vec![native.entity_records[2].id.clone()],
         }]
+    );
+    let expected_formula = formula.clone();
+
+    let mut version_205_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_205_namespace)
+        .expect("store current formula dependency candidates");
+    let mut version_205_entities: Vec<crate::native::CatiaEntityRecord> = version_205_namespace
+        .arena_as("entity_records")
+        .expect("load version 205 entity records");
+    version_205_entities[0]
+        .formula_relation
+        .as_mut()
+        .expect("complete formula relation")
+        .parameter_dependencies[0]
+        .candidates
+        .clear();
+    version_205_namespace
+        .set_arena("entity_records", &version_205_entities)
+        .expect("store version 205 entity records");
+    version_205_namespace.version = 205;
+    let migrated = crate::native::CatiaNative::load(&version_205_namespace)
+        .expect("migrate version 205 formula dependency candidates");
+    assert_eq!(
+        migrated.entity_records[0].formula_relation,
+        Some(expected_formula)
     );
 
     let mut malformed = native;
@@ -11448,13 +11474,34 @@ fn formula_relation_requires_a_complete_relation_expression_target() {
 fn formula_parameter_dependency_requires_a_unique_binding() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, true));
-
-    assert!(native.entity_records[0]
+    let dependency = &native.entity_records[0]
         .formula_relation
         .as_ref()
         .expect("complete formula relation")
-        .parameter_dependencies
-        .is_empty());
+        .parameter_dependencies[0];
+
+    assert_eq!(dependency.symbol, "#1_ /2");
+    assert_eq!(dependency.candidates.len(), 2);
+}
+
+#[test]
+fn formula_parameter_dependency_retains_an_unmatched_symbol() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#2_ /2", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_ /2-2mm",
+    ));
+    let dependency = &native.entity_records[0]
+        .formula_relation
+        .as_ref()
+        .expect("complete formula relation")
+        .parameter_dependencies[0];
+
+    assert_eq!(dependency.symbol, "#1_ /2");
+    assert!(dependency.candidates.is_empty());
 }
 
 #[test]
@@ -11476,7 +11523,7 @@ fn formula_relation_resolves_bare_expression_symbols() {
             .parameter_dependencies,
         [crate::native::CatiaFormulaParameterDependency {
             symbol: "#1_".to_string(),
-            parameter: native.entity_records[2].id.clone(),
+            candidates: vec![native.entity_records[2].id.clone()],
         }]
     );
 }
@@ -12986,6 +13033,22 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
         .expect("decode ambiguous formula");
 
     assert!(decoded.ir.model.parameters.is_empty());
+    assert_eq!(
+        decoded.report.coverage["decoded_formula_parameter_dependency_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_formula_parameter_dependency_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_formula_parameter_dependency_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["ambiguous_formula_parameter_dependency_count"],
+        1
+    );
 }
 
 #[test]

@@ -63,7 +63,9 @@ current scores require those matrices and representative fixtures.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, evaluation state, expression, and dependency identities resolve
   exactly. Typed unset inputs transfer independently while preventing formula
-  evaluation. Every transferred numeric parameter retains its canonical
+  evaluation. Every formula symbol occurrence retains all same-graph parameter
+  binding candidates; exactly one candidate resolves the dependency. Every
+  transferred numeric parameter retains its canonical
   `LENGTH`, `ANGLE`, `Real`, or `Integer` value type independently of whether
   an evaluated value exists.
   Placeholder-state, Boolean-prefixed parser-version, unprefixed

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 205;
+pub const CATIA_NATIVE_VERSION: u32 = 206;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -29,6 +29,8 @@ const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
 const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
 #[cfg(test)]
 const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 205;
+#[cfg(test)]
+const CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION: u32 = 206;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1303,13 +1305,14 @@ pub struct CatiaFormulaRelation {
     pub parameter_dependencies: Vec<CatiaFormulaParameterDependency>,
 }
 
-/// One unambiguous named parameter selected by a formula expression symbol.
+/// One formula expression symbol and every matching named parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaFormulaParameterDependency {
     /// Exact expression-local symbol occurrence.
     pub symbol: String,
-    /// Entity record carrying the uniquely matching named parameter binding.
-    pub parameter: String,
+    /// Entity records carrying matching named parameter bindings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<String>,
 }
 
 /// Field order used by a repeated-reference schema preamble.
@@ -2769,15 +2772,13 @@ fn formula_relation(
     let (expression, source) = relation_expressions.get(expression_object)?;
     let parameter_dependencies = relation_symbols(source)
         .into_iter()
-        .filter_map(|symbol| {
-            let parameters = parameter_bindings.get(graph_id)?.get(&symbol)?;
-            let [parameter] = parameters.as_slice() else {
-                return None;
-            };
-            Some(CatiaFormulaParameterDependency {
-                symbol,
-                parameter: parameter.clone(),
-            })
+        .map(|symbol| {
+            let candidates = parameter_bindings
+                .get(graph_id)
+                .and_then(|bindings| bindings.get(&symbol))
+                .cloned()
+                .unwrap_or_default();
+            CatiaFormulaParameterDependency { symbol, candidates }
         })
         .collect();
     Some(CatiaFormulaRelation {
@@ -7101,6 +7102,27 @@ impl CatiaNative {
         }
         let (relation_expressions, entities_by_object, parameter_bindings) =
             semantic_entity_indices(&entity_records);
+        if namespace.version < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION {
+            let records_by_id = records
+                .iter()
+                .map(|record| (record.id.as_str(), record))
+                .collect::<HashMap<_, _>>();
+            for entity in &mut entity_records {
+                entity.formula_relation = records_by_id
+                    .get(entity.object_record.as_str())
+                    .and_then(|object| {
+                        formula_relation(
+                            &entity.definition_schema_selections,
+                            &entity.object_graph,
+                            entity.entity_id,
+                            object,
+                            &relation_expressions,
+                            &entities_by_object,
+                            &parameter_bindings,
+                        )
+                    });
+            }
+        }
         for graph in &mut graphs {
             graph.records = records
                 .iter()

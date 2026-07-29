@@ -71,7 +71,11 @@ pub(crate) fn transfer_parameters(
                 all_inputs_complete = false;
                 continue;
             };
-            let Some(entity) = entities.get(dependency.parameter.as_str()) else {
+            let [parameter] = dependency.candidates.as_slice() else {
+                all_inputs_complete = false;
+                continue;
+            };
+            let Some(entity) = entities.get(parameter.as_str()) else {
                 all_inputs_complete = false;
                 continue;
             };
