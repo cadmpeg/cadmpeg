@@ -507,7 +507,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             *head_bytes.first()?
         };
         let head = decode_head(head_bytes);
-        let (owner_ref, owner_literal, class_ref, storage_ref) = head_roles(lead, &head);
+        let roles = head_roles(lead, &head);
         let repeated_reference_suffix = repeated_reference_suffix(&payload);
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
@@ -517,11 +517,11 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             lead,
             head,
             inline_body,
-            owner_ref,
-            owner_literal,
-            class_ref,
+            owner_ref: roles.owner_ref,
+            owner_literal: roles.owner_literal,
+            class_ref: roles.class_ref,
             class_name: None,
-            storage_ref,
+            storage_ref: roles.storage_ref,
             payload,
             repeated_reference_suffix,
             subtype,
@@ -536,10 +536,15 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
     })
 }
 
-pub(crate) fn head_roles(
-    lead: u8,
-    head: &[HeadToken],
-) -> (Option<u32>, Option<u8>, Option<u32>, Option<u32>) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HeadRoles {
+    pub(crate) owner_ref: Option<u32>,
+    pub(crate) owner_literal: Option<u8>,
+    pub(crate) class_ref: Option<u32>,
+    pub(crate) storage_ref: Option<u32>,
+}
+
+pub(crate) fn head_roles(lead: u8, head: &[HeadToken]) -> HeadRoles {
     let separator_roles = matches!(head.get(1), Some(HeadToken::Separator));
     let extended_role_count = extended_compact_role_count(head);
     let null_lane_roles = matches!(
@@ -640,12 +645,22 @@ pub(crate) fn head_roles(
         let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
         let owner_ref = storage_ref.and_then(|_| role_reference(owner_index));
         let owner_literal = storage_ref.and_then(|_| role_literal(owner_index));
-        (owner_ref, owner_literal, class_ref, storage_ref)
+        HeadRoles {
+            owner_ref,
+            owner_literal,
+            class_ref,
+            storage_ref,
+        }
     } else {
         let owner_ref = role_reference(owner_index);
         let class_ref = owner_ref.and_then(|_| role_reference(class_index));
         let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
-        (owner_ref, None, class_ref, storage_ref)
+        HeadRoles {
+            owner_ref,
+            owner_literal: None,
+            class_ref,
+            storage_ref,
+        }
     }
 }
 

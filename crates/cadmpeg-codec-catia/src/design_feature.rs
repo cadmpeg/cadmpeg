@@ -541,7 +541,7 @@ fn bound_declaration(
     owner_entity_id: u32,
 ) -> bool {
     record.design_object.as_deref() == Some(design_object)
-        && record.owner_entity_id == Some(owner_entity_id)
+        && record.owner_entity_id() == Some(owner_entity_id)
 }
 
 fn complete_empty_declaration(

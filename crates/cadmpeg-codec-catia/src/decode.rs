@@ -525,7 +525,7 @@ fn finish_decode(
         .collect::<HashMap<_, _>>();
     let unassigned_owner_slot_count = object_records_by_id
         .values()
-        .filter(|record| record.unassigned_owner_slot.is_some())
+        .filter(|record| record.has_unassigned_owner())
         .count();
     let structurally_owned_records = native
         .design_objects
@@ -560,7 +560,7 @@ fn finish_decode(
             record.definition_chain_value.is_some()
                 && object_records_by_id
                     .get(record.object_record.as_str())
-                    .is_some_and(|record| record.unassigned_owner_slot.is_some())
+                    .is_some_and(|record| record.has_unassigned_owner())
         })
         .count();
     let structurally_owned_definition_chain_evaluation_count = native
@@ -589,7 +589,7 @@ fn finish_decode(
                 )
             }) && object_records_by_id
                 .get(record.object_record.as_str())
-                .is_some_and(|record| record.unassigned_owner_slot.is_some())
+                .is_some_and(|record| record.has_unassigned_owner())
         })
         .count();
     let transferred_formula_design_records = formula_transfer

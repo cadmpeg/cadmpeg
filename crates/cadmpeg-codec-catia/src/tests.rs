@@ -8028,8 +8028,9 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
     native.object_graphs[0].records[0].class_entry =
         Some(definition_value.definition.entry.clone());
     native.object_graphs[0].records[0].class_name = Some("CircPattern".to_string());
-    native.object_graphs[0].records[0].owner_entity_id =
-        Some(native.design_objects[0].owner_entity_id);
+    native.object_graphs[0].records[0].owner = Some(crate::native::CatiaObjectOwner::Entity(
+        native.design_objects[0].owner_entity_id,
+    ));
     native.object_graphs[0].records[0].storage_ref = None;
     native.object_graphs[0].records[0].references.clear();
 
@@ -8165,8 +8166,9 @@ fn unanimous_complete_rectangular_pattern_definitions_transfer_feature_identity(
     native.object_graphs[0].records[0].class_entry =
         Some(definition_value.definition.entry.clone());
     native.object_graphs[0].records[0].class_name = Some("RectPattern".to_string());
-    native.object_graphs[0].records[0].owner_entity_id =
-        Some(native.design_objects[0].owner_entity_id);
+    native.object_graphs[0].records[0].owner = Some(crate::native::CatiaObjectOwner::Entity(
+        native.design_objects[0].owner_entity_id,
+    ));
     native.object_graphs[0].records[0].storage_ref = None;
     native.object_graphs[0].records[0].references.clear();
 
@@ -9016,8 +9018,8 @@ fn native_design_objects_preserve_unresolved_owner_identities() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let graph = &native.object_graphs[0];
 
-    assert_eq!(graph.records[0].owner_entity_id, Some(0));
-    assert_eq!(graph.records[1].owner_entity_id, Some(4));
+    assert_eq!(graph.records[0].owner_entity_id(), Some(0));
+    assert_eq!(graph.records[1].owner_entity_id(), Some(4));
     assert!(graph
         .records
         .iter()
@@ -9599,11 +9601,11 @@ fn decode_retains_outer_object_graph_order_and_references() {
     let graph = &native.object_graphs[0];
     assert_eq!(graph.records.len(), 2);
     assert_eq!(graph.records[0].ordinal, 0);
-    assert_eq!(graph.records[0].owner_entity_id, Some(2));
+    assert_eq!(graph.records[0].owner_entity_id(), Some(2));
     assert_eq!(graph.records[0].class_ref, Some(3));
     assert_eq!(graph.records[0].storage_ref, Some(4));
     assert_eq!(graph.records[1].ordinal, 1);
-    assert_eq!(graph.records[1].owner_entity_id, Some(2));
+    assert_eq!(graph.records[1].owner_entity_id(), Some(2));
     assert_eq!(graph.records[1].class_ref, Some(4));
     assert_eq!(native.design_objects.len(), 1);
     let object = &native.design_objects[0];
@@ -11842,13 +11844,16 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
         crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
             .expect("load literal owner slot");
     let record = &native.object_graphs[0].records[0];
-    assert_eq!(record.owner_entity_id, None);
-    assert_eq!(record.unassigned_owner_slot, Some(66));
+    assert_eq!(
+        record.owner,
+        Some(crate::native::CatiaObjectOwner::UnassignedLiteral(66))
+    );
     assert!(record.design_object.is_none());
     assert!(native.design_objects.is_empty());
 
     let mut malformed = native.clone();
-    malformed.object_graphs[0].records[0].unassigned_owner_slot = Some(67);
+    malformed.object_graphs[0].records[0].owner =
+        Some(crate::native::CatiaObjectOwner::UnassignedLiteral(67));
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
@@ -11865,16 +11870,16 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
     let mut previous_records: Vec<crate::native::CatiaObjectRecord> = previous_namespace
         .arena_as("object_graph_records")
         .expect("load stored object records");
-    previous_records[0].unassigned_owner_slot = None;
+    previous_records[0].owner = None;
     previous_namespace
         .set_arena("object_graph_records", &previous_records)
         .expect("store previous object records");
-    previous_namespace.version = 196;
+    previous_namespace.version = 197;
     let migrated = crate::native::CatiaNative::load(&previous_namespace)
         .expect("migrate previous literal owner slot");
     assert_eq!(
-        migrated.object_graphs[0].records[0].unassigned_owner_slot,
-        Some(66)
+        migrated.object_graphs[0].records[0].owner,
+        Some(crate::native::CatiaObjectOwner::UnassignedLiteral(66))
     );
 }
 
