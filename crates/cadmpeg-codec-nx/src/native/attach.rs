@@ -275,7 +275,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(179);
+    namespace.version = namespace.version.max(180);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -5236,7 +5236,7 @@ mod tests {
             named_point: "named-point".to_string(),
             source_offsets: vec![52],
         };
-        let mut ir = CadIr::empty(Default::default());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let mut annotations = AnnotationBuilder::new();
         let stream = annotations.stream("nx:container");
         let sketch = super::attach_solved_sketch_points(
@@ -5256,7 +5256,7 @@ mod tests {
             }
         ));
 
-        let mut rejected_ir = CadIr::empty(Default::default());
+        let mut rejected_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let mut rejected_annotations = AnnotationBuilder::new();
         let rejected_stream = rejected_annotations.stream("nx:container");
         assert!(super::attach_solved_sketch_points(

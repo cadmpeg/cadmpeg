@@ -468,7 +468,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         if let Some(header) = census.transmit_header {
             let bytes = &stream.inflated[..header.end];
             events.transmit_headers.push(ParasolidDeltasTransmitHeader {
-                id: format!("nx:s{stream_ordinal}:deltas-transmit-header"),
+                id: format!("nx:s{stream_ordinal}:deltas-transmit-header#0"),
                 stream_ordinal: stream_ordinal as u32,
                 description: header.description,
                 schema: header.schema,
@@ -2106,10 +2106,14 @@ pub fn parasolid_attribute_numeric_class_uses(
             else {
                 return None;
             };
+            if class_use.stream_ordinal != numeric_use.stream_ordinal {
+                return None;
+            }
+            let (_, class_key) = class_use.id.rsplit_once('#')?;
             Some(ParasolidAttributeNumericClassUse {
                 id: format!(
-                    "{}:numeric-class-use#{}",
-                    class_use.id, numeric_use.reference_ordinal
+                    "nx:s{}:attribute-numeric-class-use#{class_key}-{}",
+                    numeric_use.stream_ordinal, numeric_use.reference_ordinal
                 ),
                 stream_ordinal: numeric_use.stream_ordinal,
                 attribute_class_use: class_use.id.clone(),
@@ -2330,6 +2334,7 @@ mod tests {
 
         assert_eq!(events.transmit_headers.len(), 1);
         let header = &events.transmit_headers[0];
+        assert_eq!(header.id, "nx:s0:deltas-transmit-header#0");
         assert_eq!(header.description.as_bytes(), description);
         assert_eq!(header.schema.as_bytes(), schema);
         assert_eq!(header.references, [1063, 1064]);
@@ -2638,7 +2643,7 @@ mod tests {
     #[test]
     fn numeric_attribute_uses_retain_their_resolved_class() {
         let class_use = ParasolidAttributeClassUse {
-            id: "class-use".into(),
+            id: "nx:s2:attribute-class-use#class-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
             class_discriminator: 8,
@@ -2662,7 +2667,11 @@ mod tests {
         );
 
         assert_eq!(uses.len(), 1);
-        assert_eq!(uses[0].attribute_class_use, "class-use");
+        assert_eq!(uses[0].id, "nx:s2:attribute-numeric-class-use#class-use-5");
+        assert_eq!(
+            uses[0].attribute_class_use,
+            "nx:s2:attribute-class-use#class-use"
+        );
         assert_eq!(uses[0].attribute_definition, "definition");
         assert_eq!(uses[0].numeric_use, "numeric-use");
         assert_eq!(uses[0].reference_ordinal, 5);
@@ -2676,10 +2685,21 @@ mod tests {
             definition_xmt: 11,
             attribute_definition: "other-definition".into(),
         };
-        assert!(
-            parasolid_attribute_numeric_class_uses(&[class_use, duplicate], &[numeric_use])
-                .is_empty()
-        );
+        assert!(parasolid_attribute_numeric_class_uses(
+            &[class_use, duplicate.clone()],
+            std::slice::from_ref(&numeric_use)
+        )
+        .is_empty());
+
+        let wrong_stream = ParasolidAttributeClassUse {
+            stream_ordinal: 3,
+            ..duplicate
+        };
+        assert!(parasolid_attribute_numeric_class_uses(
+            &[wrong_stream],
+            std::slice::from_ref(&numeric_use)
+        )
+        .is_empty());
     }
 
     #[test]
