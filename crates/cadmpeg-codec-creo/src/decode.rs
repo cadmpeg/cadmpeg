@@ -30411,15 +30411,23 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             })
             .sum::<usize>(),
     );
-    let decoded_dimension_driven_variable_count = scan
+    let (
+        decoded_dimension_driven_variable_count,
+        decoded_dimension_driven_coordinate_variable_count,
+    ) = scan
         .features
         .definitions
         .iter()
         .filter_map(|definition| definition.variables.as_ref())
         .flat_map(|variables| &variables.rows)
         .filter(|row| row.dimension_driven)
-        .count();
-    let resolved_dimension_driven_variable_count = scan
+        .fold((0usize, 0usize), |(all, coordinates), row| {
+            (
+                all + 1,
+                coordinates + usize::from(matches!(row.variable_type, 1 | 2)),
+            )
+        });
+    let resolved_dimension_driven_coordinate_variable_count = scan
         .features
         .definitions
         .iter()
@@ -30444,13 +30452,40 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         decoded_dimension_driven_variable_count,
     );
     coverage.insert(
+        "decoded_feature_dimension_driven_coordinate_variable_count".to_string(),
+        decoded_dimension_driven_coordinate_variable_count,
+    );
+    coverage.insert(
+        "decoded_feature_dimension_driven_other_variable_count".to_string(),
+        decoded_dimension_driven_variable_count
+            .saturating_sub(decoded_dimension_driven_coordinate_variable_count),
+    );
+    coverage.insert(
         "resolved_feature_dimension_driven_variable_count".to_string(),
-        resolved_dimension_driven_variable_count,
+        resolved_dimension_driven_coordinate_variable_count,
+    );
+    coverage.insert(
+        "resolved_feature_dimension_driven_coordinate_variable_count".to_string(),
+        resolved_dimension_driven_coordinate_variable_count,
+    );
+    coverage.insert(
+        "resolved_feature_dimension_driven_other_variable_count".to_string(),
+        0,
     );
     coverage.insert(
         "unresolved_feature_dimension_driven_variable_count".to_string(),
         decoded_dimension_driven_variable_count
-            .saturating_sub(resolved_dimension_driven_variable_count),
+            .saturating_sub(resolved_dimension_driven_coordinate_variable_count),
+    );
+    coverage.insert(
+        "unresolved_feature_dimension_driven_coordinate_variable_count".to_string(),
+        decoded_dimension_driven_coordinate_variable_count
+            .saturating_sub(resolved_dimension_driven_coordinate_variable_count),
+    );
+    coverage.insert(
+        "unresolved_feature_dimension_driven_other_variable_count".to_string(),
+        decoded_dimension_driven_variable_count
+            .saturating_sub(decoded_dimension_driven_coordinate_variable_count),
     );
     coverage.insert(
         "decoded_feature_circle_segment_count".to_string(),
@@ -31430,14 +31465,19 @@ fn build_report(
     let unresolved_dimension_driven_variables =
         count("unresolved_feature_dimension_driven_variable_count");
     if unresolved_dimension_driven_variables != 0 {
+        let unresolved_coordinate_variables =
+            count("unresolved_feature_dimension_driven_coordinate_variable_count");
+        let other_variables = count("unresolved_feature_dimension_driven_other_variable_count");
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_dimension_driven_variables} dimension-driven section solver \
-                 variable(s) retain unresolved exact values because their dimension binding or \
-                 variable-family equation is unresolved."
+                 variable(s) retain unresolved exact values: {unresolved_coordinate_variables} \
+                 coordinate variable(s) lack a complete dimension equation and {other_variables} \
+                 variable(s) have a non-coordinate family whose dimension semantics are \
+                 unresolved."
             ),
             provenance: None,
         });

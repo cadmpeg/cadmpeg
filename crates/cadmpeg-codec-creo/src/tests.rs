@@ -5239,6 +5239,14 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
         0
     );
     assert_eq!(
+        coverage["resolved_feature_dimension_driven_coordinate_variable_count"],
+        0
+    );
+    assert_eq!(
+        coverage["resolved_feature_dimension_driven_other_variable_count"],
+        0
+    );
+    assert_eq!(
         coverage["unresolved_feature_dimension_driven_variable_count"],
         0
     );
@@ -5247,8 +5255,9 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
 #[test]
 fn decode_reports_unresolved_dimension_driven_solver_variables() {
     let mut payload =
-        b"feat_defs_40\0var_arr\0\xf8\x01\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+        b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[1, 7, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f, 0, 1, 3, 0xe2]);
+    payload.extend_from_slice(&[7, 8, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f, 0, 1, 4, 0xe2]);
     let data = build_prt("c", &[("FeatDefs", payload)]);
 
     let result = CreoCodec
@@ -5258,6 +5267,14 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
 
     assert_eq!(
         coverage["decoded_feature_dimension_driven_variable_count"],
+        2
+    );
+    assert_eq!(
+        coverage["decoded_feature_dimension_driven_coordinate_variable_count"],
+        1
+    );
+    assert_eq!(
+        coverage["decoded_feature_dimension_driven_other_variable_count"],
         1
     );
     assert_eq!(
@@ -5265,14 +5282,32 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
         0
     );
     assert_eq!(
+        coverage["resolved_feature_dimension_driven_coordinate_variable_count"],
+        0
+    );
+    assert_eq!(
+        coverage["resolved_feature_dimension_driven_other_variable_count"],
+        0
+    );
+    assert_eq!(
         coverage["unresolved_feature_dimension_driven_variable_count"],
+        2
+    );
+    assert_eq!(
+        coverage["unresolved_feature_dimension_driven_coordinate_variable_count"],
+        1
+    );
+    assert_eq!(
+        coverage["unresolved_feature_dimension_driven_other_variable_count"],
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::LossCategory::Attribute
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
-                "1 dimension-driven section solver variable(s) retain unresolved exact values",
+                "2 dimension-driven section solver variable(s) retain unresolved exact values: 1 \
+                 coordinate variable(s) lack a complete dimension equation and 1 variable(s) \
+                 have a non-coordinate family",
             )
     }));
 }

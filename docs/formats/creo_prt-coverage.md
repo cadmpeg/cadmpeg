@@ -222,11 +222,12 @@ fixtures, claims above L1 remain unproven.
    solver-variable rows separately. It counts
    decoded and transferred section dimensions separately and counts dimensions
    whose scalar values resolve or remain unresolved. It counts decoded section
-   solver variables, dimension-driven sentinel variables, and dimension-driven
-   variables whose exact ordinate resolves through the complete equation system
-   separately.
-   Every unresolved dimension-driven solver variable raises a decode loss
-   note. The map likewise counts decoded, transferred, and evaluated active
+   solver variables and dimension-driven sentinel variables. Dimension-driven
+   variables are partitioned into coordinate types one and two, whose exact
+   ordinate may resolve through the complete equation system, and other
+   solver-variable types whose dimension semantics remain unresolved. Every
+   unresolved dimension-driven solver variable raises a decode loss note. The
+   map likewise counts decoded, transferred, and evaluated active
    curve-equation assignments separately and partitions them by active,
    inactive, and unresolved-conditional state. Prohibited active records and
    their distinct prohibited construct kinds are counted separately, and each
