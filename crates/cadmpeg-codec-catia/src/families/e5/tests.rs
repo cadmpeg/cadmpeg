@@ -32,6 +32,22 @@ fn e5_circle_parser_reads_framed_carrier() {
         surfaces[0].geometry,
         SurfaceGeometry::Cylinder { radius: 2.5, .. }
     ));
+
+    let mut small = e5_circle_stream();
+    small[86..94].copy_from_slice(&f64::MIN_POSITIVE.to_le_bytes());
+    assert_eq!(crate::families::e5::records::e5_circles(&small).len(), 1);
+    assert!(matches!(
+        crate::families::e5::records::e5_surfaces(&small)[0].geometry,
+        SurfaceGeometry::Cylinder {
+            radius: f64::MIN_POSITIVE,
+            ..
+        }
+    ));
+
+    let mut zero = e5_circle_stream();
+    zero[86..94].copy_from_slice(&0.0_f64.to_le_bytes());
+    assert!(crate::families::e5::records::e5_circles(&zero).is_empty());
+    assert!(crate::families::e5::records::e5_surfaces(&zero).is_empty());
 }
 
 #[test]
@@ -222,6 +238,18 @@ fn e5_surface_parser_reads_framed_torus() {
         }
         other => panic!("expected torus, got {other:?}"),
     }
+
+    let mut large = e5_torus_stream();
+    large[110..118].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
+    large[118..126].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
+    assert!(matches!(
+        crate::families::e5::records::e5_surfaces(&large)[0].geometry,
+        SurfaceGeometry::Torus {
+            major_radius: 2_000_000.0,
+            minor_radius: 1_500_000.0,
+            ..
+        }
+    ));
 }
 
 #[test]
