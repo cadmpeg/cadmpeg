@@ -1602,6 +1602,11 @@ identifier under the same arity rules as `segtab` lines.
 A complete saved line whose two endpoints share exactly one section coordinate
 supplies that fixed-coordinate orientation to its connected type-five/type-seven
 line component.
+A `segtab` line whose stored selector, unary type-one/type-two incidence, or
+consistent type-five/type-seven component uniquely fixes one coordinate is an
+unbounded axis-parallel line when both decoded endpoint values for that
+coordinate agree. The other endpoint coordinate may remain unresolved and
+does not define a finite extent.
 For type-three and type-nine point-on-line incidences, that same complete saved
 line coordinate supplies the missing coordinate of the selected `segtab` point.
 For type-zero and type-three coincidence incidences, complete saved endpoint or

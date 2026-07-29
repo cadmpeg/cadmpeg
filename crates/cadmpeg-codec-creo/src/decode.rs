@@ -4161,31 +4161,58 @@ fn section_axis_line_carrier_with_points(
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    let fixed_coordinate = match segment.directions {
+        [Some(0), _, _] => 0,
+        [_, Some(0), _] => 1,
+        _ => return None,
+    };
+    section_fixed_coordinate_line_carrier(variable_points, segment, fixed_coordinate)
+}
+
+fn section_fixed_coordinate_line_carrier(
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+    segment: &crate::feature::FeatureSegment,
+    fixed_coordinate: usize,
+) -> Option<SketchGeometry> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Line && fixed_coordinate < 2)
+        .then_some(())?;
     let endpoint = |id| variable_points.get(&id);
     let [first, second] = segment.point_ids.map(endpoint);
     let (Some(first), Some(second)) = (first, second) else {
         return None;
     };
-    if segment.directions[0] == Some(0) {
-        let (Some(first_u), Some(second_u)) = (first[0], second[0]) else {
-            return None;
-        };
-        let scale = first_u.abs().max(second_u.abs()).max(1.0);
-        ((first_u - second_u).abs() <= 1e-9 * scale).then(|| SketchGeometry::ReferenceLine {
-            origin: Point2::new(first_u, 0.0),
-            direction: Point2::new(0.0, 1.0),
-        })
-    } else if segment.directions[1] == Some(0) {
-        let (Some(first_v), Some(second_v)) = (first[1], second[1]) else {
-            return None;
-        };
-        let scale = first_v.abs().max(second_v.abs()).max(1.0);
-        ((first_v - second_v).abs() <= 1e-9 * scale).then(|| SketchGeometry::ReferenceLine {
-            origin: Point2::new(0.0, first_v),
-            direction: Point2::new(1.0, 0.0),
-        })
+    let (Some(first), Some(second)) = (first[fixed_coordinate], second[fixed_coordinate]) else {
+        return None;
+    };
+    let scale = first.abs().max(second.abs()).max(1.0);
+    ((first - second).abs() <= 1e-9 * scale).then(|| {
+        if fixed_coordinate == 0 {
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(first, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            }
+        } else {
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(0.0, first),
+                direction: Point2::new(1.0, 0.0),
+            }
+        }
+    })
+}
+
+fn section_proven_axis_line_carrier(
+    definition: &crate::feature::FeatureDefinition,
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    if let Some(geometry) = section_axis_line_carrier_with_points(variable_points, segment) {
+        Some(geometry)
     } else {
-        None
+        section_fixed_coordinate_line_carrier(
+            variable_points,
+            segment,
+            section_line_entity_fixed_coordinate(definition, segment.external_id)?,
+        )
     }
 }
 
@@ -4195,7 +4222,7 @@ fn section_axis_reference_line_geometry(
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
     if !section_degenerate_axis_line(definition, segment) {
-        return section_axis_line_carrier_with_points(variable_points, segment);
+        return section_proven_axis_line_carrier(definition, variable_points, segment);
     }
     let fixed_coordinate = usize::try_from(segment.vertical_horizontal?).ok()?;
     let values = segment
@@ -4249,7 +4276,7 @@ fn section_segment_intersection_carrier_with_missing_line(
     ) {
         return Some(SectionIntersectionCarrier { geometry });
     }
-    if let Some(geometry) = section_axis_line_carrier_with_points(variable_points, segment) {
+    if let Some(geometry) = section_proven_axis_line_carrier(definition, variable_points, segment) {
         return Some(SectionIntersectionCarrier { geometry });
     }
     let ([center_u, center_v], radius) = section_arc_carrier(radii, points, segment)

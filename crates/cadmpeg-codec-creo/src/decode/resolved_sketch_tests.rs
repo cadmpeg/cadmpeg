@@ -3623,6 +3623,35 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         ),
         None
     );
+    let mut selector_segment = segment.clone();
+    selector_segment.directions = [None; 3];
+    selector_segment.vertical_horizontal = Some(0);
+    let mut selector_definition = definition.clone();
+    selector_definition.segments = Some(crate::feature::FeatureSegmentTable {
+        declared_count: 1,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![selector_segment.clone()],
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: 0,
+    });
+    assert_eq!(
+        section_axis_reference_line_geometry(
+            &selector_definition,
+            &BTreeMap::from([(7, [Some(2.0), None]), (9, [Some(2.0), Some(8.0)])]),
+            &selector_segment,
+        ),
+        Some(SketchGeometry::ReferenceLine {
+            origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+        })
+    );
     assert_eq!(
         unique_owned_feature_definition(std::slice::from_ref(&definition), 6)
             .map(|matched| matched.id),
