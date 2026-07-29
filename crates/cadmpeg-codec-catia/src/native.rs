@@ -20,13 +20,13 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 199;
+pub const CATIA_NATIVE_VERSION: u32 = 200;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
 const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
 #[cfg(test)]
-const CATIA_ESCAPED_SUFFIX_WORD_VERSION: u32 = 199;
+const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1164,6 +1164,27 @@ pub struct CatiaEntitySuffixEscapedWord {
     pub state: CatiaEntitySuffixEscapedWordState,
 }
 
+/// One complete non-value entity-record suffix framing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaEntitySuffixFraming {
+    /// One escaped fixed-width word followed by an exact state.
+    EscapedWord(CatiaEntitySuffixEscapedWord),
+    /// Standalone token `81 49`.
+    Token8149,
+    /// Standalone fixed frame `FE F6 <payload[16]>`.
+    FixedFeF6 {
+        /// Exact fixed-width payload.
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[schemars(with = "String")]
+        payload: Vec<u8>,
+    },
+    /// One paged compact atom followed by state byte `01`.
+    PagedAtomState01 {
+        /// Decoded compact-atom value.
+        value: u32,
+    },
+}
+
 /// One suffix selector resolved through its graph's source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntitySuffixSchemaSelection {
@@ -1376,9 +1397,9 @@ pub struct CatiaEntityRecord {
     /// Complete typed value production occupying the record suffix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suffix_value: Option<CatiaEntitySuffixValue>,
-    /// Complete escaped-word production occupying the record suffix.
+    /// Complete non-value framing occupying the record suffix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suffix_escaped_word: Option<CatiaEntitySuffixEscapedWord>,
+    pub suffix_framing: Option<CatiaEntitySuffixFraming>,
     /// Fixed-width suffix selector resolved through the containing graph's catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
@@ -2460,32 +2481,46 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
     })
 }
 
-fn entity_suffix_escaped_word(suffix: &[u8]) -> Option<CatiaEntitySuffixEscapedWord> {
-    let [0x80, word @ .., state] = suffix else {
-        return None;
-    };
-    let state = match state {
-        0x00 => CatiaEntitySuffixEscapedWordState::State00,
-        0x01 => CatiaEntitySuffixEscapedWordState::State01,
-        0x03 => CatiaEntitySuffixEscapedWordState::State03,
-        0x04 => CatiaEntitySuffixEscapedWordState::State04,
-        0x09 => CatiaEntitySuffixEscapedWordState::State09,
-        _ => return None,
-    };
-    Some(CatiaEntitySuffixEscapedWord {
-        word: u32::from_le_bytes(word.try_into().ok()?),
-        state,
-    })
+fn entity_suffix_framing(suffix: &[u8]) -> Option<CatiaEntitySuffixFraming> {
+    match suffix {
+        [0x80, word @ .., state] => {
+            let state = match state {
+                0x00 => CatiaEntitySuffixEscapedWordState::State00,
+                0x01 => CatiaEntitySuffixEscapedWordState::State01,
+                0x03 => CatiaEntitySuffixEscapedWordState::State03,
+                0x04 => CatiaEntitySuffixEscapedWordState::State04,
+                0x09 => CatiaEntitySuffixEscapedWordState::State09,
+                _ => return None,
+            };
+            Some(CatiaEntitySuffixFraming::EscapedWord(
+                CatiaEntitySuffixEscapedWord {
+                    word: u32::from_le_bytes(word.try_into().ok()?),
+                    state,
+                },
+            ))
+        }
+        [0x81, 0x49] => Some(CatiaEntitySuffixFraming::Token8149),
+        [0xfe, 0xf6, payload @ ..] if payload.len() == 16 => {
+            Some(CatiaEntitySuffixFraming::FixedFeF6 {
+                payload: payload.to_vec(),
+            })
+        }
+        [lead @ 0xd1..=0xe4, low, 0x01] => Some(CatiaEntitySuffixFraming::PagedAtomState01 {
+            value: u32::from(*lead - 0xd1) * 256 + u32::from(*low) + 1,
+        }),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
-mod entity_suffix_escaped_word_tests {
+mod entity_suffix_framing_tests {
     use super::{
-        entity_suffix_escaped_word, CatiaEntitySuffixEscapedWord, CatiaEntitySuffixEscapedWordState,
+        entity_suffix_framing, CatiaEntitySuffixEscapedWord, CatiaEntitySuffixEscapedWordState,
+        CatiaEntitySuffixFraming,
     };
 
     #[test]
-    fn decodes_each_complete_state() {
+    fn decodes_each_escaped_word_state() {
         for (code, state) in [
             (0x00, CatiaEntitySuffixEscapedWordState::State00),
             (0x01, CatiaEntitySuffixEscapedWordState::State01),
@@ -2494,33 +2529,55 @@ mod entity_suffix_escaped_word_tests {
             (0x09, CatiaEntitySuffixEscapedWordState::State09),
         ] {
             assert_eq!(
-                entity_suffix_escaped_word(&[0x80, 0x78, 0x56, 0x34, 0x12, code]),
-                Some(CatiaEntitySuffixEscapedWord {
-                    word: 0x1234_5678,
-                    state,
-                })
+                entity_suffix_framing(&[0x80, 0x78, 0x56, 0x34, 0x12, code]),
+                Some(CatiaEntitySuffixFraming::EscapedWord(
+                    CatiaEntitySuffixEscapedWord {
+                        word: 0x1234_5678,
+                        state,
+                    }
+                ))
             );
         }
     }
 
     #[test]
+    fn decodes_each_complete_non_value_framing() {
+        assert_eq!(
+            entity_suffix_framing(&[0x81, 0x49]),
+            Some(CatiaEntitySuffixFraming::Token8149)
+        );
+        assert_eq!(
+            entity_suffix_framing(&[
+                0xfe, 0xf6, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+                0x0c, 0x0d, 0x0e, 0x0f,
+            ]),
+            Some(CatiaEntitySuffixFraming::FixedFeF6 {
+                payload: (0x00..=0x0f).collect(),
+            })
+        );
+        assert_eq!(
+            entity_suffix_framing(&[0xd2, 0x2d, 0x01]),
+            Some(CatiaEntitySuffixFraming::PagedAtomState01 { value: 302 })
+        );
+    }
+
+    #[test]
     fn rejects_other_framing() {
+        assert_eq!(entity_suffix_framing(&[0x80, 0x78, 0x56, 0x34, 0x12]), None);
         assert_eq!(
-            entity_suffix_escaped_word(&[0x80, 0x78, 0x56, 0x34, 0x12]),
+            entity_suffix_framing(&[0x81, 0x78, 0x56, 0x34, 0x12, 0x00]),
             None
         );
         assert_eq!(
-            entity_suffix_escaped_word(&[0x81, 0x78, 0x56, 0x34, 0x12, 0x00]),
+            entity_suffix_framing(&[0x80, 0x78, 0x56, 0x34, 0x12, 0x02]),
             None
         );
         assert_eq!(
-            entity_suffix_escaped_word(&[0x80, 0x78, 0x56, 0x34, 0x12, 0x02]),
+            entity_suffix_framing(&[0x80, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00]),
             None
         );
-        assert_eq!(
-            entity_suffix_escaped_word(&[0x80, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00]),
-            None
-        );
+        assert_eq!(entity_suffix_framing(&[0xfe, 0xf6, 0x00]), None);
+        assert_eq!(entity_suffix_framing(&[0xd2, 0x2d, 0x00]), None);
     }
 }
 
@@ -6589,7 +6646,7 @@ impl CatiaNative {
                     &entity.value_schema_selections,
                 );
                 entity.suffix_value = entity_suffix_value(&entity.record_suffix);
-                entity.suffix_escaped_word = entity_suffix_escaped_word(&entity.record_suffix);
+                entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
                 entity.suffix_schema_selection =
                     entity_suffix_schema_selection(entity.suffix_value.as_ref(), catalog);
                 entity.parameter_value = parameter_value(
@@ -6856,9 +6913,9 @@ impl CatiaNative {
             }
         }
         let mut entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
-        if namespace.version < CATIA_ESCAPED_SUFFIX_WORD_VERSION {
+        if namespace.version < CATIA_SUFFIX_FRAMING_VERSION {
             for entity in &mut entity_records {
-                entity.suffix_escaped_word = entity_suffix_escaped_word(&entity.record_suffix);
+                entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
             }
         }
         let graph_ids = graphs
@@ -6959,8 +7016,7 @@ impl CatiaNative {
                         entity.suffix_value != entity_suffix_value(&entity.record_suffix)
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.suffix_escaped_word
-                            != entity_suffix_escaped_word(&entity.record_suffix)
+                        entity.suffix_framing != entity_suffix_framing(&entity.record_suffix)
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_schema_selection
@@ -7912,7 +7968,7 @@ fn native_object_graph(
                 reference_signature: entity.reference_signature,
                 record_suffix: entity.record_suffix,
                 suffix_value: None,
-                suffix_escaped_word: None,
+                suffix_framing: None,
                 suffix_schema_selection: None,
             })
         })
