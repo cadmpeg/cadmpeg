@@ -558,6 +558,8 @@ pub enum AffectedIdKind {
     Parents,
     /// `contours` contour identifiers.
     Contours,
+    /// `qlts_affected` quilt-entity identifiers.
+    Quilts,
 }
 
 /// One complete affected-ID array owned by a feature.
@@ -597,6 +599,27 @@ pub struct FeatureReplayAffectedIds {
     pub geometry_extent: ReplayExtentSource,
     /// Encoding of the edge-array extent.
     pub edge_extent: ReplayExtentSource,
+    /// Byte offset of the replay anchor in the original stream.
+    pub offset: usize,
+}
+
+/// Geometry, edge, and quilt operands recovered from a class-946 positional replay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureSurfaceMergeAffectedIds {
+    /// Owning surface-merge feature identifier.
+    pub feature_id: u32,
+    /// Geometry identifiers at the first affected-array schema position.
+    pub geometry_ids: Vec<u32>,
+    /// Edge identifiers at the second affected-array schema position.
+    pub edge_ids: Vec<u32>,
+    /// Quilt identifiers at the third affected-array schema position.
+    pub quilt_ids: Vec<u32>,
+    /// Encoding of the geometry-array extent.
+    pub geometry_extent: ReplayExtentSource,
+    /// Encoding of the edge-array extent.
+    pub edge_extent: ReplayExtentSource,
+    /// Encoding of the quilt-array extent.
+    pub quilt_extent: ReplayExtentSource,
     /// Byte offset of the replay anchor in the original stream.
     pub offset: usize,
 }
@@ -6087,6 +6110,7 @@ pub fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
         (b"strong_parents", AffectedIdKind::StrongParents),
         (b"parent_table", AffectedIdKind::Parents),
         (b"contours", AffectedIdKind::Contours),
+        (b"qlts_affected", AffectedIdKind::Quilts),
     ];
     let mut result = Vec::new();
     for row in rows {
@@ -6416,6 +6440,134 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
             edge_extent,
             offset: row.body_offset + source_offset,
         });
+    }
+    result.sort_by_key(|record| record.offset);
+    result
+}
+
+fn unique_named_affected_ids(
+    records: &[FeatureAffectedIds],
+    feature_id: u32,
+    kind: AffectedIdKind,
+) -> Option<&[u32]> {
+    let mut matches = records
+        .iter()
+        .filter(|record| record.feature_id == feature_id && record.kind == kind);
+    let ids = matches.next()?.ids.as_slice();
+    matches
+        .all(|record| record.ids.as_slice() == ids)
+        .then_some(ids)
+}
+
+fn surface_merge_replay_suffix(bytes: &[u8]) -> bool {
+    if bytes.get(..2) != Some(&[0xe1, 0xe1]) {
+        return false;
+    }
+    let (row_id, after_row_id) = psb::compact_int(bytes, 2);
+    if after_row_id == 2 || bytes.get(after_row_id) != Some(&psb::token::COMPOUND_CLOSE) {
+        return false;
+    }
+    if bytes.get(after_row_id + 1) != Some(&psb::token::COMPOUND_CLOSE) {
+        return false;
+    }
+    let selector = after_row_id + 2;
+    let (_, after_selector) = psb::compact_int(bytes, selector);
+    let (repeated_row_id, after_repeated_id) = psb::compact_int(bytes, after_selector);
+    after_selector != selector
+        && repeated_row_id == row_id
+        && bytes.get(after_repeated_id..) == Some(&[0x00, 0xe1, 0x00, psb::token::COMPOUND_CLOSE])
+}
+
+fn positional_surface_merge_affected_ids(
+    row: &FeatureRow,
+    extents: [Option<u32>; 3],
+) -> Option<FeatureSurfaceMergeAffectedIds> {
+    const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
+    const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
+    let anchors = row
+        .body
+        .windows(ANCHOR.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == ANCHOR).then_some(offset))
+        .collect::<Vec<_>>();
+    let [anchor] = anchors.as_slice() else {
+        return None;
+    };
+    let (_, cursor) = explicit_replay_array(&row.body, anchor + ANCHOR.len())?;
+    if row.body.get(cursor..cursor + 2) != Some(&[0x01, psb::token::COMPOUND_CLOSE]) {
+        return None;
+    }
+    let (geometry_count, geometry_extent, cursor) =
+        replay_extent(&row.body, cursor + 2, b"geoms_affected", extents[0])?;
+    let (geometry_ids, cursor) = replay_ids(&row.body, geometry_count, cursor)?;
+    let (edge_count, edge_extent, cursor) =
+        replay_extent(&row.body, cursor, b"edgs_affected", extents[1])?;
+    let (edge_ids, cursor) = replay_ids(&row.body, edge_count, cursor)?;
+    if row.body.get(cursor..cursor + QUILT_SEPARATOR.len()) != Some(QUILT_SEPARATOR) {
+        return None;
+    }
+    let (quilt_count, quilt_extent, cursor) = replay_extent(
+        &row.body,
+        cursor + QUILT_SEPARATOR.len(),
+        b"qlts_affected",
+        extents[2],
+    )?;
+    let (quilt_ids, cursor) = replay_ids(&row.body, quilt_count, cursor)?;
+    surface_merge_replay_suffix(row.body.get(cursor..)?).then_some(FeatureSurfaceMergeAffectedIds {
+        feature_id: row.feature_id,
+        geometry_ids,
+        edge_ids,
+        quilt_ids,
+        geometry_extent,
+        edge_extent,
+        quilt_extent,
+        offset: row.body_offset + anchor,
+    })
+}
+
+/// Decode affected geometry, edge, and quilt arrays from class-946 replay rows.
+///
+/// Positional rows inherit an omitted array extent from the preceding
+/// class-946 row in the same `AllFeatur` stream.
+pub fn surface_merge_replay_affected_ids(
+    rows: &[FeatureRow],
+    named: &[FeatureAffectedIds],
+) -> Vec<FeatureSurfaceMergeAffectedIds> {
+    let mut result = Vec::new();
+    let mut extents = BTreeMap::<usize, [Option<u32>; 3]>::new();
+    for row in rows {
+        if row.root_schema_class != Some(946) {
+            continue;
+        }
+        let state = extents.entry(row.stream_offset).or_default();
+        let named_arrays = [
+            unique_named_affected_ids(named, row.feature_id, AffectedIdKind::Geometry),
+            unique_named_affected_ids(named, row.feature_id, AffectedIdKind::Edges),
+            unique_named_affected_ids(named, row.feature_id, AffectedIdKind::Quilts),
+        ];
+        if let [Some(geometry), Some(edges), Some(quilts)] = named_arrays {
+            let (Ok(geometry_count), Ok(edge_count), Ok(quilt_count)) = (
+                u32::try_from(geometry.len()),
+                u32::try_from(edges.len()),
+                u32::try_from(quilts.len()),
+            ) else {
+                continue;
+            };
+            *state = [Some(geometry_count), Some(edge_count), Some(quilt_count)];
+            continue;
+        }
+        let Some(record) = positional_surface_merge_affected_ids(row, *state) else {
+            continue;
+        };
+        let (Ok(geometry_count), Ok(edge_count), Ok(quilt_count)) = (
+            u32::try_from(record.geometry_ids.len()),
+            u32::try_from(record.edge_ids.len()),
+            u32::try_from(record.quilt_ids.len()),
+        ) else {
+            continue;
+        };
+        *state = [Some(geometry_count), Some(edge_count), Some(quilt_count)];
+        result.push(record);
     }
     result.sort_by_key(|record| record.offset);
     result
@@ -8015,6 +8167,109 @@ mod tests {
         row.body
             .extend_from_slice(&[3, row_id, 0x00, 0xe1, 0x00, psb::token::COMPOUND_CLOSE]);
         row
+    }
+
+    fn surface_merge_row(feature_id: u32, row_id: u8, operands: &[u8]) -> FeatureRow {
+        let mut body = vec![
+            psb::token::COMPOUND_CLOSE,
+            psb::token::ENTITY_REF,
+            0x80,
+            0x96,
+            psb::token::ARRAY_OPEN,
+            1,
+            99,
+            0x01,
+            psb::token::COMPOUND_CLOSE,
+        ];
+        body.extend_from_slice(operands);
+        body.extend_from_slice(&[
+            0xe1,
+            0xe1,
+            row_id,
+            psb::token::COMPOUND_CLOSE,
+            psb::token::COMPOUND_CLOSE,
+            3,
+            row_id,
+            0x00,
+            0xe1,
+            0x00,
+            psb::token::COMPOUND_CLOSE,
+        ]);
+        FeatureRow {
+            feature_id,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(946),
+            stream_offset: 100,
+            body,
+            body_offset: 200,
+            offset: 190,
+        }
+    }
+
+    #[test]
+    fn positional_surface_merge_replay_inherits_geometry_edge_and_quilt_extents() {
+        let rows = [
+            surface_merge_row(
+                1,
+                40,
+                &[
+                    0xf8, 2, 10, 11, 0xf8, 2, 20, 21, 0xf0, 0xf7, 0x80, 0x99, 0xf8, 2, 30, 31,
+                ],
+            ),
+            surface_merge_row(2, 41, &[12, 13, 22, 23, 0xf0, 0xf7, 0x80, 0x99, 32, 33]),
+        ];
+
+        let decoded = surface_merge_replay_affected_ids(&rows, &[]);
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].geometry_ids, [10, 11]);
+        assert_eq!(decoded[0].edge_ids, [20, 21]);
+        assert_eq!(decoded[0].quilt_ids, [30, 31]);
+        assert_eq!(decoded[1].geometry_ids, [12, 13]);
+        assert_eq!(decoded[1].edge_ids, [22, 23]);
+        assert_eq!(decoded[1].quilt_ids, [32, 33]);
+        assert_eq!(decoded[1].geometry_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[1].edge_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[1].quilt_extent, ReplayExtentSource::Inherited);
+    }
+
+    #[test]
+    fn named_surface_merge_arrays_seed_positional_replay_extents() {
+        let rows = [
+            surface_merge_row(1, 40, &[]),
+            surface_merge_row(2, 41, &[12, 13, 22, 23, 0xf0, 0xf7, 0x80, 0x99, 32, 33]),
+        ];
+        let named = [
+            FeatureAffectedIds {
+                feature_id: 1,
+                kind: AffectedIdKind::Geometry,
+                ids: vec![10, 11],
+                offset: 1,
+            },
+            FeatureAffectedIds {
+                feature_id: 1,
+                kind: AffectedIdKind::Edges,
+                ids: vec![20, 21],
+                offset: 2,
+            },
+            FeatureAffectedIds {
+                feature_id: 1,
+                kind: AffectedIdKind::Quilts,
+                ids: vec![30, 31],
+                offset: 3,
+            },
+        ];
+
+        let decoded = surface_merge_replay_affected_ids(&rows, &named);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].feature_id, 2);
+        assert_eq!(decoded[0].geometry_ids, [12, 13]);
+        assert_eq!(decoded[0].edge_ids, [22, 23]);
+        assert_eq!(decoded[0].quilt_ids, [32, 33]);
+        assert_eq!(decoded[0].geometry_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[0].edge_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[0].quilt_extent, ReplayExtentSource::Inherited);
     }
 
     #[test]

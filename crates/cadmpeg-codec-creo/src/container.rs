@@ -383,6 +383,8 @@ pub struct FeatureScan {
     pub affected_ids: Vec<FeatureAffectedIds>,
     /// Affected-ID runs from unlabeled positional replay feature rows.
     pub replay_affected_ids: Vec<FeatureReplayAffectedIds>,
+    /// Affected geometry, edge, and quilt arrays from class-946 replay rows.
+    pub surface_merge_replay_affected_ids: Vec<crate::feature::FeatureSurfaceMergeAffectedIds>,
     /// Named compact direction values from loop-restoration records.
     pub loop_restore_directions: Vec<FeatureLoopRestoreDirection>,
     /// Resolved angular termination from rotational feature rows.
@@ -1922,6 +1924,8 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     feature_affected_ids.extend(feature::affected_ids(&depdb_recipe_rows));
     feature_affected_ids.sort_by_key(|record| record.offset);
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
+    let surface_merge_replay_affected_ids =
+        feature::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
     let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
@@ -2095,6 +2099,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
             loop_history_entries: feature_loop_history_entries,
             affected_ids: feature_affected_ids,
             replay_affected_ids: feature_replay_affected_ids,
+            surface_merge_replay_affected_ids,
             loop_restore_directions: feature_loop_restore_directions,
             revolution_extents: feature_revolution_extents,
             definitions: feature_definitions,

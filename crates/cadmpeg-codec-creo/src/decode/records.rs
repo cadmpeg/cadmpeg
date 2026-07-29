@@ -168,6 +168,20 @@ pub(super) struct CreoFeatureReplayAffectedIdsRecord {
 }
 
 #[derive(Serialize)]
+pub(super) struct CreoSurfaceMergeReplayAffectedIdsRecord {
+    pub(super) id: String,
+    pub(super) owner_feature_id: u32,
+    pub(super) geometry_ids: Vec<u32>,
+    pub(super) edge_ids: Vec<u32>,
+    pub(super) quilt_ids: Vec<u32>,
+    pub(super) geometry_extent: &'static str,
+    pub(super) edge_extent: &'static str,
+    pub(super) quilt_extent: &'static str,
+    pub(super) offset: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
 pub(super) struct CreoFeatureLoopRestoreDirectionRecord {
     pub(super) id: String,
     pub(super) owner_feature_id: u32,
@@ -646,6 +660,30 @@ pub(super) fn feature_replay_affected_id_records(
             edge_ids: record.edge_ids.clone(),
             geometry_extent: extent_source(record.geometry_extent),
             edge_extent: extent_source(record.edge_extent),
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+pub(super) fn surface_merge_replay_affected_id_records(
+    scan: &ContainerScan,
+) -> Vec<CreoSurfaceMergeReplayAffectedIdsRecord> {
+    scan.features
+        .surface_merge_replay_affected_ids
+        .iter()
+        .map(|record| CreoSurfaceMergeReplayAffectedIdsRecord {
+            id: format!(
+                "creo:feature:surface_merge_replay_affected_ids#{}",
+                record.offset
+            ),
+            owner_feature_id: record.feature_id,
+            geometry_ids: record.geometry_ids.clone(),
+            edge_ids: record.edge_ids.clone(),
+            quilt_ids: record.quilt_ids.clone(),
+            geometry_extent: extent_source(record.geometry_extent),
+            edge_extent: extent_source(record.edge_extent),
+            quilt_extent: extent_source(record.quilt_extent),
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })

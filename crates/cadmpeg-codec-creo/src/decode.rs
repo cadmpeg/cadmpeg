@@ -763,6 +763,7 @@ fn affected_kind(kind: crate::feature::AffectedIdKind) -> &'static str {
         crate::feature::AffectedIdKind::StrongParents => "strong_parents",
         crate::feature::AffectedIdKind::Parents => "parents",
         crate::feature::AffectedIdKind::Contours => "contours",
+        crate::feature::AffectedIdKind::Quilts => "quilts",
     }
 }
 
@@ -14735,6 +14736,7 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
             crate::feature::AffectedIdKind::StrongParents => "strong_parent_feature_ids",
             crate::feature::AffectedIdKind::Parents => "parent_feature_ids",
             crate::feature::AffectedIdKind::Contours => "contour_ids",
+            crate::feature::AffectedIdKind::Quilts => "affected_quilt_ids",
         };
         insert_feature_parameter(
             &mut parameters,
@@ -14791,6 +14793,48 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
             }
             .to_string(),
         );
+    }
+    for affected in scan
+        .features
+        .surface_merge_replay_affected_ids
+        .iter()
+        .filter(|record| record.feature_id == feature_id)
+    {
+        for (name, ids) in [
+            (
+                "surface_merge_replay_affected_geometry_ids",
+                &affected.geometry_ids,
+            ),
+            ("surface_merge_replay_affected_edge_ids", &affected.edge_ids),
+            (
+                "surface_merge_replay_affected_quilt_ids",
+                &affected.quilt_ids,
+            ),
+        ] {
+            insert_feature_parameter(
+                &mut parameters,
+                name,
+                ids.iter().map(u32::to_string).collect::<Vec<_>>().join(","),
+            );
+        }
+        for (name, extent) in [
+            (
+                "surface_merge_replay_geometry_extent",
+                affected.geometry_extent,
+            ),
+            ("surface_merge_replay_edge_extent", affected.edge_extent),
+            ("surface_merge_replay_quilt_extent", affected.quilt_extent),
+        ] {
+            insert_feature_parameter(
+                &mut parameters,
+                name,
+                match extent {
+                    crate::feature::ReplayExtentSource::Explicit => "explicit",
+                    crate::feature::ReplayExtentSource::Inherited => "inherited",
+                }
+                .to_string(),
+            );
+        }
     }
     for direction in scan
         .features
@@ -15020,6 +15064,7 @@ fn feature_dependencies(
         &scan.features.affected_ids,
         &scan.features.operations,
         &scan.features.entity_tables,
+        &scan.features.surface_merge_replay_affected_ids,
         &scan.surfaces.rows,
         feature_id,
         prototype_dependencies
@@ -15042,6 +15087,7 @@ fn native_feature_dependency_ids(
     affected_ids: &[crate::feature::FeatureAffectedIds],
     operations: &[crate::feature::FeatureOperation],
     entity_tables: &[crate::feature::FeatureEntityTable],
+    surface_merge_replay_affected_ids: &[crate::feature::FeatureSurfaceMergeAffectedIds],
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
     prototype_dependencies: &[u32],
@@ -15050,6 +15096,12 @@ fn native_feature_dependency_ids(
         .into_iter()
         .chain(current_feature_recipe_parent(operations, feature_id))
         .chain(prototype_dependencies.iter().copied())
+        .chain(surface_merge_entity_dependencies(
+            affected_ids,
+            surface_merge_replay_affected_ids,
+            entity_tables,
+            feature_id,
+        ))
         .chain(feature_entity_dependencies(entity_tables, feature_id))
         .chain(surface_transition_dependencies(
             feature_id,
@@ -15110,6 +15162,66 @@ fn feature_entity_producers(
                 owners
             },
         )
+}
+
+fn agreed_surface_merge_replay_quilt_ids(
+    records: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    feature_id: u32,
+) -> Option<&[u32]> {
+    let mut matches = records
+        .iter()
+        .filter(|record| record.feature_id == feature_id);
+    let ids = matches.next()?.quilt_ids.as_slice();
+    matches
+        .all(|record| record.quilt_ids.as_slice() == ids)
+        .then_some(ids)
+}
+
+fn surface_merge_quilt_ids<'a>(
+    affected_ids: &'a [crate::feature::FeatureAffectedIds],
+    replay: &'a [crate::feature::FeatureSurfaceMergeAffectedIds],
+    feature_id: u32,
+) -> Option<&'a [u32]> {
+    if let Some(ids) = agreed_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Quilts,
+    ) {
+        return (!ids.is_empty()).then_some(ids);
+    }
+    if has_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Quilts,
+    ) {
+        return None;
+    }
+    agreed_surface_merge_replay_quilt_ids(replay, feature_id).filter(|ids| !ids.is_empty())
+}
+
+fn surface_merge_entity_dependencies(
+    affected_ids: &[crate::feature::FeatureAffectedIds],
+    replay: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    tables: &[crate::feature::FeatureEntityTable],
+    feature_id: u32,
+) -> Vec<u32> {
+    let Some(ids) = surface_merge_quilt_ids(affected_ids, replay, feature_id) else {
+        return Vec::new();
+    };
+    let producers = feature_entity_producers(tables);
+    ids.iter()
+        .filter_map(|entity_id| {
+            let owners = producers.get(entity_id)?;
+            let mut owners = owners.iter().copied();
+            let owner = owners.next()?;
+            (owners.next().is_none() && owner != feature_id).then_some(owner)
+        })
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
 }
 
 fn agreed_feature_affected_ids(
@@ -15248,6 +15360,7 @@ fn reconcile_feature_links(
             &scan.features.affected_ids,
             &scan.features.operations,
             &scan.features.entity_tables,
+            &scan.features.surface_merge_replay_affected_ids,
             &scan.surfaces.rows,
             feature_id,
             prototype_dependencies
@@ -16044,7 +16157,7 @@ fn filled_surface_feature_definition(
     }
 }
 
-fn knit_operand_entity_ids(
+fn knit_class_100_operand_entity_ids(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
 ) -> Option<Vec<u32>> {
@@ -16067,12 +16180,31 @@ fn knit_operand_entity_ids(
         .then_some(ids)
 }
 
+fn knit_operand_entity_ids(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<(Vec<u32>, &'static str)> {
+    if let Some(ids) = surface_merge_quilt_ids(
+        &scan.features.affected_ids,
+        &scan.features.surface_merge_replay_affected_ids,
+        feature_id,
+    ) {
+        let ids = ids.to_vec();
+        if ids.iter().collect::<BTreeSet<_>>().len() == ids.len() {
+            return Some((ids, "surface_merge_quilts"));
+        }
+        return None;
+    }
+    knit_class_100_operand_entity_ids(feature_id, &scan.features.entity_tables)
+        .map(|ids| (ids, "surface_merge_entities"))
+}
+
 fn knit_surface_feature_definition(scan: &ContainerScan, feature_id: u32) -> IrFeatureDefinition {
-    let faces = knit_operand_entity_ids(feature_id, &scan.features.entity_tables).map_or(
+    let faces = knit_operand_entity_ids(scan, feature_id).map_or(
         FaceSelection::Unresolved,
-        |ids| {
+        |(ids, namespace)| {
             FaceSelection::Native(format!(
-                "creo:allfeatur:surface_merge_entities#{feature_id}:{}",
+                "creo:allfeatur:{namespace}#{feature_id}:{}",
                 ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
             ))
         },
@@ -29549,6 +29681,23 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             );
         },
     )?;
+    let surface_merge_replay_affected_ids = surface_merge_replay_affected_id_records(scan);
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "surface_merge_replay_affected_ids",
+        &surface_merge_replay_affected_ids,
+        |annotations, record| {
+            annotate(
+                annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "surface_merge_replay_affected_ids",
+                Exactness::ByteExact,
+            );
+        },
+    )?;
     let feature_loop_restore_directions = feature_loop_restore_direction_records(scan);
     emit_arena(
         &mut ir,
@@ -30829,6 +30978,10 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     coverage.insert(
         "decoded_feature_replay_affected_id_count".to_string(),
         scan.features.replay_affected_ids.len(),
+    );
+    coverage.insert(
+        "decoded_surface_merge_replay_affected_id_count".to_string(),
+        scan.features.surface_merge_replay_affected_ids.len(),
     );
     coverage.insert(
         "decoded_feature_loop_restore_direction_count".to_string(),

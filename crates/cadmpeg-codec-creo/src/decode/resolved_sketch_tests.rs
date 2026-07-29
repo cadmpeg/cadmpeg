@@ -160,7 +160,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         [175]
     );
     assert_eq!(
-        knit_operand_entity_ids(416, &[producer.clone(), consumer.clone()]),
+        knit_class_100_operand_entity_ids(416, &[producer.clone(), consumer.clone()]),
         Some(vec![192])
     );
     assert_eq!(
@@ -168,6 +168,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
             &[],
             &[],
             &[producer.clone(), consumer.clone()],
+            &[],
             &[],
             416,
             &[40, 40],
@@ -181,7 +182,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
     )
     .is_empty());
     assert_eq!(
-        knit_operand_entity_ids(
+        knit_class_100_operand_entity_ids(
             416,
             &[producer.clone(), conflicting.clone(), consumer.clone()]
         ),
@@ -192,21 +193,65 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         &[],
         &[producer.clone(), conflicting, consumer],
         &[],
+        &[],
         416,
         &[],
     )
     .is_empty());
     let missing = table(417, 100, vec![entry(193, 98, None)]);
-    assert_eq!(knit_operand_entity_ids(417, &[missing]), None);
+    assert_eq!(knit_class_100_operand_entity_ids(417, &[missing]), None);
     let duplicate = table(418, 100, vec![entry(192, 98, None), entry(192, 98, None)]);
     assert_eq!(
-        knit_operand_entity_ids(418, &[producer.clone(), duplicate]),
+        knit_class_100_operand_entity_ids(418, &[producer.clone(), duplicate]),
         None
     );
     let self_reference = table(175, 100, vec![entry(192, 98, None)]);
     assert_eq!(
-        knit_operand_entity_ids(175, &[producer, self_reference]),
+        knit_class_100_operand_entity_ids(175, &[producer, self_reference]),
         None
+    );
+}
+
+#[test]
+fn surface_merge_quilt_roster_links_every_unique_generator() {
+    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id: 200,
+        source_entity_id: Some(source_entity_id),
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: true,
+        offset: 0,
+        end_offset: 0,
+    };
+    let producer = |feature_id, entity_id| crate::feature::FeatureEntityTable {
+        feature_id: Some(feature_id),
+        table_class_id: 67,
+        entry_ids: vec![entity_id],
+        entries: vec![entry(entity_id, feature_id)],
+        surface_ids: Vec::new(),
+        non_surface_entity_ids: vec![entity_id],
+        offset: 0,
+    };
+    let replay = crate::feature::FeatureSurfaceMergeAffectedIds {
+        feature_id: 416,
+        geometry_ids: vec![98, 145, 157, 184, 321],
+        edge_ids: vec![241],
+        quilt_ids: vec![103, 192, 329],
+        geometry_extent: crate::feature::ReplayExtentSource::Explicit,
+        edge_extent: crate::feature::ReplayExtentSource::Explicit,
+        quilt_extent: crate::feature::ReplayExtentSource::Inherited,
+        offset: 0,
+    };
+    let tables = [producer(97, 103), producer(175, 192), producer(312, 329)];
+
+    assert_eq!(
+        surface_merge_entity_dependencies(&[], std::slice::from_ref(&replay), &tables, 416),
+        [97, 175, 312]
+    );
+    assert_eq!(
+        surface_merge_quilt_ids(&[], std::slice::from_ref(&replay), 416),
+        Some([103, 192, 329].as_slice())
     );
 }
 

@@ -1964,8 +1964,19 @@ Root feature-definition class `946` identifies the same surface-merge family
 when the current-state record omits its display name. The class value does not
 encode face selection or merge operands.
 For a surface-merge feature, each entry in a class-`100` generated-entity table
-names one input entity. The input is established only when exactly one
+names the base input entity. The input is established only when exactly one
 preceding feature-generated class-`200` entry has the same entity identifier.
+The `qlts_affected` array is the ordered roster of every quilt participating in
+the merge, including the base input. Each quilt identifier occupies the
+feature-generated entity namespace and joins to its generating feature through
+the equal identifier of a class-`200` entry.
+In a compact class-`946` replay row, an `f7 150` anchor precedes the counted
+removed-entity array and its `01 e3` close. The affected-geometry and
+affected-edge arrays follow, then `f0 f7 153`, the affected-quilt array, and a
+suffix that repeats the replay-row identifier. Each affected-array position
+inherits its count from the preceding class-`946` row in the same feature
+stream when its `f8 <count>` opener is omitted. A named row supplies the same
+state through `geoms_affected`, `edgs_affected`, and `qlts_affected`.
 `Extrude <decimal-ordinal>` identifies an extrusion operation.
 `Boundary Blend <decimal-ordinal>` identifies a boundary-surface operation.
 `Protrusion` identifies a linear extrusion operation; absent section operands
