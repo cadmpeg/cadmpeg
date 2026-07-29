@@ -7139,6 +7139,10 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
     native.object_graphs[0].records[0].class_entry =
         Some(definition_value.definition.entry.clone());
     native.object_graphs[0].records[0].class_name = Some("CircPattern".to_string());
+    native.object_graphs[0].records[0].owner_entity_id =
+        Some(native.design_objects[0].owner_entity_id);
+    native.object_graphs[0].records[0].storage_ref = None;
+    native.object_graphs[0].records[0].references.clear();
 
     let mut second_entity = native.entity_records[0].clone();
     second_entity.id.push_str("-second");
@@ -7158,7 +7162,11 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
-    assert!(transfer.consumed_records().is_empty());
+    assert_eq!(
+        transfer.pattern_records,
+        native.design_objects[0].fields.iter().cloned().collect()
+    );
+    assert_eq!(transfer.consumed_records(), transfer.pattern_records);
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
         ir.model.features[0].source_tag.as_deref(),
@@ -7195,6 +7203,12 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
     }
     let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
     crate::design_feature::transfer_design_features(&mut rejected, &foreign_fields);
+    assert!(rejected.model.features.is_empty());
+
+    let mut payload_bearing = native.clone();
+    payload_bearing.object_graphs[0].records[0].storage_ref = Some(1);
+    let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
+    crate::design_feature::transfer_design_features(&mut rejected, &payload_bearing);
     assert!(rejected.model.features.is_empty());
 
     let mut incomplete = native;

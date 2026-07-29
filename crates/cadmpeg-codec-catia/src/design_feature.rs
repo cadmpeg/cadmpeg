@@ -19,6 +19,7 @@ pub(crate) struct DesignFeatureTransfer {
     pub(crate) declaration_records: HashSet<String>,
     pub(crate) placement_records: HashSet<String>,
     pub(crate) principal_plane_records: HashSet<String>,
+    pub(crate) pattern_records: HashSet<String>,
     pub(crate) features_by_design_object: HashMap<String, FeatureId>,
 }
 
@@ -27,6 +28,7 @@ impl DesignFeatureTransfer {
         self.declaration_records
             .union(&self.placement_records)
             .chain(&self.principal_plane_records)
+            .chain(&self.pattern_records)
             .cloned()
             .collect()
     }
@@ -173,7 +175,10 @@ pub(crate) fn transfer_design_features(
                     );
                 }
             }
-            DesignFeatureDefinition::CircularPattern { definition_name } => {
+            DesignFeatureDefinition::CircularPattern {
+                declarations,
+                definition_name,
+            } => {
                 ir.model.features.push(Feature {
                     id: feature_id.clone(),
                     ordinal: ir.model.features.len() as u64,
@@ -194,6 +199,9 @@ pub(crate) fn transfer_design_features(
                     },
                     native_ref: Some(object.id.clone()),
                 });
+                transfer
+                    .pattern_records
+                    .extend(declarations.into_iter().map(|record| record.id.clone()));
             }
         }
         transfer
@@ -382,6 +390,7 @@ enum DesignFeatureDefinition<'a> {
         declaration_class: &'a str,
     },
     CircularPattern {
+        declarations: Vec<&'a CatiaObjectRecord>,
         definition_name: &'a str,
     },
 }
@@ -408,8 +417,8 @@ fn circular_pattern_candidate<'a>(
         .fields
         .iter()
         .map(|field| {
-            let record = records.get(field.as_str())?;
-            (record.design_object.as_deref() == Some(object.id.as_str())).then_some(())?;
+            let record = records.get(field.as_str()).copied()?;
+            complete_empty_declaration(record, &object.id, object.owner_entity_id).then_some(())?;
             Some((record, record.entity_record.as_deref()?))
         })
         .collect::<Option<Vec<_>>>()?;
@@ -419,9 +428,9 @@ fn circular_pattern_candidate<'a>(
         .all(|((_, entity), definition)| *entity == definition)
         .then_some(())?;
     let definitions = fields
-        .into_iter()
+        .iter()
         .map(|(record, entity_id)| {
-            let entity = *entities.get(entity_id)?;
+            let entity = *entities.get(*entity_id)?;
             let definition = &entity.definition_value.as_ref()?.definition;
             (record.class_entry.as_deref() == Some(definition.entry.as_str())
                 && record.class_name.as_deref() == Some(definition.value.as_str()))
@@ -437,6 +446,7 @@ fn circular_pattern_candidate<'a>(
     .then_some(DesignFeatureCandidate {
         object,
         definition: DesignFeatureDefinition::CircularPattern {
+            declarations: fields.into_iter().map(|(record, _)| record).collect(),
             definition_name: name,
         },
     })
