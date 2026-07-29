@@ -165,7 +165,7 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
 }
 
 #[test]
-fn standard_mesh_resolver_uses_trim_occurrence_port_components() {
+fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
         .windows(3)
@@ -194,6 +194,23 @@ fn standard_mesh_resolver_uses_trim_occurrence_port_components() {
         topology.edge_vertices().expect("resolved edge endpoints"),
         vec![[0, 1], [1, 2], [2, 3], [3, 0]]
     );
+}
+
+#[test]
+fn standard_mesh_candidate_quotient_defers_occurrence_direction() {
+    let candidates = vec![vec![[1, 2]], vec![[0, 3]], vec![[0, 1]]];
+    let local_ports = [[0, 1], [2, 3], [4, 5]];
+    let prematurely_oriented_ports = [[0, 1], [1, 2], [3, 1]];
+
+    assert!(
+        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &local_ports).is_some()
+    );
+    assert!(crate::solve::mesh_quotient::initial_mesh_quotient(
+        &candidates,
+        4,
+        &prematurely_oriented_ports,
+    )
+    .is_none());
 }
 
 #[test]
