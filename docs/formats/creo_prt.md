@@ -662,7 +662,8 @@ record also ends the prototype; its named fields belong to that peer entity.
 
 In a geometry section containing exactly one `torus` prototype with a positive
 finite `radius2`, a type-`26` positional row can replay that minor radius as
-its sole terminal scalar frame. The scalar must end at the row-body boundary,
+the final scalar of its terminal scalar frame. The scalar must end at the
+row-body boundary,
 must equal the prototype `radius2` exactly, and the row must not contain the
 tagged radius-override form. This replay defines only the instance minor
 radius. It does not define the major radius, center, axis, or parameter-space

@@ -549,9 +549,7 @@ impl SurfaceParameterRecord {
             && prototype_minor_radius > 0.0)
             .then_some(())?;
         let frame = self.terminal_scalar_frame.as_ref()?;
-        let [slot] = frame.slots.as_slice() else {
-            return None;
-        };
+        let slot = frame.slots.last()?;
         let value = slot.value?;
         (slot.offset.checked_add(slot.length) == Some(self.body.len())
             && value.to_bits() == prototype_minor_radius.to_bits())
@@ -7063,7 +7061,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_only_an_exact_singleton_terminal_type26_minor_radius_replay() {
+    fn decodes_only_an_exact_terminal_type26_minor_radius_replay() {
         let record = |body: &[u8]| {
             let mut payload = vec![7, 0x26, 4, 0x01, 0, 0];
             payload.extend_from_slice(body);
@@ -7080,9 +7078,14 @@ mod tests {
             .type26_replayed_minor_radius(0x25, 0.199_999_999_999_999_98)
             .is_none());
 
-        let two_slot_terminal = record(&[0x18, 0x29, 0xc9, 0x99]);
-        assert!(two_slot_terminal
-            .type26_replayed_minor_radius(0x26, 0.199_999_999_999_98)
+        let two_slot_terminal = record(&[0xe4, 0x29, 0xc9, 0x99]);
+        assert_eq!(
+            two_slot_terminal.type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98),
+            Some(0.199_999_999_999_999_98)
+        );
+        let nonterminal_match = record(&[0x29, 0xc9, 0x99, 0xe4]);
+        assert!(nonterminal_match
+            .type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98)
             .is_none());
         let tagged_override = record(&[
             0x18, 0x0d, 0x29, 0xc9, 0x99, 0x00, 0x0e, 0x01, 0x29, 0xdf, 0xff,

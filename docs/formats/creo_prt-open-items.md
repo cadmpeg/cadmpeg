@@ -15,7 +15,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   placeholder images are unspecified, including variable-length `e5` forms.
 - Per-instance cone half-angle bodies outside the terminal positive-DICT form
   and `geom_type = 26` torus/sphere radius bodies outside the tagged radius
-  trailer and singleton terminal prototype-minor-radius replay are unspecified.
+  trailer and terminal prototype-minor-radius replay are unspecified.
 - Positional plane-envelope scalar prefixes outside the defined row lane are
   unspecified.
 - Unsuffixed terminal scalar frames with six coordinate-like trailing values
