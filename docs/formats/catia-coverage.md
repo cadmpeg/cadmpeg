@@ -36,6 +36,8 @@ current scores require those matrices and representative fixtures.
 
 ## Implemented slices above the score
 
+- Stream-directory inspection retains every extent's raw flags word in logical
+  extent order.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
   occurrences.

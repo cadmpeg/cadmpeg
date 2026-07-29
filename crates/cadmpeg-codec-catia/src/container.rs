@@ -468,6 +468,8 @@ pub struct Extent {
     pub phys_off: u32,
     /// Physical byte length of this extent.
     pub phys_len: u32,
+    /// Raw trailing extent flags word.
+    pub flags: u32,
 }
 
 /// One catalogued logical stream.
@@ -673,8 +675,7 @@ fn parse_extents(
         let phys_len = u32_be(dirbuf, base + 4)?;
         let log_len = u32_be(dirbuf, base + 8)?;
         let log_off = u32_be(dirbuf, base + 12)?;
-        // Presence-validate the trailing flags word without retaining it.
-        u32_be(dirbuf, base + 16)?;
+        let flags = u32_be(dirbuf, base + 16)?;
         if phys_len == 0
             || physical_base + phys_off as usize + phys_len as usize > file_len
             || log_off as usize != cum
@@ -683,7 +684,11 @@ fn parse_extents(
             return None;
         }
         cum += log_len as usize;
-        extents.push(Extent { phys_off, phys_len });
+        extents.push(Extent {
+            phys_off,
+            phys_len,
+            flags,
+        });
     }
     Some((extents, cum))
 }
@@ -866,6 +871,14 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             attributes.insert("directory".to_string(), directory.to_string());
             attributes.insert("desc_offset".to_string(), d.desc_offset.to_string());
             attributes.insert("extent_count".to_string(), d.extents.len().to_string());
+            attributes.insert(
+                "extent_flags".to_string(),
+                d.extents
+                    .iter()
+                    .map(|extent| format!("0x{:08x}", extent.flags))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
             let phys: u64 = d.extents.iter().map(|e| e.phys_len as u64).sum();
             entries.push(ContainerEntry {
                 name: if d.name.is_empty() {
@@ -1003,7 +1016,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{identify_variant, Census, InnerDir};
+    use super::{
+        identify_variant, parse_extents, summarize, Census, ContainerScan, Descriptor, Extent,
+        InnerDir,
+    };
     use crate::variant::Variant;
 
     #[test]
@@ -1020,6 +1036,60 @@ mod tests {
         assert_eq!(
             identify_variant(Some(&inner), Some(&[]), &census, true),
             Variant::E5Stream
+        );
+    }
+
+    #[test]
+    fn extent_parser_retains_the_raw_flags_word() {
+        let mut directory = vec![0; 24];
+        for (offset, value) in [(4, 40u32), (8, 8), (12, 8), (16, 0), (20, 0xa501_0080)] {
+            directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
+        }
+        let (extents, logical_length) =
+            parse_extents(&directory, 0, 1, 0, 64).expect("complete extent");
+        assert_eq!(logical_length, 8);
+        assert_eq!(extents[0].flags, 0xa501_0080);
+    }
+
+    #[test]
+    fn container_summary_exposes_extent_flags_in_logical_order() {
+        let scan = ContainerScan {
+            data: Vec::new(),
+            outer_dir_offset: 0,
+            outer_dir_length: 0,
+            outer: Some(InnerDir {
+                inner: 0,
+                descriptors: vec![Descriptor {
+                    name: "MAIN".to_string(),
+                    desc_offset: 16,
+                    logical_length: 12,
+                    extents: vec![
+                        Extent {
+                            phys_off: 40,
+                            phys_len: 4,
+                            flags: 0xa501_0080,
+                        },
+                        Extent {
+                            phys_off: 80,
+                            phys_len: 8,
+                            flags: 0,
+                        },
+                    ],
+                }],
+            }),
+            inner: None,
+            brep: None,
+            previews: Vec::new(),
+            last_save_version: None,
+            external_references: Vec::new(),
+            finjpl_segments: Vec::new(),
+            census: Census::default(),
+            variant: Variant::Unknown,
+        };
+        let summary = summarize(&scan);
+        assert_eq!(
+            summary.entries[0].attributes["extent_flags"],
+            "0xa5010080,0x00000000"
         );
     }
 }

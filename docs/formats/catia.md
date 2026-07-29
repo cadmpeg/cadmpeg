@@ -97,6 +97,8 @@ ds+0x54 : k extent structs, 20 bytes each:
 
 A candidate is a descriptor when every extent validates: `inner + phys_off + phys_len <= filesize`, `phys_len != 0`, `log_off` cumulative from 0, `log_len == phys_len`, `sum(log_len) == logical_stream_length`. A logical stream is the concatenation of `file[inner+phys_off : inner+phys_off+phys_len]` over the descriptor's extents in `log_off` order. The stream name is a UTF-16LE ASCII run in the descriptor header.
 
+Container inspection retains the `flags` word of every extent and reports the words as an ordered comma-separated list of eight-digit hexadecimal values in the `extent_flags` attribute.
+
 The descriptor names include `MAIN`, `MainDataStream`, `Header`, `SceneGraph`, `Describe`, and `SurfacicReps`. `MainDataStream` contains the topology spine, including FBB groups, `05 08 01` vertices, and `30 04 04` loops. `SurfacicReps` contains analytic surface and curve kind markers and trim records. Extents for these streams can interleave physically.
 
 ### 3.5 `SurfacicReps` parallel F/E/V roster
