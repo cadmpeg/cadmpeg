@@ -250,6 +250,10 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
     let mut wrong_degree = a5_freeform_curve_stream();
     wrong_degree[9] = 17;
     assert!(crate::families::a5a8::records::a5_freeform_curves(&wrong_degree).is_empty());
+
+    let mut wrong_header_token = a5_freeform_curve_stream();
+    wrong_header_token[7] = 9;
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&wrong_header_token).is_empty());
 }
 
 #[test]
