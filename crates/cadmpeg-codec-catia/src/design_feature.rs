@@ -1,37 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Transfer of exact CATIA reference and sketch history nodes.
+//! Transfer of exact CATIA reference history nodes.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, PrincipalPlane, SketchSpace,
+    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, PrincipalPlane,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 use crate::native::{CatiaDesignObject, CatiaNative, CatiaObjectRecord};
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
-    pub(crate) declaration_records: HashSet<String>,
-    pub(crate) placement_records: HashSet<String>,
     pub(crate) principal_plane_records: HashSet<String>,
     pub(crate) features_by_design_object: HashMap<String, FeatureId>,
 }
 
 impl DesignFeatureTransfer {
     pub(crate) fn consumed_records(&self) -> HashSet<String> {
-        self.declaration_records
-            .union(&self.placement_records)
-            .chain(&self.principal_plane_records)
-            .cloned()
-            .collect()
+        self.principal_plane_records.clone()
     }
 }
 
-/// Transfer exact owner-bound reference and sketch history nodes.
+/// Transfer exact owner-bound reference history nodes.
 pub(crate) fn transfer_design_features(
     ir: &mut CadIr,
     native: &CatiaNative,
@@ -45,20 +37,8 @@ pub(crate) fn transfer_design_features(
     let candidates = native
         .design_objects
         .iter()
-        .filter_map(|object| design_feature_candidate(object, &records))
+        .filter_map(|object| principal_plane_candidate(object, &records))
         .collect::<Vec<_>>();
-    let sketch_feature_ids = candidates
-        .iter()
-        .filter(|candidate| matches!(candidate.definition, DesignFeatureDefinition::Sketch { .. }))
-        .map(|candidate| {
-            (
-                candidate.object.id.as_str(),
-                FeatureId(format!("{}:feature", candidate.object.id)),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let (candidates, cyclic_parent_objects) =
-        order_design_feature_candidates(candidates, &sketch_feature_ids);
     let mut transfer = DesignFeatureTransfer::default();
 
     for candidate in candidates {
@@ -89,84 +69,6 @@ pub(crate) fn transfer_design_features(
                     .principal_plane_records
                     .extend(declarations.into_iter().map(|record| record.id.clone()));
             }
-            DesignFeatureDefinition::Sketch {
-                declarations,
-                declaration_class,
-            } => {
-                let plane_declarations = object
-                    .fields
-                    .iter()
-                    .filter_map(|field| records.get(field.as_str()).copied())
-                    .filter(|record| {
-                        matches!(
-                            record.class_name.as_deref(),
-                            Some("xy-plane" | "yz-plane" | "zx-plane")
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let resolved_placement = complete_principal_plane(
-                    &plane_declarations,
-                    &object.id,
-                    object.owner_entity_id,
-                );
-                let placement = resolved_placement.unwrap_or(SketchPlacement::Unresolved);
-                let parent = if cyclic_parent_objects.contains(object.id.as_str()) {
-                    None
-                } else {
-                    object
-                        .owner_design_object
-                        .as_deref()
-                        .and_then(|owner| sketch_feature_ids.get(owner))
-                        .cloned()
-                };
-
-                let sketch_id = SketchId(format!("{}:sketch", object.id));
-                ir.model.sketches.push(Sketch {
-                    id: sketch_id.clone(),
-                    name: None,
-                    configuration: None,
-                    placement,
-                    profiles: Vec::new(),
-                    native_ref: Some(object.id.clone()),
-                });
-                ir.model.features.push(Feature {
-                    id: feature_id.clone(),
-                    ordinal: ir.model.features.len() as u64,
-                    name: None,
-                    suppressed: None,
-                    parent,
-                    dependencies: Vec::new(),
-                    source_properties: BTreeMap::new(),
-                    source_tag: Some(declaration_class.to_string()),
-                    source_text: None,
-                    source_content: Vec::new(),
-                    outputs: Vec::new(),
-                    definition: FeatureDefinition::Sketch {
-                        space: SketchSpace::Planar,
-                        sketch: Some(sketch_id),
-                    },
-                    native_ref: Some(object.id.clone()),
-                });
-                transfer.declaration_records.extend(
-                    declarations
-                        .into_iter()
-                        .filter(|declaration| {
-                            complete_empty_declaration(
-                                declaration,
-                                &object.id,
-                                object.owner_entity_id,
-                            )
-                        })
-                        .map(|declaration| declaration.id.clone()),
-                );
-                if resolved_placement.is_some() {
-                    transfer.placement_records.extend(
-                        plane_declarations
-                            .into_iter()
-                            .map(|declaration| declaration.id.clone()),
-                    );
-                }
-            }
         }
         transfer
             .features_by_design_object
@@ -174,68 +76,6 @@ pub(crate) fn transfer_design_features(
     }
 
     transfer
-}
-
-fn order_design_feature_candidates<'a>(
-    candidates: Vec<DesignFeatureCandidate<'a>>,
-    sketch_feature_ids: &HashMap<&str, FeatureId>,
-) -> (Vec<DesignFeatureCandidate<'a>>, HashSet<String>) {
-    let sketch_parents = candidates
-        .iter()
-        .filter(|candidate| matches!(candidate.definition, DesignFeatureDefinition::Sketch { .. }))
-        .filter_map(|candidate| {
-            let parent = candidate.object.owner_design_object.as_deref()?;
-            sketch_feature_ids
-                .contains_key(parent)
-                .then_some((candidate.object.id.as_str(), parent))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut cyclic_parent_objects = HashSet::new();
-    for start in sketch_parents.keys().copied() {
-        let mut path = Vec::new();
-        let mut path_indices = HashMap::new();
-        let mut current = start;
-        loop {
-            if let Some(cycle_start) = path_indices.insert(current, path.len()) {
-                cyclic_parent_objects.extend(
-                    path[cycle_start..]
-                        .iter()
-                        .map(|object: &&str| (*object).to_string()),
-                );
-                break;
-            }
-            path.push(current);
-            let Some(parent) = sketch_parents.get(current).copied() else {
-                break;
-            };
-            current = parent;
-        }
-    }
-
-    let mut remaining = candidates;
-    let mut ordered = Vec::with_capacity(remaining.len());
-    while !remaining.is_empty() {
-        let remaining_ids = remaining
-            .iter()
-            .map(|candidate| candidate.object.id.as_str())
-            .collect::<HashSet<_>>();
-        let next = remaining.iter().position(|candidate| {
-            if !matches!(candidate.definition, DesignFeatureDefinition::Sketch { .. })
-                || cyclic_parent_objects.contains(candidate.object.id.as_str())
-            {
-                return true;
-            }
-            candidate
-                .object
-                .owner_design_object
-                .as_deref()
-                .filter(|owner| sketch_feature_ids.contains_key(owner))
-                .is_none_or(|owner| !remaining_ids.contains(owner))
-        });
-        let next = next.expect("removing every exact cycle leaves an acyclic sketch-owner graph");
-        ordered.push(remaining.remove(next));
-    }
-    (ordered, cyclic_parent_objects)
 }
 
 /// Project exact design-object membership into ordered feature source content.
@@ -349,17 +189,6 @@ enum DesignFeatureDefinition<'a> {
         plane: PrincipalPlane,
         declaration_class: &'a str,
     },
-    Sketch {
-        declarations: Vec<&'a CatiaObjectRecord>,
-        declaration_class: &'a str,
-    },
-}
-
-fn design_feature_candidate<'a>(
-    object: &'a CatiaDesignObject,
-    records: &HashMap<&str, &'a CatiaObjectRecord>,
-) -> Option<DesignFeatureCandidate<'a>> {
-    principal_plane_candidate(object, records).or_else(|| sketch_candidate(object, records))
 }
 
 fn principal_plane_candidate<'a>(
@@ -393,39 +222,6 @@ fn principal_plane_candidate<'a>(
         })
 }
 
-fn sketch_candidate<'a>(
-    object: &'a CatiaDesignObject,
-    records: &HashMap<&str, &'a CatiaObjectRecord>,
-) -> Option<DesignFeatureCandidate<'a>> {
-    object.owner_record.as_ref()?;
-    let declarations = object
-        .fields
-        .iter()
-        .filter_map(|field| records.get(field.as_str()).copied())
-        .filter(|record| record.class_name.as_deref() == Some("PRTSketch"))
-        .collect::<Vec<_>>();
-    let (declaration_class, declaration_entry) = declarations.first().and_then(|record| {
-        record
-            .class_name
-            .as_deref()
-            .zip(record.class_entry.as_deref())
-    })?;
-    declarations
-        .iter()
-        .all(|record| {
-            record.class_name.as_deref() == Some(declaration_class)
-                && record.class_entry.as_deref() == Some(declaration_entry)
-                && bound_declaration(record, &object.id, object.owner_entity_id)
-        })
-        .then_some(DesignFeatureCandidate {
-            object,
-            definition: DesignFeatureDefinition::Sketch {
-                declarations,
-                declaration_class,
-            },
-        })
-}
-
 fn principal_plane(class_name: &str) -> Option<PrincipalPlane> {
     match class_name {
         "xy-plane" => Some(PrincipalPlane::Top),
@@ -455,69 +251,4 @@ fn complete_empty_declaration(
         && record.subtype == PayloadSubtype::Empty
         && record.payload.size == 1
         && record.payload.fields == [PayloadField::Terminator]
-}
-
-fn complete_principal_plane(
-    declarations: &[&CatiaObjectRecord],
-    design_object: &str,
-    owner_entity_id: u32,
-) -> Option<SketchPlacement> {
-    let first = declarations.first()?;
-    let class_name = first.class_name.as_deref()?;
-    let class_entry = first.class_entry.as_deref()?;
-    if declarations.iter().any(|record| {
-        record.class_name.as_deref() != Some(class_name)
-            || record.class_entry.as_deref() != Some(class_entry)
-            || !complete_empty_declaration(record, design_object, owner_entity_id)
-    }) {
-        return None;
-    }
-    let (normal, u_axis) = match class_name {
-        "xy-plane" => (
-            Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-            },
-            Vector3 {
-                x: 1.0,
-                y: 0.0,
-                z: 0.0,
-            },
-        ),
-        "yz-plane" => (
-            Vector3 {
-                x: 1.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            Vector3 {
-                x: 0.0,
-                y: 1.0,
-                z: 0.0,
-            },
-        ),
-        "zx-plane" => (
-            Vector3 {
-                x: 0.0,
-                y: 1.0,
-                z: 0.0,
-            },
-            Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0,
-            },
-        ),
-        _ => return None,
-    };
-    Some(SketchPlacement::Resolved {
-        origin: Point3 {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        },
-        normal,
-        u_axis,
-    })
 }
