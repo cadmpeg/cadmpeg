@@ -11548,6 +11548,14 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
     assert!(input.dependencies.is_empty());
     assert_eq!(decoded.report.coverage["transferred_parameter_count"], 1);
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_formula_output_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_formula_output_count"],
+        1
+    );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .is_empty());
@@ -11609,6 +11617,14 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(
         decoded.report.coverage["transferred_formula_design_record_count"],
         4
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_formula_output_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_formula_output_count"],
+        0
     );
     assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 0);
     assert!(decoded.report.losses.iter().all(|loss| {
