@@ -1838,6 +1838,52 @@ fn incidence_components_reuse_independent_solution_domains() {
 }
 
 #[test]
+fn incidence_components_preflight_independent_unsatisfiable_domains() {
+    use std::ops::ControlFlow;
+
+    const BROAD_COMPONENT_COUNT: usize = 15;
+    let mut choices = (0..BROAD_COMPONENT_COUNT)
+        .map(|component| {
+            let first = component * 2;
+            vec![[first, first], [first + 1, first + 1]]
+        })
+        .collect::<Vec<_>>();
+    choices.push(vec![[30, 30], [31, 31], [32, 32], [33, 33]]);
+    let edge_faces = (0..choices.len())
+        .map(|face| [face, face])
+        .collect::<Vec<_>>();
+    let constrained_edge = choices.len() - 1;
+    let active_edges = (0..choices.len())
+        .map(|edge| edge == constrained_edge)
+        .collect::<Vec<_>>();
+    let partial = |assignment: &[Option<[usize; 2]>]| assignment[constrained_edge].is_none();
+    let mut visited = false;
+
+    let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        choices.len(),
+        34,
+        None,
+        None,
+        Some(MeshPartialEndpointConstraint {
+            active_edges: &active_edges,
+            coupled_edges: &active_edges,
+            assignment_predecessors: None,
+            valid: &partial,
+        }),
+        &|_| true,
+        &mut |_| {
+            visited = true;
+            ControlFlow::Continue(())
+        },
+    );
+
+    assert_eq!(outcome, crate::solve::incidence::IncidenceSolve::Rejected);
+    assert!(!visited);
+}
+
+#[test]
 fn incidence_components_discard_quotient_impossible_complete_solutions() {
     let choices = vec![vec![[0, 0], [1, 1]], vec![[1, 1]]];
     let edge_faces = [[0, 0], [1, 1]];

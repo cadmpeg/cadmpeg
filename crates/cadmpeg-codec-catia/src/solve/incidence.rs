@@ -1534,58 +1534,24 @@ where
     F: Fn(&[[usize; 2]]) -> bool,
     V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
 {
+    struct ComponentDomain {
+        solutions: Vec<Vec<MeshEndpointPair>>,
+        exhausted: bool,
+    }
+
     #[allow(clippy::too_many_arguments)]
-    fn visit_components<F, V>(
-        component_index: usize,
-        components: &[Vec<usize>],
+    fn solve_component_domain(
+        component: &[usize],
         choices: &[Vec<[usize; 2]>],
         edge_faces: &[[usize; 2]],
         face_edges: &[Vec<usize>],
         mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
         mesh_quotient: Option<&MeshQuotient>,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
-        solution_valid: &F,
-        assignment: &mut [Option<[usize; 2]>],
-        degrees: &mut [Vec<u8>],
-        point_count: usize,
+        assignment: &[Option<[usize; 2]>],
+        degrees: &[Vec<u8>],
         budget: &MeshConstraintBudget,
-        visitor: &mut V,
-        visited: &mut usize,
-        solution_cache: &mut [Option<Vec<Vec<MeshEndpointPair>>>],
-    ) -> Result<ControlFlow<()>, ()>
-    where
-        F: Fn(&[[usize; 2]]) -> bool,
-        V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
-    {
-        let Some(component) = components.get(component_index) else {
-            let pairs = assignment
-                .iter()
-                .copied()
-                .collect::<Option<Vec<_>>>()
-                .ok_or(())?;
-            if !boundary_domains_close(mesh_assignments, &pairs) || !solution_valid(&pairs) {
-                return Ok(ControlFlow::Continue(()));
-            }
-            if mesh_assignments.is_none() {
-                if let Some(quotient) = mesh_quotient {
-                    let singleton = pairs
-                        .iter()
-                        .copied()
-                        .map(|pair| vec![pair])
-                        .collect::<Vec<_>>();
-                    let mut quotient = quotient.clone();
-                    if !quotient.point_assignment_exists(point_count, &singleton, Some(budget)) {
-                        if budget.exhausted.get() {
-                            return Err(());
-                        }
-                        return Ok(ControlFlow::Continue(()));
-                    }
-                }
-            }
-            *visited = visited.checked_add(1).ok_or(())?;
-            return Ok(visitor(&pairs));
-        };
-
+    ) -> ComponentDomain {
         let mut active = vec![false; choices.len()];
         let mut constraints = HashSet::<(usize, usize)>::new();
         let mut component_faces = HashSet::new();
@@ -1617,42 +1583,87 @@ where
             ) && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed))
         };
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
-        let (search_exhausted, solutions) =
-            if let Some(solutions) = solution_cache[component_index].clone() {
-                (false, solutions)
-            } else {
-                let mut search = IncidenceComponentSearch {
-                    choices,
-                    edge_faces,
-                    face_edges,
-                    mesh_assignments,
-                    mesh_quotient,
-                    active,
-                    edges: component,
-                    constraints,
-                    assignment: assignment.to_vec(),
-                    degrees: degrees.to_vec(),
-                    solutions: Vec::new(),
-                    solution_filter,
-                    partial_solution_filter: partial_solution_valid,
-                    dead_states: HashSet::new(),
-                    budget,
-                    states: 0,
-                    exhausted: false,
-                };
-                search.search();
-                if !search.exhausted {
-                    solution_cache[component_index] = Some(search.solutions.clone());
+        let mut search = IncidenceComponentSearch {
+            choices,
+            edge_faces,
+            face_edges,
+            mesh_assignments,
+            mesh_quotient,
+            active,
+            edges: component,
+            constraints,
+            assignment: assignment.to_vec(),
+            degrees: degrees.to_vec(),
+            solutions: Vec::new(),
+            solution_filter,
+            partial_solution_filter: partial_solution_valid,
+            dead_states: HashSet::new(),
+            budget,
+            states: 0,
+            exhausted: false,
+        };
+        search.search();
+        ComponentDomain {
+            solutions: search.solutions,
+            exhausted: search.exhausted,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn visit_components<F, V>(
+        component_index: usize,
+        edge_faces: &[[usize; 2]],
+        mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
+        mesh_quotient: Option<&MeshQuotient>,
+        solution_valid: &F,
+        assignment: &mut [Option<[usize; 2]>],
+        degrees: &mut [Vec<u8>],
+        point_count: usize,
+        budget: &MeshConstraintBudget,
+        visitor: &mut V,
+        visited: &mut usize,
+        component_domains: &[ComponentDomain],
+    ) -> Result<ControlFlow<()>, ()>
+    where
+        F: Fn(&[[usize; 2]]) -> bool,
+        V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
+    {
+        let Some(domain) = component_domains.get(component_index) else {
+            let pairs = assignment
+                .iter()
+                .copied()
+                .collect::<Option<Vec<_>>>()
+                .ok_or(())?;
+            if !boundary_domains_close(mesh_assignments, &pairs) || !solution_valid(&pairs) {
+                return Ok(ControlFlow::Continue(()));
+            }
+            if mesh_assignments.is_none() {
+                if let Some(quotient) = mesh_quotient {
+                    let singleton = pairs
+                        .iter()
+                        .copied()
+                        .map(|pair| vec![pair])
+                        .collect::<Vec<_>>();
+                    let mut quotient = quotient.clone();
+                    if !quotient.point_assignment_exists(point_count, &singleton, Some(budget)) {
+                        if budget.exhausted.get() {
+                            return Err(());
+                        }
+                        return Ok(ControlFlow::Continue(()));
+                    }
                 }
-                (search.exhausted, search.solutions)
-            };
-        let mut downstream_exhausted = false;
-        for solution in solutions {
+            }
+            *visited = visited.checked_add(1).ok_or(())?;
+            return Ok(visitor(&pairs));
+        };
+
+        let mut downstream_exhausted = domain.exhausted;
+        for solution in &domain.solutions {
             if !budget.charge() {
                 downstream_exhausted = true;
                 break;
             }
-            for &(edge, pair) in &solution {
+            for &(edge, pair) in solution {
                 assignment[edge] = Some(pair);
                 for (rank, face) in edge_faces[edge].into_iter().enumerate() {
                     if rank > 0 && face == edge_faces[edge][0] {
@@ -1665,13 +1676,9 @@ where
             }
             let control = visit_components(
                 component_index + 1,
-                components,
-                choices,
                 edge_faces,
-                face_edges,
                 mesh_assignments,
                 mesh_quotient,
-                partial_solution_valid,
                 solution_valid,
                 assignment,
                 degrees,
@@ -1679,7 +1686,7 @@ where
                 budget,
                 visitor,
                 visited,
-                solution_cache,
+                component_domains,
             );
             for &(edge, pair) in solution.iter().rev() {
                 assignment[edge] = None;
@@ -1698,7 +1705,7 @@ where
                 Err(()) => downstream_exhausted = true,
             }
         }
-        if search_exhausted || downstream_exhausted {
+        if downstream_exhausted {
             Err(())
         } else {
             Ok(ControlFlow::Continue(()))
@@ -1762,16 +1769,46 @@ where
             return None;
         }
         let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let mut solution_cache = vec![None; components.len()];
+        let mut component_domains = Vec::with_capacity(components.len());
+        for component in components {
+            let domain = solve_component_domain(
+                &component,
+                choices,
+                edge_faces,
+                &face_edges,
+                mesh_assignments,
+                mesh_quotient,
+                partial_solution_valid,
+                &fixed,
+                &degrees,
+                &budget,
+            );
+            if domain.solutions.is_empty() && domain.exhausted {
+                exhausted = true;
+                return None;
+            }
+            if domain.solutions.is_empty() {
+                return None;
+            }
+            component_domains.push((component, domain));
+        }
+        component_domains.sort_by_key(|(component, domain)| {
+            (
+                domain.exhausted,
+                domain.solutions.len(),
+                component.len(),
+                component.first().copied().unwrap_or_default(),
+            )
+        });
+        let component_domains = component_domains
+            .into_iter()
+            .map(|(_, domain)| domain)
+            .collect::<Vec<_>>();
         if visit_components(
             0,
-            &components,
-            choices,
             edge_faces,
-            &face_edges,
             mesh_assignments,
             mesh_quotient,
-            partial_solution_valid,
             solution_valid,
             &mut fixed,
             &mut degrees,
@@ -1779,7 +1816,7 @@ where
             &budget,
             visitor,
             &mut visited,
-            &mut solution_cache,
+            &component_domains,
         )
         .is_err()
         {
