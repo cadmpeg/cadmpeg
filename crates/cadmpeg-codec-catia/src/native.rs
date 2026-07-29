@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 191;
+pub const CATIA_NATIVE_VERSION: u32 = 192;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2801,8 +2801,6 @@ pub struct CatiaZeroEntityOrientedUse {
     pub side: u32,
     /// Two stored allocation values.
     pub allocations: [u32; 2],
-    /// Side-specific slots derived from the owning header's base columns.
-    pub side_slots: [u32; 2],
 }
 
 /// One zero-entity `2569` header and its two positional uses.
@@ -3898,7 +3896,6 @@ fn zero_entity_oriented_use_pairs(bytes: &[u8]) -> Vec<CatiaZeroEntityOrientedUs
                 record_ordinal: use_.record_ordinal,
                 side: use_.side,
                 allocations: use_.allocations,
-                side_slots: use_.side_slots,
             }),
         })
         .collect()
@@ -5501,7 +5498,7 @@ fn validate_zero_entity_topology_records(
                     && use_.byte_offset > pair.header_byte_offset
                     && (use_index == 0 || pair.uses[use_index - 1].byte_offset < use_.byte_offset)
                     && use_.record_ordinal == pair.header_record_ordinal.saturating_add(side)
-                    && use_.side_slots
+                    && use_.allocations
                         == [
                             pair.base_columns[0].saturating_add(side),
                             pair.base_columns[1].saturating_add(side),

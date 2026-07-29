@@ -1244,14 +1244,14 @@ pub(crate) fn zero_entity_topology_stream() -> Vec<u8> {
     write_tagged_u32(&mut header, 13, 100);
     write_tagged_u32(&mut header, 18, 200);
 
-    let make_use = |side, references: [u32; 2]| {
+    let make_use = |side, allocations: [u32; 2]| {
         let mut record = vec![0u8; 0x38 + 12];
         record[..4].copy_from_slice(&[0xa9, 0x03, 0x06, 0x38]);
         write_tagged_u32(&mut record, 7, 1);
         record[12] = 0x83;
         write_tagged_u32(&mut record, 13, side);
-        write_tagged_u32(&mut record, 18, references[0]);
-        write_tagged_u32(&mut record, 23, references[1]);
+        write_tagged_u32(&mut record, 18, allocations[0]);
+        write_tagged_u32(&mut record, 23, allocations[1]);
         record
     };
 
@@ -1273,8 +1273,8 @@ pub(crate) fn zero_entity_topology_stream() -> Vec<u8> {
     edge_stride
         .into_iter()
         .chain(header)
-        .chain(make_use(1, [1, 2]))
-        .chain(make_use(2, [3, 4]))
+        .chain(make_use(1, [101, 201]))
+        .chain(make_use(2, [102, 202]))
         .chain(incidence)
         .chain(vertex)
         .chain(support0)
@@ -5260,8 +5260,6 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
     };
     assert_eq!(pair.header_record_ordinal, 2);
     assert_eq!(pair.base_columns, [100, 200]);
-    assert_eq!(pair.uses[0].side_slots, [101, 201]);
-    assert_eq!(pair.uses[1].side_slots, [102, 202]);
 
     let [incidence] = native.zero_entity_vertex_incidences.as_slice() else {
         panic!("one zero-entity vertex incidence")
@@ -5300,7 +5298,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut invalid = native;
-    invalid.zero_entity_oriented_use_pairs[0].uses[1].side_slots[0] += 1;
+    invalid.zero_entity_oriented_use_pairs[0].uses[1].allocations[0] += 1;
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
