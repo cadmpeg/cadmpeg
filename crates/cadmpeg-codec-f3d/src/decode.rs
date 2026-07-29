@@ -1424,6 +1424,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             annotate_docstruct(&mut ir, &scan);
             match crate::xref::decode(&scan) {
                 Ok(Some(table)) => {
+                    ir.model.occurrences = crate::xref::project_occurrences(&table);
                     native.xref_designs = table.designs;
                     native.xref_references = table.references;
                 }
@@ -1770,6 +1771,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     annotate_docstruct(&mut ir, &scan);
     let xref_table = crate::xref::decode(&scan);
     if let Ok(Some(table)) = &xref_table {
+        ir.model.occurrences = crate::xref::project_occurrences(table);
         native.xref_designs.clone_from(&table.designs);
         native.xref_references.clone_from(&table.references);
     }

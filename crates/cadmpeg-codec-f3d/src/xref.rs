@@ -11,6 +11,9 @@
 use serde::Deserialize;
 
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::products::{
+    ComponentReference, ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceId,
+};
 
 use crate::bytes::lp_ascii_strict;
 use crate::container::role;
@@ -232,6 +235,57 @@ pub fn design_for<'a>(table: &'a XrefTable, reference: &XrefReference) -> Option
         .find(|design| design.target_file_name == reference.relative_path)
 }
 
+/// Project each external-reference placement as one root product occurrence.
+pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
+    table
+        .references
+        .iter()
+        .map(|reference| {
+            let mut transform = reference.transform.unwrap_or([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]);
+            for row in transform.iter_mut().take(3) {
+                row[3] *= 10.0;
+            }
+            Occurrence {
+                id: OccurrenceId(reference.id.clone()),
+                prototype: ComponentReference::External {
+                    document: ExternalDocumentReference {
+                        path: Some(reference.relative_path.clone()),
+                        document_id: None,
+                        resolution: ExternalResolution::Unresolved,
+                    },
+                    object: None,
+                },
+                parent: None,
+                array_index: None,
+                local_transform: transform,
+                prototype_transform: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+                resolved_transform: transform,
+                scale: [1.0; 3],
+                linked_subelements: Vec::new(),
+                visible: None,
+                element_component: None,
+                claim_child: None,
+                copy_on_change: None,
+                copy_on_change_source: None,
+                copy_on_change_group: None,
+                copy_on_change_touched: None,
+                link_transform: None,
+                native_ref: Some(reference.id.clone()),
+            }
+        })
+        .collect()
+}
+
 /// Expand container references through their occurrence records in the active
 /// Design `BulkStream` and retain each occurrence-local placement matrix.
 fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
@@ -250,24 +304,31 @@ fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
     });
     let mut streams = streams
         .filter_map(|entry| scan.entry_bytes(&entry.name).ok())
-        .filter_map(|bytes| {
+        .map(|bytes| {
             let headers = indexed_records(bytes);
             let matrices = std::collections::HashMap::new();
-            let class_tag = xref_class_tag(bytes, &headers, &roles)?;
-            Some((bytes, headers, class_tag, matrices))
+            let class_tag = xref_class_tag(bytes, &headers, &roles);
+            (bytes, headers, class_tag, matrices)
         })
         .collect::<Vec<_>>();
     let mut expanded = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
         for (bytes, headers, class_tag, matrices) in &mut streams {
-            occurrences.extend(occurrence_transforms(
-                bytes,
-                headers,
-                &reference.neutron_role,
-                class_tag,
-                matrices,
-            ));
+            let direct = role_adjacent_transforms(bytes, headers, &reference.neutron_role);
+            if direct.is_empty() {
+                if let Some(class_tag) = class_tag {
+                    occurrences.extend(occurrence_transforms(
+                        bytes,
+                        headers,
+                        &reference.neutron_role,
+                        class_tag,
+                        matrices,
+                    ));
+                }
+            } else {
+                occurrences.extend(direct.into_iter().map(Some));
+            }
         }
         if occurrences.is_empty() {
             expanded.push(reference.clone());
@@ -285,6 +346,28 @@ fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
         }
     }
     table.references = expanded;
+}
+
+fn role_adjacent_transforms(
+    bytes: &[u8],
+    records: &[IndexedRecord],
+    role: &str,
+) -> Vec<[[f64; 4]; 4]> {
+    records
+        .iter()
+        .flat_map(|record| {
+            role_tails(bytes, record, role)
+                .into_iter()
+                .filter_map(|after_role| {
+                    let matrix_at = after_role.checked_add(2)?;
+                    if matrix_at.checked_add(128)? <= record.end {
+                        decode_rigid_matrix(bytes, matrix_at)
+                    } else {
+                        None
+                    }
+                })
+        })
+        .collect()
 }
 
 #[derive(Debug)]
@@ -525,6 +608,59 @@ mod tests {
     }
 
     #[test]
+    fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
+        let transform = [
+            [0.0, -1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 2.0],
+            [0.0, 0.0, 1.0, 3.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let table = super::XrefTable {
+            designs: Vec::new(),
+            references: vec![crate::records::XrefReference {
+                id: "f3d:xref:reference#0/occurrence#0".into(),
+                ordinal: 0,
+                occurrence_ordinal: 0,
+                from: "root.f3d".into(),
+                relative_path: "part.f3d".into(),
+                neutron_role: "role".into(),
+                neutron_data: "data".into(),
+                transform: Some(transform),
+            }],
+        };
+
+        let occurrences = super::project_occurrences(&table);
+
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(occurrences[0].id.0, table.references[0].id);
+        assert_eq!(
+            occurrences[0].local_transform,
+            [
+                [0.0, -1.0, 0.0, 10.0],
+                [1.0, 0.0, 0.0, 20.0],
+                [0.0, 0.0, 1.0, 30.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        );
+        assert_eq!(
+            occurrences[0].resolved_transform,
+            occurrences[0].local_transform
+        );
+        assert!(occurrences[0].parent.is_none());
+        assert_eq!(
+            occurrences[0].prototype,
+            cadmpeg_ir::products::ComponentReference::External {
+                document: cadmpeg_ir::products::ExternalDocumentReference {
+                    path: Some("part.f3d".into()),
+                    document_id: None,
+                    resolution: cadmpeg_ir::products::ExternalResolution::Unresolved,
+                },
+                object: None,
+            }
+        );
+    }
+
+    #[test]
     fn component_reference_data_is_an_open_json_object() {
         let value = super::parse_component_reference_data(
             br#"{"schema":7,"references":[{"id":"component"}],"extension":{"x":true}}"#,
@@ -595,6 +731,26 @@ mod tests {
         bytes
     }
 
+    fn direct_occurrence_record(role: &str, transforms: &[[[f64; 4]; 4]]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(b"382");
+        bytes.extend_from_slice(&10_u64.to_le_bytes());
+        for transform in transforms {
+            bytes.extend_from_slice(&[0; 9]);
+            let role = role.encode_utf16().collect::<Vec<_>>();
+            bytes.extend_from_slice(&(role.len() as u32).to_le_bytes());
+            for value in role {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            bytes.extend_from_slice(&[0, 0]);
+            for value in transform.iter().flatten() {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes
+    }
+
     #[test]
     fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
         let first = [
@@ -622,6 +778,28 @@ mod tests {
                 &mut matrices,
             ),
             vec![Some(first), Some(second)]
+        );
+    }
+
+    #[test]
+    fn repeated_roles_retain_each_directly_adjacent_occurrence_transform() {
+        let first = [
+            [1.0, 0.0, 0.0, -1.3],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let second = [
+            [-1.0, 0.0, 0.0, -5.8],
+            [0.0, 1.0, 0.0, 6.16],
+            [0.0, 0.0, -1.0, 0.568],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let bytes = direct_occurrence_record("role", &[first, second]);
+
+        assert_eq!(
+            super::role_adjacent_transforms(&bytes, &super::indexed_records(&bytes), "role"),
+            [first, second]
         );
     }
 
