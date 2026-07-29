@@ -19779,20 +19779,72 @@ fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
     Some(PlaneEquation { origin, normal })
 }
 
+#[derive(Debug, Clone, Copy)]
+struct BoundaryLine {
+    origin: [f64; 3],
+    direction: [f64; 3],
+}
+
+fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
+    let CurveGeometry::Line { origin, direction } = geometry else {
+        return None;
+    };
+    Some(BoundaryLine {
+        origin: [origin.x, origin.y, origin.z],
+        direction: normalized([direction.x, direction.y, direction.z])?,
+    })
+}
+
+fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation> {
+    let mut candidate = None;
+    'pairs: for first in 0..lines.len() {
+        for second in first + 1..lines.len() {
+            let direction_cross = cross(lines[first].direction, lines[second].direction);
+            let displacement =
+                std::array::from_fn(|axis| lines[second].origin[axis] - lines[first].origin[axis]);
+            let normal = normalized(direction_cross)
+                .or_else(|| normalized(cross(lines[first].direction, displacement)));
+            if let Some(normal) = normal {
+                candidate = Some(PlaneEquation {
+                    origin: lines[first].origin,
+                    normal,
+                });
+                break 'pairs;
+            }
+        }
+    }
+    let candidate = candidate?;
+    let canonical = agreed_plane(&[candidate])?;
+    lines
+        .iter()
+        .all(|line| {
+            point_on_carrier(line.origin, CarrierEquation::Plane(canonical))
+                && dot(line.direction, canonical.normal).abs() <= 1e-9
+        })
+        .then_some(canonical)
+}
+
 fn agreed_topology_bound_plane(
     points: impl IntoIterator<Item = [f64; 3]>,
     curve_planes: impl IntoIterator<Item = PlaneEquation>,
+    lines: impl IntoIterator<Item = BoundaryLine>,
 ) -> Option<PlaneEquation> {
     let points = points.into_iter().collect::<Vec<_>>();
+    let lines = lines.into_iter().collect::<Vec<_>>();
     let candidates = topology_bound_plane(points.iter().copied())
         .into_iter()
         .chain(curve_planes)
+        .chain(topology_bound_line_plane(&lines))
         .collect::<Vec<_>>();
     let plane = agreed_plane(&candidates)?;
-    points
+    let points_agree = points
         .iter()
-        .all(|point| point_on_carrier(*point, CarrierEquation::Plane(plane)))
-        .then_some(plane)
+        .all(|point| point_on_carrier(*point, CarrierEquation::Plane(plane)));
+    let lines_agree = lines.iter().all(|line| {
+        point_on_carrier(line.origin, CarrierEquation::Plane(plane))
+            && dot(line.direction, plane.normal).abs() <= 1e-9
+    });
+    (points_agree && lines_agree).then_some(plane)
 }
 
 fn transfer_topology_bound_planes(
@@ -19827,7 +19879,7 @@ fn transfer_topology_bound_planes(
                     .then_some(*point)
             })
             .collect::<Vec<_>>();
-        let curve_planes = scan
+        let boundary_curves = scan
             .topology
             .loops
             .iter()
@@ -19839,9 +19891,16 @@ fn transfer_topology_bound_planes(
                     .then_some(())?;
                 let id = CurveId(format!("creo:visibgeom:curve#{}", half_edge.curve_id));
                 let curve = ir.model.curves.iter().find(|curve| curve.id == id)?;
-                analytic_curve_plane(&curve.geometry)
-            });
-        let Some(plane) = agreed_topology_bound_plane(points, curve_planes) else {
+                Some(&curve.geometry)
+            })
+            .collect::<Vec<_>>();
+        let curve_planes = boundary_curves
+            .iter()
+            .filter_map(|geometry| analytic_curve_plane(geometry));
+        let lines = boundary_curves
+            .iter()
+            .filter_map(|geometry| analytic_boundary_line(geometry));
+        let Some(plane) = agreed_topology_bound_plane(points, curve_planes, lines) else {
             continue;
         };
         let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
@@ -30962,8 +31021,8 @@ fn build_report(
              Outline-backed planes, guarded non-axis support frames, complete ND first-instance \
              plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional \
              surface-of-extrusion planes, \
-             topology-bound `fc 05` planes with circle or ellipse boundary carriers, \
-             cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
+             topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a \
+             resolved axis-normal cap plane, four-entry two-cap and blind \
              circular-sweep cylinders, \
              four-entry simple-hole cylinders with complete cap outlines, radius-anchored \
              class-911 counterbore and bore patches, and compact simple-hole cylinders with \
@@ -31026,8 +31085,8 @@ fn build_report(
             severity: Severity::Info,
             message: format!(
                 "Transferred {topology_bound_plane_count} model-space plane carrier(s) from \
-                 a circle or ellipse boundary carrier or three or more non-collinear solved \
-                 boundary vertices of the same native face."
+                 circle, ellipse, or line boundary carriers or three or more non-collinear \
+                 solved boundary vertices of the same native face."
             ),
             provenance: None,
         });

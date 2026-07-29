@@ -1,7 +1,8 @@
 use super::{
-    agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_curve_plane, dot,
-    envelope_reconciled_plane_candidate, frame_bound_outline_plane_candidate,
-    held_coordinate_plane, plane_candidates, topology_bound_plane, transfer_topology_bound_planes,
+    agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
+    analytic_curve_plane, dot, envelope_reconciled_plane_candidate,
+    frame_bound_outline_plane_candidate, held_coordinate_plane, plane_candidates,
+    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes, BoundaryLine,
     Curve, CurveGeometry, CurveId, PlaneCandidate, PlaneChart, PlaneEquation, Point3,
     SurfaceGeometry, SurfaceId, Vector3,
 };
@@ -56,8 +57,34 @@ fn every_solved_boundary_vertex_must_lie_on_the_analytic_plane() {
         origin: [0.0, 0.0, 2.0],
         normal: [0.0, 0.0, 1.0],
     };
-    assert!(agreed_topology_bound_plane([[3.0, 4.0, 2.0]], [plane]).is_some());
-    assert!(agreed_topology_bound_plane([[3.0, 4.0, 3.0]], [plane]).is_none());
+    assert!(agreed_topology_bound_plane([[3.0, 4.0, 2.0]], [plane], []).is_some());
+    assert!(agreed_topology_bound_plane([[3.0, 4.0, 3.0]], [plane], []).is_none());
+}
+
+#[test]
+fn distinct_boundary_lines_define_one_plane() {
+    let line = |origin, direction| BoundaryLine { origin, direction };
+    let plane = topology_bound_line_plane(&[
+        line([0.0, 0.0, 3.0], [1.0, 0.0, 0.0]),
+        line([0.0, 2.0, 3.0], [1.0, 0.0, 0.0]),
+        line([4.0, 0.0, 3.0], [0.0, 1.0, 0.0]),
+    ])
+    .expect("coplanar boundary lines");
+    assert_eq!(plane.normal, [0.0, 0.0, 1.0]);
+
+    assert!(topology_bound_line_plane(&[
+        line([0.0, 0.0, 3.0], [1.0, 0.0, 0.0]),
+        line([0.0, 2.0, 4.0], [1.0, 0.0, 0.0]),
+        line([4.0, 0.0, 3.0], [0.0, 1.0, 0.0]),
+    ])
+    .is_none());
+
+    let analytic = analytic_boundary_line(&CurveGeometry::Line {
+        origin: Point3::new(1.0, 2.0, 3.0),
+        direction: Vector3::new(2.0, 0.0, 0.0),
+    })
+    .expect("analytic line");
+    assert_eq!(analytic.direction, [1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -127,6 +154,65 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         transfer_topology_bound_planes(&scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),),
         0
     );
+}
+
+#[test]
+fn unique_native_line_loop_places_its_plane_surface() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 5,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 1,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 10,
+    });
+    for id in [11, 12] {
+        scan.curves
+            .topology_rows
+            .push(crate::curve::CurveTopologyRow {
+                id,
+                type_byte: 0,
+                feature_id: 1,
+                directions: [0; 2],
+                faces: [5, 0],
+                next_edges: [if id == 11 { 12 } else { 11 }, 0],
+                offset: 20,
+            });
+    }
+    scan.topology.loops.push(crate::topology::Loop {
+        face_id: 5,
+        half_edges: [11, 12]
+            .into_iter()
+            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .collect(),
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    for (id, origin, direction) in [
+        (11, Point3::new(0.0, 0.0, 4.0), Vector3::new(1.0, 0.0, 0.0)),
+        (12, Point3::new(0.0, 2.0, 4.0), Vector3::new(0.0, 1.0, 0.0)),
+    ] {
+        ir.model.curves.push(Curve {
+            id: CurveId(format!("creo:visibgeom:curve#{id}")),
+            geometry: CurveGeometry::Line { origin, direction },
+            source_object: None,
+        });
+    }
+
+    assert_eq!(
+        transfer_topology_bound_planes(&scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),),
+        1
+    );
+    assert!(ir.model.surfaces.iter().any(|surface| {
+        surface.id == SurfaceId("creo:visibgeom:surface#5".to_string())
+            && matches!(
+                &surface.geometry,
+                SurfaceGeometry::Plane { origin, normal, .. }
+                    if origin.z == 4.0 && *normal == Vector3::new(0.0, 0.0, 1.0)
+            )
+    }));
 }
 
 #[test]
