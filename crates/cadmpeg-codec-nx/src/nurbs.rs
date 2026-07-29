@@ -578,7 +578,10 @@ fn curve_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, CurveDescriptor
         && (2..=2000).contains(&distinct)
         && [1, 4, 5, 6].contains(&form))
     .then_some(())?;
-    if bytes.get(pos + 17 + shift..pos + 21 + shift) == Some(&[0, 0, 1, 4]) {
+    if matches!(
+        bytes.get(pos + 17 + shift..pos + 21 + shift),
+        Some([0, 0, 0, 1] | [0, 0, 1, 4])
+    ) {
         let mut at = pos + 21 + shift;
         let mut references = [0; 3];
         for reference in &mut references {

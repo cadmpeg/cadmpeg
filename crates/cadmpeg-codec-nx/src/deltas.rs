@@ -4028,6 +4028,20 @@ mod nurbs_auxiliary_tests {
         ]
     }
 
+    fn escaped_curve_descriptor_with_extended_references() -> Vec<u8> {
+        vec![
+            0, 136, 0xff, 0xb8, 0xfc, 0, 1, // envelope and extended XMT
+            0, 1, // degree
+            0, 0, 0, 2, // pole count
+            0, 2, // dimension
+            0, 0, 0, 2, // distinct-knot count
+            5, 0, 0, 0, 1, // form and reference-lane prefix
+            0xb8, 0xf9, 0, 1, 0, // term-use reference
+            0xb8, 0xfa, 0, 1, 0, // multiplicity reference
+            0xb8, 0xfb, 0, 1, 0, // knot reference
+        ]
+    }
+
     #[test]
     fn retains_status_framed_rational_curve_descriptor() {
         let bytes = status_framed_curve_descriptor();
@@ -4052,6 +4066,19 @@ mod nurbs_auxiliary_tests {
         for malformed in [&bytes[..bytes.len() - 1], &bad_status, &bad_dimension] {
             assert!(walk(malformed).records.is_empty());
         }
+    }
+
+    #[test]
+    fn retains_escaped_curve_descriptor_with_extended_state_references() {
+        let bytes = escaped_curve_descriptor_with_extended_references();
+        let census = walk(&bytes);
+
+        assert_eq!(census.records.len(), 1);
+        assert_eq!(census.records[0].kind, 136);
+        assert_eq!(census.records[0].xmt, 50_947);
+        assert_eq!(census.records[0].references, [50_950, 50_949, 50_948]);
+        assert_eq!(census.records[0].end, bytes.len());
+        assert_eq!(census.bytes_decoded, bytes.len());
     }
 }
 
