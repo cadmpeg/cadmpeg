@@ -2607,12 +2607,7 @@ fn parse_extrusion_surface(
         records,
         object_stream_pcurves,
     )?;
-    if directrix
-        .parameter_range()
-        .into_iter()
-        .zip(carrier.parameter_bounds[1])
-        .any(|(left, right)| left.to_bits() != right.to_bits())
-    {
+    if !parameter_range_contains(directrix.parameter_range(), carrier.parameter_bounds[1]) {
         return None;
     }
     Some(B5ExtrusionSurface {
@@ -2621,6 +2616,16 @@ fn parse_extrusion_surface(
         parameter_bounds: carrier.parameter_bounds,
         directrix,
     })
+}
+
+fn parameter_range_contains(domain: [f64; 2], active: [f64; 2]) -> bool {
+    let scale = domain
+        .into_iter()
+        .chain(active)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let tolerance = 64.0 * f64::EPSILON * scale;
+    domain[0] <= active[0] + tolerance && active[1] <= domain[1] + tolerance
 }
 
 struct B5ExtrusionCarrier {
@@ -6088,6 +6093,22 @@ mod tests {
                     cache_fit_tolerance: 0.01,
                 },
             })
+        );
+        let directrix_lower_bound = 2 + 7 * 8;
+        let mut trimmed_interval = record.clone();
+        trimmed_interval.payload[directrix_lower_bound..directrix_lower_bound + 8]
+            .copy_from_slice(&(-2.0_f64).to_le_bytes());
+        assert!(
+            parse_extrusion_surface(&trimmed_interval, &records, &pcurves).is_some(),
+            "the extrusion may use a strict subinterval of its directrix"
+        );
+        let mut outside_interval = record.clone();
+        outside_interval.payload[directrix_lower_bound..directrix_lower_bound + 8]
+            .copy_from_slice(&(-3.0_f64 - 1.0e-9).to_le_bytes());
+        assert_eq!(
+            parse_extrusion_surface(&outside_interval, &records, &pcurves),
+            None,
+            "the active interval must remain inside the directrix domain"
         );
 
         for controls in [[0x05, 0x05], [0x01, 0x29], [0x05, 0x29]] {

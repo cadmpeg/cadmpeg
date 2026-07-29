@@ -297,7 +297,8 @@ current scores require those matrices and representative fixtures.
   great-circle pcurves and exact model-space circles.
   Class-`24` support curves and class-`14` fixed-direction curve offsets feed
   class-`2c` extrusion carriers and class-`30` surface offsets. A transferred
-  class-`2c` carrier retains its directrix construction. For a class-`30`
+  class-`2c` carrier retains its directrix construction and may trim it to a
+  contained active parameter interval. For a class-`30`
   construction, the class-`14` result directrix validates the result carrier
   against the source extrusion and signed surface distance; the neutral surface
   offset retains the defining source extrusion directly.
