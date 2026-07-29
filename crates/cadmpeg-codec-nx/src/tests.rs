@@ -8288,7 +8288,7 @@ fn nurbs_carriers_reject_duplicate_support_identities() {
     fn duplicate_record(stream: &mut Vec<u8>, tag: u8, xmt_offset: usize, xmt: u16, len: usize) {
         let start = stream
             .windows(len)
-            .position(|record| {
+            .rposition(|record| {
                 record[..2] == [0, tag] && record[xmt_offset..xmt_offset + 2] == xmt.to_be_bytes()
             })
             .expect("support record");
@@ -10052,6 +10052,82 @@ fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
 }
 
 #[test]
+fn nurbs_decodes_escaped_surface_payload_envelope() {
+    let mut stream = bspline_partition_stream();
+    let payload = stream
+        .windows(4)
+        .position(|window| window == [0, 125, 0, 21])
+        .expect("surface payload");
+    stream.insert(payload + 2, 0xff);
+
+    let surfaces = crate::nurbs::surfaces(&stream);
+    assert_eq!(surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+        panic!("expected NURBS surface");
+    };
+    assert_eq!(surface.control_points.len(), 4);
+    assert_eq!(surface.control_points[3].y, 20.0);
+}
+
+#[test]
+fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
+    let mut stream = bspline_partition_stream();
+    let mut descriptor = record(126, 49);
+    put_ref(&mut descriptor, 2, 20);
+    put_ref(&mut descriptor, 6, 1);
+    put_ref(&mut descriptor, 8, 1);
+    put_ref(&mut descriptor, 12, 2);
+    put_ref(&mut descriptor, 16, 2);
+    descriptor[18] = 5;
+    descriptor[19] = 5;
+    descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
+    descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
+    let mut at = 34;
+    for reference in [9, 30, 31, 32, 33] {
+        put_ref(&mut descriptor, at, reference);
+        at += 2;
+        descriptor[at] = 0;
+        at += 1;
+    }
+    stream.extend(descriptor);
+
+    let surfaces = crate::nurbs::surfaces(&stream);
+    assert_eq!(surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+        panic!("expected NURBS surface");
+    };
+    assert_eq!(surface.control_points.len(), 4);
+}
+
+#[test]
+fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
+    let mut stream = bspline_partition_stream();
+    let mut descriptor = record(136, 30);
+    put_ref(&mut descriptor, 2, 40);
+    put_ref(&mut descriptor, 4, 1);
+    put_ref(&mut descriptor, 8, 2);
+    put_ref(&mut descriptor, 10, 3);
+    put_ref(&mut descriptor, 14, 2);
+    descriptor[16] = 5;
+    descriptor[20] = 1;
+    let mut at = 21;
+    for reference in [41, 42, 43] {
+        put_ref(&mut descriptor, at, reference);
+        at += 2;
+        descriptor[at] = 0;
+        at += 1;
+    }
+    stream.extend(descriptor);
+
+    let curves = crate::nurbs::curves(&stream);
+    assert_eq!(curves.len(), 1);
+    let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
+        panic!("expected NURBS curve");
+    };
+    assert_eq!(curve.control_points.len(), 2);
+}
+
+#[test]
 fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
     let mut stream = bspline_partition_stream();
     let descriptor = stream
@@ -10273,9 +10349,18 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
 
 #[test]
 fn decode_tracks_fully_extended_geometry_header_shift() {
-    let mut cur = Cursor::new(prt_with_partition(
-        &topology_with_fully_extended_geometry_headers(),
+    let stream = topology_with_fully_extended_geometry_headers();
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(matches!(
+        graph.get(50, 6).and_then(|node| node.surface_geometry()),
+        Some(SurfaceGeometry::Plane { .. })
     ));
+    assert!(matches!(
+        graph.get(30, 9).and_then(|node| node.curve_geometry()),
+        Some(CurveGeometry::Line { .. })
+    ));
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir.model.faces.len(), 1);

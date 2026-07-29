@@ -332,6 +332,15 @@ fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)>
     let shift = escape + xmt_len - 2;
     let count_escape = usize::from(bytes.get(pos + 91 + shift) == Some(&0xff));
     let count_at = pos + 91 + shift + count_escape;
+    let nested_same_record = (pos + 2..count_at).any(|candidate| {
+        if bytes.get(candidate..candidate + 2) != Some(&[0, 125]) {
+            return false;
+        }
+        let escape = usize::from(bytes.get(candidate + 2) == Some(&0xff));
+        read_xmt(bytes, candidate + 2 + escape)
+            .is_some_and(|(candidate_xmt, _)| candidate_xmt == xmt)
+    });
+    (!nested_same_record).then_some(())?;
     let count = be_u32(bytes, count_at)? as usize;
     (count > 0 && count <= 0x40000).then_some(())?;
     let (_, first_len) = read_xmt(bytes, count_at + 4)?;
@@ -430,6 +439,7 @@ fn finite_f64_values(raw: &[u8]) -> Option<Vec<f64>> {
         .then_some(values)
 }
 
+#[derive(Clone, PartialEq, Eq)]
 struct SurfaceDescriptor {
     u_degree: u16,
     v_degree: u16,
@@ -450,7 +460,39 @@ fn surface_descriptors(bytes: &[u8]) -> BTreeMap<u32, SurfaceDescriptor> {
     let records = (0..bytes.len().saturating_sub(47)).filter_map(|pos| {
         surface_descriptor_at(bytes, pos).map(|(xmt, descriptor, _)| (xmt, descriptor))
     });
-    unique_records(records)
+    let mut descriptors = BTreeMap::<u32, SurfaceDescriptor>::new();
+    let mut conflicts = BTreeSet::new();
+    for (xmt, descriptor) in records {
+        if conflicts.contains(&xmt) {
+            continue;
+        }
+        let Some(current) = descriptors.remove(&xmt) else {
+            descriptors.insert(xmt, descriptor);
+            continue;
+        };
+        if current == descriptor {
+            conflicts.insert(xmt);
+            continue;
+        }
+        let mut current_basis = current.clone();
+        let mut descriptor_basis = descriptor.clone();
+        current_basis.payload = None;
+        descriptor_basis.payload = None;
+        if current_basis != descriptor_basis {
+            conflicts.insert(xmt);
+            continue;
+        }
+        let payload = match (current.payload, descriptor.payload) {
+            (Some(left), Some(right)) if left != right => {
+                conflicts.insert(xmt);
+                continue;
+            }
+            (Some(payload), _) | (_, Some(payload)) => Some(payload),
+            (None, None) => None,
+        };
+        descriptors.insert(xmt, SurfaceDescriptor { payload, ..current });
+    }
+    descriptors
 }
 
 fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescriptor, usize)> {
@@ -479,7 +521,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
     let short = be_u16(bytes, pos + 44 + shift) == Some(125);
     let (u_mult, v_mult, u_knots, v_knots, payload, end) = if short {
         let payload_at = pos + 46 + shift;
-        let (payload, payload_len) = read_xmt(bytes, payload_at)?;
+        let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
         (payload > 1).then_some(())?;
         (
             u32::from(be_u16(bytes, pos + 36 + shift)?),
@@ -499,7 +541,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
         }
         if at == pos + 54 + shift && be_u16(bytes, at) == Some(125) {
             let payload_at = at + 2;
-            let (payload, payload_len) = read_xmt(bytes, payload_at)?;
+            let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
             (payload > 1).then_some(())?;
             (
                 refs[1],
@@ -543,6 +585,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
     ))
 }
 
+#[derive(Clone, PartialEq, Eq)]
 struct CurveDescriptor {
     degree: u16,
     poles: usize,
@@ -558,7 +601,31 @@ fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u32, CurveDescriptor> {
     let records = (0..bytes.len().saturating_sub(26)).filter_map(|pos| {
         curve_descriptor_at(bytes, pos, true).map(|(xmt, descriptor, _)| (xmt, descriptor))
     });
-    unique_records(records)
+    let mut descriptors = BTreeMap::<u32, CurveDescriptor>::new();
+    let mut conflicts = BTreeSet::new();
+    for (xmt, descriptor) in records {
+        if conflicts.contains(&xmt) {
+            continue;
+        }
+        let Some(current) = descriptors.remove(&xmt) else {
+            descriptors.insert(xmt, descriptor);
+            continue;
+        };
+        if current == descriptor {
+            conflicts.insert(xmt);
+            continue;
+        }
+        let mut current_basis = current.clone();
+        let mut descriptor_basis = descriptor.clone();
+        current_basis.references.clear();
+        descriptor_basis.references.clear();
+        if current_basis == descriptor_basis {
+            descriptors.insert(xmt, current);
+        } else {
+            conflicts.insert(xmt);
+        }
+    }
+    descriptors
 }
 
 fn curve_descriptor_at(
@@ -714,6 +781,12 @@ fn read_xmt(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     let remainder = first.unsigned_abs();
     let quotient = u16::from_be_bytes([*bytes.get(at + 2)?, *bytes.get(at + 3)?]);
     Some((u32::from(quotient) * 32_767 + u32::from(remainder), 4))
+}
+
+fn read_enveloped_xmt(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
+    let escape = usize::from(bytes.get(at) == Some(&0xff));
+    let (value, len) = read_xmt(bytes, at + escape)?;
+    Some((value, escape + len))
 }
 
 /// Codec-local ceiling on the total expanded knot count. Multiplicities are

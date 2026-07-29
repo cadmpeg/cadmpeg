@@ -800,7 +800,7 @@ Payload offsets are relative to the record's type tag, after the common header (
 
 Every analytic normal or axis and its x-axis are finite unit vectors with an absolute dot product below `1e-6`. A non-unit or non-orthogonal frame rejects the analytic carrier.
 
-An extended leading reference shifts the analytic payload and record end by the same decoded byte count. Bytes before that shifted end remain owned by the record and cannot open another analytic carrier.
+Each extended reference in the five-reference common header shifts the analytic payload and record end by two bytes. The shifts accumulate across the header. Bytes before that shifted end remain owned by the record and cannot open another analytic carrier.
 
 Validity gates: CIRCLE, ELLIPSE, CYLINDER, SPHERE, and TORUS radii are positive. ELLIPSE has `major >= minor`. CONE reference radius is nonnegative and has finite nonzero `sin_half` and `cos_half` satisfying `sin_half² + cos_half² ≈ 1`; SPHERE has a unit axis; a horn torus has `major == minor`.
 
@@ -825,10 +825,12 @@ B_SURFACE / B_CURVE are compact: header through sense `+18`, then `nurbs` ref `+
 |  135 | `0087` | B-curve control payload                                                                                                                                     |
 |  136 | `0088` | B-curve descriptor: `degree +4`, `pole_count +8`, `dimension +10` (2=UV, 3=XYZ), distinct-knot `+14`, form `+16`, mult/knot refs `+23/+25`                  |
 
-Types 135 and 136 may place an `ff` envelope escape before their xmt. This
+Types 125, 126, 135, and 136 may place an `ff` envelope escape before their xmt. This
 shifts every subsequent logical field by one byte. Type 135 may place a second
 `ff` escape before its control-value count; the count and control-reference tail
-shift by one additional byte. Multiplicity and knot references in type 136 are
+shift by one additional byte. A short or large-index type-126 descriptor's
+embedded type-125 payload header may carry the same envelope escape before its
+payload xmt. Multiplicity and knot references in type 136 are
 sequential encoded xmts, so an extended multiplicity reference shifts the knot
 reference. Type 136 admits dimensions 2, 3, and 4; dimension 4 is homogeneous
 three-dimensional control data. Its status-framed form continues after the form
@@ -837,7 +839,7 @@ ordered as term-use, multiplicity, and knot references. Every reference is
 non-null and may use compact or extended XMT encoding. The complete form ends
 after the knot-reference status.
 
-Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. Each support-record XMT is unique within its stream. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
+Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. Within one physical stream, each support-record XMT is unique. A merged partition-and-delta view may contain compact and status-framed descriptors with the same XMT. They denote one descriptor only when their degree, pole counts, dimension or directional forms, distinct-knot counts, and multiplicity and knot references agree. A payload reference present in either equivalent representation supplies the shared payload identity; two different payload identities or any differing basis field reject the descriptor. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
 
 ### 6.3 Procedural intersection curves (type 38 / `0x5a`)
 
@@ -1408,7 +1410,7 @@ A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body snapsh
 
 ### 9.3 B-spline payloads
 
-A type-125 B-surface control payload stores a parameter-range block, a marker byte, a sense byte, `double_count:u32`, a large-index-capable `first_index`, and `double_count` doubles. An optional envelope escape before `double_count` shifts the remaining fields by one byte. A type-125 surface-data header is `007d [ff], xmt, value[8]:f64 BE, marker, marker_lane[12], ref 01, ref 01, ref 01, ref 01`. The XMT is non-null, every value is finite, and `marker` is `01` or `02`. `marker_lane` contains either `marker * 4` bytes `42` followed by `(3 - marker) * 4` bytes `3f`, or, for marker `01`, eight bytes `42` followed by four bytes `3f`.
+A type-125 B-surface control payload stores a parameter-range block, a marker byte, a sense byte, `double_count:u32`, a large-index-capable `first_index`, and `double_count` doubles. An optional envelope escape before `double_count` shifts the remaining fields by one byte. A candidate containing another type-125 header with the same XMT before its `double_count` field is the descriptor prefix of the nested record, not a control payload. A type-125 surface-data header is `007d [ff], xmt, value[8]:f64 BE, marker, marker_lane[12], ref 01, ref 01, ref 01, ref 01`. The XMT is non-null, every value is finite, and `marker` is `01` or `02`. `marker_lane` contains either `marker * 4` bytes `42` followed by `(3 - marker) * 4` bytes `3f`, or, for marker `01`, eight bytes `42` followed by four bytes `3f`.
 
 A type-135 curve-data header is `0087 [ff], xmt, mode, ref 01`, where `mode`
 is `01` or `02`. Its XMT is non-null. A type-135 counted control payload is

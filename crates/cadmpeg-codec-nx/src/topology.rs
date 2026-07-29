@@ -285,13 +285,15 @@ impl Node {
     /// Decode this graph-owned fixed analytic surface carrier.
     pub fn surface_geometry(&self) -> Option<cadmpeg_ir::geometry::SurfaceGeometry> {
         matches!(self.kind, 50..=54).then_some(())?;
-        crate::geometry::decode_surface_record(&self.bytes, self.kind, self.shift)
+        let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
+        crate::geometry::decode_surface_record(&self.bytes, self.kind, payload_shift)
     }
 
     /// Decode this graph-owned fixed analytic curve carrier.
     pub fn curve_geometry(&self) -> Option<cadmpeg_ir::geometry::CurveGeometry> {
         matches!(self.kind, 30..=32).then_some(())?;
-        crate::geometry::decode_curve_record(&self.bytes, self.kind, self.shift)
+        let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
+        crate::geometry::decode_curve_record(&self.bytes, self.kind, payload_shift)
     }
 }
 
