@@ -401,6 +401,23 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     decode_in_surface_row_lane(data, offset, cache)
 }
 
+/// Whether `byte` opens a dedicated scalar form in the second
+/// directrix-coordinate lane.
+pub(crate) fn is_tabulated_cylinder_second_coordinate_opener(byte: u8) -> bool {
+    matches!(
+        byte,
+        0x28
+            | 0x2c
+            | 0x41
+            | 0x45
+            | 0x4c..=0x4d
+            | 0x50
+            | 0x54
+            | 0x5c
+            | 0x5e..=0xdf
+    )
+}
+
 /// Decode one coordinate in a named surface-prototype `local_sys` body.
 ///
 /// Compact `0x0e` is positive one half in this lane. Positional surface rows

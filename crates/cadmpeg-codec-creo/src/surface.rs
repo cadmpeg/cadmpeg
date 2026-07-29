@@ -4823,13 +4823,20 @@ fn named_spline_scalar_slot(
             .map(|(value, next)| (Some(value), next));
     }
     if matches!(family, SurfacePrototypeFamily::Fillet)
-        && matches!(name, "i_pnts" | "i_points" | "tangts")
+        && name == "tangts"
+        && scalar::is_tabulated_cylinder_second_coordinate_opener(head)
+    {
+        return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
+    }
+    if matches!(family, SurfacePrototypeFamily::Fillet)
+        && matches!(name, "i_pnts" | "i_points")
         && matches!(head, 0xa4..=0xdf)
     {
         return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
-    if matches!(name, "i_pnts" | "i_points") && matches!(head, 0x63 | 0x68 | 0x6e | 0x70) {
+    if matches!(name, "i_pnts" | "i_points") && matches!(head, 0x5b..=0xa3) {
         return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
     }
     if matches!(name, "i_pnts" | "i_points") && matches!(head, 0xb3 | 0xb9) {
@@ -8747,6 +8754,35 @@ mod tests {
                 tokens: vec![negative.to_vec(), vec![0xe4], vec![0x0f]],
             })
         );
+    }
+
+    #[test]
+    fn fillet_vectors_dispatch_positive_coordinate_lanes_by_field() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x02i_pnts\0\xf9\x01\x03\x98\x01\x02\x03\x04\x05\x06\xe4\xe4\
+            \xe0\x02tangts\0\xf9\x01\x03\x4c\x01\x02\x03\x04\x05\x06\xe4\xe4";
+
+        let records = named_prototype_records(payload);
+        let prototype = &records[0];
+
+        assert!(matches!(
+            prototype.field("i_pnts").map(|field| &field.value),
+            Some(SurfaceNamedValue::ScalarArray { values, .. })
+                if values == &[
+                    Some(f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6])),
+                    Some(1.0),
+                    Some(1.0),
+                ]
+        ));
+        assert!(matches!(
+            prototype.field("tangts").map(|field| &field.value),
+            Some(SurfaceNamedValue::ScalarArray { values, .. })
+                if values == &[
+                    Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 0])),
+                    Some(1.0),
+                    Some(1.0),
+                ]
+        ));
     }
 
     #[test]
