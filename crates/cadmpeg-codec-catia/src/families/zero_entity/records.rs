@@ -962,7 +962,7 @@ fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
     let origin = c.point3()?;
     c.skip(1)?;
     let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
-    if !(radius.is_finite() && radius > 0.0 && radius < 1e6) {
+    if !(radius.is_finite() && radius > 0.0) {
         return None;
     }
     Some(geometry)
@@ -973,7 +973,6 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
     let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
     if !(radius.is_finite()
         && radius > 0.0
-        && radius < 1e6
         && half_angle.is_finite()
         && half_angle > 0.0
         && half_angle < std::f64::consts::FRAC_PI_2)
@@ -988,10 +987,8 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
     if !(major_radius.is_finite()
         && major_radius > 0.0
-        && major_radius < 1e6
         && minor_radius.is_finite()
-        && minor_radius > 0.0
-        && minor_radius < 1e6)
+        && minor_radius > 0.0)
     {
         return None;
     }
@@ -1126,6 +1123,48 @@ mod tests {
         assert!(torus_point.x.abs() < 1e-12);
         assert!((torus_point.y - 4.0).abs() < 1e-12);
         assert_eq!(torus_point.z, 2.0);
+    }
+
+    #[test]
+    fn analytic_carriers_have_no_model_size_cutoff() {
+        let mut cylinder = vec![0_u8; 89];
+        cylinder[33..41].copy_from_slice(&1.0_f64.to_le_bytes());
+        cylinder[65..73].copy_from_slice(&1.0_f64.to_le_bytes());
+        cylinder[81..89].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
+        assert!(matches!(
+            zero_entity_cylinder(&cylinder),
+            Some(SurfaceGeometry::Cylinder {
+                radius: 2_000_000.0,
+                ..
+            })
+        ));
+
+        let mut cone = vec![0_u8; 120];
+        cone[32..40].copy_from_slice(&1.0_f64.to_le_bytes());
+        cone[96..104].copy_from_slice(&1.0_f64.to_le_bytes());
+        cone[104..112].copy_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
+        cone[112..120].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
+        assert!(matches!(
+            zero_entity_cone(&cone),
+            Some(SurfaceGeometry::Cone {
+                radius: 2_000_000.0,
+                ..
+            })
+        ));
+
+        let mut torus = vec![0_u8; 120];
+        torus[32..40].copy_from_slice(&1.0_f64.to_le_bytes());
+        torus[96..104].copy_from_slice(&1.0_f64.to_le_bytes());
+        torus[104..112].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
+        torus[112..120].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
+        assert!(matches!(
+            zero_entity_torus(&torus),
+            Some(SurfaceGeometry::Torus {
+                major_radius: 2_000_000.0,
+                minor_radius: 1_500_000.0,
+                ..
+            })
+        ));
     }
 
     #[test]

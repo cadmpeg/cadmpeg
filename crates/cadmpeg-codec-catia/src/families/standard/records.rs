@@ -533,7 +533,6 @@ fn standard_curve_supports_at(
                 || !cz.is_finite()
                 || !radius.is_finite()
                 || radius <= 0.0
-                || radius >= 1e6
             {
                 break;
             }
@@ -607,7 +606,7 @@ pub fn standard_lines(brep: &[u8], face_count: usize) -> Vec<StandardLine> {
 /// record. The big-endian `f32` payload begins immediately after the 3-byte
 /// `00 33 <kind>` marker ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). Returns `None` for the plane kind (its
 /// parameters are in a separate bridged record) and for any non-finite or
-/// out-of-range payload.
+/// invalid payload.
 pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeometry> {
     let p = prefix.pos + 3; // skip `00 33 <kind>`
     let be = |i: usize| -> Option<f32> {
@@ -618,7 +617,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
         0x35 => {
             // sphere: cx cy cz radius
             let (cx, cy, cz, r) = (be(0)?, be(1)?, be(2)?, be(3)?);
-            if !all_finite(&[cx, cy, cz, r]) || !(0.0..1e6).contains(&r.abs()) || r <= 0.0 {
+            if !all_finite(&[cx, cy, cz, r]) || r <= 0.0 {
                 return None;
             }
             Some(SurfaceGeometry::Sphere {
@@ -635,12 +634,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             if !all_finite(&[cx, cy, cz, ax, ay, major, minor]) {
                 return None;
             }
-            if !(major.abs() > 0.0
-                && major.abs() < 1e6
-                && minor > 0.0
-                && minor < 1e6
-                && ax * ax + ay * ay <= 1.0 + 1e-4)
-            {
+            if !(major.abs() > 0.0 && minor > 0.0 && ax * ax + ay * ay <= 1.0 + 1e-4) {
                 return None;
             }
             let axis = axis_from_xy(ax, ay, major)?;
@@ -658,7 +652,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             if !all_finite(&[px, py, pz, ax, ay, radius]) {
                 return None;
             }
-            if !(radius.abs() > 0.0 && radius.abs() < 1e6) || ax * ax + ay * ay > 1.0 + 1e-4 {
+            if radius == 0.0 || ax * ax + ay * ay > 1.0 + 1e-4 {
                 return None;
             }
             let axis = axis_from_xy(ax, ay, radius)?;

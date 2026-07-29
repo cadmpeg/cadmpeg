@@ -1258,12 +1258,10 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
             && half_angle < std::f64::consts::FRAC_PI_2
             && periodic_angular_range_is_valid(angular_range, angular_domain)
             && 0.0 < angular_scale
-            && angular_scale < 1e6
             && values[19] == 1.0
             && values[20] == 0.0
             && 0.0 <= slant_range[0]
             && slant_range[0] < slant_range[1]
-            && slant_range[1] < 1e6
         {
             out.push(B2Cone {
                 pos,
@@ -1672,7 +1670,6 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let v_range = read_f64_array::<2>(data, p + 73)?;
             if one != 1.0
                 || radius <= 0.0
-                || radius >= 1e6
                 || origin_values.iter().any(|value| !value.is_finite())
                 || vector.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
@@ -1720,7 +1717,6 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let u_range = read_f64_array::<2>(data, p + 49)?;
             let v_range = read_f64_array::<2>(data, p + 65)?;
             if radius <= 0.0
-                || radius >= 1e6
                 || origin_values.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
                 || v_range.iter().any(|value| !value.is_finite())
@@ -1758,7 +1754,6 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let expected_range_origin = cylinder_range_origin(radius, u_range);
             if one != 1.0
                 || radius <= 0.0
-                || radius >= 1e6
                 || origin_values.iter().any(|value| !value.is_finite())
                 || vector.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
@@ -1827,7 +1822,6 @@ pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
         let [c1, c2, radius, lo, hi] = values;
         if values.iter().all(|v| v.is_finite())
             && 0.0 < radius
-            && radius < 1e6
             && c1.abs() <= 1e6
             && c2.abs() <= 1e6
             && hi > lo

@@ -4386,7 +4386,6 @@ fn validate_consolidated_circles(
                 .any(|value| !value.is_finite())
             || circle.center_pair.iter().any(|value| value.abs() > 1e6)
             || circle.radius <= 0.0
-            || circle.radius >= 1e6
             || circle.range[0] >= circle.range[1]
             || circle.full_circle != full_circle
             || index > 0 && circles[index - 1].byte_offset >= circle.byte_offset
@@ -4448,10 +4447,7 @@ fn validate_consolidated_cones(
             )
             || cone.slant_range[0] < 0.0
             || cone.slant_range[0] >= cone.slant_range[1]
-            || cone.slant_range[1] <= 0.0
-            || cone.slant_range[1] >= 1e6
             || cone.angular_scale <= 0.0
-            || cone.angular_scale >= 1e6
             || index > 0 && cones[index - 1].byte_offset >= cone.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -4539,7 +4535,6 @@ fn validate_consolidated_cylinders(
                 .chain(&[cylinder.radius])
                 .any(|value| !value.is_finite())
             || cylinder.radius <= 0.0
-            || cylinder.radius >= 1e6
             || cylinder.u_range[0] >= cylinder.u_range[1]
             || cylinder.v_range[0] >= cylinder.v_range[1]
             || !payload_valid

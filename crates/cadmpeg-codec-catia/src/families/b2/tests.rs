@@ -559,6 +559,15 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     let mut zero_radius = b2_circle_stream();
     zero_radius[24..32].copy_from_slice(&0.0_f64.to_le_bytes());
     assert!(crate::families::b2::records::b2_circles(&zero_radius).is_empty());
+
+    let mut large = b2_circle_stream();
+    let radius = 2_000_000.0_f64;
+    large[24..32].copy_from_slice(&radius.to_le_bytes());
+    large[40..48].copy_from_slice(&(std::f64::consts::TAU * radius).to_le_bytes());
+    assert_eq!(
+        crate::families::b2::records::b2_circles(&large)[0].radius,
+        radius
+    );
 }
 
 #[test]
@@ -586,6 +595,18 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         malformed[range].copy_from_slice(&f64::NAN.to_le_bytes());
         assert!(crate::families::b2::records::b2_cylinders(&malformed).is_empty());
     }
+
+    let mut large = b2_cylinder_stream();
+    let radius = 2_000_000.0_f64;
+    large[54..62].copy_from_slice(&radius.to_le_bytes());
+    large[70..78].copy_from_slice(&(std::f64::consts::TAU * radius).to_le_bytes());
+    assert!(matches!(
+        crate::families::b2::records::b2_cylinders(&large)[0].geometry,
+        SurfaceGeometry::Cylinder {
+            radius: 2_000_000.0,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -678,6 +699,13 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
             0.5 + 3.0 * std::f64::consts::FRAC_PI_2
         ]
     );
+
+    let mut large = b2_cone_stream();
+    large[141..149].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
+    large[149..157].copy_from_slice(&3_000_000.0_f64.to_le_bytes());
+    let cones = crate::families::b2::records::b2_cones(&large);
+    assert_eq!(cones[0].slant_range, [2.0, 2_000_000.0]);
+    assert_eq!(cones[0].angular_scale, 3_000_000.0);
 }
 
 #[test]

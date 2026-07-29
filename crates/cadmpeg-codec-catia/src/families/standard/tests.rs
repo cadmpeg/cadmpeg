@@ -4355,6 +4355,58 @@ mod record_decoders {
     }
 
     #[test]
+    fn standard_analytic_carriers_have_no_model_size_cutoff() {
+        for (kind, values, expected_radius) in [
+            (0x35, vec![0.0_f32, 0.0, 0.0, 2_000_000.0], 2_000_000.0),
+            (
+                0x33,
+                vec![0.0_f32, 0.0, 0.0, 0.0, 0.0, 2_000_000.0],
+                2_000_000.0,
+            ),
+        ] {
+            let mut bytes = vec![0x00, 0x33, kind];
+            for value in values {
+                bytes.extend_from_slice(&value.to_be_bytes());
+            }
+            let surface = crate::families::standard::records::decode_curved(
+                &bytes,
+                &crate::families::standard::records::SurfacePrefix {
+                    pos: 0,
+                    target: 0,
+                    kind,
+                },
+            )
+            .expect("large analytic carrier");
+            let radius = match surface {
+                SurfaceGeometry::Sphere { radius, .. }
+                | SurfaceGeometry::Cylinder { radius, .. } => radius,
+                _ => panic!("expected sphere or cylinder"),
+            };
+            assert_eq!(radius, expected_radius);
+        }
+
+        let mut bytes = vec![0x00, 0x33, 0x38];
+        for value in [0.0_f32, 0.0, 0.0, 0.0, 0.0, 2_000_000.0, 1_500_000.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        assert!(matches!(
+            crate::families::standard::records::decode_curved(
+                &bytes,
+                &crate::families::standard::records::SurfacePrefix {
+                    pos: 0,
+                    target: 0,
+                    kind: 0x38,
+                },
+            ),
+            Some(SurfaceGeometry::Torus {
+                major_radius: 2_000_000.0,
+                minor_radius: 1_500_000.0,
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
         let component = (0.5_f64 + 4.0e-6).sqrt() as f32;
         let mut bytes = vec![0x00, 0x33, 0x33];
@@ -4823,6 +4875,19 @@ mod record_decoders {
         let mut bytes = vec![0x61, 0, 0, 0, 0, 0x12, 0, 0x33, 0x37];
         bytes.extend_from_slice(&[0; 18]);
         assert!(crate::families::standard::records::standard_circles(&bytes, 1).is_empty());
+    }
+
+    #[test]
+    fn standard_circle_parser_has_no_model_size_cutoff() {
+        let mut bytes = vec![0x60, 1, 2, 3, 0x00, 0x12, 0x00, 0x33, 0x37];
+        for value in [0.0_f32, 0.0, 0.0, 2_000_000.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0, 1]);
+        assert_eq!(
+            crate::families::standard::records::standard_circles(&bytes, 2)[0].radius,
+            2_000_000.0
+        );
     }
 
     #[test]
