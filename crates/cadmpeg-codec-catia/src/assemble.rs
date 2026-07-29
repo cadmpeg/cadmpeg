@@ -671,7 +671,7 @@ pub(crate) fn rational_pcurve_arc(
     range: [f64; 2],
 ) -> Option<PcurveGeometry> {
     let span = range[1] - range[0];
-    if !radius.is_finite() || radius <= 0.0 || !span.is_finite() || span.abs() <= 1e-12 {
+    if !radius.is_finite() || radius <= 0.0 || !span.is_finite() || span == 0.0 {
         return None;
     }
     let segment_count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil();
@@ -689,7 +689,7 @@ pub(crate) fn rational_pcurve_arc(
         let end = start + step;
         let middle = (start + end) * 0.5;
         let middle_weight = (step * 0.5).cos();
-        if middle_weight.abs() <= 1e-12 {
+        if !middle_weight.is_finite() || middle_weight == 0.0 {
             return None;
         }
         if index == 0 {
@@ -745,13 +745,15 @@ pub(crate) fn quintic_jet_pcurve(
 
 #[cfg(test)]
 mod route_tests {
-    use crate::assemble::{neutral_model_is_admissible, unresolved_carrier_counts};
+    use crate::assemble::{
+        neutral_model_is_admissible, rational_pcurve_arc, unresolved_carrier_counts,
+    };
 
     use cadmpeg_ir::document::CadIr;
 
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-        ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+        ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
         CurveId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId,
@@ -760,6 +762,25 @@ mod route_tests {
     use cadmpeg_ir::topology::Shell;
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::unknown::UnknownRecord;
+
+    #[test]
+    fn rational_pcurve_arc_preserves_tiny_nonzero_sweep() {
+        let range = [0.0, 1e-200];
+        let pcurve = rational_pcurve_arc([0.0, 0.0], 2.0, range).expect("tiny circular arc");
+        let PcurveGeometry::Nurbs {
+            knots,
+            control_points,
+            weights,
+            ..
+        } = pcurve
+        else {
+            panic!("rational arc must produce NURBS");
+        };
+        assert_eq!(knots.first(), Some(&range[0]));
+        assert_eq!(knots.last(), Some(&range[1]));
+        assert_eq!(control_points.len(), 3);
+        assert_eq!(weights, Some(vec![1.0, 1.0, 1.0]));
+    }
 
     #[test]
     fn neutral_model_admissibility_rejects_invalid_topology() {
