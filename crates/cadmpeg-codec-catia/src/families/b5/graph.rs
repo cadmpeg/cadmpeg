@@ -319,9 +319,7 @@ pub struct B5ExtrusionSurface {
     pub direction: [f64; 3],
     /// Increasing native U and V intervals.
     pub parameter_bounds: [[f64; 2]; 2],
-    /// Terminal construction controls.
-    pub controls: [u8; 2],
-    /// Exact two-support directrix construction.
+    /// Exact directrix construction.
     pub directrix: B5ExtrusionDirectrix,
 }
 
@@ -2510,7 +2508,6 @@ fn parse_extrusion_surface(
         object_id: record.object_id,
         direction: carrier.direction,
         parameter_bounds: carrier.parameter_bounds,
-        controls: carrier.controls,
         directrix,
     })
 }
@@ -2519,7 +2516,6 @@ struct B5ExtrusionCarrier {
     directrix_id: u32,
     direction: [f64; 3],
     parameter_bounds: [[f64; 2]; 2],
-    controls: [u8; 2],
 }
 
 fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
@@ -2540,7 +2536,6 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
             directrix_id,
             direction: [values[0], values[1], values[2]],
             parameter_bounds: [[values[3], values[4]], [values[7], values[8]]],
-            controls,
         })
 }
 
@@ -5837,7 +5832,6 @@ mod tests {
                 object_id: 8,
                 direction: [0.0, 0.0, 1.0],
                 parameter_bounds: [[-2.0, 6.0], [-3.0, 4.0]],
-                controls: [0x05, 0x05],
                 directrix: B5ExtrusionDirectrix::Intersection {
                     object_id: 5,
                     supports: [(6, 3, [-3.0, 4.0]), (7, 4, [10.0, 20.0])],
@@ -5846,6 +5840,36 @@ mod tests {
                 },
             })
         );
+
+        for controls in [[0x05, 0x05], [0x01, 0x29], [0x05, 0x29]] {
+            let mut candidate = record.clone();
+            let tail = candidate.payload.len() - 2;
+            candidate.payload[tail..].copy_from_slice(&controls);
+            assert!(
+                parse_extrusion_surface(&candidate, &records, &pcurves).is_some(),
+                "terminal controls {controls:02x?}"
+            );
+        }
+        for controls in [
+            [0x01, 0x05],
+            [0x05, 0x09],
+            [0x05, 0x11],
+            [0x05, 0x15],
+            [0x05, 0x19],
+            [0x01, 0x09],
+            [0x01, 0x15],
+            [0x01, 0x19],
+            [0x09, 0x29],
+        ] {
+            let mut candidate = record.clone();
+            let tail = candidate.payload.len() - 2;
+            candidate.payload[tail..].copy_from_slice(&controls);
+            assert_eq!(
+                parse_extrusion_surface(&candidate, &records, &pcurves),
+                None,
+                "terminal controls {controls:02x?}"
+            );
+        }
     }
 
     #[test]

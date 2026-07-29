@@ -1116,7 +1116,6 @@ mod tests {
                 object_id: 50,
                 direction: [0.0, 0.0, 1.0],
                 parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
-                controls: [0x05, 0x05],
                 directrix: B5ExtrusionDirectrix::Intersection {
                     object_id: 80,
                     supports: [(90, 91, [0.0, 1.0]), (100, 101, [0.0, 1.0])],
