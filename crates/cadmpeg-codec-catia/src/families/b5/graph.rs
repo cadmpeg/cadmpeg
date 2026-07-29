@@ -782,7 +782,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             .map(|loop_| (record.object_id, loop_))
         })
         .collect();
-    let mut faces: Vec<B5Face> = records
+    let faces: Vec<B5Face> = records
         .iter()
         .filter(|record| record.class == 0x5f)
         .filter_map(|record| parse_face(record, &loops, &surfaces))
@@ -794,33 +794,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .into_iter()
         .map(|point| [point.x, point.y, point.z])
         .collect::<Vec<_>>();
-    let geometric_edge_vertices =
-        if let Some(vertices) = bind_edge_vertices(&loops, &pcurves, &vertex_points) {
-            vertices
-        } else {
-            pcurves.retain(|object_id, _| by_id.contains_key(object_id));
-            loops = records
-                .iter()
-                .filter(|record| record.class == 0x62)
-                .filter_map(|record| {
-                    parse_loop(
-                        record,
-                        &by_id,
-                        &pcurves,
-                        &opaque_pcurves,
-                        &implicit_pcurves,
-                        &surfaces,
-                    )
-                    .map(|loop_| (record.object_id, loop_))
-                })
-                .collect();
-            faces = records
-                .iter()
-                .filter(|record| record.class == 0x5f)
-                .filter_map(|record| parse_face(record, &loops, &surfaces))
-                .collect();
-            bind_edge_vertices(&loops, &pcurves, &vertex_points)?
-        };
+    let geometric_edge_vertices = bind_edge_vertices(&loops, &pcurves, &vertex_points);
     let native_edge_vertices: BTreeMap<u32, [u32; 2]> = records
         .iter()
         .filter(|record| record.class == 0x5e)
@@ -1770,11 +1744,15 @@ fn bind_edge_vertices(
     loops: &BTreeMap<u32, B5Loop>,
     pcurves: &BTreeMap<u32, B5Pcurve>,
     points: &[[f64; 3]],
-) -> Option<BTreeMap<u32, [usize; 2]>> {
+) -> BTreeMap<u32, [usize; 2]> {
     let point_index = point_index(points);
     let mut edges: BTreeMap<u32, [usize; 2]> = BTreeMap::new();
+    let mut conflicts = HashSet::new();
     for loop_ in loops.values() {
         for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
+            if conflicts.contains(&edge_id) {
+                continue;
+            }
             let Some(endpoints) = pcurves
                 .get(&pcurve_id)
                 .and_then(|pcurve| pcurve.lifted_endpoints)
@@ -1795,14 +1773,15 @@ fn bind_edge_vertices(
                 previous_sorted.sort_unstable();
                 current_sorted.sort_unstable();
                 if previous_sorted != current_sorted {
-                    return None;
+                    edges.remove(&edge_id);
+                    conflicts.insert(edge_id);
                 }
             } else {
                 edges.insert(edge_id, indices);
             }
         }
     }
-    Some(edges)
+    edges
 }
 
 const POINT_TOLERANCE: f64 = 1.5e-3;
@@ -2070,7 +2049,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let mut position = 1;
             let profile_curve = wire::object_ref(&record.payload, &mut position, true)?;
             (record.payload.len() == position.checked_add(171)?
-                && record.payload.first() == Some(&0x80))
+                && record.payload.first() == Some(&0x81))
             .then_some(())?;
             let angular_range = [
                 scalar(&record.payload, position.checked_add(96)?)?,
@@ -3992,7 +3971,62 @@ mod tests {
         };
         assert_eq!(
             bind_edge_vertices(&BTreeMap::from([(1, loop_)]), &BTreeMap::new(), &[]),
-            Some(BTreeMap::new())
+            BTreeMap::new()
+        );
+    }
+
+    #[test]
+    fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
+        let loops = BTreeMap::from([
+            (
+                1,
+                B5Loop {
+                    object_id: 1,
+                    pcurves: vec![10],
+                    edges: vec![20],
+                    surface: 30,
+                },
+            ),
+            (
+                2,
+                B5Loop {
+                    object_id: 2,
+                    pcurves: vec![11],
+                    edges: vec![20],
+                    surface: 31,
+                },
+            ),
+            (
+                3,
+                B5Loop {
+                    object_id: 3,
+                    pcurves: vec![12],
+                    edges: vec![21],
+                    surface: 32,
+                },
+            ),
+        ]);
+        let pcurve = |object_id, endpoints| B5Pcurve {
+            object_id,
+            surface: object_id + 20,
+            degree: 1,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+            weights: None,
+            parameter_range: None,
+            lifted_endpoints: Some(endpoints),
+        };
+        let pcurves = BTreeMap::from([
+            (10, pcurve(10, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])),
+            (11, pcurve(11, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])),
+            (12, pcurve(12, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])),
+        ]);
+        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
+
+        assert_eq!(
+            bind_edge_vertices(&loops, &pcurves, &points),
+            BTreeMap::from([(21, [0, 2])])
         );
     }
 
@@ -4052,7 +4086,7 @@ mod tests {
     #[test]
     fn revolution_surface_requires_complete_sparse_reference_chart() {
         let mut payload = vec![0; 175];
-        payload[0] = 0x80;
+        payload[0] = 0x81;
         payload[1..4].copy_from_slice(&[0x30, 0x86, 0x16]);
         payload[4..12].copy_from_slice(&1.0f64.to_le_bytes());
         payload[28..36].copy_from_slice(&1.0f64.to_le_bytes());
@@ -4096,6 +4130,9 @@ mod tests {
         let mut left_handed = record.clone();
         left_handed.payload[92..100].copy_from_slice(&(-1.0f64).to_le_bytes());
         assert_eq!(parse_surface(&left_handed), None);
+        let mut wrong_lead = record.clone();
+        wrong_lead.payload[0] = 0x80;
+        assert_eq!(parse_surface(&wrong_lead), None);
         let mut wrong_half_period = record;
         wrong_half_period.payload[167..175].copy_from_slice(&1.0f64.to_le_bytes());
         assert_eq!(parse_surface(&wrong_half_period), None);

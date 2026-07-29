@@ -117,13 +117,14 @@ current scores require those matrices and representative fixtures.
   axial intervals, and the full-turn chart origin; pcurve lifting uses the
   stored gauge rather than assuming radius-scaled U.
   Object-stream revolution surfaces require their complete reference-width
-  dependent payload, retain the stored profile and angular intervals, and
-  validate the right-handed frame, fixed controls, positive angular gauge, and
-  exact half-turn relation. Their line and arc profiles require complete unit
-  frames, fixed metric controls, ordered intervals, and centered periodic arc
-  domains. A revolution transfers only when its profile interval equals the
-  referenced profile's complete interval. Its exact NURBS cache uses the stored
-  ranges directly rather than deriving a patch from available pcurves.
+  dependent payload with its single-reference cardinality, retain the stored
+  profile and angular intervals, and validate the right-handed frame, fixed
+  controls, positive angular gauge, and exact half-turn relation. Their line
+  and arc profiles require complete unit frames, fixed metric controls, ordered
+  intervals, and centered periodic arc domains. A revolution transfers only
+  when its profile interval equals the referenced profile's complete interval.
+  Its exact NURBS cache uses the stored ranges directly rather than deriving a
+  patch from available pcurves.
   Consolidated and object-stream tori retain independent active major- and
   minor-angle intervals and their centered full-turn chart domains.
   Object-stream tori additionally require the complete lead, right-handed
@@ -170,6 +171,10 @@ current scores require those matrices and representative fixtures.
   The candidate does not establish curve coincidence or a physical edge. Every
   in-range odd-lane typed reference retains its selected global record identity
   atomically for the loop.
+  In the object stream, full-pcurve endpoint loci are geometric fallback
+  candidates only. Conflicting candidates for one edge are discarded locally;
+  they do not discard other pcurve records or override the edge's serialized
+  vertex identities and parameter incidences.
   Loop-to-oriented-use, oriented-use-to-incidence, physical endpoint identity,
   and body/shell binding remain unresolved.
 

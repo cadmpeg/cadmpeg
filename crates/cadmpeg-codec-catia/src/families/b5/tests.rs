@@ -105,7 +105,7 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     profile[65..73].copy_from_slice(&le_f64(2.0));
     append_b5_record(&mut bytes, 0x0e, 110, &profile);
     let mut revolution = vec![0; 176];
-    revolution[0] = 0x80;
+    revolution[0] = 0x81;
     revolution[1] = 0x38;
     revolution[2..5].copy_from_slice(&[110, 0, 0]);
     revolution[29..37].copy_from_slice(&le_f64(1.0));
