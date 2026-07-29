@@ -3920,6 +3920,17 @@ pub(crate) fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5Parame
         .collect()
 }
 
+/// Read every structurally complete vertex-incidence roster independently of
+/// member and topology resolution.
+pub(crate) fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
+    records(bytes)
+        .into_iter()
+        .filter_map(|record| {
+            counted_references(&record, 0x05).map(|members| (record.object_id, members))
+        })
+        .collect()
+}
+
 /// Read each face's leading surface reference independently of its loop grammar.
 pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     records(bytes)

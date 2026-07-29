@@ -157,6 +157,10 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         .values()
         .map(|incidence| incidence.curves.len())
         .sum();
+    let typed_vertex_incidence_rosters =
+        crate::families::b5::graph::typed_vertex_incidence_rosters(&scan.data);
+    let typed_vertex_incidence_roster_member_count =
+        typed_vertex_incidence_rosters.values().map(Vec::len).sum();
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
@@ -352,6 +356,16 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         coverage.insert(
             "typed_object_stream_parameter_incidence_member_count".to_string(),
             typed_parameter_incidence_member_count,
+        );
+    }
+    if !typed_vertex_incidence_rosters.is_empty() {
+        coverage.insert(
+            "typed_object_stream_vertex_incidence_roster_count".to_string(),
+            typed_vertex_incidence_rosters.len(),
+        );
+        coverage.insert(
+            "typed_object_stream_vertex_incidence_roster_member_count".to_string(),
+            typed_vertex_incidence_roster_member_count,
         );
     }
     Some(FamilyOutput {
