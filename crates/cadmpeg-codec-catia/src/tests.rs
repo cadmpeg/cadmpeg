@@ -5522,6 +5522,32 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
 }
 
 #[test]
+fn consolidated_edge_nodes_require_canonical_headers_and_terminal_controls() {
+    let bytes = b2_edge_node_stream();
+    assert_eq!(crate::families::b2::records::b2_edge_nodes(&bytes).len(), 1);
+
+    let mut noncanonical_header = bytes.clone();
+    noncanonical_header[0] = 0xb3;
+    noncanonical_header[4] = 0x04;
+    noncanonical_header.insert(5, 1);
+    assert!(crate::families::b2::records::b2_edge_nodes(&noncanonical_header).is_empty());
+
+    let mut wide_header = bytes.clone();
+    wide_header[0] = 0xb3;
+    wide_header[4] = 0x04;
+    wide_header.insert(5, 0x40);
+    let wide_nodes = crate::families::b2::records::b2_edge_nodes(&wide_header);
+    let [wide_node] = wide_nodes.as_slice() else {
+        panic!("canonical wide-header edge node")
+    };
+    assert_eq!(wide_node.header_token, 0x4004);
+
+    let mut invalid_terminal = bytes;
+    *invalid_terminal.last_mut().expect("edge terminal") = 0x03;
+    assert!(crate::families::b2::records::b2_edge_nodes(&invalid_terminal).is_empty());
+}
+
+#[test]
 fn native_namespace_attaches_oriented_uses_without_pcurves() {
     let bytes = a5_native_edge_identity_stream(6, 139, 142);
     let native = crate::native::CatiaNative::decode(&bytes);

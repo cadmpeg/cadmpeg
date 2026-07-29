@@ -335,6 +335,19 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
     b_family_frames(data, 0x5e)
         .into_iter()
         .filter_map(|frame| {
+            let token_start = frame.pos.checked_add(4)?;
+            let mut token_end = token_start;
+            let header_value = compact_int(data, &mut token_end)?;
+            let canonical_token_width = match header_value {
+                0..=0x3f => 1,
+                0x40..=0xff => 2,
+                _ => 3,
+            };
+            if token_end != frame.payload
+                || frame.payload.checked_sub(token_start)? != canonical_token_width
+            {
+                return None;
+            }
             let mut at = frame.payload;
             let curve_ref = compact_int(data, &mut at)?;
             let start_vertex_ref = allocation_ref(data, &mut at)?;
@@ -342,16 +355,17 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
             let start_parameter_ref = compact_int(data, &mut at)?;
             let end_parameter_ref = compact_int(data, &mut at)?;
             let tail = *data.get(at)?;
-            (at + 1 == frame.end).then_some(B2EdgeNode {
-                pos: frame.pos,
-                header_token: frame.header_token,
-                curve_ref,
-                start_vertex_ref,
-                end_vertex_ref,
-                start_parameter_ref,
-                end_parameter_ref,
-                tail,
-            })
+            (at + 1 == frame.end && matches!(tail, 0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a))
+                .then_some(B2EdgeNode {
+                    pos: frame.pos,
+                    header_token: frame.header_token,
+                    curve_ref,
+                    start_vertex_ref,
+                    end_vertex_ref,
+                    start_parameter_ref,
+                    end_parameter_ref,
+                    tail,
+                })
         })
         .collect()
 }
