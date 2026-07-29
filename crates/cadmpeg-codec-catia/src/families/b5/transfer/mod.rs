@@ -868,7 +868,11 @@ pub(crate) fn resolved_extrusion_surface(
         }
         B5ExtrusionDirectrix::SurfaceCurve { support, .. } => {
             let support = resolve_support(*support)?;
-            let curve = support.curve.clone()?;
+            let curve = curve_on_parameter_range(
+                support.curve.clone()?,
+                support.pcurve_parameter_range,
+                extrusion.parameter_bounds[1],
+            )?;
             ResolvedExtrusionDirectrix::SurfaceCurve { support, curve }
         }
         B5ExtrusionDirectrix::Offset {
@@ -885,12 +889,16 @@ pub(crate) fn resolved_extrusion_surface(
                 return None;
             };
             let support = resolve_support(*support)?;
-            let source_curve = support.curve.clone()?;
+            let source_curve = curve_on_parameter_range(
+                support.curve.clone()?,
+                *source_parameter_range,
+                extrusion.parameter_bounds[1],
+            )?;
             ResolvedExtrusionDirectrix::Offset {
                 source_object_id: *object_id,
                 support,
                 source_curve,
-                source_parameter_range: *source_parameter_range,
+                source_parameter_range: extrusion.parameter_bounds[1],
                 distance: *distance,
                 direction: vector(*direction),
             }
@@ -904,6 +912,57 @@ pub(crate) fn resolved_extrusion_surface(
         parameter_bounds: extrusion.parameter_bounds,
         directrix,
     })
+}
+
+fn curve_on_parameter_range(
+    curve: CurveGeometry,
+    source: [f64; 2],
+    target: [f64; 2],
+) -> Option<CurveGeometry> {
+    if parameter_range_contains(source, target) {
+        return Some(curve);
+    }
+    let source_span = source[1] - source[0];
+    let target_span = target[1] - target[0];
+    if !source_span.is_finite()
+        || source_span <= 0.0
+        || !parameter_spans_agree(source_span, target_span)
+    {
+        return None;
+    }
+    let shift = target[0] - source[0];
+    match curve {
+        CurveGeometry::Nurbs(mut curve) => {
+            for knot in &mut curve.knots {
+                *knot += shift;
+            }
+            Some(CurveGeometry::Nurbs(curve))
+        }
+        CurveGeometry::Line { origin, direction } => Some(CurveGeometry::Line {
+            origin: Point3::new(
+                origin.x - shift * direction.x,
+                origin.y - shift * direction.y,
+                origin.z - shift * direction.z,
+            ),
+            direction,
+        }),
+        _ => None,
+    }
+}
+
+fn parameter_spans_agree(left: f64, right: f64) -> bool {
+    let scale = left.abs().max(right.abs()).max(1.0);
+    (left - right).abs() <= 64.0 * f64::EPSILON * scale
+}
+
+fn parameter_range_contains(domain: [f64; 2], active: [f64; 2]) -> bool {
+    let scale = domain
+        .into_iter()
+        .chain(active)
+        .map(f64::abs)
+        .fold(1.0f64, f64::max);
+    let tolerance = 64.0 * f64::EPSILON * scale;
+    domain[0] <= active[0] + tolerance && active[1] <= domain[1] + tolerance
 }
 
 pub(crate) fn resolved_offset_surface(
@@ -1042,8 +1101,8 @@ mod tests {
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
     use super::{
-        build_plan, native_pcurve_parameter_range, referenced_surface_ids, transfer, CurvePlan,
-        SurfacePlan,
+        build_plan, curve_on_parameter_range, native_pcurve_parameter_range,
+        referenced_surface_ids, transfer, CurvePlan, SurfacePlan,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
@@ -1056,6 +1115,51 @@ mod tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    fn equal_span_curve_ranges_translate_without_changing_geometry() {
+        let nurbs = NurbsCurve {
+            degree: 1,
+            knots: vec![10.0, 10.0, 20.0, 20.0],
+            control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+            weights: None,
+            periodic: false,
+        };
+        let CurveGeometry::Nurbs(translated) = curve_on_parameter_range(
+            CurveGeometry::Nurbs(nurbs.clone()),
+            [10.0, 20.0],
+            [0.0, 10.0],
+        )
+        .expect("equal-span NURBS translation") else {
+            unreachable!();
+        };
+        assert_eq!(translated.knots, [0.0, 0.0, 10.0, 10.0]);
+        assert_eq!(translated.control_points, nurbs.control_points);
+
+        let line = CurveGeometry::Line {
+            origin: Point3::new(10.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert_eq!(
+            curve_on_parameter_range(line, [10.0, 20.0], [0.0, 10.0]),
+            Some(CurveGeometry::Line {
+                origin: Point3::new(20.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            })
+        );
+        assert_eq!(
+            curve_on_parameter_range(
+                CurveGeometry::Nurbs(nurbs.clone()),
+                [10.0, 20.0],
+                [12.0, 18.0],
+            ),
+            Some(CurveGeometry::Nurbs(nurbs.clone()))
+        );
+        assert_eq!(
+            curve_on_parameter_range(CurveGeometry::Nurbs(nurbs), [10.0, 20.0], [0.0, 9.0]),
+            None
+        );
+    }
 
     #[test]
     fn explicit_pcurve_range_must_be_a_subrange_of_its_knot_domain() {

@@ -392,6 +392,21 @@ impl B5ExtrusionDirectrix {
         }
     }
 
+    fn reorigin_parameter_range(&mut self, range: [f64; 2]) -> bool {
+        match self {
+            Self::SurfaceCurve {
+                parameter_range, ..
+            }
+            | Self::Offset {
+                parameter_range, ..
+            } => {
+                *parameter_range = range;
+                true
+            }
+            Self::Intersection { .. } => false,
+        }
+    }
+
     pub(crate) fn supports(&self) -> Vec<(u32, u32, [f64; 2])> {
         match self {
             Self::Intersection { supports, .. } => supports.to_vec(),
@@ -675,6 +690,19 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             candidate,
         );
     }
+    for candidate in records.iter().filter_map(|record| {
+        if record.family == 0xa8 && record.class == 0x21 {
+            parse_a8_class21_pcurve(record.object_id, &record.payload)
+        } else {
+            None
+        }
+    }) {
+        merge_pcurve_candidate(
+            &mut object_stream_pcurve_candidates,
+            &mut conflicting_object_stream_pcurves,
+            candidate,
+        );
+    }
     let a8_pcurve_supports = object_stream_pcurve_candidates
         .iter()
         .map(|(&object_id, pcurve)| (object_id, pcurve.surface))
@@ -740,7 +768,14 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     let object_stream_pcurves = object_stream_pcurve_candidates
         .iter()
         .filter_map(|(&object_id, pcurve)| {
-            Some((object_id, (pcurve.surface, pcurve.parameter_range?)))
+            Some((
+                object_id,
+                (
+                    pcurve.surface,
+                    pcurve.parameter_range?,
+                    pcurve.class_21_suffix_scalar,
+                ),
+            ))
         })
         .collect();
     let extrusion_surfaces: BTreeMap<u32, B5ExtrusionSurface> = records
@@ -1180,6 +1215,93 @@ fn object_stream_pcurve_candidate(
         weights: None,
         parameter_range: Some(jet.range),
         class_21_suffix_scalar: None,
+        lifted_endpoints: None,
+    })
+}
+
+fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
+    (payload.first() == Some(&0x81)).then_some(())?;
+    let mut position = 1;
+    let surface = wire::object_ref(payload, &mut position, true)?;
+    (payload.get(position) == Some(&0x01)).then_some(())?;
+    position += 1;
+    let degree = wire::compact_uint(payload, &mut position)?;
+    (degree == 5 && payload.get(position..position + 2) == Some(&[0x01, 0x01])).then_some(())?;
+    position += 2;
+    let knot_count = usize::try_from(wire::compact_uint(payload, &mut position)?).ok()?;
+    (2..=8192).contains(&knot_count).then_some(())?;
+    matches!(payload.get(position), Some(0x01 | 0x11 | 0x19)).then_some(())?;
+    position += 1;
+    let read_values = |position: &mut usize| -> Option<Vec<f64>> {
+        let mut values = Vec::with_capacity(knot_count);
+        for _ in 0..knot_count {
+            values.push(scalar(payload, *position)?);
+            *position += 8;
+        }
+        Some(values)
+    };
+    let distinct_knots = read_values(&mut position)?;
+    distinct_knots
+        .windows(2)
+        .all(|pair| pair[0] < pair[1])
+        .then_some(())?;
+    let multiplicities = (0..knot_count)
+        .map(|_| wire::compact_uint(payload, &mut position))
+        .collect::<Option<Vec<_>>>()?;
+    (multiplicities.first() == Some(&(degree + 1))
+        && multiplicities.last() == Some(&(degree + 1))
+        && multiplicities[1..knot_count - 1]
+            .iter()
+            .all(|multiplicity| *multiplicity == 3))
+    .then_some(())?;
+    let u = read_values(&mut position)?;
+    let v = read_values(&mut position)?;
+    let du = read_values(&mut position)?;
+    let dv = read_values(&mut position)?;
+    let ddu = read_values(&mut position)?;
+    let ddv = read_values(&mut position)?;
+    let points = u
+        .into_iter()
+        .zip(v)
+        .map(|(u, v)| [u, v])
+        .collect::<Vec<_>>();
+    let first = du
+        .into_iter()
+        .zip(dv)
+        .map(|(u, v)| [u, v])
+        .collect::<Vec<_>>();
+    let second = ddu
+        .into_iter()
+        .zip(ddv)
+        .map(|(u, v)| [u, v])
+        .collect::<Vec<_>>();
+    let (_, control_points) =
+        crate::nurbs::quintic_jet_bspline(degree, &distinct_knots, &points, &first, &second)?;
+    let tail = payload.get(position..)?;
+    let tail_control = tail.get(..2);
+    let extension_control = tail.get(34..36);
+    (matches!(tail.len(), 36 | 38)
+        && (tail_control == Some(&[0x05, 0x05]) || tail_control == Some(&[0x05, 0x11]))
+        && scalar(tail, 2)? == 0.0
+        && scalar(tail, 10)? > 0.0
+        && scalar(tail, 18)? == 1.0
+        && scalar(tail, 26)? == 0.0
+        && (tail.len() == 36
+            || extension_control == Some(&[0x01, 0x11])
+            || extension_control == Some(&[0x01, 0x19]))
+        && tail.get(tail.len() - 2..) == Some(&[0x00, 0x07]))
+    .then_some(())?;
+    let parameter_range = [*distinct_knots.first()?, *distinct_knots.last()?];
+    Some(B5Pcurve {
+        object_id,
+        surface,
+        degree,
+        distinct_knots,
+        multiplicities: vec![degree + 1; knot_count],
+        control_points,
+        weights: None,
+        parameter_range: Some(parameter_range),
+        class_21_suffix_scalar: Some(scalar(tail, 10)?),
         lifted_endpoints: None,
     })
 }
@@ -2599,16 +2721,30 @@ fn parse_offset_cache(record: &B5Record) -> Option<B5OffsetCache> {
 fn parse_extrusion_surface(
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
-    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2])>,
+    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2], Option<f64>)>,
 ) -> Option<B5ExtrusionSurface> {
     let carrier = extrusion_carrier(record)?;
-    let directrix = parse_extrusion_directrix(
+    let mut directrix = parse_extrusion_directrix(
         records.get(&carrier.directrix_id)?,
         records,
         object_stream_pcurves,
     )?;
     if !parameter_range_contains(directrix.parameter_range(), carrier.parameter_bounds[1]) {
-        return None;
+        let source_span = directrix.parameter_range()[1] - directrix.parameter_range()[0];
+        let active_span = carrier.parameter_bounds[1][1] - carrier.parameter_bounds[1][0];
+        let suffix_span = directrix
+            .supports()
+            .first()
+            .and_then(|support| object_stream_pcurves.get(&support.1))
+            .and_then(|candidate| candidate.2);
+        if !parameter_spans_agree(source_span, active_span)
+            || !suffix_span.is_some_and(|span| parameter_spans_agree(span, active_span))
+        {
+            return None;
+        }
+        if !directrix.reorigin_parameter_range(carrier.parameter_bounds[1]) {
+            return None;
+        }
     }
     Some(B5ExtrusionSurface {
         object_id: record.object_id,
@@ -2626,6 +2762,11 @@ fn parameter_range_contains(domain: [f64; 2], active: [f64; 2]) -> bool {
         .fold(1.0, f64::max);
     let tolerance = 64.0 * f64::EPSILON * scale;
     domain[0] <= active[0] + tolerance && active[1] <= domain[1] + tolerance
+}
+
+fn parameter_spans_agree(left: f64, right: f64) -> bool {
+    let scale = left.abs().max(right.abs()).max(1.0);
+    (left - right).abs() <= 64.0 * f64::EPSILON * scale
 }
 
 struct B5ExtrusionCarrier {
@@ -2658,7 +2799,7 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
 fn parse_extrusion_directrix(
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
-    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2])>,
+    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2], Option<f64>)>,
 ) -> Option<B5ExtrusionDirectrix> {
     if record.family == 0xb5 && record.class == 0x24 {
         return parse_surface_curve_directrix(record, records, object_stream_pcurves);
@@ -2704,7 +2845,7 @@ fn parse_extrusion_directrix(
     let first = records.get(&first_pcurve)?;
     let first_surface = pcurve_surface_reference(first)?;
     let first_range = analytic_pcurve_range(first)?;
-    let &(second_surface, second_range) = object_stream_pcurves.get(&second_pcurve)?;
+    let &(second_surface, second_range, _) = object_stream_pcurves.get(&second_pcurve)?;
     Some(B5ExtrusionDirectrix::Intersection {
         object_id: record.object_id,
         supports: [
@@ -2719,7 +2860,7 @@ fn parse_extrusion_directrix(
 fn parse_surface_curve_directrix(
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
-    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2])>,
+    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2], Option<f64>)>,
 ) -> Option<B5ExtrusionDirectrix> {
     (record.family == 0xb5 && record.class == 0x24 && record.payload.first() == Some(&0x81))
         .then_some(())?;
@@ -2737,29 +2878,30 @@ fn parse_surface_curve_directrix(
     {
         return None;
     }
-    let (surface, pcurve_range) = object_stream_pcurves.get(&pcurve).copied().or_else(|| {
-        let pcurve_record = records.get(&pcurve)?;
-        Some((
-            pcurve_surface_reference(pcurve_record)?,
-            analytic_pcurve_range(pcurve_record)?,
-        ))
-    })?;
+    let (surface, pcurve_range) = object_stream_pcurves
+        .get(&pcurve)
+        .map(|&(surface, range, _)| (surface, range))
+        .or_else(|| {
+            let pcurve_record = records.get(&pcurve)?;
+            Some((
+                pcurve_surface_reference(pcurve_record)?,
+                analytic_pcurve_range(pcurve_record)?,
+            ))
+        })?;
     let parameter_range = [start, end];
-    pcurve_range
-        .into_iter()
-        .zip(parameter_range)
-        .all(|(left, right)| left.to_bits() == right.to_bits())
-        .then_some(B5ExtrusionDirectrix::SurfaceCurve {
+    parameter_range_contains(pcurve_range, parameter_range).then_some(
+        B5ExtrusionDirectrix::SurfaceCurve {
             object_id: record.object_id,
-            support: (surface, pcurve, pcurve_range),
+            support: (surface, pcurve, parameter_range),
             parameter_range,
-        })
+        },
+    )
 }
 
 fn parse_offset_curve_directrix(
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
-    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2])>,
+    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2], Option<f64>)>,
 ) -> Option<B5ExtrusionDirectrix> {
     (record.family == 0xb5 && record.class == 0x14 && record.payload.first() == Some(&0x81))
         .then_some(())?;
@@ -6066,7 +6208,7 @@ mod tests {
             payload: directrix_payload,
         };
         let records = HashMap::from([(2, &wrapper), (3, &pcurve), (5, &directrix)]);
-        let pcurves = BTreeMap::from([(4, (7, [10.0, 20.0]))]);
+        let pcurves = BTreeMap::from([(4, (7, [10.0, 20.0], None))]);
         let mut payload = vec![0x81, 0x85];
         for value in [0.0f64, 0.0, 1.0, -2.0, 6.0, 1.0, 0.0, -3.0, 4.0] {
             payload.extend_from_slice(&value.to_le_bytes());
@@ -6143,6 +6285,99 @@ mod tests {
     }
 
     #[test]
+    fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
+        let mut payload = vec![0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x09, 0x01];
+        for value in [10.0f64, 20.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x19, 0x19]);
+        for channel in 0..6 {
+            for station in 0..2 {
+                payload.extend_from_slice(&(f64::from(channel * 2 + station)).to_le_bytes());
+            }
+        }
+        payload.extend_from_slice(&[0x05, 0x05]);
+        for value in [0.0f64, 10.0, 1.0, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x00, 0x07]);
+
+        let pcurve = parse_a8_class21_pcurve(7, &payload).expect("complete class-21 jet");
+        assert_eq!(pcurve.object_id, 7);
+        assert_eq!(pcurve.surface, 3);
+        assert_eq!(pcurve.distinct_knots, [10.0, 20.0]);
+        assert_eq!(pcurve.multiplicities, [6, 6]);
+        assert_eq!(pcurve.control_points.len(), 6);
+        assert_eq!(pcurve.parameter_range, Some([10.0, 20.0]));
+        assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
+
+        payload[6] = 0x0d;
+        assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
+    }
+
+    #[test]
+    fn extrusion_reorigins_a_class21_surface_curve_only_with_equal_native_spans() {
+        let mut wrapper_payload = vec![0x81, 0x83, 0x81, 0x01];
+        for value in [10.0f64, 20.0, 0.0] {
+            wrapper_payload.extend_from_slice(&value.to_le_bytes());
+        }
+        wrapper_payload.push(0x01);
+        let wrapper = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x24,
+            object_id: 2,
+            payload: wrapper_payload,
+        };
+        let records = HashMap::from([(2, &wrapper)]);
+        let pcurves = BTreeMap::from([(3, (7, [-10.0, 30.0], Some(10.0)))]);
+        let mut payload = vec![0x81, 0x82];
+        for value in [0.0f64, 0.0, 1.0, -2.0, 6.0, 1.0, 0.0, 0.0, 10.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x05, 0x05]);
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x2c,
+            object_id: 8,
+            payload,
+        };
+
+        assert_eq!(
+            parse_extrusion_surface(&record, &records, &pcurves),
+            Some(B5ExtrusionSurface {
+                object_id: 8,
+                direction: [0.0, 0.0, 1.0],
+                parameter_bounds: [[-2.0, 6.0], [0.0, 10.0]],
+                directrix: B5ExtrusionDirectrix::SurfaceCurve {
+                    object_id: 2,
+                    support: (7, 3, [10.0, 20.0]),
+                    parameter_range: [0.0, 10.0],
+                },
+            })
+        );
+
+        let missing_suffix = BTreeMap::from([(3, (7, [-10.0, 30.0], None))]);
+        assert_eq!(
+            parse_extrusion_surface(&record, &records, &missing_suffix),
+            None
+        );
+        let mismatched_suffix = BTreeMap::from([(3, (7, [-10.0, 30.0], Some(9.0)))]);
+        assert_eq!(
+            parse_extrusion_surface(&record, &records, &mismatched_suffix),
+            None
+        );
+        let mut mismatched_span = record;
+        let active_end = 2 + 8 * 8;
+        mismatched_span.payload[active_end..active_end + 8].copy_from_slice(&9.0f64.to_le_bytes());
+        assert_eq!(
+            parse_extrusion_surface(&mismatched_span, &records, &pcurves),
+            None
+        );
+    }
+
+    #[test]
     fn offset_curve_directrix_binds_source_support_and_exact_ranges() {
         let mut source_payload = vec![0x81, 0x83, 0x81, 0x01];
         for value in [-3.0f64, 4.0, 0.0] {
@@ -6157,7 +6392,7 @@ mod tests {
             payload: source_payload,
         };
         let records = HashMap::from([(2, &source)]);
-        let pcurves = BTreeMap::from([(3, (7, [-3.0, 4.0]))]);
+        let pcurves = BTreeMap::from([(3, (7, [-3.0, 4.0], None))]);
         let mut payload = vec![0x81, 0x82];
         for value in [-3.0f64, 4.0] {
             payload.extend_from_slice(&value.to_le_bytes());

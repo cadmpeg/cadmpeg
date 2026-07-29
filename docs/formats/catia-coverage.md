@@ -283,12 +283,14 @@ current scores require those matrices and representative fixtures.
   general parametric, constant-U, or constant-V. Object-stream class-`19`
   pcurves require the complete finite arc-length circle grammar. Both transfer
   over their stored parameter intervals.
-  Object-stream class-`21` pcurves require the exact single-segment clamped
-  Bézier grammar, complete finite suffix, and positive scalar domain. The typed
-  pcurve retains the exact positive suffix scalar without assigning its
-  unresolved semantic role. Decode coverage counts structurally typed and
-  reference-resolved suffix scalars independently, including when no topology
-  graph closes.
+  Object-stream `b5 03 21` pcurves require the exact single-segment clamped
+  Bézier grammar, complete finite suffix, and positive scalar domain.
+  Object-stream `a8 03 21` pcurves require the complete degree-5 UV
+  position/first-derivative/second-derivative jet, multiplicity grammar, and
+  finite tail. Each knot span transfers as an exact quintic Bézier segment.
+  The typed pcurve retains the positive suffix scalar. Decode coverage counts
+  structurally typed and reference-resolved suffix scalars independently,
+  including when no topology graph closes.
   Object-stream class-`1a` pcurves require the exact circular diameter-period
   grammar and transfer as rational quadratic arcs over their stored intervals.
   Object-stream class-`1d` pcurves require the complete sphere great-circle
@@ -298,7 +300,9 @@ current scores require those matrices and representative fixtures.
   Class-`24` support curves and class-`14` fixed-direction curve offsets feed
   class-`2c` extrusion carriers and class-`30` surface offsets. A transferred
   class-`2c` carrier retains its directrix construction and may trim it to a
-  contained active parameter interval. For a class-`30`
+  contained active parameter interval. A class-`21` jet directrix may translate
+  its parameter origin when the wrapper interval, native tail span, and
+  extrusion V span agree. For a class-`30`
   construction, the class-`14` result directrix validates the result carrier
   against the source extrusion and signed surface distance; the neutral surface
   offset retains the defining source extrusion directly.
