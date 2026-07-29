@@ -4256,6 +4256,19 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     assert!(sketch.fields["opaque_segments"]
         .as_array()
         .is_some_and(Vec::is_empty));
+    let coverage = &result.report.coverage;
+    assert_eq!(coverage["decoded_feature_segment_row_count"], 6);
+    assert_eq!(coverage["decoded_feature_circle_segment_count"], 1);
+    assert_eq!(coverage["decoded_feature_point_segment_count"], 1);
+    assert_eq!(coverage["decoded_feature_centered_line_segment_count"], 2);
+    assert_eq!(coverage["decoded_feature_reference_line_segment_count"], 1);
+    assert_eq!(coverage["decoded_feature_bounded_curve_segment_count"], 1);
+    assert!(!coverage.contains_key("decoded_feature_segment_count"));
+    assert_eq!(
+        coverage["resolved_feature_segment_geometry_count"]
+            + coverage["unresolved_feature_segment_geometry_count"],
+        coverage["decoded_feature_segment_row_count"]
+    );
 }
 
 #[test]

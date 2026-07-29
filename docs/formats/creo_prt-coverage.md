@@ -215,7 +215,9 @@ fixtures, claims above L1 remain unproven.
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts
    decoded section-segment rows, resolved and unresolved segment geometry, and
-   missing declared segment rows separately. It also counts decoded and missing
+   missing declared segment rows separately. The decoded row total includes
+   ordinary and every typed special segment family and equals the sum of
+   resolved and unresolved geometry. It also counts decoded and missing
    solver-variable rows separately. It counts
    decoded and transferred section dimensions separately and counts dimensions
    whose scalar values resolve or remain unresolved. It counts decoded section

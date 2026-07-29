@@ -30427,15 +30427,6 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .saturating_sub(resolved_dimension_driven_variable_count),
     );
     coverage.insert(
-        "decoded_feature_segment_count".to_string(),
-        scan.features
-            .definitions
-            .iter()
-            .filter_map(|definition| definition.segments.as_ref())
-            .map(|segments| segments.rows.len())
-            .sum::<usize>(),
-    );
-    coverage.insert(
         "decoded_feature_circle_segment_count".to_string(),
         scan.features
             .definitions
