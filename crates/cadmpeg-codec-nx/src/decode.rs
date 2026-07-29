@@ -378,12 +378,10 @@ fn certified_planar_offset_cache_fit(
     else {
         return None;
     };
-    let same_basis = support.u_degree == 1
-        && support.v_degree == 1
+    let same_basis = support.u_degree > 0
+        && support.v_degree > 0
         && candidate.u_degree == support.u_degree
         && candidate.v_degree == support.v_degree
-        && support.u_count == 2
-        && support.v_count == 2
         && support.u_knots == candidate.u_knots
         && support.v_knots == candidate.v_knots
         && support.u_count == candidate.u_count
@@ -395,33 +393,18 @@ fn certified_planar_offset_cache_fit(
         && !support.v_periodic
         && uniform_positive_weights(support.weights.as_deref());
     if !same_basis
-        || support.control_points.len() != 4
-        || candidate.control_points.len() != 4
+        || support.control_points.len() != candidate.control_points.len()
         || !distance.is_finite()
         || !tolerance.is_finite()
         || tolerance < 0.0
     {
         return None;
     }
-    let [p00, p01, p10, p11] = support.control_points.as_slice() else {
-        return None;
-    };
-    let du = Vector3::new(p10.x - p00.x, p10.y - p00.y, p10.z - p00.z);
-    let dv = Vector3::new(p01.x - p00.x, p01.y - p00.y, p01.z - p00.z);
-    let opposite = Vector3::new(p11.x - p01.x, p11.y - p01.y, p11.z - p01.z);
-    let other_opposite = Vector3::new(p11.x - p10.x, p11.y - p10.y, p11.z - p10.z);
-    if opposite != du || other_opposite != dv {
-        return None;
-    }
-    let normal = cross_vector(du, dv);
-    let norm = normal.norm();
-    if !norm.is_finite() || norm == 0.0 {
-        return None;
-    }
+    let normal = translation_net_normal(support)?;
     let translation = Vector3::new(
-        distance * normal.x / norm,
-        distance * normal.y / norm,
-        distance * normal.z / norm,
+        distance * normal.x,
+        distance * normal.y,
+        distance * normal.z,
     );
     let maximum_error = support
         .control_points
@@ -439,6 +422,70 @@ fn certified_planar_offset_cache_fit(
             error.is_finite().then(|| maximum.max(error))
         })?;
     (maximum_error <= tolerance).then_some(maximum_error)
+}
+
+fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> {
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    if u_count < 2
+        || v_count < 2
+        || u_degree >= u_count
+        || v_degree >= v_count
+        || surface.control_points.len() != u_count.checked_mul(v_count)?
+        || surface
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != surface.control_points.len())
+        || surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
+        || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
+    {
+        return None;
+    }
+    let point = |u: usize, v: usize| surface.control_points[u * v_count + v];
+    let difference = |end: Point3, start: Point3| {
+        Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z)
+    };
+    let u_direction = difference(point(1, 0), point(0, 0));
+    let v_direction = difference(point(0, 1), point(0, 0));
+    let normal = unit_vector(cross_vector(u_direction, v_direction))?;
+
+    let positive_collinear = |increment: Vector3, direction: Vector3| {
+        increment.x.is_finite()
+            && increment.y.is_finite()
+            && increment.z.is_finite()
+            && cross_vector(increment, direction) == Vector3::new(0.0, 0.0, 0.0)
+            && dot_vector(increment, direction) > 0.0
+    };
+    for u in 0..u_count - 1 {
+        let denominator = surface.u_knots[u + u_degree + 1] - surface.u_knots[u + 1];
+        if !denominator.is_finite()
+            || denominator <= 0.0
+            || !positive_collinear(difference(point(u + 1, 0), point(u, 0)), u_direction)
+        {
+            return None;
+        }
+    }
+    for v in 0..v_count - 1 {
+        let denominator = surface.v_knots[v + v_degree + 1] - surface.v_knots[v + 1];
+        if !denominator.is_finite()
+            || denominator <= 0.0
+            || !positive_collinear(difference(point(0, v + 1), point(0, v)), v_direction)
+        {
+            return None;
+        }
+    }
+    let origin = point(0, 0);
+    for u in 0..u_count {
+        for v in 0..v_count {
+            let v_displacement = difference(point(0, v), origin);
+            if difference(point(u, v), point(u, 0)) != v_displacement {
+                return None;
+            }
+        }
+    }
+    Some(normal)
 }
 
 fn uniform_positive_weights(weights: Option<&[f64]>) -> bool {
@@ -8493,6 +8540,28 @@ mod tests {
         })
     }
 
+    fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
+        SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 2,
+            v_degree: 2,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            u_count: 3,
+            v_count: 3,
+            control_points: [0.0, 1.0, 3.0]
+                .into_iter()
+                .flat_map(|x| {
+                    [0.0, 2.0, 5.0]
+                        .into_iter()
+                        .map(move |y| Point3::new(x, y, z))
+                })
+                .collect(),
+            weights: Some(vec![2.0; 9]),
+            u_periodic: false,
+            v_periodic: false,
+        })
+    }
+
     #[test]
     fn planar_offset_cache_fit_is_certified_over_the_control_net() {
         let support = affine_nurbs_surface(0.0);
@@ -8534,6 +8603,19 @@ mod tests {
             1.0
         )
         .is_none());
+    }
+
+    #[test]
+    fn planar_offset_cache_fit_accepts_higher_degree_translation_nets() {
+        assert_eq!(
+            super::certified_planar_offset_cache_fit(
+                &quadratic_translation_surface(0.0),
+                &quadratic_translation_surface(4.0),
+                4.0,
+                0.0
+            ),
+            Some(0.0)
+        );
     }
 
     #[test]
