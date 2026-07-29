@@ -4155,7 +4155,6 @@ fn section_arc_carrier(
 #[derive(Clone)]
 struct SectionIntersectionCarrier {
     geometry: SketchGeometry,
-    line_is_bounded: bool,
 }
 
 fn section_axis_line_carrier_with_points(
@@ -4168,28 +4167,23 @@ fn section_axis_line_carrier_with_points(
     let (Some(first), Some(second)) = (first, second) else {
         return None;
     };
-    let scale = first[0]
-        .into_iter()
-        .chain(first[1])
-        .chain(second[0])
-        .chain(second[1])
-        .map(f64::abs)
-        .fold(1.0, f64::max);
     if segment.directions[0] == Some(0) {
         let (Some(first_u), Some(second_u)) = (first[0], second[0]) else {
             return None;
         };
-        ((first_u - second_u).abs() <= 1e-9 * scale).then(|| SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(first_u, -scale),
-            end: cadmpeg_ir::math::Point2::new(first_u, scale),
+        let scale = first_u.abs().max(second_u.abs()).max(1.0);
+        ((first_u - second_u).abs() <= 1e-9 * scale).then(|| SketchGeometry::ReferenceLine {
+            origin: Point2::new(first_u, 0.0),
+            direction: Point2::new(0.0, 1.0),
         })
     } else if segment.directions[1] == Some(0) {
         let (Some(first_v), Some(second_v)) = (first[1], second[1]) else {
             return None;
         };
-        ((first_v - second_v).abs() <= 1e-9 * scale).then(|| SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-scale, first_v),
-            end: cadmpeg_ir::math::Point2::new(scale, first_v),
+        let scale = first_v.abs().max(second_v.abs()).max(1.0);
+        ((first_v - second_v).abs() <= 1e-9 * scale).then(|| SketchGeometry::ReferenceLine {
+            origin: Point2::new(0.0, first_v),
+            direction: Point2::new(1.0, 0.0),
         })
     } else {
         None
@@ -4201,16 +4195,10 @@ fn section_axis_reference_line_geometry(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let fixed_coordinate = if section_degenerate_axis_line(definition, segment) {
-        usize::try_from(segment.vertical_horizontal?).ok()?
-    } else {
-        (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
-        match segment.directions {
-            [Some(0), _, _] => 0,
-            [_, Some(0), _] => 1,
-            _ => return None,
-        }
-    };
+    if !section_degenerate_axis_line(definition, segment) {
+        return section_axis_line_carrier_with_points(variable_points, segment);
+    }
+    let fixed_coordinate = usize::try_from(segment.vertical_horizontal?).ok()?;
     let values = segment
         .point_ids
         .iter()
@@ -4260,16 +4248,10 @@ fn section_segment_intersection_carrier_with_missing_line(
         segment,
         missing_line,
     ) {
-        return Some(SectionIntersectionCarrier {
-            line_is_bounded: matches!(geometry, SketchGeometry::Line { .. }),
-            geometry,
-        });
+        return Some(SectionIntersectionCarrier { geometry });
     }
     if let Some(geometry) = section_axis_line_carrier_with_points(variable_points, segment) {
-        return Some(SectionIntersectionCarrier {
-            geometry,
-            line_is_bounded: false,
-        });
+        return Some(SectionIntersectionCarrier { geometry });
     }
     let ([center_u, center_v], radius) = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))?;
@@ -4280,7 +4262,6 @@ fn section_segment_intersection_carrier_with_missing_line(
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::TAU),
         },
-        line_is_bounded: false,
     })
 }
 
@@ -4334,47 +4315,54 @@ fn trim_segment_id(
     }
 }
 
+fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
+    match geometry {
+        SketchGeometry::Line { start, end } => {
+            Some((*start, Point2::new(end.u - start.u, end.v - start.v)))
+        }
+        SketchGeometry::ReferenceLine { origin, direction } => Some((*origin, *direction)),
+        _ => None,
+    }
+}
+
 fn intersect_section_lines(first: &SketchGeometry, second: &SketchGeometry) -> Option<[f64; 2]> {
-    let (
-        SketchGeometry::Line {
-            start: first_start,
-            end: first_end,
-        },
-        SketchGeometry::Line {
-            start: second_start,
-            end: second_end,
-        },
-    ) = (first, second)
-    else {
-        return None;
-    };
-    let denominator = (first_start.u - first_end.u).mul_add(
-        second_start.v - second_end.v,
-        -(first_start.v - first_end.v) * (second_start.u - second_end.u),
+    let (first_origin, first_direction) = section_line_origin_direction(first)?;
+    let (second_origin, second_direction) = section_line_origin_direction(second)?;
+    let first_end = Point2::new(
+        first_origin.u + first_direction.u,
+        first_origin.v + first_direction.v,
     );
-    let scale = (first_start.u - first_end.u)
+    let second_end = Point2::new(
+        second_origin.u + second_direction.u,
+        second_origin.v + second_direction.v,
+    );
+    let denominator = (first_origin.u - first_end.u).mul_add(
+        second_origin.v - second_end.v,
+        -(first_origin.v - first_end.v) * (second_origin.u - second_end.u),
+    );
+    let scale = (first_origin.u - first_end.u)
         .abs()
-        .max((first_start.v - first_end.v).abs())
-        .max((second_start.u - second_end.u).abs())
-        .max((second_start.v - second_end.v).abs())
+        .max((first_origin.v - first_end.v).abs())
+        .max((second_origin.u - second_end.u).abs())
+        .max((second_origin.v - second_end.v).abs())
         .max(1.0);
     if denominator.abs() <= 1e-12 * scale * scale {
         return None;
     }
-    let first_cross = first_start
+    let first_cross = first_origin
         .u
-        .mul_add(first_end.v, -(first_start.v * first_end.u));
-    let second_cross = second_start
+        .mul_add(first_end.v, -(first_origin.v * first_end.u));
+    let second_cross = second_origin
         .u
-        .mul_add(second_end.v, -(second_start.v * second_end.u));
+        .mul_add(second_end.v, -(second_origin.v * second_end.u));
     Some([
         first_cross.mul_add(
-            second_start.u - second_end.u,
-            -(first_start.u - first_end.u) * second_cross,
+            second_origin.u - second_end.u,
+            -(first_origin.u - first_end.u) * second_cross,
         ) / denominator,
         first_cross.mul_add(
-            second_start.v - second_end.v,
-            -(first_start.v - first_end.v) * second_cross,
+            second_origin.v - second_end.v,
+            -(first_origin.v - first_end.v) * second_cross,
         ) / denominator,
     ])
 }
@@ -4497,11 +4485,11 @@ fn intersect_section_carriers(
     first: &SectionIntersectionCarrier,
     second: &SectionIntersectionCarrier,
 ) -> Option<[f64; 2]> {
-    let line_arc_is_bounded = match (&first.geometry, &second.geometry) {
-        (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. }) => first.line_is_bounded,
-        (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. }) => second.line_is_bounded,
-        _ => false,
-    };
+    let line_arc_is_bounded = matches!(
+        (&first.geometry, &second.geometry),
+        (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. })
+            | (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. })
+    );
     intersect_section_lines(&first.geometry, &second.geometry)
         .or_else(|| {
             line_arc_is_bounded

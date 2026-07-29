@@ -3599,9 +3599,9 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     };
     assert_eq!(
         section_axis_line_carrier(&definition, &segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(2.0, -8.0),
-            end: cadmpeg_ir::math::Point2::new(2.0, 8.0),
+        Some(SketchGeometry::ReferenceLine {
+            origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
         })
     );
     assert_eq!(
@@ -3820,6 +3820,14 @@ fn intersects_evaluated_section_carriers() {
     };
     assert_eq!(
         intersect_section_lines(&horizontal, &vertical),
+        Some([0.5, 1.0])
+    );
+    let vertical_reference = SketchGeometry::ReferenceLine {
+        origin: cadmpeg_ir::math::Point2::new(0.5, 0.0),
+        direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+    };
+    assert_eq!(
+        intersect_section_lines(&horizontal, &vertical_reference),
         Some([0.5, 1.0])
     );
 
@@ -10819,7 +10827,6 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
             start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
             end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
         },
-        line_is_bounded: false,
     };
     let concurrent = [
         line([-1.0, 0.0], [1.0, 0.0]),
