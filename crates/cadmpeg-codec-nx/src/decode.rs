@@ -395,7 +395,7 @@ fn certified_offset_cache_fit(
             .weights
             .as_ref()
             .is_none_or(|weights| weights.len() == support.control_points.len())
-        && uniform_positive_weights(support.weights.as_deref());
+        && positive_weights(support.weights.as_deref());
     if !same_basis
         || support.control_points.len() != candidate.control_points.len()
         || !distance.is_finite()
@@ -431,18 +431,49 @@ fn certified_offset_cache_fit(
 }
 
 #[derive(Clone)]
-struct PolynomialSurfaceNet {
+struct HomogeneousSurfaceNet {
     u_degree: usize,
     v_degree: usize,
     u_knots: Vec<f64>,
     v_knots: Vec<f64>,
     u_count: usize,
     v_count: usize,
-    controls: Vec<Vector3>,
+    controls: Vec<[f64; 4]>,
 }
 
-impl PolynomialSurfaceNet {
-    fn from_surface(surface: &NurbsSurface) -> Option<Self> {
+impl HomogeneousSurfaceNet {
+    fn from_homogeneous_surface(surface: &NurbsSurface) -> Option<Self> {
+        Self::from_components(surface, |point, weight| {
+            [point.x * weight, point.y * weight, point.z * weight, weight]
+        })
+    }
+
+    fn from_homogeneous_residual(support: &NurbsSurface, candidate: &NurbsSurface) -> Option<Self> {
+        Self::from_homogeneous_surface(candidate)?;
+        let mut net = Self::from_components(support, |point, weight| {
+            [point.x * weight, point.y * weight, point.z * weight, weight]
+        })?;
+        for ((control, support), candidate) in net
+            .controls
+            .iter_mut()
+            .zip(&support.control_points)
+            .zip(&candidate.control_points)
+        {
+            control[0] = (candidate.x - support.x) * control[3];
+            control[1] = (candidate.y - support.y) * control[3];
+            control[2] = (candidate.z - support.z) * control[3];
+        }
+        net.controls
+            .iter()
+            .flatten()
+            .all(|component| component.is_finite())
+            .then_some(net)
+    }
+
+    fn from_components(
+        surface: &NurbsSurface,
+        components: impl Fn(Point3, f64) -> [f64; 4],
+    ) -> Option<Self> {
         let u_degree = usize::try_from(surface.u_degree).ok()?;
         let v_degree = usize::try_from(surface.v_degree).ok()?;
         let u_count = usize::try_from(surface.u_count).ok()?;
@@ -466,6 +497,28 @@ impl PolynomialSurfaceNet {
                 .control_points
                 .iter()
                 .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+            || !positive_weights(surface.weights.as_deref())
+        {
+            return None;
+        }
+        let controls = surface
+            .control_points
+            .iter()
+            .enumerate()
+            .map(|(index, point)| {
+                components(
+                    *point,
+                    surface
+                        .weights
+                        .as_ref()
+                        .map_or(1.0, |weights| weights[index]),
+                )
+            })
+            .collect::<Vec<_>>();
+        if controls
+            .iter()
+            .flatten()
+            .any(|component| !component.is_finite())
         {
             return None;
         }
@@ -476,11 +529,7 @@ impl PolynomialSurfaceNet {
             v_knots: surface.v_knots.clone(),
             u_count,
             v_count,
-            controls: surface
-                .control_points
-                .iter()
-                .map(|point| Vector3::new(point.x, point.y, point.z))
-                .collect(),
+            controls,
         })
     }
 
@@ -518,11 +567,9 @@ impl PolynomialSurfaceNet {
                     return None;
                 }
                 let factor = degree as f64 / denominator;
-                controls.push(Vector3::new(
-                    factor * (second.x - first.x),
-                    factor * (second.y - first.y),
-                    factor * (second.z - first.z),
-                ));
+                controls.push(std::array::from_fn(|axis| {
+                    factor * (second[axis] - first[axis])
+                }));
             }
         }
         Some(Self {
@@ -544,10 +591,21 @@ impl PolynomialSurfaceNet {
         })
     }
 
-    fn maximum_norm(&self) -> Option<f64> {
+    fn maximum_position_norm(&self) -> Option<f64> {
         self.controls.iter().try_fold(0.0_f64, |maximum, control| {
-            let norm = control.norm();
+            let norm = control[..3]
+                .iter()
+                .map(|coordinate| coordinate * coordinate)
+                .sum::<f64>()
+                .sqrt();
             norm.is_finite().then(|| maximum.max(norm))
+        })
+    }
+
+    fn maximum_weight_magnitude(&self) -> Option<f64> {
+        self.controls.iter().try_fold(0.0_f64, |maximum, control| {
+            let value = control[3].abs();
+            value.is_finite().then(|| maximum.max(value))
         })
     }
 }
@@ -560,78 +618,15 @@ fn certified_curved_offset_cache_fit(
 ) -> Option<f64> {
     const MAX_RECTANGLES: usize = 1_000_000;
 
-    let support_net = PolynomialSurfaceNet::from_surface(support)?;
-    let mut residual_net = PolynomialSurfaceNet::from_surface(candidate)?;
-    if support_net.u_degree != residual_net.u_degree
-        || support_net.v_degree != residual_net.v_degree
-        || support_net.u_knots != residual_net.u_knots
-        || support_net.v_knots != residual_net.v_knots
-        || support_net.u_count != residual_net.u_count
-        || support_net.v_count != residual_net.v_count
-    {
-        return None;
-    }
-    for (residual, support) in residual_net.controls.iter_mut().zip(&support_net.controls) {
-        residual.x -= support.x;
-        residual.y -= support.y;
-        residual.z -= support.z;
-    }
-
-    let support_u = support_net.derivative(true)?;
-    let support_v = support_net.derivative(false)?;
-    let support_uv = support_u.derivative(false)?;
-    let residual_u = residual_net.derivative(true)?.maximum_norm()?;
-    let residual_v = residual_net.derivative(false)?.maximum_norm()?;
-    let support_u_bound = support_u.maximum_norm()?;
-    let support_v_bound = support_v.maximum_norm()?;
-    let support_uu_bound = if support_u.u_degree == 0 {
-        0.0
-    } else {
-        support_u.derivative(true)?.maximum_norm()?
-    };
-    let support_uv_bound = support_uv.maximum_norm()?;
-    let support_vv_bound = if support_v.v_degree == 0 {
-        0.0
-    } else {
-        support_v.derivative(false)?.maximum_norm()?
-    };
-
-    let reference_normal = support
-        .u_knots
-        .get(support_net.u_degree)
-        .zip(support.u_knots.get(support_net.u_count))
-        .zip(
-            support
-                .v_knots
-                .get(support_net.v_degree)
-                .zip(support.v_knots.get(support_net.v_count)),
-        )
-        .and_then(|((u0, u1), (v0, v1))| {
-            nurbs_surface_partials(support, u0 + (u1 - u0) * 0.5, v0 + (v1 - v0) * 0.5)
-        })
-        .and_then(|partials| unit_vector(cross_vector(partials.du, partials.dv)))?;
-    let minimum_normal = support_u
-        .controls
-        .iter()
-        .flat_map(|u| {
-            support_v
-                .controls
-                .iter()
-                .map(|v| dot_vector(cross_vector(*u, *v), reference_normal))
-        })
-        .try_fold(f64::INFINITY, |minimum, projection| {
-            projection.is_finite().then(|| minimum.min(projection))
-        })?;
-    if minimum_normal <= 0.0 {
-        return None;
-    }
-    let normal_u_bound =
-        (support_uu_bound * support_v_bound + support_u_bound * support_uv_bound) / minimum_normal;
-    let normal_v_bound =
-        (support_uv_bound * support_v_bound + support_u_bound * support_vv_bound) / minimum_normal;
-    let u_lipschitz = residual_u + distance.abs() * normal_u_bound;
-    let v_lipschitz = residual_v + distance.abs() * normal_v_bound;
-    if !u_lipschitz.is_finite() || !v_lipschitz.is_finite() {
+    let support_net = HomogeneousSurfaceNet::from_homogeneous_surface(support)?;
+    let residual_net = HomogeneousSurfaceNet::from_homogeneous_residual(support, candidate)?;
+    let support_bounds = rational_surface_derivative_bounds(&support_net)?;
+    let residual_bounds = rational_surface_derivative_bounds(&residual_net)?;
+    let normal_u_numerator =
+        support_bounds.uu * support_bounds.v + support_bounds.u * support_bounds.uv;
+    let normal_v_numerator =
+        support_bounds.uv * support_bounds.v + support_bounds.u * support_bounds.vv;
+    if !normal_u_numerator.is_finite() || !normal_v_numerator.is_finite() {
         return None;
     }
 
@@ -676,14 +671,29 @@ fn certified_curved_offset_cache_fit(
         let support_point = cadmpeg_ir::eval::nurbs_surface_point(support, u, v)?;
         let candidate_point = cadmpeg_ir::eval::nurbs_surface_point(candidate, u, v)?;
         let partials = nurbs_surface_partials(support, u, v)?;
-        let normal = unit_vector(cross_vector(partials.du, partials.dv))?;
+        let normal_vector = cross_vector(partials.du, partials.dv);
+        let normal_size = normal_vector.norm();
+        let half_u = (u1 - u0) * 0.5;
+        let half_v = (v1 - v0) * 0.5;
+        let minimum_normal =
+            normal_size - normal_u_numerator * half_u - normal_v_numerator * half_v;
+        if !minimum_normal.is_finite() || minimum_normal <= 0.0 {
+            let split_u = normal_u_numerator * (u1 - u0) >= normal_v_numerator * (v1 - v0);
+            if !subdivide_offset_rectangle(&mut rectangles, [u0, u1, v0, v1], [u, v], split_u) {
+                return None;
+            }
+            continue;
+        }
+        let normal = unit_vector(normal_vector)?;
+        let u_lipschitz = residual_bounds.u + distance.abs() * normal_u_numerator / minimum_normal;
+        let v_lipschitz = residual_bounds.v + distance.abs() * normal_v_numerator / minimum_normal;
         let expected = Point3::new(
             support_point.x + distance * normal.x,
             support_point.y + distance * normal.y,
             support_point.z + distance * normal.z,
         );
         let midpoint_error = point_distance(expected, candidate_point);
-        let bound = midpoint_error + u_lipschitz * (u1 - u0) * 0.5 + v_lipschitz * (v1 - v0) * 0.5;
+        let bound = midpoint_error + u_lipschitz * half_u + v_lipschitz * half_v;
         if !bound.is_finite() {
             return None;
         }
@@ -692,21 +702,100 @@ fn certified_curved_offset_cache_fit(
             continue;
         }
         let split_u = u_lipschitz * (u1 - u0) >= v_lipschitz * (v1 - v0);
-        if split_u {
-            if u == u0 || u == u1 {
-                return None;
-            }
-            rectangles.push([u0, u, v0, v1]);
-            rectangles.push([u, u1, v0, v1]);
-        } else {
-            if v == v0 || v == v1 {
-                return None;
-            }
-            rectangles.push([u0, u1, v0, v]);
-            rectangles.push([u0, u1, v, v1]);
+        if !subdivide_offset_rectangle(&mut rectangles, [u0, u1, v0, v1], [u, v], split_u) {
+            return None;
         }
     }
     Some(certified_bound)
+}
+
+#[derive(Clone, Copy)]
+struct RationalSurfaceDerivativeBounds {
+    u: f64,
+    v: f64,
+    uu: f64,
+    uv: f64,
+    vv: f64,
+}
+
+fn rational_surface_derivative_bounds(
+    net: &HomogeneousSurfaceNet,
+) -> Option<RationalSurfaceDerivativeBounds> {
+    let weight_floor = net
+        .controls
+        .iter()
+        .map(|control| control[3])
+        .try_fold(f64::INFINITY, |minimum, weight| {
+            (weight.is_finite() && weight > 0.0).then(|| minimum.min(weight))
+        })?;
+    let a = net.maximum_position_norm()?;
+    let u_net = net.derivative(true)?;
+    let v_net = net.derivative(false)?;
+    let au = u_net.maximum_position_norm()?;
+    let av = v_net.maximum_position_norm()?;
+    let wu = u_net.maximum_weight_magnitude()?;
+    let wv = v_net.maximum_weight_magnitude()?;
+    let uv_net = u_net.derivative(false)?;
+    let (auu, wuu) = if u_net.u_degree == 0 {
+        (0.0, 0.0)
+    } else {
+        let derivative = u_net.derivative(true)?;
+        (
+            derivative.maximum_position_norm()?,
+            derivative.maximum_weight_magnitude()?,
+        )
+    };
+    let (avv, wvv) = if v_net.v_degree == 0 {
+        (0.0, 0.0)
+    } else {
+        let derivative = v_net.derivative(false)?;
+        (
+            derivative.maximum_position_norm()?,
+            derivative.maximum_weight_magnitude()?,
+        )
+    };
+    let auv = uv_net.maximum_position_norm()?;
+    let wuv = uv_net.maximum_weight_magnitude()?;
+    let inverse_weight = weight_floor.recip();
+    let inverse_weight_squared = inverse_weight * inverse_weight;
+    let inverse_weight_cubed = inverse_weight_squared * inverse_weight;
+    let u = au * inverse_weight + a * wu * inverse_weight_squared;
+    let v = av * inverse_weight + a * wv * inverse_weight_squared;
+    let uu = auu * inverse_weight
+        + (a * wuu + 2.0 * au * wu) * inverse_weight_squared
+        + 2.0 * a * wu * wu * inverse_weight_cubed;
+    let uv = auv * inverse_weight
+        + (au * wv + av * wu + a * wuv) * inverse_weight_squared
+        + 2.0 * a * wu * wv * inverse_weight_cubed;
+    let vv = avv * inverse_weight
+        + (a * wvv + 2.0 * av * wv) * inverse_weight_squared
+        + 2.0 * a * wv * wv * inverse_weight_cubed;
+    [u, v, uu, uv, vv]
+        .iter()
+        .all(|bound| bound.is_finite())
+        .then_some(RationalSurfaceDerivativeBounds { u, v, uu, uv, vv })
+}
+
+fn subdivide_offset_rectangle(
+    rectangles: &mut Vec<[f64; 4]>,
+    [u0, u1, v0, v1]: [f64; 4],
+    [u, v]: [f64; 2],
+    split_u: bool,
+) -> bool {
+    if split_u {
+        if u == u0 || u == u1 {
+            return false;
+        }
+        rectangles.push([u0, u, v0, v1]);
+        rectangles.push([u, u1, v0, v1]);
+    } else {
+        if v == v0 || v == v1 {
+            return false;
+        }
+        rectangles.push([u0, u1, v0, v]);
+        rectangles.push([u0, u1, v, v1]);
+    }
+    true
 }
 
 fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> {
@@ -773,18 +862,14 @@ fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> {
     Some(normal)
 }
 
-fn uniform_positive_weights(weights: Option<&[f64]>) -> bool {
+fn positive_weights(weights: Option<&[f64]>) -> bool {
     let Some(weights) = weights else {
         return true;
     };
-    let Some(first) = weights.first() else {
-        return false;
-    };
-    first.is_finite()
-        && *first > 0.0
+    !weights.is_empty()
         && weights
             .iter()
-            .all(|weight| weight.to_bits() == first.to_bits())
+            .all(|weight| weight.is_finite() && *weight > 0.0)
 }
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
@@ -9153,9 +9238,44 @@ mod tests {
             unreachable!();
         };
         for v in 0..3 {
-            surface.control_points[2 * 3 + v].x = 0.0;
+            surface.control_points[2 * 3 + v] = surface.control_points[3 + v];
         }
         assert!(super::certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
+    }
+
+    #[test]
+    fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
+        let mut support = quadratic_paraboloid_surface();
+        let SurfaceGeometry::Nurbs(surface) = &mut support else {
+            unreachable!();
+        };
+        for v in 0..3 {
+            surface.control_points[2 * 3 + v].x = 0.0;
+        }
+        assert_eq!(
+            super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn curved_offset_cache_fit_certifies_varying_positive_weights() {
+        let mut support = quadratic_paraboloid_surface();
+        let SurfaceGeometry::Nurbs(surface) = &mut support else {
+            unreachable!();
+        };
+        let axis_weights = [1.0, 1.01, 1.02];
+        surface.weights = Some(
+            (0..3)
+                .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
+                .collect(),
+        );
+
+        assert_eq!(
+            super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+            Some(0.0)
+        );
+        assert!(super::certified_offset_cache_fit(&support, &support, 0.01, 0.02).is_some());
     }
 
     #[test]
