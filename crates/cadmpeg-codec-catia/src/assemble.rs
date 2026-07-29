@@ -661,8 +661,13 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
 }
 
 pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {
-    reference + (value - reference + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
-        - std::f64::consts::PI
+    let delta = value - reference;
+    if (-std::f64::consts::PI..=std::f64::consts::PI).contains(&delta) {
+        value
+    } else {
+        reference + (delta + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+            - std::f64::consts::PI
+    }
 }
 
 pub(crate) fn rational_pcurve_arc(
@@ -805,6 +810,13 @@ mod route_tests {
         )
         .expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
+    }
+
+    #[test]
+    fn angle_unwrap_preserves_tiny_principal_differences() {
+        let tiny = 1e-200;
+        assert_eq!(crate::assemble::unwrap_angle(tiny, 0.0), tiny);
+        assert_eq!(crate::assemble::unwrap_angle(-tiny, 0.0), -tiny);
     }
 
     #[test]
