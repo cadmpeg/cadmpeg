@@ -17,7 +17,8 @@ use cadmpeg_ir::features::{
     DesignConfiguration, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
     Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm,
     HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm,
-    RadiusSpec, RibConstruction, RibDraft, SketchSpace, Termination, ThickenSide, TrimRegion,
+    RadiusSpec, RibConstruction, RibDraft, SketchSpace, SweepMode, Termination, ThickenSide,
+    TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -3148,8 +3149,22 @@ fn non_boolean_feature_definition_with_parameters(
         "MASTER SNAPSHOT BODY" => FeatureDefinition::BaseFeature {
             bodies: BodySelection::Unresolved,
         },
-        "SKIN" => FeatureDefinition::LoftUnresolved,
+        "SKIN" | "THRU_CURVE" => FeatureDefinition::LoftUnresolved,
         "Studio Surface" => FeatureDefinition::FreeformSurfaceUnresolved,
+        "SWP104" => FeatureDefinition::Sweep {
+            profile: None,
+            sections: Vec::new(),
+            path: None,
+            mode: SweepMode::Unresolved,
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        },
         "DRAFT" => FeatureDefinition::DraftUnresolved,
         "CPROJ" | "CPROJ_CMB" => FeatureDefinition::ProjectedCurve {
             source: PathRef::Unresolved("nx:unresolved".into()),
@@ -4511,6 +4526,33 @@ mod tests {
                 std::collections::BTreeMap::default(),
             ),
             cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "DELETE"
+        ));
+        assert!(matches!(
+            super::non_boolean_feature_definition_with_parameters(
+                "THRU_CURVE",
+                &[],
+                None,
+                None,
+                super::HoleProjection::default(),
+                std::collections::BTreeMap::new(),
+            ),
+            cadmpeg_ir::features::FeatureDefinition::LoftUnresolved
+        ));
+        assert!(matches!(
+            super::non_boolean_feature_definition_with_parameters(
+                "SWP104",
+                &[],
+                None,
+                None,
+                super::HoleProjection::default(),
+                std::collections::BTreeMap::new(),
+            ),
+            cadmpeg_ir::features::FeatureDefinition::Sweep {
+                profile: None,
+                path: None,
+                mode: cadmpeg_ir::features::SweepMode::Unresolved,
+                ..
+            }
         ));
         let duplicate_expressions = vec![
             expression("expression-a", "p1_length", "1"),

@@ -11305,6 +11305,34 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         },
         native_ref: None,
     });
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#incomplete-sweep".into()),
+        ordinal: 11,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sweep {
+            profile: None,
+            sections: Vec::new(),
+            path: None,
+            mode: cadmpeg_ir::features::SweepMode::Unresolved,
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        },
+        native_ref: None,
+    });
     ir.model.configurations.extend([
         DesignConfiguration {
             id: ConfigurationId("test:configuration#0".into()),
@@ -11343,7 +11371,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 
     assert_eq!(losses.len(), 6);
     assert_eq!(losses[0].category, LossCategory::DesignIntent);
-    assert!(losses[0].message.contains("9 NX feature history operation"));
+    assert!(losses[0]
+        .message
+        .contains("10 NX feature history operation"));
     assert_eq!(losses[1].category, LossCategory::DesignIntent);
     assert!(losses[1].message.contains("1 NX design configuration"));
     assert_eq!(losses[2].category, LossCategory::DesignIntent);
@@ -11357,6 +11387,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(losses[4].message.contains("block (1)"));
     assert!(losses[4].message.contains("delete body (1)"));
     assert!(losses[4].message.contains("sketch (1)"));
+    assert!(losses[4].message.contains("sweep (1)"));
     assert_eq!(losses[5].category, LossCategory::DesignIntent);
     assert!(losses[5].message.contains("1 NX sketch history feature"));
     assert!(losses[5].message.contains("1 have no neutral sketch graph"));

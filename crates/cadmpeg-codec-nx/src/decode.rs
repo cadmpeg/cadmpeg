@@ -23,7 +23,8 @@ use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, ExtrudeExtent,
     FaceSelection, FeatureDefinition, HoleKind, Length, ParameterId, PathRef, PatternKind,
-    ProfileRef, RadiusSpec, RibConstruction, RibDraft, SketchSpace, Termination, TrimRegion,
+    ProfileRef, RadiusSpec, RibConstruction, RibDraft, SketchSpace, SweepMode, Termination,
+    TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -7201,6 +7202,25 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "extrude"
             }
+            FeatureDefinition::Sweep {
+                profile,
+                sections,
+                path,
+                mode,
+                orientation,
+                transition,
+                transformation,
+                ..
+            } if profile.as_ref().is_none_or(profile_ref_is_incomplete)
+                || sections.iter().any(profile_ref_is_incomplete)
+                || path.as_ref().is_none_or(path_ref_is_incomplete)
+                || matches!(mode, SweepMode::Unresolved)
+                || orientation.is_none()
+                || transition.is_none()
+                || transformation.is_none() =>
+            {
+                "sweep"
+            }
             FeatureDefinition::OffsetSurface { faces, distance }
                 if face_selection_is_incomplete(faces) || distance.is_none() =>
             {
@@ -7370,6 +7390,7 @@ pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Opti
         FeatureDefinition::SewBodies { .. } => Some("sew bodies"),
         FeatureDefinition::TrimBodies { .. } => Some("trim bodies"),
         FeatureDefinition::Extrude { .. } => Some("extrude"),
+        FeatureDefinition::Sweep { .. } => Some("sweep"),
         FeatureDefinition::OffsetSurface { .. } => Some("offset surface"),
         FeatureDefinition::Thicken { .. } => Some("thicken"),
         FeatureDefinition::Draft { .. } => Some("draft"),
