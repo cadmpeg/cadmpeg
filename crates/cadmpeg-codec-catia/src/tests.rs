@@ -7913,6 +7913,10 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
         decoded.report.coverage["transferred_sketch_placement_record_count"],
         0
     );
+    assert_eq!(
+        decoded.report.coverage["transferred_pattern_declaration_record_count"],
+        0
+    );
     assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 1);
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
@@ -7922,6 +7926,9 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
             && loss
                 .message
                 .contains("0 exact sketch placement field record(s)")
+            && loss
+                .message
+                .contains("0 exact circular-pattern declaration field record(s)")
             && loss.message.contains("1 field record(s)")
     }));
 }
