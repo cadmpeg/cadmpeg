@@ -77,6 +77,10 @@ pub struct FeatureOperationCommonFrame {
     pub object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
     pub raw_object_index: Vec<u8>,
+    /// Uniquely addressed offset-store block selected by the nonzero object
+    /// reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
     /// Exact serialized frame byte length.
     pub byte_len: u64,
     /// Absolute offset of the first compact index token.
@@ -109,6 +113,10 @@ pub struct FeatureOperationTerminalFrame {
     pub object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
     pub raw_object_index: Vec<u8>,
+    /// Uniquely addressed offset-store block for a suffix not already owned by
+    /// an exact common frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
     /// Absolute offset of the first local-ordinal token.
     pub source_offset: u64,
     /// Absolute offset of the object-reference token.
@@ -2719,6 +2727,7 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
 /// Decode every exact common frame from bounded feature operations.
 pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOperationCommonFrame> {
     let sections = container.om_sections();
+    let indexed = container.indexed_om_sections();
     let mut frames = Vec::new();
     for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
@@ -2755,6 +2764,9 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
                     raw_local_ordinal: frame.raw_local_ordinal,
                     object_index: frame.object_index,
                     raw_object_index: frame.raw_object_index,
+                    data_block: frame
+                        .object_index
+                        .and_then(|object_index| unique_offset_data_block(&indexed, object_index)),
                     byte_len: (frame.end_offset - frame.offset) as u64,
                     source_offset: entry_offset + frame.offset as u64,
                     index_source_offsets: frame
@@ -2777,6 +2789,7 @@ pub fn feature_operation_terminal_frames(
     common_frames: &[FeatureOperationCommonFrame],
 ) -> Vec<FeatureOperationTerminalFrame> {
     let sections = container.om_sections();
+    let indexed = container.indexed_om_sections();
     let mut frames = Vec::new();
     for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
@@ -2811,6 +2824,13 @@ pub fn feature_operation_terminal_frames(
                 };
                 Some(common.id.clone())
             });
+            let data_block = if immediate_common_frame.is_none() {
+                frame
+                    .object_index
+                    .and_then(|object_index| unique_offset_data_block(&indexed, object_index))
+            } else {
+                None
+            };
             frames.push(FeatureOperationTerminalFrame {
                 id: format!(
                     "nx:feature-history:operation-terminal-frame#{section_key}-{operation_ordinal:010}"
@@ -2821,6 +2841,7 @@ pub fn feature_operation_terminal_frames(
                 raw_local_ordinal: frame.raw_local_ordinal,
                 object_index: frame.object_index,
                 raw_object_index: frame.raw_object_index,
+                data_block,
                 source_offset: entry_offset + frame.offset as u64,
                 object_index_source_offset: entry_offset + frame.object_index_offset as u64,
             });
@@ -8153,6 +8174,60 @@ mod tests {
     use crate::NxCodec;
 
     use super::*;
+
+    #[test]
+    fn operation_frames_resolve_nonzero_object_references_to_unique_data_blocks() {
+        let common = [
+            0x00, 0x80, 0x80, 0x80, 0x81, 0x01, 0x03, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x05, 0x05, 0x01, 0x00,
+        ];
+        let zero = [
+            0x00, 0x80, 0x80, 0x80, 0x81, 0x01, 0x03, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x06, 0x06, 0x00, 0x00,
+        ];
+        let (mut operations, block1, block2, block3, block4, block5) =
+            composed_feature_history_inputs();
+        operations[0].2 = common.to_vec();
+        operations[1].2 = zero.to_vec();
+        operations[2].2 = vec![0x07, 0x07, 0x02, 0x00];
+        let store_records: Vec<&[u8]> = vec![&block1, &block2, &block3, &block4, &block5];
+        let payload = composed_feature_history_payload(&operations, &store_records);
+        let container = container::scan_bytes(prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            payload,
+        )]))
+        .expect("composed NX container");
+
+        let common_frames = super::feature_operation_common_frames(&container);
+        assert_eq!(common_frames.len(), 2);
+        assert_eq!(
+            common_frames[0].data_block.as_deref(),
+            Some("nx:om-data-blocks-0:block#1")
+        );
+        assert_eq!(common_frames[1].data_block, None);
+
+        let terminal_frames = super::feature_operation_terminal_frames(&container, &common_frames);
+        let linked_terminal_frames = terminal_frames
+            .iter()
+            .filter(|frame| frame.immediate_common_frame.is_some())
+            .collect::<Vec<_>>();
+        assert_eq!(linked_terminal_frames.len(), 2);
+        assert!(linked_terminal_frames
+            .iter()
+            .all(|frame| frame.data_block.is_none()));
+        let unlinked = terminal_frames
+            .iter()
+            .filter(|frame| frame.local_ordinal == 7)
+            .collect::<Vec<_>>();
+        let [unlinked] = unlinked.as_slice() else {
+            panic!("one unlinked terminal frame");
+        };
+        assert_eq!(unlinked.immediate_common_frame, None);
+        assert_eq!(
+            unlinked.data_block.as_deref(),
+            Some("nx:om-data-blocks-0:block#2")
+        );
+    }
 
     #[test]
     fn nx_feature_source_content_orders_payload_text() {

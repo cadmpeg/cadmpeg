@@ -37,8 +37,9 @@ This document records unresolved NX `.prt` byte semantics.
 - The semantic roles of bytes in each bounded OM field-registry suffix are unspecified.
 - The cross-store relation from a primary feature body field's resolved
   offset-store block to a segment body-image object-index pair is unspecified.
-  Feature-history object-index relations not covered by primary-body writers
-  and Boolean tool consumption are also unspecified.
+  Feature-history object-index relations not covered by primary-body writers,
+  Boolean tool consumption, operation inputs, and common-frame block addressing
+  are also unspecified.
 - Ownership roles of embedded operation common frames, the roles of their
   exactly framed eight-byte state lanes, and the relation of any field to
   operation suppression are unspecified.

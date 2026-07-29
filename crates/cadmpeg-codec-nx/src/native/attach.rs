@@ -269,7 +269,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(171);
+    namespace.version = namespace.version.max(172);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -4505,6 +4505,7 @@ mod tests {
             raw_local_ordinal: vec![0x29],
             object_index: Some(65),
             raw_object_index: vec![0x41],
+            data_block: Some("block".into()),
             byte_len: 20,
             source_offset: 101,
             index_source_offsets: [101, 102, 104],
@@ -4520,6 +4521,7 @@ mod tests {
             raw_local_ordinal: vec![0x29],
             object_index: Some(65),
             raw_object_index: vec![0x41],
+            data_block: None,
             source_offset: 117,
             object_index_source_offset: 119,
         };
