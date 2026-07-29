@@ -3217,6 +3217,11 @@ fn non_boolean_feature_definition_with_parameters(
                 pattern: PatternKind::Unresolved { form: None },
             }
         }
+        "ASSOCIATIVE_INTERSECTION" | "Intersection Curve" => FeatureDefinition::SectionShape {
+            first: BodySelection::Unresolved,
+            second: BodySelection::Unresolved,
+            approximate: None,
+        },
         _ => FeatureDefinition::Native {
             kind: kind.to_string(),
             parameters: native_parameters,
@@ -4361,7 +4366,6 @@ mod tests {
             ),
             cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "DELETE"
         ));
-
         let duplicate_expressions = vec![
             expression("expression-a", "p1_length", "1"),
             expression("expression-b", "p1_length", "2"),
@@ -4373,6 +4377,27 @@ mod tests {
             &expressions,
         )
         .is_empty());
+    }
+
+    #[test]
+    fn nx_intersection_labels_project_without_fabricating_construction_fields() {
+        for operation in ["ASSOCIATIVE_INTERSECTION", "Intersection Curve"] {
+            assert!(matches!(
+                super::non_boolean_feature_definition_with_parameters(
+                    operation,
+                    &[],
+                    None,
+                    None,
+                    super::HoleProjection::default(),
+                    std::collections::BTreeMap::default(),
+                ),
+                cadmpeg_ir::features::FeatureDefinition::SectionShape {
+                    first: cadmpeg_ir::features::BodySelection::Unresolved,
+                    second: cadmpeg_ir::features::BodySelection::Unresolved,
+                    approximate: None,
+                }
+            ));
+        }
     }
 
     #[test]

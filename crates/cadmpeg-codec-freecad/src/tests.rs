@@ -1392,7 +1392,7 @@ fn transfers_part_ruled_surface_and_section_intersection() {
     assert!(matches!(
         feature("Section").definition,
         cadmpeg_ir::features::FeatureDefinition::SectionShape {
-            approximate: true,
+            approximate: Some(true),
             ..
         }
     ));

@@ -1218,6 +1218,11 @@ The `SIMPLE HOLE` payload template is the unique payload string beginning `Hole_
 
 The operation labels `HOLE PACKAGE`, `RIB`, `CHAMFER`, and `THICKEN_SHEET` identify their corresponding construction families. Neutral projection preserves the family as a hole, rib, edge chamfer, or face-thickening operation. Undeclared operands, sidedness, draft, Boolean state, and dimensions outside the rules below remain unresolved.
 
+The operation labels `ASSOCIATIVE_INTERSECTION` and `Intersection Curve`
+identify section constructions producing intersection curves from two source
+shapes. Neutral projection retains unresolved source selections and unresolved
+approximation state until their serialized construction fields are assigned.
+
 A `THICKEN_SHEET` operation with exactly one solid output body has a resolved thickness when that body's complete topology owns one or more `OFFSET_SURF` carriers in one of two forms. In the one-sided form every owned carrier has the same bit-exact finite nonzero signed distance; the absolute distance is the thickness. For resolved support faces, positive distance is forward on a forward-sense face and reverse on a reversed-sense face; negative distance reverses that mapping. The neutral side resolves only when every selected face produces the same result. In the symmetric form the owned carriers divide into positive and negative distances with one common absolute bit pattern and identical nonempty sets of support surfaces; twice the absolute distance is the thickness and the side is both. Other distinct signed distances or unequal positive and negative support sets leave the thickness unresolved. The selected support surfaces retain their native identities. They resolve to neutral faces only under the same one-support-to-one-distinct-face ownership rule as `OFFSET`; otherwise the selection remains native.
 
 The operation labels `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` identify repetition constructions. Neutral projection preserves an unresolved pattern with an unresolved seed selection until its input records supply the pattern form, transform, and seeds.

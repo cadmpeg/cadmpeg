@@ -7225,6 +7225,17 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "pattern"
             }
+            FeatureDefinition::SectionShape {
+                first,
+                second,
+                approximate,
+            } if body_selection_is_incomplete(first)
+                || body_selection_is_incomplete(second)
+                || body_selections_overlap(first, second)
+                || approximate.is_none() =>
+            {
+                "section"
+            }
             FeatureDefinition::Combine { target, tools, op }
                 if body_selection_is_incomplete(target)
                     || body_selection_is_incomplete(tools)

@@ -949,8 +949,9 @@ pub enum FeatureDefinition {
         first: BodySelection,
         /// Second intersected source shape.
         second: BodySelection,
-        /// Whether the resulting section edges are approximated.
-        approximate: bool,
+        /// Whether the resulting section edges are approximated, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        approximate: Option<bool>,
     },
     /// Reflects one source shape across a model-space plane.
     MirrorShape {

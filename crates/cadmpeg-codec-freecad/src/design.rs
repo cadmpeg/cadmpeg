@@ -2829,7 +2829,7 @@ fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDef
     Some(FeatureDefinition::SectionShape {
         first: operand("Base")?,
         second: operand("Tool")?,
-        approximate: bool_property(properties, "Approximation").unwrap_or(false),
+        approximate: Some(bool_property(properties, "Approximation").unwrap_or(false)),
     })
 }
 
