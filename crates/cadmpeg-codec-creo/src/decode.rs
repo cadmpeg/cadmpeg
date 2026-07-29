@@ -2975,13 +2975,11 @@ fn resolved_section_segment_geometry_with_missing_line(
 pub(crate) fn resolved_section_coordinates(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, [Option<f64>; 2]> {
-    let Some(variables) = &definition.variables else {
-        return BTreeMap::new();
+    let (points, ambiguous_point_ids) = match &definition.variables {
+        Some(variables) if variables.is_complete() => variables.reconciled_points(),
+        Some(_) => return BTreeMap::new(),
+        None => (BTreeMap::new(), BTreeSet::new()),
     };
-    if !variables.is_complete() {
-        return BTreeMap::new();
-    }
-    let (points, ambiguous_point_ids) = variables.reconciled_points();
     let mut segment_counts = BTreeMap::new();
     for segment in definition.segments.iter().flat_map(|table| &table.rows) {
         *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;

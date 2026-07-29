@@ -10419,6 +10419,11 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         resolved_section_points(&saved_coincident),
         BTreeMap::from([(1, [0.0, 2.0]), (4, [1.0, 1.0]), (5, [0.0, 1.0])])
     );
+    saved_coincident.variables = None;
+    assert_eq!(
+        resolved_section_points(&saved_coincident),
+        BTreeMap::from([(4, [1.0, 1.0]), (5, [0.0, 1.0])])
+    );
     let mut saved_symmetric = saved_definition.clone();
     let point = saved_symmetric
         .variables
