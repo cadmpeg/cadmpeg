@@ -684,6 +684,34 @@ pub(crate) fn bind_feature_body_selections(
             }
             continue;
         }
+        if let FeatureDefinition::Combine { target, .. } = &mut feature.definition {
+            let BodySelection::Native(native) = target else {
+                continue;
+            };
+            let (Some(state_id), Some(previous_state_id)) =
+                (scope.history_state_id, scope.previous_history_state_id)
+            else {
+                continue;
+            };
+            let Some(Some(state)) = states.get(&state_id) else {
+                continue;
+            };
+            let Some(body) =
+                singleton_revised_input_body_across_state_chain(state, previous_state_id, &states)
+            else {
+                continue;
+            };
+            let prefix = feature_input_prefix(&feature_id, previous_state_id);
+            *target = BodySelection::Historical {
+                state: crate::design::edge_resolve::feature_input_topology_id(
+                    &feature_id,
+                    previous_state_id,
+                ),
+                bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
+                native: native.clone(),
+            };
+            continue;
+        }
         let (bodies, proof) = match &mut feature.definition {
             FeatureDefinition::MoveBody { bodies, .. } => {
                 (bodies, BodySelectionProof::TopologyStableRevision)
