@@ -2209,7 +2209,6 @@ fn saved_section_line_geometry(
 ) -> Option<SketchGeometry> {
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
     let order_table = definition.order_table.as_ref()?;
-    let saved_section = definition.saved_section.as_ref()?;
     let internal_id = order_table
         .internal_id(segment.external_id)
         .or_else(|| {
@@ -2228,7 +2227,7 @@ fn saved_section_line_geometry(
                 .find_map(|candidate| order_table.internal_id(candidate.external_id))?;
             let internal_id = previous.checked_add(1)?;
             (next == internal_id.checked_add(1)?
-                && saved_section.entities.iter().any(|entity| {
+                && semantic_saved_section_entities(definition).any(|entity| {
                     matches!(entity, crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id)
                 }))
             .then_some(internal_id)
@@ -2265,9 +2264,7 @@ fn saved_section_line_geometry(
                 })
                 .map(|candidate| candidate.external_id)
                 .collect::<Vec<_>>();
-            let saved_ids = saved_section
-                .entities
-                .iter()
+            let saved_ids = semantic_saved_section_entities(definition)
                 .filter_map(|entity| match entity {
                     crate::feature::FeatureSavedEntity::Line(line)
                         if !ordered_internal_ids.contains(&line.entity_id) =>
@@ -2288,16 +2285,12 @@ fn saved_section_line_geometry(
     unique_saved_section_internal_ids(definition)
         .contains(&internal_id)
         .then_some(())?;
-    let line = saved_section
-        .entities
-        .iter()
-        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
-        .find_map(|entity| match entity {
-            crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id => {
-                Some(line)
-            }
-            _ => None,
-        })?;
+    let line = semantic_saved_section_entities(definition).find_map(|entity| match entity {
+        crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id => {
+            Some(line)
+        }
+        _ => None,
+    })?;
     let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints else {
         return None;
     };
@@ -2320,18 +2313,10 @@ fn saved_section_arc_record<'a>(
     unique_saved_section_internal_ids(definition)
         .contains(&internal_id)
         .then_some(())?;
-    definition
-        .saved_section
-        .as_ref()?
-        .entities
-        .iter()
-        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
-        .find_map(|entity| match entity {
-            crate::feature::FeatureSavedEntity::Arc(arc) if arc.entity_id == internal_id => {
-                Some(arc)
-            }
-            _ => None,
-        })
+    semantic_saved_section_entities(definition).find_map(|entity| match entity {
+        crate::feature::FeatureSavedEntity::Arc(arc) if arc.entity_id == internal_id => Some(arc),
+        _ => None,
+    })
 }
 
 fn saved_section_arc_carrier(
@@ -2736,11 +2721,7 @@ fn saved_section_missing_line_geometry(
         return None;
     };
 
-    let saved = definition.saved_section.as_ref()?;
-    let geometries = saved
-        .entities
-        .iter()
-        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
+    let geometries = semantic_saved_section_entities(definition)
         .filter_map(saved_section_entity_geometry)
         .filter(|(internal_id, _, _)| order.rows.iter().any(|row| row.internal_id == *internal_id))
         .collect::<Vec<_>>();
@@ -6660,11 +6641,8 @@ fn transfer_saved_spline_curves(
         else {
             continue;
         };
-        for spline in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(|entity| match entity {
+        for spline in
+            semantic_saved_section_entities(definition).filter_map(|entity| match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
@@ -6932,11 +6910,8 @@ fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        for (internal_id, section_geometry, offset) in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(saved_section_entity_geometry)
+        for (internal_id, section_geometry, offset) in
+            semantic_saved_section_entities(definition).filter_map(saved_section_entity_geometry)
         {
             let Some(external_id) = order_table.external_id(internal_id) else {
                 continue;
@@ -6989,10 +6964,7 @@ fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        let splines = definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
+        let splines = semantic_saved_section_entities(definition)
             .filter_map(|entity| match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
@@ -10781,24 +10753,14 @@ fn section_saved_entity(
     external_id: u32,
 ) -> Option<&crate::feature::FeatureSavedEntity> {
     let internal_id = definition.order_table.as_ref()?.internal_id(external_id)?;
-    let mut matches = definition
-        .saved_section
-        .as_ref()?
-        .entities
-        .iter()
-        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
-        .filter(|entity| match entity {
-            crate::feature::FeatureSavedEntity::Line(line) => line.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Arc(arc) => arc.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Circle(circle) => circle.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Conic(conic) => conic.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Spline(spline) => {
-                spline.entity_id == Some(internal_id)
-            }
-            crate::feature::FeatureSavedEntity::Dummy(dummy) => {
-                dummy.entity_id == Some(internal_id)
-            }
-        });
+    let mut matches = semantic_saved_section_entities(definition).filter(|entity| match entity {
+        crate::feature::FeatureSavedEntity::Line(line) => line.entity_id == internal_id,
+        crate::feature::FeatureSavedEntity::Arc(arc) => arc.entity_id == internal_id,
+        crate::feature::FeatureSavedEntity::Circle(circle) => circle.entity_id == internal_id,
+        crate::feature::FeatureSavedEntity::Conic(conic) => conic.entity_id == internal_id,
+        crate::feature::FeatureSavedEntity::Spline(spline) => spline.entity_id == Some(internal_id),
+        crate::feature::FeatureSavedEntity::Dummy(dummy) => dummy.entity_id == Some(internal_id),
+    });
     let entity = matches.next()?;
     matches.next().is_none().then_some(entity)
 }
@@ -11420,10 +11382,7 @@ fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -
     let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
     let unique_saved_ids = unique_saved_section_internal_ids(definition);
     ids.extend(
-        definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
+        semantic_saved_section_entities(definition)
             .filter_map(|entity| saved_section_entity_identity(entity).0)
             .filter_map(|internal_id| {
                 saved_section_external_id(
@@ -11601,11 +11560,7 @@ fn unresolved_saved_section_entity(
 fn unique_saved_section_internal_ids(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeSet<u32> {
-    definition
-        .saved_section
-        .iter()
-        .flat_map(|saved| &saved.entities)
-        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
+    semantic_saved_section_entities(definition)
         .filter_map(|entity| saved_section_entity_identity(entity).0)
         .fold(BTreeMap::new(), |mut counts, internal_id| {
             *counts.entry(internal_id).or_insert(0usize) += 1;
@@ -11640,16 +11595,22 @@ fn saved_section_entity_is_elided_prototype(
         })
 }
 
-fn materialized_saved_section_external_ids(
+fn semantic_saved_section_entities(
     definition: &crate::feature::FeatureDefinition,
-) -> BTreeSet<u32> {
-    let unique_saved_ids = unique_saved_section_internal_ids(definition);
-    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
+) -> impl Iterator<Item = &crate::feature::FeatureSavedEntity> {
     definition
         .saved_section
         .iter()
         .flat_map(|saved| &saved.entities)
         .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
+}
+
+fn materialized_saved_section_external_ids(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeSet<u32> {
+    let unique_saved_ids = unique_saved_section_internal_ids(definition);
+    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
+    semantic_saved_section_entities(definition)
         .filter_map(|entity| {
             match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => {
@@ -12996,11 +12957,8 @@ fn transfer_sketches(
         }
         let mut saved_section_geometries = Vec::new();
         let mut generated_saved_geometries = Vec::new();
-        for (internal_id, geometry, offset) in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(saved_section_entity_geometry)
+        for (internal_id, geometry, offset) in
+            semantic_saved_section_entities(definition).filter_map(saved_section_entity_geometry)
         {
             let unique_internal_id = unique_saved_ids.contains(&internal_id);
             let external_id = if unique_internal_id {
@@ -13065,11 +13023,8 @@ fn transfer_sketches(
             });
             saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
         }
-        for spline in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(|entity| match entity {
+        for spline in
+            semantic_saved_section_entities(definition).filter_map(|entity| match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
@@ -13154,11 +13109,7 @@ fn transfer_sketches(
                 generated_saved_geometries.push((external_id, geometry));
             }
         }
-        for saved in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-        {
+        for saved in semantic_saved_section_entities(definition) {
             let (entity, offset) = unresolved_saved_section_entity(
                 definition,
                 &sketch_id,
@@ -13985,16 +13936,12 @@ fn transfer_resolved_revolution_surfaces(
                     feature_id,
                     &scan.features.entity_tables,
                     order,
-                    definition
-                        .saved_section
-                        .iter()
-                        .flat_map(|saved| &saved.entities)
-                        .filter_map(|entity| match entity {
-                            crate::feature::FeatureSavedEntity::Spline(spline) => {
-                                order.external_id(spline.entity_id?)
-                            }
-                            _ => None,
-                        }),
+                    semantic_saved_section_entities(definition).filter_map(|entity| match entity {
+                        crate::feature::FeatureSavedEntity::Spline(spline) => {
+                            order.external_id(spline.entity_id?)
+                        }
+                        _ => None,
+                    }),
                     crate::surface::SurfaceKind::Spline,
                 )
             });
@@ -14071,11 +14018,9 @@ fn transfer_resolved_revolution_surfaces(
             transferred += 1;
         }
         if let Some(order) = definition.order_table.as_ref() {
-            for (internal_id, section_geometry, offset) in definition
-                .saved_section
-                .iter()
-                .flat_map(|saved| &saved.entities)
-                .filter_map(saved_section_entity_geometry)
+            for (internal_id, section_geometry, offset) in
+                semantic_saved_section_entities(definition)
+                    .filter_map(saved_section_entity_geometry)
             {
                 let Some(external_id) = order.external_id(internal_id) else {
                     continue;
@@ -14122,11 +14067,8 @@ fn transfer_resolved_revolution_surfaces(
                 transferred += 1;
             }
         }
-        for spline in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(|entity| match entity {
+        for spline in
+            semantic_saved_section_entities(definition).filter_map(|entity| match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })

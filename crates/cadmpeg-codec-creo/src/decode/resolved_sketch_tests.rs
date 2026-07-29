@@ -5755,6 +5755,35 @@ fn saved_arc_joins_through_order_table() {
         .entities
         .insert(0, prototype);
     assert!(saved_section_arc_geometry(&elided_prototype, &segment).is_some());
+    assert_eq!(
+        semantic_saved_section_entities(&elided_prototype).count(),
+        1
+    );
+
+    let mut complete_elided_prototype = elided_prototype.clone();
+    let complete_arc = complete_elided_prototype
+        .saved_section
+        .as_ref()
+        .expect("saved section")
+        .entities[1]
+        .clone();
+    complete_elided_prototype
+        .saved_section
+        .as_mut()
+        .expect("saved section")
+        .entities[0] = complete_arc;
+    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut complete_elided_prototype
+        .saved_section
+        .as_mut()
+        .expect("saved section")
+        .entities[0]
+    {
+        arc.offset = 18;
+    }
+    assert_eq!(
+        semantic_saved_section_entities(&complete_elided_prototype).count(),
+        1
+    );
 
     let mut unique_at_table_origin = definition.clone();
     unique_at_table_origin.segments = Some(segment_table);
