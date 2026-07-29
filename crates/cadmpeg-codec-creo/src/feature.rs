@@ -408,8 +408,8 @@ pub struct FeatureEntityTableEntry {
     pub class_id: u32,
     /// Source section entity identifier carried by class `200` entries.
     pub source_entity_id: Option<u32>,
-    /// Related entity identifier carried by class `210`, `214`, `219`, and
-    /// `2017` entries.
+    /// Related entity identifier carried by class `210`, related-form class
+    /// `214`, class `219`, and class `2017` entries.
     pub related_entity_id: Option<u32>,
     /// One-byte state following a related entity.
     pub related_entity_state: Option<u8>,
