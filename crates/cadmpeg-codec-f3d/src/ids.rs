@@ -90,6 +90,16 @@ pub(crate) fn brep_entity_id(index: impl std::fmt::Display) -> String {
     format!("f3d:brep:entity#{index}")
 }
 
+/// Neutral product occurrence projected from one external-reference placement.
+pub(crate) fn neutral_xref_occurrence_id(
+    reference_ordinal: u32,
+    occurrence_ordinal: u32,
+) -> cadmpeg_ir::products::OccurrenceId {
+    cadmpeg_ir::products::OccurrenceId(format!(
+        "f3d:model:occurrence#xref-{reference_ordinal}-{occurrence_ordinal}"
+    ))
+}
+
 /// The Design configuration record key for the archive entry `entry_name`.
 pub(crate) fn configuration_entry_id(entry_name: &str) -> String {
     format!("f3d:configuration:entry#{entry_name}")

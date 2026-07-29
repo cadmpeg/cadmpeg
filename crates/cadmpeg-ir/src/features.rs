@@ -9,6 +9,7 @@ use crate::ids::{
     HistoricalFaceId, SubdId, VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
+use crate::products::OccurrenceId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -368,6 +369,11 @@ pub enum FeatureDefinition {
     InsertBodies {
         /// Newly created body copies in source order.
         bodies: BodySelection,
+    },
+    /// External component occurrence introduced into an assembly timeline.
+    InsertComponent {
+        /// Placed occurrence created by this history operation.
+        occurrence: OccurrenceId,
     },
     /// Freeform modeling session represented by its final subdivision cages.
     Form {

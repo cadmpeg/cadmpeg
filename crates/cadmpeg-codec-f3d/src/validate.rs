@@ -1008,6 +1008,27 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
             }
         };
+        let component_insert_link = match &scope.component_insert_construction {
+            None => scope.kind != "Component Insert",
+            Some(construction) => {
+                let relation =
+                    records_by_index.get(&(native_stream, construction.relation_record_index));
+                scope.kind == "Component Insert"
+                    && scope.reference_members == [construction.relation_record_index]
+                    && construction.carrier_record_index != construction.relation_record_index
+                    && crate::bytes::is_guid_relaxed(&construction.neutron_role)
+                    && design::decode::sketch::valid_sketch_transform(&construction.transform)
+                    && construction.transform_offset == scope.byte_offset + 50
+                    && construction.neutron_role_offset < construction.carrier_transform_offset
+                    && relation.is_some_and(|relation| {
+                        construction.carrier_transform_offset < relation.byte_offset
+                    })
+                    && native.xref_references.iter().any(|reference| {
+                        reference.neutron_role == construction.neutron_role
+                            && reference.transform == Some(construction.transform)
+                    })
+            }
+        };
         let draft_link = match (
             scope.draft_operation.as_ref(),
             design::design_feature_family(&scope.kind),
@@ -1195,6 +1216,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && copy_paste_link
             && rectangular_pattern_link
             && assembly_alignment_link
+            && component_insert_link
             && draft_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))

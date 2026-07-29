@@ -11,14 +11,15 @@
 use serde::Deserialize;
 
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
-    ComponentReference, ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceId,
+    ComponentReference, ExternalDocumentReference, ExternalResolution, Occurrence,
 };
 
 use crate::bytes::lp_ascii_strict;
 use crate::container::role;
 use crate::container::ContainerScan;
-use crate::records::{XrefDesign, XrefReference};
+use crate::records::{DesignParameterScope, XrefDesign, XrefReference};
 
 /// Top-level container entry holding the external-reference table.
 pub const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
@@ -251,7 +252,10 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                 row[3] *= 10.0;
             }
             Occurrence {
-                id: OccurrenceId(reference.id.clone()),
+                id: crate::ids::neutral_xref_occurrence_id(
+                    reference.ordinal,
+                    reference.occurrence_ordinal,
+                ),
                 prototype: ComponentReference::External {
                     document: ExternalDocumentReference {
                         path: Some(reference.relative_path.clone()),
@@ -284,6 +288,46 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
             }
         })
         .collect()
+}
+
+/// Resolve exact `Component Insert` history scopes to their placed occurrences.
+pub fn bind_component_insert_features(
+    features: &mut [Feature],
+    scopes: &[DesignParameterScope],
+    table: &XrefTable,
+) {
+    for scope in scopes {
+        let Some(construction) = &scope.component_insert_construction else {
+            continue;
+        };
+        let mut matches = table.references.iter().filter(|reference| {
+            reference.neutron_role == construction.neutron_role
+                && reference.transform == Some(construction.transform)
+        });
+        let Some(reference) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
+        }
+        let Some(feature) = features
+            .iter_mut()
+            .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+        else {
+            continue;
+        };
+        if matches!(
+            &feature.definition,
+            FeatureDefinition::Native { kind, .. } if kind == "Component Insert"
+        ) {
+            feature.definition = FeatureDefinition::InsertComponent {
+                occurrence: crate::ids::neutral_xref_occurrence_id(
+                    reference.ordinal,
+                    reference.occurrence_ordinal,
+                ),
+            };
+        }
+    }
 }
 
 /// Expand container references through their occurrence records in the active
@@ -337,7 +381,7 @@ fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
         for (occurrence_ordinal, transform) in occurrences.into_iter().enumerate() {
             let mut occurrence = reference.clone();
             occurrence.id = format!(
-                "f3d:xref:reference#{}/occurrence#{occurrence_ordinal}",
+                "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
                 reference.ordinal
             );
             occurrence.occurrence_ordinal = occurrence_ordinal as u32;
@@ -618,7 +662,7 @@ mod tests {
         let table = super::XrefTable {
             designs: Vec::new(),
             references: vec![crate::records::XrefReference {
-                id: "f3d:xref:reference#0/occurrence#0".into(),
+                id: "f3d:xref:reference#0-occurrence-0".into(),
                 ordinal: 0,
                 occurrence_ordinal: 0,
                 from: "root.f3d".into(),
@@ -632,7 +676,7 @@ mod tests {
         let occurrences = super::project_occurrences(&table);
 
         assert_eq!(occurrences.len(), 1);
-        assert_eq!(occurrences[0].id.0, table.references[0].id);
+        assert_eq!(occurrences[0].id.0, "f3d:model:occurrence#xref-0-0");
         assert_eq!(
             occurrences[0].local_transform,
             [

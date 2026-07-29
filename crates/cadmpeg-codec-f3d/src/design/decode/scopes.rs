@@ -12,13 +12,13 @@ use crate::records::{
     DesignAssemblyAlignment, DesignAssemblyOperandFrame, DesignBaseFeatureConstruction,
     DesignBaseFlangeOperation, DesignCircularPatternConstruction, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
-    DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignDraftOperation,
-    DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
-    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
-    DesignMirrorConstruction, DesignMoveOperation, DesignObjectKind, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignComponentInsertConstruction, DesignCopyPasteBodiesOperation, DesignDirectFaceOperation,
+    DesignDraftOperation, DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent,
+    DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudePrologueReference,
+    DesignExtrudeStart, DesignFixedChamferDistance, DesignFixedChamferParameters,
+    DesignFixedExtrudeParameters, DesignFixedFilletGroup, DesignFixedFilletParameters,
+    DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation, DesignObjectKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
     DesignRectangularPatternConstruction, DesignRectangularPatternInstances, DesignScaleOperation,
     DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
@@ -119,6 +119,8 @@ pub fn decode_parameter_scopes(
             scope.rectangular_pattern_construction =
                 exact_rectangular_pattern_construction(bytes, &scope, parameter_owners);
             scope.assembly_alignment = exact_assembly_alignment(bytes, &scope, parameter_owners);
+            scope.component_insert_construction =
+                exact_component_insert_construction(bytes, &scope);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             out.push(scope);
@@ -184,6 +186,97 @@ pub(crate) fn exact_assembly_alignment(
     };
     alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
     Some(alignment)
+}
+
+pub(crate) fn exact_component_insert_construction(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignComponentInsertConstruction> {
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    let relation_record_index = *scope.reference_members.first()?;
+    if scope.kind != "Component Insert"
+        || scope.frame_length != 399
+        || scope.paired_class_tag != "259"
+        || scope.reference_members.len() != 1
+        || bytes.get(start + 11..start + 20)? != [0; 9]
+        || bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
+        || bytes.get(start + 33..start + 37)? != [0; 4]
+        || bytes.get(start + 37) != Some(&1)
+        || u32_at(bytes, start + 38)? != relation_record_index
+        || bytes.get(start + 42..start + 50)? != [0, 0, 0, 0, 0, 0, 1, 0]
+    {
+        return None;
+    }
+    let transform = rigid_transform_at(bytes, start + 50)?;
+    let relation_at = next_indexed_record_offset_with_index(bytes, 0, relation_record_index)?;
+    if relation_at >= start
+        || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
+        || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
+        || bytes.get(relation_at + 21) != Some(&1)
+        || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
+        || bytes.get(relation_at + 34) != Some(&1)
+        || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
+        || bytes.get(relation_at + 46) != Some(&1)
+        || u32_at(bytes, relation_at + 47)? != scope.record_index
+        || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
+    {
+        return None;
+    }
+    let carrier_record_index = u32_at(bytes, relation_at + 22)?;
+    let carrier_at = unique_indexed_record_before(bytes, carrier_record_index, relation_at)?;
+    let mut placements = Vec::new();
+    for at in carrier_at + 11..relation_at {
+        let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 1..=256) else {
+            continue;
+        };
+        if !crate::bytes::is_guid_relaxed(&role)
+            || bytes.get(after_role..after_role + 2) != Some(&[0, 0])
+        {
+            continue;
+        }
+        let transform_at = after_role.checked_add(2)?;
+        if rigid_transform_at(bytes, transform_at) == Some(transform) {
+            placements.push((role, at + 4, transform_at));
+        }
+    }
+    let [(neutron_role, neutron_role_offset, carrier_transform_offset)] = placements.as_slice()
+    else {
+        return None;
+    };
+    Some(DesignComponentInsertConstruction {
+        relation_record_index,
+        carrier_record_index,
+        neutron_role: neutron_role.clone(),
+        neutron_role_offset: u64::try_from(*neutron_role_offset).ok()?,
+        transform,
+        transform_offset: u64::try_from(start + 50).ok()?,
+        carrier_transform_offset: u64::try_from(*carrier_transform_offset).ok()?,
+    })
+}
+
+fn unique_indexed_record_before(bytes: &[u8], record_index: u32, end: usize) -> Option<usize> {
+    let mut position = 0;
+    let mut found = None;
+    while let Some(at) = next_indexed_record_offset(bytes, position) {
+        if at >= end {
+            break;
+        }
+        let (_, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+        if u32_at(bytes, after_tag) == Some(record_index) && found.replace(at).is_some() {
+            return None;
+        }
+        position = at.checked_add(1)?;
+    }
+    found
+}
+
+fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+    let values = f64s_at(bytes, at, 16)?;
+    let mut transform = [[0.0; 4]; 4];
+    for (ordinal, value) in values.into_iter().enumerate() {
+        transform[ordinal / 4][ordinal % 4] = value;
+    }
+    valid_sketch_transform(&transform).then_some(transform)
 }
 
 fn exact_assembly_operand_frames(
@@ -2258,6 +2351,7 @@ pub(crate) fn parse_parameter_scope(
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
         assembly_alignment: None,
+        component_insert_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,

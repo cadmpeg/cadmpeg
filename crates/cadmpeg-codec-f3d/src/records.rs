@@ -1131,6 +1131,25 @@ pub struct DesignAssemblyOperandFrame {
     pub transform_offset: u64,
 }
 
+/// External occurrence and placement joined through a `Component Insert` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignComponentInsertConstruction {
+    /// Scope-owned relation record.
+    pub relation_record_index: u32,
+    /// Grouped occurrence carrier named by the relation record.
+    pub carrier_record_index: u32,
+    /// Occurrence-role GUID joining the carrier to the external-reference table.
+    pub neutron_role: String,
+    /// Byte offset of the occurrence-role string payload.
+    pub neutron_role_offset: u64,
+    /// Row-major local occurrence transform in centimetres.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the scope-local transform.
+    pub transform_offset: u64,
+    /// Byte offset of the equal transform in the grouped carrier.
+    pub carrier_transform_offset: u64,
+}
+
 /// Exact construction carried by a Mirror scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignMirrorConstruction {
@@ -1386,6 +1405,9 @@ pub struct DesignParameterScope {
     /// Exact alignment scalars carried by an `Assemble` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assembly_alignment: Option<DesignAssemblyAlignment>,
+    /// Exact external-occurrence construction carried by a `Component Insert` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component_insert_construction: Option<DesignComponentInsertConstruction>,
     /// Exact construction carried by a Mirror scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mirror_construction: Option<DesignMirrorConstruction>,

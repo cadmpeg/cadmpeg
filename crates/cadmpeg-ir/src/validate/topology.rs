@@ -2274,6 +2274,21 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
+            FeatureDefinition::InsertComponent { occurrence } => {
+                if !ir
+                    .model
+                    .occurrences
+                    .iter()
+                    .any(|candidate| candidate.id == *occurrence)
+                {
+                    ref_error(
+                        findings,
+                        &feature.id.0,
+                        "inserted component occurrence",
+                        &occurrence.0,
+                    );
+                }
+            }
             FeatureDefinition::Form { cages } => {
                 if cages.is_empty() {
                     feature_geometry_error(findings, feature, "Form operation has no control cage");

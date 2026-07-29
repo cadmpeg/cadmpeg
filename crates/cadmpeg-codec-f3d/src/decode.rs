@@ -1383,7 +1383,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             native.act_root_components = act.root_components;
             report_unresolved_dimension_companions(&mut report, &native);
             report_unresolved_configuration_rules(&mut report, &native, &ir);
-            report_design_projection_gaps(&mut report, &ir, &native);
             if !native.lost_edge_references.is_empty() {
                 report.losses.push(LossNote {
                 code: LossCode::AttributesNotTransferred,
@@ -1425,12 +1424,18 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             match crate::xref::decode(&scan) {
                 Ok(Some(table)) => {
                     ir.model.occurrences = crate::xref::project_occurrences(&table);
+                    crate::xref::bind_component_insert_features(
+                        &mut ir.model.features,
+                        &native.design_parameter_scopes,
+                        &table,
+                    );
                     native.xref_designs = table.designs;
                     native.xref_references = table.references;
                 }
                 Ok(None) => {}
                 Err(error) => report.losses.push(xref_parse_loss(&error)),
             }
+            report_design_projection_gaps(&mut report, &ir, &native);
             native.store(ir.native.namespace_mut("f3d"))?;
             let annotations = populate_annotations(
                 &ir,
@@ -1772,6 +1777,11 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let xref_table = crate::xref::decode(&scan);
     if let Ok(Some(table)) = &xref_table {
         ir.model.occurrences = crate::xref::project_occurrences(table);
+        crate::xref::bind_component_insert_features(
+            &mut ir.model.features,
+            &native.design_parameter_scopes,
+            table,
+        );
         native.xref_designs.clone_from(&table.designs);
         native.xref_references.clone_from(&table.references);
     }
@@ -3569,6 +3579,7 @@ mod tests {
             circular_pattern_construction: None,
             rectangular_pattern_construction: None,
             assembly_alignment: None,
+            component_insert_construction: None,
             mirror_construction: None,
             base_flange_profile: None,
             entity_id: None,
@@ -3727,6 +3738,7 @@ mod tests {
             circular_pattern_construction: None,
             rectangular_pattern_construction: None,
             assembly_alignment: None,
+            component_insert_construction: None,
             mirror_construction: None,
             base_flange_profile: None,
             entity_id: None,
