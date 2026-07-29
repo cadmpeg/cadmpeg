@@ -96,9 +96,10 @@ current scores require those matrices and representative fixtures.
   cumulative gate in one closed envelope passes.
 - Zero-entity face-local support occurrences with complete lifted endpoint
   tapes form radial endpoint-pair candidates only when two occurrences have
-  matching unordered model-space endpoints and the surrounding face-incidence
-  partition is unambiguous. This relation does not assert curve coincidence:
-  distinct curved supports may share both endpoints. Candidate endpoint
+  matching unordered model-space endpoints and bounded-curve midpoint
+  witnesses and the surrounding face-incidence partition is unambiguous. This
+  relation does not assert curve coincidence: distinct curved supports may
+  share all three witnesses. Candidate endpoint
   coordinates form geometric endpoint-locus candidates only when each tolerance
   component is a complete pairwise clique; ambiguous tolerance chains remain
   unresolved.
@@ -157,9 +158,10 @@ current scores require those matrices and representative fixtures.
   unresolved topology ownership.
 - Zero-entity surface carriers retain their complete face-local `21xx` support
   tapes. Every occurrence keeps its framed local slot, record family, and
-  complete clamped `2171`, `2191`, `2199`, or `21d6` parameter-space NURBS
-  curve, including rational `2199` weights, together with its inline UV
-  endpoint pair. Plane pcurves lift affinely to exact model-space NURBS
+  complete clamped `2145`, `2171`, `2172`, `2191`, `2199`, `219f`, `21d6`, or
+  `21e8` parameter-space NURBS curve, including rational `2199` weights,
+  together with its inline UV endpoint pair. Plane pcurves lift affinely to
+  exact model-space NURBS
   carriers. Constant-coordinate pcurves on cylinder, cone, torus, and NURBS
   surfaces retain their exact analytic or contracted NURBS carriers.
   Non-isoparametric affine cone pcurves retain exact conical-helix

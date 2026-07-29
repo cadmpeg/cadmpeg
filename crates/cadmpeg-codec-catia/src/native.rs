@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 187;
+pub const CATIA_NATIVE_VERSION: u32 = 188;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -5037,10 +5037,13 @@ fn validate_zero_entity_support_runs(
                 .enumerate()
                 .all(|(support_index, support)| {
                     let endpoints_valid = match (support.tag, support.uv_endpoints) {
-                        ([0x21, 0x71 | 0x91 | 0x99 | 0xd6 | 0xe8], Some(endpoints)) => {
-                            endpoints.iter().flatten().all(|value| value.is_finite())
+                        (
+                            [0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8],
+                            Some(endpoints),
+                        ) => endpoints.iter().flatten().all(|value| value.is_finite()),
+                        ([0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8], None) => {
+                            false
                         }
-                        ([0x21, 0x71 | 0x91 | 0x99 | 0xd6 | 0xe8], None) => false,
                         ([0x21, _], None) => true,
                         _ => false,
                     };
@@ -5071,7 +5074,7 @@ fn validate_zero_entity_support_runs(
                         }) == has_model_carrier;
                     let pcurve_valid = match (&support.tag, &support.pcurve) {
                         (
-                            [0x21, tag @ (0x71 | 0x91 | 0x99 | 0xd6)],
+                            [0x21, tag @ (0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8)],
                             Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
                                 degree,
                                 knots,
@@ -5080,11 +5083,20 @@ fn validate_zero_entity_support_runs(
                                 periodic: false,
                             }),
                         ) => {
-                            let (expected_degree, expected_controls, rational) = match tag {
-                                0x71 => (1, 2, false),
-                                0x91 => (3, 4, false),
-                                0x99 => (2, 3, true),
-                                0xd6 => (2, 5, false),
+                            let (
+                                expected_degree,
+                                expected_controls,
+                                expected_multiplicities,
+                                rational,
+                            ): (u32, usize, &[usize], bool) = match tag {
+                                0x45 => (3, 12, &[4, 2, 2, 2, 2, 4], false),
+                                0x71 => (1, 2, &[2, 2], false),
+                                0x72 => (3, 14, &[4, 2, 2, 2, 2, 2, 4], false),
+                                0x91 => (3, 4, &[4, 4], false),
+                                0x99 => (2, 3, &[3, 3], true),
+                                0x9f => (3, 16, &[4, 2, 2, 2, 2, 2, 2, 4], false),
+                                0xd6 => (2, 5, &[3, 2, 3], false),
+                                0xe8 => (3, 7, &[4, 1, 1, 1, 4], false),
                                 _ => unreachable!(),
                             };
                             *degree == expected_degree
@@ -5099,10 +5111,10 @@ fn validate_zero_entity_support_runs(
                                     .iter()
                                     .all(|knot| *knot == knots[expected_controls])
                                 && knots[expected_degree as usize] < knots[expected_controls]
-                                && (*tag != 0xd6
-                                    || knots[3] == knots[4]
-                                        && knots[2] < knots[3]
-                                        && knots[4] < knots[5])
+                                && knots
+                                    .chunk_by(|left, right| left == right)
+                                    .map(<[f64]>::len)
+                                    .eq(expected_multiplicities.iter().copied())
                                 && control_points
                                     .iter()
                                     .all(|point| point.u.is_finite() && point.v.is_finite())
@@ -5114,7 +5126,7 @@ fn validate_zero_entity_support_runs(
                                             .all(|weight| weight.is_finite() && *weight > 0.0)
                                 }) == rational
                         }
-                        ([0x21, 0x71 | 0x91 | 0x99 | 0xd6], _) => false,
+                        ([0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8], _) => false,
                         ([0x21, _], None) => true,
                         _ => false,
                     };

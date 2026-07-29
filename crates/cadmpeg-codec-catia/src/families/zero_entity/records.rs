@@ -763,9 +763,12 @@ fn zero_entity_support_occurrence(
     }
     let face_local_slot = u32_le(data, record.pos + 13)?;
     let uv_offsets = match record.tag {
+        [0x21, 0x45] => Some([145, 321]),
         [0x21, 0x71] => Some([93, 109]),
+        [0x21, 0x72] => Some([158, 366]),
         [0x21, 0x91] => Some([93, 141]),
         [0x21, 0x99] => Some([93, 125]),
+        [0x21, 0x9f] => Some([171, 411]),
         [0x21, 0xd6] => Some([106, 170]),
         [0x21, 0xe8] => Some([132, 228]),
         _ => None,
@@ -787,7 +790,11 @@ fn zero_entity_support_occurrence(
         None
     };
     let pcurve = zero_entity_support_pcurve(data, record);
-    if matches!(record.tag, [0x21, 0x71 | 0x91 | 0x99 | 0xd6]) && pcurve.is_none() {
+    if matches!(
+        record.tag,
+        [0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8]
+    ) && pcurve.is_none()
+    {
         return None;
     }
     Some(ZeroEntitySupportOccurrence {
@@ -815,10 +822,46 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
         weight_start,
         required_end,
     ) = match record.tag {
+        [0x21, 0x45] => (
+            &[67, 75, 83, 91, 99, 107][..],
+            115,
+            &[4, 2, 2, 2, 2, 4][..],
+            145,
+            12,
+            None,
+            337,
+        ),
         [0x21, 0x71] => (&[67, 75][..], 83, &[2, 2][..], 93, 2, None, 125),
+        [0x21, 0x72] => (
+            &[67, 75, 83, 91, 99, 107, 115][..],
+            123,
+            &[4, 2, 2, 2, 2, 2, 4][..],
+            158,
+            14,
+            None,
+            382,
+        ),
         [0x21, 0x91] => (&[67, 75][..], 83, &[4, 4][..], 93, 4, None, 157),
         [0x21, 0x99] => (&[67, 75][..], 83, &[3, 3][..], 93, 3, Some(141), 165),
+        [0x21, 0x9f] => (
+            &[67, 75, 83, 91, 99, 107, 115, 123][..],
+            131,
+            &[4, 2, 2, 2, 2, 2, 2, 4][..],
+            171,
+            16,
+            None,
+            427,
+        ),
         [0x21, 0xd6] => (&[67, 75, 83][..], 91, &[3, 2, 3][..], 106, 5, None, 186),
+        [0x21, 0xe8] => (
+            &[67, 75, 83, 91, 99][..],
+            107,
+            &[4, 1, 1, 1, 4][..],
+            132,
+            7,
+            None,
+            244,
+        ),
         _ => return None,
     };
     if record.pos.checked_add(required_end)? > record.end {
@@ -1592,37 +1635,45 @@ mod tests {
     }
 
     fn support_pcurve_record(tag: u8) -> Vec<u8> {
-        let mut record = vec![0u8; usize::from(tag) + 12];
+        let logical_len =
+            zero_entity_fixed_logical_length([0x21, tag]).unwrap_or(usize::from(tag) + 12);
+        let mut record = vec![0u8; logical_len];
         record[..4].copy_from_slice(&[0xa9, 0x03, 0x21, tag]);
         write_tagged_u32(&mut record, 12, 1);
-        let (knots, multiplicities, pole_start, points, weights): (
-            &[_],
-            &[_],
-            usize,
-            &[_],
-            Option<&[_]>,
-        ) = match tag {
-            0x91 => (
-                &[0.0, 1.0],
-                &[4, 4],
-                93,
-                &[[0.0, 0.0], [0.25, 0.5], [0.75, 0.5], [1.0, 1.0]],
-                None,
+        let (knots, multiplicities, control_count, rational): (&[_], &[_], usize, bool) = match tag
+        {
+            0x45 => (
+                &[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                &[4, 2, 2, 2, 2, 4],
+                12,
+                false,
             ),
-            0x99 => (
-                &[0.0, 1.0],
-                &[3, 3],
-                93,
-                &[[0.0, 0.0], [0.5, 1.0], [1.0, 0.0]],
-                Some(&[1.0, 0.5, 1.0]),
+            0x71 => (&[0.0, 1.0], &[2, 2], 2, false),
+            0x72 => (
+                &[0.0, 1.0 / 6.0, 2.0 / 6.0, 0.5, 4.0 / 6.0, 5.0 / 6.0, 1.0],
+                &[4, 2, 2, 2, 2, 2, 4],
+                14,
+                false,
             ),
-            0xd6 => (
-                &[0.0, 0.5, 1.0],
-                &[3, 2, 3],
-                106,
-                &[[0.0, 0.0], [0.25, 0.5], [0.5, 1.0], [0.75, 0.5], [1.0, 0.0]],
-                None,
+            0x91 => (&[0.0, 1.0], &[4, 4], 4, false),
+            0x99 => (&[0.0, 1.0], &[3, 3], 3, true),
+            0x9f => (
+                &[
+                    0.0,
+                    1.0 / 7.0,
+                    2.0 / 7.0,
+                    3.0 / 7.0,
+                    4.0 / 7.0,
+                    5.0 / 7.0,
+                    6.0 / 7.0,
+                    1.0,
+                ],
+                &[4, 2, 2, 2, 2, 2, 2, 4],
+                16,
+                false,
             ),
+            0xd6 => (&[0.0, 0.5, 1.0], &[3, 2, 3], 5, false),
+            0xe8 => (&[0.0, 0.25, 0.5, 0.75, 1.0], &[4, 1, 1, 1, 4], 7, false),
             _ => unreachable!(),
         };
         let knot_start = 67;
@@ -1634,16 +1685,26 @@ mod tests {
         for (index, multiplicity) in multiplicities.iter().copied().enumerate() {
             write_tagged_u32(&mut record, multiplicity_start + index * 5, multiplicity);
         }
+        let pole_start = multiplicity_start + multiplicities.len() * 5;
+        let points = (0..control_count)
+            .map(|index| {
+                let parameter = index as f64 / (control_count - 1) as f64;
+                [parameter, parameter * (1.0 - parameter)]
+            })
+            .collect::<Vec<_>>();
         for (index, point) in points.iter().enumerate() {
             let at = pole_start + index * 16;
             record[at..at + 8].copy_from_slice(&f64::to_le_bytes(point[0]));
             record[at + 8..at + 16].copy_from_slice(&f64::to_le_bytes(point[1]));
         }
-        if let Some(weights) = weights {
+        if rational {
             let weight_start = pole_start + points.len() * 16;
-            for (index, weight) in weights.iter().enumerate() {
+            for (index, weight) in (0..control_count)
+                .map(|index| if index == control_count / 2 { 0.5 } else { 1.0 })
+                .enumerate()
+            {
                 let at = weight_start + index * 8;
-                record[at..at + 8].copy_from_slice(&f64::to_le_bytes(*weight));
+                record[at..at + 8].copy_from_slice(&f64::to_le_bytes(weight));
             }
         }
         record
@@ -1693,9 +1754,16 @@ mod tests {
 
     #[test]
     fn support_pcurves_decode_each_complete_clamped_family() {
-        for (tag, degree, control_count, rational) in
-            [(0x91, 3, 4, false), (0x99, 2, 3, true), (0xd6, 2, 5, false)]
-        {
+        for (tag, degree, control_count, rational) in [
+            (0x45, 3, 12, false),
+            (0x71, 1, 2, false),
+            (0x72, 3, 14, false),
+            (0x91, 3, 4, false),
+            (0x99, 2, 3, true),
+            (0x9f, 3, 16, false),
+            (0xd6, 2, 5, false),
+            (0xe8, 3, 7, false),
+        ] {
             let bytes = support_pcurve_record(tag);
             let records = zero_entity_records(&bytes);
             let [record] = records.as_slice() else {
@@ -1703,6 +1771,7 @@ mod tests {
             };
             let support =
                 zero_entity_support_occurrence(&bytes, *record).expect("complete support pcurve");
+            assert_eq!(support.uv_endpoints, Some([[0.0, 0.0], [1.0, 0.0]]));
             let Some(PcurveGeometry::Nurbs {
                 degree: actual_degree,
                 control_points,
@@ -1715,6 +1784,23 @@ mod tests {
             assert_eq!(actual_degree, degree);
             assert_eq!(control_points.len(), control_count);
             assert_eq!(weights.is_some(), rational);
+
+            let multiplicity_start = match tag {
+                0x45 => 115,
+                0x71 | 0x91 | 0x99 => 83,
+                0x72 => 123,
+                0x9f => 131,
+                0xd6 => 91,
+                0xe8 => 107,
+                _ => unreachable!(),
+            };
+            let mut malformed = bytes;
+            malformed[multiplicity_start + 1] ^= 1;
+            let malformed_records = zero_entity_records(&malformed);
+            let [record] = malformed_records.as_slice() else {
+                panic!("one malformed support record")
+            };
+            assert!(zero_entity_support_occurrence(&malformed, *record).is_none());
         }
     }
 
@@ -1966,15 +2052,9 @@ mod tests {
     fn record_walk_skips_complete_logical_support_continuations() {
         let fixture = zero_entity_support_stream();
         let plane = &fixture[..0x6a + 12];
-        let mut support = vec![
-            0u8;
-            zero_entity_fixed_logical_length([0x21, 0x45])
-                .expect("class 2145 has a fixed logical length")
-        ];
-        support[..4].copy_from_slice(&[0xa9, 0x03, 0x21, 0x45]);
-        support[12] = 0x10;
+        let mut support = support_pcurve_record(0x45);
         support[13..17].copy_from_slice(&42u32.to_le_bytes());
-        support[100..100 + plane.len()].copy_from_slice(plane);
+        support[200..204].copy_from_slice(&[0xa9, 0x03, 0x27, 0x6a]);
 
         let mut stream = plane.to_vec();
         stream.extend(support);

@@ -683,6 +683,33 @@ fn finish_decode(
                 .sum(),
         ),
         (
+            "decoded_zero_entity_support_pcurve_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .flat_map(|run| &run.supports)
+                .filter(|support| support.pcurve.is_some())
+                .count(),
+        ),
+        (
+            "decoded_zero_entity_support_model_curve_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .flat_map(|run| &run.supports)
+                .filter(|support| support.model_curve.is_some())
+                .count(),
+        ),
+        (
+            "decoded_zero_entity_support_model_construction_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .flat_map(|run| &run.supports)
+                .filter(|support| support.model_curve_construction.is_some())
+                .count(),
+        ),
+        (
             "decoded_zero_entity_uv_endpoint_pair_count".to_string(),
             native
                 .zero_entity_support_runs

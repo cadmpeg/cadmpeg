@@ -5252,7 +5252,23 @@ fn decode_reports_zero_entity_surface_support_runs() {
         1
     );
     assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_support_pcurve_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_support_model_curve_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_support_model_construction_count"],
+        0
+    );
+    assert_eq!(
         decoded.report.coverage["decoded_zero_entity_uv_endpoint_pair_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_model_midpoint_count"],
         1
     );
     assert!(decoded.report.losses.iter().any(|loss| {
