@@ -4,14 +4,14 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::tests::{
-    b2_circle_stream, b2_cone_face_stream, b2_cone_stream, b2_construction_use_stream,
-    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
-    b2_embedded_cylinder_stream, b2_group_stream, b2_implicit_axis_cylinder_stream,
-    b2_line_profile_stream, b2_link_5f_stream, b2_linked_counted_owner_stream,
-    b2_linked_owner_stream, b2_long_61_stream, b2_offset_support_stream, b2_owner_packet_stream,
-    b2_parameter_point_stream, b2_pcurve_stream, b2_range_origin_cylinder_stream,
-    b2_reference_list_stream, b2_resolved_revolution_stream, b2_revolution_stream,
-    b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
+    a5_surface_stream, b2_circle_stream, b2_cone_face_stream, b2_cone_stream,
+    b2_construction_use_stream, b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream,
+    b2_edge_parameter_stream, b2_embedded_cylinder_stream, b2_group_stream,
+    b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_link_5f_stream,
+    b2_linked_counted_owner_stream, b2_linked_owner_stream, b2_long_61_stream,
+    b2_offset_support_stream, b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream,
+    b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
+    b2_revolution_stream, b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
     b2_width_coded_owner_packet_stream, b3_cylinder_stream, b3_offset_support_stream,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -550,6 +550,48 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
     assert_eq!(offsets[0].support_id, 0x1234);
     assert_eq!(offsets[0].distance, 2.5);
     assert_eq!(offsets[0].domain, [0.0, -1.0, 4.0, 3.0]);
+}
+
+#[test]
+fn offset_support_binding_scales_each_nurbs_parameter_domain() {
+    let tiny = 1e-200_f64;
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
+    let SurfaceGeometry::Nurbs(surface) = &mut carriers[0].geometry else {
+        panic!("NURBS fixture");
+    };
+    for knots in [&mut surface.u_knots, &mut surface.v_knots] {
+        let lower = knots[0];
+        let span = knots.last().copied().expect("nonempty knots") - lower;
+        for knot in knots {
+            *knot = (*knot - lower) / span * tiny;
+        }
+    }
+    let exact = crate::families::b2::records::B2OffsetSupport {
+        pos: 0,
+        support_id: 1,
+        distance: tiny,
+        domain: [0.0, 0.0, tiny, tiny],
+    };
+    assert_eq!(
+        crate::families::b2::records::offset_support_carriers(
+            std::slice::from_ref(&exact),
+            &carriers
+        ),
+        [Some(0)]
+    );
+
+    let mut outside_u = exact.clone();
+    outside_u.domain[2] = 2.0 * tiny;
+    assert_eq!(
+        crate::families::b2::records::offset_support_carriers(&[outside_u], &carriers),
+        [None]
+    );
+    let mut outside_v = exact;
+    outside_v.domain[3] = 2.0 * tiny;
+    assert_eq!(
+        crate::families::b2::records::offset_support_carriers(&[outside_v], &carriers),
+        [None]
+    );
 }
 
 #[test]

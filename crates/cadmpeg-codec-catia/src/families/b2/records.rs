@@ -1946,7 +1946,7 @@ pub fn offset_support_carriers(
     offsets: &[B2OffsetSupport],
     carriers: &[FreeformSurface],
 ) -> Vec<Option<usize>> {
-    const PARAMETER_TOLERANCE: f64 = 1e-3;
+    const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-3;
     offsets
         .iter()
         .map(|offset| {
@@ -1962,15 +1962,23 @@ pub fn offset_support_carriers(
                     let u_max = *surface.u_knots.last()?;
                     let v_min = *surface.v_knots.first()?;
                     let v_max = *surface.v_knots.last()?;
-                    let contains = u0 >= u_min - PARAMETER_TOLERANCE
-                        && u1 <= u_max + PARAMETER_TOLERANCE
-                        && v0 >= v_min - PARAMETER_TOLERANCE
-                        && v1 <= v_max + PARAMETER_TOLERANCE;
+                    let u_span = u_max - u_min;
+                    let v_span = v_max - v_min;
+                    if !u_span.is_finite() || u_span <= 0.0 || !v_span.is_finite() || v_span <= 0.0
+                    {
+                        return None;
+                    }
+                    let u_tolerance = RELATIVE_PARAMETER_TOLERANCE * u_span;
+                    let v_tolerance = RELATIVE_PARAMETER_TOLERANCE * v_span;
+                    let contains = u0 >= u_min - u_tolerance
+                        && u1 <= u_max + u_tolerance
+                        && v0 >= v_min - v_tolerance
+                        && v1 <= v_max + v_tolerance;
                     let has_v_limit = |limit: f64| {
                         surface
                             .v_knots
                             .iter()
-                            .any(|knot| (*knot - limit).abs() <= PARAMETER_TOLERANCE)
+                            .any(|knot| (*knot - limit).abs() <= v_tolerance)
                     };
                     (contains && has_v_limit(v0) && has_v_limit(v1)).then_some(index)
                 })
