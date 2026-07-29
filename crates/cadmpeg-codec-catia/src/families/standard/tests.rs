@@ -562,7 +562,6 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
         exhausted: false,
     };
 
@@ -592,7 +591,6 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
         exhausted: false,
     };
 
@@ -600,11 +598,19 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
 }
 
 #[test]
-fn incidence_component_does_not_charge_a_forced_viable_pair() {
-    let choices = vec![vec![[0, 0], [1, 1]]];
-    let edge_faces = [[0, 0]];
-    let face_edges = vec![vec![0]];
-    let edges = [0];
+fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
+    const EDGE_COUNT: usize = 9;
+    let choices = (0..EDGE_COUNT)
+        .map(|edge| vec![[edge * 2, edge * 2], [edge * 2 + 1, edge * 2 + 1]])
+        .collect::<Vec<_>>();
+    let edge_faces = (0..EDGE_COUNT).map(|face| [face, face]).collect::<Vec<_>>();
+    let face_edges = (0..EDGE_COUNT).map(|edge| vec![edge]).collect::<Vec<_>>();
+    let edges = (0..EDGE_COUNT).collect::<Vec<_>>();
+    let constraints = (0..EDGE_COUNT)
+        .flat_map(|face| [(face, face * 2), (face, face * 2 + 1)])
+        .collect::<Vec<_>>();
+    let solution_filter =
+        |solution: &[(usize, [usize; 2])]| solution.iter().all(|(_, pair)| pair[0] % 2 == 0);
     let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
@@ -612,58 +618,23 @@ fn incidence_component_does_not_charge_a_forced_viable_pair() {
         face_edges: &face_edges,
         mesh_assignments: None,
         mesh_quotient: None,
-        active: vec![true],
+        active: vec![true; EDGE_COUNT],
         edges: &edges,
-        constraints: vec![(0, 0), (0, 1)],
-        assignment: vec![None],
-        degrees: vec![vec![0, 2]],
+        constraints,
+        assignment: vec![None; EDGE_COUNT],
+        degrees: vec![vec![0; EDGE_COUNT * 2]; EDGE_COUNT],
         solutions: Vec::new(),
-        solution_filter: None,
+        solution_filter: Some(&solution_filter),
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 4_096,
         exhausted: false,
     };
 
     search.search();
 
     assert!(!search.exhausted);
-    assert_eq!(search.states, 4_096);
-    assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
-}
-
-#[test]
-fn incidence_component_bounds_ambiguous_recursive_states() {
-    let choices = vec![vec![[0, 0], [1, 1]]];
-    let edge_faces = [[0, 0]];
-    let face_edges = vec![vec![0]];
-    let edges = [0];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let mut search = crate::solve::incidence::IncidenceComponentSearch {
-        choices: &choices,
-        edge_faces: &edge_faces,
-        face_edges: &face_edges,
-        mesh_assignments: None,
-        mesh_quotient: None,
-        active: vec![true],
-        edges: &edges,
-        constraints: Vec::new(),
-        assignment: vec![None],
-        degrees: vec![vec![0; 2]],
-        solutions: Vec::new(),
-        solution_filter: None,
-        partial_solution_filter: None,
-        dead_states: HashSet::new(),
-        budget: &budget,
-        states: crate::solve::incidence::MAX_INCIDENCE_BRANCH_STATES,
-        exhausted: false,
-    };
-
-    search.search();
-
-    assert!(search.exhausted);
-    assert!(search.solutions.is_empty());
+    assert_eq!(search.solutions.len(), 1);
 }
 
 #[test]
@@ -696,7 +667,6 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         }),
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
         exhausted: false,
     };
 
@@ -740,7 +710,6 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         }),
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
         exhausted: false,
     };
 
@@ -783,7 +752,6 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
         exhausted: false,
     };
 
@@ -825,7 +793,6 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
         exhausted: false,
     };
 
@@ -877,7 +844,6 @@ fn incidence_candidate_defers_global_quotient_validation_until_selection() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
         exhausted: false,
     };
 
@@ -925,7 +891,6 @@ fn incidence_selection_validates_only_its_affected_faces() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
         exhausted: false,
     };
 

@@ -20,8 +20,6 @@ use crate::solve::UnionFind;
 use std::collections::{HashMap, HashSet};
 use std::ops::ControlFlow;
 
-pub(crate) const MAX_INCIDENCE_BRANCH_STATES: usize = 256;
-
 pub(crate) fn prune_incidence_choices(
     choices: &mut [Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
@@ -358,7 +356,6 @@ pub(crate) struct IncidenceComponentSearch<'a> {
     pub(crate) partial_solution_filter: Option<MeshPartialEndpointConstraint<'a>>,
     pub(crate) dead_states: HashSet<Vec<Option<[usize; 2]>>>,
     pub(crate) budget: &'a MeshConstraintBudget,
-    pub(crate) states: usize,
     pub(crate) exhausted: bool,
 }
 
@@ -649,18 +646,6 @@ pub(crate) fn compact_boundary_domains_jointly_viable<'a>(
 }
 
 impl IncidenceComponentSearch<'_> {
-    fn charge_branch(&mut self, option_count: usize) -> bool {
-        if option_count <= 1 {
-            return true;
-        }
-        if self.states >= MAX_INCIDENCE_BRANCH_STATES {
-            self.exhausted = true;
-            return false;
-        }
-        self.states += 1;
-        true
-    }
-
     fn degree_candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
         let faces = self.edge_faces[edge];
         faces.into_iter().enumerate().all(|(rank, face)| {
@@ -1091,7 +1076,7 @@ impl IncidenceComponentSearch<'_> {
             return;
         }
         if let Some(options) = face_options {
-            if !options.is_empty() && self.charge_branch(options.len()) {
+            if !options.is_empty() {
                 self.search_face_configurations(options, quotient_states);
             }
             return;
@@ -1124,9 +1109,6 @@ impl IncidenceComponentSearch<'_> {
                 return;
             }
             self.solutions.push(solution);
-            return;
-        }
-        if !self.charge_branch(options.len()) {
             return;
         }
         for (edge, pair) in options {
@@ -1599,7 +1581,6 @@ where
             partial_solution_filter: partial_solution_valid,
             dead_states: HashSet::new(),
             budget,
-            states: 0,
             exhausted: false,
         };
         search.search();
