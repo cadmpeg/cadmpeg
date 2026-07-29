@@ -8787,6 +8787,7 @@ mod marker_tests {
             extended_compact_84_construction_line_endpoint_indices(&payload, 0),
             Some([8, 2])
         );
+        payload[72..76].fill(0);
         payload[56..60].copy_from_slice(&[0x01, 0x00, 0x00, 0x00]);
         let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
             id: id.into(),
@@ -8877,10 +8878,18 @@ mod marker_tests {
                 .iter()
                 .map(|endpoint| endpoint.id.as_str())
                 .collect::<Vec<_>>(),
-            ["second", "fourth"]
+            ["first", "third"]
         );
         payload[72..76].fill(0);
         assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
+        let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+        assert_eq!(
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["second", "fourth"]
+        );
         payload[27..29].copy_from_slice(&1u16.to_le_bytes());
         payload[29..31].copy_from_slice(&1u16.to_le_bytes());
         payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
@@ -37660,19 +37669,23 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
     if !coordinate_roster_curve_layout(payload, offset) {
         return Vec::new();
     }
+    let complete_entity_roster = extended_marker84_line_uses_point_roster(payload, offset)
+        && marker_profile_curve_role(payload, offset) == Some(2)
+        && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x01, 0x00]);
     let mut coordinates = markers
         .iter()
         .copied()
         .filter(|marker| {
             marker.feature_ref == curve.feature_ref
-                && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind,
-                    SketchInputKind::Point
-                        | SketchInputKind::ConstrainedPoint
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                )
+                && (complete_entity_roster
+                    || marker.coordinates_m.is_some()
+                        && matches!(
+                            marker.kind,
+                            SketchInputKind::Point
+                                | SketchInputKind::ConstrainedPoint
+                                | SketchInputKind::LineOrCircle
+                                | SketchInputKind::Arc
+                        ))
         })
         .collect::<Vec<_>>();
     coordinates.sort_unstable_by_key(|marker| marker.offset);
@@ -37694,7 +37707,16 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
         } else {
             index
         };
-        coordinates.get(index).copied()
+        coordinates.get(index).copied().filter(|marker| {
+            marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+        })
     };
     let (Some(first), Some(second)) = (endpoint(endpoint_offset), endpoint(endpoint_offset + 2))
     else {
