@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 204;
+pub const CATIA_NATIVE_VERSION: u32 = 205;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -28,7 +28,7 @@ const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
 #[cfg(test)]
 const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
 #[cfg(test)]
-const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 204;
+const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 205;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1610,7 +1610,7 @@ pub struct CatiaDesignReferenceCell {
 pub struct CatiaDesignReferenceRow {
     /// Cells in the order of the table's source fields.
     pub cells: Vec<CatiaDesignReferenceCell>,
-    /// Design object whose selected fields exactly match every classified column.
+    /// Design object whose distinct selected fields exactly match every classified column.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema_member: Option<String>,
 }
@@ -1879,6 +1879,10 @@ fn design_parallel_reference_table(
                 .first()
                 .and_then(|cell| cell.design_object.clone())
                 .filter(|member| {
+                    let distinct_fields = cells
+                        .iter()
+                        .filter_map(|cell| cell.field.as_deref())
+                        .collect::<HashSet<_>>();
                     columns
                         .iter()
                         .zip(&cells)
@@ -1888,6 +1892,7 @@ fn design_parallel_reference_table(
                                 && cell.field_class.as_ref() == source_class.as_ref()
                                 && cell.design_object.as_ref() == Some(member)
                         })
+                        && distinct_fields.len() == cells.len()
                 });
             CatiaDesignReferenceRow {
                 cells,

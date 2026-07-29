@@ -8292,6 +8292,65 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
 }
 
 #[test]
+fn parallel_reference_schema_membership_requires_distinct_target_fields() {
+    let list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x83, 0x85, 0xfe];
+    let list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
+    let mut bytes = sequential_entity_backed_object_graph(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &list_a),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &list_b),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x83], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x84], &[0xfe]),
+    ]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Profile",
+        "Profile",
+        "Profile",
+        "Profile",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let table = native.design_objects[0]
+        .parallel_reference_table
+        .as_ref()
+        .expect("parallel reference table");
+
+    assert!(table.rows[0].schema_member.is_some());
+    assert!(table.rows[1].schema_member.is_none());
+    assert_eq!(table.rows[1].cells[0].field, table.rows[1].cells[1].field);
+
+    let mut version_204_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_204_namespace)
+        .expect("store current parallel reference memberships");
+    let mut version_204_objects: Vec<crate::native::CatiaDesignObject> = version_204_namespace
+        .arena_as("design_objects")
+        .expect("load version 204 design objects");
+    version_204_objects[0]
+        .parallel_reference_table
+        .as_mut()
+        .expect("parallel reference table")
+        .rows[1]
+        .schema_member = table.rows[1].cells[0].design_object.clone();
+    version_204_namespace
+        .set_arena("design_objects", &version_204_objects)
+        .expect("store version 204 design objects");
+    version_204_namespace.version = 204;
+
+    let migrated = crate::native::CatiaNative::load(&version_204_namespace)
+        .expect("migrate version 204 schema memberships");
+    assert!(migrated.design_objects[0]
+        .parallel_reference_table
+        .as_ref()
+        .expect("migrated parallel reference table")
+        .rows[1]
+        .schema_member
+        .is_none());
+}
+
+#[test]
 fn native_design_objects_follow_first_field_order() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x04, 0x01, 0x83, 0x81], &[0xfe]),
