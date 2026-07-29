@@ -2794,7 +2794,13 @@ fn parse_extrusion_surface(
         records,
         object_stream_pcurves,
     )?;
-    if !parameter_range_contains(directrix.parameter_range(), carrier.parameter_bounds[1]) {
+    let directrix_contains_active =
+        parameter_range_contains(directrix.parameter_range(), carrier.parameter_bounds[1]);
+    let translated_chart = carrier.controls == [0x05, 0x11];
+    if translated_chart && directrix_contains_active {
+        return None;
+    }
+    if !directrix_contains_active {
         let source_span = directrix.parameter_range()[1] - directrix.parameter_range()[0];
         let active_span = carrier.parameter_bounds[1][1] - carrier.parameter_bounds[1][0];
         let suffix_span = directrix
@@ -2838,6 +2844,7 @@ struct B5ExtrusionCarrier {
     directrix_id: u32,
     direction: [f64; 3],
     parameter_bounds: [[f64; 2]; 2],
+    controls: [u8; 2],
 }
 
 fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
@@ -2848,7 +2855,8 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
     let values = line_values::<9>(&record.payload, position)?;
     position += 72;
     let controls: [u8; 2] = record.payload.get(position..)?.try_into().ok()?;
-    ((controls == [0x05, 0x05] || (matches!(controls[0], 0x01 | 0x05) && controls[1] == 0x29))
+    ((matches!(controls, [0x05, 0x05 | 0x11])
+        || (matches!(controls[0], 0x01 | 0x05) && controls[1] == 0x29))
         && unit([values[0], values[1], values[2]]).is_some()
         && values[3] < values[4]
         && values[5].to_bits() == 1.0f64.to_bits()
@@ -2858,6 +2866,7 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
             directrix_id,
             direction: [values[0], values[1], values[2]],
             parameter_bounds: [[values[3], values[4]], [values[7], values[8]]],
+            controls,
         })
 }
 
@@ -6487,14 +6496,22 @@ mod tests {
             })
         );
 
+        let mut translated_control = record.clone();
+        let tail = translated_control.payload.len() - 2;
+        translated_control.payload[tail..].copy_from_slice(&[0x05, 0x11]);
+        assert_eq!(
+            parse_extrusion_surface(&translated_control, &records, &pcurves),
+            parse_extrusion_surface(&record, &records, &pcurves)
+        );
+
         let missing_suffix = BTreeMap::from([(3, (7, [-10.0, 30.0], None))]);
         assert_eq!(
-            parse_extrusion_surface(&record, &records, &missing_suffix),
+            parse_extrusion_surface(&translated_control, &records, &missing_suffix),
             None
         );
         let mismatched_suffix = BTreeMap::from([(3, (7, [-10.0, 30.0], Some(9.0)))]);
         assert_eq!(
-            parse_extrusion_surface(&record, &records, &mismatched_suffix),
+            parse_extrusion_surface(&translated_control, &records, &mismatched_suffix),
             None
         );
         let mut mismatched_span = record;
@@ -6503,6 +6520,19 @@ mod tests {
         assert_eq!(
             parse_extrusion_surface(&mismatched_span, &records, &pcurves),
             None
+        );
+
+        let contained_pcurve = BTreeMap::from([(3, (7, [-10.0, 30.0], Some(10.0)))]);
+        let mut contained_chart = translated_control;
+        let active_start = 2 + 7 * 8;
+        let active_end = 2 + 8 * 8;
+        contained_chart.payload[active_start..active_start + 8]
+            .copy_from_slice(&10.0f64.to_le_bytes());
+        contained_chart.payload[active_end..active_end + 8].copy_from_slice(&20.0f64.to_le_bytes());
+        assert_eq!(
+            parse_extrusion_surface(&contained_chart, &records, &contained_pcurve),
+            None,
+            "05 11 selects a translated chart rather than an ordinary trim"
         );
     }
 
