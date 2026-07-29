@@ -408,6 +408,8 @@ pub struct FeatureEntityTableEntry {
     pub class_id: u32,
     /// Source section entity identifier carried by class `200` entries.
     pub source_entity_id: Option<u32>,
+    /// Related entity identifier carried by class `219` entries.
+    pub related_entity_id: Option<u32>,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
     /// Byte offset of the entity identifier in the original stream.
@@ -7529,16 +7531,24 @@ fn read_entries(
                 .flatten()
                 .map(|(class_id, _)| (class_id, after))
         })?;
-        let (source_entity_id, body_start) = if class_id == 200 {
+        let (source_entity_id, related_entity_id, body_start) = if class_id == 200 {
             match psb::reference_id(payload, after_class) {
-                Ok((order, after_order)) => (Some(order), after_order),
-                Err(_) => (None, after_class),
+                Ok((order, after_order)) => (Some(order), None, after_order),
+                Err(_) => (None, None, after_class),
+            }
+        } else if class_id == 219 {
+            match psb::reference_id(payload, after_class) {
+                Ok((related, after_related)) if payload.get(after_related) == Some(&0) => {
+                    (None, Some(related), after_related)
+                }
+                Err(_) => (None, None, after_class),
+                Ok(_) => (None, None, after_class),
             }
         } else {
-            (None, after_class)
+            (None, None, after_class)
         };
         let terminal_table_separator = (index + 1 == count
-            && class_id == 200
+            && matches!(class_id, 200 | 219)
             && matches!(payload.get(body_start), Some(0x00 | 0x01))
             && payload.get(body_start + 1..body_start + 3)
                 == Some(&[0xf2, psb::token::ENTITY_REF]))
@@ -7557,6 +7567,7 @@ fn read_entries(
             entity_id: id,
             class_id,
             source_entity_id,
+            related_entity_id,
             prefixed,
             offset,
             end_offset,
@@ -7658,6 +7669,27 @@ mod tests {
 
         let misplaced = [10, 30, 0, 0xe3, 0xf7, 31, 20, 0xe4, 0xe3];
         assert!(read_entries(&misplaced, 0, 2).is_none());
+    }
+
+    #[test]
+    fn class_219_generated_entry_retains_its_related_entity() {
+        let payload = [0x85, 0xba, 0x80, 0xdb, 0x84, 0x97, 0, 0xe3];
+        let entries = read_entries(&payload, 0, 1).expect("class-219 generated entry");
+
+        assert_eq!(entries[0].entity_id, 1466);
+        assert_eq!(entries[0].class_id, 219);
+        assert_eq!(entries[0].source_entity_id, None);
+        assert_eq!(entries[0].related_entity_id, Some(1175));
+        assert_eq!(entries[0].end_offset, payload.len());
+    }
+
+    #[test]
+    fn final_class_219_entry_may_terminate_at_the_table_separator() {
+        let payload = [0x85, 0xba, 0x80, 0xdb, 0x84, 0x97, 0, 0xf2, 0xf7];
+        let entries = read_entries(&payload, 0, 1).expect("terminal class-219 entry");
+
+        assert_eq!(entries[0].related_entity_id, Some(1175));
+        assert_eq!(entries[0].end_offset, 7);
     }
 
     #[test]
@@ -8114,6 +8146,7 @@ mod tests {
                     entity_id: index as u32 + 1,
                     class_id: 200,
                     source_entity_id: Some(*source_id),
+                    related_entity_id: None,
                     prefixed: true,
                     offset: index,
                     end_offset: index + 1,
