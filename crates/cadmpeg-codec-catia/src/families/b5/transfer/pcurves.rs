@@ -153,7 +153,7 @@ pub(super) fn oriented_circle_plan(
     };
     let angles = [start_uv[dimension] / scale, end_uv[dimension] / scale];
     let delta = angles[1] - angles[0];
-    if !delta.is_finite() || delta.abs() <= 1e-12 || delta.abs() > std::f64::consts::TAU + 1e-9 {
+    if !delta.is_finite() || delta == 0.0 || delta.abs() > std::f64::consts::TAU + 1e-9 {
         return None;
     }
     let direction = delta.signum();
@@ -601,9 +601,7 @@ pub(super) fn cylinder_helix(
         .map(|uv| cylinder_point(*origin, *reference_x, *axis, *radius, *angular_scale, uv));
     let forward_error = distance(lifted[0], edge_start).max(distance(lifted[1], edge_end));
     let reverse_error = distance(lifted[1], edge_start).max(distance(lifted[0], edge_end));
-    if (forward_error - reverse_error).abs() <= 1e-12
-        || forward_error.min(reverse_error) > POINT_TOLERANCE
-    {
+    if forward_error == reverse_error || forward_error.min(reverse_error) > POINT_TOLERANCE {
         return None;
     }
     if reverse_error < forward_error {
@@ -612,7 +610,7 @@ pub(super) fn cylinder_helix(
     let angles = endpoints.map(|point| point[0] / angular_scale);
     let delta_angle = angles[1] - angles[0];
     let delta_height = endpoints[1][1] - endpoints[0][1];
-    if delta_angle.abs() <= 1e-12 || delta_height.abs() <= 1e-12 {
+    if delta_angle == 0.0 || delta_height == 0.0 {
         return None;
     }
     let reference_y = cross(*axis, *reference_x);

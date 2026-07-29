@@ -2143,6 +2143,32 @@ mod tests {
         .expect("seam-crossing circle range");
         assert_eq!(forward.parameter_range, Some([5.5, 6.5]));
 
+        let tiny_sweep = 1e-14;
+        let tiny_pcurve = B5Pcurve {
+            control_points: vec![[0.0, 3.0], [2.0 * tiny_sweep, 3.0]],
+            ..pcurve.clone()
+        };
+        let tiny_geometry =
+            lifted_curve_geometry(&tiny_pcurve, &cylinder).expect("tiny cylinder latitude");
+        let tiny_end = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            2.0,
+            2.0,
+            tiny_pcurve.control_points[1],
+        );
+        let tiny = oriented_circle_plan(
+            &tiny_pcurve,
+            &cylinder,
+            &tiny_geometry,
+            [0.0, 1.0],
+            [2.0, 0.0, 3.0],
+            tiny_end,
+        )
+        .expect("tiny circle sweep");
+        assert_eq!(tiny.parameter_range, Some([0.0, tiny_sweep]));
+
         let reversed_pcurve = B5Pcurve {
             control_points: pcurve.control_points.iter().copied().rev().collect(),
             ..pcurve.clone()
@@ -2680,6 +2706,29 @@ mod tests {
         };
         assert_eq!(angle_range, [0.0, 1.0]);
         assert_eq!(center.z, 4.0);
+        assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
+
+        let tiny = 1e-14;
+        let tiny_pcurve = B5Pcurve {
+            control_points: vec![[0.0, 0.0], [2.0 * tiny, 2.0 * tiny]],
+            ..pcurve
+        };
+        let tiny_end = [2.0 * tiny.cos(), 2.0 * tiny.sin(), 2.0 * tiny];
+        let tiny_plan = cylinder_helix(
+            &tiny_pcurve,
+            &cylinder,
+            [0.0, 1.0],
+            [2.0, 0.0, 0.0],
+            tiny_end,
+        )
+        .expect("tiny helix sweep");
+        let ProceduralCurveDefinition::Helix {
+            angle_range, pitch, ..
+        } = tiny_plan.definition
+        else {
+            unreachable!();
+        };
+        assert_eq!(angle_range, [0.0, tiny]);
         assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
     }
 }
