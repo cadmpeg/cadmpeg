@@ -3880,6 +3880,26 @@ pub(crate) fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
         .collect()
 }
 
+/// Read every structurally complete physical-edge record independently of
+/// topology resolution.
+pub(crate) fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
+    records(bytes)
+        .into_iter()
+        .filter_map(|record| parse_edge(&record).map(|edge| (record.object_id, edge)))
+        .collect()
+}
+
+/// Read every structurally complete vertex-incidence link independently of
+/// topology resolution.
+pub(crate) fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidenceLink> {
+    records(bytes)
+        .into_iter()
+        .filter_map(|record| {
+            parse_vertex_incidence_link(&record).map(|link| (record.object_id, link))
+        })
+        .collect()
+}
+
 /// Read each face's leading surface reference independently of its loop grammar.
 pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     records(bytes)

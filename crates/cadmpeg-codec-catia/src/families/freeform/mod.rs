@@ -91,36 +91,43 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         let records = crate::families::b5::graph::typed_face_records(&scan.data);
         (!records.is_empty()).then(|| typed_face_counts(&records, 0))
     };
-    let edge_terminal_controls = b5_graph.as_ref().map(|graph| {
-        graph.edges.values().fold([0usize; 8], |mut counts, edge| {
-            let index = match edge.terminal_control {
-                0x01 => 0,
-                0x02 => 1,
-                0x21 => 2,
-                0x22 => 3,
-                0x25 => 4,
-                0x26 => 5,
-                0x29 => 6,
-                0x2a => 7,
-                _ => unreachable!("the edge parser admits only declared controls"),
-            };
-            counts[index] += 1;
-            counts
-        })
-    });
-    let vertex_incidence_terminal_controls = b5_graph.as_ref().map(|graph| {
-        graph
-            .vertex_incidence_links
+    let typed_edge_records = crate::families::b5::graph::typed_edge_records(&scan.data);
+    let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
+        typed_edge_records
             .values()
-            .fold([0usize; 2], |mut counts, link| {
-                match link.terminal_control {
-                    0x00 => counts[0] += 1,
-                    0x04 => counts[1] += 1,
-                    _ => unreachable!("the vertex-incidence parser admits only controls 00 and 04"),
-                }
+            .fold([0usize; 8], |mut counts, edge| {
+                let index = match edge.terminal_control {
+                    0x01 => 0,
+                    0x02 => 1,
+                    0x21 => 2,
+                    0x22 => 3,
+                    0x25 => 4,
+                    0x26 => 5,
+                    0x29 => 6,
+                    0x2a => 7,
+                    _ => unreachable!("the edge parser admits only declared controls"),
+                };
+                counts[index] += 1;
                 counts
             })
     });
+    let typed_vertex_incidence_links =
+        crate::families::b5::graph::typed_vertex_incidence_links(&scan.data);
+    let vertex_incidence_terminal_controls =
+        (!typed_vertex_incidence_links.is_empty()).then(|| {
+            typed_vertex_incidence_links
+                .values()
+                .fold([0usize; 2], |mut counts, link| {
+                    match link.terminal_control {
+                        0x00 => counts[0] += 1,
+                        0x04 => counts[1] += 1,
+                        _ => unreachable!(
+                            "the vertex-incidence parser admits only controls 00 and 04"
+                        ),
+                    }
+                    counts
+                })
+        });
     let resolved_loop_metadata_counts = b5_graph
         .as_ref()
         .map(|graph| loop_metadata_counts(graph.loops.values()));
