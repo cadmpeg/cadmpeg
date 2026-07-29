@@ -7142,11 +7142,18 @@ fn deltas_walks_complete_type_70_records() {
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
     let record = crate::deltas::walk(&stream).records.remove(0);
-    assert_eq!(record.canonical_bytes.len(), 31);
+    assert_eq!(record.canonical_bytes.len(), 39);
     assert_eq!(
         crate::topology::offset_surfaces(&record.canonical_bytes)[0].distance,
         4.5
     );
+
+    let mut finite_state = stream.clone();
+    let state = finite_state.len() - 8;
+    put_f64(&mut finite_state, state, 4.0);
+    assert_eq!(crate::deltas::walk(&finite_state).records.len(), 1);
+    put_f64(&mut finite_state, state, f64::NAN);
+    assert!(crate::deltas::walk(&finite_state).records.is_empty());
 
     let mut invalid_status = stream.clone();
     let offset = invalid_status

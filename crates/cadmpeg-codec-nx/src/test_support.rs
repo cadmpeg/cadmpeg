@@ -2168,6 +2168,7 @@ pub(crate) fn deltas_offset_surface_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&6u16.to_be_bytes());
     stream.push(1);
     stream.extend_from_slice(&0.004_5f64.to_be_bytes());
+    stream.extend_from_slice(&0xc2bc_928f_996e_0000u64.to_be_bytes());
     stream
 }
 

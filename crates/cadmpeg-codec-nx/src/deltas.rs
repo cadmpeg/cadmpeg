@@ -543,6 +543,7 @@ const OFFSET_SURFACE: &[Token] = &[
     Token::Boolean,
     Token::Ref,
     Token::Scalar,
+    Token::Scalar,
 ];
 const BLEND_SURFACE: &[Token] = &[
     Token::Ref,
