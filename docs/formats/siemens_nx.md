@@ -65,15 +65,19 @@ Other arrangements have no body membership without a distinct body-state relatio
 An absent declaration, duplicate declaration, multiple defaults, type mismatch,
 or unequal name does not form the relation.
 
-When exactly one active configuration has complete body membership, every
-feature producing one of those bodies is active in that configuration. Its
-transitive exact feature dependencies are also active. Each member of this
-closed graph has `suppressed=false` and one configuration-local feature state
-retaining its neutral definition, ordered dependencies, and outputs. The graph
-is rejected atomically when a dependency has no feature, any member is
-explicitly suppressed, active configuration identity is ambiguous, or body
-membership is unresolved. Operations outside the closed graph retain
-unresolved suppression.
+Every feature producing a body in the selected current B-rep is active in the
+current document state. Its transitive exact feature dependencies are also
+active. Each member of this closed graph has `suppressed=false`. The graph is
+rejected atomically when feature identities repeat, a dependency has no
+feature, a dependency is not earlier than its consumer, or any member is
+explicitly suppressed.
+
+When exactly one active configuration has complete body membership, the same
+closure rule produces its configuration-local feature states. Each state
+retains the neutral definition, ordered dependencies, and outputs. Ambiguous
+active configuration identity, unresolved body membership, or a preexisting
+configuration-local state rejects configuration-state derivation. Operations
+outside a proven closed graph retain unresolved suppression.
 
 The same active configuration retains the complete current parameter state when
 every neutral NX parameter identity is unique, every value is evaluated, and

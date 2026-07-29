@@ -55,9 +55,10 @@
 //!
 //! Ordered feature-operation records, body dependencies, Boolean operations,
 //! sketch record lanes, and numeric expressions transfer from the NX object
-//! model. Operation suppression remains unresolved instead of being asserted
-//! active. Embedded JT coordinates and triangle connectivity transfer as canonical
-//! tessellations. Complete design history, assembly occurrence placement, material
+//! model. Current-body writers and their complete earlier dependency closure
+//! transfer as active; other operation suppression remains unresolved. Embedded
+//! JT coordinates and triangle connectivity transfer as canonical tessellations.
+//! Complete design history, assembly occurrence placement, material
 //! and appearance assignment, class-specific entity attribute fields, and `.prt`
 //! writing are not supported.
 //! Part attributes transfer as document attributes. The public submodules

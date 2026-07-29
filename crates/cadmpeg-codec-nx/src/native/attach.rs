@@ -266,12 +266,13 @@ pub(crate) fn attach(
         &model.features.feature_block_dimensions,
         annotations,
     );
+    attach_current_feature_states(ir, annotations);
     attach_active_configuration_feature_states(ir, annotations);
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(177);
+    namespace.version = namespace.version.max(178);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -331,6 +332,86 @@ fn attach_active_configuration_parameter_values(
     annotations.derived(&configuration.id.0, "parameter_values");
 }
 
+fn active_feature_closure(ir: &CadIr, bodies: &[BodyId]) -> Option<BTreeSet<FeatureId>> {
+    let feature_indices = ir
+        .model
+        .features
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (feature.id.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    if feature_indices.len() != ir.model.features.len() {
+        return None;
+    }
+    let active_bodies = bodies.iter().collect::<BTreeSet<_>>();
+    let mut active_features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            feature
+                .outputs
+                .iter()
+                .any(|output| active_bodies.contains(output))
+        })
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
+    if active_features.is_empty() {
+        return None;
+    }
+    let mut pending = active_features.iter().cloned().collect::<Vec<_>>();
+    while let Some(feature_id) = pending.pop() {
+        let feature = feature_indices
+            .get(&feature_id)
+            .and_then(|index| ir.model.features.get(*index))?;
+        for dependency in &feature.dependencies {
+            let dependency_feature = feature_indices
+                .get(dependency)
+                .and_then(|index| ir.model.features.get(*index))?;
+            (dependency_feature.ordinal < feature.ordinal).then_some(())?;
+            if active_features.insert(dependency.clone()) {
+                pending.push(dependency.clone());
+            }
+        }
+    }
+    if active_features.iter().any(|id| {
+        feature_indices
+            .get(id)
+            .and_then(|index| ir.model.features.get(*index))
+            .is_some_and(|feature| feature.suppressed == Some(true))
+    }) {
+        return None;
+    }
+    Some(active_features)
+}
+
+fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let current_bodies = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    let Some(active_features) = active_feature_closure(ir, &current_bodies) else {
+        return;
+    };
+    let feature_indices = ir
+        .model
+        .features
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (feature.id.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    for id in active_features {
+        let feature = feature_indices
+            .get(&id)
+            .and_then(|index| ir.model.features.get_mut(*index))
+            .expect("active feature closure has validated every feature identity");
+        feature.suppressed = Some(false);
+        annotations.derived(&feature.id, "suppressed");
+    }
+}
+
 fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     let Some(configuration_index) = unique_active_configuration_index(&ir.model.configurations)
     else {
@@ -349,6 +430,9 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
     {
         return;
     }
+    let Some(active_features) = active_feature_closure(ir, &configuration_bodies) else {
+        return;
+    };
     let feature_indices = ir
         .model
         .features
@@ -356,48 +440,6 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
         .enumerate()
         .map(|(index, feature)| (feature.id.clone(), index))
         .collect::<BTreeMap<_, _>>();
-    let active_bodies = configuration_bodies.iter().collect::<BTreeSet<_>>();
-    let mut active_features = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| {
-            feature
-                .outputs
-                .iter()
-                .any(|output| active_bodies.contains(output))
-        })
-        .map(|feature| feature.id.clone())
-        .collect::<BTreeSet<_>>();
-    if active_features.is_empty() {
-        return;
-    }
-    let mut pending = active_features.iter().cloned().collect::<Vec<_>>();
-    while let Some(feature_id) = pending.pop() {
-        let Some(feature) = feature_indices
-            .get(&feature_id)
-            .and_then(|index| ir.model.features.get(*index))
-        else {
-            return;
-        };
-        for dependency in &feature.dependencies {
-            if !feature_indices.contains_key(dependency) {
-                return;
-            }
-            if active_features.insert(dependency.clone()) {
-                pending.push(dependency.clone());
-            }
-        }
-    }
-    if active_features.iter().any(|id| {
-        feature_indices
-            .get(id)
-            .and_then(|index| ir.model.features.get(*index))
-            .is_some_and(|feature| feature.suppressed == Some(true))
-    }) {
-        return;
-    }
-
     let states = active_features
         .iter()
         .map(|id| {
@@ -420,9 +462,11 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
         let feature = feature_indices
             .get(id)
             .and_then(|index| ir.model.features.get_mut(*index))
-            .expect("active feature has a validated index");
-        feature.suppressed = Some(false);
-        annotations.derived(&feature.id, "suppressed");
+            .expect("active feature closure has validated every feature identity");
+        if feature.suppressed != Some(false) {
+            feature.suppressed = Some(false);
+            annotations.derived(&feature.id, "suppressed");
+        }
     }
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.feature_states = states;
@@ -4777,6 +4821,9 @@ mod tests {
             ),
             feature("unrelated", Vec::new(), Vec::new(), None),
         ];
+        for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
+            feature.ordinal = ordinal as u64;
+        }
         ir.model.configurations = vec![configuration(
             true,
             ConfigurationBodies::Resolved(vec![body]),
@@ -4801,6 +4848,60 @@ mod tests {
             states[&FeatureId("writer".into())].outputs,
             [BodyId("body".into())]
         );
+    }
+
+    #[test]
+    fn current_body_writers_close_false_suppression_without_a_configuration() {
+        let body = BodyId("body".into());
+        let feature = |id: &str, ordinal, dependencies, outputs| Feature {
+            id: FeatureId(id.into()),
+            ordinal,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies,
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs,
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
+            },
+            native_ref: None,
+        };
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut body_record = cadmpeg_ir::examples::unit_cube().model.bodies.remove(0);
+        body_record.id = body.clone();
+        ir.model.bodies.push(body_record);
+        ir.model.features = vec![
+            feature("dependency", 1, Vec::new(), Vec::new()),
+            feature(
+                "writer",
+                2,
+                vec![FeatureId("dependency".into())],
+                vec![body],
+            ),
+            feature("unrelated", 3, Vec::new(), Vec::new()),
+        ];
+        let mut annotations = AnnotationBuilder::new();
+
+        super::attach_current_feature_states(&mut ir, &mut annotations);
+
+        assert_eq!(ir.model.features[0].suppressed, Some(false));
+        assert_eq!(ir.model.features[1].suppressed, Some(false));
+        assert_eq!(ir.model.features[2].suppressed, None);
+
+        ir.model.features[0].ordinal = 2;
+        assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_none());
+        ir.model.features[0].ordinal = 1;
+        ir.model.features[2].id = FeatureId("writer".into());
+        assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_none());
+        ir.model.features[2].id = FeatureId("unrelated".into());
+        ir.model.features[1].suppressed = Some(true);
+        assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_none());
     }
 
     #[test]
