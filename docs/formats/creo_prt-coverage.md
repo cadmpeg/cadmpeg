@@ -86,13 +86,14 @@ fixtures, claims above L1 remain unproven.
   geometry, decoded rows retaining source-native geometry, and declared rows
   that did not decode. Each nonzero unresolved or missing count raises a decode
   loss note.
-- Section-coordinate solving requires a complete variable table. Missing
-  declared variable rows are counted and raise a decode loss note. Complete
+- Section-coordinate solving accepts a complete variable table or no variable
+  table. An incomplete variable table contributes no coordinate equations;
+  missing declared rows are counted and raise a decode loss note. Complete
   endpoints from uniquely joined saved lines and arcs, and the center of a
-  joined saved arc or circle, seed the corresponding segment-point equations.
-  A joined saved circle also seeds its radius-reference component.
-  Disagreement with stored or constraint-derived coordinates or radii withholds
-  the inconsistent derivation.
+  joined saved arc or circle, seed the corresponding segment-point equations
+  even when no variable table is present. A joined saved circle also seeds its
+  radius-reference component. Disagreement with stored or constraint-derived
+  coordinates or radii withholds the inconsistent derivation.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   It also counts decoded and missing declared relation, incidence, and
