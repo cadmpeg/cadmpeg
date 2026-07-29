@@ -3804,6 +3804,7 @@ type MeshPartialEndpointSolutionFilter<'a> = &'a dyn Fn(&[Option<[usize; 2]>]) -
 #[derive(Clone, Copy)]
 pub(crate) struct MeshPartialEndpointConstraint<'a> {
     pub(crate) active_edges: &'a [bool],
+    pub(crate) coupled_edges: &'a [bool],
     pub(crate) assignment_predecessors: Option<&'a [Option<usize>]>,
     pub(crate) valid: MeshPartialEndpointSolutionFilter<'a>,
 }
@@ -5782,6 +5783,7 @@ where
         Some(&mesh_quotient),
         Some(MeshPartialEndpointConstraint {
             active_edges: &constraint_edges,
+            coupled_edges: partial_constraint_edges,
             assignment_predecessors: Some(&assignment_predecessors),
             valid: &constrained_pair_solution_valid,
         }),

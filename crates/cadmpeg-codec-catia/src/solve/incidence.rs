@@ -263,6 +263,59 @@ pub(crate) fn incidence_choice_components(
     components
 }
 
+pub(crate) fn join_partial_constraint_components(
+    components: Vec<Vec<usize>>,
+    coupled_edges: &[bool],
+    assignment_predecessors: Option<&[Option<usize>]>,
+) -> Vec<Vec<usize>> {
+    let component_by_edge = components
+        .iter()
+        .enumerate()
+        .flat_map(|(component, edges)| edges.iter().copied().map(move |edge| (edge, component)))
+        .collect::<HashMap<_, _>>();
+    let mut union = UnionFind::new(components.len());
+    let mut coupled_owner = None;
+    for (edge, active) in coupled_edges.iter().copied().enumerate() {
+        if !active {
+            continue;
+        }
+        let Some(&component) = component_by_edge.get(&edge) else {
+            continue;
+        };
+        if let Some(owner) = coupled_owner {
+            union.union(owner, component);
+        } else {
+            coupled_owner = Some(component);
+        }
+    }
+    if let Some(predecessors) = assignment_predecessors {
+        for (edge, predecessor) in predecessors.iter().copied().enumerate() {
+            let Some(predecessor) = predecessor else {
+                continue;
+            };
+            if let (Some(&left), Some(&right)) = (
+                component_by_edge.get(&edge),
+                component_by_edge.get(&predecessor),
+            ) {
+                union.union(left, right);
+            }
+        }
+    }
+    let mut joined = HashMap::<usize, (usize, Vec<usize>)>::new();
+    for (index, component) in components.into_iter().enumerate() {
+        let root = union.find(index);
+        let entry = joined.entry(root).or_insert_with(|| (index, Vec::new()));
+        entry.0 = entry.0.min(index);
+        entry.1.extend(component);
+    }
+    let mut joined = joined.into_values().collect::<Vec<_>>();
+    for (_, edges) in &mut joined {
+        edges.sort_unstable();
+    }
+    joined.sort_unstable_by_key(|(first, _)| *first);
+    joined.into_iter().map(|(_, edges)| edges).collect()
+}
+
 pub(crate) struct IncidenceComponentSearch<'a> {
     pub(crate) choices: &'a [Vec<[usize; 2]>],
     pub(crate) edge_faces: &'a [[usize; 2]],
@@ -868,21 +921,21 @@ impl IncidenceComponentSearch<'_> {
         self.advance_ordered_faces(faces, states).is_some()
     }
 
-    fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
+    pub(crate) fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
         let mesh_assignments = self.mesh_assignments?;
         let mut best = None::<Vec<Vec<(usize, [usize; 2])>>>;
         for (face, domain) in mesh_assignments.iter().enumerate() {
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
                 continue;
             };
-            if !self.budget.charge() {
-                return Some(Vec::new());
-            }
             if !self.face_edges[face]
                 .iter()
                 .any(|edge| self.active[*edge] && self.assignment[*edge].is_none())
             {
                 continue;
+            }
+            if !self.budget.charge() {
+                return Some(Vec::new());
             }
             let Some(configurations) = mesh_face_endpoint_configurations(
                 assignments,
@@ -1626,13 +1679,24 @@ where
     let mut exhausted = false;
     let mut visited = 0usize;
     let result = (|| {
-        if partial_solution_valid
-            .is_some_and(|constraint| constraint.active_edges.len() != choices.len())
-        {
+        if partial_solution_valid.is_some_and(|constraint| {
+            constraint.active_edges.len() != choices.len()
+                || constraint.coupled_edges.len() != choices.len()
+                || constraint
+                    .assignment_predecessors
+                    .is_some_and(|predecessors| predecessors.len() != choices.len())
+        }) {
             return None;
         }
-        let components =
+        let mut components =
             incidence_choice_components(choices, edge_faces, mesh_assignments, mesh_quotient);
+        if let Some(constraint) = partial_solution_valid {
+            components = join_partial_constraint_components(
+                components,
+                constraint.coupled_edges,
+                constraint.assignment_predecessors,
+            );
+        }
         let mut face_edges = vec![Vec::new(); face_count];
         for (edge, faces) in edge_faces.iter().copied().enumerate() {
             for (rank, face) in faces.into_iter().enumerate() {

@@ -690,6 +690,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         solution_filter: None,
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
+            coupled_edges: &active_edges,
             assignment_predecessors: None,
             valid: &valid,
         }),
@@ -733,6 +734,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         solution_filter: None,
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
+            coupled_edges: &active_edges,
             assignment_predecessors: Some(&assignment_predecessors),
             valid: &valid,
         }),
@@ -789,6 +791,46 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
 
     assert!(search.exhausted);
     assert!(search.solutions.is_empty());
+}
+
+#[test]
+fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
+    let choices = vec![vec![[0, 0]]];
+    let edge_faces = [[0, 0]];
+    let face_edges = vec![vec![0]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: Some(false),
+            }]],
+        },
+    ])];
+    let budget = MeshConstraintBudget::new(0);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        mesh_quotient: None,
+        active: vec![false],
+        edges: &[],
+        constraints: Vec::new(),
+        assignment: vec![Some([0, 0])],
+        degrees: vec![vec![2]],
+        solutions: Vec::new(),
+        solution_filter: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        states: 0,
+        exhausted: false,
+    };
+
+    assert_eq!(search.face_configuration_options(), None);
+    assert!(!budget.exhausted.get());
 }
 
 #[test]
@@ -903,6 +945,32 @@ fn incidence_components_join_only_through_shared_face_vertices() {
     assert_eq!(
         crate::solve::incidence::incidence_choice_components(&choices, &edge_faces, None, None),
         vec![vec![0, 1], vec![2]]
+    );
+}
+
+#[test]
+fn partial_incidence_constraint_joins_every_component_it_can_couple() {
+    let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
+    let active = [true, false, false, true, false, false];
+
+    assert_eq!(
+        crate::solve::incidence::join_partial_constraint_components(components, &active, None),
+        vec![vec![0, 2, 3, 5], vec![1], vec![4]],
+    );
+}
+
+#[test]
+fn partial_incidence_predecessors_join_only_their_class_components() {
+    let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
+    let predecessors = [None, None, None, Some(0), None, None];
+
+    assert_eq!(
+        crate::solve::incidence::join_partial_constraint_components(
+            components,
+            &[false; 6],
+            Some(&predecessors),
+        ),
+        vec![vec![0, 2, 3, 5], vec![1], vec![4]],
     );
 }
 
@@ -1704,6 +1772,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
         None,
         Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
+            coupled_edges: &active_edges,
             assignment_predecessors: None,
             valid: &partial,
         }),
