@@ -569,6 +569,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         BodySelection::Bodies(_)
         | BodySelection::Resolved { .. }
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. } => 0,
     };
@@ -2627,10 +2628,12 @@ fn extend_related_design_records(
         )?;
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
         &mut native.design_body_recipe_operands,
+        &native.construction_recipes,
         &native.persistent_subentity_tags,
     );
     crate::history::bind_body_recipe_operand_history_candidates(
         &mut native.design_body_recipe_operands,
+        &native.construction_recipes,
         &native.design_parameter_scopes,
         &native.asm_histories,
     );

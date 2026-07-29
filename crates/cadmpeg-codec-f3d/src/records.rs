@@ -317,10 +317,22 @@ pub struct ConstructionRecipe {
     /// Byte offset of `design_id` in the Design `BulkStream`, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_id_offset: Option<u64>,
+    /// Selector following the Design entity id, when the recipe carries that id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_selector: Option<ConstructionRecipeSelector>,
     /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     pub recipe_index: u32,
     /// Source `BulkStream` record index this recipe was decoded from.
     pub record_index: i32,
+}
+
+/// Serialized Design selector carried by a construction recipe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConstructionRecipeSelector {
+    /// Selector value.
+    pub value: u32,
+    /// Byte offset of `value`.
+    pub byte_offset: u64,
 }
 
 /// Semantic family of one Design parameter record.

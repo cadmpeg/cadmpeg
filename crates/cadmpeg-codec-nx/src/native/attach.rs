@@ -3815,6 +3815,7 @@ fn atomic_disjoint_body_selections(
         BodySelection::Bodies(bodies) => BodySelection::Bodies(bodies),
         BodySelection::Generated { .. }
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Local { .. }
         | BodySelection::Unresolved => BodySelection::Unresolved,
     };

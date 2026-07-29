@@ -4718,6 +4718,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         kind: ConstructionRecipeKind::Edge,
         design_id: None,
         design_id_offset: None,
+        design_selector: None,
         recipe_index: 0,
         record_index: 303,
     };
@@ -6113,6 +6114,10 @@ fn body_recipe_operand_decodes_counted_reference_table() {
         kind: ConstructionRecipeKind::Body,
         design_id: Some("2265".into()),
         design_id_offset: None,
+        design_selector: Some(crate::records::ConstructionRecipeSelector {
+            value: 1,
+            byte_offset: 0,
+        }),
         recipe_index: 0,
         record_index: 0,
     };
@@ -6137,10 +6142,19 @@ fn body_recipe_operand_decodes_counted_reference_table() {
     operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#0".into();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut operand),
+        std::slice::from_ref(&recipe),
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(FaceId("same-stream".into())),
+                selector: 0,
+                token: String::new(),
+                design_references: vec![2265, 2266],
+                ordinal: 0,
+            },
+            PersistentSubentityTag {
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
+                target: AttributeTarget::Face(FaceId("base-only".into())),
                 selector: 0,
                 token: String::new(),
                 design_references: vec![2265],
@@ -6686,6 +6700,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         kind: ConstructionRecipeKind::Edge,
         design_id: None,
         design_id_offset: None,
+        design_selector: None,
         recipe_index: 7,
         record_index: 303,
     };
@@ -7680,6 +7695,13 @@ fn bounded_face_record_identity_is_not_a_second_design_id() {
     assert_eq!(recipes.len(), 1);
     assert_eq!(recipes[0].design_id.as_deref(), Some("2265"));
     assert_eq!(recipes[0].design_id_offset, Some(4));
+    assert_eq!(
+        recipes[0].design_selector,
+        Some(crate::records::ConstructionRecipeSelector {
+            value: 3,
+            byte_offset: 8,
+        })
+    );
 }
 
 #[test]

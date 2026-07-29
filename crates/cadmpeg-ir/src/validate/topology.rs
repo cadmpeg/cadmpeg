@@ -4204,6 +4204,42 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         },
                     );
                 }
+                BodySelection::HistoricalSet {
+                    state,
+                    bodies,
+                    native,
+                } => {
+                    let native_is_valid = bodies.len() == native.len()
+                        && !native.is_empty()
+                        && native.iter().all(|member| !member.trim().is_empty())
+                        && native.iter().collect::<HashSet<_>>().len() == native.len();
+                    if !native_is_valid {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "historical body selection set is invalid",
+                        );
+                    }
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            bodies.iter().map(crate::ids::HistoricalBodyId::as_str),
+                            native.first().map_or("", String::as_str),
+                        ),
+                        "body",
+                        false,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .bodies
+                                .iter()
+                                .map(crate::ids::HistoricalBodyId::as_str)
+                                .collect()
+                        },
+                    );
+                }
                 BodySelection::Generated { bodies, native } => {
                     if bodies.is_empty()
                         || native.trim().is_empty()

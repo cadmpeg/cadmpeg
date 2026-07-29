@@ -799,7 +799,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
-        BodySelection::Historical { bodies, .. } => bodies.is_empty(),
+        BodySelection::Historical { bodies, .. } | BodySelection::HistoricalSet { bodies, .. } => {
+            bodies.is_empty()
+        }
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,

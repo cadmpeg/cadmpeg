@@ -2072,6 +2072,16 @@ pub enum BodySelection {
         /// Format-native selection expression.
         native: String,
     },
+    /// Bodies resolved in the containing feature's input topology from
+    /// independently retained native selection members.
+    HistoricalSet {
+        /// Input topology containing every selected body.
+        state: FeatureInputTopologyId,
+        /// State-local body identities in native member order.
+        bodies: Vec<HistoricalBodyId>,
+        /// Ordered format-native selection members.
+        native: Vec<String>,
+    },
     /// Bodies in intermediate regenerated feature results, paired with the
     /// format-native selection required for rewrite.
     Generated {

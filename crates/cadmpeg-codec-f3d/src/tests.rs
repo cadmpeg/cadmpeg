@@ -8421,6 +8421,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         kind,
         design_id: Some(format!("{}", 320 + ordinal)),
         design_id_offset: None,
+        design_selector: None,
         recipe_index: 0,
         record_index: 100 + i32::try_from(ordinal).unwrap(),
     })

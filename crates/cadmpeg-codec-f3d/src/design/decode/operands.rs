@@ -1710,21 +1710,45 @@ fn parse_body_recipe_operand_frame(
 /// Join body-recipe Design references to solved persistent face tags.
 pub fn bind_body_recipe_operand_candidates(
     operands: &mut [DesignBodyRecipeOperand],
+    recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
 ) {
     use cadmpeg_ir::attributes::AttributeTarget;
 
+    let mut recipes_by_id = HashMap::<_, Option<&ConstructionRecipe>>::new();
+    for recipe in recipes {
+        recipes_by_id
+            .entry(recipe.id.as_str())
+            .and_modify(|recipe| *recipe = None)
+            .or_insert(Some(recipe));
+    }
     for operand in operands {
+        let derived_selector = recipes_by_id
+            .get(operand.recipe_id.as_str())
+            .and_then(|recipe| *recipe)
+            .and_then(|recipe| recipe.design_selector)
+            .map(|selector| u64::from(selector.value));
         for reference in &mut operand.references {
             reference.candidate_faces.clear();
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
                 continue;
+            };
+            let derived_reference = if reference.form == 3 {
+                derived_selector
+                    .and_then(|selector| reference.design_reference.checked_add(selector))
+            } else {
+                None
             };
             reference.candidate_faces = tags
                 .iter()
                 .filter(|tag| {
                     crate::ids::same_native_occurrence(&tag.id, &operand.id)
                         && tag.design_references.contains(&design_reference)
+                        && derived_reference.is_none_or(|derived| {
+                            i64::try_from(derived)
+                                .ok()
+                                .is_some_and(|derived| tag.design_references.contains(&derived))
+                        })
                 })
                 .filter_map(|tag| match &tag.target {
                     AttributeTarget::Face(face) => Some(face.clone()),

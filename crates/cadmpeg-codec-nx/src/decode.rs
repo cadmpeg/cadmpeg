@@ -7201,6 +7201,7 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
         | BodySelection::Native(_)

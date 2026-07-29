@@ -7,8 +7,8 @@ use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
 use crate::records::{
-    BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBodyBinding, DesignBodyBounds,
-    DesignBodyMember, DesignEntityHeader, DesignObjectKind,
+    BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DesignObjectKind,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
@@ -281,6 +281,15 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             }
             let design_id_field = recipe_design_id(bytes, offset, name);
             let design_id = design_id_field.as_ref().map(|field| field.0.clone());
+            let design_selector = design_id_field
+                .as_ref()
+                .and_then(|(design_id, design_id_at)| {
+                    let selector_at = design_id_at.checked_add(design_id.len())?;
+                    Some(ConstructionRecipeSelector {
+                        value: u32_at(bytes, selector_at)?,
+                        byte_offset: u64::try_from(selector_at).ok()?,
+                    })
+                });
             let key = (kind, design_id.clone());
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
@@ -302,6 +311,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 kind,
                 design_id,
                 design_id_offset: design_id_field.as_ref().map(|field| field.1 as u64),
+                design_selector,
                 recipe_index,
                 record_index,
             });

@@ -684,7 +684,7 @@ pub(crate) fn bind_feature_body_selections(
             }
             continue;
         }
-        if let FeatureDefinition::Combine { target, .. } = &mut feature.definition {
+        if let FeatureDefinition::Combine { target, tools, .. } = &mut feature.definition {
             let BodySelection::Native(native) = target else {
                 continue;
             };
@@ -702,14 +702,73 @@ pub(crate) fn bind_feature_body_selections(
                 continue;
             };
             let prefix = feature_input_prefix(&feature_id, previous_state_id);
+            let input_state = crate::design::edge_resolve::feature_input_topology_id(
+                &feature_id,
+                previous_state_id,
+            );
             *target = BodySelection::Historical {
-                state: crate::design::edge_resolve::feature_input_topology_id(
-                    &feature_id,
-                    previous_state_id,
-                ),
+                state: input_state.clone(),
                 bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
                 native: native.clone(),
             };
+            let native_tools = match tools {
+                BodySelection::Native(native) => vec![native.clone()],
+                BodySelection::NativeSet(native) => native.clone(),
+                _ => continue,
+            };
+            let Some(stream) = crate::ids::native_stream(&scope.id) else {
+                continue;
+            };
+            let mut tool_bodies = Vec::with_capacity(native_tools.len());
+            for native in &native_tools {
+                let Some((native_stream, record_index)) = native.rsplit_once(":design-record#")
+                else {
+                    tool_bodies.clear();
+                    break;
+                };
+                let Ok(record_index) = record_index.parse::<u32>() else {
+                    tool_bodies.clear();
+                    break;
+                };
+                if native_stream != stream {
+                    tool_bodies.clear();
+                    break;
+                }
+                let mut matching = body_recipe_operands.iter().filter(|operand| {
+                    crate::ids::native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == scope.record_index
+                        && matches!(
+                            operand.owner,
+                            crate::records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
+                        )
+                        && operand.record_index == record_index
+                });
+                let Some(operand) = matching.next() else {
+                    tool_bodies.clear();
+                    break;
+                };
+                if matching.next().is_some() {
+                    tool_bodies.clear();
+                    break;
+                }
+                let Some(body) = operand.resolved_body_slot else {
+                    tool_bodies.clear();
+                    break;
+                };
+                let body = crate::ids::history_input_body_id(&prefix, body);
+                if tool_bodies.contains(&body) {
+                    tool_bodies.clear();
+                    break;
+                }
+                tool_bodies.push(body);
+            }
+            if tool_bodies.len() == native_tools.len() {
+                *tools = BodySelection::HistoricalSet {
+                    state: input_state,
+                    bodies: tool_bodies,
+                    native: native_tools,
+                };
+            }
             continue;
         }
         let (bodies, proof) = match &mut feature.definition {
@@ -1617,6 +1676,7 @@ fn cyclic_point_subsequence(
 
 pub(crate) fn bind_body_recipe_operand_history_candidates(
     operands: &mut [crate::records::DesignBodyRecipeOperand],
+    recipes: &[crate::records::ConstructionRecipe],
     scopes: &[crate::records::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
@@ -1627,7 +1687,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             .and_modify(|state| *state = None)
             .or_insert(Some(state));
     }
-    for operand in operands {
+    for operand in operands.iter_mut() {
         for reference in &mut operand.references {
             reference.preceding_candidate_faces.clear();
             reference.preceding_body_slots.clear();
@@ -1711,6 +1771,53 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         }
         if intersection.len() == 1 {
             operand.resolved_body_slot = intersection.into_iter().next();
+        }
+    }
+    let mut recipes_by_id = HashMap::<_, Option<&crate::records::ConstructionRecipe>>::new();
+    for recipe in recipes {
+        recipes_by_id
+            .entry(recipe.id.as_str())
+            .and_modify(|recipe| *recipe = None)
+            .or_insert(Some(recipe));
+    }
+    let identity = |operand: &crate::records::DesignBodyRecipeOperand| {
+        let stream = crate::ids::native_stream(&operand.id)?.to_owned();
+        let recipe = recipes_by_id
+            .get(operand.recipe_id.as_str())
+            .and_then(|recipe| *recipe)?;
+        let selector = recipe.design_selector?;
+        Some((
+            stream,
+            operand.asset_id.clone(),
+            operand.context_id.clone(),
+            operand
+                .references
+                .iter()
+                .map(|reference| (reference.design_reference, reference.form))
+                .collect::<Vec<_>>(),
+            recipe.design_id.clone(),
+            selector.value,
+        ))
+    };
+    let mut resolved_by_identity = HashMap::new();
+    for operand in operands.iter() {
+        let (Some(identity), Some(body)) = (identity(operand), operand.resolved_body_slot) else {
+            continue;
+        };
+        resolved_by_identity
+            .entry(identity)
+            .and_modify(|resolved| {
+                if *resolved != Some(body) {
+                    *resolved = None;
+                }
+            })
+            .or_insert(Some(body));
+    }
+    for operand in operands {
+        if operand.resolved_body_slot.is_none() {
+            operand.resolved_body_slot = identity(operand)
+                .and_then(|identity| resolved_by_identity.get(&identity).copied())
+                .flatten();
         }
     }
 }

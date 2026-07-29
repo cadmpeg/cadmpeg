@@ -2532,10 +2532,12 @@ fn validate_body_recipe_operands<'a>(
     let mut expected_operands = native.design_body_recipe_operands.clone();
     design::decode::operands::bind_body_recipe_operand_candidates(
         &mut expected_operands,
+        &native.construction_recipes,
         &native.persistent_subentity_tags,
     );
     history::bind_body_recipe_operand_history_candidates(
         &mut expected_operands,
+        &native.construction_recipes,
         &native.design_parameter_scopes,
         &native.asm_histories,
     );
@@ -2616,10 +2618,24 @@ fn validate_body_recipe_operands<'a>(
             && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
             && recipe.is_some_and(|recipe| {
+                let selector_is_valid = recipe.design_id.as_ref().is_some_and(|design_id| {
+                    let Some(design_id_offset) = recipe.design_id_offset else {
+                        return false;
+                    };
+                    let Some(selector) = recipe.design_selector else {
+                        return false;
+                    };
+                    u64::try_from(design_id.len()).ok().is_some_and(|length| {
+                        design_id_offset.checked_add(length) == Some(selector.byte_offset)
+                            && selector.byte_offset.checked_add(20) == Some(recipe.byte_offset)
+                            && selector.value != 0
+                    })
+                });
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == records::ConstructionRecipeKind::Body
                     && recipe.byte_offset > operand.context_id_offset
                     && recipe.byte_offset < operand.next_byte_offset
+                    && selector_is_valid
             })
             && operand.next_record_index == operand.record_index.saturating_add(4)
             && operand.next_byte_offset > operand.nested_record_index_offset

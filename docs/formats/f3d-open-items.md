@@ -46,7 +46,7 @@ This document records F3D semantics that the format specification does not yet d
 - The construction-group scalar fields and variant byte remain unresolved. Group-role fields outside the defined feature-specific namespaces remain unresolved.
 - The topology meaning of the root, prelude, and side-clause scalar fields shared by face-recipe nodes remains unresolved.
 - The join from a `Move` or `RemoveBody` role-`0x0000000400000000` construction-group identity to neutral body identities is unresolved; the group identity is retained as the native body selection.
-- When a `Combine` body-recipe reference intersects multiple bodies in the feature-input topology, the remaining native selector needed to choose one body is unresolved.
+- A form-33 `Combine` body-recipe identity that intersects multiple input bodies and has no consistently resolved occurrence elsewhere in the Design stream remains unresolved.
 - The relationship between a `Draft` scope's signed angle, neutral-plane orientation, explicit pull direction, and outward-material convention is unresolved. The signed angle and both face selections are projected without inventing the redundant direction fields.
 - The semantic roles of the class-365 whole-body operand fields after its asset and context UUIDs, excluding the bounded nested-record and body-recipe joins, remain unresolved.
 - The semantic roles of the six-byte fields following Base Feature body suffixes and record references are unresolved.
