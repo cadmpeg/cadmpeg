@@ -208,6 +208,10 @@ saved terminal image is the body's pre-operation geometry.
 primary-body field. A `DELETE` record without that field does not identify a
 body target and remains native.
 
+A `DELETE` payload begins with one nullable reference field `control:u8, 00 00 01 00 01 06, nullable-reference[5], 00`. A non-null reference uses the canonical payload object-index form `f0, value:u8` for `0..255` or `f1, value:u16 BE` for `256..65535`; a null slot is one `ff` byte. Every non-null slot independently uses the unique-store resolution rule. The field retains the control byte, all five ordered nullable indices, exact tokens, resolved blocks, and source offsets. An incorrect count or fixed byte, noncanonical or truncated reference, missing terminator, or wrong operation family rejects the field atomically without rejecting the bounded operation record. The field does not identify a body target.
+
+When all five slots are non-null and resolve in one offset store, bytewise concatenation of their blocks in field order is the logical `DELETE` construction payload. Physical block boundaries do not delimit payload fields. The payload retains its exact length and hash, reference-field identity, ordered block identities, payload-relative block starts, exact block lengths, and absolute source offsets. A null, unresolved, or cross-store slot leaves the payload unreconstructed.
+
 An operation label equal to `SKETCH` denotes a sketch history operation. Its
 position in the operation sequence is the sketch's history position. The
 sketch record consists of that label, the operation record beginning at the

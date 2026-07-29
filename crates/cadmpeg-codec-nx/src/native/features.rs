@@ -1269,6 +1269,50 @@ pub struct FeatureFsetConstructionPayload {
     pub block_source_offsets: Vec<u64>,
 }
 
+/// Exact counted nullable reference field carried by a `DELETE` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDeleteReferenceField {
+    /// Globally unique field identity.
+    pub id: String,
+    /// Owning `DELETE` operation label.
+    pub operation_label: String,
+    /// Leading operation-local control byte.
+    pub control: u8,
+    /// Five serialized object-index slots in field order.
+    pub object_indices: [Option<u32>; 5],
+    /// Exact object-index tokens in field order.
+    pub raw_object_indices: [Vec<u8>; 5],
+    /// Independently resolved offset-store blocks; null and unresolved slots are `None`.
+    pub data_blocks: [Option<String>; 5],
+    /// Absolute source offset of the leading control byte.
+    pub source_offset: u64,
+    /// Absolute source offsets of the five object-index tokens.
+    pub object_index_source_offsets: [u64; 5],
+}
+
+/// Exact logical payload reconstructed from a complete non-null `DELETE` field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDeleteConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `DELETE` operation label.
+    pub operation_label: String,
+    /// Complete five-slot reference field selecting the source blocks.
+    pub reference_field: String,
+    /// Ordered source blocks.
+    pub data_blocks: [String; 5],
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: [u64; 5],
+    /// Exact source-block lengths.
+    pub block_byte_lengths: [u64; 5],
+    /// Absolute source-block offsets.
+    pub block_source_offsets: [u64; 5],
+}
+
 /// Ordered construction reference carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePatternReference {
@@ -5321,7 +5365,7 @@ pub fn feature_fset_construction_payloads(
                     return None;
                 }
                 let (bytes, starts, lengths, sources) =
-                    join_data_block_bytes(&data_blocks, &blocks)?;
+                    join_data_block_bytes(&data_blocks, blocks)?;
                 let group_name = match group {
                     FeatureFsetReferenceGroup::First => "first",
                     FeatureFsetReferenceGroup::Second => "second",
@@ -5343,6 +5387,103 @@ pub fn feature_fset_construction_payloads(
                     block_byte_lengths: lengths,
                     block_source_offsets: sources,
                 })
+            })
+        })
+        .collect()
+}
+
+/// Decode exact `DELETE` payload reference fields and independently resolve
+/// their non-null slots without assigning a target object family.
+pub fn feature_delete_reference_fields(container: &Container) -> Vec<FeatureDeleteReferenceField> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut fields = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(field) = crate::om::delete_payload_references(record) else {
+                continue;
+            };
+            fields.push(FeatureDeleteReferenceField {
+                id: format!(
+                    "nx:feature-history:delete-reference-field#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                control: field.control,
+                object_indices: field
+                    .references
+                    .each_ref()
+                    .map(|reference| reference.object_index),
+                raw_object_indices: field
+                    .references
+                    .each_ref()
+                    .map(|reference| reference.raw_object_index.clone()),
+                data_blocks: field.references.each_ref().map(|reference| {
+                    reference
+                        .object_index
+                        .and_then(|object_index| unique_offset_data_block(&indexed, object_index))
+                }),
+                source_offset: entry_offset + field.offset as u64,
+                object_index_source_offsets: field
+                    .references
+                    .each_ref()
+                    .map(|reference| entry_offset + reference.offset as u64),
+            });
+        }
+    }
+    fields
+}
+
+/// Reconstruct one ordered logical payload from each complete same-store
+/// non-null `DELETE` reference field.
+pub fn feature_delete_construction_payloads(
+    container: &Container,
+    fields: &[FeatureDeleteReferenceField],
+) -> Vec<FeatureDeleteConstructionPayload> {
+    let blocks = offset_data_block_bytes(container);
+    fields
+        .iter()
+        .filter_map(|field| {
+            let data_blocks = field
+                .data_blocks
+                .clone()
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?;
+            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
+            if data_blocks.iter().any(|block| {
+                block
+                    .rsplit_once(":block#")
+                    .is_none_or(|(prefix, _)| prefix != store)
+            }) {
+                return None;
+            }
+            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let operation_key = field
+                .operation_label
+                .strip_prefix("nx:feature-history:operation-label#")?;
+            Some(FeatureDeleteConstructionPayload {
+                id: format!("nx:feature-history:delete-construction-payload#{operation_key}"),
+                operation_label: field.operation_label.clone(),
+                reference_field: field.id.clone(),
+                data_blocks: data_blocks.try_into().ok()?,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                block_payload_offsets: starts.try_into().ok()?,
+                block_byte_lengths: lengths.try_into().ok()?,
+                block_source_offsets: sources.try_into().ok()?,
             })
         })
         .collect()

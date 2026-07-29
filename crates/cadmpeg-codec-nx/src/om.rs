@@ -864,6 +864,28 @@ pub struct FsetPayloadReferenceGraph {
     pub offset: usize,
 }
 
+/// One nullable object-index slot in a counted `DELETE` payload field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletePayloadReferenceSlot {
+    /// Decoded object index, or `None` for the exact `ff` null token.
+    pub object_index: Option<u32>,
+    /// Exact serialized object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the token.
+    pub offset: usize,
+}
+
+/// Exact five-slot nullable reference field in a `DELETE` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletePayloadReferenceField {
+    /// Leading operation-local control byte.
+    pub control: u8,
+    /// Five slots in serialized order.
+    pub references: [DeletePayloadReferenceSlot; 5],
+    /// Absolute offset of the leading control byte.
+    pub offset: usize,
+}
+
 /// Scalar width selected by one pattern-transform row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatternTransformEncoding {
@@ -2253,6 +2275,41 @@ pub fn fset_payload_reference_graph(
         return None;
     };
     Some(graph.clone())
+}
+
+/// Decode the exactly counted nullable construction-reference field at the
+/// start of a bounded `DELETE` payload.
+pub fn delete_payload_references(
+    record: OperationRecord<'_>,
+) -> Option<DeletePayloadReferenceField> {
+    const PREFIX: [u8; 6] = [0x00, 0x00, 0x01, 0x00, 0x01, 0x06];
+    if record.label.value != "DELETE" || record.payload.get(1..1 + PREFIX.len()) != Some(&PREFIX) {
+        return None;
+    }
+    let control = *record.payload.first()?;
+    let mut at = 1 + PREFIX.len();
+    let mut references = Vec::with_capacity(5);
+    for _ in 0..5 {
+        let offset = at;
+        let (object_index, width) = if record.payload.get(at) == Some(&0xff) {
+            (None, 1)
+        } else {
+            let (object_index, width) = payload_object_index(&record.payload[at..])?;
+            (Some(object_index), width)
+        };
+        at += width;
+        references.push(DeletePayloadReferenceSlot {
+            object_index,
+            raw_object_index: record.payload[offset..at].to_vec(),
+            offset: record.payload_offset + offset,
+        });
+    }
+    let references = references.try_into().ok()?;
+    (record.payload.get(at) == Some(&0x00)).then_some(DeletePayloadReferenceField {
+        control,
+        references,
+        offset: record.payload_offset,
+    })
 }
 
 /// Decode the unique exactly counted transform lane in a bounded pattern payload.

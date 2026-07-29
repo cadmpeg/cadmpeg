@@ -135,6 +135,8 @@ pub(crate) struct FeatureRecords {
         Vec<FeatureProjectedCurveConstructionString>,
     pub(crate) feature_fset_reference_graphs: Vec<FeatureFsetReferenceGraph>,
     pub(crate) feature_fset_construction_payloads: Vec<FeatureFsetConstructionPayload>,
+    pub(crate) feature_delete_reference_fields: Vec<FeatureDeleteReferenceField>,
+    pub(crate) feature_delete_construction_payloads: Vec<FeatureDeleteConstructionPayload>,
     pub(crate) feature_pattern_references: Vec<FeaturePatternReference>,
     pub(crate) feature_pattern_construction_payloads: Vec<FeaturePatternConstructionPayload>,
     pub(crate) feature_pattern_construction_strings: Vec<FeaturePatternConstructionString>,
@@ -460,6 +462,9 @@ impl NativeModel {
         let feature_fset_reference_graphs = feature_fset_reference_graphs(container);
         let feature_fset_construction_payloads =
             feature_fset_construction_payloads(container, &feature_fset_reference_graphs);
+        let feature_delete_reference_fields = feature_delete_reference_fields(container);
+        let feature_delete_construction_payloads =
+            feature_delete_construction_payloads(container, &feature_delete_reference_fields);
         let feature_pattern_references = feature_pattern_references(container);
         let feature_pattern_construction_payloads = feature_pattern_construction_payloads(
             container,
@@ -830,6 +835,8 @@ impl NativeModel {
                 feature_projected_curve_construction_strings,
                 feature_fset_reference_graphs,
                 feature_fset_construction_payloads,
+                feature_delete_reference_fields,
+                feature_delete_construction_payloads,
                 feature_pattern_references,
                 feature_pattern_construction_payloads,
                 feature_pattern_construction_strings,

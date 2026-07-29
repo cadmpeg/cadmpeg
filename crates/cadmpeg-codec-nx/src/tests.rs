@@ -2364,6 +2364,57 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
 }
 
 #[test]
+fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
+    fn record(payload: &[u8]) -> crate::om::OperationRecord<'_> {
+        crate::om::OperationRecord {
+            offset: 0,
+            bytes: payload,
+            payload_offset: 100,
+            payload,
+            label: crate::om::OperationLabel {
+                header_offset: 0,
+                offset: 0,
+                value: "DELETE",
+                object_indices: [None; 4],
+                object_index_offsets: [0; 4],
+            },
+        }
+    }
+
+    let payload = [
+        0x0c, 0x00, 0x00, 0x01, 0x00, 0x01, 0x06, 0xf0, 0x20, 0xff, 0xf1, 0x02, 0x08, 0xf1, 0x02,
+        0x09, 0xff, 0x00,
+    ];
+    let field = crate::om::delete_payload_references(record(&payload)).unwrap();
+    assert_eq!(field.control, 0x0c);
+    assert_eq!(field.offset, 100);
+    assert_eq!(
+        field
+            .references
+            .each_ref()
+            .map(|reference| reference.object_index),
+        [Some(0x20), None, Some(0x208), Some(0x209), None]
+    );
+    assert_eq!(
+        field
+            .references
+            .each_ref()
+            .map(|reference| reference.offset),
+        [107, 109, 110, 113, 116]
+    );
+
+    let mut noncanonical = payload;
+    noncanonical[11] = 0x00;
+    noncanonical[12] = 0x20;
+    assert!(crate::om::delete_payload_references(record(&noncanonical)).is_none());
+    let truncated = &payload[..payload.len() - 1];
+    assert!(crate::om::delete_payload_references(record(truncated)).is_none());
+    let mut wrong_count = payload;
+    wrong_count[6] = 0x05;
+    assert!(crate::om::delete_payload_references(record(&wrong_count)).is_none());
+}
+
+#[test]
 fn om_data_block_object_references_require_complete_field_frames() {
     let bytes = [
         0x04, 0x00, 0x2a, 0x02, 0x0b, 0xff, 0x04, 0x00, 0x80, 0xc9, 0x02, 0x0b, 0x04, 0x00, 0x90,
@@ -11711,6 +11762,8 @@ mod golden {
         "feature_draft_construction_payloads",
         "feature_draft_construction_references",
         "feature_draft_construction_terminal_lanes",
+        "feature_delete_construction_payloads",
+        "feature_delete_reference_fields",
         "feature_extrude_32_constructions",
         "feature_extrude_construction_profiles",
         "feature_extrude_payload_32_branches",
@@ -12523,7 +12576,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (202), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (204), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -12532,7 +12585,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 202, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 204, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

@@ -269,7 +269,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(168);
+    namespace.version = namespace.version.max(169);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -308,6 +308,8 @@ fn attach_feature_operations(
         .as_slice();
     let fset_reference_graphs = features.feature_fset_reference_graphs.as_slice();
     let fset_construction_payloads = features.feature_fset_construction_payloads.as_slice();
+    let delete_reference_fields = features.feature_delete_reference_fields.as_slice();
+    let delete_construction_payloads = features.feature_delete_construction_payloads.as_slice();
     let pattern_references = features.feature_pattern_references.as_slice();
     let pattern_construction_payloads = features.feature_pattern_construction_payloads.as_slice();
     let pattern_construction_strings = features.feature_pattern_construction_strings.as_slice();
@@ -528,6 +530,12 @@ fn attach_feature_operations(
         records_by_operation(fset_reference_graphs, |graph| &graph.operation_label);
     let fset_construction_payloads_by_operation =
         records_by_operation(fset_construction_payloads, |payload| {
+            &payload.operation_label
+        });
+    let delete_reference_fields_by_operation =
+        records_by_operation(delete_reference_fields, |field| &field.operation_label);
+    let delete_construction_payloads_by_operation =
+        records_by_operation(delete_construction_payloads, |payload| {
             &payload.operation_label
         });
     let pattern_references_by_operation =
@@ -1376,6 +1384,23 @@ fn attach_feature_operations(
             };
             source_properties.insert(
                 format!("fset_construction_payload.{group}"),
+                payload.id.clone(),
+            );
+        }
+        for field in delete_reference_fields_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert("delete_reference_field".to_string(), field.id.clone());
+        }
+        for payload in delete_construction_payloads_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                "delete_construction_payload".to_string(),
                 payload.id.clone(),
             );
         }

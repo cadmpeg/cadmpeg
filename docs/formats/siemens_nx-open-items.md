@@ -42,6 +42,7 @@ This document records unresolved NX `.prt` byte semantics.
 - Feature-operation payloads contain recursively nested common frames. Frame
   ownership, the roles of the state bytes preceding each terminal suffix, and
   the relation of any field to operation suppression are unspecified.
+- The target object family and slot roles of the five nullable references at the start of a `DELETE` payload are unspecified.
 - Body membership and per-body state for inactive arrangements are unspecified.
 - The semantic roles of the extrusion terminal discriminator lane's type indices, fixed counted values, flags, and trailing indices are unspecified.
 - The source-curve, target-surface, direction, and combination roles of the ordered `CPROJ` and `CPROJ_CMB` construction references are unspecified.
