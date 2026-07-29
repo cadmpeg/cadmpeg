@@ -20,6 +20,8 @@ pub(crate) struct DesignFeatureTransfer {
     pub(crate) placement_records: HashSet<String>,
     pub(crate) principal_plane_records: HashSet<String>,
     pub(crate) pattern_records: HashSet<String>,
+    pub(crate) circular_pattern_feature_count: usize,
+    pub(crate) linear_pattern_feature_count: usize,
     pub(crate) features_by_design_object: HashMap<String, FeatureId>,
 }
 
@@ -201,6 +203,11 @@ pub(crate) fn transfer_design_features(
                 transfer
                     .pattern_records
                     .extend(declarations.into_iter().map(|record| record.id.clone()));
+                match form {
+                    PatternForm::Circular => transfer.circular_pattern_feature_count += 1,
+                    PatternForm::Linear => transfer.linear_pattern_feature_count += 1,
+                    _ => unreachable!("only admitted CATIA pattern forms reach transfer"),
+                }
             }
         }
         transfer

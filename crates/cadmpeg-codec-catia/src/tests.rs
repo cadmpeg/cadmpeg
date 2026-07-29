@@ -7150,6 +7150,8 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
         native.design_objects[0].fields.iter().cloned().collect()
     );
     assert_eq!(transfer.consumed_records(), transfer.pattern_records);
+    assert_eq!(transfer.circular_pattern_feature_count, 1);
+    assert_eq!(transfer.linear_pattern_feature_count, 0);
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
         ir.model.features[0].source_tag.as_deref(),
@@ -7255,6 +7257,8 @@ fn unanimous_complete_rectangular_pattern_definitions_transfer_feature_identity(
         ir.model.features[0].source_tag.as_deref(),
         Some("RectPattern")
     );
+    assert_eq!(transfer.circular_pattern_feature_count, 0);
+    assert_eq!(transfer.linear_pattern_feature_count, 1);
 }
 
 #[test]
@@ -7944,6 +7948,14 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
         decoded.report.coverage["transferred_pattern_declaration_record_count"],
         0
     );
+    assert_eq!(
+        decoded.report.coverage["transferred_circular_pattern_feature_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_linear_pattern_feature_count"],
+        0
+    );
     assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 1);
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
@@ -7956,6 +7968,8 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
             && loss
                 .message
                 .contains("0 exact pattern declaration field record(s)")
+            && loss.message.contains("0 circular pattern feature(s)")
+            && loss.message.contains("0 linear pattern feature(s)")
             && loss.message.contains("1 field record(s)")
     }));
 }

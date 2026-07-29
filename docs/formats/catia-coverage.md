@@ -63,7 +63,8 @@ current scores require those matrices and representative fixtures.
   identity equal to one unanimous `CircPattern` or `RectPattern` definition
   transfers one circular- or linear-pattern feature identity and consumes those
   declarations. Seeds, directions, counts, spacing, angles, field roles, and
-  outputs remain unresolved.
+  outputs remain unresolved. Coverage counts the transferred circular and
+  linear feature identities separately from their consumed declaration records.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not
   transfer as values of either type.
