@@ -1044,7 +1044,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             );
         }
     }
-    let bound_consolidated_standard_edge_count =
+    let consolidated_curve_bindings =
         append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
@@ -1067,7 +1067,11 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
     );
     report.coverage.insert(
         "bound_consolidated_standard_edge_count".to_string(),
-        bound_consolidated_standard_edge_count,
+        consolidated_curve_bindings.standard_edges,
+    );
+    report.coverage.insert(
+        "bound_consolidated_partner_face_pcurve_pair_count".to_string(),
+        consolidated_curve_bindings.partner_face_pcurve_pairs,
     );
     Some(FamilyOutput {
         ir,

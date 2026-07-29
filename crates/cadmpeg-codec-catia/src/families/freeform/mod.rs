@@ -3,12 +3,15 @@
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, PcurveGeometry,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceCurveFamily, SurfaceGeometry,
+    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
+    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, Surface,
+    SurfaceCurveFamily, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::ids::{
+    CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -504,7 +507,7 @@ pub(crate) fn append_freeform_surface_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
-) -> usize {
+) -> ConsolidatedCurveBindingCounts {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data);
     surfaces.extend(crate::families::a5a8::records::a5_surfaces(data));
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
@@ -713,6 +716,12 @@ pub(crate) enum ConsolidatedCarrierChart<'a> {
     },
 }
 
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ConsolidatedCurveBindingCounts {
+    pub(crate) standard_edges: usize,
+    pub(crate) partner_face_pcurve_pairs: usize,
+}
+
 impl ConsolidatedCarrierChart<'_> {
     fn point(&self, [u, v]: [f64; 2]) -> [f64; 2] {
         match self {
@@ -767,7 +776,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     data: &[u8],
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
-) -> usize {
+) -> ConsolidatedCurveBindingCounts {
     let standalone = crate::families::b2::records::b2_cylinders(data)
         .into_iter()
         .map(|cylinder| (cylinder.pos, cylinder))
@@ -807,6 +816,24 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .enumerate()
         .map(|(index, curve)| (curve.id.clone(), index))
         .collect::<HashMap<_, _>>();
+    let face_surfaces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.clone(), face.surface.clone()))
+        .collect::<HashMap<_, _>>();
+    let loop_surfaces = ir
+        .model
+        .loops
+        .iter()
+        .filter_map(|loop_| Some((loop_.id.clone(), face_surfaces.get(&loop_.face)?.clone())))
+        .collect::<HashMap<_, _>>();
+    let coedge_surfaces = ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| loop_surfaces.get(&coedge.owner_loop).cloned())
+        .collect::<Vec<_>>();
     let attachable_edges = ir
         .model
         .edges
@@ -826,25 +853,34 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 .procedural_curves
                 .iter()
                 .enumerate()
-                .filter(|(_, procedure)| {
-                    procedure.curve == *curve_id
-                        && matches!(
-                            &procedure.definition,
-                            ProceduralCurveDefinition::Intersection { context, .. }
-                                if context.sides.iter().all(|side| {
-                                    side.surface.is_some() && side.pcurve.is_none()
-                                })
-                        )
+                .filter_map(|(index, procedure)| {
+                    if procedure.curve != *curve_id {
+                        return None;
+                    }
+                    let ProceduralCurveDefinition::Intersection { context, .. } =
+                        &procedure.definition
+                    else {
+                        return None;
+                    };
+                    let surfaces = std::array::from_fn(|side| {
+                        (context.sides[side].pcurve.is_none())
+                            .then(|| context.sides[side].surface.clone())
+                            .flatten()
+                    });
+                    let [Some(first), Some(second)] = surfaces else {
+                        return None;
+                    };
+                    Some((index, [first, second]))
                 })
-                .map(|(index, _)| index)
                 .collect::<Vec<_>>();
-            let [procedure_index] = procedures.as_slice() else {
+            let [(procedure_index, standard_surfaces)] = procedures.as_slice() else {
                 return None;
             };
             Some((
                 edge_index,
                 *procedure_index,
                 curve_id.clone(),
+                standard_surfaces.clone(),
                 [
                     *vertex_positions.get(&edge.start)?,
                     *vertex_positions.get(&edge.end)?,
@@ -853,7 +889,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         })
         .collect::<Vec<_>>();
     let mut attached_curves = HashSet::new();
-    let mut attached_standard_edge_count = 0usize;
+    let mut binding_counts = ConsolidatedCurveBindingCounts::default();
 
     for resolved in crate::families::consolidated::records::resolve_consolidated_edge_blocks(data) {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
@@ -1053,11 +1089,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 pcurve_parameter_range: None,
             };
         }
-        let resolved_side_count = sides
+        let exact_side_count = sides
             .iter()
             .filter(|side| side.surface.is_some() && side.pcurve.is_some())
             .count();
-        if resolved_side_count == 0 {
+        if exact_side_count == 0 {
             continue;
         }
         let attachment = resolved.endpoint_loci.as_ref().and_then(|loci| {
@@ -1065,9 +1101,12 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 *loci,
                 attachable_edges
                     .iter()
-                    .filter(|(_, _, curve, _)| !attached_curves.contains(curve))
-                    .map(|(edge, procedure, curve, endpoints)| {
-                        ((*edge, *procedure, curve.clone()), *endpoints)
+                    .filter(|(_, _, curve, _, _)| !attached_curves.contains(curve))
+                    .map(|(edge, procedure, curve, surfaces, endpoints)| {
+                        (
+                            (*edge, *procedure, curve.clone(), surfaces.clone()),
+                            *endpoints,
+                        )
                     }),
             )
         });
@@ -1088,14 +1127,115 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     side.pcurve = pcurve;
                 }
             }
-            Some(identity)
+            let (_, _, _, standard_surfaces) = &identity;
+            let resolved_sides = sides
+                .iter()
+                .enumerate()
+                .filter(|(_, side)| side.surface.is_some() && side.pcurve.is_some())
+                .map(|(side, _)| side)
+                .collect::<Vec<_>>();
+            let partner_pcurves = if let [resolved_side] = resolved_sides.as_slice() {
+                let resolved_surface = sides[*resolved_side].surface.as_ref()?;
+                let resolved_geometry = &ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| &surface.id == resolved_surface)?
+                    .geometry;
+                let matches = standard_surfaces
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, id)| {
+                        ir.model
+                            .surfaces
+                            .iter()
+                            .find(|surface| &surface.id == *id)
+                            .is_some_and(|surface| {
+                                same_surface_locus(&surface.geometry, resolved_geometry)
+                            })
+                    })
+                    .map(|(side, _)| side)
+                    .collect::<Vec<_>>();
+                if let [standard_resolved_side] = matches.as_slice() {
+                    let partner = 1 - *resolved_side;
+                    let mut partner_pcurve = consolidated_jet_pcurve(
+                        &resolved.block.pcurves[partner],
+                        &ConsolidatedCarrierChart::Identity,
+                    )?;
+                    if reversed {
+                        partner_pcurve = crate::nurbs::reverse_pcurve_geometry(
+                            &partner_pcurve,
+                            resolved.block.parameters.range,
+                        )?;
+                    }
+                    let standard_surface_geometry = &ir
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|surface| surface.id == standard_surfaces[*standard_resolved_side])?
+                        .geometry;
+                    let resolved_pcurve = rechart_equivalent_surface_pcurve(
+                        sides[*resolved_side].pcurve.as_ref()?,
+                        resolved_geometry,
+                        standard_surface_geometry,
+                    )?;
+                    let standard_geometries = [resolved_pcurve, partner_pcurve];
+                    let standard_geometries = if *standard_resolved_side == 0 {
+                        standard_geometries
+                    } else {
+                        [
+                            standard_geometries[1].clone(),
+                            standard_geometries[0].clone(),
+                        ]
+                    };
+                    let edge_id = &ir.model.edges[identity.0].id;
+                    let coedges = standard_surfaces
+                        .iter()
+                        .enumerate()
+                        .map(|(side, surface)| {
+                            let candidates = ir
+                                .model
+                                .coedges
+                                .iter()
+                                .enumerate()
+                                .filter(|(index, coedge)| {
+                                    coedge.edge == *edge_id
+                                        && coedge.pcurves.is_empty()
+                                        && coedge_surfaces[*index].as_ref() == Some(surface)
+                                })
+                                .map(|(index, _)| index)
+                                .collect::<Vec<_>>();
+                            let [coedge] = candidates.as_slice() else {
+                                return None;
+                            };
+                            let mut geometry = standard_geometries[side].clone();
+                            if matches!(
+                                ir.model.coedges[*coedge].sense,
+                                cadmpeg_ir::topology::Sense::Reversed
+                            ) {
+                                geometry = crate::nurbs::reverse_pcurve_geometry(
+                                    &geometry,
+                                    resolved.block.parameters.range,
+                                )?;
+                            }
+                            Some((*coedge, geometry))
+                        })
+                        .collect::<Option<Vec<_>>>();
+                    coedges.filter(|coedges| coedges.len() == 2)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            Some((identity, partner_pcurves))
         });
         let context = IntcurveSupportContext {
             sides,
             parameter_range: resolved.block.parameters.range,
             discontinuities: std::array::from_fn(|_| Vec::new()),
         };
-        let definition = if resolved_side_count == 2 {
+        let definition = if exact_side_count == 2 {
             ProceduralCurveDefinition::Intersection {
                 context,
                 discontinuity_flag: false,
@@ -1107,9 +1247,42 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 tail: None,
             }
         };
-        if let Some((edge_index, procedure_index, curve_id)) = attachment {
+        if let Some(((edge_index, procedure_index, curve_id, _), partner_pcurves)) = attachment {
             attached_curves.insert(curve_id.clone());
-            attached_standard_edge_count += 1;
+            binding_counts.standard_edges += 1;
+            if let Some(partner_pcurves) = partner_pcurves {
+                binding_counts.partner_face_pcurve_pairs += 1;
+                for (coedge_index, geometry) in partner_pcurves {
+                    let pcurve_id = PcurveId(format!(
+                        "catia:consolidated:standard-pcurve#{}",
+                        ir.model.pcurves.len()
+                    ));
+                    annotate(
+                        annotations,
+                        &pcurve_id,
+                        "consolidated_edge_run",
+                        run.edge.pcurves[0].pos as u64,
+                        "resolved_face_side_pcurve",
+                        Exactness::Derived,
+                    );
+                    ir.model.pcurves.push(Pcurve {
+                        id: pcurve_id.clone(),
+                        geometry,
+                        wrapper_reversed: None,
+                        native_tail_flags: None,
+                        parameter_range: Some(resolved.block.parameters.range),
+                        fit_tolerance: None,
+                    });
+                    ir.model.coedges[coedge_index]
+                        .pcurves
+                        .push(cadmpeg_ir::topology::PcurveUse {
+                            pcurve: pcurve_id,
+                            isoparametric: None,
+                            parameter_range: None,
+                        });
+                    annotations.derived(&ir.model.coedges[coedge_index].id, "pcurves");
+                }
+            }
             ir.model.edges[edge_index].param_range = Some(resolved.block.parameters.range);
             let procedural = &mut ir.model.procedural_curves[procedure_index];
             procedural.definition = definition;
@@ -1166,7 +1339,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             });
         }
     }
-    attached_standard_edge_count
+    binding_counts
 }
 
 fn unique_endpoint_pair_match<T>(
@@ -1187,6 +1360,124 @@ fn unique_endpoint_pair_match<T>(
     });
     let winner = matches.next()?;
     matches.next().is_none().then_some(winner)
+}
+
+fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
+    if left == right {
+        return true;
+    }
+    let (
+        SurfaceGeometry::Cone {
+            origin: left_origin,
+            axis: left_axis,
+            ref_direction: left_reference,
+            radius: left_radius,
+            ratio: left_ratio,
+            half_angle: left_angle,
+        },
+        SurfaceGeometry::Cone {
+            origin: right_origin,
+            axis: right_axis,
+            ref_direction: right_reference,
+            radius: right_radius,
+            ratio: right_ratio,
+            half_angle: right_angle,
+        },
+    ) = (left, right)
+    else {
+        return false;
+    };
+    if left_axis != right_axis
+        || left_reference != right_reference
+        || left_ratio.to_bits() != right_ratio.to_bits()
+        || left_angle.to_bits() != right_angle.to_bits()
+    {
+        return false;
+    }
+    let tangent = left_angle.tan();
+    if !tangent.is_finite() || tangent == 0.0 {
+        return false;
+    }
+    let apex = |origin: Point3, axis: Vector3, radius: f64| {
+        Point3::new(
+            origin.x - axis.x * radius / tangent,
+            origin.y - axis.y * radius / tangent,
+            origin.z - axis.z * radius / tangent,
+        )
+    };
+    let left_apex = apex(*left_origin, *left_axis, *left_radius);
+    let right_apex = apex(*right_origin, *right_axis, *right_radius);
+    let scale = [
+        left_apex.x,
+        left_apex.y,
+        left_apex.z,
+        right_apex.x,
+        right_apex.y,
+        right_apex.z,
+    ]
+    .into_iter()
+    .map(f64::abs)
+    .fold(1.0f64, f64::max);
+    (left_apex.x - right_apex.x)
+        .hypot(left_apex.y - right_apex.y)
+        .hypot(left_apex.z - right_apex.z)
+        <= 1e-12 * scale
+}
+
+fn rechart_equivalent_surface_pcurve(
+    pcurve: &PcurveGeometry,
+    source: &SurfaceGeometry,
+    target: &SurfaceGeometry,
+) -> Option<PcurveGeometry> {
+    if source == target {
+        return Some(pcurve.clone());
+    }
+    let (
+        SurfaceGeometry::Cone {
+            origin: source_origin,
+            axis: source_axis,
+            ..
+        },
+        SurfaceGeometry::Cone {
+            origin: target_origin,
+            ..
+        },
+    ) = (source, target)
+    else {
+        return None;
+    };
+    if !same_surface_locus(source, target) {
+        return None;
+    }
+    let v_shift = (source_origin.x - target_origin.x) * source_axis.x
+        + (source_origin.y - target_origin.y) * source_axis.y
+        + (source_origin.z - target_origin.z) * source_axis.z;
+    if !v_shift.is_finite() {
+        return None;
+    }
+    match pcurve {
+        PcurveGeometry::Line { origin, direction } => Some(PcurveGeometry::Line {
+            origin: Point2::new(origin.u, origin.v + v_shift),
+            direction: *direction,
+        }),
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => Some(PcurveGeometry::Nurbs {
+            degree: *degree,
+            knots: knots.clone(),
+            control_points: control_points
+                .iter()
+                .map(|point| Point2::new(point.u, point.v + v_shift))
+                .collect(),
+            weights: weights.clone(),
+            periodic: *periodic,
+        }),
+        _ => None,
+    }
 }
 
 pub(crate) fn append_a8_rolling_ball_pools(
@@ -1255,16 +1546,19 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 mod tests {
     use super::{
         append_resolved_consolidated_surface_curves, freeform_surface_carriers,
-        unique_endpoint_pair_match,
+        rechart_equivalent_surface_pcurve, same_surface_locus, unique_endpoint_pair_match,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralCurveDefinition, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
+        ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
-    use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::topology::{Edge, Point, Vertex};
+    use cadmpeg_ir::ids::{
+        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, ShellId, SurfaceId,
+        VertexId,
+    };
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
@@ -1310,12 +1604,74 @@ mod tests {
     }
 
     #[test]
+    fn cone_locus_equality_accepts_only_the_same_apex_shift() {
+        let cone = |origin, radius| SurfaceGeometry::Cone {
+            origin,
+            axis: Vector3::new(-1.0, 0.0, 0.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let apex_form = cone(Point3::new(111.0, 0.0, 0.0), 0.0);
+        let shifted = cone(Point3::new(107.5, 0.0, 0.0), 3.5);
+        let other = cone(Point3::new(107.0, 0.0, 0.0), 3.5);
+        assert!(same_surface_locus(&apex_form, &shifted));
+        assert!(!same_surface_locus(&apex_form, &other));
+    }
+
+    #[test]
+    fn equivalent_cone_pcurve_moves_to_the_target_axial_origin() {
+        let cone = |origin, radius| SurfaceGeometry::Cone {
+            origin,
+            axis: Vector3::new(-1.0, 0.0, 0.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let source = cone(Point3::new(107.5, 0.0, 0.0), 3.5);
+        let target = cone(Point3::new(111.0, 0.0, 0.0), 0.0);
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.25, 1.5),
+            direction: Point2::new(2.0, -0.5),
+        };
+        assert_eq!(
+            rechart_equivalent_surface_pcurve(&pcurve, &source, &target),
+            Some(PcurveGeometry::Line {
+                origin: Point2::new(0.25, 5.0),
+                direction: Point2::new(2.0, -0.5),
+            })
+        );
+    }
+
+    #[test]
     fn consolidated_surface_curve_reuses_one_matching_unresolved_edge() {
         let mut ir = CadIr::empty(Units::default());
         let points = [
             Point3::new(1.0, 4.0, 3.0),
             Point3::new(2.0, 2.0 + 2.0 * 0.5f64.cos(), 3.0 + 2.0 * 0.5f64.sin()),
         ];
+        let mut bytes = crate::tests::b2_cylinder_stream();
+        for point in points {
+            bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+            for value in [point.x, point.y, point.z] {
+                bytes.extend_from_slice(&(value as f32).to_le_bytes());
+            }
+        }
+        let mut edge_run = crate::tests::a5_native_edge_run_stream(6, 139, 142);
+        let second_pcurve = crate::tests::a5_pcurve_stream().len();
+        for (offset, value) in [10.0f64, 11.0, 20.0, 21.0].into_iter().enumerate() {
+            let start = second_pcurve + 33 + 8 * offset;
+            edge_run[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&edge_run);
+        let cylinder = crate::families::b2::records::b2_cylinders(&bytes)
+            .into_iter()
+            .next()
+            .expect("one exact cylinder")
+            .geometry;
+
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(Point {
                 id: PointId(format!("point#{index}")),
@@ -1346,11 +1702,52 @@ mod tests {
             SurfaceId("support#0".to_string()),
             SurfaceId("support#1".to_string()),
         ];
-        for id in &support_ids {
-            ir.model.surfaces.push(Surface {
-                id: id.clone(),
-                geometry: SurfaceGeometry::Unknown { record: None },
-                source_object: None,
+        ir.model.surfaces.push(Surface {
+            id: support_ids[0].clone(),
+            geometry: cylinder,
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: support_ids[1].clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        for side in 0..2 {
+            let face_id = FaceId(format!("face#{side}"));
+            let loop_id = LoopId(format!("loop#{side}"));
+            let coedge_id = CoedgeId(format!("coedge#{side}"));
+            ir.model.faces.push(Face {
+                id: face_id.clone(),
+                shell: ShellId("shell".to_string()),
+                surface: support_ids[side].clone(),
+                sense: Sense::Forward,
+                loops: vec![loop_id.clone()],
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            ir.model.loops.push(Loop {
+                id: loop_id.clone(),
+                face: face_id,
+                boundary_role: LoopBoundaryRole::Unspecified,
+                coedges: vec![coedge_id.clone()],
+                vertex_uses: Vec::new(),
+            });
+            ir.model.coedges.push(Coedge {
+                id: coedge_id.clone(),
+                owner_loop: loop_id,
+                edge: EdgeId("standard-edge".to_string()),
+                next: coedge_id.clone(),
+                previous: coedge_id.clone(),
+                radial_next: CoedgeId(format!("coedge#{}", 1 - side)),
+                sense: if side == 0 {
+                    Sense::Forward
+                } else {
+                    Sense::Reversed
+                },
+                pcurves: Vec::new(),
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
         }
         ir.model.procedural_curves.push(ProceduralCurve {
@@ -1371,15 +1768,6 @@ mod tests {
             cache_fit_tolerance: None,
         });
 
-        let mut bytes = crate::tests::b2_cylinder_stream();
-        for point in points {
-            bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-            for value in [point.x, point.y, point.z] {
-                bytes.extend_from_slice(&(value as f32).to_le_bytes());
-            }
-        }
-        bytes.extend_from_slice(&crate::tests::a5_native_edge_run_stream(6, 139, 142));
-
         let attached = append_resolved_consolidated_surface_curves(
             &mut ir,
             &mut AnnotationBuilder::new(),
@@ -1387,15 +1775,29 @@ mod tests {
             &[],
             &[],
         );
-        assert_eq!(attached, 1);
+        assert_eq!(attached.standard_edges, 1);
+        assert_eq!(attached.partner_face_pcurve_pairs, 1);
+        assert_eq!(ir.model.pcurves.len(), 2);
+        assert!(ir
+            .model
+            .coedges
+            .iter()
+            .all(|coedge| coedge.pcurves.len() == 1));
         assert_eq!(ir.model.curves.len(), 1);
         assert_eq!(ir.model.edges[0].curve.as_ref(), Some(&curve_id));
-        let ProceduralCurveDefinition::Intersection { context, .. } =
+        let ProceduralCurveDefinition::SurfaceCurve { context, .. } =
             &ir.model.procedural_curves[0].definition
         else {
-            panic!("resolved two-sided construction");
+            panic!("one exact support remains a parametric surface curve");
         };
-        assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
+        assert_eq!(
+            context
+                .sides
+                .iter()
+                .filter(|side| side.pcurve.is_some())
+                .count(),
+            1
+        );
         let start = cadmpeg_ir::eval::pcurve_uv(
             context.sides[0].pcurve.as_ref().expect("first pcurve"),
             context.parameter_range[0],
