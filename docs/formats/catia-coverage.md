@@ -95,11 +95,12 @@ current scores require those matrices and representative fixtures.
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
 - Zero-entity face-local support occurrences with complete lifted endpoint
-  tapes form radial endpoint-pair candidates only when two occurrences have
-  matching unordered model-space endpoints and bounded-curve midpoint
-  witnesses and the surrounding face-incidence partition is unambiguous. This
-  relation does not assert curve coincidence: distinct curved supports may
-  share all three witnesses. Candidate endpoint
+  tapes form radial endpoint-pair candidates when two occurrences have one
+  reciprocal unordered model-space endpoint match and the surrounding
+  face-incidence partition is unambiguous. Repeated endpoint pairs additionally
+  require one reciprocal bounded-curve midpoint match. This relation does not
+  assert curve coincidence: distinct curved supports may share the retained
+  witnesses. Candidate endpoint
   coordinates form geometric endpoint-locus candidates only when each tolerance
   component is a complete pairwise clique; ambiguous tolerance chains remain
   unresolved.
