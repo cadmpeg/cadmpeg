@@ -1128,6 +1128,15 @@ coordinate selected by the axis-aligned support-frame normal. It establishes
 the held coordinate when its exact token image equals that coordinate's token
 in the first corner; the other two coordinates of the second corner are absent.
 
+A uniquely identified plane surface row is placed by its native face topology
+when a uniquely identified boundary circle or ellipse has a model-space
+carrier, or when at least three distinct solved boundary vertices are
+non-collinear. The analytic carrier's center and axis or the vertices' cross
+product define the plane. Every independently defined boundary plane and every
+other solved boundary vertex of that face must agree. Duplicate surface or
+curve identities, collinear vertices, or conflicting boundary evidence leave
+the carrier unresolved.
+
 A `crv_array` edge whose two face references resolve to nonparallel placed
 planes has the exact model-space carrier given by their intersection line. Its
 direction is the normalized cross product of the plane normals; its origin is

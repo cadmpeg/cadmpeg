@@ -19723,6 +19723,158 @@ fn placed_plane_surfaces(scan: &ContainerScan) -> BTreeMap<u32, (PlaneEquation, 
         .collect()
 }
 
+fn topology_bound_plane(points: impl IntoIterator<Item = [f64; 3]>) -> Option<PlaneEquation> {
+    let mut points = points.into_iter().collect::<Vec<_>>();
+    points.sort_by(|left, right| {
+        left.iter()
+            .zip(right)
+            .find_map(|(left, right)| {
+                let ordering = left.total_cmp(right);
+                (ordering != std::cmp::Ordering::Equal).then_some(ordering)
+            })
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    points.dedup_by(|left, right| model_points_agree(*left, *right));
+    let origin = *points.first()?;
+    let scale = points
+        .iter()
+        .flatten()
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let mut normal = None;
+    'candidate: for first in 1..points.len() {
+        for second in first + 1..points.len() {
+            let first_direction = std::array::from_fn(|axis| points[first][axis] - origin[axis]);
+            let second_direction = std::array::from_fn(|axis| points[second][axis] - origin[axis]);
+            let Some(candidate) = normalized(cross(first_direction, second_direction)) else {
+                continue;
+            };
+            normal = Some(candidate);
+            break 'candidate;
+        }
+    }
+    let mut normal = normal?;
+    let leading = normal.iter().find(|coordinate| coordinate.abs() > 1e-12)?;
+    if *leading < 0.0 {
+        normal = normal.map(|coordinate| -coordinate);
+    }
+    points
+        .iter()
+        .all(|point| {
+            let displacement = std::array::from_fn(|axis| point[axis] - origin[axis]);
+            dot(displacement, normal).abs() <= 1e-9 * scale
+        })
+        .then_some(PlaneEquation { origin, normal })
+}
+
+fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
+    let (origin, normal) = match geometry {
+        CurveGeometry::Circle { center, axis, .. }
+        | CurveGeometry::Ellipse { center, axis, .. } => (
+            [center.x, center.y, center.z],
+            normalized([axis.x, axis.y, axis.z])?,
+        ),
+        _ => return None,
+    };
+    Some(PlaneEquation { origin, normal })
+}
+
+fn agreed_topology_bound_plane(
+    points: impl IntoIterator<Item = [f64; 3]>,
+    curve_planes: impl IntoIterator<Item = PlaneEquation>,
+) -> Option<PlaneEquation> {
+    let points = points.into_iter().collect::<Vec<_>>();
+    let candidates = topology_bound_plane(points.iter().copied())
+        .into_iter()
+        .chain(curve_planes)
+        .collect::<Vec<_>>();
+    let plane = agreed_plane(&candidates)?;
+    points
+        .iter()
+        .all(|point| point_on_carrier(*point, CarrierEquation::Plane(plane)))
+        .then_some(plane)
+}
+
+fn transfer_topology_bound_planes(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let carriers = placed_carriers(scan, ir);
+    let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
+    let vertex_faces =
+        crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
+    let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows);
+    let unique_curve_ids = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+        .into_iter()
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>();
+    let mut transferred = 0;
+    for row in unique_rows
+        .into_iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)
+    {
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        let points = solved_vertices
+            .iter()
+            .filter_map(|(vertex_id, point)| {
+                vertex_faces
+                    .get(vertex_id)
+                    .is_some_and(|faces| faces.contains(&row.id))
+                    .then_some(*point)
+            })
+            .collect::<Vec<_>>();
+        let curve_planes = scan
+            .topology
+            .loops
+            .iter()
+            .filter(|lp| lp.face_id == row.id)
+            .flat_map(|lp| lp.half_edges.iter())
+            .filter_map(|half_edge| {
+                unique_curve_ids
+                    .contains(&half_edge.curve_id)
+                    .then_some(())?;
+                let id = CurveId(format!("creo:visibgeom:curve#{}", half_edge.curve_id));
+                let curve = ir.model.curves.iter().find(|curve| curve.id == id)?;
+                analytic_curve_plane(&curve.geometry)
+            });
+        let Some(plane) = agreed_topology_bound_plane(points, curve_planes) else {
+            continue;
+        };
+        let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "plane_topology_boundary",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                normal,
+                u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEquation> {
     let mut carriers = placed_planes(scan)
         .into_iter()
@@ -22190,8 +22342,14 @@ fn transfer_native_brep(
     derived_intersection_curves: &BTreeSet<CurveId>,
     analytic_pcurve_carriers: &BTreeSet<CurveId>,
 ) -> (usize, usize) {
-    let planes = placed_planes(scan);
     let carriers = placed_carriers(scan, ir);
+    let planes = carriers
+        .iter()
+        .filter_map(|(id, carrier)| match carrier {
+            CarrierEquation::Plane(plane) => Some((*id, *plane)),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
     let face_orientations = native_face_orientations(scan, ir);
     let half_edges = scan
         .topology
@@ -27702,6 +27860,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let shared_extrusion_generator_curve_count =
         nurbs_boundary_curves.shared_extrusion_generator_count;
     derived_intersection_curves.extend(nurbs_boundary_curves.ids);
+    let topology_bound_plane_count =
+        transfer_topology_bound_planes(scan, &mut ir, &mut annotations);
     let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
         scan,
         &mut ir,
@@ -27897,6 +28057,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "transferred_shared_extrusion_generator_curve_count".to_string(),
             shared_extrusion_generator_curve_count,
+        );
+        coverage.insert(
+            "transferred_topology_bound_plane_surface_count".to_string(),
+            topology_bound_plane_count,
         );
         coverage.insert(
             "transferred_feature_revolution_surface_count".to_string(),
@@ -30763,6 +30927,7 @@ fn build_report(
     let positional_cylinder_count = count("transferred_positional_cylinder_count");
     let paired_envelope_sphere_count = count("transferred_paired_envelope_sphere_count");
     let positional_torus_count = count("transferred_positional_torus_count");
+    let topology_bound_plane_count = count("transferred_topology_bound_plane_surface_count");
     let mut losses = Vec::new();
 
     if container_only {
@@ -30797,7 +30962,7 @@ fn build_report(
              Outline-backed planes, guarded non-axis support frames, complete ND first-instance \
              plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional \
              surface-of-extrusion planes, \
-             topology-bound `fc 05` \
+             topology-bound `fc 05` planes with circle or ellipse boundary carriers, \
              cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
              circular-sweep cylinders, \
              four-entry simple-hole cylinders with complete cap outlines, radius-anchored \
@@ -30849,6 +31014,20 @@ fn build_report(
             message: format!(
                 "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
                  VisibGeom local-system support frames."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && topology_bound_plane_count != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {topology_bound_plane_count} model-space plane carrier(s) from \
+                 a circle or ellipse boundary carrier or three or more non-collinear solved \
+                 boundary vertices of the same native face."
             ),
             provenance: None,
         });
