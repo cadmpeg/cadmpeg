@@ -601,7 +601,7 @@ fn parse_object_stream_pcurve(
             .chain(&ddu)
             .chain(&ddv)
             .chain(&range)
-            .any(|x| !x.is_finite() || x.abs() >= 1e12)
+            .any(|x| !x.is_finite())
     {
         return None;
     }
@@ -728,7 +728,7 @@ pub fn a8_surface_from_external_grid(
             || control_points
                 .iter()
                 .flat_map(|point| [point.x, point.y, point.z])
-                .any(|coordinate| !coordinate.is_finite() || coordinate.abs() >= 1e9)
+                .any(|coordinate| !coordinate.is_finite())
         {
             continue;
         }
@@ -837,7 +837,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     if control_points
         .iter()
         .flat_map(|point| [point.x, point.y, point.z])
-        .any(|coordinate| !coordinate.is_finite() || coordinate.abs() >= 1e12)
+        .any(|coordinate| !coordinate.is_finite())
     {
         return None;
     }
@@ -992,7 +992,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     if control_points
         .iter()
         .flat_map(|point| [point.x, point.y, point.z])
-        .any(|coordinate| !coordinate.is_finite() || coordinate.abs() >= 1e12)
+        .any(|coordinate| !coordinate.is_finite())
     {
         return None;
     }
@@ -1000,7 +1000,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
         let values = f64_values(data, &mut pole_start, poles, end)?;
         values
             .iter()
-            .all(|weight| *weight != 0.0)
+            .all(|weight| weight.is_finite() && *weight != 0.0)
             .then_some(values)?
     } else {
         Vec::new()
@@ -1126,7 +1126,11 @@ fn a5_weights(bytes: &[u8], at: &mut usize, rows: usize, cols: usize) -> Option<
         copies += 1;
         *at += 1;
     }
-    if copies + 1 != rows || row.contains(&0.0) {
+    if copies + 1 != rows
+        || row
+            .iter()
+            .any(|weight| !weight.is_finite() || *weight == 0.0)
+    {
         return None;
     }
     Some((0..rows).flat_map(|_| row.iter().copied()).collect())

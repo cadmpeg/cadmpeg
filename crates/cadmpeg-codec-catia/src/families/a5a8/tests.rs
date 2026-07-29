@@ -84,6 +84,28 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
 }
 
 #[test]
+fn a8_elided_surface_accepts_finite_large_external_poles() {
+    let mut bytes = a8_elided_surface_stream();
+    let frame = bytes
+        .windows(3)
+        .position(|value| value == [0xb5, 0x03, 0x21])
+        .expect("external pole allocation anchor");
+    let pole_start = frame + 8 + usize::from(bytes[frame + 3]);
+    bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(2e12));
+
+    let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes)
+        .try_into()
+        .expect("one resolved surface");
+    let SurfaceGeometry::Nurbs(surface) = resolved.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[0].x, 2e12);
+
+    bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+}
+
+#[test]
 fn a8_pcurve_parser_reads_degree5_uv_jet() {
     let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
@@ -111,6 +133,19 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
     let payload_len = u32::try_from(trailing_byte.len() - 11).unwrap();
     trailing_byte[3..7].copy_from_slice(&payload_len.to_le_bytes());
     assert!(crate::families::a5a8::records::a8_pcurves(&trailing_byte).is_empty());
+}
+
+#[test]
+fn a8_pcurve_parser_accepts_finite_large_jet_values() {
+    let mut bytes = a8_pcurve_stream();
+    bytes[40..48].copy_from_slice(&le_f64(2e12));
+    let [pcurve] = crate::families::a5a8::records::a8_pcurves(&bytes)
+        .try_into()
+        .expect("one pcurve");
+    assert_eq!(pcurve.points[0][0], 2e12);
+
+    bytes[40..48].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a8_pcurves(&bytes).is_empty());
 }
 
 #[test]
@@ -200,6 +235,33 @@ fn a8_surface_parser_reads_rational_weight_grid() {
 }
 
 #[test]
+fn surface_parsers_require_finite_nonzero_weights() {
+    let mut a5 = a5_rational_surface_stream();
+    a5[146..154].copy_from_slice(&le_f64(2e12));
+    let [surface] = crate::families::a5a8::records::a5_surfaces(&a5)
+        .try_into()
+        .expect("one consolidated rational surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.weights.as_ref().expect("weights")[0], 2e12);
+    a5[146..154].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a5_surfaces(&a5).is_empty());
+
+    let mut a8 = a8_rational_surface_stream();
+    a8[275..283].copy_from_slice(&le_f64(2e12));
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&a8)
+        .try_into()
+        .expect("one common-form rational surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.weights.as_ref().expect("weights")[0], 2e12);
+    a8[275..283].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a8_surfaces(&a8).is_empty());
+}
+
+#[test]
 fn a5_surface_parser_reads_consolidated_nurbs() {
     use crate::families::a5a8::records::FreeformSurfaceIdentity;
 
@@ -218,6 +280,34 @@ fn a5_surface_parser_reads_consolidated_nurbs() {
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }
+}
+
+#[test]
+fn surface_parsers_accept_finite_large_control_points() {
+    let mut a5 = a5_surface_stream();
+    a5[47..55].copy_from_slice(&le_f64(2e12));
+    let [surface] = crate::families::a5a8::records::a5_surfaces(&a5)
+        .try_into()
+        .expect("one consolidated surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[0].x, 2e12);
+
+    let mut a8 = a8_surface_stream();
+    a8[59..67].copy_from_slice(&le_f64(2e12));
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&a8)
+        .try_into()
+        .expect("one common-form surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[0].x, 2e12);
+
+    a5[47..55].copy_from_slice(&le_f64(f64::NAN));
+    a8[59..67].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a5_surfaces(&a5).is_empty());
+    assert!(crate::families::a5a8::records::a8_surfaces(&a8).is_empty());
 }
 
 #[test]
