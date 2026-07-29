@@ -15652,9 +15652,13 @@ fn schema_feature_definition(
         let stepped_dimensions = (stepped_form == Some(HoleForm::Counterbore))
             .then(|| counterbore_dimensions(scan, ir, feature_id))
             .flatten();
-        let stepped_axis = (stepped_form == Some(HoleForm::Counterbore))
-            .then(|| counterbore_axis_placement(scan, ir, feature_id))
+        let stepped_directed = (stepped_form == Some(HoleForm::Counterbore))
+            .then(|| counterbore_directed_placement(scan, ir, feature_id))
             .flatten();
+        let stepped_axis = (stepped_form == Some(HoleForm::Counterbore)
+            && stepped_directed.is_none())
+        .then(|| counterbore_axis_placement(scan, ir, feature_id))
+        .flatten();
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -15678,13 +15682,27 @@ fn schema_feature_definition(
         };
         let (face, position, direction, diameter, extent, bottom) = solved.map_or_else(
             || {
-                placement.map_or(
-                    (None, None, None, None, None, None),
-                    |(entry_surface_id, direction, extent)| {
+                stepped_directed.map_or_else(
+                    || {
+                        placement.map_or(
+                            (None, None, None, None, None, None),
+                            |(entry_surface_id, direction, extent)| {
+                                (
+                                    Some(face_selection(entry_surface_id)),
+                                    None,
+                                    Some(Vector3::new(direction[0], direction[1], direction[2])),
+                                    None,
+                                    Some(extent),
+                                    None,
+                                )
+                            },
+                        )
+                    },
+                    |(entry_surface_id, position, direction, extent)| {
                         (
                             Some(face_selection(entry_surface_id)),
-                            None,
-                            Some(Vector3::new(direction[0], direction[1], direction[2])),
+                            Some(position),
+                            Some(direction),
                             None,
                             Some(extent),
                             None,
@@ -16969,6 +16987,181 @@ fn counterbore_axis_placement_from_sources(
         origin: *origin,
         axis: *axis,
     })
+}
+
+fn counterbore_directed_placement(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<(u32, Point3, Vector3, Termination)> {
+    let (bore_diameter, counterbore_diameter, counterbore_depth) =
+        counterbore_dimensions(scan, ir, feature_id)?;
+    let sources = counterbore_cylinder_sources(scan, feature_id)?;
+    let [first, second] = sources.as_slice() else {
+        return None;
+    };
+    let boundary = |ids: &[u32], radius: f64| {
+        counterbore_source_boundary_circle(scan, ir, feature_id, ids, radius)
+    };
+    let bore_radius = 0.5 * bore_diameter;
+    let counterbore_radius = 0.5 * counterbore_diameter;
+    let ((Some(counterbore), None, None, Some(bore)) | (None, Some(bore), Some(counterbore), None)) = (
+        boundary(first, counterbore_radius),
+        boundary(first, bore_radius),
+        boundary(second, counterbore_radius),
+        boundary(second, bore_radius),
+    ) else {
+        return None;
+    };
+    counterbore_directed_span(counterbore, bore, counterbore_depth)
+}
+
+fn counterbore_directed_span(
+    counterbore: (u32, Point3, [f64; 3]),
+    bore: (u32, Point3, [f64; 3]),
+    counterbore_depth: f64,
+) -> Option<(u32, Point3, Vector3, Termination)> {
+    let delta = [
+        bore.1.x - counterbore.1.x,
+        bore.1.y - counterbore.1.y,
+        bore.1.z - counterbore.1.z,
+    ];
+    let length = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let scale = [
+        counterbore.1.x,
+        counterbore.1.y,
+        counterbore.1.z,
+        bore.1.x,
+        bore.1.y,
+        bore.1.z,
+        counterbore_depth,
+    ]
+    .into_iter()
+    .map(f64::abs)
+    .fold(1.0, f64::max);
+    (length.is_finite() && length > 1e-12 * scale && counterbore_depth <= length + 1e-9 * scale)
+        .then_some(())?;
+    let direction = delta.map(|value| value / length);
+    [counterbore.2, bore.2]
+        .iter()
+        .all(|axis| {
+            let alignment = direction
+                .iter()
+                .zip(axis)
+                .map(|(left, right)| left * right)
+                .sum::<f64>()
+                .abs();
+            (alignment - 1.0).abs() <= 1e-9
+        })
+        .then_some(())?;
+    Some((
+        counterbore.0,
+        counterbore.1,
+        Vector3::new(direction[0], direction[1], direction[2]),
+        Termination::Blind {
+            length: Length(length),
+        },
+    ))
+}
+
+fn counterbore_source_boundary_circle(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    cylinder_ids: &[u32],
+    radius: f64,
+) -> Option<(u32, Point3, [f64; 3])> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .map(|row| (row.id, row))
+        .collect::<BTreeMap<_, _>>();
+    let boundary_for = |cylinder_id| {
+        let boundaries = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+            .into_iter()
+            .filter_map(|edge| {
+                (edge.feature_id == feature_id && edge.type_byte == 0).then_some(())?;
+                let other = match edge.faces {
+                    [left, right] if left == cylinder_id => right,
+                    [left, right] if right == cylinder_id => left,
+                    _ => return None,
+                };
+                let plane = rows.get(&other)?;
+                (plane.kind == crate::surface::SurfaceKind::Plane).then_some(())?;
+                let curve = ir.model.curves.iter().find(|curve| {
+                    curve.id == CurveId(format!("creo:visibgeom:curve#{}", edge.id))
+                })?;
+                let CurveGeometry::Circle {
+                    center,
+                    axis,
+                    radius: candidate,
+                    ..
+                } = &curve.geometry
+                else {
+                    return None;
+                };
+                ((*candidate - radius).abs() <= 1e-9).then_some(())?;
+                let axis = normalized([axis.x, axis.y, axis.z])?;
+                let surface = ir.model.surfaces.iter().find(|surface| {
+                    surface.id == SurfaceId(format!("creo:visibgeom:surface#{other}"))
+                })?;
+                let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry else {
+                    return None;
+                };
+                let normal = normalized([normal.x, normal.y, normal.z])?;
+                let alignment = axis
+                    .iter()
+                    .zip(normal)
+                    .map(|(left, right)| left * right)
+                    .sum::<f64>()
+                    .abs();
+                let distance = [
+                    center.x - origin.x,
+                    center.y - origin.y,
+                    center.z - origin.z,
+                ]
+                .iter()
+                .zip(normal)
+                .map(|(delta, normal)| delta * normal)
+                .sum::<f64>()
+                .abs();
+                let scale = [
+                    center.x, center.y, center.z, origin.x, origin.y, origin.z, radius,
+                ]
+                .into_iter()
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+                ((alignment - 1.0).abs() <= 1e-9 && distance <= 1e-9 * scale).then_some(())?;
+                Some((other, *center, axis))
+            })
+            .collect::<Vec<_>>();
+        let [boundary] = boundaries.as_slice() else {
+            return None;
+        };
+        Some(*boundary)
+    };
+    let boundaries = cylinder_ids
+        .iter()
+        .copied()
+        .map(boundary_for)
+        .collect::<Option<Vec<_>>>()?;
+    let first = *boundaries.first()?;
+    boundaries
+        .iter()
+        .all(|candidate| {
+            candidate.0 == first.0
+                && candidate.1 == first.1
+                && candidate
+                    .2
+                    .iter()
+                    .zip(first.2)
+                    .map(|(left, right)| left * right)
+                    .sum::<f64>()
+                    .abs()
+                    >= 1.0 - 1e-9
+        })
+        .then_some(first)
 }
 
 fn counterbore_source_patch_geometries(

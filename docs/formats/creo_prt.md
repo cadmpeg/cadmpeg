@@ -2273,6 +2273,14 @@ other pair uses the same origin, axis, and reference direction with radius ID
 `0`. When both patches of the ID-3 cylinder have the same complete carrier,
 that carrier supplies the hole's unoriented axis placement. This carrier
 derivation does not assign an axial trim, entry position, or hole direction.
+When both patches of each cylinder pair have one type-0 circular
+boundary on the same axis-normal plane, the two equal ID-3 circles define the
+counterbore entry and the two equal ID-0 circles define the bore exit. The
+ID-3 circle center is the entry position. The normalized vector from the ID-3
+center to the ID-0 center is the hole direction, and the center distance is
+the full blind span. The circles must have their dimension-assigned radii,
+their axes must be parallel to the span, and the counterbore depth must not
+exceed the full span.
 
 A cylinder patch may end with two scalar coordinate pairs separated by
 `00 0c 98`, followed by orientation scalar `-1`. The pairs are opposite

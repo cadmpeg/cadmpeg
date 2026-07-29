@@ -1037,6 +1037,36 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
 }
 
 #[test]
+fn counterbore_boundary_circles_define_the_directed_full_span() {
+    let counterbore = (65, Point3::new(0.0, 2.625, -1.0), [0.0, 0.0, 1.0]);
+    let bore = (61, Point3::new(0.0, 2.625, 0.0), [0.0, 0.0, -1.0]);
+    assert_eq!(
+        counterbore_directed_span(counterbore, bore, 0.15),
+        Some((
+            65,
+            Point3::new(0.0, 2.625, -1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Termination::Blind {
+                length: Length(1.0),
+            },
+        ))
+    );
+    assert!(counterbore_directed_span(counterbore, bore, 1.1).is_none());
+    assert!(counterbore_directed_span(
+        counterbore,
+        (61, Point3::new(0.1, 2.625, 0.0), [0.0, 0.0, -1.0]),
+        0.15,
+    )
+    .is_none());
+    assert!(counterbore_directed_span(
+        counterbore,
+        (61, Point3::new(0.0, 2.625, 0.0), [1.0, 0.0, 0.0]),
+        0.15,
+    )
+    .is_none());
+}
+
+#[test]
 fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
