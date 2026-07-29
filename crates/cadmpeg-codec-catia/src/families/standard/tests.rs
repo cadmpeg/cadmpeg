@@ -801,6 +801,55 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
 }
 
 #[test]
+fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![
+        vec![[0, 0]],
+        (1..=300).map(|point| [point, point]).collect::<Vec<_>>(),
+    ];
+    let edge_faces = [[0, 0], [1, 1]];
+    let face_edges = vec![vec![0], vec![1]];
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1)]],
+        }]),
+    ];
+    let budget = MeshConstraintBudget::new(4);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        mesh_quotient: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None, None],
+        degrees: vec![vec![0; 301], vec![0; 301]],
+        solutions: Vec::new(),
+        solution_filter: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        exhausted: false,
+    };
+
+    assert_eq!(
+        search.face_configuration_options(),
+        Some(vec![vec![(0, [0, 0])]])
+    );
+    assert!(!budget.exhausted.get());
+}
+
+#[test]
 fn incidence_candidate_defers_global_quotient_validation_until_selection() {
     let choices = vec![vec![[0, 0]]];
     let edge_faces = [[0, 0]];

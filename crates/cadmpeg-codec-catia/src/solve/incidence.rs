@@ -934,17 +934,30 @@ impl IncidenceComponentSearch<'_> {
 
     pub(crate) fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
         let mesh_assignments = self.mesh_assignments?;
-        let mut best = None::<Vec<Vec<(usize, [usize; 2])>>>;
-        for (face, domain) in mesh_assignments.iter().enumerate() {
-            let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
-                continue;
-            };
-            if !self.face_edges[face]
-                .iter()
-                .any(|edge| self.active[*edge] && self.assignment[*edge].is_none())
-            {
-                continue;
-            }
+        let mut faces = mesh_assignments
+            .iter()
+            .enumerate()
+            .filter_map(|(face, domain)| {
+                let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
+                    return None;
+                };
+                let mut has_unresolved = false;
+                let width = self.face_edges[face]
+                    .iter()
+                    .copied()
+                    .filter(|edge| self.active[*edge] && self.assignment[*edge].is_none())
+                    .fold(assignments.len().max(1), |width, edge| {
+                        has_unresolved = true;
+                        width.saturating_mul(self.choices[edge].len())
+                    });
+                if !has_unresolved {
+                    return None;
+                }
+                Some((width, face, assignments))
+            })
+            .collect::<Vec<_>>();
+        faces.sort_by_key(|(width, face, _)| (*width, *face));
+        for (_, _, assignments) in faces {
             if !self.budget.charge() {
                 return Some(Vec::new());
             }
@@ -974,14 +987,9 @@ impl IncidenceComponentSearch<'_> {
             if projected.iter().all(Vec::is_empty) {
                 continue;
             }
-            if best
-                .as_ref()
-                .is_none_or(|stored| projected.len() < stored.len())
-            {
-                best = Some(projected);
-            }
+            return Some(projected);
         }
-        best
+        None
     }
 
     fn search_face_configurations(
