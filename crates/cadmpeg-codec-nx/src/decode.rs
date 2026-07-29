@@ -6829,7 +6829,9 @@ fn build_geometry_report(
                  and BODY revision envelope was retained as an individually identified native event \
                  with its source bounds and decoded identities; BODY state tails retain exact \
                  bounded bytes and digests. Complete transmit headers retain their description, \
-                 schema, consecutive identities, and exact bytes. Count-selected numeric tails after \
+                 schema, consecutive identities, and exact bytes. Terminal two- and \
+                 four-null-reference trailers retain their exact stream boundary and bytes. \
+                 Count-selected numeric tails after \
                  term-use endpoints were retained with their ordered finite binary64 values. Maximal \
                  event gaps containing only typed stream-local references, framed reference/type \
                  maps, and complete four-reference state packets, reference-marker packets, and inline schema \
