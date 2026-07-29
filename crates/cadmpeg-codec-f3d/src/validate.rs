@@ -353,7 +353,12 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let geometry_entities = native
         .design_objects
         .iter()
-        .filter(|object| object.kind == records::DesignObjectKind::Geometry)
+        .filter(|object| {
+            matches!(
+                object.kind,
+                records::DesignObjectKind::Body | records::DesignObjectKind::Geometry
+            )
+        })
         .flat_map(|object| {
             let design_segment = ids::design_segment(&object.id);
             object
