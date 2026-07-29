@@ -5305,9 +5305,10 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Plan
         let slots = complete_plane_local_system_slots(&body, &cache)
             .map_or([None; 12], |slots| slots.map(Some));
         let frame = plane_frame(&slots);
-        let simple = matches!(body.first(), Some(0x0f | 0x10 | 0x18))
-            && body.len() <= 24
-            && !body
+        let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(&body);
+        let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))
+            && frame_body.len() <= 24
+            && !frame_body
                 .iter()
                 .any(|byte| matches!(byte, 0xe0..=0xe2 | 0xf1 | 0xf2 | 0xf7 | 0xf8));
         systems.push(PlaneLocalSystem {
@@ -8672,6 +8673,20 @@ mod tests {
         assert_eq!(frame.origin, Some([0.0, 0.0, 0.0]));
         assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
         assert_eq!(frame.normal, Some([0.0, 0.0, -1.0]));
+    }
+
+    #[test]
+    fn positional_plane_frame_classifies_rank_two_image_before_null_tail() {
+        let payload = [
+            7, 0x22, 4, 0x01, 0, 0, // plane row
+            0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3, // envelope
+            0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1, 0xe3, // local system
+        ];
+
+        let systems = plane_local_systems(&payload);
+        assert_eq!(systems.len(), 1);
+        assert_eq!(systems[0].classification, LocalSystemClassification::Simple);
+        assert_eq!(systems[0].normal, Some([0.0, 0.0, -1.0]));
     }
 
     #[test]
