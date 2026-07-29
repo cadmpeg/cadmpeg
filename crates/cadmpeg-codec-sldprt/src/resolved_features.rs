@@ -8827,6 +8827,10 @@ mod marker_tests {
             Some([8, 2])
         );
         payload[72..76].fill(0);
+        assert_eq!(
+            extended_compact_84_construction_line_endpoint_indices(&payload, 0),
+            Some([8, 2])
+        );
         payload[56..60].copy_from_slice(&[0x01, 0x00, 0x00, 0x00]);
         let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
             id: id.into(),
@@ -8919,6 +8923,29 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             ["first", "third"]
         );
+        payload[56..58].copy_from_slice(&2u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&4u16.to_le_bytes());
+        payload[72..76].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+        payload[80..84].fill(0xff);
+        assert!(!super::extended_marker84_line_uses_point_roster(
+            &payload, 0
+        ));
+        let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+        assert_eq!(
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "third"]
+        );
+        payload[80..84].fill(0);
+        assert!(!super::extended_marker84_line_uses_point_roster(
+            &payload, 0
+        ));
+        assert!(roster_curve_endpoint_markers(&payload, &curve, &markers).is_empty());
+        payload[80..84].copy_from_slice(&2u32.to_le_bytes());
+        payload[56..58].copy_from_slice(&1u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&3u16.to_le_bytes());
         payload[72..76].fill(0);
         assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
         let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
@@ -37264,12 +37291,21 @@ fn roster_curve_endpoint_markers<'a>(
             if direct.len() == 2 {
                 return direct;
             }
+            let terminal =
+                extended_terminal_84_construction_line_endpoint_markers(payload, curve, markers);
+            if terminal.len() == 2 {
+                return terminal;
+            }
         }
         return indexed;
     }
     let direct = extended_compact_endpoint_markers(payload, curve, markers);
     if direct.len() == 2 {
         return direct;
+    }
+    let terminal = extended_terminal_84_construction_line_endpoint_markers(payload, curve, markers);
+    if terminal.len() == 2 {
+        return terminal;
     }
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -37333,6 +37369,70 @@ fn roster_curve_endpoint_markers<'a>(
             candidates.next().is_none().then_some(candidate)
         })
         .collect()
+}
+
+fn extended_terminal_84_construction_line_endpoint_markers<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Vec<&'a SketchInputEntity> {
+    let Some(offset) = usize::try_from(curve.offset).ok() else {
+        return Vec::new();
+    };
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 31)
+            != Some(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&[0; 4])
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 72..offset + 80)
+            != Some(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00])
+        || payload.get(offset + 80..offset + 84) != Some(&[0xff; 4])
+        || !sketch_marker_prefix_at(payload, offset.saturating_add(84))
+    {
+        return Vec::new();
+    }
+    let indices = [56, 58].map(|relative| {
+        payload
+            .get(offset + relative..offset + relative + 2)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u16::from_le_bytes)
+            .and_then(|index| usize::from(index).checked_sub(1))
+    });
+    let [Some(first), Some(second)] = indices else {
+        return Vec::new();
+    };
+    if first == second {
+        return Vec::new();
+    }
+    let mut owned = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref == curve.feature_ref)
+        .collect::<Vec<_>>();
+    owned.sort_unstable_by_key(|marker| marker.offset);
+    let endpoints = [first, second].map(|index| {
+        owned.get(index).copied().filter(|marker| {
+            marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+        })
+    });
+    match endpoints {
+        [Some(first), Some(second)] if first.id != second.id => vec![first, second],
+        _ => Vec::new(),
+    }
 }
 
 fn extended_wide_construction_line_roster_indices(
@@ -39328,7 +39428,10 @@ fn extended_compact_84_construction_line_endpoint_indices(
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || payload.get(offset + 56..offset + 64) != Some(&[0x00, 0x00, 0x01, 0x00, 0, 0, 0, 0])
         || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
-        || payload.get(offset + 72..offset + 76) != Some(&[0x00, 0x00, 0x01, 0x00])
+        || !matches!(
+            payload.get(offset + 72..offset + 76),
+            Some([0x00, 0x00, 0x00 | 0x01, 0x00])
+        )
         || !sketch_marker_prefix_at(payload, offset.checked_add(84)?)
     {
         return None;
