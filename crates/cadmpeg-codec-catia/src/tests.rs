@@ -7025,6 +7025,50 @@ fn outer_object_graph_reads_short_extended_class_storage_owner_roles() {
 }
 
 #[test]
+fn outer_object_graph_reads_reference_terminated_class_storage_owner_roles() {
+    let bytes = object_graph_from_records(&[
+        object_graph_record(&[0x16, 0x94, 0x96, 0x80, 0x97, 0, 0], &[0xfe]),
+        object_graph_record(&[0x16, 0x94, 0x80, 0x96, 23, 0, 0, 0xd2, 0x2b], &[0xfe]),
+        object_graph_record(&[0x16, 0x94, 0x80, 123, 21, 0, 0, 0xd2, 0x2b], &[0xfe]),
+    ]);
+    let graph = crate::object_graph::parse(&bytes).expect("reference-terminated compact heads");
+
+    for record in &graph.records {
+        assert_eq!(record.class_ref, Some(20));
+    }
+    assert_eq!(graph.records[0].storage_ref, Some(22));
+    assert_eq!(graph.records[0].owner_ref, Some(0));
+    for record in &graph.records[1..] {
+        assert_eq!(record.storage_ref, Some(0));
+    }
+    assert_eq!(graph.records[1].owner_ref, Some(22));
+    assert_eq!(graph.records[2].owner_ref, None);
+    for record in &graph.records[1..] {
+        assert!(matches!(
+            record.head.last(),
+            Some(crate::object_graph::HeadToken::Reference(300))
+        ));
+    }
+}
+
+#[test]
+fn outer_object_graph_rejects_partial_reference_terminated_roles() {
+    for head in [
+        &[0x16, 0x94, 0x80, 0x96, 23, 0, 0][..],
+        &[0x16, 0x94, 0x80, 0x96, 22, 0, 0, 0x97][..],
+        &[0x16, 0x94, 0x80, 0x96, 23, 0, 0, 97][..],
+        &[0x16, 0x94, 0x80, 0x80, 0x97, 0, 0][..],
+    ] {
+        let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
+        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+
+        assert_eq!(graph.records[0].class_ref, None);
+        assert_eq!(graph.records[0].storage_ref, None);
+        assert_eq!(graph.records[0].owner_ref, None);
+    }
+}
+
+#[test]
 fn outer_object_graph_rejects_partial_short_extended_class_storage_owner_roles() {
     for head in [
         &[0x16, 0x94, 0x95, 0x80, 0x96, 20, 0][..],

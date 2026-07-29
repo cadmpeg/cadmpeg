@@ -646,6 +646,35 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
     if matches!(
         head,
         [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(storage),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *storage != 0
+    ) {
+        return Some(3);
+    }
+    if matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            owner_token @ (HeadToken::Reference(_) | HeadToken::Literal(_)),
+            HeadToken::Literal(21 | 23),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(_),
+        ] if !matches!(owner_token, HeadToken::Reference(0))
+    ) {
+        return Some(3);
+    }
+    if matches!(
+        head,
+        [
             HeadToken::Lead(0x12),
             HeadToken::Reference(owner),
             HeadToken::Reference(0),
