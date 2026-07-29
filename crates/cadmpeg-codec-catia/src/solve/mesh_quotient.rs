@@ -15,10 +15,13 @@ use crate::solve::incidence::{
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, domains_have_distinct_matching, MatchingEdgeConstraint,
 };
+#[cfg(test)]
+use crate::solve::missing_edge::standard_mesh_boundary_assignments;
 use crate::solve::missing_edge::{
-    same_unordered_pair, standard_edge_port_identities, standard_mesh_boundary_assignments,
-    standard_mesh_boundary_domains_impl, MeshBoundaryEdgeCandidate, MeshDeferredFaceBoundary,
-    MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
+    same_unordered_pair, standard_edge_port_identities,
+    standard_mesh_boundary_assignments_from_context, standard_mesh_boundary_domains_from_context,
+    MeshBoundaryEdgeCandidate, MeshDeferredFaceBoundary, MeshFaceBoundaryAssignment,
+    MeshFaceBoundaryDomain, StandardMeshBoundaryContext,
 };
 use crate::solve::UnionFind;
 use std::cell::{Cell, RefCell};
@@ -5622,12 +5625,23 @@ where
     const MAX_COMPLETED_PAIRS_PER_EDGE: usize = 65_536;
     const MAX_COMPLETED_PAIRS_TOTAL: usize = 1_000_000;
 
-    let Some((face_count, edge_rows, vertex_points, mut mesh_domains, port_identities)) = (|| {
+    let Some((
+        face_count,
+        edge_rows,
+        vertex_points,
+        boundary_context,
+        mut mesh_domains,
+        port_identities,
+    )) = (|| {
         let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
         let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
         let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-        let mesh_domains =
-            standard_mesh_boundary_domains_impl(bytes, edge_faces, Some(edge_candidates), true)?;
+        let boundary_context = StandardMeshBoundaryContext::parse(bytes, edge_faces)?;
+        let mesh_domains = standard_mesh_boundary_domains_from_context(
+            &boundary_context,
+            Some(edge_candidates),
+            true,
+        )?;
         // Do not pre-apply raw trim-run direction: standard-row endpoints are
         // oriented only when a complete face-boundary quotient is selected.
         let port_identities = standard_edge_port_identities(bytes)?;
@@ -5635,10 +5649,12 @@ where
             face_count,
             edge_rows,
             vertex_points,
+            boundary_context,
             mesh_domains,
             port_identities,
         ))
-    })() else {
+    })()
+    else {
         return MeshCandidateSolve::Rejected;
     };
     if edge_rows.len() != edge_faces.len()
@@ -5778,9 +5794,10 @@ where
                 .copied()
                 .map(|pair| vec![pair])
                 .collect::<Vec<_>>();
-            let Some(mut mesh_assignments) =
-                standard_mesh_boundary_assignments(bytes, edge_faces, Some(&singleton))
-            else {
+            let Some(mut mesh_assignments) = standard_mesh_boundary_assignments_from_context(
+                &boundary_context,
+                Some(&singleton),
+            ) else {
                 return ControlFlow::Continue(());
             };
             deduplicate_mesh_quotient_assignments(&mut mesh_assignments);

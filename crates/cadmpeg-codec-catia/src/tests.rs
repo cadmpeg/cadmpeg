@@ -287,6 +287,29 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     let boundaries =
         crate::solve::missing_edge::standard_mesh_boundary_assignments(&bytes, &[[0, 0]; 4], None)
             .expect("complete ordered boundary assignments");
+    let boundary_context =
+        crate::solve::missing_edge::StandardMeshBoundaryContext::parse(&bytes, &[[0, 0]; 4])
+            .expect("parsed boundary context");
+    assert_eq!(
+        crate::solve::missing_edge::standard_mesh_boundary_assignments_from_context(
+            &boundary_context,
+            None,
+        )
+        .expect("assignments from parsed context"),
+        boundaries,
+    );
+    let singleton_endpoints = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[0, 3]]];
+    assert_eq!(
+        crate::solve::missing_edge::standard_mesh_boundary_assignments_from_context(
+            &boundary_context,
+            Some(&singleton_endpoints),
+        ),
+        crate::solve::missing_edge::standard_mesh_boundary_assignments(
+            &bytes,
+            &[[0, 0]; 4],
+            Some(&singleton_endpoints),
+        ),
+    );
     assert_eq!(boundaries[0].len(), 1);
     assert_eq!(boundaries[0][0].boundaries.len(), 1);
     assert_eq!(
@@ -10211,7 +10234,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
             &[0x01],
             &[0xfe],
         ));
-        let mut reference_payload = vec![0x81, 0x81].repeat(reference_count);
+        let mut reference_payload = [0x81, 0x81].repeat(reference_count);
         reference_payload.push(0xfe);
         stream.push(0xde);
         stream.extend(object_graph_from_records(&[

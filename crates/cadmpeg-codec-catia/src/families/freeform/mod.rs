@@ -1947,14 +1947,14 @@ mod tests {
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         });
-        for side in 0..2 {
+        for (side, support_id) in support_ids.iter().enumerate() {
             let face_id = FaceId(format!("face#{side}"));
             let loop_id = LoopId(format!("loop#{side}"));
             let coedge_id = CoedgeId(format!("coedge#{side}"));
             ir.model.faces.push(Face {
                 id: face_id.clone(),
                 shell: ShellId("shell".to_string()),
-                surface: support_ids[side].clone(),
+                surface: support_id.clone(),
                 sense: Sense::Forward,
                 loops: vec![loop_id.clone()],
                 name: None,
