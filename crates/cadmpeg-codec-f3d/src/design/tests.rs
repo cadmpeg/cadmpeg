@@ -14636,31 +14636,82 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         owner(52, 2, 10.0, 503),
         owner(53, 3, 0.0, 504),
     ];
-    let rectangular = exact_rectangular_pattern_construction(&scope, &rectangular_owners)
+    let rectangular = exact_rectangular_pattern_construction(&[], &scope, &rectangular_owners)
         .expect("exact rectangular-pattern scalar lanes");
     assert_eq!(rectangular.u_count, 3);
     assert_eq!(rectangular.v_count, 1);
-    assert_eq!(rectangular.u_spacing, 10.0);
-    assert_eq!(rectangular.v_spacing, 0.0);
+    assert_eq!(rectangular.u_extent, 10.0);
+    assert_eq!(rectangular.v_extent, 0.0);
     assert_eq!(rectangular.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(rectangular.value_offsets, [501, 502, 503, 504]);
+    assert_eq!(rectangular.instances, None);
+
+    fn append_header(bytes: &mut Vec<u8>, record_index: u32) {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(b"999");
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+    fn append_transform_record(bytes: &mut Vec<u8>, record_index: u32, translation: [f64; 3]) {
+        append_header(bytes, record_index);
+        for value in [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    append_transform_record(&mut bytes, 100, [2.0, 3.0, 4.0]);
+    for record_index in 50..=53 {
+        append_header(&mut bytes, record_index);
+    }
+    append_header(&mut bytes, 110);
+    append_transform_record(&mut bytes, 120, [2.0, 3.0, 9.0]);
+    append_transform_record(&mut bytes, 130, [2.0, 3.0, 14.0]);
+    append_header(&mut bytes, 140);
+    scope.reference_members = vec![100, 50, 51, 52, 53, 110, 120, 130, 140];
+    let rectangular = exact_rectangular_pattern_construction(&bytes, &scope, &rectangular_owners)
+        .expect("rectangular-pattern placement run");
+    let instances = rectangular.instances.expect("exact placement run");
+    assert_eq!(instances.record_indices, [100, 120, 130]);
+    assert_eq!(
+        instances
+            .transforms
+            .iter()
+            .map(|transform| transform[2][3])
+            .collect::<Vec<_>>(),
+        [4.0, 9.0, 14.0]
+    );
 
     let mut invalid_inactive_spacing = rectangular_owners.clone();
     invalid_inactive_spacing[3].evaluated_value = 1.0;
     assert_eq!(
-        exact_rectangular_pattern_construction(&scope, &invalid_inactive_spacing),
+        exact_rectangular_pattern_construction(&[], &scope, &invalid_inactive_spacing),
         None
     );
     let mut duplicate_lane = rectangular_owners.clone();
     duplicate_lane[3].local_ordinal = 2;
     assert_eq!(
-        exact_rectangular_pattern_construction(&scope, &duplicate_lane),
+        exact_rectangular_pattern_construction(&[], &scope, &duplicate_lane),
         None
     );
     let mut excess_lane = rectangular_owners.to_vec();
     excess_lane.push(owner(54, 4, 1.0, 505));
     assert_eq!(
-        exact_rectangular_pattern_construction(&scope, &excess_lane),
+        exact_rectangular_pattern_construction(&[], &scope, &excess_lane),
         None
     );
 

@@ -2650,29 +2650,43 @@ fn project_rectangular_pattern_scalars(
     let active = [
         (
             construction.u_count,
-            construction.u_spacing,
+            construction.u_extent,
             construction.v_count,
         ),
         (
             construction.v_count,
-            construction.v_spacing,
+            construction.v_extent,
             construction.u_count,
         ),
     ]
     .into_iter()
     .filter(|(count, _, _)| *count > 1)
     .collect::<Vec<_>>();
-    let [(count, spacing, inactive_count)] = active.as_slice() else {
+    let [(count, extent, inactive_count)] = active.as_slice() else {
         return None;
     };
-    if *inactive_count != 1 || *spacing <= 0.0 {
+    if *inactive_count != 1 {
         return None;
     }
+    let direction = construction.instances.as_ref().and_then(|instances| {
+        if instances.transforms.len() != usize::try_from(*count).ok()? {
+            return None;
+        }
+        let first = instances.transforms.first()?;
+        let last = instances.transforms.last()?;
+        let delta = Vector3::new(
+            last[0][3] - first[0][3],
+            last[1][3] - first[1][3],
+            last[2][3] - first[2][3],
+        );
+        let norm = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
+        (norm > 0.0).then_some(Vector3::new(delta.x / norm, delta.y / norm, delta.z / norm))
+    });
     Some(FeatureDefinition::Pattern {
         seeds: Vec::new(),
         pattern: PatternKind::Linear {
-            direction: None,
-            spacing: Length(*spacing * 10.0),
+            direction,
+            spacing: Length(extent.abs() * 10.0 / f64::from(count.saturating_sub(1))),
             count: *count,
             second: None,
         },

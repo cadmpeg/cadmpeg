@@ -1068,14 +1068,28 @@ pub struct DesignRectangularPatternConstruction {
     pub u_count: u32,
     /// Positive V-direction instance count, including the seed.
     pub v_count: u32,
-    /// Signed U-direction instance spacing in source centimetres.
-    pub u_spacing: f64,
-    /// Signed V-direction instance spacing in source centimetres.
-    pub v_spacing: f64,
-    /// Parameter-owner records for U count, V count, U spacing, and V spacing.
+    /// Signed U-direction seed-to-final-instance span in source centimetres.
+    pub u_extent: f64,
+    /// Signed V-direction seed-to-final-instance span in source centimetres.
+    pub v_extent: f64,
+    /// Parameter-owner records for U count, V count, U extent, and V extent.
     pub owner_record_indices: [u32; 4],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
     pub value_offsets: [u64; 4],
+    /// Exact serialized instance sequence when one pattern direction is active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<DesignRectangularPatternInstances>,
+}
+
+/// Serialized placements of one linearized rectangular-pattern instance run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignRectangularPatternInstances {
+    /// Seed record followed by the generated-instance records in pattern order.
+    pub record_indices: Vec<u32>,
+    /// Row-major local-to-model placements parallel to `record_indices`.
+    pub transforms: Vec<[[f64; 4]; 4]>,
+    /// Byte offsets of the first transform scalar parallel to `record_indices`.
+    pub transform_offsets: Vec<u64>,
 }
 
 /// Alignment scalars carried by an assembly-operation scope.

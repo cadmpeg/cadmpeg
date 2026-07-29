@@ -18,8 +18,8 @@ use crate::records::{
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletGroup,
     DesignFixedFilletParameters, DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation,
     DesignObjectKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecordHeader, DesignRectangularPatternConstruction, DesignScaleOperation,
-    DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignRecordHeader, DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
+    DesignScaleOperation, DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -116,7 +116,7 @@ pub fn decode_parameter_scopes(
             scope.circular_pattern_construction =
                 exact_circular_pattern_construction_with_owners(bytes, &scope, parameter_owners);
             scope.rectangular_pattern_construction =
-                exact_rectangular_pattern_construction(&scope, parameter_owners);
+                exact_rectangular_pattern_construction(bytes, &scope, parameter_owners);
             scope.assembly_alignment = exact_assembly_alignment(&scope, parameter_owners);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
@@ -182,6 +182,7 @@ pub(crate) fn exact_assembly_alignment(
 }
 
 pub(crate) fn exact_rectangular_pattern_construction(
+    bytes: &[u8],
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignRectangularPatternConstruction> {
@@ -198,10 +199,10 @@ pub(crate) fn exact_rectangular_pattern_construction(
         })
         .collect::<Vec<_>>();
     lanes.sort_by_key(|owner| owner.local_ordinal);
-    let [u_count, v_count, u_spacing, v_spacing] = lanes.as_slice() else {
+    let [u_count, v_count, u_extent, v_extent] = lanes.as_slice() else {
         return None;
     };
-    if [u_count, v_count, u_spacing, v_spacing]
+    if [u_count, v_count, u_extent, v_extent]
         .iter()
         .enumerate()
         .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
@@ -215,31 +216,171 @@ pub(crate) fn exact_rectangular_pattern_construction(
     let u_count_value = exact_count(u_count.evaluated_value)?;
     let v_count_value = exact_count(v_count.evaluated_value)?;
     if u_count_value == 1 && v_count_value == 1
-        || (u_count_value > 1 && u_spacing.evaluated_value == 0.0)
-        || (v_count_value > 1 && v_spacing.evaluated_value == 0.0)
-        || (u_count_value == 1 && u_spacing.evaluated_value != 0.0)
-        || (v_count_value == 1 && v_spacing.evaluated_value != 0.0)
+        || (u_count_value > 1 && u_extent.evaluated_value == 0.0)
+        || (v_count_value > 1 && v_extent.evaluated_value == 0.0)
+        || (u_count_value == 1 && u_extent.evaluated_value != 0.0)
+        || (v_count_value == 1 && v_extent.evaluated_value != 0.0)
     {
         return None;
     }
-    Some(DesignRectangularPatternConstruction {
+    let mut construction = DesignRectangularPatternConstruction {
         u_count: u_count_value,
         v_count: v_count_value,
-        u_spacing: u_spacing.evaluated_value,
-        v_spacing: v_spacing.evaluated_value,
+        u_extent: u_extent.evaluated_value,
+        v_extent: v_extent.evaluated_value,
         owner_record_indices: [
             u_count.record_index,
             v_count.record_index,
-            u_spacing.record_index,
-            v_spacing.record_index,
+            u_extent.record_index,
+            v_extent.record_index,
         ],
         value_offsets: [
             u_count.evaluated_value_offset,
             v_count.evaluated_value_offset,
-            u_spacing.evaluated_value_offset,
-            v_spacing.evaluated_value_offset,
+            u_extent.evaluated_value_offset,
+            v_extent.evaluated_value_offset,
         ],
+        instances: None,
+    };
+    construction.instances = exact_rectangular_pattern_instances(bytes, scope, &construction);
+    Some(construction)
+}
+
+fn exact_rectangular_pattern_instances(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    construction: &DesignRectangularPatternConstruction,
+) -> Option<DesignRectangularPatternInstances> {
+    let active = [
+        (construction.u_count, construction.u_extent),
+        (construction.v_count, construction.v_extent),
+    ]
+    .into_iter()
+    .filter(|(count, _)| *count > 1)
+    .collect::<Vec<_>>();
+    let [(count, extent)] = active.as_slice() else {
+        return None;
+    };
+    let count = usize::try_from(*count).ok()?;
+    if count > 4_096
+        || scope.reference_members.len() != count.checked_add(6)?
+        || scope.reference_members.get(1..5) != Some(&construction.owner_record_indices)
+    {
+        return None;
+    }
+    let mut record_indices = Vec::with_capacity(count);
+    record_indices.push(*scope.reference_members.first()?);
+    record_indices.extend_from_slice(scope.reference_members.get(6..count.checked_add(5)?)?);
+    if record_indices.len() != count {
+        return None;
+    }
+    let reference_starts = scope
+        .reference_members
+        .iter()
+        .map(|record_index| {
+            next_indexed_record_offset_with_index(bytes, 0, *record_index)
+                .map(|offset| (*record_index, offset))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let mut candidates = Vec::with_capacity(count);
+    let mut scanned_bytes = 0_usize;
+    for record_index in &record_indices {
+        let start = reference_starts
+            .iter()
+            .find_map(|(candidate, offset)| (candidate == record_index).then_some(*offset))?;
+        let end = reference_starts
+            .iter()
+            .filter_map(|(_, offset)| (*offset > start).then_some(*offset))
+            .min()?;
+        let span = end.checked_sub(start)?;
+        scanned_bytes = scanned_bytes.checked_add(span)?;
+        if span > 1_048_576 || scanned_bytes > 16_777_216 {
+            return None;
+        }
+        candidates.push(exact_rigid_transform_candidates(bytes, start, end)?);
+    }
+    let first_candidates = candidates.first()?;
+    let final_candidates = candidates.last()?;
+    let mut runs = Vec::new();
+    for first in first_candidates {
+        for final_candidate in final_candidates {
+            if !same_transform_basis(&first.0, &final_candidate.0) {
+                continue;
+            }
+            let delta = translation_delta(&first.0, &final_candidate.0);
+            let distance = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
+            if (distance - extent.abs()).abs() > 1.0e-8 {
+                continue;
+            }
+            let mut run = vec![*first];
+            let mut unique = true;
+            for (ordinal, record_candidates) in candidates[1..count - 1].iter().enumerate() {
+                let fraction = (ordinal + 1) as f64 / (count - 1) as f64;
+                let matches = record_candidates
+                    .iter()
+                    .filter(|candidate| {
+                        same_transform_basis(&first.0, &candidate.0)
+                            && translation_delta(&first.0, &candidate.0)
+                                .iter()
+                                .zip(delta)
+                                .all(|(value, total)| (*value - total * fraction).abs() <= 1.0e-8)
+                    })
+                    .collect::<Vec<_>>();
+                let [candidate] = matches.as_slice() else {
+                    unique = false;
+                    break;
+                };
+                run.push(**candidate);
+            }
+            if unique {
+                run.push(*final_candidate);
+                runs.push(run);
+            }
+        }
+    }
+    runs.sort_by_key(|run| run.iter().map(|(_, offset)| *offset).collect::<Vec<_>>());
+    runs.dedup_by(|left, right| left == right);
+    let [run] = runs.as_slice() else {
+        return None;
+    };
+    Some(DesignRectangularPatternInstances {
+        record_indices,
+        transforms: run.iter().map(|(transform, _)| *transform).collect(),
+        transform_offsets: run.iter().map(|(_, offset)| *offset).collect(),
     })
+}
+
+type TransformCandidate = ([[f64; 4]; 4], u64);
+
+fn exact_rigid_transform_candidates(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<Vec<TransformCandidate>> {
+    let mut candidates = Vec::new();
+    for offset in start..end.checked_sub(127)? {
+        let values = f64s_at(bytes, offset, 16)?;
+        let mut transform = [[0.0; 4]; 4];
+        for (ordinal, value) in values.into_iter().enumerate() {
+            transform[ordinal / 4][ordinal % 4] = value;
+        }
+        if valid_sketch_transform(&transform) {
+            candidates.push((transform, u64::try_from(offset).ok()?));
+        }
+    }
+    (!candidates.is_empty()).then_some(candidates)
+}
+
+fn same_transform_basis(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
+    (0..3).all(|row| (0..3).all(|column| (left[row][column] - right[row][column]).abs() <= 1.0e-10))
+}
+
+fn translation_delta(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> [f64; 3] {
+    [
+        right[0][3] - left[0][3],
+        right[1][3] - left[1][3],
+        right[2][3] - left[2][3],
+    ]
 }
 
 pub(crate) fn exact_circular_pattern_construction_with_owners(

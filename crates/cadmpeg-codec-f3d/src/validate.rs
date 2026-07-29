@@ -828,15 +828,91 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     != Some(design::DesignFeatureFamily::RectangularPattern)
             }
             Some(construction) => {
+                let instances_link = construction.instances.as_ref().is_none_or(|instances| {
+                    let active = [
+                        (construction.u_count, construction.u_extent),
+                        (construction.v_count, construction.v_extent),
+                    ]
+                    .into_iter()
+                    .filter(|(count, _)| *count > 1)
+                    .collect::<Vec<_>>();
+                    let [(count, extent)] = active.as_slice() else {
+                        return false;
+                    };
+                    let Ok(count) = usize::try_from(*count) else {
+                        return false;
+                    };
+                    let expected_records = scope
+                        .reference_members
+                        .first()
+                        .into_iter()
+                        .chain(
+                            scope
+                                .reference_members
+                                .get(6..count.saturating_add(5))
+                                .into_iter()
+                                .flatten(),
+                        )
+                        .copied()
+                        .collect::<Vec<_>>();
+                    let Some(first) = instances.transforms.first() else {
+                        return false;
+                    };
+                    let Some(last) = instances.transforms.last() else {
+                        return false;
+                    };
+                    let delta = [
+                        last[0][3] - first[0][3],
+                        last[1][3] - first[1][3],
+                        last[2][3] - first[2][3],
+                    ];
+                    let distance = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
+                    instances.record_indices == expected_records
+                        && instances.record_indices.len() == count
+                        && instances.transforms.len() == count
+                        && instances.transform_offsets.len() == count
+                        && instances.transforms.iter().all(|transform| {
+                            design::decode::sketch::valid_sketch_transform(transform)
+                                && (0..3).all(|row| {
+                                    (0..3).all(|column| {
+                                        (transform[row][column] - first[row][column]).abs()
+                                            <= 1.0e-10
+                                    })
+                                })
+                        })
+                        && (distance - extent.abs()).abs() <= 1.0e-8
+                        && instances
+                            .transforms
+                            .iter()
+                            .enumerate()
+                            .all(|(ordinal, transform)| {
+                                let fraction = ordinal as f64 / (count - 1) as f64;
+                                (0..3).all(|axis| {
+                                    (transform[axis][3] - first[axis][3] - delta[axis] * fraction)
+                                        .abs()
+                                        <= 1.0e-8
+                                })
+                            })
+                        && instances
+                            .record_indices
+                            .iter()
+                            .zip(&instances.transform_offsets)
+                            .all(|(record_index, offset)| {
+                                records_by_index
+                                    .get(&(native_stream, *record_index))
+                                    .is_some_and(|header| *offset > header.byte_offset)
+                            })
+                });
                 design::design_feature_family(&scope.kind)
                     == Some(design::DesignFeatureFamily::RectangularPattern)
                     && construction.u_count > 0
                     && construction.v_count > 0
                     && (construction.u_count > 1 || construction.v_count > 1)
-                    && construction.u_spacing.is_finite()
-                    && construction.v_spacing.is_finite()
-                    && (construction.u_count == 1) == (construction.u_spacing == 0.0)
-                    && (construction.v_count == 1) == (construction.v_spacing == 0.0)
+                    && construction.u_extent.is_finite()
+                    && construction.v_extent.is_finite()
+                    && (construction.u_count == 1) == (construction.u_extent == 0.0)
+                    && (construction.v_count == 1) == (construction.v_extent == 0.0)
+                    && instances_link
                     && native
                         .design_parameter_owners
                         .iter()
@@ -860,8 +936,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .zip([
                             f64::from(construction.u_count),
                             f64::from(construction.v_count),
-                            construction.u_spacing,
-                            construction.v_spacing,
+                            construction.u_extent,
+                            construction.v_extent,
                         ])
                         .enumerate()
                         .all(|(ordinal, ((record_index, value_offset), value))| {
