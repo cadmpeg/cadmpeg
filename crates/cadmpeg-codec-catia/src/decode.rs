@@ -146,6 +146,13 @@ fn finish_decode(
         .flat_map(|table| &table.column_classes)
         .filter(|class| class.is_some())
         .count();
+    let design_parallel_reference_schema_membership_count = native
+        .design_objects
+        .iter()
+        .filter_map(|object| object.parallel_reference_table.as_ref())
+        .flat_map(|table| &table.rows)
+        .filter(|row| row.schema_member.is_some())
+        .count();
     let design_unowned_field_relation_count = native
         .design_objects
         .iter()
@@ -1042,6 +1049,10 @@ fn finish_decode(
         (
             "decoded_design_parallel_reference_classified_column_count".to_string(),
             design_parallel_reference_classified_column_count,
+        ),
+        (
+            "decoded_design_parallel_reference_schema_membership_count".to_string(),
+            design_parallel_reference_schema_membership_count,
         ),
         (
             "decoded_design_unowned_field_relation_count".to_string(),

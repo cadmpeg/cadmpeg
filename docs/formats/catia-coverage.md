@@ -46,7 +46,9 @@ current scores require those matrices and representative fixtures.
   retain their source-ordered columns and ordinal-aligned rows as one parallel
   reference table. Columns retain their aligned source field classes and
   resolved cells retain the exact target field class; resolved and unresolved
-  target identities remain distinct.
+  target identities remain distinct. A row retains schema membership only when
+  every classified column selects an identically classified field in one
+  design object.
 - Complete non-value entity suffixes retain escaped words and states,
   standalone `81 49` tokens, fixed `FE F6` payloads, and paged-atom state
   values as disjoint typed productions.

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 203;
+pub const CATIA_NATIVE_VERSION: u32 = 204;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -28,7 +28,7 @@ const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
 #[cfg(test)]
 const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
 #[cfg(test)]
-const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 203;
+const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 204;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1610,6 +1610,9 @@ pub struct CatiaDesignReferenceCell {
 pub struct CatiaDesignReferenceRow {
     /// Cells in the order of the table's source fields.
     pub cells: Vec<CatiaDesignReferenceCell>,
+    /// Design object whose selected fields exactly match every classified column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_member: Option<String>,
 }
 
 /// Equal-cardinality reference lists aligned by list-item ordinal.
@@ -1856,8 +1859,8 @@ fn design_parallel_reference_table(
         return None;
     }
     let rows = (0..row_count)
-        .map(|row| CatiaDesignReferenceRow {
-            cells: columns
+        .map(|row| {
+            let cells = columns
                 .iter()
                 .map(|(_, _, references)| {
                     let target_entity_id = references[row];
@@ -1871,7 +1874,25 @@ fn design_parallel_reference_table(
                         design_object: target.and_then(|record| record.design_object.clone()),
                     }
                 })
-                .collect(),
+                .collect::<Vec<_>>();
+            let schema_member = cells
+                .first()
+                .and_then(|cell| cell.design_object.clone())
+                .filter(|member| {
+                    columns
+                        .iter()
+                        .zip(&cells)
+                        .all(|((_, source_class, _), cell)| {
+                            source_class.is_some()
+                                && cell.field.is_some()
+                                && cell.field_class.as_ref() == source_class.as_ref()
+                                && cell.design_object.as_ref() == Some(member)
+                        })
+                });
+            CatiaDesignReferenceRow {
+                cells,
+                schema_member,
+            }
         })
         .collect();
     Some(CatiaDesignParallelReferenceTable {

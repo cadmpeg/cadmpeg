@@ -8117,8 +8117,8 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     let mut bytes = sequential_entity_backed_object_graph(&[
         object_graph_record(&[0x04, 0x01, 0x81, 0x83], &list_a),
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &list_b),
-        object_graph_record(&[0x04, 0x01, 0x83, 0x85], &[0xfe]),
-        object_graph_record(&[0x04, 0x01, 0x84, 0x86], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x83], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x84], &[0xfe]),
     ]);
     bytes.extend(catalog_stream(&[
         "CATCatalogManager",
@@ -8127,8 +8127,8 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         "",
         "Profile",
         "Limit",
-        "Pad",
-        "Result",
+        "Profile",
+        "Limit",
     ]));
     let native = crate::native::CatiaNative::decode(&bytes);
     let table = native.design_objects[0]
@@ -8155,6 +8155,12 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     assert!(table.rows.iter().flat_map(|row| &row.cells).all(|cell| {
         cell.field.is_some() && cell.field_class.is_some() && cell.design_object.is_some()
     }));
+    assert_eq!(
+        table.rows[0].schema_member,
+        table.rows[0].cells[0].design_object
+    );
+    assert!(table.rows[0].schema_member.is_some());
+    assert!(table.rows[1].schema_member.is_none());
 
     let expected = table.clone();
     let mut malformed = native.clone();
@@ -8188,6 +8194,32 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     previous_namespace.version = 200;
     let migrated = crate::native::CatiaNative::load(&previous_namespace)
         .expect("migrate previous parallel reference table");
+    assert_eq!(
+        migrated.design_objects[0].parallel_reference_table,
+        Some(expected.clone())
+    );
+
+    let mut version_203_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_203_namespace)
+        .expect("store current parallel reference memberships");
+    let mut version_203_objects: Vec<crate::native::CatiaDesignObject> = version_203_namespace
+        .arena_as("design_objects")
+        .expect("load version 203 design objects");
+    for row in &mut version_203_objects[0]
+        .parallel_reference_table
+        .as_mut()
+        .expect("parallel reference table")
+        .rows
+    {
+        row.schema_member = None;
+    }
+    version_203_namespace
+        .set_arena("design_objects", &version_203_objects)
+        .expect("store version 203 design objects");
+    version_203_namespace.version = 203;
+    let migrated = crate::native::CatiaNative::load(&version_203_namespace)
+        .expect("migrate version 203 schema memberships");
     assert_eq!(
         migrated.design_objects[0].parallel_reference_table,
         Some(expected.clone())
