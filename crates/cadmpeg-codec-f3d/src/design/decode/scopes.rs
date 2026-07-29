@@ -13,11 +13,11 @@ use crate::records::{
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
     DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignDraftOperation,
     DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudeStart, DesignFixedChamferDistance,
-    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletGroup,
-    DesignFixedFilletParameters, DesignHemOperation, DesignMoveOperation, DesignObjectKind,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation,
-    DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
+    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
+    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation, DesignMoveOperation,
+    DesignObjectKind, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignScaleOperation, DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -1746,14 +1746,48 @@ fn exact_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignExtrudePro
 
 fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignExtrudePrologue> {
     let direct_offset = start.checked_add(28)?;
-    let referenced_offset = start.checked_add(38)?;
-    let referenced = bytes.get(start.checked_add(25)?) == Some(&1)
-        && bytes.get(start.checked_add(30)?..start.checked_add(36)?)? == [0; 6];
-    let operation_offset = if referenced {
-        referenced_offset
+    let reference = if bytes.get(start.checked_add(25)?) == Some(&1) {
+        let reference_record_index_offset = start.checked_add(26)?;
+        let record_index = u32_at(bytes, reference_record_index_offset)?;
+        let prefix_tail = start.checked_add(30)?;
+        let candidates = [start.checked_add(37)?, start.checked_add(38)?]
+            .into_iter()
+            .filter(|operation_offset| {
+                bytes
+                    .get(prefix_tail..*operation_offset)
+                    .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
+                    && matches!(u32_at(bytes, *operation_offset), Some(1..=4))
+                    && matches!(
+                        (
+                            u32_at(bytes, operation_offset.saturating_add(4)),
+                            u32_at(bytes, operation_offset.saturating_add(8))
+                        ),
+                        (Some(1), Some(1 | 2)) | (Some(2), Some(0)) | (Some(3), Some(2))
+                    )
+                    && matches!(bytes.get(operation_offset.saturating_add(12)), Some(0 | 1))
+                    && bytes.get(operation_offset.saturating_add(13)) == Some(&1)
+                    && matches!(bytes.get(operation_offset.saturating_add(14)), Some(0..=2))
+            })
+            .collect::<Vec<_>>();
+        let [operation_offset] = candidates.as_slice() else {
+            return None;
+        };
+        let trailing_zero_count = u8::try_from(operation_offset.checked_sub(prefix_tail)?).ok()?;
+        Some((
+            *operation_offset,
+            DesignExtrudePrologueReference {
+                record_index,
+                record_index_offset: reference_record_index_offset as u64,
+                trailing_zero_count,
+            },
+        ))
     } else {
-        direct_offset
+        None
     };
+    let (operation_offset, reference) = reference
+        .map_or((direct_offset, None), |(offset, reference)| {
+            (offset, Some(reference))
+        });
     let operation = match u32_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
@@ -1791,7 +1825,7 @@ fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignEx
         _ => return None,
     };
     Some(DesignExtrudePrologue::ReferenceAware {
-        referenced,
+        reference,
         operation,
         operation_offset: operation_offset as u64,
         extent_discriminators,

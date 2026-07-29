@@ -9311,7 +9311,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
         kind: "Extrude".into(),
         kind_offset: 210,
         extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
-            referenced: false,
+            reference: None,
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 128,
             extent_discriminators: [1, 2],

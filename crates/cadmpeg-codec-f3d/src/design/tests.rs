@@ -4065,7 +4065,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut extrude_scope = scope.clone();
     extrude_scope.kind = "Extrude".into();
     extrude_scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
-        referenced: false,
+        reference: None,
         operation: DesignExtrudeOperation::NewBody,
         operation_offset: 28,
         extent_discriminators: [1, 2],
@@ -4848,7 +4848,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                  direction_reversed: u8,
                  structural_constant: u8,
                  start: u8,
-                 conditional_reference: bool,
+                 reference_padding: Option<usize>,
                  legacy_shifted: bool| {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -4858,10 +4858,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
         let operation_offset = if legacy_shifted {
             27
-        } else if conditional_reference {
+        } else if let Some(reference_padding) = reference_padding {
             bytes[25] = 1;
             bytes[26..30].copy_from_slice(&77u32.to_le_bytes());
-            38
+            30 + reference_padding
         } else {
             28
         };
@@ -4873,7 +4873,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes[operation_offset + 14] = start;
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.push(1);
-        bytes.extend_from_slice(&55u32.to_le_bytes());
+        bytes.extend_from_slice(&reference_padding.map_or(55, |_| 77_u32).to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
         bytes.extend_from_slice(&7u32.to_le_bytes());
         lp_utf16(&mut bytes, kind);
@@ -4893,11 +4893,11 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         parse_parameter_scope(&bytes, &header).unwrap()
     };
 
-    let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, false, false);
+    let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, None, false);
     assert_eq!(
         direct.extrude_prologue,
         Some(DesignExtrudePrologue::ReferenceAware {
-            referenced: false,
+            reference: None,
             operation: DesignExtrudeOperation::Join,
             operation_offset: 28,
             extent_discriminators: [1, 2],
@@ -4909,11 +4909,15 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             start_offset: 42,
         })
     );
-    let referenced = scope("Extrude", 3, (2, 0), 0, 1, 1, true, false);
+    let referenced = scope("Extrude", 3, (2, 0), 0, 1, 1, Some(8), false);
     assert_eq!(
         referenced.extrude_prologue,
         Some(DesignExtrudePrologue::ReferenceAware {
-            referenced: true,
+            reference: Some(crate::records::DesignExtrudePrologueReference {
+                record_index: 77,
+                record_index_offset: 26,
+                trailing_zero_count: 8,
+            }),
             operation: DesignExtrudeOperation::Intersect,
             operation_offset: 38,
             extent_discriminators: [2, 0],
@@ -4925,7 +4929,19 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             start_offset: 52,
         })
     );
-    let to_face = scope("Extrusion", 2, (1, 1), 1, 1, 2, false, false);
+    let compact_reference = scope("Extrude", 2, (1, 2), 0, 1, 2, Some(7), false);
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        reference: Some(reference),
+        operation_offset,
+        ..
+    }) = compact_reference.extrude_prologue
+    else {
+        panic!("compact referenced Extrude prologue");
+    };
+    assert_eq!(reference.trailing_zero_count, 7);
+    assert_eq!(operation_offset, 37);
+
+    let to_face = scope("Extrusion", 2, (1, 1), 1, 1, 2, None, false);
     assert_eq!(to_face.kind, "Extrusion");
     let Some(prologue) = to_face.extrude_prologue else {
         panic!("to-face Extrude prologue");
@@ -4934,14 +4950,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(prologue.direction_reversed());
     assert_eq!(prologue.start(), DesignExtrudeStart::FromFace);
 
-    let shifted_distance = scope("Extrude", 4, (1, 2), 0, 1, 0, false, true);
+    let shifted_distance = scope("Extrude", 4, (1, 2), 0, 1, 0, None, true);
     assert_eq!(
         shifted_distance
             .extrude_prologue
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedDistance)
     );
-    let shifted_symmetric = scope("Extrude", 4, (3, 2), 0, 1, 0, false, true);
+    let shifted_symmetric = scope("Extrude", 4, (3, 2), 0, 1, 0, None, true);
     assert_eq!(
         shifted_symmetric
             .extrude_prologue
@@ -4949,7 +4965,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(DesignExtrudeExtent::SymmetricDistance)
     );
 
-    let legacy = scope("Extrude", 2, (3, 0), 0, 1, 0, false, true);
+    let legacy = scope("Extrude", 2, (3, 0), 0, 1, 0, None, true);
     assert_eq!(
         legacy.extrude_prologue,
         Some(DesignExtrudePrologue::LegacyShifted {
@@ -4965,19 +4981,19 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         })
     );
 
-    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, false, false);
+    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false);
     assert_eq!(unrecognized.kind, "Extrude");
     assert_eq!(unrecognized.extrude_prologue, None);
     assert_eq!(
-        scope("Extrude", 2, (3, 0), 2, 1, 0, false, true).extrude_prologue,
+        scope("Extrude", 2, (3, 0), 2, 1, 0, None, true).extrude_prologue,
         None
     );
     assert_eq!(
-        scope("Extrude", 2, (3, 0), 0, 0, 0, false, true).extrude_prologue,
+        scope("Extrude", 2, (3, 0), 0, 0, 0, None, true).extrude_prologue,
         None
     );
     assert_eq!(
-        scope("Extrude", 2, (3, 0), 0, 1, 3, false, true).extrude_prologue,
+        scope("Extrude", 2, (3, 0), 0, 1, 3, None, true).extrude_prologue,
         None
     );
 }
@@ -11156,7 +11172,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         kind: "Extrude".into(),
         kind_offset: 210,
         extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
-            referenced: false,
+            reference: None,
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 128,
             extent_discriminators: [1, 2],
@@ -11483,7 +11499,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         kind: "Extrude".into(),
         kind_offset: 210,
         extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
-            referenced: false,
+            reference: None,
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 128,
             extent_discriminators: [1, 2],

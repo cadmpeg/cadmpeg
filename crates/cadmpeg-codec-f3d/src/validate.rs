@@ -854,7 +854,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (
                     true,
                     Some(records::DesignExtrudePrologue::ReferenceAware {
-                        referenced,
+                        reference,
                         operation_offset,
                         extent_discriminators,
                         extent,
@@ -864,22 +864,29 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         ..
                     }),
                 ) => {
-                    operation_offset
-                        == scope
-                            .byte_offset
-                            .saturating_add(if referenced { 38 } else { 28 })
-                        && matches!(
-                            (extent_discriminators, extent),
-                            ([1, 1], records::DesignExtrudeExtent::OneSidedToFace)
-                                | ([1, 2], records::DesignExtrudeExtent::OneSidedDistance)
-                                | ([2, 0], records::DesignExtrudeExtent::TwoSidedDistance)
-                                | ([3, 2], records::DesignExtrudeExtent::SymmetricDistance)
-                        )
-                        && extent_offsets
-                            == [
-                                operation_offset.saturating_add(4),
-                                operation_offset.saturating_add(8),
-                            ]
+                    reference.map_or(
+                        operation_offset == scope.byte_offset.saturating_add(28),
+                        |reference| {
+                            reference.record_index_offset == scope.byte_offset.saturating_add(26)
+                                && matches!(reference.trailing_zero_count, 7 | 8)
+                                && operation_offset
+                                    == reference
+                                        .record_index_offset
+                                        .saturating_add(4)
+                                        .saturating_add(u64::from(reference.trailing_zero_count))
+                                && scope.reference_members.contains(&reference.record_index)
+                        },
+                    ) && matches!(
+                        (extent_discriminators, extent),
+                        ([1, 1], records::DesignExtrudeExtent::OneSidedToFace)
+                            | ([1, 2], records::DesignExtrudeExtent::OneSidedDistance)
+                            | ([2, 0], records::DesignExtrudeExtent::TwoSidedDistance)
+                            | ([3, 2], records::DesignExtrudeExtent::SymmetricDistance)
+                    ) && extent_offsets
+                        == [
+                            operation_offset.saturating_add(4),
+                            operation_offset.saturating_add(8),
+                        ]
                         && start_offset == operation_offset.saturating_add(14)
                         && direction_reversed_offset == operation_offset.saturating_add(12)
                         && extent_offsets[1] < scope.reference_count_offset

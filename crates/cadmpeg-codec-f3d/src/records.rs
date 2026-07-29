@@ -739,14 +739,25 @@ pub enum DesignExtrudeStart {
     FromFace,
 }
 
+/// Indexed-record prefix preceding a reference-aware Extrude prologue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignExtrudePrologueReference {
+    /// Referenced Design record.
+    pub record_index: u32,
+    /// Byte offset of `record_index`.
+    pub record_index_offset: u64,
+    /// Number of zero bytes between `record_index` and the operation.
+    pub trailing_zero_count: u8,
+}
+
 /// Fixed fields preceding an Extrude parameter scope's reference table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "layout")]
 pub enum DesignExtrudePrologue {
     /// Reference-aware layout with an optional indexed-reference prefix.
     ReferenceAware {
-        /// Whether the operation follows the indexed-reference prefix.
-        referenced: bool,
+        /// Indexed-record prefix, when present.
+        reference: Option<DesignExtrudePrologueReference>,
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.
