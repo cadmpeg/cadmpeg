@@ -474,7 +474,7 @@ fn native_procedural_surface_definition(
             native_ident(bytes, "exact_spl_sur")?;
             if let (
                 Some(form),
-                cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionValues { values },
+                cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges { intervals },
             ) = (revision_form, parameters)
             {
                 if form.revision <= 0 {
@@ -489,8 +489,10 @@ fn native_procedural_surface_definition(
                     solved_cache,
                     procedural.cache_fit_tolerance,
                 )?;
-                for value in values {
-                    native_optional_f64(bytes, *value);
+                for interval in intervals {
+                    for bound in interval {
+                        native_optional_f64(bytes, *bound);
+                    }
                 }
                 native_enum(bytes, *extension);
                 bytes.push(0x10);
@@ -2902,10 +2904,11 @@ fn encode_native_loft(
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
     if let Some(form) = revision_form {
-        let cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionValues { values } = parameters
+        let cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges { intervals } =
+            parameters
         else {
             return Err(CodecError::Malformed(
-                "revision-gated loft requires revision-native parameter values".into(),
+                "revision-gated loft requires revision-native parameter ranges".into(),
             ));
         };
         if form.revision <= 0 {
@@ -2920,8 +2923,10 @@ fn encode_native_loft(
         for section in sections {
             native_loft_section(bytes, target, section, None)?;
         }
-        for value in values {
-            native_optional_f64(bytes, *value);
+        for interval in intervals {
+            for bound in interval {
+                native_optional_f64(bytes, *bound);
+            }
         }
         for flag in form.flags {
             bytes.push(native_bool(flag));

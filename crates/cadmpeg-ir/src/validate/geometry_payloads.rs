@@ -466,9 +466,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
                     })
                 }
-                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
-                    values.iter().flatten().all(|value| value.is_finite())
-                }
+                crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => intervals
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .all(|value| value.is_finite()),
             };
             if !valid {
                 bounds_err(
@@ -563,9 +565,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
                     })
                 }
-                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
-                    values.iter().flatten().all(|value| value.is_finite())
-                }
+                crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => intervals
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .all(|value| value.is_finite()),
             };
             let sections_valid =
                 sections

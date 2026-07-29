@@ -16780,6 +16780,96 @@ fn generated_revision_exact_surface_round_trips() {
 }
 
 #[test]
+fn generated_revision_exact_surface_carries_two_unextended_intervals() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
+
+    // Two distinct non-[0,1] unextended parameter intervals: U then V.
+    let smbh = synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
+        push_revision_surface_tail(surface);
+        for value in [0.0, std::f64::consts::FRAC_PI_2, 0.5, 2.0] {
+            surface.push(0x0a);
+            t_dbl(surface, value);
+        }
+        push_tagged_i64(surface, 0x15, 0);
+    });
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("revision exact decode");
+    let procedural = result.ir.model.procedural_surfaces.first().unwrap();
+    let ProceduralSurfaceDefinition::Exact { parameters, .. } = &procedural.definition else {
+        panic!("expected exact definition");
+    };
+    assert_eq!(
+        parameters,
+        &SplineSurfaceParameters::RevisionRanges {
+            intervals: [
+                [Some(0.0), Some(std::f64::consts::FRAC_PI_2)],
+                [Some(0.5), Some(2.0)],
+            ],
+        }
+    );
+    assert_revision_surface_round_trip(smbh, "exact");
+}
+
+#[test]
+fn generated_revision_loft_surface_carries_one_nonempty_wrap_interval() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
+
+    // First wrap interval non-empty [0,1]; second reversed [1,0] = empty.
+    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+        t_long(surface, 1);
+        t_dbl(surface, 0.0);
+        t_long(surface, 1);
+        t_long(surface, 1);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.extend_from_slice(&[0x0b, 0x0b]);
+        t_ident(surface, "null_surface");
+        t_ident(surface, "nullbs");
+        surface.push(0x0b);
+        t_long(surface, -1);
+        t_long(surface, 213);
+        t_long(surface, 1);
+        t_long(surface, 1);
+        for value in [0.0, 1.0, 0.25, 0.75, 0.5, 1.5] {
+            t_dbl(surface, value);
+        }
+        surface.push(0x0b);
+        t_ident(surface, "null_curve");
+        t_long(surface, 0);
+        t_long(surface, -1);
+        t_long(surface, 0);
+        for value in [0.0, 1.0, 1.0, 0.0] {
+            surface.push(0x0a);
+            t_dbl(surface, value);
+        }
+        surface.extend_from_slice(&[0x0b; 4]);
+        t_long(surface, 0);
+        t_long(surface, 0);
+        push_revision_surface_tail(surface);
+    });
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("revision loft decode");
+    let procedural = result.ir.model.procedural_surfaces.first().unwrap();
+    let ProceduralSurfaceDefinition::Loft { parameters, .. } = &procedural.definition else {
+        panic!("expected loft definition");
+    };
+    assert_eq!(
+        parameters,
+        &SplineSurfaceParameters::RevisionRanges {
+            intervals: [[Some(0.0), Some(1.0)], [Some(1.0), Some(0.0)]],
+        }
+    );
+    assert_revision_surface_round_trip(smbh, "loft");
+}
+
+#[test]
 fn generated_revision_sum_surface_round_trips() {
     let smbh = synthetic_revision_surface_smbh("sum_spl_sur", |surface| {
         for (lower, upper) in [(0.0, 1.0), (-2.0, 2.0)] {

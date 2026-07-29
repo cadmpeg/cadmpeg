@@ -1379,10 +1379,16 @@ fn decode_revision_loft(
         decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
         decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
     ];
-    let mut parameter_values = [None; 4];
-    for value in &mut parameter_values {
-        *value = take_optional_range_value(span, &mut position)?;
-    }
+    let wrap_ranges = [
+        [
+            take_optional_range_value(span, &mut position)?,
+            take_optional_range_value(span, &mut position)?,
+        ],
+        [
+            take_optional_range_value(span, &mut position)?,
+            take_optional_range_value(span, &mut position)?,
+        ],
+    ];
     let mut flags = [false; 4];
     for flag in &mut flags {
         *flag = take_bool(span, &mut position)?;
@@ -1404,8 +1410,8 @@ fn decode_revision_loft(
                 discontinuities,
                 tail_flag,
             }),
-            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionValues {
-                values: parameter_values,
+            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges {
+                intervals: wrap_ranges,
             },
             closures: [0, 0],
             singularities: [0, 0],
@@ -3329,15 +3335,23 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
         (revision > 0).then_some(())?;
         let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
             decode_revision_surface_tail(span, &mut position, int_width)?;
-        let mut bounds = [None; 4];
-        for bound in &mut bounds {
-            *bound = take_optional_range_value(span, &mut position)?;
-        }
+        // The two unextended parameter intervals: first U, then V. Each is an
+        // ordered [lo, hi] pair of optional bounds.
+        let unextended_ranges = [
+            [
+                take_optional_range_value(span, &mut position)?,
+                take_optional_range_value(span, &mut position)?,
+            ],
+            [
+                take_optional_range_value(span, &mut position)?,
+                take_optional_range_value(span, &mut position)?,
+            ],
+        ];
         let extension = take_tagged_int(span, &mut position, 0x15, int_width)?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Exact {
-                parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionValues {
-                    values: bounds,
+                parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges {
+                    intervals: unextended_ranges,
                 },
                 extension,
                 revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {

@@ -372,10 +372,15 @@ pub enum SplineSurfaceParameters {
         /// Ordered U and V intervals.
         ranges: [[f64; 2]; 2],
     },
-    /// Four optional native scalar fields in a revision-gated layout.
-    RevisionValues {
-        /// Values in serialized field order; `None` is a false presence flag.
-        values: [Option<f64>; 4],
+    /// Two parameter intervals in a revision-gated layout, each stored as an
+    /// ordered `[lo, hi]` pair of optional bounds. For exact and t-spline
+    /// surfaces these are the surface's unextended (pre-extension) parameter
+    /// ranges; for loft surfaces they are wrap ranges, where a reversed pair
+    /// (`lo > hi`) encodes an empty interval (no wrap). `None` is a false
+    /// bound-presence flag.
+    RevisionRanges {
+        /// Two parameter intervals in serialized field order.
+        intervals: [[Option<f64>; 2]; 2],
     },
 }
 
