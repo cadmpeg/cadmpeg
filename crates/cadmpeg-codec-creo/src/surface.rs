@@ -2225,6 +2225,27 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
         }
         named.sort_unstable();
         named.dedup();
+        let mut owned_scalar_end = close + 2;
+        named.retain(|(token_offset, token_length)| {
+            if *token_offset < owned_scalar_end {
+                return false;
+            }
+            let name_start = *token_offset + 2;
+            let name_end = *token_offset + *token_length - 1;
+            let name = String::from_utf8_lossy(&payload[name_start..name_end]);
+            if prototype_parameter_allowed(&family, &name) {
+                let value_offset = *token_offset + *token_length;
+                if let Some(length) = named_vector_scalar_body_len(
+                    &family,
+                    &name,
+                    &payload[value_offset..record_end],
+                    &cache,
+                ) {
+                    owned_scalar_end = value_offset + length;
+                }
+            }
+            true
+        });
         let mut parameters = Vec::new();
         for (position, (token_offset, token_length)) in named.iter().copied().enumerate() {
             let name_start = token_offset + 2;
@@ -2237,7 +2258,14 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
             let mut value_end = named
                 .get(position + 1)
                 .map_or(record_end, |(next, _)| *next);
-            if let Some(compound_close) = psb::tokens(&payload[value_offset..value_end])
+            if let Some(length) = named_vector_scalar_body_len(
+                &family,
+                &name,
+                &payload[value_offset..record_end],
+                &cache,
+            ) {
+                value_end = value_offset + length;
+            } else if let Some(compound_close) = psb::tokens(&payload[value_offset..value_end])
                 .into_iter()
                 .find(|token| token.kind == psb::TokenKind::CompoundClose)
             {
@@ -4608,6 +4636,44 @@ fn named_spline_scalar_slots(
     }
     slots.resize_with(count, || (None, Vec::new()));
     slots
+}
+
+fn named_vector_scalar_body_len(
+    family: &SurfacePrototypeFamily,
+    name: &str,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
+    matches!(
+        name,
+        "i_pnts"
+            | "i_points"
+            | "end_u_tangts"
+            | "end_v_tangts"
+            | "end_uv_deriv"
+            | "tangts"
+            | "end_tangts"
+    )
+    .then_some(())?;
+    (body.first() == Some(&psb::token::SCALAR_BODY)).then_some(())?;
+    let (dimensions, dimensions_end) = compact_int(body, 1);
+    let (count, values_start) = compact_int(body, dimensions_end);
+    (dimensions_end > 1 && values_start > dimensions_end).then_some(())?;
+    let slot_count = usize::try_from(dimensions)
+        .ok()?
+        .checked_mul(usize::try_from(count).ok()?)?;
+    let mut cursor = psb::Cursor::at(body, values_start);
+    let mut slots = 0;
+    while slots < slot_count {
+        if matches!(name, "i_pnts" | "i_points")
+            && cursor.take_slice_if(&[psb::token::SCALAR_BODY, 0x00])
+        {
+            continue;
+        }
+        cursor.take_with(|data, pos| named_spline_scalar_slot(family, name, data, pos, cache))?;
+        slots += 1;
+    }
+    Some(cursor.pos())
 }
 
 fn counted_parameter_scalar_slots(
@@ -8681,6 +8747,32 @@ mod tests {
                 tokens: vec![negative.to_vec(), vec![0xe4], vec![0x0f]],
             })
         );
+    }
+
+    #[test]
+    fn dimensioned_vectors_own_header_shaped_scalar_payloads() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x02i_pnts\0\xf9\x01\x03\
+            \xaa\xe0\x01id\0\xe3\xe4\x0f\
+            \xe0\x01tangts\0\xf9\x01\x03\xe4\xe4\xe4";
+
+        let records = named_prototype_records(payload);
+        let prototype = &records[0];
+
+        assert_eq!(
+            prototype.field("i_pnts").map(|field| field.body.as_slice()),
+            Some(&[0xf9, 0x01, 0x03, 0xaa, 0xe0, 0x01, b'i', b'd', 0x00, 0xe3, 0xe4, 0x0f,][..])
+        );
+        assert!(prototype.field("id").is_none());
+        assert!(matches!(
+            prototype.field("tangts").map(|field| &field.value),
+            Some(SurfaceNamedValue::ScalarArray {
+                dimensions: 1,
+                count: 3,
+                values,
+                ..
+            }) if values == &[Some(1.0), Some(1.0), Some(1.0)]
+        ));
     }
 
     #[test]

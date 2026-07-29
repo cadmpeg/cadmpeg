@@ -990,7 +990,9 @@ In the spline point and derivative fields, `dimensions` is the number of
 three-coordinate vectors and `count` is three. Vectors are serialized
 consecutively. Each declared slot consumes one complete scalar token; an
 unresolved seven-byte DICT token remains one opaque slot and its payload is not
-searched for nested scalar openers. `i_points` uses eight-byte `28` and `41`
+searched for nested scalar openers. The complete declared scalar span owns
+header-shaped and compound-close bytes inside its scalar tokens; those bytes do
+not terminate the field. `i_points` uses eight-byte `28` and `41`
 positive sub-unit forms in addition to eight-byte `2d`/`46` world coordinates,
 the positive DICT lattice, and the `b3`/`b9` negative forms. `end_v_tangts`
 uses the signed coordinate DICT lattice defined for the second directrix
