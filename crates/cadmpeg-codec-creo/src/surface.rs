@@ -772,7 +772,7 @@ impl SurfaceParameterRecord {
     fn type24_square_radial_round_frame(&self) -> Option<PositionalCylinderFrame> {
         (self.boundary == SurfaceBodyBoundary::CompoundClose).then_some(())?;
         let terminal = self.scalar_frames.last()?;
-        ((6..=8).contains(&terminal.slots.len())).then_some(())?;
+        ((6..=9).contains(&terminal.slots.len())).then_some(())?;
         let repeated_diameter_shell = if terminal.slots.len() == 7 {
             if let [leading, _] = self.scalar_frames.as_slice() {
                 let leading_end = leading
@@ -7471,6 +7471,27 @@ mod tests {
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert!((frame.radius - 0.1).abs() < 1.0e-12);
         assert!((frame.length.expect("required invariant") - 6.4).abs() < 1.0e-12);
+
+        let nine_slot_body = [
+            0x18, 0x18, 0x18, 0x48, 0x24, 0x00, 0x2e, 0x1f, 0xff, 0x2f, 0x14, 0x00, 0x48, 0x22,
+            0x00, 0x2f, 0x48, 0x00, 0x2f, 0x18, 0x00, 0xf7, 0x18,
+        ];
+        let mut nine_slot_payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        nine_slot_payload.extend_from_slice(&nine_slot_body);
+        nine_slot_payload.push(0xe3);
+        let nine_slot = parameter_records(&nine_slot_payload).remove(0);
+        let frame = nine_slot
+            .positional_cylinder_frame
+            .expect("complete nine-slot square-radial carrier");
+        assert!(frame
+            .origin
+            .into_iter()
+            .zip([-9.5, 8.0, 5.5])
+            .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
+        assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.radius, 0.5);
+        assert_eq!(frame.length, Some(40.0));
 
         let unbounded_body = [
             0x18, 0x2d, 0x5f, 0x25, 0xa4, 0x69, 0xd7, 0x34, 0x2d, 0x00, 0x12, 0x00, 0x2d, 0x67,

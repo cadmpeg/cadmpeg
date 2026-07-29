@@ -604,7 +604,7 @@ is the axis direction, and the first extent endpoint supplies the other two
 origin coordinates.
 
 In the terminal square-radial type-24 form, the final scalar frame has six
-through eight slots and reaches the body end, one terminal control byte `00`,
+through nine slots and reaches the body end, one terminal control byte `00`,
 `10`, or `18`, or one complete terminal entity reference. Its final six slots
 are two opposite XYZ envelope corners;
 preceding slots and frames are auxiliary. Exactly two absolute coordinate
