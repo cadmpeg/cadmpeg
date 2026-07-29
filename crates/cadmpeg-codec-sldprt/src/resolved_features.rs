@@ -3210,6 +3210,23 @@ mod marker_tests {
                 Point2::new(-0.025, 0.011),
             ])
         );
+        for index in 0..4 {
+            let offset = CURVE_START + index * 84;
+            payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
+        }
+        assert_eq!(
+            indexed_rectangle_from_line_cycle(&payload, &marker_refs),
+            Some([
+                Point2::new(-0.025, -0.011),
+                Point2::new(0.025, -0.011),
+                Point2::new(0.025, 0.011),
+                Point2::new(-0.025, 0.011),
+            ])
+        );
+        for index in 0..4 {
+            let offset = CURVE_START + index * 84;
+            payload[offset + 17..offset + 21].copy_from_slice(&1u32.to_le_bytes());
+        }
         let mut adjacent = markers.clone();
         adjacent[1].coordinates_m = None;
         adjacent[2].coordinates_m = Some([0.025, 0.011]);
@@ -29842,7 +29859,7 @@ fn legacy_extended_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Op
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || payload.get(offset + 17..offset + 21) != Some(&1u32.to_le_bytes())
+        || !matches!(marker_native_code(payload, offset), Some(1 | 2))
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || payload.get(offset + 27..offset + 29) != Some(&1u16.to_le_bytes())
         || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
