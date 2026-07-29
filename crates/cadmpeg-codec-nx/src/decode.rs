@@ -6044,6 +6044,17 @@ pub(crate) fn attach_tolerant_edge_intersections(
 ) {
     let mut candidates = Vec::new();
     for (&xmt, edge_id) in edges {
+        let Some(edge_fields) = graph.get(16, xmt).and_then(Node::edge_fields) else {
+            continue;
+        };
+        if edge_fields.curve != 1
+            || graph
+                .get(17, edge_fields.fin)
+                .and_then(Node::fin_fields)
+                .is_none_or(|fin| fin.curve_xmt != 1)
+        {
+            continue;
+        }
         let Some(edge) = ir
             .model
             .edges

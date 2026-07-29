@@ -5351,8 +5351,19 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     ir.model.edges[0].param_range = None;
     ir.model.edges[0].tolerance = Some(0.01);
     let mut edges = std::collections::BTreeMap::new();
-    edges.insert(12, edge_id.clone());
-    let graph = crate::topology::Graph::parse(&[]);
+    edges.insert(8, edge_id.clone());
+    let mut stream = topology_partition_stream();
+    let edge = stream
+        .windows(2)
+        .position(|window| window == [0, 16])
+        .expect("edge record");
+    put_ref(&mut stream, edge + 24, 1);
+    let fin = stream
+        .windows(2)
+        .position(|window| window == [0, 17])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 18, 1);
+    let graph = crate::topology::Graph::parse(&stream);
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = annotations.stream("nx:test");
 
@@ -5392,6 +5403,44 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     };
     assert!(context.sides.iter().all(|side| side.surface.is_some()));
     assert_ne!(context.sides[0].surface, context.sides[1].surface);
+}
+
+#[test]
+fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let edge_id = ir.model.edges[0].id.clone();
+    ir.model.edges[0].curve = None;
+    ir.model.edges[0].param_range = None;
+    ir.model.edges[0].tolerance = Some(0.01);
+    let edges = std::collections::BTreeMap::from([(8, edge_id.clone())]);
+    let mut stream = topology_partition_stream();
+    let edge = stream
+        .windows(2)
+        .position(|window| window == [0, 16])
+        .expect("edge record");
+    put_ref(&mut stream, edge + 24, 1);
+    let graph = crate::topology::Graph::parse(&stream);
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let source_stream = annotations.stream("nx:test");
+
+    crate::decode::attach_tolerant_edge_intersections(
+        &mut ir,
+        &graph,
+        &edges,
+        "nx:test",
+        source_stream,
+        &mut annotations,
+    );
+
+    let edge = ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id == edge_id)
+        .expect("tolerant edge");
+    assert_eq!(edge.curve, None);
+    assert_eq!(edge.param_range, None);
+    assert!(ir.model.procedural_curves.is_empty());
 }
 
 #[test]
