@@ -225,6 +225,38 @@ fn zero_entity_fixed_logical_length(tag: [u8; 2]) -> Option<usize> {
     }
 }
 
+fn zero_entity_2118_logical_end(data: &[u8], record: usize) -> Option<usize> {
+    let end = record.checked_add(292)?;
+    if end > data.len() || data.get(record.checked_add(12)?) != Some(&0x10) {
+        return None;
+    }
+    let knots = [67usize, 75, 83, 91, 99].map(|offset| f64_le(data, record.checked_add(offset)?));
+    let knots = knots.into_iter().collect::<Option<Vec<_>>>()?;
+    if !knots
+        .windows(2)
+        .all(|pair| pair[0].is_finite() && pair[0] < pair[1])
+        || !knots.last().is_some_and(|knot| knot.is_finite())
+    {
+        return None;
+    }
+    for (index, multiplicity) in [4u32, 2, 2, 2, 4].into_iter().enumerate() {
+        if tagged_u32(
+            data,
+            record.checked_add(107usize.checked_add(index.checked_mul(5)?)?)?,
+        )? != multiplicity
+        {
+            return None;
+        }
+    }
+    for index in 0usize..10 {
+        let pole = record.checked_add(132usize.checked_add(index.checked_mul(16)?)?)?;
+        if !f64_le(data, pole)?.is_finite() || !f64_le(data, pole.checked_add(8)?)?.is_finite() {
+            return None;
+        }
+    }
+    Some(end)
+}
+
 fn zero_entity_face_roster_logical_end(data: &[u8], record: usize) -> Option<usize> {
     if tagged_u32(data, record.checked_add(7)?)? != 1 {
         return None;
@@ -260,7 +292,9 @@ fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
         let Some(nominal_end) = nominal_end else {
             break;
         };
-        let end = if tag == [0x61, 0x42] {
+        let end = if tag == [0x21, 0x18] {
+            zero_entity_2118_logical_end(data, position).unwrap_or(nominal_end)
+        } else if tag == [0x61, 0x42] {
             let Some(end) = zero_entity_face_roster_logical_end(data, position) else {
                 break;
             };
@@ -763,6 +797,7 @@ fn zero_entity_support_occurrence(
     }
     let face_local_slot = u32_le(data, record.pos + 13)?;
     let uv_offsets = match record.tag {
+        [0x21, 0x18] => Some([132, 276]),
         [0x21, 0x45] => Some([145, 321]),
         [0x21, 0x71] => Some([93, 109]),
         [0x21, 0x72] => Some([158, 366]),
@@ -792,7 +827,10 @@ fn zero_entity_support_occurrence(
     let pcurve = zero_entity_support_pcurve(data, record);
     if matches!(
         record.tag,
-        [0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8]
+        [
+            0x21,
+            0x18 | 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8
+        ]
     ) && pcurve.is_none()
     {
         return None;
@@ -822,6 +860,15 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
         weight_start,
         required_end,
     ) = match record.tag {
+        [0x21, 0x18] => (
+            &[67, 75, 83, 91, 99][..],
+            107,
+            &[4, 2, 2, 2, 4][..],
+            132,
+            10,
+            None,
+            292,
+        ),
         [0x21, 0x45] => (
             &[67, 75, 83, 91, 99, 107][..],
             115,
@@ -1635,13 +1682,17 @@ mod tests {
     }
 
     fn support_pcurve_record(tag: u8) -> Vec<u8> {
-        let logical_len =
-            zero_entity_fixed_logical_length([0x21, tag]).unwrap_or(usize::from(tag) + 12);
+        let logical_len = if tag == 0x18 {
+            292
+        } else {
+            zero_entity_fixed_logical_length([0x21, tag]).unwrap_or(usize::from(tag) + 12)
+        };
         let mut record = vec![0u8; logical_len];
         record[..4].copy_from_slice(&[0xa9, 0x03, 0x21, tag]);
         write_tagged_u32(&mut record, 12, 1);
         let (knots, multiplicities, control_count, rational): (&[_], &[_], usize, bool) = match tag
         {
+            0x18 => (&[0.0, 0.25, 0.5, 0.75, 1.0], &[4, 2, 2, 2, 4], 10, false),
             0x45 => (
                 &[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
                 &[4, 2, 2, 2, 2, 4],
@@ -1755,6 +1806,7 @@ mod tests {
     #[test]
     fn support_pcurves_decode_each_complete_clamped_family() {
         for (tag, degree, control_count, rational) in [
+            (0x18, 3, 10, false),
             (0x45, 3, 12, false),
             (0x71, 1, 2, false),
             (0x72, 3, 14, false),
@@ -1786,6 +1838,7 @@ mod tests {
             assert_eq!(weights.is_some(), rational);
 
             let multiplicity_start = match tag {
+                0x18 => 107,
                 0x45 => 115,
                 0x71 | 0x91 | 0x99 => 83,
                 0x72 => 123,
