@@ -582,6 +582,21 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
     ) {
         return Some(1);
     }
+    if matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(storage),
+            HeadToken::Reference(0),
+            _,
+            HeadToken::Literal(20),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *storage != 0
+    ) {
+        return Some(3);
+    }
     let extended_class_storage_owner = matches!(
         head,
         [
