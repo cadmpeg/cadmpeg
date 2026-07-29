@@ -16030,11 +16030,11 @@ fn filled_surface_feature_definition(
     }
 }
 
-fn thicken_source_surface_ids(
+fn thicken_surface_transitions(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
-) -> Option<Vec<u32>> {
+) -> Option<Vec<(u32, u32)>> {
     let owned = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
@@ -16064,7 +16064,7 @@ fn thicken_source_surface_ids(
     let mut output_ids = BTreeSet::new();
     let mut intermediate_ids = BTreeSet::new();
     let mut source_ids = BTreeSet::new();
-    let mut sources = Vec::with_capacity(outputs.len());
+    let mut transitions = Vec::with_capacity(outputs.len());
     for (output_table, output) in outputs {
         let intermediate_id = output.related_entity_id?;
         if output.related_entity_state != Some(0)
@@ -16095,9 +16095,29 @@ fn thicken_source_surface_ids(
         {
             return None;
         }
-        sources.push(source_id);
+        transitions.push((source_id, output.entity_id));
     }
-    output_ids.is_disjoint(&source_ids).then_some(sources)
+    output_ids.is_disjoint(&source_ids).then_some(transitions)
+}
+
+fn thicken_plane_offset_magnitude(
+    transitions: &[(u32, u32)],
+    planes: &BTreeMap<u32, PlaneEquation>,
+) -> Option<f64> {
+    let mut offsets = Vec::new();
+    for &(source_id, output_id) in transitions {
+        let (Some(source), Some(output)) = (planes.get(&source_id), planes.get(&output_id)) else {
+            continue;
+        };
+        let source_normal = normalized(source.normal)?;
+        let output_normal = normalized(output.normal)?;
+        if dot(source_normal, output_normal).abs() < 1.0 - 1e-9 {
+            return None;
+        }
+        let displacement = std::array::from_fn(|index| output.origin[index] - source.origin[index]);
+        offsets.push(dot(displacement, source_normal).abs());
+    }
+    unique_positive_length(&offsets)
 }
 
 fn thicken_feature_definition(
@@ -16105,36 +16125,46 @@ fn thicken_feature_definition(
     ir: &CadIr,
     feature_id: u32,
 ) -> IrFeatureDefinition {
-    let faces = thicken_source_surface_ids(
+    let transitions = thicken_surface_transitions(
         feature_id,
         &scan.features.entity_tables,
         &scan.surfaces.rows,
-    )
-    .map_or(FaceSelection::Unresolved, |source_ids| {
-        let native = format!(
-            "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
-            source_ids
+    );
+    let faces = transitions
+        .as_ref()
+        .map_or(FaceSelection::Unresolved, |transitions| {
+            let source_ids = transitions
                 .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(",")
-        );
-        let faces = source_ids
-            .iter()
-            .map(|surface_id| FaceId(format!("creo:visibgeom:face#{surface_id}")))
-            .collect::<Vec<_>>();
-        if faces
-            .iter()
-            .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
-        {
-            FaceSelection::Resolved { faces, native }
-        } else {
-            FaceSelection::Native(native)
-        }
-    });
+                .map(|(source_id, _)| *source_id)
+                .collect::<Vec<_>>();
+            let native = format!(
+                "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
+                source_ids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let faces = source_ids
+                .iter()
+                .map(|surface_id| FaceId(format!("creo:visibgeom:face#{surface_id}")))
+                .collect::<Vec<_>>();
+            if faces
+                .iter()
+                .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
+            {
+                FaceSelection::Resolved { faces, native }
+            } else {
+                FaceSelection::Native(native)
+            }
+        });
+    let thickness = transitions
+        .as_deref()
+        .and_then(|transitions| thicken_plane_offset_magnitude(transitions, &placed_planes(scan)))
+        .map(Length);
     IrFeatureDefinition::Thicken {
         faces,
-        thickness: None,
+        thickness,
         side: None,
     }
 }

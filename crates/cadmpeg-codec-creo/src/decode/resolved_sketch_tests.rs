@@ -1679,7 +1679,7 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
 }
 
 #[test]
-fn thicken_source_surfaces_require_complete_unique_predecessor_chains() {
+fn thicken_surface_transitions_require_complete_unique_predecessor_chains() {
     let entry = |entity_id, class_id, related_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
         class_id,
@@ -1717,17 +1717,41 @@ fn thicken_source_surfaces_require_complete_unique_predecessor_chains() {
     let rows = vec![row(11, 3), row(12, 4), row(201, 17), row(202, 17)];
 
     assert_eq!(
-        thicken_source_surface_ids(17, std::slice::from_ref(&table), &rows),
-        Some(vec![11, 12])
+        thicken_surface_transitions(17, std::slice::from_ref(&table), &rows),
+        Some(vec![(11, 201), (12, 202)])
     );
 
     let mut partial = table.clone();
     partial.entries.pop();
-    assert_eq!(thicken_source_surface_ids(17, &[partial], &rows), None);
+    assert_eq!(thicken_surface_transitions(17, &[partial], &rows), None);
 
     let mut conflicting = table;
     conflicting.entries[3].related_entity_id = Some(101);
-    assert_eq!(thicken_source_surface_ids(17, &[conflicting], &rows), None);
+    assert_eq!(thicken_surface_transitions(17, &[conflicting], &rows), None);
+}
+
+#[test]
+fn thicken_plane_offsets_require_parallel_agreeing_nonzero_distances() {
+    let plane = |origin, normal| PlaneEquation { origin, normal };
+    let mut planes = BTreeMap::from([
+        (11, plane([0.0, 2.0, 0.0], [0.0, -1.0, 0.0])),
+        (12, plane([4.0, 0.0, 0.0], [1.0, 0.0, 0.0])),
+        (201, plane([0.0, -3.0, 0.0], [0.0, 1.0, 0.0])),
+        (202, plane([-1.0, 0.0, 0.0], [1.0, 0.0, 0.0])),
+    ]);
+    let transitions = [(11, 201), (12, 202), (13, 203)];
+
+    assert_eq!(
+        thicken_plane_offset_magnitude(&transitions, &planes),
+        Some(5.0)
+    );
+
+    planes.get_mut(&202).expect("plane").origin[0] = -2.0;
+    assert_eq!(thicken_plane_offset_magnitude(&transitions, &planes), None);
+
+    planes.get_mut(&202).expect("plane").origin[0] = -1.0;
+    planes.get_mut(&202).expect("plane").normal = [0.0, 1.0, 0.0];
+    assert_eq!(thicken_plane_offset_magnitude(&transitions, &planes), None);
 }
 
 #[test]
