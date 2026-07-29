@@ -408,8 +408,10 @@ pub struct FeatureEntityTableEntry {
     pub class_id: u32,
     /// Source section entity identifier carried by class `200` entries.
     pub source_entity_id: Option<u32>,
-    /// Related entity identifier carried by class `219` entries.
+    /// Related entity identifier carried by class `219` and `2017` entries.
     pub related_entity_id: Option<u32>,
+    /// One-byte state following a class `219` or `2017` related entity.
+    pub related_entity_state: Option<u8>,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
     /// Byte offset of the entity identifier in the original stream.
@@ -7531,25 +7533,43 @@ fn read_entries(
                 .flatten()
                 .map(|(class_id, _)| (class_id, after))
         })?;
-        let (source_entity_id, related_entity_id, body_start) = if class_id == 200 {
-            match psb::reference_id(payload, after_class) {
-                Ok((order, after_order)) => (Some(order), None, after_order),
-                Err(_) => (None, None, after_class),
-            }
-        } else if class_id == 219 {
-            match psb::reference_id(payload, after_class) {
-                Ok((related, after_related)) if payload.get(after_related) == Some(&0) => {
-                    (None, Some(related), after_related)
+        let (source_entity_id, related_entity_id, related_entity_state, body_start) =
+            if class_id == 200 {
+                match psb::reference_id(payload, after_class) {
+                    Ok((order, after_order)) => (Some(order), None, None, after_order),
+                    Err(_) => (None, None, None, after_class),
                 }
-                Err(_) => (None, None, after_class),
-                Ok(_) => (None, None, after_class),
-            }
+            } else if matches!(class_id, 219 | 2017) {
+                match psb::reference_id(payload, after_class) {
+                    Ok((related, after_related))
+                        if matches!(
+                            (class_id, payload.get(after_related)),
+                            (219 | 2017, Some(&0)) | (2017, Some(&1))
+                        ) =>
+                    {
+                        (
+                            None,
+                            Some(related),
+                            payload.get(after_related).copied(),
+                            after_related,
+                        )
+                    }
+                    Err(_) => (None, None, None, after_class),
+                    Ok(_) => (None, None, None, after_class),
+                }
+            } else {
+                (None, None, None, after_class)
+            };
+        let terminal_state = if class_id == 200 {
+            payload
+                .get(body_start)
+                .copied()
+                .filter(|state| matches!(state, 0 | 1))
         } else {
-            (None, None, after_class)
+            related_entity_state
         };
         let terminal_table_separator = (index + 1 == count
-            && matches!(class_id, 200 | 219)
-            && matches!(payload.get(body_start), Some(0x00 | 0x01))
+            && terminal_state.is_some()
             && payload.get(body_start + 1..body_start + 3)
                 == Some(&[0xf2, psb::token::ENTITY_REF]))
         .then_some(body_start + 1);
@@ -7568,6 +7588,7 @@ fn read_entries(
             class_id,
             source_entity_id,
             related_entity_id,
+            related_entity_state,
             prefixed,
             offset,
             end_offset,
@@ -7680,6 +7701,7 @@ mod tests {
         assert_eq!(entries[0].class_id, 219);
         assert_eq!(entries[0].source_entity_id, None);
         assert_eq!(entries[0].related_entity_id, Some(1175));
+        assert_eq!(entries[0].related_entity_state, Some(0));
         assert_eq!(entries[0].end_offset, payload.len());
     }
 
@@ -7689,6 +7711,28 @@ mod tests {
         let entries = read_entries(&payload, 0, 1).expect("terminal class-219 entry");
 
         assert_eq!(entries[0].related_entity_id, Some(1175));
+        assert_eq!(entries[0].end_offset, 7);
+    }
+
+    #[test]
+    fn class_2017_generated_entry_retains_related_entity_and_state() {
+        let payload = [0x92, 0x56, 0x87, 0xe1, 0x92, 0x48, 1, 0xe3];
+        let entries = read_entries(&payload, 0, 1).expect("class-2017 generated entry");
+
+        assert_eq!(entries[0].entity_id, 4694);
+        assert_eq!(entries[0].class_id, 2017);
+        assert_eq!(entries[0].related_entity_id, Some(4680));
+        assert_eq!(entries[0].related_entity_state, Some(1));
+        assert_eq!(entries[0].end_offset, payload.len());
+    }
+
+    #[test]
+    fn final_class_2017_entry_may_terminate_at_the_table_separator() {
+        let payload = [0x94, 0x92, 0x87, 0xe1, 0x94, 0x90, 1, 0xf2, 0xf7];
+        let entries = read_entries(&payload, 0, 1).expect("terminal class-2017 entry");
+
+        assert_eq!(entries[0].related_entity_id, Some(5264));
+        assert_eq!(entries[0].related_entity_state, Some(1));
         assert_eq!(entries[0].end_offset, 7);
     }
 
@@ -8147,6 +8191,7 @@ mod tests {
                     class_id: 200,
                     source_entity_id: Some(*source_id),
                     related_entity_id: None,
+                    related_entity_state: None,
                     prefixed: true,
                     offset: index,
                     end_offset: index + 1,
