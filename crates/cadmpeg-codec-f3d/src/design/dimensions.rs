@@ -312,7 +312,7 @@ fn project_all_dimension_constraints(
         if !design_dimension_unit(parameter) {
             return None;
         }
-        let entities = group
+        let locus_entities = group
             .loci
             .iter()
             .map(|locus| {
@@ -321,15 +321,14 @@ fn project_all_dimension_constraints(
                     .copied()
             })
             .collect::<Option<Vec<_>>>()?;
-        if let [entity] = entities.as_slice() {
-            if let Some(definition) = radial_dimension_definition(
-                entity,
-                &parameter.source_kind,
-                parameter.evaluated_value,
-                parameter_id.clone(),
-            ) {
-                return Some(definition);
-            }
+        if let Some(definition) = radial_locus_dimension_definition(
+            &locus_entities,
+            entities,
+            &parameter.source_kind,
+            parameter.evaluated_value,
+            &parameter_id,
+        ) {
+            return Some(definition);
         }
         if parameter.source_kind.starts_with("Angular Dimension") {
             let indices = group
@@ -349,7 +348,7 @@ fn project_all_dimension_constraints(
                 let entities_by_record = group
                     .loci
                     .iter()
-                    .zip(&entities)
+                    .zip(&locus_entities)
                     .map(|(locus, entity)| (locus.geometry_record_index, *entity))
                     .collect::<HashMap<_, _>>();
                 let mut definition =
@@ -372,17 +371,17 @@ fn project_all_dimension_constraints(
                 return Some(definition);
             }
             if let Some(definition) = directional_point_dimension(
-                &entities,
+                &locus_entities,
                 parameter.evaluated_value * 10.0,
                 parameter_id.clone(),
             ) {
                 return Some(definition);
             }
             if group.state == 0 && group.unknown_constraint_bits == 0 {
-                if let Some(definition) = exact_counted_dimension_relation(&entities) {
+                if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
                     return Some(definition);
                 }
-                return two_locus_distance_dimension(&entities, parameter_id);
+                return two_locus_distance_dimension(&locus_entities, parameter_id);
             }
         }
         None
@@ -1359,7 +1358,9 @@ pub(crate) fn radial_dimension_definition(
         Geometry::Circle { radius, .. } | Geometry::Arc { radius, .. } => radius.0,
         _ => return None,
     };
-    let measured = if source_kind.starts_with("Radius Dimension") {
+    let is_radius =
+        source_kind.starts_with("Radius Dimension") || source_kind.starts_with("Radial Dimension");
+    let measured = if is_radius {
         radius
     } else if source_kind.starts_with("Diameter Dimension") {
         2.0 * radius
@@ -1371,7 +1372,7 @@ pub(crate) fn radial_dimension_definition(
     if !evaluated.is_finite() || (measured - evaluated).abs() > 1.0e-9 * scale {
         return None;
     }
-    Some(if source_kind.starts_with("Radius Dimension") {
+    Some(if is_radius {
         Definition::Radius {
             entity: entity.id.clone(),
             parameter,
@@ -1382,6 +1383,73 @@ pub(crate) fn radial_dimension_definition(
             parameter,
         }
     })
+}
+
+/// Resolve a radial locus group from its selected circular entity or from a
+/// selected center point that uniquely identifies a measured circle or arc.
+pub(crate) fn radial_locus_dimension_definition(
+    loci: &[&cadmpeg_ir::sketches::SketchEntity],
+    all_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    source_kind: &str,
+    evaluated_value: f64,
+    parameter: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let unique = |mut definitions: Vec<_>| {
+        let definition = definitions.pop()?;
+        definitions.is_empty().then_some(definition)
+    };
+    let direct = loci
+        .iter()
+        .filter_map(|entity| {
+            radial_dimension_definition(entity, source_kind, evaluated_value, (*parameter).clone())
+        })
+        .collect::<Vec<_>>();
+    if !direct.is_empty() {
+        return unique(direct);
+    }
+
+    let sketch = loci.first()?.sketch.clone();
+    if loci.iter().any(|entity| entity.sketch != sketch) {
+        return None;
+    }
+    let centers = loci
+        .iter()
+        .filter_map(|entity| match &entity.geometry {
+            SketchGeometry::Point { position } => Some(*position),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if centers.is_empty() {
+        return None;
+    }
+    let candidates = all_entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch)
+        .filter(|entity| {
+            let center = match &entity.geometry {
+                SketchGeometry::Circle { center, .. } | SketchGeometry::Arc { center, .. } => {
+                    *center
+                }
+                _ => return false,
+            };
+            centers.iter().any(|witness| {
+                let scale = 1.0
+                    + center
+                        .u
+                        .abs()
+                        .max(center.v.abs())
+                        .max(witness.u.abs())
+                        .max(witness.v.abs());
+                (center.u - witness.u).hypot(center.v - witness.v) <= 1.0e-9 * scale
+            })
+        })
+        .filter_map(|entity| {
+            radial_dimension_definition(entity, source_kind, evaluated_value, (*parameter).clone())
+        })
+        .collect::<Vec<_>>();
+    unique(candidates)
 }
 
 /// Remove generic relation parses whose exact stream position is owned by a

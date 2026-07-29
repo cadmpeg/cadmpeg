@@ -50,7 +50,7 @@ use crate::design::dimensions::{
     expression_identifiers, indirect_angular_lines, null_locus_dimension_definition,
     offset_parameter_factor, point_lies_on_sketch_geometry, project_dimension_constraints,
     project_spatial_dimension_constraints, radial_dimension_definition,
-    remove_dimension_frame_relations, repeated_linear_dimension,
+    radial_locus_dimension_definition, remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_parallel_line_distance_matches, two_locus_distance_dimension,
     unique_radial_dimension_definition, unresolved_parameter_expression_dependency_count,
 };
@@ -2987,6 +2987,16 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
         Some(SketchConstraintDefinition::Radius { entity: ref actual, parameter: ref p })
             if actual == &entity.id && p == &radius_parameter
     ));
+    assert!(matches!(
+        radial_dimension_definition(
+            &entity,
+            "Radial Dimension-3",
+            0.5,
+            radius_parameter.clone(),
+        ),
+        Some(SketchConstraintDefinition::Radius { entity: ref actual, .. })
+            if actual == &entity.id
+    ));
     let diameter_parameter = cadmpeg_ir::features::ParameterId("parameter#diameter".into());
     assert!(matches!(
         radial_dimension_definition(
@@ -3058,6 +3068,68 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
         radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter,)
             .is_none()
     );
+}
+
+#[test]
+fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
+    let sketch = SketchId("f3d:model:sketch#radial-loci".into());
+    let point = |id: &str, u, v| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(u, v),
+        },
+    };
+    let circle = |id: &str, u, v, radius| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(u, v),
+            radius: Length(radius),
+        },
+    };
+    let center = point("center", 2.0, 3.0);
+    let annotation = point("annotation", 7.0, 3.0);
+    let measured = circle("measured", 2.0, 3.0, 5.0);
+    let other_center = circle("other-center", 20.0, 30.0, 5.0);
+    let other_radius = circle("other-radius", 2.0, 3.0, 7.0);
+    let all = [
+        center.clone(),
+        annotation.clone(),
+        measured.clone(),
+        other_center,
+        other_radius,
+    ];
+    let parameter = cadmpeg_ir::features::ParameterId("parameter#radial-loci".into());
+
+    assert!(matches!(
+        radial_locus_dimension_definition(
+            &[&measured, &annotation],
+            &all,
+            "Radial Dimension-2",
+            0.5,
+            &parameter,
+        ),
+        Some(SketchConstraintDefinition::Radius { entity, .. }) if entity == measured.id
+    ));
+    assert!(matches!(
+        radial_locus_dimension_definition(
+            &[&center],
+            &all,
+            "Diameter Dimension-2",
+            1.0,
+            &parameter,
+        ),
+        Some(SketchConstraintDefinition::Diameter { entity, .. }) if entity == measured.id
+    ));
 }
 
 #[test]
@@ -9472,6 +9544,9 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     };
     assert!(crate::design::feature_project::design_dimension_unit(
         &dimension("Linear Dimension-2", "mm")
+    ));
+    assert!(crate::design::feature_project::design_dimension_unit(
+        &dimension("Radial Dimension-3", "mm")
     ));
     assert!(!crate::design::feature_project::design_dimension_unit(
         &dimension("Linear Dimension-2", "deg")

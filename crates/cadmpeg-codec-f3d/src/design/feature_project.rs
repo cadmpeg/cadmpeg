@@ -1959,6 +1959,7 @@ pub(crate) fn design_dimension_unit(parameter: &DesignParameter) -> bool {
     let unit = parameter.unit.as_deref();
     if parameter.source_kind.starts_with("Linear Dimension")
         || parameter.source_kind.starts_with("Radius Dimension")
+        || parameter.source_kind.starts_with("Radial Dimension")
         || parameter.source_kind.starts_with("Diameter Dimension")
     {
         return unit.is_some_and(design_length_unit);
