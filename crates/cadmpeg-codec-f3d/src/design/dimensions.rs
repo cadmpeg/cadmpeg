@@ -789,48 +789,19 @@ fn project_all_dimension_constraints(
             })
         },
     ));
-    let governed_companions = pairs
+    let projected_parameters = constraints
         .iter()
-        .filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.governing_companion_record_index,
-            ))
-        })
-        .chain(groups.iter().filter_map(|group| {
-            Some((
-                native_stream(&group.id)?.to_owned(),
-                group.companion_record_index,
-            ))
-        }))
-        .chain(annotation_frames.iter().filter_map(|frame| {
-            Some((
-                native_stream(&frame.id)?.to_owned(),
-                frame.governing_companion_record_index,
-            ))
-        }))
-        .chain(null_pairs.iter().filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.governing_companion_record_index,
-            ))
-        }))
-        .chain(recipe_records.iter().filter_map(|record| {
-            Some((
-                native_stream(&record.id)?.to_owned(),
-                record.companion_record_index,
-            ))
-        }))
+        .flat_map(|constraint| constraint_parameters(&constraint.definition))
+        .cloned()
         .collect::<HashSet<_>>();
     constraints.extend(companions.iter().filter_map(|companion| {
         let scope = native_stream(&companion.id)?;
         let key = (scope.to_owned(), companion.record_index);
-        if governed_companions.contains(&key) {
-            return None;
-        }
         let owner = owners_by_companion.get(&key)?;
         let (parameter, parameter_id) = parameter_for(scope, companion.record_index)?;
-        if parameter.kind != DesignParameterKind::Dimension {
+        if parameter.kind != DesignParameterKind::Dimension
+            || projected_parameters.contains(&parameter_id)
+        {
             return None;
         }
         let sketch = sketches_by_scope

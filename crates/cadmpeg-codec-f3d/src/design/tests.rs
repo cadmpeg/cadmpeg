@@ -10800,6 +10800,31 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         constraint.definition,
         SketchConstraintDefinition::Parallel { .. }
     )));
+    let without_dimension_frame = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&relation_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &curves,
+            entities: &entities_with_refs,
+        },
+        &[],
+    );
+    assert_eq!(without_dimension_frame.len(), 2);
+    assert!(without_dimension_frame.iter().any(|constraint| matches!(
+        constraint.definition,
+        SketchConstraintDefinition::Native {
+            parameter: Some(_),
+            ..
+        }
+    )));
 
     let mut incompatible_unit = parameter.clone();
     incompatible_unit.unit = Some("deg".into());
