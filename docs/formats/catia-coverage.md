@@ -162,6 +162,10 @@ current scores require those matrices and representative fixtures.
   only when its unordered endpoint pair selects one candidate; edge reversal
   reverses the active parameter interval. These candidates seed empty endpoint
   domains but do not narrow independently established domains.
+- Same-incidence standard line and spline rows with one shared complete
+  bipartite endpoint relation bind equal vertex-allocation ranks to serialized
+  edge-row ranks. Line and spline rows remain separate curve families;
+  incomplete relations and cardinality mismatches remain unresolved.
 - A standard binary32 cylinder, cone, sphere, or torus face carrier is refined
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;

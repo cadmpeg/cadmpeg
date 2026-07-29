@@ -3876,6 +3876,19 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             })
             .collect::<Vec<_>>()
     };
+    let is_ranked_family =
+        |geometry: &crate::families::standard::records::StandardCurveGeometry| {
+            matches!(
+                geometry,
+                crate::families::standard::records::StandardCurveGeometry::Line
+                    | crate::families::standard::records::StandardCurveGeometry::Bspline
+            )
+        };
+    let same_ranked_family =
+        |left: &crate::families::standard::records::StandardCurveGeometry,
+         right: &crate::families::standard::records::StandardCurveGeometry| {
+            is_ranked_family(left) && std::mem::discriminant(left) == std::mem::discriminant(right)
+        };
     let normalized = normalize(candidates);
     let mut grouped = vec![false; supports.len()];
     for first in 0..supports.len() {
@@ -3995,10 +4008,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let normalized = normalize(candidates);
     for first in 0..supports.len() {
         if grouped[first]
-            || !matches!(
-                supports[first].geometry,
-                crate::families::standard::records::StandardCurveGeometry::Bspline
-            )
+            || !is_ranked_family(&supports[first].geometry)
             || normalized[first].len() < 4
         {
             continue;
@@ -4010,10 +4020,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
                 let mut candidate_faces = supports[*edge].faces;
                 candidate_faces.sort_unstable();
                 !grouped[*edge]
-                    && matches!(
-                        supports[*edge].geometry,
-                        crate::families::standard::records::StandardCurveGeometry::Bspline
-                    )
+                    && same_ranked_family(&supports[*edge].geometry, &supports[first].geometry)
                     && candidate_faces == faces
                     && normalized[*edge] == normalized[first]
             })
@@ -4136,10 +4143,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let normalized = normalize(candidates);
     for first in 0..supports.len() {
         if grouped[first]
-            || !matches!(
-                supports[first].geometry,
-                crate::families::standard::records::StandardCurveGeometry::Bspline
-            )
+            || !is_ranked_family(&supports[first].geometry)
             || normalized[first].len() < 2
         {
             continue;
@@ -4151,10 +4155,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
                 let mut candidate_faces = supports[*edge].faces;
                 candidate_faces.sort_unstable();
                 !grouped[*edge]
-                    && matches!(
-                        supports[*edge].geometry,
-                        crate::families::standard::records::StandardCurveGeometry::Bspline
-                    )
+                    && same_ranked_family(&supports[*edge].geometry, &supports[first].geometry)
                     && candidate_faces == faces
                     && normalized[*edge].len() >= 2
             })
@@ -7012,6 +7013,22 @@ mod route_tests {
             tag,
             faces: [3, 7],
             geometry: StandardCurveGeometry::Bspline,
+        });
+        let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
+        let mut candidates = [domain.clone(), domain];
+
+        bind_ordered_standard_curve_branches(&supports, &mut candidates);
+
+        assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
+    }
+
+    #[test]
+    fn standard_line_rows_bind_complete_bipartite_domains_by_allocation_rank() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Line,
         });
         let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
         let mut candidates = [domain.clone(), domain];
