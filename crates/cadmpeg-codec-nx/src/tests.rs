@@ -1349,9 +1349,23 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("sew bodies (1)"));
 
+    ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+        bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("base feature (1)"));
+
     assert_eq!(
         crate::decode::body_output_feature_family(&FeatureDefinition::DatumPointUnresolved),
         None
+    );
+    assert_eq!(
+        crate::decode::body_output_feature_family(&FeatureDefinition::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+        }),
+        Some("base feature")
     );
     assert_eq!(
         crate::decode::body_output_feature_family(&FeatureDefinition::Loft {

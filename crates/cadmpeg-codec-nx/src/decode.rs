@@ -7042,6 +7042,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
         }
         let family = match &feature.definition {
+            FeatureDefinition::BaseFeature { bodies } if body_selection_is_incomplete(bodies) => {
+                "base feature"
+            }
             FeatureDefinition::Block {
                 dimensions,
                 placement,
@@ -7387,6 +7390,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
 pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Option<&'static str> {
     match definition {
+        FeatureDefinition::BaseFeature { .. } => Some("base feature"),
         FeatureDefinition::Block { .. } => Some("block"),
         FeatureDefinition::ExtractBody { .. } => Some("extract body"),
         FeatureDefinition::Loft { .. } => Some("loft"),
