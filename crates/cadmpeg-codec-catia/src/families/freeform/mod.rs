@@ -74,6 +74,20 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
                 counts
             })
     });
+    let loop_metadata_counts = b5_graph.as_ref().map(|graph| {
+        graph.loops.values().fold([0usize; 5], |mut counts, loop_| {
+            let index = match loop_.metadata.framing_controls {
+                [0x03, 0x03] => 0,
+                [0x03, 0x05] => 1,
+                [0x05, 0x03] => 2,
+                [0x05, 0x05] => 3,
+                _ => unreachable!("the loop parser admits only controls 03 and 05"),
+            };
+            counts[index] += 1;
+            counts[4] += usize::from(loop_.metadata.extension.is_some());
+            counts
+        })
+    });
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
@@ -191,6 +205,25 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         coverage.insert(
             "typed_object_stream_vertex_incidence_terminal_control_04_count".to_string(),
             control_04,
+        );
+    }
+    if let Some([controls_03_03, controls_03_05, controls_05_03, controls_05_05, extended]) =
+        loop_metadata_counts
+    {
+        for (controls, count) in [
+            ("03_03", controls_03_03),
+            ("03_05", controls_03_05),
+            ("05_03", controls_05_03),
+            ("05_05", controls_05_05),
+        ] {
+            coverage.insert(
+                format!("resolved_object_stream_loop_framing_controls_{controls}_count"),
+                count,
+            );
+        }
+        coverage.insert(
+            "resolved_object_stream_extended_loop_metadata_count".to_string(),
+            extended,
         );
     }
     Some(FamilyOutput {

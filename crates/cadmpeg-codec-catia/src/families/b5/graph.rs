@@ -578,7 +578,7 @@ pub struct B5Face {
 
 /// A resolved `b5 03 62` loop node: payload `<0x80 + n_refs>
 /// (pcurve_ref edge_ref)* surface_ref` ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct B5Loop {
     /// This record's stream `object_id`.
     pub object_id: u32,
@@ -588,12 +588,51 @@ pub struct B5Loop {
     /// `object_id`s of the loop's member `b5 03 5e` edges, index-aligned
     /// with `pcurves`.
     pub edges: Vec<u32>,
-    /// Source-native reversal state for each edge occurrence.
-    pub edge_senses: Vec<bool>,
-    /// Source-native reversal state for each pcurve occurrence.
-    pub pcurve_senses: Vec<bool>,
+    /// Complete source-native framing, per-occurrence controls, and optional
+    /// numeric extension.
+    pub metadata: B5LoopMetadata,
     /// `object_id` of the loop's surface (the trailing reference token).
     pub surface: u32,
+}
+
+/// Complete metadata following a class-`62` loop's reference lanes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B5LoopMetadata {
+    /// Primary and secondary loop framing controls.
+    pub framing_controls: [u8; 2],
+    /// Three signed controls for each edge occurrence, in loop order.
+    pub edge_controls: Vec<[i16; 3]>,
+    /// Optional fixed-width numeric extension.
+    pub extension: Option<B5LoopMetadataExtension>,
+}
+
+/// Optional fixed-width numeric extension of a class-`62` loop.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B5LoopMetadataExtension {
+    /// Four finite binary64 fields in serialized order.
+    pub scalars: [f64; 4],
+    /// Exact admitted odd extension control.
+    pub control: u8,
+    /// Six finite binary32 fields in serialized order.
+    pub floats: [f32; 6],
+}
+
+impl B5Loop {
+    pub(crate) fn edge_senses(&self) -> Vec<bool> {
+        self.metadata
+            .edge_controls
+            .iter()
+            .map(|controls| controls[0] == -1)
+            .collect()
+    }
+
+    pub(crate) fn pcurve_senses(&self) -> Vec<bool> {
+        self.metadata
+            .edge_controls
+            .iter()
+            .map(|controls| controls[2] == -1)
+            .collect()
+    }
 }
 
 /// Resolve the dominant object-stream topology graph through inline object ids.
@@ -1770,16 +1809,17 @@ fn vertex_coordinate(points: &[[f64; 3]], logical_points: &[[f64; 3]], index: us
 }
 
 pub(crate) fn loop_chain_closes(loop_: &B5Loop, edge_vertices: &BTreeMap<u32, [usize; 2]>) -> bool {
-    if loop_.edges.is_empty() || loop_.edges.len() != loop_.edge_senses.len() {
+    let edge_senses = loop_.edge_senses();
+    if loop_.edges.is_empty() || loop_.edges.len() != edge_senses.len() {
         return false;
     }
     let Some(first) = edge_vertices.get(&loop_.edges[0]) else {
         return false;
     };
-    let first_reversed = usize::from(loop_.edge_senses[0]);
+    let first_reversed = usize::from(edge_senses[0]);
     let initial = first[first_reversed];
     let mut current = first[1 - first_reversed];
-    for (edge, reversed) in loop_.edges[1..].iter().zip(&loop_.edge_senses[1..]) {
+    for (edge, reversed) in loop_.edges[1..].iter().zip(&edge_senses[1..]) {
         let Some(endpoints) = edge_vertices.get(edge) else {
             return false;
         };
@@ -3823,7 +3863,7 @@ fn parse_loop(
     implicit_pcurves: &BTreeMap<u32, u32>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Loop> {
-    let (references, edge_senses, pcurve_senses) = loop_references_and_senses(record)?;
+    let (references, metadata) = loop_references_and_metadata(record)?;
     let count = references.len();
     let surface = *references.last()?;
     if !surfaces.contains_key(&surface) {
@@ -3846,17 +3886,16 @@ fn parse_loop(
         object_id: record.object_id,
         pcurves,
         edges,
-        edge_senses,
-        pcurve_senses,
+        metadata,
         surface,
     })
 }
 
 fn loop_references(record: &B5Record) -> Option<Vec<u32>> {
-    loop_references_and_senses(record).map(|(references, _, _)| references)
+    loop_references_and_metadata(record).map(|(references, _)| references)
 }
 
-fn loop_references_and_senses(record: &B5Record) -> Option<(Vec<u32>, Vec<bool>, Vec<bool>)> {
+fn loop_references_and_metadata(record: &B5Record) -> Option<(Vec<u32>, B5LoopMetadata)> {
     (record.class == 0x62).then_some(())?;
     let mut position = 0;
     let count = counted_cardinality(&record.payload, &mut position)?;
@@ -3870,11 +3909,11 @@ fn loop_references_and_senses(record: &B5Record) -> Option<(Vec<u32>, Vec<bool>,
     if counted_cardinality(&record.payload, &mut position)? != edge_count {
         return None;
     }
-    let (edge_senses, pcurve_senses) = loop_metadata(record.payload.get(position..)?, edge_count)?;
-    Some((references, edge_senses, pcurve_senses))
+    let metadata = loop_metadata(record.payload.get(position..)?, edge_count)?;
+    Some((references, metadata))
 }
 
-fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(Vec<bool>, Vec<bool>)> {
+fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<B5LoopMetadata> {
     let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
     let controls_end = 3usize.checked_add(controls_len)?;
     if !matches!(bytes.first(), Some(0x03 | 0x05))
@@ -3883,21 +3922,22 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(Vec<bool>, Vec<bool
     {
         return None;
     }
-    let mut edge_senses = Vec::with_capacity(edge_count);
-    let mut pcurve_senses = Vec::with_capacity(edge_count);
-    for (index, bytes) in bytes[3..controls_end].chunks_exact(2).enumerate() {
-        let control = i16::from_le_bytes([bytes[0], bytes[1]]);
-        if !matches!(control, -1 | 1) {
-            return None;
-        }
-        if index % 3 == 0 {
-            edge_senses.push(control == -1);
-        } else if index % 3 == 2 {
-            pcurve_senses.push(control == -1);
-        }
-    }
-    match bytes.get(controls_end..)? {
-        [0x01] => {}
+    let edge_controls = bytes[3..controls_end]
+        .chunks_exact(6)
+        .map(|controls| {
+            let controls = [
+                i16::from_le_bytes(controls[0..2].try_into().ok()?),
+                i16::from_le_bytes(controls[2..4].try_into().ok()?),
+                i16::from_le_bytes(controls[4..6].try_into().ok()?),
+            ];
+            controls
+                .iter()
+                .all(|control| matches!(control, -1 | 1))
+                .then_some(controls)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let extension = match bytes.get(controls_end..)? {
+        [0x01] => None,
         extended
             if extended.len() == 62
                 && extended[0] == 0x0d
@@ -3905,33 +3945,38 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(Vec<bool>, Vec<bool
                 && extended[35] & 1 == 1
                 && extended.get(36..38) == Some(&[0x05, 0x01]) =>
         {
-            let scalar_bits: [u64; 4] = std::array::from_fn(|index| {
-                u64::from_le_bytes(
+            let scalars: [f64; 4] = std::array::from_fn(|index| {
+                f64::from_le_bytes(
                     extended[1 + index * 8..9 + index * 8]
                         .try_into()
                         .expect("checked extended loop scalar extent"),
                 )
             });
-            let float_bits: [u32; 6] = std::array::from_fn(|index| {
-                u32::from_le_bytes(
+            let floats: [f32; 6] = std::array::from_fn(|index| {
+                f32::from_le_bytes(
                     extended[38 + index * 4..42 + index * 4]
                         .try_into()
                         .expect("checked extended loop float extent"),
                 )
             });
-            if scalar_bits
-                .iter()
-                .any(|bits| !f64::from_bits(*bits).is_finite())
-                || float_bits
-                    .iter()
-                    .any(|bits| !f32::from_bits(*bits).is_finite())
+            if scalars.iter().any(|value| !value.is_finite())
+                || floats.iter().any(|value| !value.is_finite())
             {
                 return None;
             }
+            Some(B5LoopMetadataExtension {
+                scalars,
+                control: extended[35],
+                floats,
+            })
         }
         _ => return None,
-    }
-    Some((edge_senses, pcurve_senses))
+    };
+    Some(B5LoopMetadata {
+        framing_controls: [bytes[0], bytes[1]],
+        edge_controls,
+        extension,
+    })
 }
 
 fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
@@ -3977,6 +4022,14 @@ mod tests {
         }
     }
 
+    fn test_loop_metadata(edge_count: usize) -> B5LoopMetadata {
+        B5LoopMetadata {
+            framing_controls: [0x05, 0x05],
+            edge_controls: vec![[1, 1, 1]; edge_count],
+            extension: None,
+        }
+    }
+
     fn extended_loop_metadata(metadata_control: u8) -> Vec<u8> {
         let mut bytes = vec![0x03, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00];
         bytes.push(0x0d);
@@ -3998,14 +4051,25 @@ mod tests {
         ];
         assert_eq!(
             loop_metadata(&base, 2),
-            Some((vec![false, true], vec![false, true]))
+            Some(B5LoopMetadata {
+                framing_controls: [0x05, 0x05],
+                edge_controls: vec![[1, -1, 1], [-1, 1, -1]],
+                extension: None,
+            })
         );
 
         for metadata_control in [0x05, 0x09, 0x21, 0x41, 0x71] {
             let extended = extended_loop_metadata(metadata_control);
+            let metadata = loop_metadata(&extended, 1).expect("complete extended metadata");
+            assert_eq!(metadata.framing_controls, [0x03, 0x05]);
+            assert_eq!(metadata.edge_controls, [[1, -1, 1]]);
             assert_eq!(
-                loop_metadata(&extended, 1),
-                Some((vec![false], vec![false]))
+                metadata.extension,
+                Some(B5LoopMetadataExtension {
+                    scalars: [1.0, -2.0, 3.5, 4.25],
+                    control: metadata_control,
+                    floats: [1.0, -2.0, 3.5, 4.25, 5.5, -6.75],
+                })
             );
         }
 
@@ -4013,10 +4077,11 @@ mod tests {
             0x05, 0x03, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0xff,
             0xff, 0x01,
         ];
-        assert_eq!(
-            loop_metadata(&alternate_framing_control, 2),
-            Some((vec![false, true], vec![false, true]))
-        );
+        let metadata =
+            loop_metadata(&alternate_framing_control, 2).expect("alternate framing control");
+        assert_eq!(metadata.framing_controls, [0x05, 0x03]);
+        assert_eq!(metadata.edge_controls, [[1, -1, 1], [-1, 1, -1]]);
+        assert_eq!(metadata.extension, None);
     }
 
     #[test]
@@ -4031,11 +4096,10 @@ mod tests {
                 0x01,
             ],
         };
-        let (references, edge_senses, pcurve_senses) =
-            loop_references_and_senses(&record).expect("exact loop payload");
+        let (references, metadata) =
+            loop_references_and_metadata(&record).expect("exact loop payload");
         assert_eq!(references, [9, 10, 11]);
-        assert_eq!(edge_senses, [false]);
-        assert_eq!(pcurve_senses, [false]);
+        assert_eq!(metadata.edge_controls, [[1, -1, 1]]);
 
         let mut mismatched = record.clone();
         mismatched.payload[4] = 0x82;
@@ -4479,8 +4543,7 @@ mod tests {
             object_id: 1,
             pcurves: vec![2],
             edges: vec![3],
-            edge_senses: vec![false],
-            pcurve_senses: vec![false],
+            metadata: test_loop_metadata(1),
             surface: 4,
         };
 
@@ -4494,14 +4557,14 @@ mod tests {
             object_id: 1,
             pcurves: vec![4, 5, 6],
             edges: vec![1, 2, 3],
-            edge_senses: vec![false, true, false],
-            pcurve_senses: vec![false; 3],
+            metadata: test_loop_metadata(3),
             surface: 7,
         };
+        loop_.metadata.edge_controls[1][0] = -1;
         let edge_vertices = BTreeMap::from([(1, [0, 1]), (2, [2, 1]), (3, [2, 0])]);
         assert!(loop_chain_closes(&loop_, &edge_vertices));
 
-        loop_.edge_senses[1] = false;
+        loop_.metadata.edge_controls[1][0] = 1;
         assert!(!loop_chain_closes(&loop_, &edge_vertices));
     }
 
@@ -4511,8 +4574,7 @@ mod tests {
             object_id: 1,
             pcurves: vec![2],
             edges: vec![3],
-            edge_senses: vec![false],
-            pcurve_senses: vec![false],
+            metadata: test_loop_metadata(1),
             surface: 4,
         };
         assert_eq!(
@@ -4530,8 +4592,7 @@ mod tests {
                     object_id: 1,
                     pcurves: vec![10],
                     edges: vec![20],
-                    edge_senses: vec![false],
-                    pcurve_senses: vec![false],
+                    metadata: test_loop_metadata(1),
                     surface: 30,
                 },
             ),
@@ -4541,8 +4602,7 @@ mod tests {
                     object_id: 2,
                     pcurves: vec![11],
                     edges: vec![20],
-                    edge_senses: vec![false],
-                    pcurve_senses: vec![false],
+                    metadata: test_loop_metadata(1),
                     surface: 31,
                 },
             ),
@@ -4552,8 +4612,7 @@ mod tests {
                     object_id: 3,
                     pcurves: vec![12],
                     edges: vec![21],
-                    edge_senses: vec![false],
-                    pcurve_senses: vec![false],
+                    metadata: test_loop_metadata(1),
                     surface: 32,
                 },
             ),

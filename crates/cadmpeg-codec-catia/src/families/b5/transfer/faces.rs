@@ -167,7 +167,7 @@ pub(super) fn orient_loop_members(
         let member_count = graph.loops[&loop_id].edges.len();
         let flip = flips[node]?;
         let mut member_order: Vec<usize> = (0..member_count).collect();
-        let mut pcurve_reversed = graph.loops[&loop_id].pcurve_senses.clone();
+        let mut pcurve_reversed = graph.loops[&loop_id].pcurve_senses();
         if pcurve_reversed.len() != member_count {
             return None;
         }

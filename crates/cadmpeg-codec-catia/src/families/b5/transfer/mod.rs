@@ -328,7 +328,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         if !loop_chain_closes(loop_, &graph.edge_vertices) {
             return None;
         }
-        loop_senses.insert(loop_.object_id, loop_.edge_senses.clone());
+        loop_senses.insert(loop_.object_id, loop_.edge_senses());
         for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
             let Some(pcurve) = graph.pcurves.get(&pcurve_id) else {
                 if let Some(opaque) = graph
@@ -1018,7 +1018,7 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::super::graph::{
         loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop,
-        B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile,
+        B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile,
         B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
     };
     use super::edges::{
@@ -1082,6 +1082,14 @@ mod tests {
         );
         pcurve.parameter_range = Some([-1.0, 8.0]);
         assert_eq!(native_pcurve_parameter_range(&pcurve, &knots), None);
+    }
+
+    fn test_loop_metadata(edge_count: usize) -> B5LoopMetadata {
+        B5LoopMetadata {
+            framing_controls: [0x05, 0x05],
+            edge_controls: vec![[1, 1, 1]; edge_count],
+            extension: None,
+        }
     }
 
     #[test]
@@ -1228,7 +1236,7 @@ mod tests {
 
     #[test]
     fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
-        let graph = B5Graph {
+        let mut graph = B5Graph {
             complete: true,
             faces: vec![B5Face {
                 object_id: 1,
@@ -1242,8 +1250,7 @@ mod tests {
                     object_id: 2,
                     pcurves: vec![20, 20, 20],
                     edges: vec![30, 31, 32],
-                    edge_senses: vec![false; 3],
-                    pcurve_senses: vec![false, true, false],
+                    metadata: test_loop_metadata(3),
                     surface: 10,
                 },
             )]),
@@ -1320,6 +1327,12 @@ mod tests {
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
         };
+        graph
+            .loops
+            .get_mut(&2)
+            .expect("required loop")
+            .metadata
+            .edge_controls[1][2] = -1;
         let mut ir = CadIr::empty(Units::default());
 
         assert!(transfer(
@@ -1575,8 +1588,7 @@ mod tests {
                     object_id: 2,
                     pcurves: vec![4],
                     edges: vec![3],
-                    edge_senses: vec![false],
-                    pcurve_senses: vec![false],
+                    metadata: test_loop_metadata(1),
                     surface: 10,
                 },
             )]),
@@ -1630,8 +1642,7 @@ mod tests {
                 object_id: 6,
                 pcurves: vec![8],
                 edges: vec![7],
-                edge_senses: vec![false],
-                pcurve_senses: vec![false],
+                metadata: test_loop_metadata(1),
                 surface: 10,
             },
         );
@@ -1678,8 +1689,7 @@ mod tests {
         let loop_ = |object_id: u32, edges: Vec<u32>| B5Loop {
             object_id,
             pcurves: vec![0; edges.len()],
-            edge_senses: vec![false; edges.len()],
-            pcurve_senses: vec![false; edges.len()],
+            metadata: test_loop_metadata(edges.len()),
             edges,
             surface: 10,
         };
@@ -1710,7 +1720,8 @@ mod tests {
             .loops
             .get_mut(&2)
             .expect("required loop")
-            .pcurve_senses = vec![false, true, false];
+            .metadata
+            .edge_controls[1][2] = -1;
         let orientation = orient_loop_members(
             &graph,
             BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
@@ -1750,8 +1761,7 @@ mod tests {
                     object_id: 1,
                     pcurves: vec![2],
                     edges: vec![3],
-                    edge_senses: vec![false],
-                    pcurve_senses: vec![false],
+                    metadata: test_loop_metadata(1),
                     surface: 4,
                 },
             )]),
@@ -2564,8 +2574,7 @@ mod tests {
                     object_id: 3,
                     pcurves: vec![4, 4, 4],
                     edges: vec![5, 6, 7],
-                    edge_senses: vec![false; 3],
-                    pcurve_senses: vec![false; 3],
+                    metadata: test_loop_metadata(3),
                     surface: 2,
                 },
             )]),
@@ -2620,7 +2629,7 @@ mod tests {
 
         assert!(ownership_plan(&graph).is_some());
         assert!(loop_chain_closes(&graph.loops[&3], &graph.edge_vertices));
-        let senses = graph.loops[&3].edge_senses.clone();
+        let senses = graph.loops[&3].edge_senses();
         assert!(orient_loop_members(&graph, BTreeMap::from([(3, senses)])).is_some());
         let plan = build_plan(&graph, &payload).expect("complete owned graph");
 
