@@ -29318,6 +29318,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut unresolved_fillet_edge_selection_feature_count = 0;
     let mut native_fillet_edge_selection_feature_count = 0;
     let mut unresolved_fillet_radius_feature_count = 0;
+    let mut unresolved_fillet_radius_without_generated_surface_feature_count = 0;
+    let mut unresolved_fillet_radius_with_generated_surface_feature_count = 0;
     let mut variable_radius_fillet_feature_count = 0;
     let mut chamfer_feature_count = 0;
     let mut incomplete_chamfer_feature_count = 0;
@@ -29520,9 +29522,24 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                         }
                     )
                 });
+                let has_generated_surface = feature
+                    .id
+                    .as_str()
+                    .strip_prefix("creo:model:feature#")
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .is_some_and(|feature_id| {
+                        scan.surfaces
+                            .rows
+                            .iter()
+                            .any(|row| row.feature_id == feature_id)
+                    });
                 unresolved_fillet_edge_selection_feature_count += usize::from(unresolved_edges);
                 native_fillet_edge_selection_feature_count += usize::from(native_edges);
                 unresolved_fillet_radius_feature_count += usize::from(unresolved_radius);
+                unresolved_fillet_radius_without_generated_surface_feature_count +=
+                    usize::from(unresolved_radius && !has_generated_surface);
+                unresolved_fillet_radius_with_generated_surface_feature_count +=
+                    usize::from(unresolved_radius && has_generated_surface);
                 variable_radius_fillet_feature_count += usize::from(variable_radius);
                 incomplete_fillet_feature_count +=
                     usize::from(unresolved_edges || native_edges || unresolved_radius);
@@ -29846,6 +29863,14 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_unresolved_fillet_radius_feature_count".to_string(),
         unresolved_fillet_radius_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_fillet_radius_without_generated_surface_feature_count".to_string(),
+        unresolved_fillet_radius_without_generated_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_fillet_radius_with_generated_surface_feature_count".to_string(),
+        unresolved_fillet_radius_with_generated_surface_feature_count,
     );
     coverage.insert(
         "transferred_variable_radius_fillet_feature_count".to_string(),

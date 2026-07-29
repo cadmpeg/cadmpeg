@@ -2947,6 +2947,16 @@ fn decode_types_class_913_without_an_edge_array() {
         1
     );
     assert_eq!(
+        result.report.coverage
+            ["transferred_unresolved_fillet_radius_without_generated_surface_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage
+            ["transferred_unresolved_fillet_radius_with_generated_surface_feature_count"],
+        1
+    );
+    assert_eq!(
         result.report.coverage["untransferred_visible_plane_surface_row_count"],
         1
     );
@@ -3111,6 +3121,16 @@ fn decode_types_named_german_round_without_a_schema_row() {
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
         }])
     ));
+    assert_eq!(
+        result.report.coverage
+            ["transferred_unresolved_fillet_radius_without_generated_surface_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage
+            ["transferred_unresolved_fillet_radius_with_generated_surface_feature_count"],
+        0
+    );
 }
 
 #[test]

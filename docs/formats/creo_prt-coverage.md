@@ -200,6 +200,9 @@ fixtures, claims above L1 remain unproven.
    native placement faces, direction, kind, diameter, and incomplete
    termination operands. Fillet and chamfer coverage partitions unresolved and
    native edge selections from unresolved radius or dimensional specifications.
+   Unresolved fillet radii are further partitioned by whether the feature owns
+   any generated surface row, separating absent radius carriers from generated
+   carriers whose radius proof is incomplete.
    Draft coverage
    partitions unresolved and native face selections and neutral planes, pull
    direction, angle, outward sense, and wholly unresolved definitions. A
