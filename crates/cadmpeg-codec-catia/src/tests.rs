@@ -5967,6 +5967,20 @@ fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
         )
         .expect("remove owning consolidated group");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
+
+    let mut two_groups = b2_embedded_cylinder_stream();
+    two_groups.extend_from_slice(&b2_embedded_cylinder_stream());
+    let mut invalid = crate::native::CatiaNative::decode(&two_groups);
+    assert_eq!(invalid.consolidated_groups.len(), 2);
+    assert_eq!(invalid.consolidated_embedded_cylinders.len(), 2);
+    invalid.consolidated_embedded_cylinders[1]
+        .group
+        .clone_from(&invalid.consolidated_groups[0].id);
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store cross-group embedded cylinder");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
 #[test]

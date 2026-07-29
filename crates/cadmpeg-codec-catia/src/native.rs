@@ -4674,7 +4674,13 @@ fn validate_consolidated_embedded_cylinders(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let groups = groups
         .iter()
-        .map(|group| (group.id.as_str(), group))
+        .enumerate()
+        .map(|(index, group)| {
+            (
+                group.id.as_str(),
+                (group, groups.get(index + 1).map(|next| next.byte_offset)),
+            )
+        })
         .collect::<HashMap<_, _>>();
     for (index, cylinder) in cylinders.iter().enumerate() {
         let squared_length =
@@ -4682,9 +4688,14 @@ fn validate_consolidated_embedded_cylinders(
         let dot = |first: [f64; 3], second: [f64; 3]| {
             first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
         };
-        let group_valid = groups
-            .get(cylinder.group.as_str())
-            .is_some_and(|group| group.group_type == 3 && group.byte_offset < cylinder.byte_offset);
+        let group_valid =
+            groups
+                .get(cylinder.group.as_str())
+                .is_some_and(|(group, next_offset)| {
+                    group.group_type == 3
+                        && group.byte_offset < cylinder.byte_offset
+                        && next_offset.is_none_or(|next| cylinder.byte_offset < next)
+                });
         if cylinder.id != format!("catia:consolidated:embedded-cylinder#{index}")
             || !group_valid
             || !cylinder
