@@ -20,9 +20,11 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 196;
+pub const CATIA_NATIVE_VERSION: u32 = 197;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
+#[cfg(test)]
+const CATIA_UNASSIGNED_OWNER_SLOT_VERSION: u32 = 197;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1405,6 +1407,9 @@ pub struct CatiaObjectRecord {
     pub inline_body: Option<Vec<u8>>,
     /// Head role identifying the owner by stored entity identity.
     pub owner_entity_id: Option<u32>,
+    /// Literal value occupying a structurally assigned owner slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unassigned_owner_slot: Option<u8>,
     /// Head role identifying the per-file class ordinal.
     pub class_ref: Option<u32>,
     /// UTF-8 class name resolved through the graph's schema catalog.
@@ -6726,7 +6731,13 @@ impl CatiaNative {
             }
         }
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
-        let records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
+        let mut records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
+        if namespace.version < CATIA_UNASSIGNED_OWNER_SLOT_VERSION {
+            for record in &mut records {
+                record.unassigned_owner_slot =
+                    object_graph::head_roles(record.lead, &record.head).1;
+            }
+        }
         let entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
         let graph_ids = graphs
             .iter()
@@ -6928,6 +6939,7 @@ impl CatiaNative {
                 )));
             }
             for (ordinal, record) in graph.records.iter().enumerate() {
+                let expected_head_roles = object_graph::head_roles(record.lead, &record.head);
                 let expected_design_object = record
                     .owner_entity_id
                     .map(|owner| design_object_id(graph.byte_offset, owner));
@@ -6939,6 +6951,12 @@ impl CatiaNative {
                     &record_indices,
                 );
                 if usize::try_from(record.ordinal).ok() != Some(ordinal)
+                    || (
+                        record.owner_entity_id,
+                        record.unassigned_owner_slot,
+                        record.class_ref,
+                        record.storage_ref,
+                    ) != expected_head_roles
                     || record.design_object != expected_design_object
                     || record.entity_record != paired_entity.map(|entity| entity.id.clone())
                     || record.entity_id != paired_entity.map(|entity| entity.entity_id)
@@ -7673,6 +7691,7 @@ fn native_object_graph(
                 head: record.head,
                 inline_body: record.inline_body,
                 owner_entity_id: record.owner_ref,
+                unassigned_owner_slot: record.owner_literal,
                 class_ref: record.class_ref,
                 class_name: record.class_name,
                 class_entry: None,

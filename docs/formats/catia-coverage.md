@@ -40,7 +40,8 @@ current scores require those matrices and representative fixtures.
   extent order.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
-  occurrences.
+  occurrences. A literal occupying an assigned owner slot remains distinct
+  from both a reference owner and a head without an owner role.
 - Complete two-definition value chains retain the repeated schema selector,
   second role definition, catalog-resolved selected value, and structural
   ownership. Each design object retains its chain-value entity identities in

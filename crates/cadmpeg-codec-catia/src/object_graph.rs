@@ -39,6 +39,8 @@ pub struct ObjectRecord {
     pub inline_body: Option<Vec<u8>>,
     /// First head reference, identifying the owner by stored entity identity.
     pub owner_ref: Option<u32>,
+    /// Literal value occupying a structurally assigned owner slot.
+    pub owner_literal: Option<u8>,
     /// Second head reference, identifying the per-file class.
     pub class_ref: Option<u32>,
     /// UTF-8 class name at `class_ref` in the associated schema catalog.
@@ -505,108 +507,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             *head_bytes.first()?
         };
         let head = decode_head(head_bytes);
-        let separator_roles = matches!(head.get(1), Some(HeadToken::Separator));
-        let extended_role_count = extended_compact_role_count(&head);
-        let null_lane_roles = matches!(
-            head.as_slice(),
-            [
-                HeadToken::Lead(0x1a),
-                HeadToken::Reference(_),
-                HeadToken::Reference(0),
-                HeadToken::NullHandle,
-                HeadToken::Reference(owner),
-            ] if *owner != 0
-        ) || matches!(
-            head.as_slice(),
-            [
-                HeadToken::Lead(0x1a),
-                HeadToken::Reference(_),
-                HeadToken::Reference(0),
-                HeadToken::NullHandle,
-                HeadToken::Reference(0),
-                HeadToken::Reference(_),
-                HeadToken::Literal(0),
-                HeadToken::Literal(0),
-            ]
-        ) || matches!(
-            head.as_slice(),
-            [
-                HeadToken::Lead(0x1a),
-                HeadToken::Reference(_),
-                HeadToken::Reference(0),
-                HeadToken::NullHandle,
-                HeadToken::Reference(0),
-                HeadToken::Reference(_) | HeadToken::Literal(_),
-                HeadToken::Literal(20 | 21 | 22 | 23 | 26 | 27 | 28),
-                HeadToken::Literal(0),
-                HeadToken::Literal(0),
-            ]
-        );
-        let terminal_null_lane_roles = matches!(
-            head.as_slice(),
-            [
-                HeadToken::Lead(0x5a),
-                HeadToken::Reference(_),
-                HeadToken::Reference(0),
-                HeadToken::NullHandle,
-                HeadToken::Reference(owner),
-                HeadToken::Reference(3),
-            ] if *owner != 0
-        );
-        let terminal_lane_roles = matches!(
-            head.as_slice(),
-            [
-                HeadToken::Lead(0x56),
-                HeadToken::Reference(_),
-                HeadToken::Reference(_),
-                HeadToken::Reference(owner),
-                HeadToken::Reference(3),
-            ] if *owner != 0
-        );
-        let fixed_role_count = match lead {
-            0x02 => 1,
-            0x12 => 2,
-            0x16 | 0x52 => 3,
-            _ => 0,
-        };
-        let fixed_roles = fixed_role_count != 0 && head.len() == fixed_role_count + 1;
-        let (owner_index, class_index, storage_index, class_first) = if separator_roles {
-            (Some(2), Some(3), Some(4), false)
-        } else if null_lane_roles || terminal_null_lane_roles {
-            (Some(4), Some(1), Some(2), true)
-        } else if terminal_lane_roles {
-            (Some(3), Some(1), Some(2), true)
-        } else if extended_role_count.is_some() || fixed_roles {
-            match lead {
-                0x02 => (Some(1), None, None, false),
-                0x12 => (
-                    Some(1),
-                    (extended_role_count != Some(1)).then_some(2),
-                    None,
-                    false,
-                ),
-                0x16 | 0x56 => (Some(3), Some(1), Some(2), true),
-                0x52 => (Some(1), Some(2), Some(3), false),
-                _ => (None, None, None, false),
-            }
-        } else {
-            (None, None, None, false)
-        };
-        let role_reference = |index: Option<usize>| match index.and_then(|index| head.get(index)) {
-            Some(HeadToken::Reference(value)) => Some(*value),
-            _ => None,
-        };
-        let (owner_ref, class_ref, storage_ref) = if class_first {
-            let class_ref = role_reference(class_index);
-            let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
-            let owner_ref = storage_ref.and_then(|_| role_reference(owner_index));
-            (owner_ref, class_ref, storage_ref)
-        } else {
-            let owner_ref = role_reference(owner_index);
-            let class_ref = owner_ref.and_then(|_| role_reference(class_index));
-            let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
-            (owner_ref, class_ref, storage_ref)
-        };
+        let (owner_ref, owner_literal, class_ref, storage_ref) = head_roles(lead, &head);
         let repeated_reference_suffix = repeated_reference_suffix(&payload);
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
@@ -617,6 +518,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             head,
             inline_body,
             owner_ref,
+            owner_literal,
             class_ref,
             class_name: None,
             storage_ref,
@@ -632,6 +534,119 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         catalog_pos: None,
         records,
     })
+}
+
+pub(crate) fn head_roles(
+    lead: u8,
+    head: &[HeadToken],
+) -> (Option<u32>, Option<u8>, Option<u32>, Option<u32>) {
+    let separator_roles = matches!(head.get(1), Some(HeadToken::Separator));
+    let extended_role_count = extended_compact_role_count(head);
+    let null_lane_roles = matches!(
+        head,
+        [
+            HeadToken::Lead(0x1a),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(owner),
+        ] if *owner != 0
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x1a),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ]
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x1a),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_),
+            HeadToken::Literal(20 | 21 | 22 | 23 | 26 | 27 | 28),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ]
+    );
+    let terminal_null_lane_roles = matches!(
+        head,
+        [
+            HeadToken::Lead(0x5a),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(owner),
+            HeadToken::Reference(3),
+        ] if *owner != 0
+    );
+    let terminal_lane_roles = matches!(
+        head,
+        [
+            HeadToken::Lead(0x56),
+            HeadToken::Reference(_),
+            HeadToken::Reference(_),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(3),
+        ] if *owner != 0
+    );
+    let fixed_role_count = match lead {
+        0x02 => 1,
+        0x12 => 2,
+        0x16 | 0x52 => 3,
+        _ => 0,
+    };
+    let fixed_roles = fixed_role_count != 0 && head.len() == fixed_role_count + 1;
+    let (owner_index, class_index, storage_index, class_first) = if separator_roles {
+        (Some(2), Some(3), Some(4), false)
+    } else if null_lane_roles || terminal_null_lane_roles {
+        (Some(4), Some(1), Some(2), true)
+    } else if terminal_lane_roles {
+        (Some(3), Some(1), Some(2), true)
+    } else if extended_role_count.is_some() || fixed_roles {
+        match lead {
+            0x02 => (Some(1), None, None, false),
+            0x12 => (
+                Some(1),
+                (extended_role_count != Some(1)).then_some(2),
+                None,
+                false,
+            ),
+            0x16 | 0x56 => (Some(3), Some(1), Some(2), true),
+            0x52 => (Some(1), Some(2), Some(3), false),
+            _ => (None, None, None, false),
+        }
+    } else {
+        (None, None, None, false)
+    };
+    let role_reference = |index: Option<usize>| match index.and_then(|index| head.get(index)) {
+        Some(HeadToken::Reference(value)) => Some(*value),
+        _ => None,
+    };
+    let role_literal = |index: Option<usize>| match index.and_then(|index| head.get(index)) {
+        Some(HeadToken::Literal(value)) => Some(*value),
+        _ => None,
+    };
+    if class_first {
+        let class_ref = role_reference(class_index);
+        let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
+        let owner_ref = storage_ref.and_then(|_| role_reference(owner_index));
+        let owner_literal = storage_ref.and_then(|_| role_literal(owner_index));
+        (owner_ref, owner_literal, class_ref, storage_ref)
+    } else {
+        let owner_ref = role_reference(owner_index);
+        let class_ref = owner_ref.and_then(|_| role_reference(class_index));
+        let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
+        (owner_ref, None, class_ref, storage_ref)
+    }
 }
 
 fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
