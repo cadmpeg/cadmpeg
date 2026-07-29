@@ -408,9 +408,10 @@ pub struct FeatureEntityTableEntry {
     pub class_id: u32,
     /// Source section entity identifier carried by class `200` entries.
     pub source_entity_id: Option<u32>,
-    /// Related entity identifier carried by class `219` and `2017` entries.
+    /// Related entity identifier carried by class `210`, `214`, `219`, and
+    /// `2017` entries.
     pub related_entity_id: Option<u32>,
-    /// One-byte state following a class `219` or `2017` related entity.
+    /// One-byte state following a related entity.
     pub related_entity_state: Option<u8>,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
@@ -7539,12 +7540,12 @@ fn read_entries(
                     Ok((order, after_order)) => (Some(order), None, None, after_order),
                     Err(_) => (None, None, None, after_class),
                 }
-            } else if matches!(class_id, 219 | 2017) {
+            } else if matches!(class_id, 210 | 214 | 219 | 2017) {
                 match psb::reference_id(payload, after_class) {
                     Ok((related, after_related))
                         if matches!(
                             (class_id, payload.get(after_related)),
-                            (219 | 2017, Some(&0)) | (2017, Some(&1))
+                            (210 | 214 | 219 | 2017, Some(&0)) | (2017, Some(&1))
                         ) =>
                     {
                         (
@@ -7734,6 +7735,28 @@ mod tests {
         assert_eq!(entries[0].related_entity_id, Some(5264));
         assert_eq!(entries[0].related_entity_state, Some(1));
         assert_eq!(entries[0].end_offset, 7);
+    }
+
+    #[test]
+    fn class_210_generated_entry_retains_its_nonvisible_entity_link() {
+        let payload = [0x85, 0xb7, 0x80, 0xd2, 0x85, 0x59, 0, 0xe3];
+        let entries = read_entries(&payload, 0, 1).expect("class-210 generated entry");
+
+        assert_eq!(entries[0].entity_id, 1463);
+        assert_eq!(entries[0].class_id, 210);
+        assert_eq!(entries[0].related_entity_id, Some(1369));
+        assert_eq!(entries[0].related_entity_state, Some(0));
+    }
+
+    #[test]
+    fn class_214_generated_entry_retains_its_related_entity() {
+        let payload = [0x85, 0x49, 0x80, 0xd6, 0x80, 0xb8, 0, 0xe3];
+        let entries = read_entries(&payload, 0, 1).expect("class-214 generated entry");
+
+        assert_eq!(entries[0].entity_id, 1353);
+        assert_eq!(entries[0].class_id, 214);
+        assert_eq!(entries[0].related_entity_id, Some(184));
+        assert_eq!(entries[0].related_entity_state, Some(0));
     }
 
     #[test]
