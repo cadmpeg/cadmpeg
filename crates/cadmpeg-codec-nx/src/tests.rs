@@ -5975,6 +5975,14 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             parameter,
         )
         .expect("charted tolerant intersection evaluates");
+        let inverted = cadmpeg_ir::eval::model_curve_parameter_near_point(
+            &ir,
+            &ir.model.procedural_curves[0].curve,
+            evaluated,
+            parameter,
+        )
+        .expect("charted tolerant intersection inverts");
+        assert!((inverted - parameter).abs() < 1.0e-8);
         let points: [Point3; 2] = std::array::from_fn(|side| {
             let uv =
                 cadmpeg_ir::eval::pcurve_uv(&parameterization.pcurves[side], parameter).unwrap();
@@ -6009,6 +6017,13 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     assert!(cadmpeg_ir::eval::model_curve_point_by_id(
         &ir,
         &ir.model.procedural_curves[0].curve,
+        0.5,
+    )
+    .is_none());
+    assert!(cadmpeg_ir::eval::model_curve_parameter_near_point(
+        &ir,
+        &ir.model.procedural_curves[0].curve,
+        Point3::new(5.0, 0.0, 0.0),
         0.5,
     )
     .is_none());

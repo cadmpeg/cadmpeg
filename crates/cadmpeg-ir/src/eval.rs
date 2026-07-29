@@ -246,6 +246,170 @@ pub fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
     (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
 }
 
+/// Find a parameter witness whose NURBS curve point lies within `tolerance` of
+/// `point`, searching finite knot spans in proximity to `seed`.
+///
+/// Interval rejection uses a rational-curve speed bound, so skipped intervals
+/// cannot contain an admissible witness. The returned parameter is always
+/// forward-evaluated within `tolerance`; `None` also covers malformed input or
+/// exhaustion of the bounded certified search.
+pub fn nurbs_curve_parameter_near_point(
+    curve: &NurbsCurve,
+    point: Point3,
+    tolerance: f64,
+    seed: f64,
+) -> Option<f64> {
+    const MAX_INTERVALS: usize = 100_000;
+
+    let degree = usize::try_from(curve.degree).ok()?;
+    let count = curve.control_points.len();
+    let domain = nurbs_curve_parameter_domain(curve)?;
+    if degree == 0
+        || !tolerance.is_finite()
+        || tolerance < 0.0
+        || !seed.is_finite()
+        || !point.x.is_finite()
+        || !point.y.is_finite()
+        || !point.z.is_finite()
+    {
+        return None;
+    }
+    let owned_weights;
+    let weights = match &curve.weights {
+        Some(weights) if weights.len() == count => weights,
+        Some(_) => return None,
+        None => {
+            owned_weights = vec![1.0; count];
+            &owned_weights
+        }
+    };
+    if curve
+        .control_points
+        .iter()
+        .zip(weights)
+        .any(|(control, weight)| {
+            !control.x.is_finite()
+                || !control.y.is_finite()
+                || !control.z.is_finite()
+                || !weight.is_finite()
+                || *weight <= 0.0
+        })
+        || curve.knots.iter().any(|knot| !knot.is_finite())
+        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
+
+    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
+    let radius = |control: &Point3| {
+        ((control.x - point.x).powi(2)
+            + (control.y - point.y).powi(2)
+            + (control.z - point.z).powi(2))
+        .sqrt()
+    };
+    let maximum_weighted_radius = curve
+        .control_points
+        .iter()
+        .zip(weights)
+        .map(|(control, weight)| weight * radius(control))
+        .fold(0.0_f64, f64::max);
+    let mut maximum_numerator_speed = 0.0_f64;
+    let mut maximum_weight_speed = 0.0_f64;
+    for index in 0..count - 1 {
+        let denominator = curve.knots[index + degree + 1] - curve.knots[index + 1];
+        if denominator == 0.0 {
+            continue;
+        }
+        let factor = f64::from(curve.degree) / denominator;
+        let first = curve.control_points[index];
+        let second = curve.control_points[index + 1];
+        let numerator_delta = Vector3::new(
+            weights[index + 1] * (second.x - point.x) - weights[index] * (first.x - point.x),
+            weights[index + 1] * (second.y - point.y) - weights[index] * (first.y - point.y),
+            weights[index + 1] * (second.z - point.z) - weights[index] * (first.z - point.z),
+        );
+        maximum_numerator_speed = maximum_numerator_speed.max(factor * numerator_delta.norm());
+        maximum_weight_speed =
+            maximum_weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
+    }
+    let speed_bound = maximum_numerator_speed / minimum_weight
+        + maximum_weighted_radius * maximum_weight_speed / minimum_weight.powi(2);
+    if !speed_bound.is_finite() {
+        return None;
+    }
+    let distance = |parameter| {
+        let position = nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            Some(weights),
+            parameter,
+        )?;
+        Some(
+            ((position.x - point.x).powi(2)
+                + (position.y - point.y).powi(2)
+                + (position.z - point.z).powi(2))
+            .sqrt(),
+        )
+    };
+    let seed = seed.clamp(domain[0], domain[1]);
+    let mut boundaries = curve.knots[degree..=count].to_vec();
+    boundaries.sort_by(f64::total_cmp);
+    boundaries.dedup();
+    let mut boundary_witnesses = boundaries.clone();
+    boundary_witnesses
+        .sort_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()));
+    for parameter in boundary_witnesses {
+        if distance(parameter)? <= tolerance {
+            return Some(parameter);
+        }
+    }
+    let mut intervals = boundaries
+        .windows(2)
+        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    intervals.sort_by(|first, second| {
+        interval_distance_to_parameter(*second, seed)
+            .total_cmp(&interval_distance_to_parameter(*first, seed))
+    });
+    let mut examined = 0usize;
+    while let Some([start, end]) = intervals.pop() {
+        examined += 1;
+        if examined > MAX_INTERVALS {
+            return None;
+        }
+        let middle = start + (end - start) * 0.5;
+        let middle_distance = distance(middle)?;
+        if middle_distance <= tolerance {
+            return Some(middle);
+        }
+        if middle_distance - speed_bound * (end - start) * 0.5 > tolerance
+            || middle == start
+            || middle == end
+        {
+            continue;
+        }
+        let halves = [[start, middle], [middle, end]];
+        let nearer = usize::from(
+            interval_distance_to_parameter(halves[1], seed)
+                < interval_distance_to_parameter(halves[0], seed),
+        );
+        intervals.push(halves[1 - nearer]);
+        intervals.push(halves[nearer]);
+    }
+    None
+}
+
+fn interval_distance_to_parameter(interval: [f64; 2], parameter: f64) -> f64 {
+    if parameter < interval[0] {
+        interval[0] - parameter
+    } else if parameter > interval[1] {
+        parameter - interval[1]
+    } else {
+        0.0
+    }
+}
+
 /// Map a NURBS parameter onto its evaluable knot branch.
 ///
 /// Periodic parameters retain their serialized phase outside this operation
@@ -712,6 +876,97 @@ pub fn model_curve_point_by_id(
     (separation.is_finite() && separation <= *tolerance).then_some(first)
 }
 
+/// Invert a model curve near a caller-selected branch parameter.
+///
+/// Charted tolerant intersections use an exact NURBS isocurve from any support
+/// whose chart fixes one surface parameter. The seed selects between repeated
+/// model-space points. The returned parameter is forward-validated against the
+/// complete two-support construction.
+pub fn model_curve_parameter_near_point(
+    ir: &CadIr,
+    curve_id: &crate::ids::CurveId,
+    point: Point3,
+    seed: f64,
+) -> Option<f64> {
+    let curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| candidate.id == *curve_id)?;
+    let CurveGeometry::Procedural { construction } = &curve.geometry else {
+        return None;
+    };
+    let procedural = ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|candidate| candidate.id == *construction && candidate.curve == *curve_id)?;
+    let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        supports,
+        tolerance,
+        parameterization: Some(parameterization),
+        ..
+    } = &procedural.definition
+    else {
+        return None;
+    };
+    let range = parameterization.parameter_range;
+    if !seed.is_finite() || seed < range[0] || seed > range[1] {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for (support_id, pcurve) in supports.iter().zip(&parameterization.pcurves) {
+        let Some(surface) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *support_id)
+        else {
+            continue;
+        };
+        let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
+            continue;
+        };
+        let PcurveGeometry::Line { origin, direction } = pcurve else {
+            continue;
+        };
+        let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
+            if direction.u == 0.0 && direction.v != 0.0 {
+                (SurfaceParameterAxis::U, origin.u, origin.v, direction.v)
+            } else if direction.v == 0.0 && direction.u != 0.0 {
+                (SurfaceParameterAxis::V, origin.v, origin.u, direction.u)
+            } else {
+                continue;
+            };
+        let Some(isocurve) = nurbs_surface_isocurve(surface, fixed_axis, fixed_parameter) else {
+            continue;
+        };
+        let isocurve_seed = varying_origin + varying_scale * seed;
+        let Some(isocurve_parameter) =
+            nurbs_curve_parameter_near_point(&isocurve, point, *tolerance, isocurve_seed)
+        else {
+            continue;
+        };
+        let parameter = (isocurve_parameter - varying_origin) / varying_scale;
+        if parameter < range[0] || parameter > range[1] {
+            continue;
+        }
+        let Some(evaluated) = model_curve_point_by_id(ir, curve_id, parameter) else {
+            continue;
+        };
+        let distance = ((evaluated.x - point.x).powi(2)
+            + (evaluated.y - point.y).powi(2)
+            + (evaluated.z - point.z).powi(2))
+        .sqrt();
+        if distance.is_finite() && distance <= *tolerance {
+            candidates.push(parameter);
+        }
+    }
+    candidates
+        .into_iter()
+        .min_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()))
+}
+
 fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Point3> {
     if depth > 256 {
         return None;
@@ -1141,9 +1396,12 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 #[cfg(test)]
 mod tests {
     use super::{
-        curve_point, nurbs_surface_isocurve, nurbs_surface_partials, nurbs_surface_point, pcurve_uv,
+        curve_point, nurbs_curve_parameter_near_point, nurbs_surface_isocurve,
+        nurbs_surface_partials, nurbs_surface_point, pcurve_uv,
     };
-    use crate::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceParameterAxis};
+    use crate::geometry::{
+        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceParameterAxis,
+    };
     use crate::math::{Point2, Point3, Vector3};
 
     #[test]
@@ -1238,6 +1496,34 @@ mod tests {
                 assert!((actual.z - expected.z).abs() < 1e-12);
             }
         }
+    }
+
+    #[test]
+    fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
+        let curve = NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let point = Point3::new(0.5, 0.0, 0.0);
+        assert_eq!(
+            nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1),
+            Some(0.25)
+        );
+        assert_eq!(
+            nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.9),
+            Some(0.75)
+        );
+        assert_eq!(
+            nurbs_curve_parameter_near_point(&curve, Point3::new(0.5, 1.0, 0.0), 1.0e-12, 0.5,),
+            None
+        );
     }
 
     #[test]

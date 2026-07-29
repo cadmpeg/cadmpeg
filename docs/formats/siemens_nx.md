@@ -807,11 +807,15 @@ transfer assigns both charts the neutral interval `[0,1]` and assigns that
 interval to the EDGE. The parameterization is atomic: both charts and their
 common interval are present or all three are absent. Evaluation maps the common
 parameter through both charts and succeeds only while the resulting support
-points agree within the EDGE tolerance. Transfer does not synthesize a
-model-space line between the vertices. A null EDGE and FIN curve without
-exactly two distinct adjacent support surfaces, two resolved endpoint
-positions, or endpoint incidence on both surfaces within the EDGE tolerance
-remains carrierless.
+points agree within the EDGE tolerance. Inverse parameterization on a
+constant-parameter NURBS support extracts the exact rational isocurve from the
+surface tensor product. A supplied branch seed selects among repeated
+model-space points; interval rejection uses a rational speed bound, and the
+selected parameter must forward-evaluate through both support charts within
+the EDGE tolerance. Transfer does not synthesize a model-space line between
+the vertices. A null EDGE and FIN curve without exactly two distinct adjacent
+support surfaces, two resolved endpoint positions, or endpoint incidence on
+both surfaces within the EDGE tolerance remains carrierless.
 A null `EDGE.curve` may instead have a non-null owning `FIN.curve`. The FIN
 reference is the carrier path. When it resolves through
 `TRIMMED_CURVE → SP_CURVE` whose original 3D curve is null, the SP_CURVE's
