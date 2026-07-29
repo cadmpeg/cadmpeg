@@ -67,6 +67,15 @@ pub enum ValueField {
         /// Byte offset within the value payload.
         offset: usize,
     },
+    /// `E5 <length:u32le> <bytes[length]>` length-framed byte string.
+    ByteString {
+        /// Exact stored bytes.
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[schemars(with = "String")]
+        bytes: Vec<u8>,
+        /// Byte offset within the value payload.
+        offset: usize,
+    },
     /// Compact unsigned atom.
     Atom {
         /// Decoded unsigned value.
@@ -190,6 +199,27 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 });
                 at += 1;
             }
+        } else if payload.get(at) == Some(&0xe5) && at + 5 <= payload.len() {
+            let len = usize::try_from(u32::from_le_bytes(
+                payload[at + 1..at + 5]
+                    .try_into()
+                    .expect("checked byte-string length extent"),
+            ))
+            .ok();
+            let end = len.and_then(|len| at.checked_add(5)?.checked_add(len));
+            if let Some(end) = end.filter(|end| *end <= payload.len()) {
+                fields.push(ValueField::ByteString {
+                    bytes: payload[at + 5..end].to_vec(),
+                    offset,
+                });
+                at = end;
+            } else {
+                fields.push(ValueField::Literal {
+                    value: payload[at],
+                    offset,
+                });
+                at += 1;
+            }
         } else if payload.get(at) == Some(&0x32) && at + 5 <= payload.len() {
             fields.push(ValueField::SchemaSelector {
                 ordinal: u32::from_le_bytes(
@@ -267,6 +297,36 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn length_framed_byte_strings_hide_marker_shaped_payload_bytes() {
+        let payload = [0xe5, 5, 0, 0, 0, 0x32, 0xe8, 0x37, 0xfe, 0x80, 0xfe];
+        assert_eq!(
+            tokenize(&payload),
+            vec![
+                ValueField::ByteString {
+                    bytes: vec![0x32, 0xe8, 0x37, 0xfe, 0x80],
+                    offset: 0,
+                },
+                ValueField::Terminator { offset: 10 },
+            ]
+        );
+    }
+
+    #[test]
+    fn truncated_length_framed_byte_string_is_not_assigned() {
+        let fields = tokenize(&[0xe5, 5, 0, 0, 0, 1]);
+        assert!(matches!(
+            fields.first(),
+            Some(ValueField::Literal {
+                value: 0xe5,
+                offset: 0
+            })
+        ));
+        assert!(fields
+            .iter()
+            .all(|field| !matches!(field, ValueField::ByteString { .. })));
     }
 
     #[test]

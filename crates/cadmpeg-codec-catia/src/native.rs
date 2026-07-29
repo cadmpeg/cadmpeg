@@ -2464,6 +2464,7 @@ fn value_field_offset(field: &value_block::ValueField) -> usize {
         | value_block::ValueField::Opcode { offset, .. }
         | value_block::ValueField::Separator { offset }
         | value_block::ValueField::Inline { offset, .. }
+        | value_block::ValueField::ByteString { offset, .. }
         | value_block::ValueField::Atom { offset, .. }
         | value_block::ValueField::Terminator { offset }
         | value_block::ValueField::Literal { offset, .. } => *offset,
