@@ -336,6 +336,38 @@ fn finish_decode(
                 (total + 1, dimensions, complex, evaluated, unset)
             },
         );
+    let (
+        constraint_range_incoming_reference_count,
+        unreferenced_constraint_range_count,
+        uniquely_referenced_constraint_range_count,
+        multiply_referenced_constraint_range_count,
+    ) = native
+        .entity_records
+        .iter()
+        .filter(|record| record.constraint_range.is_some())
+        .map(|entity| {
+            native
+                .object_graphs
+                .iter()
+                .find(|graph| graph.id == entity.object_graph)
+                .map(|graph| {
+                    graph
+                        .records
+                        .iter()
+                        .flat_map(|record| &record.references)
+                        .filter(|reference| reference.entity_id == entity.entity_id)
+                        .count()
+                })
+                .unwrap_or_default()
+        })
+        .fold(
+            (0_usize, 0_usize, 0_usize, 0_usize),
+            |(references, zero, one, multiple), count| match count {
+                0 => (references, zero + 1, one, multiple),
+                1 => (references + 1, zero, one + 1, multiple),
+                _ => (references + count, zero, one, multiple + 1),
+            },
+        );
     let definition_value_count = native
         .entity_records
         .iter()
@@ -1267,6 +1299,22 @@ fn finish_decode(
         (
             "decoded_unset_constraint_range_count".to_string(),
             unset_constraint_range_count,
+        ),
+        (
+            "decoded_constraint_range_incoming_reference_count".to_string(),
+            constraint_range_incoming_reference_count,
+        ),
+        (
+            "unreferenced_constraint_range_count".to_string(),
+            unreferenced_constraint_range_count,
+        ),
+        (
+            "uniquely_referenced_constraint_range_count".to_string(),
+            uniquely_referenced_constraint_range_count,
+        ),
+        (
+            "multiply_referenced_constraint_range_count".to_string(),
+            multiply_referenced_constraint_range_count,
         ),
         (
             "decoded_definition_value_count".to_string(),

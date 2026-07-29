@@ -10079,6 +10079,22 @@ fn native_namespace_types_dimension_constraint_ranges() {
         decoded.report.coverage["decoded_unset_constraint_range_count"],
         0
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unreferenced_constraint_range_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["uniquely_referenced_constraint_range_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["multiply_referenced_constraint_range_count"],
+        0
+    );
     assert!(!decoded
         .report
         .coverage
@@ -10087,6 +10103,86 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .report
         .coverage
         .contains_key("unresolved_constraint_range_owner_count"));
+
+    let referenced_file = |reference_count: usize| {
+        let value = [0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0xfe];
+        let mut range_entity = entity_table_record_with_definition_and_value(1, &[0x01], &value);
+        range_entity[6] = 2;
+        range_entity.extend_from_slice(&suffix);
+        let range_len = u32::try_from(range_entity.len()).expect("bounded range entity");
+        range_entity[2..6].copy_from_slice(&range_len.to_le_bytes());
+        let mut stream = range_entity;
+        stream.extend(entity_table_record_with_definition_and_value(
+            2,
+            &[0x01],
+            &[0xfe],
+        ));
+        let mut reference_payload = vec![0x81, 0x81].repeat(reference_count);
+        reference_payload.push(0xfe);
+        stream.push(0xde);
+        stream.extend(object_graph_from_records(&[
+            object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
+            object_graph_record(&[0x04, 0x01, 0x82, 0x84], &reference_payload),
+        ]));
+        stream.extend(catalog_stream(&[
+            "CATCatalogManager",
+            "catalogManager",
+            "catalogLinks",
+            "",
+            "Range",
+            "CstAttr_Dimension",
+        ]));
+        let mut file = standard_catpart();
+        file.splice(16..16, stream);
+        let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+        file[8..12].copy_from_slice(&be32(file_len));
+        file
+    };
+    let uniquely_referenced = CatiaCodec
+        .decode(
+            &mut Cursor::new(referenced_file(1)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode uniquely referenced constraint range");
+    assert_eq!(
+        uniquely_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        1
+    );
+    assert_eq!(
+        uniquely_referenced.report.coverage["unreferenced_constraint_range_count"],
+        0
+    );
+    assert_eq!(
+        uniquely_referenced.report.coverage["uniquely_referenced_constraint_range_count"],
+        1
+    );
+    assert_eq!(
+        uniquely_referenced.report.coverage["multiply_referenced_constraint_range_count"],
+        0
+    );
+
+    let multiply_referenced = CatiaCodec
+        .decode(
+            &mut Cursor::new(referenced_file(2)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode multiply referenced constraint range");
+    assert_eq!(
+        multiply_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        2
+    );
+    assert_eq!(
+        multiply_referenced.report.coverage["unreferenced_constraint_range_count"],
+        0
+    );
+    assert_eq!(
+        multiply_referenced.report.coverage["uniquely_referenced_constraint_range_count"],
+        0
+    );
+    assert_eq!(
+        multiply_referenced.report.coverage["multiply_referenced_constraint_range_count"],
+        1
+    );
 
     let mut malformed = native;
     malformed.entity_records[0]

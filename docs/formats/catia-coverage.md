@@ -92,9 +92,11 @@ current scores require those matrices and representative fixtures.
   products, quotients, extrema, trigonometric calls, absolute values, and
   square roots.
   Complete constraint-range productions are counted separately as dimension or
-  complex-constraint ranges and finite or unset evaluations. Design-field
-  containment does not establish constraint identity, ownership, operands, or
-  sketch incidence.
+  complex-constraint ranges and finite or unset evaluations. Coverage retains
+  the total exact incoming reference occurrences and partitions ranges with
+  zero, one, or multiple incoming occurrences. An incoming occurrence and
+  design-field containment do not establish constraint identity, ownership,
+  operands, or sketch incidence.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node. Schema fields named `PRTSketch` or `Sketch` do not establish
