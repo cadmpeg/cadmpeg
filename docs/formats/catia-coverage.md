@@ -131,7 +131,11 @@ current scores require those matrices and representative fixtures.
   resolved support bindings and independently counts shared sampled loci and
   endpoint loci. A run with one resolved support transfers as a parametric
   surface curve; it does not imply that the unresolved partner surface has
-  resolved.
+  resolved. When its unordered endpoint loci select exactly one standard spline
+  edge whose existing surface-intersection construction has no pcurves, that
+  construction receives every resolved consolidated support pcurve and the
+  parameter interval. Opposite edge traversal reverses the pcurve
+  parameterization. A missing or multiply matching edge remains unbound.
 - A standard circle edge without a face-side branch witness uses its exact
   two-support object-stream pcurves when both lifted endpoint and midpoint
   samples agree, match the physical endpoints, lie on the circle, and preserve

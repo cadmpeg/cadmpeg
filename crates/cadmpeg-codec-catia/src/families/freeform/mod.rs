@@ -13,7 +13,7 @@ use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::assemble::{
     annotate, insert_unresolved_carrier_loss, link_payload_carriers, neutral_model_is_admissible,
@@ -498,11 +498,13 @@ fn append_consolidated_line_profiles(
     }
 }
 
+/// Append standalone freeform carriers and return the number of consolidated
+/// surface curves bound to existing standard edges.
 pub(crate) fn append_freeform_surface_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
-) {
+) -> usize {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data);
     surfaces.extend(crate::families::a5a8::records::a5_surfaces(data));
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
@@ -690,7 +692,7 @@ pub(crate) fn append_freeform_surface_pools(
     }
 
     append_a8_rolling_ball_pools(ir, annotations, data);
-    append_resolved_consolidated_surface_curves(ir, annotations, data, &surfaces, &carrier_ids);
+    append_resolved_consolidated_surface_curves(ir, annotations, data, &surfaces, &carrier_ids)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -757,13 +759,15 @@ pub(crate) fn consolidated_jet_pcurve(
     quintic_jet_pcurve(pcurve.degree, &pcurve.knots, &points, &first, &second)
 }
 
+/// Transfer resolved consolidated surface curves, reusing an existing
+/// pcurve-less standard edge construction when endpoint loci select one.
 pub(crate) fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
-) {
+) -> usize {
     let standalone = crate::families::b2::records::b2_cylinders(data)
         .into_iter()
         .map(|cylinder| (cylinder.pos, cylinder))
@@ -784,6 +788,72 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             .collect::<HashMap<_, _>>();
 
     let mut surface_ids = HashMap::<ConsolidatedCarrierKey, SurfaceId>::new();
+    let point_positions = ir
+        .model
+        .points
+        .iter()
+        .map(|point| (point.id.clone(), point.position))
+        .collect::<HashMap<_, _>>();
+    let vertex_positions = ir
+        .model
+        .vertices
+        .iter()
+        .filter_map(|vertex| Some((vertex.id.clone(), *point_positions.get(&vertex.point)?)))
+        .collect::<HashMap<_, _>>();
+    let curve_indices = ir
+        .model
+        .curves
+        .iter()
+        .enumerate()
+        .map(|(index, curve)| (curve.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let attachable_edges = ir
+        .model
+        .edges
+        .iter()
+        .enumerate()
+        .filter_map(|(edge_index, edge)| {
+            let curve_id = edge.curve.as_ref()?;
+            let curve_index = *curve_indices.get(curve_id)?;
+            if !matches!(
+                ir.model.curves[curve_index].geometry,
+                CurveGeometry::Unknown { .. }
+            ) {
+                return None;
+            }
+            let procedures = ir
+                .model
+                .procedural_curves
+                .iter()
+                .enumerate()
+                .filter(|(_, procedure)| {
+                    procedure.curve == *curve_id
+                        && matches!(
+                            &procedure.definition,
+                            ProceduralCurveDefinition::Intersection { context, .. }
+                                if context.sides.iter().all(|side| {
+                                    side.surface.is_some() && side.pcurve.is_none()
+                                })
+                        )
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            let [procedure_index] = procedures.as_slice() else {
+                return None;
+            };
+            Some((
+                edge_index,
+                *procedure_index,
+                curve_id.clone(),
+                [
+                    *vertex_positions.get(&edge.start)?,
+                    *vertex_positions.get(&edge.end)?,
+                ],
+            ))
+        })
+        .collect::<Vec<_>>();
+    let mut attached_curves = HashSet::new();
+    let mut attached_standard_edge_count = 0usize;
 
     for resolved in crate::families::consolidated::records::resolve_consolidated_edge_blocks(data) {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
@@ -983,42 +1053,43 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 pcurve_parameter_range: None,
             };
         }
-        let resolved_side_count = sides.iter().filter(|side| side.surface.is_some()).count();
+        let resolved_side_count = sides
+            .iter()
+            .filter(|side| side.surface.is_some() && side.pcurve.is_some())
+            .count();
         if resolved_side_count == 0 {
             continue;
         }
-        let curve_id = CurveId(format!(
-            "catia:consolidated:curve#{}",
-            ir.model.curves.len()
-        ));
-        annotate(
-            annotations,
-            &curve_id,
-            "consolidated_edge_run",
-            run.edge.pcurves[0].pos as u64,
-            "procedural_curve_cache",
-            Exactness::Unknown,
-        );
-        ir.model.curves.push(Curve {
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Unknown { record: None },
-            source_object: None,
+        let attachment = resolved.endpoint_loci.as_ref().and_then(|loci| {
+            unique_endpoint_pair_match(
+                *loci,
+                attachable_edges
+                    .iter()
+                    .filter(|(_, _, curve, _)| !attached_curves.contains(curve))
+                    .map(|(edge, procedure, curve, endpoints)| {
+                        ((*edge, *procedure, curve.clone()), *endpoints)
+                    }),
+            )
         });
-        let procedural_id = ProceduralCurveId(format!(
-            "catia:consolidated:construction#{}",
-            ir.model.procedural_curves.len()
-        ));
-        annotate(
-            annotations,
-            &procedural_id,
-            "consolidated_edge_run",
-            run.edge.pcurves[0].pos as u64,
-            "resolved_surface_curve",
-            Exactness::Derived,
-        );
-        annotations
-            .derived(&procedural_id, "curve")
-            .derived(&procedural_id, "definition");
+        let attachment = attachment.and_then(|(identity, reversed)| {
+            if reversed {
+                let reversed_pcurves = sides
+                    .iter()
+                    .map(|side| match &side.pcurve {
+                        Some(pcurve) => crate::nurbs::reverse_pcurve_geometry(
+                            pcurve,
+                            resolved.block.parameters.range,
+                        )
+                        .map(Some),
+                        None => Some(None),
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                for (side, pcurve) in sides.iter_mut().zip(reversed_pcurves) {
+                    side.pcurve = pcurve;
+                }
+            }
+            Some(identity)
+        });
         let context = IntcurveSupportContext {
             sides,
             parameter_range: resolved.block.parameters.range,
@@ -1036,13 +1107,86 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 tail: None,
             }
         };
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: procedural_id,
-            curve: curve_id,
-            definition,
-            cache_fit_tolerance: None,
-        });
+        if let Some((edge_index, procedure_index, curve_id)) = attachment {
+            attached_curves.insert(curve_id.clone());
+            attached_standard_edge_count += 1;
+            ir.model.edges[edge_index].param_range = Some(resolved.block.parameters.range);
+            let procedural = &mut ir.model.procedural_curves[procedure_index];
+            procedural.definition = definition;
+            procedural.cache_fit_tolerance = None;
+            annotate(
+                annotations,
+                &procedural.id,
+                "consolidated_edge_run",
+                run.edge.pcurves[0].pos as u64,
+                "resolved_surface_curve_bound_to_standard_edge",
+                Exactness::Derived,
+            );
+            annotations
+                .derived(&procedural.id, "curve")
+                .derived(&procedural.id, "definition");
+        } else {
+            let curve_id = CurveId(format!(
+                "catia:consolidated:curve#{}",
+                ir.model.curves.len()
+            ));
+            annotate(
+                annotations,
+                &curve_id,
+                "consolidated_edge_run",
+                run.edge.pcurves[0].pos as u64,
+                "procedural_curve_cache",
+                Exactness::Unknown,
+            );
+            ir.model.curves.push(Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Unknown { record: None },
+                source_object: None,
+            });
+            let procedural_id = ProceduralCurveId(format!(
+                "catia:consolidated:construction#{}",
+                ir.model.procedural_curves.len()
+            ));
+            annotate(
+                annotations,
+                &procedural_id,
+                "consolidated_edge_run",
+                run.edge.pcurves[0].pos as u64,
+                "resolved_surface_curve",
+                Exactness::Derived,
+            );
+            annotations
+                .derived(&procedural_id, "curve")
+                .derived(&procedural_id, "definition");
+            ir.model.procedural_curves.push(ProceduralCurve {
+                id: procedural_id,
+                curve: curve_id,
+                definition,
+                cache_fit_tolerance: None,
+            });
+        }
     }
+    attached_standard_edge_count
+}
+
+fn unique_endpoint_pair_match<T>(
+    loci: [Point3; 2],
+    candidates: impl Iterator<Item = (T, [Point3; 2])>,
+) -> Option<(T, bool)> {
+    const TOLERANCE: f64 = 2e-3;
+    let close = |left: Point3, right: Point3| {
+        (left.x - right.x)
+            .hypot(left.y - right.y)
+            .hypot(left.z - right.z)
+            < TOLERANCE
+    };
+    let mut matches = candidates.filter_map(|(identity, endpoints)| {
+        let forward = close(loci[0], endpoints[0]) && close(loci[1], endpoints[1]);
+        let reversed = close(loci[0], endpoints[1]) && close(loci[1], endpoints[0]);
+        (forward != reversed).then_some((identity, reversed))
+    });
+    let winner = matches.next()?;
+    matches.next().is_none().then_some(winner)
 }
 
 pub(crate) fn append_a8_rolling_ball_pools(
@@ -1109,9 +1253,20 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 
 #[cfg(test)]
 mod tests {
-    use super::freeform_surface_carriers;
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use super::{
+        append_resolved_consolidated_surface_curves, freeform_surface_carriers,
+        unique_endpoint_pair_match,
+    };
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralCurveDefinition, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{Edge, Point, Vertex};
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::AnnotationBuilder;
 
     #[test]
     fn freeform_fallback_distinguishes_grouped_and_standalone_cylinders() {
@@ -1122,6 +1277,132 @@ mod tests {
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
+    }
+
+    #[test]
+    fn endpoint_pair_binding_requires_one_unordered_match() {
+        let loci = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
+        let unique = unique_endpoint_pair_match(
+            loci,
+            [
+                (
+                    7,
+                    [Point3::new(4.0, 5.0, 6.001), Point3::new(1.0, 2.0, 3.001)],
+                ),
+                (8, [Point3::new(0.0, 0.0, 0.0), Point3::new(4.0, 5.0, 6.0)]),
+            ]
+            .into_iter(),
+        );
+        assert_eq!(unique, Some((7, true)));
+
+        let ambiguous = unique_endpoint_pair_match(
+            loci,
+            [
+                (7, loci),
+                (
+                    8,
+                    [Point3::new(1.0, 2.0, 3.001), Point3::new(4.0, 5.0, 6.001)],
+                ),
+            ]
+            .into_iter(),
+        );
+        assert_eq!(ambiguous, None);
+    }
+
+    #[test]
+    fn consolidated_surface_curve_reuses_one_matching_unresolved_edge() {
+        let mut ir = CadIr::empty(Units::default());
+        let points = [
+            Point3::new(1.0, 4.0, 3.0),
+            Point3::new(2.0, 2.0 + 2.0 * 0.5f64.cos(), 3.0 + 2.0 * 0.5f64.sin()),
+        ];
+        for (index, position) in points.into_iter().enumerate() {
+            ir.model.points.push(Point {
+                id: PointId(format!("point#{index}")),
+                position,
+                source_object: None,
+            });
+            ir.model.vertices.push(Vertex {
+                id: VertexId(format!("vertex#{index}")),
+                point: PointId(format!("point#{index}")),
+                tolerance: None,
+            });
+        }
+        let curve_id = CurveId("standard-curve".to_string());
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: EdgeId("standard-edge".to_string()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("vertex#1".to_string()),
+            end: VertexId("vertex#0".to_string()),
+            param_range: Some([0.0, 1.0]),
+            tolerance: None,
+        });
+        let support_ids = [
+            SurfaceId("support#0".to_string()),
+            SurfaceId("support#1".to_string()),
+        ];
+        for id in &support_ids {
+            ir.model.surfaces.push(Surface {
+                id: id.clone(),
+                geometry: SurfaceGeometry::Unknown { record: None },
+                source_object: None,
+            });
+        }
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId("standard-intersection".to_string()),
+            curve: curve_id.clone(),
+            definition: ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: std::array::from_fn(|side| IntcurveSupportSide {
+                        surface: Some(support_ids[side].clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    }),
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: std::array::from_fn(|_| Vec::new()),
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: None,
+        });
+
+        let mut bytes = crate::tests::b2_cylinder_stream();
+        for point in points {
+            bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+            for value in [point.x, point.y, point.z] {
+                bytes.extend_from_slice(&(value as f32).to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&crate::tests::a5_native_edge_run_stream(6, 139, 142));
+
+        let attached = append_resolved_consolidated_surface_curves(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bytes,
+            &[],
+            &[],
+        );
+        assert_eq!(attached, 1);
+        assert_eq!(ir.model.curves.len(), 1);
+        assert_eq!(ir.model.edges[0].curve.as_ref(), Some(&curve_id));
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &ir.model.procedural_curves[0].definition
+        else {
+            panic!("resolved two-sided construction");
+        };
+        assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
+        let start = cadmpeg_ir::eval::pcurve_uv(
+            context.sides[0].pcurve.as_ref().expect("first pcurve"),
+            context.parameter_range[0],
+        )
+        .expect("reversed pcurve start");
+        assert_eq!([start.u, start.v], [0.5, 1.0]);
+        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     }
 
     #[test]

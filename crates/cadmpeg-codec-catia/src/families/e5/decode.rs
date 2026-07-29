@@ -776,7 +776,8 @@ fn plan_e5_boundary(
                     return None;
                 }
                 let oriented_pcurve = if reversed {
-                    let Some(reversed) = reverse_e5_pcurve_geometry(&geometry, range) else {
+                    let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(&geometry, range)
+                    else {
                         return None;
                     };
                     reversed
@@ -898,7 +899,7 @@ fn plan_e5_boundary(
                 (curve, curve_range) = reversed_curve;
             }
             let pcurve = if reversed {
-                let Some(reversed) = reverse_e5_pcurve_geometry(&geometry, range) else {
+                let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(&geometry, range) else {
                     continue;
                 };
                 reversed
@@ -1769,50 +1770,6 @@ pub(crate) fn reverse_e5_boundary_curve(
                 }),
                 range,
             ))
-        }
-        _ => None,
-    }
-}
-
-pub(crate) fn reverse_e5_pcurve_geometry(
-    geometry: &PcurveGeometry,
-    range: [f64; 2],
-) -> Option<PcurveGeometry> {
-    match geometry {
-        PcurveGeometry::Line { origin, direction } => Some(PcurveGeometry::Line {
-            origin: Point2::new(
-                origin.u + (range[0] + range[1]) * direction.u,
-                origin.v + (range[0] + range[1]) * direction.v,
-            ),
-            direction: Point2::new(-direction.u, -direction.v),
-        }),
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => {
-            let sum = range[0] + range[1];
-            let mut reversed_knots = knots
-                .iter()
-                .rev()
-                .map(|knot| sum - knot)
-                .collect::<Vec<_>>();
-            for knot in &mut reversed_knots {
-                if *knot == -0.0 {
-                    *knot = 0.0;
-                }
-            }
-            Some(PcurveGeometry::Nurbs {
-                degree: *degree,
-                knots: reversed_knots,
-                control_points: control_points.iter().rev().copied().collect(),
-                weights: weights
-                    .as_ref()
-                    .map(|weights| weights.iter().rev().copied().collect()),
-                periodic: *periodic,
-            })
         }
         _ => None,
     }

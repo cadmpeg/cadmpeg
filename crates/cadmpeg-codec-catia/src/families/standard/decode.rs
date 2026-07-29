@@ -1044,7 +1044,8 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             );
         }
     }
-    append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
+    let bound_consolidated_standard_edge_count =
+        append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
 
@@ -1063,6 +1064,10 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
     report.coverage.insert(
         "refined_consolidated_analytic_surface_count".to_string(),
         refined_analytic_surfaces.len(),
+    );
+    report.coverage.insert(
+        "bound_consolidated_standard_edge_count".to_string(),
+        bound_consolidated_standard_edge_count,
     );
     Some(FamilyOutput {
         ir,
@@ -4896,7 +4901,6 @@ mod route_tests {
         attach_free_vertices, circle_parameter_range_from_surface_branch, ordered_range,
         rational_pcurve_arc,
     };
-    use crate::families::e5::decode::reverse_e5_pcurve_geometry;
     use crate::families::standard::decode::{
         analytic_surface_uv, bind_ordered_standard_curve_branches, build_standard_edge_curve,
         circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
@@ -6311,22 +6315,6 @@ mod route_tests {
             .expect("canonical seam range");
         assert_eq!(range[0], 0.0);
         assert!((range[1] - 0.25).abs() < 2e-14);
-    }
-
-    #[test]
-    fn reversed_surface_pcurve_preserves_domain_and_swaps_endpoints() {
-        let geometry = PcurveGeometry::Line {
-            origin: Point2::new(2.0, -1.0),
-            direction: Point2::new(3.0, 4.0),
-        };
-        let range = [5.0, 9.0];
-        let reversed = reverse_e5_pcurve_geometry(&geometry, range).expect("reversible line");
-        for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
-            let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
-            let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
-            assert!((actual.u - expected.u).abs() < 1e-12);
-            assert!((actual.v - expected.v).abs() < 1e-12);
-        }
     }
 
     #[test]
