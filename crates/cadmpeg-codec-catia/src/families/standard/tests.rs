@@ -1703,6 +1703,36 @@ fn incidence_component_products_stream_until_the_consumer_stops() {
 }
 
 #[test]
+fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() {
+    use crate::solve::incidence::{visit_component_incidence_pair_solutions, IncidenceSolve};
+    use std::ops::ControlFlow;
+
+    let choices = vec![(0..300).map(|point| [point, point]).collect::<Vec<_>>()];
+    let mut visited = 0usize;
+    let outcome = visit_component_incidence_pair_solutions(
+        &choices,
+        &[[0, 0]],
+        1,
+        300,
+        None,
+        None,
+        None,
+        &|_| true,
+        &mut |_| {
+            visited += 1;
+            if visited == 2 {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        },
+    );
+
+    assert_eq!(outcome, IncidenceSolve::Solved(2));
+    assert_eq!(visited, 2);
+}
+
+#[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
     let use_ = |edge, start, end| MeshBoundaryEdgeCandidate {
         edge,

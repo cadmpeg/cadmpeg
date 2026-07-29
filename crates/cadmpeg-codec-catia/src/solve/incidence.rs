@@ -1552,9 +1552,7 @@ where
             search.search();
             (search.exhausted, search.solutions)
         };
-        if search_exhausted {
-            return Err(());
-        }
+        let mut downstream_exhausted = false;
         for solution in solutions {
             for &(edge, pair) in &solution {
                 assignment[edge] = Some(pair);
@@ -1583,7 +1581,7 @@ where
                 budget,
                 visitor,
                 visited,
-            )?;
+            );
             for &(edge, pair) in solution.iter().rev() {
                 assignment[edge] = None;
                 for (rank, face) in edge_faces[edge].into_iter().enumerate() {
@@ -1595,11 +1593,17 @@ where
                     }
                 }
             }
-            if control.is_break() {
-                return Ok(control);
+            match control {
+                Ok(ControlFlow::Break(())) => return Ok(ControlFlow::Break(())),
+                Ok(ControlFlow::Continue(())) => {}
+                Err(()) => downstream_exhausted = true,
             }
         }
-        Ok(ControlFlow::Continue(()))
+        if search_exhausted || downstream_exhausted {
+            Err(())
+        } else {
+            Ok(ControlFlow::Continue(()))
+        }
     }
 
     let mut exhausted = false;
