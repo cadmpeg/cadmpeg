@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 190;
+pub const CATIA_NATIVE_VERSION: u32 = 191;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2799,8 +2799,8 @@ pub struct CatiaZeroEntityOrientedUse {
     pub record_ordinal: u32,
     /// Positional side number.
     pub side: u32,
-    /// Two stored global-record references.
-    pub references: [u32; 2],
+    /// Two stored allocation values.
+    pub allocations: [u32; 2],
     /// Side-specific slots derived from the owning header's base columns.
     pub side_slots: [u32; 2],
 }
@@ -2870,8 +2870,8 @@ pub struct CatiaZeroEntityVertexIncidence {
     pub record_ordinal: u32,
     /// Complete two-byte record tag.
     pub tag: [u8; 2],
-    /// Stored global-record references.
-    pub references: Vec<u32>,
+    /// Stored allocation values.
+    pub allocations: Vec<u32>,
     /// Immediately following `5d06` vertex-owner record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vertex_record: Option<String>,
@@ -3897,7 +3897,7 @@ fn zero_entity_oriented_use_pairs(bytes: &[u8]) -> Vec<CatiaZeroEntityOrientedUs
                 byte_offset: use_.pos as u64,
                 record_ordinal: use_.record_ordinal,
                 side: use_.side,
-                references: use_.references,
+                allocations: use_.allocations,
                 side_slots: use_.side_slots,
             }),
         })
@@ -3935,7 +3935,7 @@ fn zero_entity_vertex_incidences(
                 byte_offset: record.pos as u64,
                 record_ordinal: record.record_ordinal,
                 tag: record.tag,
-                references: record.references,
+                allocations: record.allocations,
                 vertex_record,
             }
         })
@@ -5494,14 +5494,10 @@ fn validate_zero_entity_topology_records(
             && pair.uses.iter().enumerate().all(|(use_index, use_)| {
                 let side = use_index as u32 + 1;
                 use_.side == side
-                    && !use_.references.contains(&0)
+                    && !use_.allocations.contains(&0)
                     && zero_entity_record(records, use_.record_ordinal).is_some_and(|source| {
                         source.byte_offset == use_.byte_offset && source.tag == [0x06, 0x38]
                     })
-                    && use_
-                        .references
-                        .iter()
-                        .all(|reference| zero_entity_record(records, *reference).is_some())
                     && use_.byte_offset > pair.header_byte_offset
                     && (use_index == 0 || pair.uses[use_index - 1].byte_offset < use_.byte_offset)
                     && use_.record_ordinal == pair.header_record_ordinal.saturating_add(side)
@@ -5521,15 +5517,11 @@ fn validate_zero_entity_topology_records(
         };
         record.id == format!("catia:zero-entity:vertex-incidence#{index}")
             && record.record_ordinal != 0
-            && !record.references.contains(&0)
+            && !record.allocations.contains(&0)
             && zero_entity_record(records, record.record_ordinal).is_some_and(|source| {
                 source.byte_offset == record.byte_offset && source.tag == record.tag
             })
-            && record
-                .references
-                .iter()
-                .all(|reference| zero_entity_record(records, *reference).is_some())
-            && record.references.len() == expected_count
+            && record.allocations.len() == expected_count
             && record.vertex_record.as_deref()
                 == zero_entity_vertex_owner(records, record.record_ordinal)
                     .map(|owner| owner.id.as_str())

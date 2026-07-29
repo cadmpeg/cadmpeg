@@ -131,8 +131,8 @@ pub struct ZeroEntityOrientedUse {
     pub record_ordinal: u32,
     /// Positional side number, either one or two.
     pub side: u32,
-    /// Two stored global-record references.
-    pub references: [u32; 2],
+    /// Two stored allocation values.
+    pub allocations: [u32; 2],
     /// Side-specific slots derived from the owning header's base columns.
     pub side_slots: [u32; 2],
 }
@@ -159,8 +159,8 @@ pub struct ZeroEntityVertexIncidence {
     pub record_ordinal: u32,
     /// Complete two-byte record tag.
     pub tag: [u8; 2],
-    /// Stored global-record references.
-    pub references: Vec<u32>,
+    /// Stored allocation values.
+    pub allocations: Vec<u32>,
 }
 
 /// The terminal zero-entity body hierarchy.
@@ -1416,9 +1416,6 @@ pub fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
 #[must_use]
 pub fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUsePair> {
     let records = zero_entity_records(data);
-    let Ok(record_count) = u32::try_from(records.len()) else {
-        return Vec::new();
-    };
     records
         .windows(3)
         .filter_map(|records| {
@@ -1444,21 +1441,18 @@ pub fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUseP
                 {
                     return None;
                 }
-                let references = [
+                let allocations = [
                     tagged_u32(data, record.pos + 18)?,
                     tagged_u32(data, record.pos + 23)?,
                 ];
-                if references
-                    .iter()
-                    .any(|reference| !(1..=record_count).contains(reference))
-                {
+                if allocations.contains(&0) {
                     return None;
                 }
                 Some(ZeroEntityOrientedUse {
                     pos: record.pos,
                     record_ordinal: record.ordinal,
                     side: expected_side,
-                    references,
+                    allocations,
                     side_slots: [
                         base_columns[0].checked_add(expected_side)?,
                         base_columns[1].checked_add(expected_side)?,
@@ -1479,9 +1473,6 @@ pub fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUseP
 #[must_use]
 pub fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
     let records = zero_entity_records(data);
-    let Ok(record_count) = u32::try_from(records.len()) else {
-        return Vec::new();
-    };
     records
         .into_iter()
         .filter_map(|record| {
@@ -1496,20 +1487,17 @@ pub fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexInciden
             {
                 return None;
             }
-            let references = (0..count)
+            let allocations = (0..count)
                 .map(|index| tagged_u32(data, record.pos + 13 + index * 5))
                 .collect::<Option<Vec<_>>>()?;
-            if references
-                .iter()
-                .any(|reference| !(1..=record_count).contains(reference))
-            {
+            if allocations.contains(&0) {
                 return None;
             }
             Some(ZeroEntityVertexIncidence {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
                 tag: record.tag,
-                references,
+                allocations,
             })
         })
         .collect()
@@ -2176,10 +2164,10 @@ mod tests {
         assert_eq!(pair.header_record_ordinal, 2);
         assert_eq!(pair.base_columns, [100, 200]);
         assert_eq!(pair.uses[0].record_ordinal, 3);
-        assert_eq!(pair.uses[0].references, [1, 2]);
+        assert_eq!(pair.uses[0].allocations, [1, 2]);
         assert_eq!(pair.uses[0].side_slots, [101, 201]);
         assert_eq!(pair.uses[1].record_ordinal, 4);
-        assert_eq!(pair.uses[1].references, [3, 4]);
+        assert_eq!(pair.uses[1].allocations, [3, 4]);
         assert_eq!(pair.uses[1].side_slots, [102, 202]);
 
         let incidences = zero_entity_vertex_incidences(&stream);
@@ -2188,7 +2176,7 @@ mod tests {
         };
         assert_eq!(incidence.record_ordinal, 5);
         assert_eq!(incidence.tag, [0x05, 0x10]);
-        assert_eq!(incidence.references, [1, 2, 5]);
+        assert_eq!(incidence.allocations, [1, 2, 5]);
     }
 
     #[test]
@@ -2197,6 +2185,38 @@ mod tests {
         let second_use = 38 + (0x69 + 12) + (0x38 + 12);
         write_tagged_u32(&mut stream, second_use + 13, 1);
         assert!(zero_entity_oriented_use_pairs(&stream).is_empty());
+    }
+
+    #[test]
+    fn topology_allocation_lanes_are_not_global_record_ordinals() {
+        let mut stream = zero_entity_topology_stream();
+        let header = 38;
+        let first_use = header + 0x69 + 12;
+        let second_use = first_use + 0x38 + 12;
+        let incidence = second_use + 0x38 + 12;
+        for (offset, value) in [
+            (first_use + 18, 101),
+            (first_use + 23, 102),
+            (second_use + 18, 103),
+            (second_use + 23, 104),
+            (incidence + 13, 105),
+            (incidence + 18, 106),
+            (incidence + 23, 107),
+        ] {
+            write_tagged_u32(&mut stream, offset, value);
+        }
+
+        let pairs = zero_entity_oriented_use_pairs(&stream);
+        let [pair] = pairs.as_slice() else {
+            panic!("one oriented-use pair")
+        };
+        assert_eq!(pair.uses[0].allocations, [101, 102]);
+        assert_eq!(pair.uses[1].allocations, [103, 104]);
+        let incidences = zero_entity_vertex_incidences(&stream);
+        let [incidence] = incidences.as_slice() else {
+            panic!("one vertex incidence")
+        };
+        assert_eq!(incidence.allocations, [105, 106, 107]);
     }
 
     #[test]

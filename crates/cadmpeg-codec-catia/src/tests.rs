@@ -5267,7 +5267,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
         panic!("one zero-entity vertex incidence")
     };
     assert_eq!(incidence.record_ordinal, 5);
-    assert_eq!(incidence.references, [1, 2, 5]);
+    assert_eq!(incidence.allocations, [1, 2, 5]);
     assert_eq!(
         incidence.vertex_record.as_deref(),
         Some("catia:zero-entity:record#6")

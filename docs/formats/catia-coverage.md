@@ -174,9 +174,9 @@ current scores require those matrices and representative fixtures.
   edge-stride registry retains its fixed
   tagged-one prefix and closed `[T,X,Y,T−1,T−2]` allocation tuples. The `2569`/`0638`
   positional-use and counted `05xx` vertex-incidence registries retain
-  one-based global record ordinals and exact references against a complete
-  framed-record identity inventory. Each counted vertex-incidence record binds
-  its immediately following `5d06` vertex-owner record. The terminal
+  one-based global record ordinals and their exact nonzero allocation lanes.
+  Each counted vertex-incidence record binds its immediately following `5d06`
+  vertex-owner record. The terminal
   `6142`/`6006`/`6508` hierarchy retains the
   complete descending face-allocation roster and binds it through one shell and
   body; the `6142` logical extent includes its full continuation beyond the
