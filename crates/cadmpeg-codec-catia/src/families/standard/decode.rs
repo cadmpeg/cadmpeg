@@ -1056,7 +1056,8 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         plane_faces,
         analytic_record_count,
         &crate::assemble::UnresolvedSurfaceCounts {
-            face_local_freeform: unresolved_freeform_record_count,
+            face_local_freeform: unresolved_freeform_record_count
+                .saturating_sub(consolidated_curve_bindings.standard_face_surfaces),
             unbound_revolution: revolution_record_count.saturating_sub(resolved_revolution_count),
         },
         topology_result.err().map(StandardTopologyFailure::message),
@@ -1070,8 +1071,16 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         consolidated_curve_bindings.standard_edges,
     );
     report.coverage.insert(
+        "bound_consolidated_partner_support_count".to_string(),
+        consolidated_curve_bindings.partner_supports,
+    );
+    report.coverage.insert(
         "bound_consolidated_partner_face_pcurve_pair_count".to_string(),
         consolidated_curve_bindings.partner_face_pcurve_pairs,
+    );
+    report.coverage.insert(
+        "bound_consolidated_standard_face_surface_count".to_string(),
+        consolidated_curve_bindings.standard_face_surfaces,
     );
     Some(FamilyOutput {
         ir,

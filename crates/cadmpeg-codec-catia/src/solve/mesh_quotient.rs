@@ -799,18 +799,98 @@ impl MeshQuotient {
             solutions: &mut Vec<Vec<usize>>,
             states: &mut usize,
             exhausted: &mut bool,
+            base_degrees: &mut HashMap<(usize, usize), u8>,
             budget: Option<&MeshConstraintBudget>,
         ) {
             const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
 
+            fn adjust_assignment_degrees(
+                root: usize,
+                increase: bool,
+                assigned: &[Option<usize>],
+                edges: &[[usize; 2]],
+                root_edges: &[Vec<usize>],
+                edge_faces: Option<&[[usize; 2]]>,
+                degrees: &mut HashMap<(usize, usize), u8>,
+            ) {
+                let Some(edge_faces) = edge_faces else {
+                    return;
+                };
+                for &edge in &root_edges[root] {
+                    let [left, right] = edges[edge];
+                    let [Some(left), Some(right)] = [assigned[left], assigned[right]] else {
+                        continue;
+                    };
+                    let faces = edge_faces[edge];
+                    for (rank, face) in faces.into_iter().enumerate() {
+                        if rank > 0 && face == faces[0] {
+                            continue;
+                        }
+                        for point in [left, right] {
+                            if increase {
+                                *degrees.entry((face, point)).or_default() += 1;
+                            } else {
+                                let degree = degrees
+                                    .get_mut(&(face, point))
+                                    .expect("assigned edge contributes its face degree");
+                                *degree -= 1;
+                                if *degree == 0 {
+                                    degrees.remove(&(face, point));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn assign(
+                root: usize,
+                point: usize,
+                assigned: &mut [Option<usize>],
+                edges: &[[usize; 2]],
+                root_edges: &[Vec<usize>],
+                edge_faces: Option<&[[usize; 2]]>,
+                degrees: &mut HashMap<(usize, usize), u8>,
+                budget: Option<&MeshConstraintBudget>,
+            ) -> bool {
+                if budget.is_some_and(|budget| !budget.charge_by(root_edges[root].len())) {
+                    return false;
+                }
+                assigned[root] = Some(point);
+                adjust_assignment_degrees(
+                    root, true, assigned, edges, root_edges, edge_faces, degrees,
+                );
+                true
+            }
+
+            fn unassign(
+                root: usize,
+                assigned: &mut [Option<usize>],
+                edges: &[[usize; 2]],
+                root_edges: &[Vec<usize>],
+                edge_faces: Option<&[[usize; 2]]>,
+                degrees: &mut HashMap<(usize, usize), u8>,
+            ) {
+                adjust_assignment_degrees(
+                    root, false, assigned, edges, root_edges, edge_faces, degrees,
+                );
+                assigned[root] = None;
+            }
+
+            #[allow(clippy::too_many_arguments)]
             fn rollback(
                 assigned: &mut [Option<usize>],
                 point_uses: &mut [usize],
                 propagated: Vec<(usize, usize)>,
+                edges: &[[usize; 2]],
+                root_edges: &[Vec<usize>],
+                edge_faces: Option<&[[usize; 2]]>,
+                degrees: &mut HashMap<(usize, usize), u8>,
             ) {
                 for (root, point) in propagated.into_iter().rev() {
                     point_uses[point] -= 1;
-                    assigned[root] = None;
+                    unassign(root, assigned, edges, root_edges, edge_faces, degrees);
                 }
             }
 
@@ -851,7 +931,8 @@ impl MeshQuotient {
             let viable_values =
                 |root: usize,
                  assigned: &[Option<usize>],
-                 base_degrees: &HashMap<(usize, usize), u8>| {
+                 base_degrees: &HashMap<(usize, usize), u8>,
+                 work_budget: Option<&MeshConstraintBudget>| {
                     domains[root]
                         .iter()
                         .copied()
@@ -873,7 +954,7 @@ impl MeshQuotient {
                             let Some(edge_faces) = edge_faces else {
                                 return true;
                             };
-                            if budget.is_some_and(|budget| {
+                            if work_budget.is_some_and(|budget| {
                                 !budget.charge_by(root_edges[root].len().max(1))
                             }) {
                                 return false;
@@ -914,7 +995,7 @@ impl MeshQuotient {
                                 let Some(face_edges) = face_edges else {
                                     return false;
                                 };
-                                if budget.is_some_and(|budget| {
+                                if work_budget.is_some_and(|budget| {
                                     !budget.charge_by(face_edges[face].len().max(1))
                                 }) {
                                     return false;
@@ -953,7 +1034,7 @@ impl MeshQuotient {
                                                         domains,
                                                         assigned,
                                                         (root, *point),
-                                                        budget,
+                                                        work_budget,
                                                     )
                                                 })
                                             }
@@ -964,7 +1045,7 @@ impl MeshQuotient {
                                                 edge_candidates.len(),
                                                 assigned,
                                                 (root, *point),
-                                                budget,
+                                                work_budget,
                                             ),
                                         }
                                     });
@@ -1008,43 +1089,35 @@ impl MeshQuotient {
                 let mut dead = false;
                 let mut progress = false;
                 let mut scan_truncated = false;
+                let mut scan_deferred = false;
                 let mut supported_unused = HashSet::new();
                 let mut unused_point_roots = HashMap::<usize, Vec<usize>>::new();
-                let mut base_degrees = HashMap::<(usize, usize), u8>::new();
-                if let Some(edge_faces) = edge_faces {
-                    if budget.is_some_and(|budget| !budget.charge_by(edges.len().max(1))) {
-                        *exhausted = true;
-                        break None;
-                    }
-                    for (edge, [left, right]) in edges.iter().copied().enumerate() {
-                        let [Some(left), Some(right)] = [assigned[left], assigned[right]] else {
-                            continue;
-                        };
-                        let faces = edge_faces[edge];
-                        for (rank, face) in faces.into_iter().enumerate() {
-                            if rank > 0 && face == faces[0] {
-                                continue;
-                            }
-                            for point in [left, right] {
-                                *base_degrees.entry((face, point)).or_default() += 1;
-                            }
-                        }
-                    }
-                }
                 for root in scanned_roots {
                     if assigned[root].is_some() {
                         continue;
                     }
-                    if budget.is_some_and(|budget| {
+                    let work_budget =
+                        budget.map(|budget| MeshConstraintBudget::new(budget.remaining.get()));
+                    if work_budget.as_ref().is_some_and(|budget| {
                         !budget.charge_by(domains[root].len().saturating_add(1))
                     }) {
-                        *exhausted = true;
-                        break;
+                        scan_deferred = true;
+                        continue;
                     }
-                    let values = viable_values(root, assigned, &base_degrees);
-                    if budget.is_some_and(|budget| budget.exhausted.get()) {
-                        *exhausted = true;
-                        break;
+                    let values = viable_values(root, assigned, base_degrees, work_budget.as_ref());
+                    if work_budget
+                        .as_ref()
+                        .is_some_and(|budget| budget.exhausted.get())
+                    {
+                        scan_deferred = true;
+                        continue;
+                    }
+                    if let (Some(budget), Some(work_budget)) = (budget, work_budget.as_ref()) {
+                        let work = budget.remaining.get() - work_budget.remaining.get();
+                        if !budget.charge_by(work) {
+                            *exhausted = true;
+                            break;
+                        }
                     }
                     if values.is_empty() {
                         dead = true;
@@ -1060,7 +1133,19 @@ impl MeshQuotient {
                         unused_point_roots.entry(point).or_default().push(root);
                     }
                     if let [point] = values.as_slice() {
-                        assigned[root] = Some(*point);
+                        if !assign(
+                            root,
+                            *point,
+                            assigned,
+                            edges,
+                            root_edges,
+                            edge_faces,
+                            base_degrees,
+                            budget,
+                        ) {
+                            *exhausted = true;
+                            break;
+                        }
                         point_uses[*point] += 1;
                         propagated.push((root, *point));
                         progress = true;
@@ -1087,11 +1172,22 @@ impl MeshQuotient {
                 if progress {
                     continue;
                 }
-                if scan_truncated {
+                if scan_truncated || scan_deferred {
                     let best = viable_domains
                         .into_iter()
                         .min_by_key(|(_, values)| values.len());
-                    break Some(best);
+                    if best.is_some() {
+                        break Some(best);
+                    }
+                    if partial_scan {
+                        pending_roots = None;
+                        continue;
+                    }
+                    if let Some(budget) = budget {
+                        budget.exhausted.set(true);
+                    }
+                    *exhausted = true;
+                    break None;
                 }
                 if partial_scan {
                     pending_roots = None;
@@ -1119,7 +1215,19 @@ impl MeshQuotient {
                     }) {
                         break None;
                     }
-                    assigned[root] = Some(point);
+                    if !assign(
+                        root,
+                        point,
+                        assigned,
+                        edges,
+                        root_edges,
+                        edge_faces,
+                        base_degrees,
+                        budget,
+                    ) {
+                        *exhausted = true;
+                        break None;
+                    }
                     point_uses[point] += 1;
                     propagated.push((root, point));
                     pending_roots = Some(affected_roots(
@@ -1204,7 +1312,19 @@ impl MeshQuotient {
                         break None;
                     }
                     if let Some((point, root)) = matching_forced {
-                        assigned[root] = Some(point);
+                        if !assign(
+                            root,
+                            point,
+                            assigned,
+                            edges,
+                            root_edges,
+                            edge_faces,
+                            base_degrees,
+                            budget,
+                        ) {
+                            *exhausted = true;
+                            break None;
+                        }
                         point_uses[point] += 1;
                         propagated.push((root, point));
                         pending_roots = Some(affected_roots(
@@ -1225,7 +1345,19 @@ impl MeshQuotient {
                         viable_domains.iter().find(|(_, values)| values.len() == 1)
                     {
                         let point = values[0];
-                        assigned[root] = Some(point);
+                        if !assign(
+                            root,
+                            point,
+                            assigned,
+                            edges,
+                            root_edges,
+                            edge_faces,
+                            base_degrees,
+                            budget,
+                        ) {
+                            *exhausted = true;
+                            break None;
+                        }
                         point_uses[point] += 1;
                         propagated.push((root, point));
                         pending_roots = Some(affected_roots(
@@ -1240,7 +1372,15 @@ impl MeshQuotient {
                 break Some(best);
             };
             let Some(branch) = branch else {
-                rollback(assigned, point_uses, propagated);
+                rollback(
+                    assigned,
+                    point_uses,
+                    propagated,
+                    edges,
+                    root_edges,
+                    edge_faces,
+                    base_degrees,
+                );
                 return;
             };
             let Some((root, values)) = branch else {
@@ -1314,17 +1454,45 @@ impl MeshQuotient {
                             .expect("complete coordinate assignment"),
                     );
                 }
-                rollback(assigned, point_uses, propagated);
+                rollback(
+                    assigned,
+                    point_uses,
+                    propagated,
+                    edges,
+                    root_edges,
+                    edge_faces,
+                    base_degrees,
+                );
                 return;
             };
             if budget.is_none() && *states >= MAX_COORDINATE_CLOSURE_STATES {
                 *exhausted = true;
-                rollback(assigned, point_uses, propagated);
+                rollback(
+                    assigned,
+                    point_uses,
+                    propagated,
+                    edges,
+                    root_edges,
+                    edge_faces,
+                    base_degrees,
+                );
                 return;
             }
             *states += 1;
             for point in values {
-                assigned[root] = Some(point);
+                if !assign(
+                    root,
+                    point,
+                    assigned,
+                    edges,
+                    root_edges,
+                    edge_faces,
+                    base_degrees,
+                    budget,
+                ) {
+                    *exhausted = true;
+                    break;
+                }
                 point_uses[point] += 1;
                 walk(
                     domains,
@@ -1343,15 +1511,24 @@ impl MeshQuotient {
                     solutions,
                     states,
                     exhausted,
+                    base_degrees,
                     budget,
                 );
                 point_uses[point] -= 1;
-                assigned[root] = None;
+                unassign(root, assigned, edges, root_edges, edge_faces, base_degrees);
                 if solutions.len() > 1 || *exhausted {
                     break;
                 }
             }
-            rollback(assigned, point_uses, propagated);
+            rollback(
+                assigned,
+                point_uses,
+                propagated,
+                edges,
+                root_edges,
+                edge_faces,
+                base_degrees,
+            );
         }
 
         let mut roots = Vec::new();
@@ -1554,6 +1731,7 @@ impl MeshQuotient {
             let mut solutions = Vec::new();
             let mut states = 0;
             let mut exhausted = false;
+            let mut base_degrees = HashMap::new();
             walk(
                 &local_domains,
                 &local_edges,
@@ -1571,6 +1749,7 @@ impl MeshQuotient {
                 &mut solutions,
                 &mut states,
                 &mut exhausted,
+                &mut base_degrees,
                 budget,
             );
             if exhausted {

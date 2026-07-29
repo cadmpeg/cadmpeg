@@ -3546,6 +3546,42 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
 }
 
 #[test]
+fn quotient_incidence_closure_updates_face_degrees_incrementally() {
+    const EDGE_COUNT: usize = 64;
+    let singleton = |point| Arc::new(HashSet::from([point]));
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(2 * EDGE_COUNT),
+        domains: (0..EDGE_COUNT)
+            .flat_map(|edge| [singleton(edge), singleton((edge + 1) % EDGE_COUNT)])
+            .collect(),
+        members: (0..2 * EDGE_COUNT).map(|node| vec![node]).collect(),
+    };
+    for edge in 0..EDGE_COUNT {
+        quotient
+            .merge(edge * 2 + 1, ((edge + 1) % EDGE_COUNT) * 2)
+            .expect("adjacent boundary ports share one coordinate root");
+    }
+    let edge_candidates = vec![Vec::new(); EDGE_COUNT];
+    let edge_faces = vec![[0, 0]; EDGE_COUNT];
+    let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(
+        (0..EDGE_COUNT).collect(),
+    )];
+    let budget = MeshConstraintBudget::new(45_000);
+
+    assert!(quotient
+        .close_coordinate_roots_for_incidence_with_budget(
+            EDGE_COUNT,
+            &edge_candidates,
+            &edge_faces,
+            1,
+            &domains,
+            Some(&budget),
+        )
+        .is_some());
+    assert!(!budget.exhausted.get());
+}
+
+#[test]
 fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search() {
     const EDGE_COUNT: usize = 50;
     let mut quotient = MeshQuotient {

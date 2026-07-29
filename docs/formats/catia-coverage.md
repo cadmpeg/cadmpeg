@@ -134,12 +134,16 @@ current scores require those matrices and representative fixtures.
   resolved. When its unordered endpoint loci select exactly one standard spline
   edge whose existing surface-intersection construction has no pcurves, that
   construction receives every resolved consolidated support pcurve and the
-  parameter interval. When exactly one resolved support carrier matches one of
-  the standard edge's face carriers, both consolidated pcurves bind to the
-  corresponding face coedges without asserting the unresolved carrier's
-  geometry. Opposite edge or coedge traversal reverses the corresponding pcurve
-  parameterization. A missing or multiply matching edge, face carrier, or
-  coedge remains unbound.
+  parameter interval. A missing support binds to one free-form surface carrier
+  only when the paired support pcurves lift to the same endpoint, midpoint, and
+  endpoint loci and exactly one carrier satisfies those witnesses. When the
+  originally resolved support carrier matches exactly one of the standard
+  edge's face carriers, both consolidated pcurves bind to the corresponding
+  face coedges. The partner face receives the uniquely selected free-form
+  carrier, and the edge construction uses the two face surfaces directly.
+  Opposite edge or coedge traversal reverses the corresponding pcurve
+  parameterization. A missing or multiply matching edge, support carrier, face
+  carrier, or coedge remains unbound.
 - A standard circle edge without a face-side branch witness uses its exact
   two-support object-stream pcurves when both lifted endpoint and midpoint
   samples agree, match the physical endpoints, lie on the circle, and preserve
