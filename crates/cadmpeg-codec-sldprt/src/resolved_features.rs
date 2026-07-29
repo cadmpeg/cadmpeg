@@ -1880,6 +1880,7 @@ mod marker_tests {
         compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
         compact_legacy_linked_profile_point_coordinates, compact_legacy_object_line_endpoints,
         compact_legacy_profile_vertex, compact_legacy_selected_axis_endpoint_indices,
+        compact_legacy_short_role_one_curve_endpoint_indices,
         compact_legacy_short_role_two_curve_endpoint_indices, compact_line_chain_addresses,
         compact_line_region_addresses, compact_offset_plane_source,
         compact_profile_reference_plane_source, compact_radial_circle_index,
@@ -5607,6 +5608,47 @@ mod marker_tests {
         payload[64..68].fill(0xff);
         assert_eq!(
             compact_legacy_short_role_two_curve_endpoint_indices(&payload, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn compact_legacy_short_role_one_curve_indexes_the_coordinate_roster() {
+        let mut payload = vec![0; 68 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&1u32.to_le_bytes());
+        payload[17..23].copy_from_slice(&[0x00, 0x00, 0x04, 0x00, 0x02, 0x00]);
+        payload[23..27].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
+        payload[31] = 0x04;
+        payload[42..44].copy_from_slice(&0u16.to_le_bytes());
+        payload[44..46].copy_from_slice(&2u16.to_le_bytes());
+        payload[46..50].copy_from_slice(&1u32.to_le_bytes());
+        payload[50..58].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[60..62].copy_from_slice(&3u16.to_le_bytes());
+        payload[64..68].copy_from_slice(&2u32.to_le_bytes());
+        payload[68..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(
+            compact_legacy_short_role_one_curve_endpoint_indices(&payload, 0),
+            Some([1, 3])
+        );
+        assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(42));
+        payload[25..27].fill(0);
+        payload[46..50].fill(0);
+        assert_eq!(
+            compact_legacy_short_role_one_curve_endpoint_indices(&payload, 0),
+            Some([1, 3])
+        );
+        payload[23..25].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            compact_legacy_short_role_one_curve_endpoint_indices(&payload, 0),
+            None
+        );
+        payload[23..25].copy_from_slice(&1u16.to_le_bytes());
+        payload[46..50].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            compact_legacy_short_role_one_curve_endpoint_indices(&payload, 0),
             None
         );
     }
@@ -36487,6 +36529,7 @@ const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     extended_compact_indexed_curve_endpoint_indices,
     compact_legacy_curve_endpoint_indices,
     compact_legacy_short_role_two_curve_endpoint_indices,
+    compact_legacy_short_role_one_curve_endpoint_indices,
     alternate_current_indexed_curve_endpoint_indices,
     current_compact_104_indexed_line_endpoint_indices,
     extended_profile_roster_construction_line_endpoint_indices,
@@ -38690,6 +38733,9 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
     if extended_compact_legacy_curve_record(payload, offset) {
         return Some(42);
     }
+    if compact_legacy_short_role_one_curve_endpoint_indices(payload, offset).is_some() {
+        return Some(42);
+    }
     if packed_legacy_curve_endpoint_indices(payload, offset).is_some() {
         return Some(48);
     }
@@ -39271,12 +39317,32 @@ fn compact_legacy_short_role_two_curve_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
+    compact_legacy_short_curve_endpoint_indices_for_role(payload, offset, 2)
+}
+
+fn compact_legacy_short_role_one_curve_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    compact_legacy_short_curve_endpoint_indices_for_role(payload, offset, 1)
+}
+
+fn compact_legacy_short_curve_endpoint_indices_for_role(
+    payload: &[u8],
+    offset: usize,
+    role: u16,
+) -> Option<[u32; 2]> {
+    let state = u16::from_le_bytes(payload.get(offset + 25..offset + 27)?.try_into().ok()?);
+    let body_tag = match (role, state) {
+        (1, 0 | 1) => 0x04,
+        (2, 0) => 0x0c,
+        _ => return None,
+    };
     if !compact_legacy_marker_body(payload, offset)
         || !matches!(marker_native_code(payload, offset), Some(0 | 1))
-        || marker_profile_curve_role(payload, offset) != Some(2)
-        || payload.get(offset + 25..offset + 27) != Some(&[0; 2])
-        || payload.get(offset + 31..offset + 42) != Some(&[0x0c, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-        || payload.get(offset + 46..offset + 50) != Some(&[0; 4])
+        || marker_profile_curve_role(payload, offset) != Some(role)
+        || payload.get(offset + 31..offset + 42) != Some(&[body_tag, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || payload.get(offset + 46..offset + 50) != Some(&u32::from(state).to_le_bytes())
         || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
         || payload.get(offset + 62..offset + 64) != Some(&[0; 2])
         || !payload
