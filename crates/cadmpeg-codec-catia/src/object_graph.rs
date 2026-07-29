@@ -614,6 +614,63 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
     ) {
         return Some(3);
     }
+    let extended_owner_class_storage = matches!(
+        head,
+        [
+            HeadToken::Lead(0x52),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_),
+            HeadToken::Literal(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(3),
+        ] if *owner != 0
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x52),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(3),
+        ] if *owner != 0
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x52),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *owner != 0 && head[3] == head[7]
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x52),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_),
+            HeadToken::Literal(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_),
+            HeadToken::Literal(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *owner != 0 && head[3] == head[8] && head[4] == head[9]
+    );
+    if extended_owner_class_storage {
+        return Some(3);
+    }
     let extended_class_storage_owner = matches!(
         head,
         [

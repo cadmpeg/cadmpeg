@@ -7040,6 +7040,48 @@ fn outer_object_graph_retains_class_first_roles_before_an_unassigned_slot() {
 }
 
 #[test]
+fn outer_object_graph_reads_extended_owner_class_storage_roles() {
+    let bytes = object_graph_from_records(&[
+        object_graph_record(&[0x52, 0x92, 0x80, 0x95, 22, 0, 0, 0x83], &[0xfe]),
+        object_graph_record(&[0x52, 0x92, 0x80, 95, 22, 0, 0, 0x83], &[0xfe]),
+        object_graph_record(&[0x52, 0x92, 0x80, 0x95, 0, 0, 0x83], &[0xfe]),
+        object_graph_record(&[0x52, 0x92, 0x80, 0x95, 0, 0, 0x80, 0x95, 0, 0], &[0xfe]),
+        object_graph_record(
+            &[0x52, 0x92, 0x80, 95, 22, 0, 0, 0x80, 95, 22, 0, 0],
+            &[0xfe],
+        ),
+    ]);
+    let graph = crate::object_graph::parse(&bytes).expect("extended compact heads");
+
+    for record in &graph.records {
+        assert_eq!(record.owner_ref, Some(18));
+        assert_eq!(record.class_ref, Some(0));
+    }
+    assert_eq!(graph.records[0].storage_ref, Some(21));
+    assert_eq!(graph.records[1].storage_ref, None);
+    assert_eq!(graph.records[2].storage_ref, Some(21));
+    assert_eq!(graph.records[3].storage_ref, Some(21));
+    assert_eq!(graph.records[4].storage_ref, None);
+}
+
+#[test]
+fn outer_object_graph_rejects_incomplete_extended_owner_class_storage_roles() {
+    for head in [
+        &[0x52, 0x92, 0x80, 0x95, 22, 0, 0, 0x84][..],
+        &[0x52, 0x92, 0x80, 0x95, 0, 0, 0x80, 0x96, 0, 0][..],
+        &[0x52, 0x92, 0x80, 95, 22, 0, 0, 0x80, 95, 23, 0, 0][..],
+        &[0x52, 0x80, 0x80, 0x95, 22, 0, 0, 0x83][..],
+    ] {
+        let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
+        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+
+        assert_eq!(graph.records[0].owner_ref, None);
+        assert_eq!(graph.records[0].class_ref, None);
+        assert_eq!(graph.records[0].storage_ref, None);
+    }
+}
+
+#[test]
 fn object_graph_payload_reads_fixed_width_escaped_values() {
     use crate::object_graph::PayloadField;
 
