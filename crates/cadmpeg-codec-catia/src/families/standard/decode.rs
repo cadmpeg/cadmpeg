@@ -3,9 +3,9 @@
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
+    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -1150,6 +1150,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         .map(|support| support.tag)
         .collect::<HashSet<_>>();
     let object_evidence = standard_object_evidence(scan, &freeform_tags, &edge_tags);
+    let standard_limit_curve_count = object_evidence.limit_curves.len();
     let revolution_record_count = crate::families::b2::records::b2_revolutions(&scan.data).len();
     let freeform_geometries = &object_evidence.surface_geometries;
     let freeform_procedural_surfaces = &object_evidence.procedural_surfaces;
@@ -1566,6 +1567,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         &face_bindings,
         brep,
     );
+    let mut bound_standard_limit_curve_count = 0;
     let topology_result = attach_standard_topology(
         &mut topology_ir,
         &mut topology_annotations,
@@ -1576,6 +1578,8 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         &scan.data,
         &object_evidence.edge_owner_faces,
         &object_evidence.edge_supports,
+        &object_evidence.limit_curves,
+        &mut bound_standard_limit_curve_count,
     )
     .and_then(|()| {
         neutral_model_is_admissible(&topology_ir, &unknowns)
@@ -1628,6 +1632,14 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         refined_analytic_surfaces.len(),
     );
     report.coverage.insert(
+        "decoded_standard_limit_curve_count".to_string(),
+        standard_limit_curve_count,
+    );
+    report.coverage.insert(
+        "bound_standard_limit_curve_count".to_string(),
+        bound_standard_limit_curve_count,
+    );
+    report.coverage.insert(
         "bound_consolidated_revolution_face_surface_count".to_string(),
         bound_revolution_face_surface_count,
     );
@@ -1665,6 +1677,7 @@ pub(crate) struct StandardObjectEvidence {
     pub(crate) procedural_surfaces: HashMap<u32, StandardSurfaceProcedure>,
     pub(crate) edge_owner_faces: HashMap<u32, HashSet<u32>>,
     pub(crate) edge_supports: HashMap<u32, StandardEdgeSupport>,
+    pub(crate) limit_curves: Vec<NurbsCurve>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1776,7 +1789,24 @@ pub(crate) fn standard_object_evidence(
                 container::reconstruct_logical_stream(&scan.data, descriptor, directory.inner)
             })
         });
-    standard_object_evidence_from_streams(streams, tags, edge_tags)
+    let mut evidence = standard_object_evidence_from_streams(streams, tags, edge_tags);
+    merge_standard_limit_curves(&mut evidence.limit_curves, &scan.data);
+    evidence
+}
+
+fn merge_standard_limit_curves(curves: &mut Vec<NurbsCurve>, data: &[u8]) {
+    for jet in crate::families::a5a8::records::a5_freeform_curves(data) {
+        for second_limit in [false, true] {
+            let Some(geometry) =
+                crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
+            else {
+                continue;
+            };
+            if !curves.contains(&geometry) {
+                curves.push(geometry);
+            }
+        }
+    }
 }
 
 pub(crate) fn standard_object_evidence_from_streams(
@@ -1789,7 +1819,9 @@ pub(crate) fn standard_object_evidence_from_streams(
         HashMap::<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>::new();
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
+    let mut limit_curves = Vec::<NurbsCurve>::new();
     for stream in streams {
+        merge_standard_limit_curves(&mut limit_curves, &stream);
         let face_surfaces = crate::families::b5::graph::face_surface_references(&stream);
         let surface_bindings = tags
             .iter()
@@ -1998,6 +2030,7 @@ pub(crate) fn standard_object_evidence_from_streams(
             .into_iter()
             .filter_map(|(edge, support)| Some((edge, support?)))
             .collect(),
+        limit_curves,
     }
 }
 
@@ -2322,6 +2355,265 @@ pub(crate) fn apply_standard_native_edge_faces(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct StandardLimitCurveBinding {
+    curve: usize,
+    points: [usize; 2],
+    parameter_range: [f64; 2],
+}
+
+fn split_bezier_half(control: &[Point3]) -> Option<(Vec<Point3>, Vec<Point3>)> {
+    let mut levels = vec![control.to_vec()];
+    while levels.last()?.len() > 1 {
+        levels.push(
+            levels
+                .last()?
+                .windows(2)
+                .map(|pair| {
+                    Point3::new(
+                        0.5 * (pair[0].x + pair[1].x),
+                        0.5 * (pair[0].y + pair[1].y),
+                        0.5 * (pair[0].z + pair[1].z),
+                    )
+                })
+                .collect(),
+        );
+    }
+    let left = levels.iter().map(|level| level[0]).collect::<Vec<_>>();
+    let right = levels
+        .iter()
+        .rev()
+        .map(|level| *level.last().expect("nonempty Bézier level"))
+        .collect::<Vec<_>>();
+    Some((left, right))
+}
+
+fn collect_bezier_point_parameters(
+    control: &[Point3],
+    range: [f64; 2],
+    point: Point3,
+    tolerance: f64,
+    depth: usize,
+    parameters: &mut Vec<(f64, f64)>,
+) {
+    let bounds = |coordinate: fn(Point3) -> f64| {
+        control
+            .iter()
+            .copied()
+            .map(coordinate)
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(low, high), value| {
+                (low.min(value), high.max(value))
+            })
+    };
+    let [(x0, x1), (y0, y1), (z0, z1)] = [bounds(|p| p.x), bounds(|p| p.y), bounds(|p| p.z)];
+    let axis_distance = |value: f64, low: f64, high: f64| {
+        if value < low {
+            low - value
+        } else if value > high {
+            value - high
+        } else {
+            0.0
+        }
+    };
+    let lower_bound = axis_distance(point.x, x0, x1)
+        .hypot(axis_distance(point.y, y0, y1))
+        .hypot(axis_distance(point.z, z0, z1));
+    if lower_bound > tolerance {
+        return;
+    }
+    let diameter = (x1 - x0).hypot(y1 - y0).hypot(z1 - z0);
+    if depth >= 48 || diameter <= tolerance * 1e-4 {
+        let parameter = 0.5 * (range[0] + range[1]);
+        let mut level = control.to_vec();
+        while level.len() > 1 {
+            level = level
+                .windows(2)
+                .map(|pair| {
+                    Point3::new(
+                        0.5 * (pair[0].x + pair[1].x),
+                        0.5 * (pair[0].y + pair[1].y),
+                        0.5 * (pair[0].z + pair[1].z),
+                    )
+                })
+                .collect();
+        }
+        let distance = level[0].distance_squared(point).sqrt();
+        if distance <= tolerance {
+            parameters.push((parameter, distance));
+        }
+        return;
+    }
+    let Some((left, right)) = split_bezier_half(control) else {
+        return;
+    };
+    let middle = 0.5 * (range[0] + range[1]);
+    collect_bezier_point_parameters(
+        &left,
+        [range[0], middle],
+        point,
+        tolerance,
+        depth + 1,
+        parameters,
+    );
+    collect_bezier_point_parameters(
+        &right,
+        [middle, range[1]],
+        point,
+        tolerance,
+        depth + 1,
+        parameters,
+    );
+}
+
+fn standard_limit_curve_point_parameter(
+    curve: &NurbsCurve,
+    point: Point3,
+    tolerance: f64,
+) -> Option<f64> {
+    let span_count = curve.control_points.len().checked_div(6)?;
+    if span_count == 0
+        || span_count * 6 != curve.control_points.len()
+        || curve.knots.len() != (span_count + 1) * 6
+        || curve.weights.is_some()
+        || curve.degree != 5
+    {
+        return None;
+    }
+    let mut parameters = Vec::new();
+    for span in 0..span_count {
+        collect_bezier_point_parameters(
+            &curve.control_points[span * 6..(span + 1) * 6],
+            [curve.knots[span * 6], curve.knots[(span + 1) * 6]],
+            point,
+            tolerance,
+            0,
+            &mut parameters,
+        );
+    }
+    parameters.sort_by(|left, right| left.1.total_cmp(&right.1));
+    let &(parameter, distance) = parameters.first()?;
+    let [parameter_start, parameter_end] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)?;
+    let parameter_span = parameter_end - parameter_start;
+    let control_polygon_length = curve
+        .control_points
+        .chunks_exact(6)
+        .map(|control| {
+            control
+                .windows(2)
+                .map(|pair| pair[0].distance_squared(pair[1]).sqrt())
+                .sum::<f64>()
+        })
+        .sum::<f64>();
+    let parameter_tolerance = (4.0 * tolerance * parameter_span
+        / control_polygon_length.max(tolerance))
+    .max(1e-9 * parameter_span.max(1.0));
+    let ambiguous = parameters.iter().skip(1).any(|&(other, other_distance)| {
+        (other - parameter).abs() > parameter_tolerance
+            && (other_distance - distance).abs() <= tolerance * 1e-8
+    });
+    (!ambiguous).then_some(parameter)
+}
+
+fn standard_limit_curve_bindings(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    curves: &[NurbsCurve],
+) -> Vec<Vec<StandardLimitCurveBinding>> {
+    const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
+
+    let curve_points = curves
+        .iter()
+        .map(|curve| {
+            ir.model
+                .points
+                .iter()
+                .enumerate()
+                .filter_map(|(point, value)| {
+                    standard_limit_curve_point_parameter(
+                        curve,
+                        value.position,
+                        VERTEX_MATCH_TOLERANCE,
+                    )
+                    .map(|parameter| (point, parameter))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut edge_curves = vec![Vec::<StandardLimitCurveBinding>::new(); supports.len()];
+    for (curve, points) in curve_points.iter().enumerate() {
+        for (edge, support) in supports.iter().enumerate() {
+            if !matches!(
+                support.geometry,
+                crate::families::standard::records::StandardCurveGeometry::Bspline
+            ) {
+                continue;
+            }
+            let candidates = points
+                .iter()
+                .copied()
+                .filter(|(point, _)| {
+                    let position = ir.model.points[*point].position;
+                    support.faces.iter().all(|face| {
+                        face_surface(ir, bindings, surface_indices, *face).is_some_and(|surface| {
+                            matches!(surface.geometry, SurfaceGeometry::Unknown { .. })
+                                || point_on_surface(position, &surface.geometry)
+                        })
+                    })
+                })
+                .collect::<Vec<_>>();
+            let Ok([(start, start_parameter), (end, end_parameter)]) =
+                <[(usize, f64); 2]>::try_from(candidates)
+            else {
+                continue;
+            };
+            let geometry = CurveGeometry::Nurbs(curves[curve].clone());
+            let Some(midpoint) =
+                cadmpeg_ir::eval::curve_point(&geometry, 0.5 * (start_parameter + end_parameter))
+            else {
+                continue;
+            };
+            let mut checked_surface = false;
+            let agrees = support.faces.iter().all(|face| {
+                let Some(surface) = face_surface(ir, bindings, surface_indices, *face) else {
+                    return false;
+                };
+                if matches!(surface.geometry, SurfaceGeometry::Unknown { .. }) {
+                    return true;
+                }
+                checked_surface = true;
+                point_on_surface(midpoint, &surface.geometry)
+            });
+            if checked_surface && agrees {
+                edge_curves[edge].push(StandardLimitCurveBinding {
+                    curve,
+                    points: [start, end],
+                    parameter_range: [start_parameter, end_parameter],
+                });
+            }
+        }
+    }
+    edge_curves
+}
+
+fn resolve_standard_limit_curve_binding(
+    bindings: &[StandardLimitCurveBinding],
+    points: [usize; 2],
+) -> Option<StandardLimitCurveBinding> {
+    let matches = bindings
+        .iter()
+        .filter(|binding| missing_edge::same_unordered_pair(binding.points, points))
+        .copied()
+        .collect::<Vec<_>>();
+    let [mut binding] = <[StandardLimitCurveBinding; 1]>::try_from(matches).ok()?;
+    if binding.points != points {
+        binding.points.reverse();
+        binding.parameter_range.reverse();
+    }
+    Some(binding)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn attach_standard_topology(
     ir: &mut CadIr,
@@ -2333,6 +2625,8 @@ fn attach_standard_topology(
     source: &[u8],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
     native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
+    limit_curves: &[NurbsCurve],
+    bound_limit_curve_count: &mut usize,
 ) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
     let mut supports =
@@ -2361,6 +2655,8 @@ fn attach_standard_topology(
         .map(|(index, surface)| (surface.id.clone(), index))
         .collect::<HashMap<_, _>>();
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
+    let limit_curve_bindings =
+        standard_limit_curve_bindings(ir, bindings, &surface_indices, &supports, limit_curves);
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
     let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
@@ -2533,6 +2829,26 @@ fn attach_standard_topology(
         &supports,
         &endpoint_candidates,
     );
+    if let Some(options) = &mut endpoint_options {
+        for (edge, bindings) in limit_curve_bindings.iter().enumerate() {
+            if bindings.is_empty() {
+                continue;
+            }
+            let mut limit_pairs = bindings
+                .iter()
+                .map(|binding| {
+                    let mut points = binding.points;
+                    points.sort_unstable();
+                    points
+                })
+                .collect::<Vec<_>>();
+            limit_pairs.sort_unstable();
+            limit_pairs.dedup();
+            if options[edge].is_empty() {
+                options[edge] = limit_pairs;
+            }
+        }
+    }
     if let Some(options) = &mut endpoint_options {
         for (edge, support) in supports.iter().enumerate() {
             let Some(pair) = native_edge_supports
@@ -3030,6 +3346,21 @@ fn attach_standard_topology(
     ) else {
         return Err(StandardTopologyFailure::InvalidTopologySolution);
     };
+    let resolved_limit_curve_bindings = edge_vertices
+        .iter()
+        .enumerate()
+        .map(|(edge, logical_vertices)| {
+            let points = [
+                point_assignment[logical_vertices[0]],
+                point_assignment[logical_vertices[1]],
+            ];
+            resolve_standard_limit_curve_binding(&limit_curve_bindings[edge], points)
+        })
+        .collect::<Vec<_>>();
+    *bound_limit_curve_count = resolved_limit_curve_bindings
+        .iter()
+        .filter(|binding| binding.is_some())
+        .count();
     emit_standard_topology(
         ir,
         annotations,
@@ -3041,6 +3372,8 @@ fn attach_standard_topology(
         &point_assignment,
         &topology,
         native_edge_supports,
+        &resolved_limit_curve_bindings,
+        limit_curves,
     );
     Ok(())
 }
@@ -3122,6 +3455,8 @@ fn emit_standard_topology(
     point_assignment: &[usize],
     topology: &crate::families::standard::topology::StandardTopology,
     native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
+    limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
+    limit_curves: &[NurbsCurve],
 ) {
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
@@ -3136,6 +3471,8 @@ fn emit_standard_topology(
             support,
             [start_point, end_point],
             native_edge_supports.get(&support.tag),
+            limit_curve_bindings[edge_index]
+                .map(|binding| (&limit_curves[binding.curve], binding.parameter_range)),
         );
         let id = EdgeId(format!("catia:standard:edge#{edge_index}"));
         annotate(
@@ -4727,6 +5064,7 @@ pub(crate) fn build_standard_edge_curve(
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
     native_support: Option<&StandardEdgeSupport>,
+    limit_curve: Option<(&NurbsCurve, [f64; 2])>,
 ) -> (Option<CurveId>, Option<[f64; 2]>) {
     let (geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
@@ -4833,14 +5171,23 @@ pub(crate) fn build_standard_edge_curve(
             )
         }
         crate::families::standard::records::StandardCurveGeometry::Bspline => {
-            match standard_spline_line(ir, bindings, surface_indices, support, points) {
-                Some((geometry, range)) => (geometry, Some(range)),
-                None => (
-                    CurveGeometry::Unknown {
-                        record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
-                    },
-                    None,
-                ),
+            if let Some((limit_curve, parameter_range)) = limit_curve {
+                (
+                    CurveGeometry::Nurbs(limit_curve.clone()),
+                    Some(parameter_range),
+                )
+            } else {
+                match standard_spline_line(ir, bindings, surface_indices, support, points) {
+                    Some((geometry, range)) => (geometry, Some(range)),
+                    None => (
+                        CurveGeometry::Unknown {
+                            record: Some(UnknownId(
+                                "catia:payload:unknown#brep-stream".to_string(),
+                            )),
+                        },
+                        None,
+                    ),
+                }
             }
         }
     };
@@ -5527,8 +5874,9 @@ mod route_tests {
         include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
         native_support_circle_param_range, plane_intersection_line, point_on_known_surface,
         point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
-        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
-        standard_circle_param_range, standard_native_support_endpoint_pair,
+        resolve_standard_limit_curve_binding, retry_rejected_mesh_solution,
+        standard_circle_endpoint_candidates, standard_circle_param_range,
+        standard_limit_curve_bindings, standard_native_support_endpoint_pair,
         standard_object_evidence_from_streams, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
@@ -5543,7 +5891,7 @@ mod route_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::{pcurve_uv, surface_point};
     use cadmpeg_ir::geometry::{
-        CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+        CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
         ProceduralSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
         RollingBallJetSite, Surface, SurfaceGeometry,
     };
@@ -5829,6 +6177,7 @@ mod route_tests {
             &support,
             [0, 1],
             None,
+            None,
         );
         let id = id.expect("spline support identifies a curve carrier");
         assert_eq!(range, Some([0.0, 3.0]));
@@ -5906,6 +6255,7 @@ mod route_tests {
             &support,
             [0, 1],
             Some(&native),
+            None,
         );
         let curve = curve.expect("native support identifies the curve");
         assert_eq!(range, Some([2.0, 5.0]));
@@ -5996,6 +6346,102 @@ mod route_tests {
     }
 
     #[test]
+    fn limit_curve_binding_retains_correlated_edge_candidates() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.extend(
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
+                .into_iter()
+                .enumerate()
+                .map(|(index, position)| Point {
+                    id: PointId(format!("point-{index}")),
+                    position,
+                    source_object: None,
+                }),
+        );
+        let surface_id = SurfaceId("surface".to_string());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let support = StandardCurveSupport {
+            pos: 10,
+            tag: 20,
+            faces: [0, 0],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let limit_curve = NurbsCurve {
+            degree: 5,
+            knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            control_points: (0..6)
+                .map(|index| Point3::new(-1.0 + 0.8 * f64::from(index), 0.0, 0.0))
+                .collect(),
+            weights: None,
+            periodic: false,
+        };
+        let bindings = [(surface_id.clone(), false, 0)];
+        let surface_indices = HashMap::from([(surface_id, 0)]);
+
+        let limit_bindings = standard_limit_curve_bindings(
+            &ir,
+            &bindings,
+            &surface_indices,
+            std::slice::from_ref(&support),
+            std::slice::from_ref(&limit_curve),
+        );
+        let [limit_candidates] = limit_bindings.as_slice() else {
+            panic!("one edge limit-curve domain");
+        };
+        let [binding] = limit_candidates.as_slice() else {
+            panic!("one limit-curve candidate");
+        };
+        assert_eq!((binding.curve, binding.points), (0, [0, 1]));
+        assert!((binding.parameter_range[0] - 0.25).abs() <= 1e-6);
+        assert!((binding.parameter_range[1] - 0.75).abs() <= 1e-6);
+        let (curve, range) = build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &surface_indices,
+            &[],
+            &support,
+            [0, 1],
+            None,
+            Some((&limit_curve, binding.parameter_range)),
+        );
+        assert_eq!(range, Some(binding.parameter_range));
+        assert!(matches!(
+            curve
+                .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == id))
+                .map(|curve| &curve.geometry),
+            Some(CurveGeometry::Nurbs(curve)) if curve == &limit_curve
+        ));
+        let duplicated = standard_limit_curve_bindings(
+            &ir,
+            &bindings,
+            &surface_indices,
+            &[support.clone(), support],
+            &[limit_curve],
+        );
+        assert_eq!(duplicated, vec![vec![*binding], vec![*binding]]);
+        let reversed = resolve_standard_limit_curve_binding(limit_candidates, [1, 0])
+            .expect("the solved endpoint pair selects the limit curve");
+        assert_eq!(reversed.points, [1, 0]);
+        assert_eq!(
+            reversed.parameter_range,
+            [binding.parameter_range[1], binding.parameter_range[0]]
+        );
+        assert_eq!(
+            resolve_standard_limit_curve_binding(&[*binding, *binding], [0, 1]),
+            None
+        );
+    }
+
+    #[test]
     fn standard_spline_retains_a_procedural_rolling_ball_support() {
         let mut ir = CadIr::empty(Units::default());
         ir.model.points.extend(
@@ -6069,6 +6515,7 @@ mod route_tests {
             &support,
             [0, 1],
             Some(&native),
+            None,
         );
         let curve = curve.expect("procedural support identifies the curve");
         assert_eq!(ir.model.surfaces.len(), 2);
@@ -6190,6 +6637,7 @@ mod route_tests {
             &support,
             [0, 1],
             None,
+            None,
         );
         assert_eq!(range, Some([0.0, 5.0]));
     }
@@ -6221,6 +6669,7 @@ mod route_tests {
             &[],
             &support,
             [0, 1],
+            None,
             None,
         );
         assert!(curve.is_some());
@@ -6361,6 +6810,7 @@ mod route_tests {
             &support,
             [0, 1],
             Some(&native),
+            None,
         );
         assert_eq!(range, Some([0.0, 1.5 * std::f64::consts::PI]));
     }

@@ -153,6 +153,13 @@ current scores require those matrices and representative fixtures.
   two-support object-stream pcurves when both lifted endpoint and midpoint
   samples agree, match the physical endpoints, lie on the circle, and preserve
   one oriented support-carrier axis.
+- Exact `a5 03 32` rolling-ball limit curves retain every correlated standard
+  spline edge candidate whose two physical endpoints have unique curve
+  parameters and whose endpoint and midpoint witnesses agree with every
+  resolved adjacent face carrier. The solved topology binds a 3D NURBS carrier
+  only when its unordered endpoint pair selects one candidate; edge reversal
+  reverses the active parameter interval. These candidates seed empty endpoint
+  domains but do not narrow independently established domains.
 - A standard binary32 cylinder, cone, sphere, or torus face carrier is refined
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;

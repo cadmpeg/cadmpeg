@@ -509,7 +509,7 @@ pub(crate) fn build_geometry_report(
                   non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or \
                   cone generators are transferred as curves. Standard spline edges retain exact \
                   two-surface intersection constructions and their identity-bound support \
-                  pcurves when present, but their serialized 3D NURBS caches, materials, and \
+                  pcurves when present, but unbound serialized 3D NURBS caches, materials, and \
                   document metadata are not yet transferred."
             .to_string(),
         provenance: None,
