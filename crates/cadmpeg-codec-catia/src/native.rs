@@ -21,6 +21,8 @@ use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
 pub const CATIA_NATIVE_VERSION: u32 = 196;
+#[cfg(test)]
+const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -7007,7 +7009,20 @@ impl CatiaNative {
         }
         let design_objects = design_objects(&graphs, &entity_records);
         if namespace.arenas.contains_key("design_objects") {
-            let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
+            let mut stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
+            if namespace.version < CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION {
+                let derived_by_id = design_objects
+                    .iter()
+                    .map(|object| (object.id.as_str(), object))
+                    .collect::<HashMap<_, _>>();
+                for object in &mut stored {
+                    if let Some(derived) = derived_by_id.get(object.id.as_str()) {
+                        object
+                            .definition_chain_values
+                            .clone_from(&derived.definition_chain_values);
+                    }
+                }
+            }
             let stored_by_id = stored
                 .iter()
                 .map(|object| (object.id.as_str(), object))

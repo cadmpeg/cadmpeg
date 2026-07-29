@@ -11756,6 +11756,27 @@ fn design_objects_retain_definition_chain_values_in_field_order() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_two_definition_chain_values());
+    let expected = native.design_objects[0].definition_chain_values.clone();
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut previous_namespace)
+        .expect("store current definition-chain ownership");
+    let mut previous_design_objects: Vec<crate::native::CatiaDesignObject> = previous_namespace
+        .arena_as("design_objects")
+        .expect("load stored design objects");
+    for object in &mut previous_design_objects {
+        object.definition_chain_values.clear();
+    }
+    previous_namespace
+        .set_arena("design_objects", &previous_design_objects)
+        .expect("store previous design objects");
+    previous_namespace.version = 195;
+    let migrated = crate::native::CatiaNative::load(&previous_namespace)
+        .expect("migrate previous definition-chain ownership");
+    assert_eq!(migrated.design_objects[0].definition_chain_values, expected);
 }
 
 #[test]
