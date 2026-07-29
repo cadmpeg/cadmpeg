@@ -316,6 +316,32 @@ pub(crate) fn join_partial_constraint_components(
     joined.into_iter().map(|(_, edges)| edges).collect()
 }
 
+pub(crate) fn order_incidence_components_by_branch_width(
+    components: &mut [Vec<usize>],
+    choices: &[Vec<[usize; 2]>],
+) -> Option<()> {
+    if components
+        .iter()
+        .flatten()
+        .any(|edge| *edge >= choices.len())
+    {
+        return None;
+    }
+    let branch_width = |component: &[usize]| {
+        component.iter().fold(1usize, |width, edge| {
+            width.saturating_mul(choices[*edge].len())
+        })
+    };
+    components.sort_by_key(|component| {
+        (
+            branch_width(component),
+            component.len(),
+            component.first().copied().unwrap_or_default(),
+        )
+    });
+    Some(())
+}
+
 pub(crate) struct IncidenceComponentSearch<'a> {
     pub(crate) choices: &'a [Vec<[usize; 2]>],
     pub(crate) edge_faces: &'a [[usize; 2]],
@@ -1700,6 +1726,7 @@ where
                 constraint.assignment_predecessors,
             );
         }
+        order_incidence_components_by_branch_width(&mut components, choices)?;
         let mut face_edges = vec![Vec::new(); face_count];
         for (edge, faces) in edge_faces.iter().copied().enumerate() {
             for (rank, face) in faces.into_iter().enumerate() {

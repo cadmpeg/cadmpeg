@@ -975,6 +975,22 @@ fn partial_incidence_predecessors_join_only_their_class_components() {
 }
 
 #[test]
+fn incidence_components_order_by_endpoint_branch_width() {
+    let choices = vec![
+        vec![[0, 0], [1, 1]],
+        vec![[2, 2], [3, 3], [4, 4]],
+        vec![[5, 5], [6, 6]],
+        vec![[7, 7]],
+    ];
+    let mut components = vec![vec![0, 2], vec![1], vec![3]];
+
+    crate::solve::incidence::order_incidence_components_by_branch_width(&mut components, &choices)
+        .expect("valid component edges");
+
+    assert_eq!(components, vec![vec![3], vec![1], vec![0, 2]]);
+}
+
+#[test]
 fn incidence_components_keep_fixed_face_boundaries_independent() {
     let choices = vec![
         vec![[0, 1], [0, 2]],
