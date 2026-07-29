@@ -56,7 +56,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The semantic roles of the class-`62` secondary framing control and odd extended-metadata control are unresolved.
 - The semantic distinction between object-stream vertex-incidence terminal controls `00` and `04` is unresolved.
 - The semantic role of the positive scalar in the exact `b5 03 21` pcurve suffix is unresolved.
-- The parameter mapping from a class-`24` or class-`14` directrix interval to the distinct class-`2c` V interval is unresolved for terminal pairs `05 15` and `05 19`. These records do not use the direct `directrix(V) + U·direction` chart.
 - The individual roles of the two decreasing auxiliary scalars in class-`2c` terminal forms `01 09` and `01 15` are unresolved. Their enclosing class-`30` construction supplies the exact result chart independently.
 - The operation name and semantic roles of the six control bytes in `b5 03 37` support-bound surface constructions are unresolved.
 - The operation name and semantic roles of the six controls and first scalar in `b5 03 3b` support-bound surface constructions are unresolved.

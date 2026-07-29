@@ -683,10 +683,19 @@ fn parse_records(bytes: &[u8], records: &[B5Record], require_topology: bool) -> 
     let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes);
     let mut object_stream_pcurve_candidates = BTreeMap::new();
     let mut conflicting_object_stream_pcurves = HashSet::new();
+    let mut object_stream_pcurve_classes = HashMap::<u32, Option<u8>>::new();
     for jet in &object_stream_pcurve_jets {
         let Some(candidate) = object_stream_pcurve_candidate(jet) else {
             continue;
         };
+        object_stream_pcurve_classes
+            .entry(candidate.object_id)
+            .and_modify(|class| {
+                if *class != Some(0x20) {
+                    *class = None;
+                }
+            })
+            .or_insert(Some(0x20));
         merge_pcurve_candidate(
             &mut object_stream_pcurve_candidates,
             &mut conflicting_object_stream_pcurves,
@@ -694,6 +703,14 @@ fn parse_records(bytes: &[u8], records: &[B5Record], require_topology: bool) -> 
         );
     }
     for candidate in a8_class21_pcurves(bytes) {
+        object_stream_pcurve_classes
+            .entry(candidate.object_id)
+            .and_modify(|class| {
+                if *class != Some(0x21) {
+                    *class = None;
+                }
+            })
+            .or_insert(Some(0x21));
         merge_pcurve_candidate(
             &mut object_stream_pcurve_candidates,
             &mut conflicting_object_stream_pcurves,
@@ -765,9 +782,14 @@ fn parse_records(bytes: &[u8], records: &[B5Record], require_topology: bool) -> 
     let object_stream_pcurves = object_stream_pcurve_candidates
         .iter()
         .filter_map(|(&object_id, pcurve)| {
+            let class = object_stream_pcurve_classes
+                .get(&object_id)
+                .copied()
+                .flatten()?;
             Some((
                 object_id,
                 B5ObjectStreamPcurve {
+                    class,
                     surface: pcurve.surface,
                     parameter_range: pcurve.parameter_range?,
                     class_21_suffix_scalar: pcurve.class_21_suffix_scalar,
@@ -2881,6 +2903,7 @@ struct B5OffsetCache {
 }
 
 struct B5ObjectStreamPcurve {
+    class: u8,
     surface: u32,
     parameter_range: [f64; 2],
     class_21_suffix_scalar: Option<f64>,
@@ -2924,11 +2947,21 @@ fn parse_extrusion_surface_with_context(
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
 ) -> Option<B5ExtrusionSurface> {
     let carrier = extrusion_carrier(record)?;
-    let mut directrix = parse_extrusion_directrix(
-        records.get(&carrier.directrix_id)?,
-        records,
-        object_stream_pcurves,
-    )?;
+    let terminal_span_chart = matches!(carrier.controls, [0x05, 0x15 | 0x19]);
+    let mut directrix = if terminal_span_chart {
+        terminal_span_directrix(
+            carrier.directrix_id,
+            carrier.parameter_bounds[1],
+            carrier.controls,
+            object_stream_pcurves,
+        )?
+    } else {
+        parse_extrusion_directrix(
+            records.get(&carrier.directrix_id)?,
+            records,
+            object_stream_pcurves,
+        )?
+    };
     if matches!(carrier.controls, [0x01, 0x09 | 0x15]) {
         let parameter_bounds = contextual_offset_extrusion_bounds(
             record.object_id,
@@ -3025,6 +3058,42 @@ fn contextual_offset_extrusion_bounds(
     resolved
 }
 
+fn terminal_span_directrix(
+    directrix_id: u32,
+    active: [f64; 2],
+    controls: [u8; 2],
+    object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
+) -> Option<B5ExtrusionDirectrix> {
+    let mut first_position = 0;
+    let target_span_count = wire::compact_uint(&controls[..1], &mut first_position)?;
+    let mut second_position = 0;
+    let source_span_count =
+        usize::try_from(wire::compact_uint(&controls[1..], &mut second_position)?).ok()?;
+    (target_span_count == 1 && matches!(source_span_count, 5 | 6)).then_some(())?;
+    let pcurve = object_stream_pcurves.get(&directrix_id)?;
+    (pcurve.class == 0x20 && pcurve.distinct_knots.len() == source_span_count + 1).then_some(())?;
+    let source_range = [
+        *pcurve.distinct_knots.get(source_span_count - 1)?,
+        *pcurve.distinct_knots.get(source_span_count)?,
+    ];
+    pcurve
+        .parameter_range
+        .into_iter()
+        .zip([
+            *pcurve.distinct_knots.first()?,
+            *pcurve.distinct_knots.last()?,
+        ])
+        .all(|(left, right)| left.to_bits() == right.to_bits())
+        .then_some(())?;
+    parameter_spans_agree(source_range[1] - source_range[0], active[1] - active[0]).then_some(
+        B5ExtrusionDirectrix::SurfaceCurve {
+            object_id: directrix_id,
+            support: (pcurve.surface, directrix_id, source_range),
+            parameter_range: active,
+        },
+    )
+}
+
 fn translated_directrix_span_count(
     directrix: &B5ExtrusionDirectrix,
     active: [f64; 2],
@@ -3039,6 +3108,7 @@ fn translated_directrix_span_count(
     (target_span_count == 1 && source_span_count > 1).then_some(())?;
     let [support] = directrix.supports().try_into().ok()?;
     let pcurve = object_stream_pcurves.get(&support.1)?;
+    (pcurve.class == 0x21).then_some(())?;
     let suffix_span = pcurve.class_21_suffix_scalar?;
     let active_span = active[1] - active[0];
     parameter_spans_agree(suffix_span, active_span).then_some(())?;
@@ -3089,7 +3159,7 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
     position += 72;
     let controls: [u8; 2] = record.payload.get(position..)?.try_into().ok()?;
     let contextual_offset_chart = matches!(controls, [0x01, 0x09 | 0x15]);
-    ((matches!(controls, [0x05, 0x05 | 0x11])
+    ((matches!(controls, [0x05, 0x05 | 0x11 | 0x15 | 0x19])
         || contextual_offset_chart
         || (matches!(controls[0], 0x01 | 0x05) && controls[1] == 0x29))
         && unit([values[0], values[1], values[2]]).is_some()
@@ -4594,6 +4664,7 @@ mod tests {
         suffix: Option<f64>,
     ) -> B5ObjectStreamPcurve {
         B5ObjectStreamPcurve {
+            class: 0x21,
             surface,
             parameter_range: [
                 *distinct_knots.first().expect("test knot"),
@@ -6916,6 +6987,70 @@ mod tests {
             None,
             "05 11 requires four uniform source spans"
         );
+    }
+
+    #[test]
+    fn extrusion_selects_the_terminal_span_of_a_direct_class20_pcurve() {
+        let records = HashMap::new();
+        for (controls, knots) in [
+            ([0x05, 0x15], vec![0.0, 2.0, 5.0, 9.0, 12.0, 14.5]),
+            ([0x05, 0x19], vec![0.0, 1.0, 3.0, 6.0, 10.0, 13.0, 15.5]),
+        ] {
+            let mut pcurve = object_stream_pcurve(7, knots.clone(), None);
+            pcurve.class = 0x20;
+            let pcurves = BTreeMap::from([(3, pcurve)]);
+            let mut payload = vec![0x81, 0x83];
+            for value in [0.0f64, 0.0, 1.0, -2.0, 6.0, 1.0, 0.0, 0.0, 2.5] {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            payload.extend_from_slice(&controls);
+            let record = B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x2c,
+                object_id: 8,
+                payload,
+            };
+            let source_range = [knots[knots.len() - 2], knots[knots.len() - 1]];
+
+            assert_eq!(
+                parse_extrusion_surface(&record, &records, &pcurves),
+                Some(B5ExtrusionSurface {
+                    object_id: 8,
+                    direction: [0.0, 0.0, 1.0],
+                    parameter_bounds: [[-2.0, 6.0], [0.0, 2.5]],
+                    directrix: B5ExtrusionDirectrix::SurfaceCurve {
+                        object_id: 3,
+                        support: (7, 3, source_range),
+                        parameter_range: [0.0, 2.5],
+                    },
+                })
+            );
+
+            let wrong_class = BTreeMap::from([(3, object_stream_pcurve(7, knots.clone(), None))]);
+            assert_eq!(
+                parse_extrusion_surface(&record, &records, &wrong_class),
+                None
+            );
+
+            let mut wrong_span = record.clone();
+            let active_end = 2 + 8 * 8;
+            wrong_span.payload[active_end..active_end + 8].copy_from_slice(&2.0f64.to_le_bytes());
+            assert_eq!(
+                parse_extrusion_surface(&wrong_span, &records, &pcurves),
+                None
+            );
+
+            let mut extra_knot = knots;
+            extra_knot.insert(1, 0.5);
+            let mut pcurve = object_stream_pcurve(7, extra_knot, None);
+            pcurve.class = 0x20;
+            let wrong_cardinality = BTreeMap::from([(3, pcurve)]);
+            assert_eq!(
+                parse_extrusion_surface(&record, &records, &wrong_cardinality),
+                None
+            );
+        }
     }
 
     #[test]

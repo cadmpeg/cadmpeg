@@ -311,7 +311,9 @@ current scores require those matrices and representative fixtures.
   its parameter origin when the wrapper interval, native tail span, and
   extrusion V span agree. Class-`2c` controls `05 11` map four uniform
   class-`21` knot spans onto one V interval by an exact affine
-  reparameterization. Controls `01 09` and `01 15` use the class-`14` result
+  reparameterization. Controls `05 15` and `05 19` select and reorigin the
+  terminal span of a direct class-`20` pcurve having exactly five and six
+  spans respectively. Controls `01 09` and `01 15` use the class-`14` result
   interval as V bounds only when at least one class-`30` kind-`21` construction
   names the carrier and every such construction matches the source directrix
   identity, source extrusion, signed distance, plane-normal direction, and both
