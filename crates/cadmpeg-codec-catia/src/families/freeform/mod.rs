@@ -903,8 +903,8 @@ mod tests {
     }
 
     #[test]
-    fn freeform_fallback_retains_phase_tailed_cylinder_carriers() {
-        let carriers = freeform_surface_carriers(&crate::tests::b2_phase_tailed_cylinder_stream());
+    fn freeform_fallback_retains_range_origin_cylinder_carriers() {
+        let carriers = freeform_surface_carriers(&crate::tests::b2_range_origin_cylinder_stream());
         assert!(matches!(
             carriers.as_slice(),
             [carrier]

@@ -108,6 +108,9 @@ current scores require those matrices and representative fixtures.
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;
   missing and multiply matching records leave the standard carrier unchanged.
+  A layout-`0x62` cylinder retains the exact redundant origin of its partial
+  circumferential interval and rejects a tail that disagrees with the interval
+  midpoint and radius.
 - The freeform fallback transfers complete consolidated cylinder, cone, sphere,
   and torus records as placed analytic surface carriers independently of
   unresolved topology ownership.

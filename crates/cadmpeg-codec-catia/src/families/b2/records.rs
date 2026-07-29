@@ -907,10 +907,10 @@ pub struct B2Cylinder {
     pub u_range: [f64; 2],
     /// Axial range.
     pub v_range: [f64; 2],
-    /// Stored planar vector for a phase-tailed `0x62` frame.
+    /// Stored planar vector for a range-origin `0x62` frame.
     pub stored_vector: Option<[f64; 2]>,
-    /// Phase scalar for a phase-tailed `0x62` frame.
-    pub phase: Option<f64>,
+    /// Origin of the stored partial circumferential interval.
+    pub range_origin: Option<f64>,
 }
 
 /// Slant-coordinate cone chart stored in a `b2 03 29` record.
@@ -1657,7 +1657,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 u_range,
                 v_range,
                 stored_vector: None,
-                phase: None,
+                range_origin: None,
             })
         }
         0x52 => {
@@ -1696,7 +1696,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 u_range,
                 v_range,
                 stored_vector: None,
-                phase: None,
+                range_origin: None,
             })
         }
         0x62 if frame_token == 0x0e && data.get(p + 89) == Some(&0x03) => {
@@ -1705,7 +1705,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let radius = f64_le(data, p + 49)?;
             let u_range = read_f64_array::<2>(data, p + 57)?;
             let v_range = read_f64_array::<2>(data, p + 73)?;
-            let phase = f64_le(data, p + 90)?;
+            let range_origin = f64_le(data, p + 90)?;
+            let expected_range_origin = cylinder_range_origin(radius, u_range);
             if one != 1.0
                 || !(0.0..1e6).contains(&radius)
                 || origin_values.iter().any(|value| !value.is_finite())
@@ -1713,7 +1714,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 || u_range.iter().any(|value| !value.is_finite())
                 || v_range.iter().any(|value| !value.is_finite())
                 || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
-                || !phase.is_finite()
+                || !range_origin.is_finite()
+                || range_origin.to_bits() != expected_range_origin.to_bits()
                 || u_range[0] >= u_range[1]
                 || v_range[0] >= v_range[1]
                 || u_range[1] - u_range[0] > 2.0 * std::f64::consts::PI * radius + 1e-6
@@ -1735,11 +1737,15 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 u_range,
                 v_range,
                 stored_vector: Some(vector),
-                phase: Some(phase),
+                range_origin: Some(range_origin),
             })
         }
         _ => None,
     }
+}
+
+pub(crate) fn cylinder_range_origin(radius: f64, u_range: [f64; 2]) -> f64 {
+    (u_range[0] + u_range[1]) * 0.5 - std::f64::consts::PI * radius
 }
 
 /// Decode `b2 03 19` arc-length circle supports.

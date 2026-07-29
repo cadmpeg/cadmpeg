@@ -9,7 +9,7 @@ use crate::tests::{
     b2_embedded_cylinder_stream, b2_group_stream, b2_implicit_axis_cylinder_stream,
     b2_line_profile_stream, b2_link_5f_stream, b2_linked_counted_owner_stream,
     b2_linked_owner_stream, b2_long_61_stream, b2_offset_support_stream, b2_owner_packet_stream,
-    b2_parameter_point_stream, b2_pcurve_stream, b2_phase_tailed_cylinder_stream,
+    b2_parameter_point_stream, b2_pcurve_stream, b2_range_origin_cylinder_stream,
     b2_reference_list_stream, b2_resolved_revolution_stream, b2_revolution_stream,
     b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
     b2_width_coded_owner_packet_stream, b3_cylinder_stream, b3_offset_support_stream,
@@ -595,8 +595,8 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
 }
 
 #[test]
-fn b2_cylinder_parser_resolves_phase_tailed_carrier_and_preserves_chart_phase() {
-    let cylinders = crate::families::b2::records::b2_cylinders(&b2_phase_tailed_cylinder_stream());
+fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
+    let cylinders = crate::families::b2::records::b2_cylinders(&b2_range_origin_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].layout, 0x62);
     assert!(matches!(
@@ -609,13 +609,19 @@ fn b2_cylinder_parser_resolves_phase_tailed_carrier_and_preserves_chart_phase() 
             && [ref_direction.x, ref_direction.y, ref_direction.z] == [0.0, 0.0, 1.0]
     ));
     assert_eq!(cylinders[0].stored_vector, Some([0.0, 1.0]));
-    assert_eq!(cylinders[0].phase, Some(0.75));
+    assert_eq!(
+        cylinders[0].range_origin.map(f64::to_bits),
+        Some(((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits())
+    );
 
     for range in [30..38, 46..54, 95..103] {
-        let mut malformed = b2_phase_tailed_cylinder_stream();
+        let mut malformed = b2_range_origin_cylinder_stream();
         malformed[range].copy_from_slice(&f64::NAN.to_le_bytes());
         assert!(crate::families::b2::records::b2_cylinders(&malformed).is_empty());
     }
+    let mut inconsistent = b2_range_origin_cylinder_stream();
+    inconsistent[95..103].copy_from_slice(&0.0_f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_cylinders(&inconsistent).is_empty());
 }
 
 #[test]

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 176;
+pub const CATIA_NATIVE_VERSION: u32 = 177;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -221,16 +221,16 @@ pub enum CatiaConsolidatedCylinderPayload {
         /// Unit direction from which the circumferential parameter is measured.
         reference_direction: [f64; 3],
     },
-    /// Complete layout-`0x62` frame and its independent chart phase.
-    PhaseTailed {
+    /// Complete layout-`0x62` frame and its redundant range origin.
+    RangeOrigin {
         /// Stored unit vector in the token-defined carrier plane.
         stored_vector: [f64; 2],
         /// Cylinder-axis unit direction.
         axis: [f64; 3],
         /// Unit direction from which the circumferential parameter is measured.
         reference_direction: [f64; 3],
-        /// Stored finite phase scalar.
-        phase: f64,
+        /// Origin of the stored partial circumferential interval.
+        range_origin: f64,
     },
 }
 
@@ -3505,13 +3505,15 @@ fn consolidated_cylinders(bytes: &[u8]) -> Vec<CatiaConsolidatedCylinder> {
                 else {
                     unreachable!("B2 cylinder parser produced a non-cylinder carrier")
                 };
-                CatiaConsolidatedCylinderPayload::PhaseTailed {
+                CatiaConsolidatedCylinderPayload::RangeOrigin {
                     stored_vector: cylinder
                         .stored_vector
-                        .expect("phase-tailed cylinder has its stored vector"),
+                        .expect("range-origin cylinder has its stored vector"),
                     axis: [axis.x, axis.y, axis.z],
                     reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                    phase: cylinder.phase.expect("phase-tailed cylinder has its phase"),
+                    range_origin: cylinder
+                        .range_origin
+                        .expect("range-origin cylinder has its range origin"),
                 }
             } else {
                 match cylinder.geometry {
@@ -4478,22 +4480,28 @@ fn validate_consolidated_cylinders(
                         .abs()
                         <= 1e-6
             }
-            CatiaConsolidatedCylinderPayload::PhaseTailed {
+            CatiaConsolidatedCylinderPayload::RangeOrigin {
                 stored_vector,
                 axis,
                 reference_direction,
-                phase,
+                range_origin,
             } => {
                 cylinder.layout == 0x62
                     && stored_vector
                         .iter()
-                        .chain(std::iter::once(phase))
+                        .chain(std::iter::once(range_origin))
                         .all(|value| value.is_finite())
                     && (stored_vector[0].hypot(stored_vector[1]) - 1.0).abs() <= 1e-9
                     && *axis == [0.0, 1.0, 0.0]
                     && *reference_direction == [stored_vector[0], 0.0, stored_vector[1]]
                     && cylinder.u_range[1] - cylinder.u_range[0]
                         <= std::f64::consts::TAU * cylinder.radius + 1e-6
+                    && range_origin.to_bits()
+                        == crate::families::b2::records::cylinder_range_origin(
+                            cylinder.radius,
+                            cylinder.u_range,
+                        )
+                        .to_bits()
             }
         };
         if cylinder.id != expected_id

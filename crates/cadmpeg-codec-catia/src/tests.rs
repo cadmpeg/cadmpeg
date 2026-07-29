@@ -1621,7 +1621,7 @@ pub(crate) fn b2_implicit_axis_cylinder_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn b2_phase_tailed_cylinder_stream() -> Vec<u8> {
+pub(crate) fn b2_range_origin_cylinder_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x28, 0x62, 0x05];
     record.resize(103, 0);
     let p = 5;
@@ -1635,7 +1635,8 @@ pub(crate) fn b2_phase_tailed_cylinder_stream() -> Vec<u8> {
     record[p + 73..p + 81].copy_from_slice(&le_f64(-2.0));
     record[p + 81..p + 89].copy_from_slice(&le_f64(2.0));
     record[p + 89] = 0x03;
-    record[p + 90..p + 98].copy_from_slice(&le_f64(0.75));
+    let range_origin = (0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0;
+    record[p + 90..p + 98].copy_from_slice(&le_f64(range_origin));
     record
 }
 
@@ -4352,9 +4353,9 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
 fn native_namespace_retains_all_consolidated_cylinder_layouts() {
     let mut stream = b2_cylinder_stream();
     stream.extend_from_slice(&b2_implicit_axis_cylinder_stream());
-    stream.extend_from_slice(&b2_phase_tailed_cylinder_stream());
+    stream.extend_from_slice(&b2_range_origin_cylinder_stream());
     let native = crate::native::CatiaNative::decode(&stream);
-    let [explicit, implicit, phase_tailed] = native.consolidated_cylinders.as_slice() else {
+    let [explicit, implicit, range_origin] = native.consolidated_cylinders.as_slice() else {
         panic!("three consolidated cylinders")
     };
     assert_eq!(explicit.layout, 0x5a);
@@ -4373,16 +4374,17 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
         implicit.payload,
         crate::native::CatiaConsolidatedCylinderPayload::Resolved { .. }
     ));
-    assert_eq!(phase_tailed.layout, 0x62);
-    assert_eq!(phase_tailed.radius, 4.0);
+    assert_eq!(range_origin.layout, 0x62);
+    assert_eq!(range_origin.radius, 4.0);
     assert!(matches!(
-        phase_tailed.payload,
-        crate::native::CatiaConsolidatedCylinderPayload::PhaseTailed {
+        range_origin.payload,
+        crate::native::CatiaConsolidatedCylinderPayload::RangeOrigin {
             stored_vector: [0.0, 1.0],
             axis: [0.0, 1.0, 0.0],
             reference_direction: [0.0, 0.0, 1.0],
-            phase: 0.75,
-        }
+            range_origin,
+        } if range_origin.to_bits()
+            == ((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits()
     ));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -4393,7 +4395,12 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
     );
 
     let mut invalid = native;
-    invalid.consolidated_cylinders[2].layout = 0x5a;
+    let crate::native::CatiaConsolidatedCylinderPayload::RangeOrigin { range_origin, .. } =
+        &mut invalid.consolidated_cylinders[2].payload
+    else {
+        panic!("range-origin cylinder")
+    };
+    *range_origin += 1.0;
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)

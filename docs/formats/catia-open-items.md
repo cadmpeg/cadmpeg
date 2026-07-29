@@ -40,7 +40,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The standard-path arc branch is unspecified for arcs with no witnessed adjacent face.
 - The `a5 03 20` `op1` or persistent-tag reference to serialized-record mapping is unspecified.
 - The semantic coordinate roles of the binary64 box and three binary32 bounds in the fixed `b2/b3/b4 03 62` owner tail, the five-byte header, and the owner packet's binding to a face record are unspecified.
-- The effect of the layout-`0x62` phase scalar on the cylinder's native circumferential chart is unresolved.
 - The semantic roles of the two binary64 lanes before `angular_offset` and the four lanes after `angular_scale` in `b2 03 29` cone records are unspecified.
 - The semantic roles of the four `b2/b3/b4 03 18` parameter-point prefix selectors are unresolved.
 - The internal roles of the reference-and-control program in `b2 03 3b` cone-face chart records are unresolved.
