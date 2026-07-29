@@ -253,6 +253,7 @@ pub(crate) fn attach(
         &model.features.feature_parameter_uses,
         annotations,
     );
+    attach_active_configuration_parameter_values(ir, annotations);
     attach_feature_operations(
         ir,
         &model.features,
@@ -270,32 +271,79 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(172);
+    namespace.version = namespace.version.max(173);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
     Ok(())
 }
 
-fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
-    let active_configuration_indices = ir
-        .model
-        .configurations
-        .iter()
-        .enumerate()
-        .filter_map(|(index, configuration)| configuration.active.then_some(index))
-        .collect::<Vec<_>>();
-    let [configuration_index] = active_configuration_indices.as_slice() else {
+fn attach_active_configuration_parameter_values(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    let Some(configuration_index) = unique_active_configuration_index(&ir.model.configurations)
+    else {
         return;
     };
-    let Some(configuration_bodies) = ir.model.configurations[*configuration_index]
+    let configuration = &ir.model.configurations[configuration_index];
+    if configuration.bodies.is_unresolved()
+        || !configuration.parameter_values.is_empty()
+        || ir.model.parameters.is_empty()
+    {
+        return;
+    }
+    let parameters_by_id = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter))
+        .collect::<BTreeMap<_, _>>();
+    if parameters_by_id.len() != ir.model.parameters.len()
+        || ir.model.parameters.iter().any(|parameter| {
+            parameter.value.is_none()
+                || parameter.dependencies.iter().any(|dependency| {
+                    parameters_by_id.get(dependency).is_none_or(|dependency| {
+                        dependency.owner != parameter.owner
+                            || dependency.ordinal >= parameter.ordinal
+                    })
+                })
+        })
+    {
+        return;
+    }
+    let values = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| {
+            (
+                parameter.id.clone(),
+                parameter
+                    .value
+                    .clone()
+                    .expect("validated parameter has an evaluated value"),
+            )
+        })
+        .collect();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    configuration.parameter_values = values;
+    annotations.derived(&configuration.id.0, "parameter_values");
+}
+
+fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let Some(configuration_index) = unique_active_configuration_index(&ir.model.configurations)
+    else {
+        return;
+    };
+    let Some(configuration_bodies) = ir.model.configurations[configuration_index]
         .bodies
         .resolved()
         .map(<[BodyId]>::to_vec)
     else {
         return;
     };
-    if !ir.model.configurations[*configuration_index]
+    if !ir.model.configurations[configuration_index]
         .feature_states
         .is_empty()
     {
@@ -376,9 +424,21 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
         feature.suppressed = Some(false);
         annotations.derived(&feature.id, "suppressed");
     }
-    let configuration = &mut ir.model.configurations[*configuration_index];
+    let configuration = &mut ir.model.configurations[configuration_index];
     configuration.feature_states = states;
     annotations.derived(&configuration.id.0, "feature_states");
+}
+
+fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> Option<usize> {
+    let active = configurations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, configuration)| configuration.active.then_some(index))
+        .collect::<Vec<_>>();
+    let [index] = active.as_slice() else {
+        return None;
+    };
+    Some(*index)
 }
 
 fn attach_feature_operations(
@@ -4584,6 +4644,133 @@ mod tests {
     use crate::NxCodec;
 
     use super::*;
+
+    #[test]
+    fn active_configuration_retains_complete_evaluated_parameter_state() {
+        let parameter =
+            |id: &str, ordinal, value, dependencies: Vec<ParameterId>| DesignParameter {
+                id: ParameterId(id.into()),
+                owner: None,
+                ordinal,
+                name: id.into(),
+                expression: id.into(),
+                display: None,
+                value,
+                dependencies,
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            };
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.parameters = vec![
+            parameter(
+                "length",
+                0,
+                Some(ParameterValue::Length(Length(25.4))),
+                Vec::new(),
+            ),
+            parameter(
+                "angle",
+                1,
+                Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
+                vec![ParameterId("length".into())],
+            ),
+        ];
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("active".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Model".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            bodies: ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        });
+        let mut annotations = AnnotationBuilder::new();
+
+        super::attach_active_configuration_parameter_values(&mut ir, &mut annotations);
+
+        assert_eq!(
+            ir.model.configurations[0].parameter_values,
+            BTreeMap::from([
+                (
+                    ParameterId("angle".into()),
+                    ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))
+                ),
+                (
+                    ParameterId("length".into()),
+                    ParameterValue::Length(Length(25.4))
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
+        let parameter = |id: &str, value, dependencies: Vec<ParameterId>| DesignParameter {
+            id: ParameterId(id.into()),
+            owner: None,
+            ordinal: 0,
+            name: id.into(),
+            expression: id.into(),
+            display: None,
+            value,
+            dependencies,
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let configuration = || DesignConfiguration {
+            id: ConfigurationId("active".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Model".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            bodies: ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        };
+        let mut cases = [
+            vec![parameter("p1", None, Vec::new())],
+            vec![parameter(
+                "p1",
+                Some(ParameterValue::Real(1.0)),
+                vec![ParameterId("missing".into())],
+            )],
+            vec![
+                parameter("p1", Some(ParameterValue::Real(1.0)), Vec::new()),
+                parameter("p1", Some(ParameterValue::Real(2.0)), Vec::new()),
+            ],
+            vec![
+                parameter("p1", Some(ParameterValue::Real(1.0)), Vec::new()),
+                parameter(
+                    "p2",
+                    Some(ParameterValue::Real(2.0)),
+                    vec![ParameterId("p1".into())],
+                ),
+            ],
+        ];
+        let mut annotations = AnnotationBuilder::new();
+        for parameters in &mut cases {
+            let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+            ir.model.parameters = std::mem::take(parameters);
+            ir.model.configurations.push(configuration());
+
+            super::attach_active_configuration_parameter_values(&mut ir, &mut annotations);
+
+            assert!(ir.model.configurations[0].parameter_values.is_empty());
+        }
+    }
 
     #[test]
     fn active_configuration_body_writers_close_false_suppression_through_dependencies() {

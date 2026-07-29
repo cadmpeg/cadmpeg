@@ -75,6 +75,15 @@ explicitly suppressed, active configuration identity is ambiguous, or body
 membership is unresolved. Operations outside the closed graph retain
 unresolved suppression.
 
+The same active configuration retains the complete current parameter state when
+every neutral NX parameter identity is unique, every value is evaluated, and
+every parameter dependency names an earlier parameter in the same ownership
+scope. Values retain their neutral length, angle, real, integer, Boolean, or
+string type. An empty parameter set, duplicate identity, unevaluated value,
+missing, cross-scope, or nonpreceding dependency, preexisting
+configuration-local parameter state, or unresolved active body membership
+rejects the parameter map atomically.
+
 The canonical `/Root/UG_PART/UG_PART` payload begins with a segment index of
 12-byte little-endian rows:
 
