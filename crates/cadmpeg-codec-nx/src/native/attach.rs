@@ -3080,6 +3080,9 @@ fn non_boolean_feature_definition_with_parameters(
         "EXTRACT_BODY" => FeatureDefinition::ExtractBody {
             source: BodySelection::Unresolved,
         },
+        "MASTER SNAPSHOT BODY" => FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Unresolved,
+        },
         "SKIN" => FeatureDefinition::LoftUnresolved,
         "Studio Surface" => FeatureDefinition::FreeformSurfaceUnresolved,
         "DRAFT" => FeatureDefinition::DraftUnresolved,
@@ -4822,6 +4825,12 @@ mod tests {
         assert!(matches!(
             super::non_boolean_feature_definition("DATUM_CSYS", &[], None, None, None),
             cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
+        ));
+        assert!(matches!(
+            super::non_boolean_feature_definition("MASTER SNAPSHOT BODY", &[], None, None, None,),
+            cadmpeg_ir::features::FeatureDefinition::BaseFeature {
+                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+            }
         ));
         assert!(matches!(
             super::non_boolean_feature_definition(
