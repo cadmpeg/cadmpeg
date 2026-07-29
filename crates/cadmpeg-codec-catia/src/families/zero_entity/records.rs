@@ -684,6 +684,9 @@ fn zero_entity_faces_from_records(
             let allocations = (0..count)
                 .map(|index| tagged_u32(data, record.pos + 13 + index * 5))
                 .collect::<Option<Vec<_>>>()?;
+            if allocations.contains(&0) {
+                return None;
+            }
             let first = *allocations.first()?;
             let loop_terminals = allocations[1..]
                 .iter()
@@ -2319,6 +2322,16 @@ mod tests {
         let mut stream = zero_entity_face_support_stream();
         *stream.last_mut().expect("face terminal") = 0x04;
         assert!(zero_entity_support_runs(&stream)[0].face.is_none());
+    }
+
+    #[test]
+    fn face_roster_requires_nonzero_allocation_lanes() {
+        for allocation_offset in [13usize, 18] {
+            let mut stream = zero_entity_face_support_stream();
+            let face = zero_entity_records(&stream)[2];
+            write_tagged_u32(&mut stream, face.pos + allocation_offset, 0);
+            assert!(zero_entity_support_runs(&stream)[0].face.is_none());
+        }
     }
 
     #[test]

@@ -4988,6 +4988,18 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity face");
     assert!(crate::native::CatiaNative::load(&invalid_face_namespace).is_err());
 
+    let mut invalid_face_allocation = native.clone();
+    invalid_face_allocation.zero_entity_support_runs[0]
+        .face
+        .as_mut()
+        .expect("face")
+        .allocations[0] = 0;
+    let mut invalid_face_allocation_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_face_allocation
+        .store(&mut invalid_face_allocation_namespace)
+        .expect("store invalid CATIA zero-entity face allocation");
+    assert!(crate::native::CatiaNative::load(&invalid_face_allocation_namespace).is_err());
+
     let mut invalid_face_control = native.clone();
     invalid_face_control.zero_entity_support_runs[0]
         .face

@@ -4938,6 +4938,7 @@ fn validate_zero_entity_support_runs(
                 .and_then(|length| length.checked_add(14));
             face.tag[0] == 0x5f
                 && face.allocations.len() >= 2
+                && !face.allocations.contains(&0)
                 && matches!(face.terminal_control, 0x03 | 0x05)
                 && expected_length == Some(usize::from(face.tag[1]) + 12)
                 && derived_terminals.as_ref() == Some(&face.loop_terminals)
