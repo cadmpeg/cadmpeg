@@ -2109,7 +2109,15 @@ before `e1 e1 <row-id> e3 <suffix> <selector> <row-id> 00 e1 00 e3`.
 `<suffix>` is either `e3` or `f7 <canonical-reference> e3`. The repeated compact
 `row-id` values must agree. The pair begins immediately after a compound close,
 and its two stateful extents must consume the bytes up to that suffix exactly.
-More than one exact start leaves the row opaque.
+An unanchored row can instead terminate two explicit affected arrays after
+generated-surface and generated-edge arrays. In that form the final two
+`f8 <count> <ids...>` arrays before the repeated-row suffix are
+`geoms_affected` and `edgs_affected`. The arrays are adjacent, separated by
+`f7 <reference>`, or separated by
+`f1 f7 <reference> 01 e3 [f7 <reference>]`. The second array is followed
+immediately by the repeated-row suffix, by `f1 f7 <reference>` and that
+suffix, or by `f5 96 92 00` and that suffix. Earlier arrays in the row remain
+generated-output tables. More than one exact pair leaves the row opaque.
 
 Repeated named affected-ID arrays for one feature and namespace are distinct
 stored states. They define a neutral edge selection, parent set, generated

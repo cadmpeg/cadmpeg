@@ -6212,6 +6212,85 @@ fn replay_affected_pair(run: &[u8], extents: [Option<u32>; 2]) -> Option<ReplayA
     })
 }
 
+fn explicit_replay_array(run: &[u8], opener: usize) -> Option<(Vec<u32>, usize)> {
+    (run.get(opener) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (count, cursor) = psb::compact_int(run, opener + 1);
+    (cursor > opener + 1).then_some(())?;
+    replay_ids(run, count, cursor)
+}
+
+fn replay_entity_reference_end(bytes: &[u8], cursor: usize) -> Option<usize> {
+    (bytes.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    psb::reference_id(bytes, cursor + 1)
+        .ok()
+        .map(|(_, after)| after)
+}
+
+fn replay_array_separator(bytes: &[u8]) -> bool {
+    if bytes.is_empty() {
+        return true;
+    }
+    if replay_entity_reference_end(bytes, 0) == Some(bytes.len()) {
+        return true;
+    }
+    if bytes.first() != Some(&0xf1) {
+        return false;
+    }
+    let Some(after_reference) = replay_entity_reference_end(bytes, 1) else {
+        return false;
+    };
+    let Some(after_close) = bytes
+        .get(after_reference..)
+        .is_some_and(|tail| tail.starts_with(&[1, psb::token::COMPOUND_CLOSE]))
+        .then_some(after_reference + 2)
+    else {
+        return false;
+    };
+    after_close == bytes.len()
+        || replay_entity_reference_end(bytes, after_close) == Some(bytes.len())
+}
+
+fn replay_array_trailer(bytes: &[u8]) -> bool {
+    if bytes.is_empty() || bytes == [0xf5, 0x96, 0x92, 0x00] {
+        return true;
+    }
+    if bytes.first() != Some(&0xf1) {
+        return false;
+    }
+    replay_entity_reference_end(bytes, 1) == Some(bytes.len())
+}
+
+fn explicit_replay_pair_before_suffix(
+    row: &FeatureRow,
+    suffix: usize,
+) -> Option<(ReplayAffectedPair, usize)> {
+    let arrays = row.body[..suffix]
+        .iter()
+        .enumerate()
+        .filter_map(|(opener, byte)| {
+            (*byte == psb::token::ARRAY_OPEN)
+                .then(|| explicit_replay_array(&row.body[..suffix], opener))
+                .flatten()
+                .map(|(ids, end)| (opener, ids, end))
+        })
+        .collect::<Vec<_>>();
+    let [.., geometry, edges] = arrays.as_slice() else {
+        return None;
+    };
+    replay_array_separator(&row.body[geometry.2..edges.0]).then_some(())?;
+    replay_array_trailer(&row.body[edges.2..suffix]).then_some(())?;
+    Some((
+        ReplayAffectedPair {
+            geometry_ids: geometry.1.clone(),
+            edge_ids: edges.1.clone(),
+            geometry_extent: ReplayExtentSource::Explicit,
+            edge_extent: ReplayExtentSource::Explicit,
+            consumed: edges.2 - geometry.0,
+        },
+        geometry.0,
+    ))
+}
+
 fn unique_unanchored_replay_pair(
     row: &FeatureRow,
     extents: [Option<u32>; 2],
@@ -6250,6 +6329,7 @@ fn unique_unanchored_replay_pair(
         {
             continue;
         }
+        let candidate_count = candidates.len();
         for start in 1..suffix {
             if row.body[start - 1] != psb::token::COMPOUND_CLOSE {
                 continue;
@@ -6259,6 +6339,11 @@ fn unique_unanchored_replay_pair(
             };
             if pair.consumed == suffix - start {
                 candidates.push((pair, start));
+            }
+        }
+        if candidates.len() == candidate_count {
+            if let Some(pair) = explicit_replay_pair_before_suffix(row, suffix) {
+                candidates.push(pair);
             }
         }
     }
@@ -7885,6 +7970,28 @@ mod tests {
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].geometry_ids, vec![10, 11]);
         assert_eq!(decoded[0].edge_ids, vec![20, 21]);
+    }
+
+    #[test]
+    fn positional_round_replay_uses_final_explicit_arrays_before_row_suffix() {
+        let mut row = unanchored_replay_row(
+            1,
+            40,
+            None,
+            &[
+                0xf8, 3, 1, 2, 3, 0xf1, 0xf7, 54, 1, 0xe3, 0xf7, 0x80, 0x97, 0xf8, 2, 10, 11, 0xf1,
+                0xf7, 56,
+            ],
+        );
+        row.body.splice(1..1, [0xf8, 4, 30, 31, 32, 33]);
+
+        let decoded = replay_affected_ids(&[row]);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].geometry_ids, vec![1, 2, 3]);
+        assert_eq!(decoded[0].edge_ids, vec![10, 11]);
+        assert_eq!(decoded[0].geometry_extent, ReplayExtentSource::Explicit);
+        assert_eq!(decoded[0].edge_extent, ReplayExtentSource::Explicit);
     }
 
     #[test]
