@@ -966,6 +966,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == scope.feature_ordinal_offset.saturating_add(
                     if scope.kind == "CopyPasteBodies" {
                         53
+                    } else if scope
+                        .paired_byte_offset
+                        .saturating_sub(scope.feature_ordinal_offset)
+                        == 87
+                    {
+                        41
                     } else {
                         31
                     },

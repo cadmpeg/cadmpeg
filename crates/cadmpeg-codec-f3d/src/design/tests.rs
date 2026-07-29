@@ -3373,6 +3373,22 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         !crate::design::decode::scopes::parameter_scope_tail_length_is_valid("CopyPasteBodies", 78,)
     );
 
+    let mut extended_tail = bytes[..feature_ordinal_at].to_vec();
+    let mut tail = [0; 87];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[41..45].copy_from_slice(&3u32.to_le_bytes());
+    extended_tail.extend_from_slice(&tail);
+    extended_tail.extend_from_slice(&3u32.to_le_bytes());
+    extended_tail.extend_from_slice(b"261");
+    extended_tail.extend_from_slice(&12u32.to_le_bytes());
+    let extended =
+        parse_parameter_scope(&extended_tail, &header).expect("scope with extended fixed tail");
+    assert_eq!(extended.previous_history_state_id, Some(3));
+    assert_eq!(
+        extended.previous_history_state_id_offset,
+        (feature_ordinal_at + 41) as u64
+    );
+
     let mut copy_scope = Vec::new();
     copy_scope.extend_from_slice(&3u32.to_le_bytes());
     copy_scope.extend_from_slice(b"316");

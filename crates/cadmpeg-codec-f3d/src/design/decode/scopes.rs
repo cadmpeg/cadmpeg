@@ -1704,7 +1704,7 @@ pub(crate) fn parameter_scope_tail_length_is_valid(kind: &str, tail_length: usiz
     if kind == "CopyPasteBodies" {
         tail_length == 110
     } else {
-        matches!(tail_length, 77 | 78)
+        matches!(tail_length, 77 | 78 | 87)
     }
 }
 
@@ -1731,11 +1731,11 @@ pub(crate) fn parse_parameter_scope(
             if parameter_scope_tail_length_is_valid(&kind, tail_length)
                 && kind.chars().all(|character| !character.is_control())
             {
-                candidates.push((at, end, kind));
+                candidates.push((at, end, tail_length, kind));
             }
         }
     }
-    let [(kind_at, kind_end, kind)] = candidates.as_slice() else {
+    let [(kind_at, kind_end, tail_length, kind)] = candidates.as_slice() else {
         return None;
     };
     let kind_end = *kind_end;
@@ -1750,7 +1750,11 @@ pub(crate) fn parse_parameter_scope(
         state_id => Some(i64::from(state_id)),
     };
     let previous_history_state_id_offset =
-        kind_end.checked_add(if kind == "CopyPasteBodies" { 53 } else { 31 })?;
+        kind_end.checked_add(match (kind.as_str(), *tail_length) {
+            ("CopyPasteBodies", _) => 53,
+            (_, 87) => 41,
+            _ => 31,
+        })?;
     let previous_history_state_id = match u32_at(bytes, previous_history_state_id_offset)? {
         u32::MAX => None,
         state_id => Some(i64::from(state_id)),
