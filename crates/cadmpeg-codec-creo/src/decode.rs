@@ -4196,6 +4196,56 @@ fn section_axis_line_carrier_with_points(
     }
 }
 
+fn section_axis_reference_line_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    let fixed_coordinate = if section_degenerate_axis_line(definition, segment) {
+        usize::try_from(segment.vertical_horizontal?).ok()?
+    } else {
+        (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+        match segment.directions {
+            [Some(0), _, _] => 0,
+            [_, Some(0), _] => 1,
+            _ => return None,
+        }
+    };
+    let values = segment
+        .point_ids
+        .iter()
+        .filter_map(|point| {
+            variable_points
+                .get(point)?
+                .get(fixed_coordinate)
+                .copied()
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    let expected_value_count = if segment.point_ids[0] == segment.point_ids[1] {
+        1
+    } else {
+        2
+    };
+    (values.len() == expected_value_count).then_some(())?;
+    let value = *values.first()?;
+    let scale = values
+        .iter()
+        .copied()
+        .map(f64::abs)
+        .fold(value.abs().max(1.0), f64::max);
+    values
+        .iter()
+        .all(|candidate| (*candidate - value).abs() <= 1e-9 * scale)
+        .then_some(())?;
+    let (origin, direction) = if fixed_coordinate == 0 {
+        (Point2::new(value, 0.0), Point2::new(0.0, 1.0))
+    } else {
+        (Point2::new(0.0, value), Point2::new(1.0, 0.0))
+    };
+    Some(SketchGeometry::ReferenceLine { origin, direction })
+}
+
 fn section_segment_intersection_carrier_with_missing_line(
     definition: &crate::feature::FeatureDefinition,
     radii: &BTreeMap<u32, f64>,
@@ -5846,6 +5896,18 @@ fn placed_section_geometry_curve(
             let direction = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             Some(CurveGeometry::Line {
                 origin: Point3::new(start[0], start[1], start[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
+        }
+        SketchGeometry::ReferenceLine { origin, direction } => {
+            let origin = section_point_in_model(transform, [origin.u, origin.v]);
+            let direction = normalized([
+                direction.u * transform.u_axis[0] + direction.v * transform.v_axis[0],
+                direction.u * transform.u_axis[1] + direction.v * transform.v_axis[1],
+                direction.u * transform.u_axis[2] + direction.v * transform.v_axis[2],
+            ])?;
+            Some(CurveGeometry::Line {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
             })
         }
@@ -12077,7 +12139,13 @@ fn transfer_sketches(
                 coverage.by_family.entry(family).or_default().0 += count;
             }
         }
-        let points = resolved_section_points(definition);
+        let variable_points = resolved_section_coordinates(definition);
+        let points = variable_points
+            .iter()
+            .filter_map(|(point, [u, v])| {
+                Some((*point, [u.as_ref().copied()?, v.as_ref().copied()?]))
+            })
+            .collect::<BTreeMap<_, _>>();
         let radii = resolved_section_radii(definition);
         let missing_line_geometry = saved_section_missing_line_geometry(definition);
         let solved = definition
@@ -12119,15 +12187,24 @@ fn transfer_sketches(
                         .get(&segment.offset)
                         .cloned()
                         .flatten()
-                };
+                }
+                .or_else(|| {
+                    section_axis_reference_line_geometry(definition, &variable_points, segment)
+                });
                 (segment.offset, geometry)
             })
             .collect::<BTreeMap<_, _>>();
         let segment_geometry = |segment: &crate::feature::FeatureSegment| {
             if section_degenerate_axis_line(definition, segment) {
-                return Some(SketchGeometry::Native {
-                    native_kind: "line".to_string(),
-                });
+                return segment_geometries
+                    .get(&segment.offset)
+                    .cloned()
+                    .flatten()
+                    .or_else(|| {
+                        Some(SketchGeometry::Native {
+                            native_kind: "line".to_string(),
+                        })
+                    });
             }
             segment_geometries.get(&segment.offset).cloned().flatten()
         };
@@ -12197,8 +12274,9 @@ fn transfer_sketches(
         let resolved_segment_offsets = segments
             .iter()
             .filter(|segment| {
-                !section_degenerate_axis_line(definition, segment)
-                    && segment_geometry(segment).is_some()
+                segment_geometries
+                    .get(&segment.offset)
+                    .is_some_and(Option::is_some)
             })
             .map(|segment| segment.offset)
             .collect::<BTreeSet<_>>();
@@ -12341,6 +12419,9 @@ fn transfer_sketches(
                         (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
                             "section_degenerate_axis_line"
                         }
+                        (SketchGeometry::ReferenceLine { .. }, _) => {
+                            "solved_section_axis_reference_line"
+                        }
                         (_, crate::feature::FeatureSegmentKind::Line) => "solved_section_line",
                         (_, crate::feature::FeatureSegmentKind::Arc) => "solved_section_arc",
                         (_, crate::feature::FeatureSegmentKind::Point) => "solved_section_point",
@@ -12351,7 +12432,8 @@ fn transfer_sketches(
                         Exactness::Derived
                     },
                 );
-                let construction = !unique_segment_ids.contains(&segment.external_id)
+                let construction = matches!(geometry, SketchGeometry::ReferenceLine { .. })
+                    || !unique_segment_ids.contains(&segment.external_id)
                     || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
                 Some(SketchEntity {
                     id,
@@ -12361,6 +12443,11 @@ fn transfer_sketches(
                     geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
                     endpoint_refs: match (&geometry, segment.kind) {
                         (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+                            vec![segment.point_ids[0]]
+                        }
+                        (SketchGeometry::ReferenceLine { .. }, _)
+                            if section_degenerate_axis_line(definition, segment) =>
+                        {
                             vec![segment.point_ids[0]]
                         }
                         (_, crate::feature::FeatureSegmentKind::Arc) => {
@@ -12962,6 +13049,15 @@ fn transfer_sketches(
                     .get(&segment.offset)
                     .cloned()
                     .flatten()
+                    .or_else(|| {
+                        segment_geometries
+                            .get(&segment.offset)
+                            .cloned()
+                            .flatten()
+                            .filter(|geometry| {
+                                matches!(geometry, SketchGeometry::ReferenceLine { .. })
+                            })
+                    })
                 else {
                     continue;
                 };

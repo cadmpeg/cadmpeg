@@ -3605,6 +3605,25 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         })
     );
     assert_eq!(
+        section_axis_reference_line_geometry(
+            &definition,
+            &resolved_section_coordinates(&definition),
+            &segment,
+        ),
+        Some(SketchGeometry::ReferenceLine {
+            origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+        })
+    );
+    assert_eq!(
+        section_axis_reference_line_geometry(
+            &definition,
+            &BTreeMap::from([(7, [Some(2.0), None]), (9, [None, Some(8.0)]),]),
+            &segment,
+        ),
+        None
+    );
+    assert_eq!(
         unique_owned_feature_definition(std::slice::from_ref(&definition), 6)
             .map(|matched| matched.id),
         Some(5)

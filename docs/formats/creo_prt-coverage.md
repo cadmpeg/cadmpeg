@@ -32,6 +32,8 @@ fixtures, claims above L1 remain unproven.
   dimensions, and typed or identity-preserving native constraints.
 - Section-reference lines transfer as construction-line geometry when both
   stored endpoint references resolve to distinct section coordinates.
+- Fixed-ordinate section axes with unresolved along-line coordinates transfer
+  as unbounded construction lines; no finite endpoint extent is inferred.
 - Active solver incidences drive coordinate, orientation, equality, radius,
   and supported dimensional equations; disabled incidences remain retained but
   do not affect solved geometry.
