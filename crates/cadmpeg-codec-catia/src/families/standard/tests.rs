@@ -1784,6 +1784,44 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
 }
 
 #[test]
+fn incidence_components_reuse_independent_solution_domains() {
+    use std::ops::ControlFlow;
+
+    const COMPONENT_COUNT: usize = 15;
+    let choices = (0..COMPONENT_COUNT)
+        .map(|component| {
+            let first = component * 2;
+            vec![[first, first], [first + 1, first + 1]]
+        })
+        .collect::<Vec<_>>();
+    let edge_faces = (0..COMPONENT_COUNT)
+        .map(|face| [face, face])
+        .collect::<Vec<_>>();
+    let mut visited = 0usize;
+
+    let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        COMPONENT_COUNT,
+        COMPONENT_COUNT * 2,
+        None,
+        None,
+        None,
+        &|_| true,
+        &mut |_| {
+            visited += 1;
+            ControlFlow::Continue(())
+        },
+    );
+
+    assert_eq!(
+        outcome,
+        crate::solve::incidence::IncidenceSolve::Solved(1 << COMPONENT_COUNT)
+    );
+    assert_eq!(visited, 1 << COMPONENT_COUNT);
+}
+
+#[test]
 fn incidence_components_discard_quotient_impossible_complete_solutions() {
     let choices = vec![vec![[0, 0], [1, 1]], vec![[1, 1]]];
     let edge_faces = [[0, 0], [1, 1]];

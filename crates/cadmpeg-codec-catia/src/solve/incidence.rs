@@ -1525,6 +1525,7 @@ where
         budget: &MeshConstraintBudget,
         visitor: &mut V,
         visited: &mut usize,
+        solution_cache: &mut [Option<Vec<Vec<MeshEndpointPair>>>],
     ) -> Result<ControlFlow<()>, ()>
     where
         F: Fn(&[[usize; 2]]) -> bool,
@@ -1577,7 +1578,6 @@ where
         }
         let mut constraints = constraints.into_iter().collect::<Vec<_>>();
         constraints.sort_unstable();
-        let last_component = component_index + 1 == components.len();
         let filter = |solution: &[MeshEndpointPair]| {
             let mut completed = assignment.to_vec();
             for &(edge, pair) in solution {
@@ -1589,41 +1589,43 @@ where
                 face_edges,
                 mesh_assignments,
             ) && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed))
-                && (!last_component
-                    || completed
-                        .into_iter()
-                        .collect::<Option<Vec<_>>>()
-                        .is_some_and(|pairs| {
-                            boundary_domains_close(mesh_assignments, &pairs)
-                                && solution_valid(&pairs)
-                        }))
         };
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
-        let (search_exhausted, solutions) = {
-            let mut search = IncidenceComponentSearch {
-                choices,
-                edge_faces,
-                face_edges,
-                mesh_assignments,
-                mesh_quotient,
-                active,
-                edges: component,
-                constraints,
-                assignment: assignment.to_vec(),
-                degrees: degrees.to_vec(),
-                solutions: Vec::new(),
-                solution_filter,
-                partial_solution_filter: partial_solution_valid,
-                dead_states: HashSet::new(),
-                budget,
-                states: 0,
-                exhausted: false,
+        let (search_exhausted, solutions) =
+            if let Some(solutions) = solution_cache[component_index].clone() {
+                (false, solutions)
+            } else {
+                let mut search = IncidenceComponentSearch {
+                    choices,
+                    edge_faces,
+                    face_edges,
+                    mesh_assignments,
+                    mesh_quotient,
+                    active,
+                    edges: component,
+                    constraints,
+                    assignment: assignment.to_vec(),
+                    degrees: degrees.to_vec(),
+                    solutions: Vec::new(),
+                    solution_filter,
+                    partial_solution_filter: partial_solution_valid,
+                    dead_states: HashSet::new(),
+                    budget,
+                    states: 0,
+                    exhausted: false,
+                };
+                search.search();
+                if !search.exhausted {
+                    solution_cache[component_index] = Some(search.solutions.clone());
+                }
+                (search.exhausted, search.solutions)
             };
-            search.search();
-            (search.exhausted, search.solutions)
-        };
         let mut downstream_exhausted = false;
         for solution in solutions {
+            if !budget.charge() {
+                downstream_exhausted = true;
+                break;
+            }
             for &(edge, pair) in &solution {
                 assignment[edge] = Some(pair);
                 for (rank, face) in edge_faces[edge].into_iter().enumerate() {
@@ -1651,6 +1653,7 @@ where
                 budget,
                 visitor,
                 visited,
+                solution_cache,
             );
             for &(edge, pair) in solution.iter().rev() {
                 assignment[edge] = None;
@@ -1732,6 +1735,7 @@ where
             return None;
         }
         let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let mut solution_cache = vec![None; components.len()];
         if visit_components(
             0,
             &components,
@@ -1748,6 +1752,7 @@ where
             &budget,
             visitor,
             &mut visited,
+            &mut solution_cache,
         )
         .is_err()
         {
