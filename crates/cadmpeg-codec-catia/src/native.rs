@@ -4997,6 +4997,7 @@ fn validate_zero_entity_support_runs(
                                         loop_record.oriented_model_endpoints == expected
                                     }
                                     && loop_record.terminal_id == *terminal
+                                    && loop_record.gap != 0
                                     && matches!(loop_record.loop_class, 0x41 | 0x50 | 0xc1)
                                     && loop_record.member_ids.iter().enumerate().all(
                                         |(member_index, member)| {
@@ -5036,6 +5037,9 @@ fn validate_zero_entity_support_runs(
                 .iter()
                 .enumerate()
                 .all(|(support_index, support)| {
+                    if support.face_local_slot == 0 {
+                        return false;
+                    }
                     let endpoints_valid = match (support.tag, support.uv_endpoints) {
                         (
                             [0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8],

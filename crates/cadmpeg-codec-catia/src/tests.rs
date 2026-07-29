@@ -5000,6 +5000,27 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity face control");
     assert!(crate::native::CatiaNative::load(&invalid_face_control_namespace).is_err());
 
+    let mut invalid_loop_gap = native.clone();
+    invalid_loop_gap.zero_entity_support_runs[0]
+        .face
+        .as_mut()
+        .expect("face")
+        .loops[0]
+        .gap = 0;
+    let mut invalid_loop_gap_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_loop_gap
+        .store(&mut invalid_loop_gap_namespace)
+        .expect("store invalid CATIA zero-entity loop gap");
+    assert!(crate::native::CatiaNative::load(&invalid_loop_gap_namespace).is_err());
+
+    let mut invalid_support_slot = native.clone();
+    invalid_support_slot.zero_entity_support_runs[0].supports[0].face_local_slot = 0;
+    let mut invalid_support_slot_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_support_slot
+        .store(&mut invalid_support_slot_namespace)
+        .expect("store invalid CATIA zero-entity support slot");
+    assert!(crate::native::CatiaNative::load(&invalid_support_slot_namespace).is_err());
+
     let mut invalid_loop = native.clone();
     invalid_loop.zero_entity_support_runs[0]
         .face

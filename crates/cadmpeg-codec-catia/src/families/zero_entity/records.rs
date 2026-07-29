@@ -736,12 +736,14 @@ fn zero_entity_loops_from_records(
                 .collect::<Vec<_>>();
             let terminal_id = *references.last()?;
             let gap = terminal_id.checked_sub(*member_ids.first()?)?;
-            if !member_ids.iter().enumerate().all(|(index, member)| {
-                u32::try_from(index)
-                    .ok()
-                    .and_then(|index| terminal_id.checked_sub(gap)?.checked_sub(index))
-                    == Some(*member)
-            }) {
+            if gap == 0
+                || !member_ids.iter().enumerate().all(|(index, member)| {
+                    u32::try_from(index)
+                        .ok()
+                        .and_then(|index| terminal_id.checked_sub(gap)?.checked_sub(index))
+                        == Some(*member)
+                })
+            {
                 return None;
             }
             let trailer = record
@@ -798,6 +800,9 @@ fn zero_entity_support_occurrence(
         return None;
     }
     let face_local_slot = u32_le(data, record.pos + 13)?;
+    if face_local_slot == 0 {
+        return None;
+    }
     let uv_offsets = match record.tag {
         [0x21, 0x18] => Some([132, 276]),
         [0x21, 0x45] => Some([145, 321]),
@@ -2344,6 +2349,22 @@ mod tests {
         assert_eq!(loop_record.loop_class, 0x41);
         assert_eq!(loop_record.forward_senses, [true]);
         assert!(loop_record.support_record_ordinals.is_empty());
+    }
+
+    #[test]
+    fn loop_member_lane_must_remain_strictly_below_its_terminal() {
+        let mut stream = zero_entity_face_loop_support_stream();
+        let loop_record = zero_entity_records(&stream)[3];
+        write_tagged_u32(&mut stream, loop_record.pos + 23, 6);
+        assert!(zero_entity_loops_from_records(&stream, &zero_entity_records(&stream)).is_empty());
+    }
+
+    #[test]
+    fn support_occurrence_requires_a_nonzero_face_local_slot() {
+        let mut stream = zero_entity_face_support_stream();
+        let support = zero_entity_records(&stream)[1];
+        stream[support.pos + 13..support.pos + 17].copy_from_slice(&0u32.to_le_bytes());
+        assert!(zero_entity_support_occurrence(&stream, support).is_none());
     }
 
     #[test]
