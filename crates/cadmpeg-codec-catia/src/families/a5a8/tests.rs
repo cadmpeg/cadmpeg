@@ -353,7 +353,7 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
 
 #[test]
 fn rolling_ball_parsers_accept_finite_nonzero_radii() {
-    for radius in [1e-200, 1e200] {
+    for radius in [1e-200, 1e200, 1e308] {
         let mut a5 = a5_freeform_curve_stream();
         a5[28..36].copy_from_slice(&le_f64(radius));
         a5[60..68].copy_from_slice(&le_f64(radius));
@@ -370,6 +370,16 @@ fn rolling_ball_parsers_accept_finite_nonzero_radii() {
             .expect("one common-form rolling-ball jet");
         assert_eq!(curve.sites[0].radius, radius);
     }
+}
+
+#[test]
+fn rolling_ball_parsers_reject_scale_relative_radius_disagreement() {
+    let tiny = 1e-200;
+    let mut bytes = a5_freeform_curve_stream();
+    bytes[28..36].copy_from_slice(&le_f64(tiny));
+    bytes[60..68].copy_from_slice(&le_f64(2.0 * tiny));
+    bytes[100..108].copy_from_slice(&le_f64(std::f64::consts::PI));
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
 }
 
 #[test]

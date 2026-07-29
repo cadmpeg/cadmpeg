@@ -468,9 +468,13 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
         let radius = distance3(center, limit1);
         let other = distance3(center, limit2);
         let chord = distance3(limit1, limit2);
-        if radius <= 0.0
-            || (radius - other).abs() > 1e-9 * radius.max(1.0)
-            || (v[9] - 2.0 * (chord / (2.0 * radius)).clamp(-1.0, 1.0).asin()).abs() > 1e-9
+        let radius_scale = radius.max(other);
+        let relative_radius_difference = ((radius / radius_scale) - (other / radius_scale)).abs();
+        if !radius.is_finite()
+            || radius <= 0.0
+            || !other.is_finite()
+            || relative_radius_difference > 1e-9
+            || (v[9] - 2.0 * ((chord / radius) * 0.5).clamp(-1.0, 1.0).asin()).abs() > 1e-9
         {
             return None;
         }
