@@ -1250,6 +1250,34 @@ pub(crate) fn zero_entity_topology_stream() -> Vec<u8> {
         .collect()
 }
 
+pub(crate) fn zero_entity_ownership_stream(face_count: u8) -> Vec<u8> {
+    assert!(face_count != 0 && face_count < 0x80);
+    let write_tagged_u32 = |record: &mut Vec<u8>, value: u32| {
+        record.push(0x10);
+        record.extend_from_slice(&value.to_le_bytes());
+    };
+    let mut face_roster = vec![0xa9, 0x03, 0x61, 0x42, 0, 0, 0];
+    write_tagged_u32(&mut face_roster, 1);
+    face_roster.push(0x80 + face_count);
+    for slot in (1..=u32::from(face_count)).rev() {
+        write_tagged_u32(&mut face_roster, slot);
+    }
+    face_roster.extend_from_slice(&[0x00, 0x01, 0xc0, 0xff, 0xff, 0x3f, 0, 0, 0, 0, 0x03]);
+
+    let mut shell = vec![0xa9, 0x03, 0x60, 0x06, 0, 0, 0];
+    write_tagged_u32(&mut shell, 1);
+    shell.push(0x81);
+    write_tagged_u32(&mut shell, 1);
+
+    let mut body = vec![0xa9, 0x03, 0x65, 0x08, 0, 0, 0];
+    write_tagged_u32(&mut body, 1);
+    body.push(0x81);
+    write_tagged_u32(&mut body, 1);
+    body.extend_from_slice(&[0x05, 0x0d]);
+
+    face_roster.into_iter().chain(shell).chain(body).collect()
+}
+
 pub(crate) fn b2_revolution_stream() -> Vec<u8> {
     let scale = 2.0;
     let angular_lo = scale * 0.5;
@@ -4966,6 +4994,42 @@ fn native_namespace_retains_closed_zero_entity_endpoint_tapes() {
         crate::native::CatiaNative::load(&namespace).expect("load CATIA zero-entity endpoint tape"),
         native
     );
+}
+
+#[test]
+fn native_namespace_retains_zero_entity_ownership_root() {
+    let mut stream = zero_entity_face_support_stream();
+    stream.extend(zero_entity_ownership_stream(1));
+    let native = crate::native::CatiaNative::decode(&stream);
+    let [root] = native.zero_entity_ownership_roots.as_slice() else {
+        panic!("one zero-entity ownership root")
+    };
+    assert_eq!(root.face_slots, [1]);
+    assert_eq!(root.face_roster_record_ordinal, 4);
+    assert_eq!(root.shell_record_ordinal, 5);
+    assert_eq!(root.body_record_ordinal, 6);
+    assert_eq!(
+        native.zero_entity_records[3].logical_end,
+        root.shell_byte_offset
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA zero-entity ownership root");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace)
+            .expect("load CATIA zero-entity ownership root"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.zero_entity_ownership_roots[0].face_slots.clear();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA zero-entity ownership root");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
 #[test]

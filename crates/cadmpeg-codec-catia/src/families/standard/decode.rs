@@ -3784,7 +3784,7 @@ pub(crate) fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> O
             ratio,
             ..
         } => {
-            if ratio.abs() <= f64::EPSILON {
+            if !ratio.is_finite() || *ratio == 0.0 {
                 return None;
             }
             let offset = point.vector_from(*origin);
@@ -3800,7 +3800,7 @@ pub(crate) fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> O
             ref_direction,
             radius,
         } => {
-            if *radius <= f64::EPSILON {
+            if !radius.is_finite() || *radius == 0.0 {
                 return None;
             }
             let offset = point.vector_from(*center);
@@ -3877,7 +3877,7 @@ pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool
             (radial - (radius + axial * half_angle.tan()).abs()).abs()
         }
         SurfaceGeometry::Sphere { center, radius, .. } => {
-            (point.distance_squared(*center).sqrt() - *radius).abs()
+            (point.distance_squared(*center).sqrt() - radius.abs()).abs()
         }
         SurfaceGeometry::Torus {
             center,
@@ -3890,7 +3890,7 @@ pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool
             let radial = (point.distance_squared(*center) - axial * axial)
                 .max(0.0)
                 .sqrt();
-            (((radial - major_radius).powi(2) + axial * axial).sqrt() - *minor_radius).abs()
+            (((radial - major_radius).powi(2) + axial * axial).sqrt() - minor_radius.abs()).abs()
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Polygonal { .. }
@@ -4687,14 +4687,15 @@ mod route_tests {
     };
     use crate::families::e5::decode::reverse_e5_pcurve_geometry;
     use crate::families::standard::decode::{
-        bind_ordered_standard_curve_branches, build_standard_edge_curve,
+        analytic_surface_uv, bind_ordered_standard_curve_branches, build_standard_edge_curve,
         circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
         combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
         include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
-        point_on_known_surface, point_on_standard_face, resolve_standard_endpoint_pairs,
-        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
-        standard_circle_param_range, standard_native_support_endpoint_pair,
-        standard_pcurve_geometry, standard_plane_normal_from_adjacent_circle_carriers,
+        point_on_known_surface, point_on_standard_face, point_on_surface,
+        resolve_standard_endpoint_pairs, retry_rejected_mesh_solution,
+        standard_circle_endpoint_candidates, standard_circle_param_range,
+        standard_native_support_endpoint_pair, standard_pcurve_geometry,
+        standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
         unique_native_identity_points, StandardEdgeSupport,
@@ -4705,7 +4706,7 @@ mod route_tests {
     };
 
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::eval::pcurve_uv;
+    use cadmpeg_ir::eval::{pcurve_uv, surface_point};
     use cadmpeg_ir::geometry::{
         CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
         ProceduralSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
@@ -4720,6 +4721,54 @@ mod route_tests {
     use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::collections::HashMap;
+
+    #[test]
+    fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
+        let tiny = 1e-200;
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+            ratio: tiny,
+            half_angle: std::f64::consts::FRAC_PI_6,
+        };
+        let cone_point = surface_point(&cone, 0.5, 1.0).expect("cone point");
+        let cone_uv = analytic_surface_uv(&cone, cone_point).expect("cone parameters");
+        assert!((cone_uv.u - 0.5).abs() < 1e-12);
+        assert_eq!(cone_uv.v, 1.0);
+
+        let sphere = SurfaceGeometry::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: -tiny,
+        };
+        let sphere_point = surface_point(&sphere, 0.5, 0.25).expect("sphere point");
+        let sphere_uv = analytic_surface_uv(&sphere, sphere_point).expect("sphere parameters");
+        assert!(sphere_uv.u.is_finite());
+        assert!((sphere_uv.v - 0.25).abs() < 1e-12);
+
+        let signed_sphere = SurfaceGeometry::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: -2.0,
+        };
+        let signed_sphere_point =
+            surface_point(&signed_sphere, 0.5, 0.25).expect("signed sphere point");
+        assert!(point_on_surface(signed_sphere_point, &signed_sphere));
+
+        let torus = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 5.0,
+            minor_radius: -2.0,
+        };
+        let torus_point = surface_point(&torus, 0.5, 0.25).expect("torus point");
+        assert!(point_on_surface(torus_point, &torus));
+    }
 
     #[test]
     fn mesh_retry_runs_only_after_exact_rejection() {

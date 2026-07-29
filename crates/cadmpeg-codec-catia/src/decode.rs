@@ -1134,6 +1134,10 @@ fn finish_decode(
             .iter()
             .filter(|incidence| incidence.vertex_record.is_some())
             .count();
+        let ownership_face_count = native
+            .zero_entity_ownership_roots
+            .first()
+            .map_or(0, |root| root.face_slots.len());
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
@@ -1151,14 +1155,17 @@ fn finish_decode(
                  edge-stride record(s) \
                  bind {edge_support_binding_count} adjacent support record(s), and \
                  {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
-                 adjacent vertex owner; {} radial occurrence endpoint-pair candidate(s) and {} \
+                 adjacent vertex owner; {} ownership root(s) bind {ownership_face_count} face \
+                 allocation(s) through a shell and body; {} radial occurrence endpoint-pair \
+                 candidate(s) and {} \
                  complete endpoint-locus candidate(s) are established from matching model-space \
                  endpoint pairs; curve coincidence, loop-to-use, use-to-incidence, physical \
-                 endpoint identity, and body/shell binding remain unresolved; {} oriented-use \
+                 endpoint identity remain unresolved; {} oriented-use \
                  pair(s) remain separate.",
                 native.zero_entity_support_runs.len(),
                 native.zero_entity_edge_strides.len(),
                 native.zero_entity_vertex_incidences.len(),
+                native.zero_entity_ownership_roots.len(),
                 native.zero_entity_endpoint_pair_candidates.len(),
                 native.zero_entity_endpoint_locus_candidates.len(),
                 native.zero_entity_oriented_use_pairs.len(),

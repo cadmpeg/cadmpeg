@@ -150,6 +150,25 @@ pub struct ZeroEntityVertexIncidence {
     pub references: Vec<u32>,
 }
 
+/// The terminal zero-entity body hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityOwnershipRoot {
+    /// Offset of the counted `6142` face-roster record.
+    pub face_roster_pos: usize,
+    /// One-based global record ordinal of the face-roster record.
+    pub face_roster_record_ordinal: u32,
+    /// Descending one-based face-allocation slots.
+    pub face_slots: Vec<u32>,
+    /// Offset of the immediately following `6006` shell root.
+    pub shell_pos: usize,
+    /// One-based global record ordinal of the shell root.
+    pub shell_record_ordinal: u32,
+    /// Offset of the immediately following `6508` body root.
+    pub body_pos: usize,
+    /// One-based global record ordinal of the body root.
+    pub body_record_ordinal: u32,
+}
+
 /// One framed record in the zero-entity global identity namespace.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityRecordIdentity {
@@ -193,6 +212,28 @@ fn zero_entity_fixed_logical_length(tag: [u8; 2]) -> Option<usize> {
     }
 }
 
+fn zero_entity_face_roster_logical_end(data: &[u8], record: usize) -> Option<usize> {
+    if tagged_u32(data, record.checked_add(7)?)? != 1 {
+        return None;
+    }
+    let count = data.get(record.checked_add(12)?)?.checked_sub(0x80)?;
+    if count == 0 {
+        return None;
+    }
+    let count = usize::from(count);
+    let values = record.checked_add(13)?;
+    for index in 0..count {
+        let value = tagged_u32(data, values.checked_add(index.checked_mul(5)?)?)?;
+        if value != u32::try_from(count.checked_sub(index)?).ok()? {
+            return None;
+        }
+    }
+    let trailer = values.checked_add(count.checked_mul(5)?)?;
+    let end = trailer.checked_add(11)?;
+    (data.get(trailer..end)? == [0x00, 0x01, 0xc0, 0xff, 0xff, 0x3f, 0, 0, 0, 0, 0x03])
+        .then_some(end)
+}
+
 fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
     let mut records = Vec::new();
     let mut position = 0usize;
@@ -206,7 +247,12 @@ fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
         let Some(nominal_end) = nominal_end else {
             break;
         };
-        let end = if matches!(tag, [0x34, 0xc8 | 0x5e]) {
+        let end = if tag == [0x61, 0x42] {
+            let Some(end) = zero_entity_face_roster_logical_end(data, position) else {
+                break;
+            };
+            end
+        } else if matches!(tag, [0x34, 0xc8 | 0x5e]) {
             let Some(end) = zero_entity_nurbs_logical_end(data, position) else {
                 break;
             };
@@ -301,6 +347,46 @@ pub fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity
             record_ordinal: record.ordinal,
         })
         .collect()
+}
+
+/// Decode the terminal face-roster, shell, and body ownership roots.
+#[must_use]
+pub fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot> {
+    let records = zero_entity_records(data);
+    records.windows(3).find_map(|window| {
+        let [face_roster, shell, body] = window else {
+            return None;
+        };
+        let body_trailer = body.pos.checked_add(18)?;
+        if face_roster.tag != [0x61, 0x42]
+            || shell.tag != [0x60, 0x06]
+            || body.tag != [0x65, 0x08]
+            || face_roster.end != shell.pos
+            || shell.end != body.pos
+            || tagged_u32(data, shell.pos.checked_add(7)?)? != 1
+            || data.get(shell.pos.checked_add(12)?) != Some(&0x81)
+            || tagged_u32(data, shell.pos.checked_add(13)?)? != 1
+            || tagged_u32(data, body.pos.checked_add(7)?)? != 1
+            || data.get(body.pos.checked_add(12)?) != Some(&0x81)
+            || tagged_u32(data, body.pos.checked_add(13)?)? != 1
+            || data.get(body_trailer..body.end)? != [0x05, 0x0d]
+        {
+            return None;
+        }
+        let count = usize::from(data[face_roster.pos + 12] - 0x80);
+        let face_slots = (0..count)
+            .map(|index| tagged_u32(data, face_roster.pos + 13 + index * 5))
+            .collect::<Option<Vec<_>>>()?;
+        Some(ZeroEntityOwnershipRoot {
+            face_roster_pos: face_roster.pos,
+            face_roster_record_ordinal: face_roster.ordinal,
+            face_slots,
+            shell_pos: shell.pos,
+            shell_record_ordinal: shell.ordinal,
+            body_pos: body.pos,
+            body_record_ordinal: body.ordinal,
+        })
+    })
 }
 
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
@@ -1050,7 +1136,7 @@ mod tests {
     use super::*;
     use crate::tests::{
         zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
-        zero_entity_support_stream, zero_entity_topology_stream,
+        zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
     };
 
     fn write_tagged_u32(record: &mut [u8], at: usize, value: u32) {
@@ -1234,6 +1320,30 @@ mod tests {
 
         assert!(zero_entity_record_inventory(&stream).is_empty());
         assert!(zero_entity_surfaces(&stream).is_empty());
+    }
+
+    #[test]
+    fn ownership_root_extends_the_counted_face_roster_and_binds_shell_and_body() {
+        let stream = zero_entity_ownership_stream(62);
+        let records = zero_entity_record_inventory(&stream);
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].tag, [0x61, 0x42]);
+        assert_eq!(records[0].end, 13 + 62 * 5 + 11);
+        assert_eq!(records[0].end, records[1].pos);
+
+        let root = zero_entity_ownership_root(&stream).expect("complete ownership root");
+        assert_eq!(root.face_roster_record_ordinal, 1);
+        assert_eq!(root.face_slots, (1..=62).rev().collect::<Vec<_>>());
+        assert_eq!(root.shell_record_ordinal, 2);
+        assert_eq!(root.body_record_ordinal, 3);
+    }
+
+    #[test]
+    fn ownership_root_rejects_noncanonical_face_allocations_atomically() {
+        let mut stream = zero_entity_ownership_stream(3);
+        write_tagged_u32(&mut stream, 13, 2);
+        assert!(zero_entity_record_inventory(&stream).is_empty());
+        assert!(zero_entity_ownership_root(&stream).is_none());
     }
 
     #[test]

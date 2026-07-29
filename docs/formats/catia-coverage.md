@@ -161,9 +161,12 @@ current scores require those matrices and representative fixtures.
   references against a complete framed-record identity inventory. Each
   edge-stride atomically binds its two typed adjacent support records. Each
   counted vertex-incidence record binds its immediately following `5d06`
-  vertex-owner record. Supports with inline UV endpoints lift those endpoints
-  through their exact plane, cylinder, circular-cone, torus, or NURBS owner
-  carrier into model space.
+  vertex-owner record. The terminal `6142`/`6006`/`6508` hierarchy retains the
+  complete descending face-allocation roster and binds it through one shell and
+  body; the `6142` logical extent includes its full continuation beyond the
+  nominal frame. Supports with inline UV endpoints lift those endpoints through
+  their exact plane, cylinder, circular-cone, torus, or NURBS owner carrier into
+  model space.
   A complete `5fxx` face roster binds positionally to those support tapes and
   retains each face's counted allocations and ordered loop terminals.
   Complete `62xx` loop rosters bind to those terminals and retain alternating

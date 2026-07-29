@@ -18,6 +18,8 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
     if surfaces.is_empty() {
         return None;
     }
+    let ownership_root =
+        crate::families::zero_entity::records::zero_entity_ownership_root(&scan.data);
 
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
@@ -59,8 +61,12 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
                 code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
                 category: LossCategory::Topology,
                 severity: Severity::Blocking,
-                message: "Zero-entity loop members bind their face-local support occurrences, but support-to-oriented-use, oriented-use-to-incidence, physical endpoint, and body/shell bindings remain unresolved; no neutral topology was transferred."
-                    .to_string(),
+                message: if ownership_root.is_some() {
+                    "Zero-entity loop members bind their face-local support occurrences and the terminal ownership root binds the complete face roster through one shell and body, but support-to-oriented-use, oriented-use-to-incidence, and physical endpoint bindings remain unresolved; no neutral topology was transferred."
+                } else {
+                    "Zero-entity loop members bind their face-local support occurrences, but support-to-oriented-use, oriented-use-to-incidence, physical endpoint, and body/shell bindings remain unresolved; no neutral topology was transferred."
+                }
+                .to_string(),
                 provenance: None,
             }],
             notes: container::summarize(scan).notes,

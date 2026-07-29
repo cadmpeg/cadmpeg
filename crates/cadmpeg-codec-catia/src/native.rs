@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 180;
+pub const CATIA_NATIVE_VERSION: u32 = 181;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -55,6 +55,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "value_schema_selections",
     "zero_entity_edge_strides",
     "zero_entity_oriented_use_pairs",
+    "zero_entity_ownership_roots",
     "zero_entity_endpoint_pair_candidates",
     "zero_entity_records",
     "zero_entity_support_runs",
@@ -2862,6 +2863,27 @@ pub struct CatiaZeroEntityVertexIncidence {
     pub vertex_record: Option<String>,
 }
 
+/// One complete zero-entity face-roster, shell, and body ownership hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntityOwnershipRoot {
+    /// Stable native-root identity.
+    pub id: String,
+    /// Byte offset of the counted `6142` face-roster record.
+    pub face_roster_byte_offset: u64,
+    /// One-based global record ordinal of the face-roster record.
+    pub face_roster_record_ordinal: u32,
+    /// Descending one-based face-allocation slots.
+    pub face_slots: Vec<u32>,
+    /// Byte offset of the `6006` shell root.
+    pub shell_byte_offset: u64,
+    /// One-based global record ordinal of the shell root.
+    pub shell_record_ordinal: u32,
+    /// Byte offset of the `6508` body root.
+    pub body_byte_offset: u64,
+    /// One-based global record ordinal of the body root.
+    pub body_record_ordinal: u32,
+}
+
 /// One framed record in the zero-entity global identity namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaZeroEntityRecord {
@@ -2969,6 +2991,9 @@ pub struct CatiaNative {
     /// Zero-entity side-pair headers and positional oriented uses.
     #[serde(default)]
     pub zero_entity_oriented_use_pairs: Vec<CatiaZeroEntityOrientedUsePair>,
+    /// Complete zero-entity face-roster, shell, and body roots.
+    #[serde(default)]
+    pub zero_entity_ownership_roots: Vec<CatiaZeroEntityOwnershipRoot>,
     /// Zero-entity endpoint pairs established by radial support occurrences.
     #[serde(default)]
     pub zero_entity_endpoint_pair_candidates: Vec<CatiaZeroEntityEndpointPairCandidate>,
@@ -3019,6 +3044,7 @@ impl Default for CatiaNative {
             value_blocks: Vec::new(),
             zero_entity_edge_strides: Vec::new(),
             zero_entity_oriented_use_pairs: Vec::new(),
+            zero_entity_ownership_roots: Vec::new(),
             zero_entity_endpoint_pair_candidates: Vec::new(),
             zero_entity_records: Vec::new(),
             zero_entity_support_runs: Vec::new(),
@@ -3869,6 +3895,22 @@ fn zero_entity_oriented_use_pairs(bytes: &[u8]) -> Vec<CatiaZeroEntityOrientedUs
                 references: use_.references,
                 side_slots: use_.side_slots,
             }),
+        })
+        .collect()
+}
+
+fn zero_entity_ownership_roots(bytes: &[u8]) -> Vec<CatiaZeroEntityOwnershipRoot> {
+    crate::families::zero_entity::records::zero_entity_ownership_root(bytes)
+        .into_iter()
+        .map(|root| CatiaZeroEntityOwnershipRoot {
+            id: "catia:zero-entity:ownership-root#0".to_string(),
+            face_roster_byte_offset: root.face_roster_pos as u64,
+            face_roster_record_ordinal: root.face_roster_record_ordinal,
+            face_slots: root.face_slots,
+            shell_byte_offset: root.shell_pos as u64,
+            shell_record_ordinal: root.shell_record_ordinal,
+            body_byte_offset: root.body_pos as u64,
+            body_record_ordinal: root.body_record_ordinal,
         })
         .collect()
 }
@@ -5150,6 +5192,57 @@ fn validate_zero_entity_records(
 }
 
 #[cfg(test)]
+fn validate_zero_entity_ownership_roots(
+    roots: &[CatiaZeroEntityOwnershipRoot],
+    support_runs: &[CatiaZeroEntitySupportRun],
+    records: &[CatiaZeroEntityRecord],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let bound_face_count = support_runs.iter().filter(|run| run.face.is_some()).count();
+    let valid = roots.len() <= 1
+        && roots.iter().all(|root| {
+            root.id == "catia:zero-entity:ownership-root#0"
+                && root.face_slots.len() == bound_face_count
+                && root
+                    .face_slots
+                    .iter()
+                    .copied()
+                    .eq((1..=u32::try_from(bound_face_count).unwrap_or(0)).rev())
+                && [
+                    (
+                        root.face_roster_record_ordinal,
+                        root.face_roster_byte_offset,
+                        [0x61, 0x42],
+                    ),
+                    (
+                        root.shell_record_ordinal,
+                        root.shell_byte_offset,
+                        [0x60, 0x06],
+                    ),
+                    (
+                        root.body_record_ordinal,
+                        root.body_byte_offset,
+                        [0x65, 0x08],
+                    ),
+                ]
+                .into_iter()
+                .all(|(ordinal, byte_offset, tag)| {
+                    zero_entity_record(records, ordinal).is_some_and(|record| {
+                        record.byte_offset == byte_offset && record.tag == tag
+                    })
+                })
+                && root.shell_record_ordinal == root.face_roster_record_ordinal.saturating_add(1)
+                && root.body_record_ordinal == root.shell_record_ordinal.saturating_add(1)
+        });
+    if valid {
+        Ok(())
+    } else {
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "zero-entity ownership root is structurally invalid".to_string(),
+        ))
+    }
+}
+
+#[cfg(test)]
 fn validate_zero_entity_topology_records(
     edge_strides: &[CatiaZeroEntityEdgeStride],
     oriented_use_pairs: &[CatiaZeroEntityOrientedUsePair],
@@ -6036,6 +6129,7 @@ impl CatiaNative {
         let zero_entity_records = zero_entity_records(bytes);
         let zero_entity_edge_strides = zero_entity_edge_strides(bytes, &zero_entity_records);
         let zero_entity_oriented_use_pairs = zero_entity_oriented_use_pairs(bytes);
+        let zero_entity_ownership_roots = zero_entity_ownership_roots(bytes);
         let parsed_zero_entity_support_runs =
             crate::families::zero_entity::records::zero_entity_support_runs(bytes);
         let parsed_zero_entity_endpoint_pairs =
@@ -6092,6 +6186,7 @@ impl CatiaNative {
             value_blocks,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
+            zero_entity_ownership_roots,
             zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
@@ -6553,6 +6648,8 @@ impl CatiaNative {
         let mut zero_entity_oriented_use_pairs: Vec<CatiaZeroEntityOrientedUsePair> =
             namespace.arena_as("zero_entity_oriented_use_pairs")?;
         zero_entity_oriented_use_pairs.sort_by_key(|pair| pair.header_byte_offset);
+        let zero_entity_ownership_roots: Vec<CatiaZeroEntityOwnershipRoot> =
+            namespace.arena_as("zero_entity_ownership_roots")?;
         let zero_entity_endpoint_pair_candidates: Vec<CatiaZeroEntityEndpointPairCandidate> =
             namespace.arena_as("zero_entity_endpoint_pair_candidates")?;
         let mut zero_entity_records: Vec<CatiaZeroEntityRecord> =
@@ -6563,6 +6660,11 @@ impl CatiaNative {
             namespace.arena_as("zero_entity_support_runs")?;
         zero_entity_support_runs.sort_by_key(|run| run.carrier_byte_offset);
         validate_zero_entity_support_runs(&zero_entity_support_runs, &zero_entity_records)?;
+        validate_zero_entity_ownership_roots(
+            &zero_entity_ownership_roots,
+            &zero_entity_support_runs,
+            &zero_entity_records,
+        )?;
         let zero_entity_endpoint_locus_candidates: Vec<CatiaZeroEntityEndpointLocusCandidate> =
             namespace.arena_as("zero_entity_endpoint_locus_candidates")?;
         validate_zero_entity_endpoint_pair_candidates(
@@ -6628,6 +6730,7 @@ impl CatiaNative {
             value_blocks,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
+            zero_entity_ownership_roots,
             zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
@@ -6739,6 +6842,10 @@ impl CatiaNative {
             &self.zero_entity_oriented_use_pairs,
         )?;
         namespace.set_arena(
+            "zero_entity_ownership_roots",
+            &self.zero_entity_ownership_roots,
+        )?;
+        namespace.set_arena(
             "zero_entity_endpoint_pair_candidates",
             &self.zero_entity_endpoint_pair_candidates,
         )?;
@@ -6797,6 +6904,7 @@ impl CatiaNative {
             mut value_blocks,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
+            zero_entity_ownership_roots,
             zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
@@ -6864,6 +6972,7 @@ impl CatiaNative {
             "zero_entity_oriented_use_pairs",
             &zero_entity_oriented_use_pairs,
         )?;
+        namespace.set_arena("zero_entity_ownership_roots", &zero_entity_ownership_roots)?;
         namespace.set_arena(
             "zero_entity_endpoint_pair_candidates",
             &zero_entity_endpoint_pair_candidates,
