@@ -1771,6 +1771,7 @@ fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignEx
         [1, 1] => DesignExtrudeExtent::OneSidedToFace,
         [1, 2] => DesignExtrudeExtent::OneSidedDistance,
         [2, 0] => DesignExtrudeExtent::TwoSidedDistance,
+        [3, 2] => DesignExtrudeExtent::SymmetricDistance,
         _ => return None,
     };
     let direction_reversed_offset = operation_offset.checked_add(12)?;
@@ -1821,6 +1822,13 @@ fn exact_legacy_shifted_extrude_prologue(
         u32_at(bytes, first_extent_offset)?,
         u32_at(bytes, second_extent_offset)?,
     ];
+    let extent = match extent_discriminators {
+        [1, 1] => Some(DesignExtrudeExtent::OneSidedToFace),
+        [1, 2] => Some(DesignExtrudeExtent::OneSidedDistance),
+        [2, 0] => Some(DesignExtrudeExtent::TwoSidedDistance),
+        [3, 2] => Some(DesignExtrudeExtent::SymmetricDistance),
+        _ => None,
+    };
     let direction_reversed_offset = operation_offset.checked_add(12)?;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
@@ -1841,6 +1849,7 @@ fn exact_legacy_shifted_extrude_prologue(
         operation,
         operation_offset: operation_offset as u64,
         extent_discriminators,
+        extent,
         extent_discriminator_offsets: [first_extent_offset as u64, second_extent_offset as u64],
         direction_reversed,
         direction_reversed_offset: direction_reversed_offset as u64,

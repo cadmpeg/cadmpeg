@@ -873,6 +873,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             ([1, 1], records::DesignExtrudeExtent::OneSidedToFace)
                                 | ([1, 2], records::DesignExtrudeExtent::OneSidedDistance)
                                 | ([2, 0], records::DesignExtrudeExtent::TwoSidedDistance)
+                                | ([3, 2], records::DesignExtrudeExtent::SymmetricDistance)
                         )
                         && extent_offsets
                             == [
@@ -887,6 +888,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     true,
                     Some(records::DesignExtrudePrologue::LegacyShifted {
                         operation_offset,
+                        extent_discriminators,
+                        extent,
                         extent_discriminator_offsets: extent_offsets,
                         direction_reversed_offset,
                         start_offset,
@@ -894,6 +897,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     }),
                 ) => {
                     operation_offset == scope.byte_offset.saturating_add(27)
+                        && match extent {
+                            Some(records::DesignExtrudeExtent::OneSidedToFace) => {
+                                extent_discriminators == [1, 1]
+                            }
+                            Some(records::DesignExtrudeExtent::OneSidedDistance) => {
+                                extent_discriminators == [1, 2]
+                            }
+                            Some(records::DesignExtrudeExtent::TwoSidedDistance) => {
+                                extent_discriminators == [2, 0]
+                            }
+                            Some(records::DesignExtrudeExtent::SymmetricDistance) => {
+                                extent_discriminators == [3, 2]
+                            }
+                            None => !matches!(extent_discriminators, [1, 1 | 2] | [2, 0] | [3, 2]),
+                        }
                         && extent_offsets
                             == [
                                 operation_offset.saturating_add(4),
@@ -1526,6 +1544,12 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     along_count == 1
                         && !has_fixed_extrude_parameters
                         && against_count == 1
+                        && side_one_offset_count == 0
+                        && !prologue.direction_reversed()
+                }
+                records::DesignExtrudeExtent::SymmetricDistance => {
+                    has_one_along_carrier
+                        && against_count == 0
                         && side_one_offset_count == 0
                         && !prologue.direction_reversed()
                 }

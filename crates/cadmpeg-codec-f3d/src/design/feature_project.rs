@@ -2897,6 +2897,7 @@ pub(crate) fn project_extrude(
     // are attached below once they are resolved.
     enum ExtentShape {
         OneSided(Termination),
+        Symmetric(Termination),
         TwoSided {
             first: Termination,
             second: Termination,
@@ -3041,7 +3042,8 @@ pub(crate) fn project_extrude(
             };
             let offset = profile_offset?;
             ExtrudeStart::FromFace {
-                face: resolved_face_group(start, face_operands)
+                face: resolved_historical_face_group(scope, start, face_operands)
+                    .or_else(|| resolved_face_group(start, face_operands))
                     .unwrap_or_else(|| FaceSelection::Native(start.id.clone())),
                 offset: (offset.0 != 0.0).then_some(offset),
             }
@@ -3081,6 +3083,19 @@ pub(crate) fn project_extrude(
                 along.0 < 0.0,
             )
         }
+        (DesignExtrudeExtent::SymmetricDistance, Some(along), None)
+            if along.0 != 0.0
+                && !prologue.direction_reversed()
+                && termination_groups.is_empty()
+                && side_one_offset.is_none() =>
+        {
+            (
+                ExtentShape::Symmetric(Termination::Blind {
+                    length: Length(along.0.abs()),
+                }),
+                along.0 < 0.0,
+            )
+        }
         (DesignExtrudeExtent::OneSidedToFace, None, None) => {
             let offset = side_one_offset?;
             let [termination] = termination_groups.as_slice() else {
@@ -3088,7 +3103,8 @@ pub(crate) fn project_extrude(
             };
             (
                 ExtentShape::OneSided(Termination::ToFace {
-                    face: resolved_face_group(termination, face_operands)
+                    face: resolved_historical_face_group(scope, termination, face_operands)
+                        .or_else(|| resolved_face_group(termination, face_operands))
                         .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
                     offset: (offset.0 != 0.0).then_some(offset),
                 }),
@@ -3130,6 +3146,13 @@ pub(crate) fn project_extrude(
     }
     let extent = match shape {
         ExtentShape::OneSided(termination) => ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination,
+                draft,
+                offset: None,
+            },
+        },
+        ExtentShape::Symmetric(termination) => ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
                 termination,
                 draft,

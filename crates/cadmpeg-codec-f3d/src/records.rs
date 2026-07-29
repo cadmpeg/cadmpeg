@@ -723,6 +723,8 @@ pub enum DesignExtrudeExtent {
     OneSidedToFace,
     /// Travel independent fixed distances on both sides of the profile.
     TwoSidedDistance,
+    /// Travel one fixed total distance symmetrically around the profile plane.
+    SymmetricDistance,
 }
 
 /// Starting support selected by the fixed Extrude prologue enum.
@@ -764,7 +766,7 @@ pub enum DesignExtrudePrologue {
         /// Byte offset of `start`.
         start_offset: u64,
     },
-    /// Shifted layout whose extent discriminator semantics are not yet classified.
+    /// Shifted layout without the reference-aware prefix.
     LegacyShifted {
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
@@ -772,6 +774,9 @@ pub enum DesignExtrudePrologue {
         operation_offset: u64,
         /// Raw extent discriminators.
         extent_discriminators: [u32; 2],
+        /// Decoded extent form.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extent: Option<DesignExtrudeExtent>,
         /// Byte offsets parallel to `extent_discriminators`.
         extent_discriminator_offsets: [u64; 2],
         /// Direction-reversal state.
@@ -795,11 +800,11 @@ impl DesignExtrudePrologue {
         }
     }
 
-    /// Decoded extent form, when the layout's discriminators are classified.
+    /// Decoded extent form.
     pub fn extent(self) -> Option<DesignExtrudeExtent> {
         match self {
             Self::ReferenceAware { extent, .. } => Some(extent),
-            Self::LegacyShifted { .. } => None,
+            Self::LegacyShifted { extent, .. } => extent,
         }
     }
 
