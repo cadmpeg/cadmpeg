@@ -74,7 +74,9 @@ current scores require those matrices and representative fixtures.
   nested schema selectors are counted independently.
 - Legacy typed relations retain their `body` and `param` role selectors and
   exact parameter identities when those selectors close within one identity
-  run.
+  run. Each legacy identity run retains its exact outer container binding.
+  Legacy parameter transfer is restricted to the unique declared part-history
+  container; unbound runs remain eligible only in declaration-free fragments.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, evaluation state, expression, and dependency identities resolve
   exactly. Typed unset inputs transfer independently while preventing formula

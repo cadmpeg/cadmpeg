@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 209;
+pub const CATIA_NATIVE_VERSION: u32 = 210;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -1426,7 +1426,7 @@ pub struct CatiaObjectGraph {
     pub finjpl_segment: Option<String>,
     /// Exact declared outer container whose physical stream contains this graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub outer_container: Option<CatiaObjectGraphContainer>,
+    pub outer_container: Option<CatiaOuterContainerBinding>,
     /// Byte offset of the associated schema catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog_byte_offset: Option<u64>,
@@ -1438,9 +1438,9 @@ pub struct CatiaObjectGraph {
     pub records: Vec<CatiaObjectRecord>,
 }
 
-/// Outer `Data` declaration and selected stream containing one object graph.
+/// Outer `Data` declaration and its selected physical stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaObjectGraphContainer {
+pub struct CatiaOuterContainerBinding {
     /// Byte offset of the declaration in the reconstructed outer `Data` stream.
     pub data_offset: u64,
     /// Source ordinal stored by the declaration.
@@ -3108,6 +3108,9 @@ pub struct CatiaLegacyEntityRun {
     pub byte_len: u64,
     /// Offset of the fixed schema-catalog opening production.
     pub catalog_offset: u64,
+    /// Exact declared outer container whose physical stream contains this run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outer_container: Option<CatiaOuterContainerBinding>,
     /// Stored identities in source order.
     pub identities: Vec<CatiaLegacyEntityIdentity>,
     /// Complete schema text fields in identity-interval order.
@@ -3549,6 +3552,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                 byte_offset: byte_offset as u64,
                 byte_len: (run.catalog_offset - byte_offset) as u64,
                 catalog_offset: run.catalog_offset as u64,
+                outer_container: None,
                 identities: run
                     .identities
                     .into_iter()
@@ -6836,7 +6840,7 @@ impl CatiaNative {
                             graph.total_len as u64,
                         )
                     })
-                    .map(CatiaObjectGraphContainer::from);
+                    .map(CatiaOuterContainerBinding::from);
                 let (graph, mut entities) =
                     native_object_graph(graph, entities, finjpl_segment, outer_container);
                 entity_records.append(&mut entities);
@@ -7002,7 +7006,20 @@ impl CatiaNative {
             .collect();
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
-        let legacy_entity_runs = legacy_entity_runs(bytes);
+        let mut legacy_entity_runs = legacy_entity_runs(bytes);
+        for run in &mut legacy_entity_runs {
+            run.outer_container = outer_directory
+                .as_ref()
+                .and_then(|outer| {
+                    container::outer_container_for_extent(
+                        outer,
+                        &outer_container_declarations,
+                        run.byte_offset,
+                        run.byte_len,
+                    )
+                })
+                .map(CatiaOuterContainerBinding::from);
+        }
         let consolidated_circles = consolidated_circles(bytes);
         let consolidated_class61_records = consolidated_class61_records(bytes);
         let consolidated_parameter_points = consolidated_parameter_points(bytes);
@@ -8138,7 +8155,7 @@ fn native_object_graph(
     graph: object_graph::ObjectGraph,
     entity_records: Vec<entity_table::EntityRecord>,
     finjpl_segment: Option<String>,
-    outer_container: Option<CatiaObjectGraphContainer>,
+    outer_container: Option<CatiaOuterContainerBinding>,
 ) -> (CatiaObjectGraph, Vec<CatiaEntityRecord>) {
     let id = format!("catia:outer:object-graph#{:010}", graph.pos);
     let mut records = graph
@@ -8268,7 +8285,7 @@ fn native_object_graph(
     )
 }
 
-impl From<&container::OuterContainerDeclaration> for CatiaObjectGraphContainer {
+impl From<&container::OuterContainerDeclaration> for CatiaOuterContainerBinding {
     fn from(declaration: &container::OuterContainerDeclaration) -> Self {
         Self {
             data_offset: declaration.data_offset as u64,

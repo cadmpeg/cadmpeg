@@ -1866,24 +1866,16 @@ fn modeling_graph_scope(
     if !has_outer_declarations {
         return None;
     }
-    let mut scope = HashSet::new();
-    let mut streams = HashSet::new();
-    for graph in graphs.iter().filter(|graph| {
+    let mut part_graphs = graphs.iter().filter(|graph| {
         graph
             .outer_container
             .as_ref()
             .is_some_and(|container| container.class_name == "CATPrtCont")
-    }) {
-        let container = graph
-            .outer_container
-            .as_ref()
-            .expect("filtered graph has an outer container");
-        if !streams.insert(container.stream_name.as_str()) {
-            return Some(HashSet::new());
-        }
-        scope.insert(graph.id.clone());
+    });
+    match (part_graphs.next(), part_graphs.next()) {
+        (Some(graph), None) => Some(HashSet::from([graph.id.clone()])),
+        _ => Some(HashSet::new()),
     }
-    Some(scope)
 }
 
 fn decode_result(
@@ -1907,7 +1899,7 @@ fn decode_result(
 #[cfg(test)]
 mod tests {
     use super::modeling_graph_scope;
-    use crate::native::{CatiaObjectGraph, CatiaObjectGraphContainer};
+    use crate::native::{CatiaObjectGraph, CatiaOuterContainerBinding};
     use std::collections::HashSet;
 
     fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {
@@ -1916,7 +1908,7 @@ mod tests {
             byte_offset: 0,
             byte_len: 10,
             finjpl_segment: None,
-            outer_container: Some(CatiaObjectGraphContainer {
+            outer_container: Some(CatiaOuterContainerBinding {
                 data_offset: 0,
                 ordinal: 1,
                 class_name: class_name.to_string(),
@@ -1959,6 +1951,16 @@ mod tests {
         let graphs = vec![
             graph("first", "part", "CATPrtCont"),
             graph("second", "part", "CATPrtCont"),
+        ];
+
+        assert_eq!(modeling_graph_scope(true, &graphs), Some(HashSet::new()));
+    }
+
+    #[test]
+    fn modeling_scope_rejects_multiple_declared_part_graphs() {
+        let graphs = vec![
+            graph("first", "first-part", "CATPrtCont"),
+            graph("second", "second-part", "CATPrtCont"),
         ];
 
         assert_eq!(modeling_graph_scope(true, &graphs), Some(HashSet::new()));

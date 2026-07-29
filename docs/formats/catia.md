@@ -587,6 +587,14 @@ A legacy scalar prefix is `FE <form> 88 82 FE`, where `form=84` is the named for
 
 A typed legacy relation with an exact parameter identity, no input clauses, no output clause, and a non-`VoidType` result is a constant formula for that parameter when the selected identity contains exactly one typed parameter. Its expression uses the arithmetic grammar and dimensional rules below. The evaluated result type must equal the selected parameter's declared type. An `E6` parameter also requires exact equality with its stored binary64 value; an `E7` parameter retains the expression without an evaluated value. Multiple relations selecting the parameter, incomplete or unsupported expressions, mismatched types, and mismatched finite values leave the generated scalar literal or unset state unchanged.
 
+Every complete legacy identity run retains the unique outer `Data` declaration
+whose selected physical stream contains the entire range from its first identity
+delimiter through the byte before its catalog opener. No binding is assigned
+when the range crosses extents or zero or multiple declared streams contain it.
+A legacy parameter authors the part model only when this binding equals the
+binding of the unique object graph contained by the declared `CATPrtCont`
+stream. Files without outer container declarations retain fragment behavior.
+
 ### 7.2 `7C02` source-schema catalogs
 
 ```text

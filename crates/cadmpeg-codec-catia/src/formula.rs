@@ -43,7 +43,19 @@ pub(crate) fn transfer_parameters(
                 counts
             },
         );
-    let legacy_transfer = collect_legacy_parameters(native, &mut candidates);
+    let legacy_scope = match graph_scope {
+        None => LegacyModelingScope::Unbounded,
+        Some(scope) => native
+            .object_graphs
+            .iter()
+            .find(|graph| scope.contains(graph.id.as_str()))
+            .and_then(|graph| graph.outer_container.as_ref())
+            .map_or(
+                LegacyModelingScope::Unresolved,
+                LegacyModelingScope::Container,
+            ),
+    };
+    let legacy_transfer = collect_legacy_parameters(native, &mut candidates, legacy_scope);
 
     for formula_entity in native.entity_records.iter().filter(|entity| {
         graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
@@ -402,12 +414,24 @@ struct LegacyParameterTransfer {
     formulas: usize,
 }
 
+#[derive(Clone, Copy)]
+enum LegacyModelingScope<'a> {
+    Unbounded,
+    Unresolved,
+    Container(&'a crate::native::CatiaOuterContainerBinding),
+}
+
 fn collect_legacy_parameters(
     native: &CatiaNative,
     candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+    modeling_scope: LegacyModelingScope<'_>,
 ) -> LegacyParameterTransfer {
     let mut transfer = LegacyParameterTransfer::default();
-    for run in &native.legacy_entity_runs {
+    for run in native
+        .legacy_entity_runs
+        .iter()
+        .filter(|run| outer_container_in_scope(run.outer_container.as_ref(), modeling_scope))
+    {
         let mut parameters_by_entity = HashMap::<u32, Vec<ParameterId>>::new();
         for scalar in &run.scalar_values {
             if scalar.encoding != crate::native::CatiaLegacyScalarEncoding::Named84 {
@@ -525,6 +549,17 @@ fn collect_legacy_parameters(
     transfer
 }
 
+fn outer_container_in_scope(
+    binding: Option<&crate::native::CatiaOuterContainerBinding>,
+    modeling_scope: LegacyModelingScope<'_>,
+) -> bool {
+    match modeling_scope {
+        LegacyModelingScope::Unbounded => true,
+        LegacyModelingScope::Unresolved => false,
+        LegacyModelingScope::Container(modeling_container) => binding == Some(modeling_container),
+    }
+}
+
 fn resolved_legacy_type(
     run: &crate::native::CatiaLegacyEntityRun,
     mut entity_id: u32,
@@ -552,6 +587,53 @@ fn resolved_legacy_type(
                 selected = true;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{outer_container_in_scope, LegacyModelingScope};
+    use crate::native::CatiaOuterContainerBinding;
+
+    fn binding(stream_name: &str) -> CatiaOuterContainerBinding {
+        CatiaOuterContainerBinding {
+            data_offset: 10,
+            ordinal: 2,
+            class_name: "CATPrtCont".to_string(),
+            base_class: "CATProdCont".to_string(),
+            stream_name: stream_name.to_string(),
+        }
+    }
+
+    #[test]
+    fn legacy_parameter_scope_requires_the_exact_modeling_container() {
+        let part = binding("part");
+        let other_part = binding("other-part");
+
+        assert!(outer_container_in_scope(
+            Some(&part),
+            LegacyModelingScope::Container(&part)
+        ));
+        assert!(!outer_container_in_scope(
+            Some(&other_part),
+            LegacyModelingScope::Container(&part)
+        ));
+        assert!(!outer_container_in_scope(
+            None,
+            LegacyModelingScope::Container(&part)
+        ));
+        assert!(!outer_container_in_scope(
+            Some(&part),
+            LegacyModelingScope::Unresolved
+        ));
+    }
+
+    #[test]
+    fn legacy_parameter_scope_admits_unbound_fragment_runs() {
+        assert!(outer_container_in_scope(
+            None,
+            LegacyModelingScope::Unbounded
+        ));
     }
 }
 

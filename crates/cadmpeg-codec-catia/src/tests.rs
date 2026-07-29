@@ -686,6 +686,10 @@ fn outer_directory_catpart() -> Vec<u8> {
 }
 
 fn outer_container_object_graph_catpart() -> (Vec<u8>, u64) {
+    outer_container_catpart(&object_graph_stream())
+}
+
+fn outer_container_catpart(stream: &[u8]) -> (Vec<u8>, u64) {
     let mut declaration = vec![0; 40];
     declaration[8..12].copy_from_slice(b"\x01\x00\x03\x00");
     declaration[12..16].copy_from_slice(&2u32.to_le_bytes());
@@ -698,7 +702,6 @@ fn outer_container_object_graph_catpart() -> (Vec<u8>, u64) {
     declaration.extend_from_slice(&0x62eb_7b6fu32.to_be_bytes());
     declaration.extend_from_slice(&0x0000_1825u32.to_be_bytes());
 
-    let graph = object_graph_stream();
     let data_offset = 16u32;
     let graph_offset = data_offset + declaration.len() as u32;
     let mut dir = Vec::new();
@@ -707,17 +710,17 @@ fn outer_container_object_graph_catpart() -> (Vec<u8>, u64) {
     dir.extend_from_slice(&descriptor(
         "1048_62eb7b6f_1825",
         graph_offset,
-        graph.len() as u32,
+        stream.len() as u32,
     ));
     dir.extend_from_slice(b"CB__END");
 
-    let directory_offset = graph_offset + graph.len() as u32;
+    let directory_offset = graph_offset + stream.len() as u32;
     let mut file = Vec::new();
     file.extend_from_slice(OUTER_MAGIC);
     file.extend_from_slice(&be32(directory_offset));
     file.extend_from_slice(&be32(dir.len() as u32));
     file.extend(declaration);
-    file.extend(graph);
+    file.extend(stream);
     file.extend(dir);
     (file, u64::from(graph_offset))
 }
@@ -13746,6 +13749,57 @@ fn object_graphs_retain_exact_outer_container_declarations() {
             .and_then(|graph| graph.outer_container.as_ref()),
         Some(&expected)
     );
+}
+
+#[test]
+fn legacy_parameters_retain_and_require_the_part_container_binding() {
+    let graph = object_graph_stream();
+    let legacy_offset = graph.len();
+    let mut stream = graph;
+    stream.push(0xea);
+    stream.extend(1_u32.to_le_bytes());
+    stream.push(0x81);
+    stream.extend([0xfd, 0x8c]);
+    stream.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+    stream.extend(b"\xe8\x00\x12\x01");
+    stream.extend([6, b'W', b'i', b'd', b't', b'h', 0xfe]);
+    stream.extend(b"\xfe\x84\x92\x82");
+    stream.extend([7, b'L', b'E', b'N', b'G', b'T', b'H', 0x83]);
+    stream.extend(b"\xfe\x84\x88\x82\xfe\xe6");
+    stream.extend(12.5_f64.to_bits().to_le_bytes());
+    stream.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+    let (bytes, stream_offset) = outer_container_catpart(&stream);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let run = native
+        .legacy_entity_runs
+        .iter()
+        .find(|run| run.byte_offset == stream_offset + legacy_offset as u64)
+        .expect("declared-stream legacy run");
+    assert_eq!(
+        run.outer_container.as_ref(),
+        native.object_graphs[0].outer_container.as_ref()
+    );
+    let expected_binding = run.outer_container.clone();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store container-bound legacy run");
+    let loaded =
+        crate::native::CatiaNative::load(&namespace).expect("load container-bound legacy run");
+    assert_eq!(
+        loaded.legacy_entity_runs[0].outer_container,
+        expected_binding
+    );
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode container-bound legacy parameter");
+    assert_eq!(
+        decoded.report.coverage["transferred_legacy_parameter_count"],
+        1
+    );
+    assert_eq!(decoded.ir.model.parameters.len(), 1);
 }
 
 #[test]
