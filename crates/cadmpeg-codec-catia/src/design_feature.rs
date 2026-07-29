@@ -12,7 +12,6 @@ use crate::object_graph::{PayloadField, PayloadSubtype};
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
     pub(crate) principal_plane_records: HashSet<String>,
-    pub(crate) features_by_design_object: HashMap<String, FeatureId>,
 }
 
 impl DesignFeatureTransfer {
@@ -65,9 +64,6 @@ pub(crate) fn transfer_design_features(
                 .into_iter()
                 .map(|record| record.id.clone()),
         );
-        transfer
-            .features_by_design_object
-            .insert(object.id.clone(), feature_id);
     }
 
     transfer

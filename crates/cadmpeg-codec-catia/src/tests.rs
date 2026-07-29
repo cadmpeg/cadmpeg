@@ -7921,7 +7921,6 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
     assert!(ir.model.features.is_empty());
     assert!(transfer.consumed_records().is_empty());
-    assert!(transfer.features_by_design_object.is_empty());
 }
 
 #[test]
@@ -7950,7 +7949,6 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
     assert!(ir.model.features.is_empty());
     assert!(ir.model.sketches.is_empty());
     assert!(transfer.consumed_records().is_empty());
-    assert!(transfer.features_by_design_object.is_empty());
 }
 
 #[test]
@@ -7989,12 +7987,6 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         assert_eq!(
             transfer.principal_plane_records,
             native.design_objects[0].fields.iter().cloned().collect()
-        );
-        assert_eq!(
-            transfer
-                .features_by_design_object
-                .get(&native.design_objects[0].id),
-            Some(&ir.model.features[0].id)
         );
     }
 }

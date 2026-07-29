@@ -64,8 +64,7 @@ current scores require those matrices and representative fixtures.
   framings retain their source expressions and typed signatures. Parser-version
   expressions remain native when their formula-instance incidence does not
   resolve.
-  Parameters structurally contained by a transferred feature retain that
-  feature ownership; other parameters remain document-scoped.
+  Parameters remain document-scoped until feature-instance ownership resolves.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not
   transfer as values of either type.
