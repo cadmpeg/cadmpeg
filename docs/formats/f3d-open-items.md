@@ -44,7 +44,7 @@ This document records F3D semantics that the format specification does not yet d
 - In Extrude selections, identities absent from history, the discriminator between multiple profile loops incident at the same ordered persistent Sketch points, the selector for one of several closed spatial-Sketch profiles, the context UUID's role, and the semantic role of the fixed member tail's optional slot remain unresolved.
 - Shifted Extrude extent-discriminator pairs other than `(1, 1)`, `(1, 2)`, `(2, 0)`, and `(3, 2)` remain unresolved.
 - The semantic roles of additional Extrude construction groups with role `0x0000000500000000` remain unresolved.
-- The construction-group scalar fields and variant byte, and the construction-group role field outside Extrude scopes, remain unresolved.
+- The construction-group scalar fields and variant byte remain unresolved. Group-role fields outside the defined feature-specific namespaces remain unresolved.
 - The topology meaning of the root, prelude, and side-clause scalar fields shared by face-recipe nodes remains unresolved.
 - The join from a `Move` or `RemoveBody` role-`0x0000000400000000` construction-group identity to neutral body identities is unresolved; the group identity is retained as the native body selection.
 - The join from each `Combine` body-selection record's GUID pair and remaining native fields to a neutral body identity is unresolved; the ordered record identities are retained as the target and tool selections.

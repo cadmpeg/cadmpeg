@@ -626,6 +626,40 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         }
         let feature_id = feature.id.clone();
+        if let FeatureDefinition::Pattern { seeds, .. } = &mut feature.definition {
+            if !seeds.is_empty() {
+                continue;
+            }
+            let Some(previous_state_id) = scope.previous_history_state_id else {
+                continue;
+            };
+            let stream = crate::ids::native_stream(&scope.id);
+            let mut matching_groups = groups.iter().filter(|group| {
+                group.scope_record_index == scope.record_index
+                    && group.role == 0x0000_0008_0000_0000
+                    && !group.members.is_empty()
+                    && crate::ids::native_stream(&group.id) == stream
+            });
+            let Some(group) = matching_groups.next() else {
+                continue;
+            };
+            if matching_groups.next().is_some() {
+                continue;
+            }
+            let mut bodies = BodySelection::Native(group.id.clone());
+            bind_body_recipe_body_selection(
+                &mut bodies,
+                &feature_id,
+                previous_state_id,
+                scope,
+                groups,
+                body_recipe_operands,
+            );
+            if matches!(bodies, BodySelection::Historical { .. }) {
+                seeds.push(cadmpeg_ir::features::PatternSeed::Bodies(bodies));
+            }
+            continue;
+        }
         if let FeatureDefinition::BoundaryFill { tools, cells } = &mut feature.definition {
             let Some(previous_state_id) = scope.previous_history_state_id else {
                 continue;
@@ -726,7 +760,10 @@ fn bind_body_recipe_body_selection(
     let mut matching_groups = groups.iter().filter(|group| {
         group.id == *group_id
             && group.scope_record_index == scope.record_index
-            && matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
+            && matches!(
+                group.role,
+                0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+            )
             && crate::ids::native_stream(&group.id) == stream
     });
     let Some(group) = matching_groups.next() else {

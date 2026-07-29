@@ -29,12 +29,12 @@ use crate::design::decode::parameters::{
     parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::decode::scopes::{
-    exact_base_feature_construction, exact_circular_pattern_construction, exact_combine_operation,
-    exact_direct_face_operation, exact_draft_operation, exact_fixed_chamfer_parameters,
-    exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_joint_origin_frame,
-    exact_path_feature_construction, exact_scale_operation, exact_solid_primitive,
-    exact_surface_stitch_operation, exact_work_plane_frame, exact_work_point_position,
-    parse_parameter_scope,
+    exact_base_feature_construction, exact_circular_pattern_construction_with_owners,
+    exact_combine_operation, exact_direct_face_operation, exact_draft_operation,
+    exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters, exact_fixed_fillet_parameters,
+    exact_joint_origin_frame, exact_path_feature_construction, exact_scale_operation,
+    exact_solid_primitive, exact_surface_stitch_operation, exact_work_plane_frame,
+    exact_work_point_position, parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -14363,7 +14363,7 @@ fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
         paired_byte_offset: 329,
     };
     assert_eq!(
-        exact_circular_pattern_construction(&bytes, &scope),
+        exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]),
         Some(DesignCircularPatternConstruction {
             count: 25,
             count_record_index,
@@ -14380,13 +14380,59 @@ fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
         })
     );
 
+    bytes[count_start + 4] = b'x';
+    bytes[angle_start + 4] = b'x';
+    let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
+        DesignParameterOwner {
+            id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
+            byte_offset: 0,
+            class_tag: "457".into(),
+            record_index,
+            scope_record_index,
+            local_ordinal,
+            evaluated_value,
+            evaluated_value_offset,
+            parameter_record_index: record_index + 1,
+            owned_ordinal: local_ordinal,
+            variant: None,
+            companion_record_index: record_index + 2,
+        }
+    };
+    let owners = [
+        owner(count_record_index, 0, 25.0, 101),
+        owner(angle_record_index, 1, std::f64::consts::TAU, 202),
+    ];
+    let owner_backed =
+        exact_circular_pattern_construction_with_owners(&bytes, &scope, &owners).unwrap();
+    assert_eq!(owner_backed.count, 25);
+    assert_eq!(owner_backed.count_offset, 101);
+    assert_eq!(owner_backed.angle, std::f64::consts::TAU);
+    assert_eq!(owner_backed.angle_offset, 202);
+    bytes[count_start + 4] = b'3';
+    bytes[angle_start + 4] = b'3';
+
+    bytes[axis_start + 89..axis_start + 93].copy_from_slice(&6_u32.to_le_bytes());
+    assert!(exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]).is_some());
+    bytes[axis_start + 89..axis_start + 93].fill(0);
+    assert_eq!(
+        exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]),
+        None
+    );
+    bytes[axis_start + 89..axis_start + 93].copy_from_slice(&9_u32.to_le_bytes());
+
     bytes[axis_start + 57..axis_start + 65].copy_from_slice(&1.0_f64.to_le_bytes());
-    assert_eq!(exact_circular_pattern_construction(&bytes, &scope), None);
+    assert_eq!(
+        exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]),
+        None
+    );
     bytes[axis_start + 57..axis_start + 65].fill(0);
     scope
         .reference_members
         .extend([axis_record_index, selection_record_index]);
-    assert_eq!(exact_circular_pattern_construction(&bytes, &scope), None);
+    assert_eq!(
+        exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]),
+        None
+    );
 }
 
 #[test]

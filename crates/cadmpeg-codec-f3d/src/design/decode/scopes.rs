@@ -28,6 +28,7 @@ use std::collections::{HashMap, HashSet};
 pub fn decode_parameter_scopes(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
+    parameter_owners: &[crate::records::DesignParameterOwner],
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -110,7 +111,7 @@ pub fn decode_parameter_scopes(
             scope.combine_operation = exact_combine_operation(bytes, &scope);
             scope.draft_operation = exact_draft_operation(bytes, &scope);
             scope.circular_pattern_construction =
-                exact_circular_pattern_construction(bytes, &scope);
+                exact_circular_pattern_construction_with_owners(bytes, &scope, parameter_owners);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
@@ -122,9 +123,10 @@ pub fn decode_parameter_scopes(
     Ok(out)
 }
 
-pub(crate) fn exact_circular_pattern_construction(
+pub(crate) fn exact_circular_pattern_construction_with_owners(
     bytes: &[u8],
     scope: &DesignParameterScope,
+    parameter_owners: &[crate::records::DesignParameterOwner],
 ) -> Option<DesignCircularPatternConstruction> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::CircularPattern) {
         return None;
@@ -159,28 +161,64 @@ pub(crate) fn exact_circular_pattern_construction(
     else {
         return None;
     };
-    let count_candidates = scope
-        .reference_members
-        .iter()
-        .filter_map(|record_index| {
+    let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
+        if native_stream(&owner.id) != native_stream(&scope.id)
+            || owner.scope_record_index != scope.record_index
+            || owner.local_ordinal != 0
+            || !owner.evaluated_value.is_finite()
+            || owner.evaluated_value <= 0.0
+            || owner.evaluated_value > f64::from(u32::MAX)
+            || owner.evaluated_value.fract() != 0.0
+        {
+            return None;
+        }
+        Some((
+            owner.evaluated_value as u32,
+            owner.record_index,
+            owner.evaluated_value_offset,
+        ))
+    });
+    let mut count_candidates = owner_count_candidates.collect::<Vec<_>>();
+    if count_candidates.is_empty() {
+        count_candidates.extend(scope.reference_members.iter().filter_map(|record_index| {
             exact_fixed_pattern_count(bytes, *record_index, scope.record_index)
                 .map(|(count, count_offset)| (count, *record_index, count_offset))
-        })
-        .collect::<Vec<_>>();
+        }));
+    }
+    count_candidates.sort_unstable();
+    count_candidates.dedup();
     let [(count, count_record_index, count_offset)] = count_candidates.as_slice() else {
         return None;
     };
-    let angle_candidates = scope
-        .reference_members
-        .iter()
-        .filter_map(|record_index| {
+    let owner_angle_candidates = parameter_owners.iter().filter_map(|owner| {
+        (native_stream(&owner.id) == native_stream(&scope.id)
+            && owner.scope_record_index == scope.record_index
+            && owner.local_ordinal == 1
+            && owner.evaluated_value.is_finite()
+            && owner.evaluated_value > 0.0)
+            .then_some((
+                owner.evaluated_value,
+                owner.record_index,
+                owner.evaluated_value_offset,
+            ))
+    });
+    let mut angle_candidates = owner_angle_candidates.collect::<Vec<_>>();
+    if angle_candidates.is_empty() {
+        angle_candidates.extend(scope.reference_members.iter().filter_map(|record_index| {
             let scalar = exact_fixed_scalar(bytes, *record_index)?;
             (scalar.owner_record_index == Some(scope.record_index)
                 && scalar.ordinal == 1
                 && scalar.value > 0.0)
                 .then_some((scalar.value, *record_index, scalar.value_offset))
-        })
-        .collect::<Vec<_>>();
+        }));
+    }
+    angle_candidates.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.cmp(&right.2))
+    });
+    angle_candidates.dedup();
     let [(angle, angle_record_index, angle_offset)] = angle_candidates.as_slice() else {
         return None;
     };
@@ -217,7 +255,7 @@ fn exact_circular_pattern_axis(
         || bytes.get(start + 11..start + 21) != Some(&[0; 10])
         || u32_at(bytes, start + 21) != Some(8)
         || bytes.get(start + 73..start + 89) != Some(&[0; 16])
-        || u32_at(bytes, start + 89) != Some(9)
+        || u32_at(bytes, start + 89)? == 0
         || u32_at(bytes, start + 93) != Some(1)
         || marked_record_reference(bytes, start + 97) != Some(selection_record_index)
         || bytes.get(start + 102..start + 108) != Some(&[0; 6])

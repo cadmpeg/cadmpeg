@@ -2532,9 +2532,12 @@ pub(crate) fn project_circular_pattern(
     if matching_groups.next().is_some() {
         return None;
     }
-    let faces = resolved_historical_face_group(scope, group, face_operands)?;
+    let seeds = resolved_historical_face_group(scope, group, face_operands)
+        .map(PatternSeed::Faces)
+        .into_iter()
+        .collect();
     Some(FeatureDefinition::Pattern {
-        seeds: vec![PatternSeed::Faces(faces)],
+        seeds,
         pattern: PatternKind::Circular {
             axis_origin: Point3::new(
                 construction.origin[0] * 10.0,
