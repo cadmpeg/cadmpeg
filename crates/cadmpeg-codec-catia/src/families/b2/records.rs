@@ -1513,14 +1513,9 @@ pub fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
             let latitude_range = [values[15], values[16]];
             let construction_radius = values[17];
             let chart_origin = values[18];
-            let squared_length = |value: [f64; 3]| {
-                value
-                    .iter()
-                    .map(|component| component * component)
-                    .sum::<f64>()
-            };
             let scaled_length_is_radius = |value: [f64; 3]| {
-                (squared_length(value).sqrt() - radius).abs() <= 1e-12 * radius.abs().max(1.0)
+                let length = value[0].hypot(value[1]).hypot(value[2]);
+                length.is_finite() && ((length / radius) - 1.0).abs() <= 1e-12
             };
             (values.iter().all(|value| value.is_finite())
                 && radius > 0.0

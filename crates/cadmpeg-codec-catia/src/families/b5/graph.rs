@@ -1961,13 +1961,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 line_values::<6>(&record.payload, 105)?;
             let azimuth_range = [azimuth_lo, azimuth_hi];
             let latitude_range = [latitude_lo, latitude_hi];
-            let vector_length = |value: [f64; 3]| {
-                value
-                    .iter()
-                    .map(|component| component * component)
-                    .sum::<f64>()
-                    .sqrt()
-            };
+            let vector_length = |value: [f64; 3]| value[0].hypot(value[1]).hypot(value[2]);
             let direction_x = unit(stored_x)?;
             let direction_y = unit(stored_y)?;
             let axis = unit(stored_axis)?;
@@ -1979,9 +1973,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && construction_radius > 0.0
                 && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
                 && (chart_origin - expected_chart_origin).abs() <= chart_origin_tolerance
-                && [stored_x, stored_y, stored_axis].iter().all(|direction| {
-                    (vector_length(*direction) - radius).abs() <= 1e-12 * radius.abs().max(1.0)
-                })
+                && [stored_x, stored_y, stored_axis]
+                    .iter()
+                    .all(|direction| ((vector_length(*direction) / radius) - 1.0).abs() <= 1e-12)
                 && directions_form_right_handed_orthonormal_frame(direction_x, direction_y, axis))
             .then_some(B5Surface::Sphere {
                 center,
@@ -4719,6 +4713,29 @@ mod tests {
                 chart_origin,
             })
         );
+        let tiny_radius = 1e-200_f64;
+        let mut tiny = record.clone();
+        for (offset, value) in [
+            (25usize, tiny_radius),
+            (57, tiny_radius),
+            (89, tiny_radius),
+            (97, tiny_radius),
+        ] {
+            tiny.payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        assert!(matches!(
+            parse_surface(&tiny),
+            Some(B5Surface::Sphere {
+                direction_x: [1.0, 0.0, 0.0],
+                direction_y: [0.0, 1.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                radius,
+                ..
+            }) if radius == tiny_radius
+        ));
+        tiny.payload[25..33].copy_from_slice(&(2.0 * tiny_radius).to_le_bytes());
+        assert_eq!(parse_surface(&tiny), None);
+
         let mut left_handed = record.clone();
         left_handed.payload[89..97].copy_from_slice(&(-2.0f64).to_le_bytes());
         assert_eq!(parse_surface(&left_handed), None);

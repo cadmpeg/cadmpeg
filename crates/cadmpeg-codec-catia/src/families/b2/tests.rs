@@ -480,6 +480,32 @@ fn b2_sphere_parser_reads_radius_scaled_frame_and_active_ranges() {
 }
 
 #[test]
+fn b2_sphere_parser_validates_tiny_radius_scaled_frame() {
+    let tiny = 1e-200_f64;
+    let mut stream = b2_sphere_stream();
+    for (index, value) in [tiny, 0.0, 0.0, 0.0, tiny, 0.0, 0.0, 0.0, tiny]
+        .into_iter()
+        .enumerate()
+    {
+        stream[5 + (3 + index) * 8..5 + (4 + index) * 8].copy_from_slice(&value.to_le_bytes());
+    }
+    stream[5 + 12 * 8..5 + 13 * 8].copy_from_slice(&tiny.to_le_bytes());
+    stream[5 + 17 * 8..5 + 18 * 8].copy_from_slice(&tiny.to_le_bytes());
+    let chart_origin = tiny * (1.0 - std::f64::consts::PI);
+    stream[5 + 18 * 8..5 + 19 * 8].copy_from_slice(&chart_origin.to_le_bytes());
+    let [sphere] = crate::families::b2::records::b2_spheres(&stream)
+        .try_into()
+        .expect("tiny sphere frame");
+    assert_eq!(sphere.radius, tiny);
+    assert_eq!(sphere.direction_x, [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.direction_y, [0.0, 1.0, 0.0]);
+    assert_eq!(sphere.axis, [0.0, 0.0, 1.0]);
+
+    stream[5 + 3 * 8..5 + 4 * 8].copy_from_slice(&(2.0 * tiny).to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+}
+
+#[test]
 fn b2_sphere_parser_rejects_invalid_scaled_frames_and_bounds() {
     let mut stream = b2_sphere_stream();
     stream[5 + 3 * 8..5 + 4 * 8].copy_from_slice(&4.0f64.to_le_bytes());
