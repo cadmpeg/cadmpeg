@@ -14023,6 +14023,12 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     append_b5_record(&mut stream, 0x27, 100, &b5_plane_payload([0.0; 3]));
     append_b5_record(
         &mut stream,
+        0x21,
+        9,
+        &b5_linear_pcurve_payload(100, [0.0, 0.0], [1.0, 0.0]),
+    );
+    append_b5_record(
+        &mut stream,
         0x62,
         103,
         &[
@@ -14061,6 +14067,10 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         crate::families::b5::graph::typed_vertex_incidence_links(&stream).len(),
         1
     );
+    assert_eq!(
+        crate::families::b5::graph::typed_class_21_pcurves(&stream).len(),
+        1
+    );
 
     let result = CatiaCodec
         .decode(
@@ -14090,6 +14100,10 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     );
     assert_eq!(
         result.report.coverage["typed_object_stream_vertex_incidence_terminal_control_04_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["typed_object_stream_class_21_pcurve_suffix_scalar_count"],
         1
     );
 }

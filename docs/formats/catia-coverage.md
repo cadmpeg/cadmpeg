@@ -243,7 +243,9 @@ current scores require those matrices and representative fixtures.
   Object-stream class-`21` pcurves require the exact single-segment clamped
   Bézier grammar, complete finite suffix, and positive scalar domain. The typed
   pcurve retains the exact positive suffix scalar without assigning its
-  unresolved semantic role.
+  unresolved semantic role. Decode coverage counts structurally typed and
+  reference-resolved suffix scalars independently, including when no topology
+  graph closes.
   Object-stream class-`1a` pcurves require the exact circular diameter-period
   grammar and transfer as rational quadratic arcs over their stored intervals.
   Object-stream class-`1d` pcurves require the complete sphere great-circle

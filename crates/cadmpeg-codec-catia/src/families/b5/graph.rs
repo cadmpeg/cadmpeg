@@ -3900,6 +3900,15 @@ pub(crate) fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5Vert
         .collect()
 }
 
+/// Read every structurally complete class-`21` pcurve independently of
+/// support and topology resolution.
+pub(crate) fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
+    records(bytes)
+        .into_iter()
+        .filter_map(|record| parse_pcurve(&record).map(|pcurve| (record.object_id, pcurve)))
+        .collect()
+}
+
 /// Read each face's leading surface reference independently of its loop grammar.
 pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     records(bytes)
