@@ -851,7 +851,7 @@ pub struct PatternPayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
-/// Scalar width selected by a counted pattern-transform lane.
+/// Scalar width selected by one pattern-transform row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatternTransformEncoding {
     /// Four-byte shifted IEEE-754 binary32 rows.
@@ -865,10 +865,12 @@ pub enum PatternTransformEncoding {
 pub struct PatternPayloadTransformLane {
     /// Absolute offset of the opening `01, count` field.
     pub offset: usize,
+    /// Schema index framing every row in the lane.
+    pub row_schema_index: u8,
     /// Count including the implicit seed row.
     pub declared_count: u8,
-    /// Homogeneous scalar encoding selected by the operation family.
-    pub encoding: PatternTransformEncoding,
+    /// Scalar encoding selected independently by each row.
+    pub encodings: Vec<PatternTransformEncoding>,
     /// Ordered finite row scalars.
     pub values: Vec<f64>,
     /// Absolute offsets of the scalar encodings.
@@ -2158,28 +2160,22 @@ pub fn pattern_payload_references(
 pub fn pattern_payload_transform_lane(
     record: OperationRecord<'_>,
 ) -> Option<PatternPayloadTransformLane> {
-    const FEATURE_PREFIX: [u8; 4] = [0x60, 0x01, 0x00, 0x00];
+    const FEATURE_PREFIX_TAIL: [u8; 3] = [0x01, 0x00, 0x00];
     const FEATURE_SCALAR_SUFFIX: [u8; 14] = [
         0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03,
     ];
-    const GEOMETRY_PREFIX: [u8; 8] = [0x60, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00];
+    const GEOMETRY_PREFIX_TAIL: [u8; 7] = [0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00];
     const GEOMETRY_SCALAR_SUFFIX: [u8; 10] =
         [0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03];
     const ROW_TAIL: [u8; 5] = [0x00, 0x00, 0xff, 0x00, 0x00];
-    const TERMINATOR: [u8; 4] = [0x5f, 0x00, 0x00, 0x01];
-
-    let (prefix, scalar_suffix, encoding, scalar_width) = match record.label.value {
+    let (prefix_tail, scalar_suffix) = match record.label.value {
         "Pattern Feature" => (
-            FEATURE_PREFIX.as_slice(),
+            FEATURE_PREFIX_TAIL.as_slice(),
             FEATURE_SCALAR_SUFFIX.as_slice(),
-            PatternTransformEncoding::Binary32,
-            4usize,
         ),
         "Pattern Geometry" => (
-            GEOMETRY_PREFIX.as_slice(),
+            GEOMETRY_PREFIX_TAIL.as_slice(),
             GEOMETRY_SCALAR_SUFFIX.as_slice(),
-            PatternTransformEncoding::Binary64,
-            8usize,
         ),
         _ => return None,
     };
@@ -2189,6 +2185,8 @@ pub fn pattern_payload_transform_lane(
         (declared_count >= 2).then_some(())?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + 2;
+        let row_schema_index = *record.payload.get(at)?;
+        let mut encodings = Vec::with_capacity(row_count);
         let mut values = Vec::with_capacity(row_count);
         let mut value_offsets = Vec::with_capacity(row_count);
         let mut raw_values = Vec::with_capacity(row_count);
@@ -2196,21 +2194,20 @@ pub fn pattern_payload_transform_lane(
         let mut raw_selectors = Vec::with_capacity(row_count);
         let mut selector_offsets = Vec::with_capacity(row_count);
         for ordinal in 1..declared_count {
-            (record.payload.get(at..at + prefix.len()) == Some(prefix)).then_some(())?;
-            at += prefix.len();
-            let raw = record.payload.get(at..at + scalar_width)?;
-            let (value, actual_encoding, width) = payload_scalar(raw)?;
-            (actual_encoding
-                == match encoding {
-                    PatternTransformEncoding::Binary32 => PayloadScalarEncoding::Binary32,
-                    PatternTransformEncoding::Binary64 => PayloadScalarEncoding::Binary64,
-                }
-                && width == scalar_width)
+            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
                 .then_some(())?;
+            at += 1 + prefix_tail.len();
+            let (value, actual_encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+            encodings.push(match actual_encoding {
+                PayloadScalarEncoding::Zero => return None,
+                PayloadScalarEncoding::Binary32 => PatternTransformEncoding::Binary32,
+                PayloadScalarEncoding::Binary64 => PatternTransformEncoding::Binary64,
+            });
             values.push(value);
             value_offsets.push(record.payload_offset + at);
-            raw_values.push(raw.to_vec());
-            at += scalar_width;
+            raw_values.push(record.payload.get(at..at + width)?.to_vec());
+            at += width;
             (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
                 .then_some(())?;
             at += scalar_suffix.len();
@@ -2229,11 +2226,15 @@ pub fn pattern_payload_transform_lane(
                 .then_some(())?;
             at += 2 + ROW_TAIL.len();
         }
-        (record.payload.get(at..at + TERMINATOR.len()) == Some(&TERMINATOR)).then_some(())?;
+        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload.get(at + 1..at + 3) == Some(&[0x00, 0x00])).then_some(())?;
+        (record.payload.get(at + 3) == Some(&0x01)).then_some(())?;
         Some(PatternPayloadTransformLane {
             offset: record.payload_offset + start,
+            row_schema_index,
             declared_count,
-            encoding,
+            encodings,
             values,
             value_offsets,
             raw_values,

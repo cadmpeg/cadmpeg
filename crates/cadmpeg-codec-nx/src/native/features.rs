@@ -1296,7 +1296,7 @@ pub struct FeaturePatternConstructionFixedLane {
     pub value_source_offsets: Vec<u64>,
 }
 
-/// Scalar width selected by one exact pattern-transform lane.
+/// Scalar width selected by one exact pattern-transform row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeaturePatternTransformEncoding {
@@ -1313,10 +1313,12 @@ pub struct FeaturePatternTransformLane {
     pub id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
     pub operation_label: String,
+    /// Schema index framing every row in the lane.
+    pub row_schema_index: u8,
     /// Count including the implicit seed row.
     pub declared_count: u8,
-    /// Homogeneous scalar encoding selected by the operation family.
-    pub encoding: FeaturePatternTransformEncoding,
+    /// Scalar encodings selected independently in row order.
+    pub encodings: Vec<FeaturePatternTransformEncoding>,
     /// Ordered finite row scalars.
     pub values: Vec<f64>,
     /// Exact scalar encodings in row order.
@@ -5464,15 +5466,20 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
+                row_schema_index: lane.row_schema_index,
                 declared_count: lane.declared_count,
-                encoding: match lane.encoding {
-                    crate::om::PatternTransformEncoding::Binary32 => {
-                        FeaturePatternTransformEncoding::Binary32
-                    }
-                    crate::om::PatternTransformEncoding::Binary64 => {
-                        FeaturePatternTransformEncoding::Binary64
-                    }
-                },
+                encodings: lane
+                    .encodings
+                    .into_iter()
+                    .map(|encoding| match encoding {
+                        crate::om::PatternTransformEncoding::Binary32 => {
+                            FeaturePatternTransformEncoding::Binary32
+                        }
+                        crate::om::PatternTransformEncoding::Binary64 => {
+                            FeaturePatternTransformEncoding::Binary64
+                        }
+                    })
+                    .collect(),
                 values: lane.values,
                 raw_values: lane.raw_values,
                 selectors: lane.selectors,

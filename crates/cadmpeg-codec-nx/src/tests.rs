@@ -2619,8 +2619,15 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     };
     let lane = crate::om::pattern_payload_transform_lane(record).expect("feature lane");
     assert_eq!(lane.offset, 201);
+    assert_eq!(lane.row_schema_index, 0x60);
     assert_eq!(lane.declared_count, 3);
-    assert_eq!(lane.encoding, crate::om::PatternTransformEncoding::Binary32);
+    assert_eq!(
+        lane.encodings,
+        [
+            crate::om::PatternTransformEncoding::Binary32,
+            crate::om::PatternTransformEncoding::Binary32,
+        ]
+    );
     assert_eq!(lane.values, [3.3125, -3.3125]);
     assert_eq!(lane.value_offsets, [207, 237]);
     assert_eq!(lane.selectors, [2, 8190]);
@@ -2638,11 +2645,58 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         ..record
     };
     let lane = crate::om::pattern_payload_transform_lane(geometry_record).expect("geometry lane");
-    assert_eq!(lane.encoding, crate::om::PatternTransformEncoding::Binary64);
+    assert_eq!(lane.row_schema_index, 0x60);
+    assert_eq!(
+        lane.encodings,
+        [
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+        ]
+    );
     assert_eq!(lane.values, [132.0, 264.0]);
     assert_eq!(lane.selectors, [2, 3]);
     assert_eq!(lane.raw_selectors, [vec![0x02], vec![0x03]]);
     assert_eq!(lane.selector_offsets, [228, 262]);
+
+    let schema_relative_payload = b"\x01\x04\
+        \x3d\x01\x00\x00\x50\x9e\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\
+        \x3d\x01\x00\x00\x50\xae\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\
+        \x3d\x01\x00\x00\x30\xb6\x80\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x04\x01\x03\x00\x00\xff\x00\x00\
+        \x3c\x00\x00\x01";
+    let relative_lane = crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+        bytes: schema_relative_payload,
+        payload: schema_relative_payload,
+        ..record
+    })
+    .expect("schema-relative feature lane");
+    assert_eq!(relative_lane.row_schema_index, 0x3d);
+    assert_eq!(relative_lane.declared_count, 4);
+    assert_eq!(
+        relative_lane.encodings,
+        [
+            crate::om::PatternTransformEncoding::Binary32,
+            crate::om::PatternTransformEncoding::Binary32,
+            crate::om::PatternTransformEncoding::Binary64,
+        ]
+    );
+    assert_eq!(relative_lane.selectors, [2, 3, 4]);
+
+    let mut changed_schema = feature_payload.to_vec();
+    let second_row = changed_schema
+        .windows(4)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == [0x60, 0x01, 0x00, 0x00]).then_some(offset))
+        .nth(1)
+        .expect("second row");
+    changed_schema[second_row] = 0x61;
+    assert!(
+        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+            bytes: &changed_schema,
+            payload: &changed_schema,
+            ..record
+        })
+        .is_none()
+    );
 
     let mut wrong_ordinal = feature_payload.to_vec();
     wrong_ordinal[29] = 2;
