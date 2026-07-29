@@ -59,6 +59,15 @@ pub struct EdgeFields {
     pub curve: u32,
 }
 
+/// Exact topology witnesses carried by the unique edge using one curve.
+#[derive(Debug, Clone, Copy)]
+pub struct CurveEdgeWitness {
+    /// Ordered model-space edge endpoints in millimetres.
+    pub endpoints: [Point3; 2],
+    /// Serialized edge tolerance in Parasolid metres.
+    pub tolerance: f64,
+}
+
 /// Sequentially decoded SHELL references.
 #[derive(Debug, Clone, Copy)]
 pub struct ShellFields {
@@ -765,8 +774,8 @@ impl Graph {
         references
     }
 
-    /// Resolve the two model-space endpoints of the unique edge carrying a curve.
-    pub fn unique_curve_edge_endpoints(&self, curve_xmt: u32) -> Option<[Point3; 2]> {
+    /// Resolve the exact witnesses of the unique edge carrying a curve.
+    pub fn unique_curve_edge_witness(&self, curve_xmt: u32) -> Option<CurveEdgeWitness> {
         let edges = self
             .of_kind(16)
             .filter_map(Node::edge_fields)
@@ -781,7 +790,10 @@ impl Graph {
             let point_xmt = self.get(18, vertex_xmt)?.vertex_fields()?.point;
             self.get(29, point_xmt)?.point_position()
         };
-        Some([position(first_fin.vertex)?, position(second_fin.vertex)?])
+        Some(CurveEdgeWitness {
+            endpoints: [position(first_fin.vertex)?, position(second_fin.vertex)?],
+            tolerance: edge.tolerance,
+        })
     }
 
     /// Carrier identities required by the surviving fixed topology image.

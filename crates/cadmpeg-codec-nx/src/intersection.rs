@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode chart-backed Parasolid surface-intersection constructions.
+//! Decode bounded Parasolid surface-intersection constructions.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -200,6 +200,19 @@ pub struct IntersectionCurve {
     pub ext_support_uv: SupportUv,
 }
 
+/// A bounded intersection relation without a solved chart cache.
+#[derive(Debug, Clone, Copy)]
+pub struct UnchartedIntersection {
+    /// Cross-reference index of the construction record.
+    pub xmt: u32,
+    /// Two exact, distinct support-surface references.
+    pub supports: [u32; 2],
+    /// Ordered endpoints of the unique topology edge in millimetres.
+    pub endpoints: [Point3; 2],
+    /// Edge tolerance in Parasolid metres.
+    pub tolerance: f64,
+}
+
 /// Rejection census for structurally decoded intersection constructions whose
 /// solved chart carrier is incomplete or inconsistent.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -249,6 +262,8 @@ pub struct CurveScan {
     pub constructions: Vec<CompositeCurve>,
     /// Constructions with a complete solved 3D chart carrier.
     pub curves: Vec<IntersectionCurve>,
+    /// Constructions bounded by exact topology witnesses but lacking a chart.
+    pub uncharted: Vec<UnchartedIntersection>,
     /// Exact rejection census for the remaining parsed constructions.
     pub rejected: RejectionCounts,
 }
@@ -328,6 +343,26 @@ fn scan_with_auxiliaries(
                     && construction_has_endpoint_witnesses(construction, terms, &graph) =>
             {
                 result.constructions.push(construction);
+                if matches!(rejection, Rejection::MissingChart) {
+                    if let (Some(supports), Some(witness)) = (
+                        construction_supports(construction, &bridges, &graph)
+                            .filter(|supports| supports[1] > 1),
+                        graph
+                            .unique_curve_edge_witness(construction.xmt)
+                            .filter(|witness| {
+                                witness.tolerance.is_finite()
+                                    && witness.tolerance > 0.0
+                                    && (witness.tolerance * 1000.0).is_finite()
+                            }),
+                    ) {
+                        result.uncharted.push(UnchartedIntersection {
+                            xmt: construction.xmt,
+                            supports,
+                            endpoints: witness.endpoints,
+                            tolerance: witness.tolerance,
+                        });
+                    }
+                }
                 result.rejected.add(rejection);
             }
             Err(_) => {}
@@ -366,7 +401,8 @@ fn enrich(
     }
     if serialized_terms.iter().any(Option::is_none) {
         let topology_endpoints = graph
-            .unique_curve_edge_endpoints(construction.xmt)
+            .unique_curve_edge_witness(construction.xmt)
+            .map(|witness| witness.endpoints)
             .ok_or_else(|| {
                 if serialized_terms[0].is_none() {
                     Rejection::MissingStartTerm
@@ -443,9 +479,7 @@ fn construction_has_endpoint_witnesses(
         || construction.references[3..=4]
             .iter()
             .all(|reference| terms.contains_key(reference))
-        || graph
-            .unique_curve_edge_endpoints(construction.xmt)
-            .is_some()
+        || graph.unique_curve_edge_witness(construction.xmt).is_some()
 }
 
 fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {

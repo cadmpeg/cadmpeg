@@ -912,6 +912,14 @@ The chart/start-term/end-term witness slots `ref[2:5]` are atomic: all three are
 
 A topology-referenced record with a non-null chart reference that does not resolve remains a typed unresolved intersection only when at least one serialized support resolves as a surface and its endpoint relation is independently witnessed by both term-use records or by one unique edge-endpoint pair. The all-null witness form remains a typed construction when a serialized support resolves. A type marker with no resolved support, or with a non-null unresolved chart and no endpoint relation, is not an intersection construction.
 
+When the chart is absent, two resolved distinct serialized supports and one
+unique carrying EDGE establish a bounded tolerant-intersection relation. The
+EDGE supplies its ordered endpoint positions and positive finite tolerance.
+The carrier retains no parameterization or parameter range until both support
+charts are established. Missing, repeated, or equal supports, multiple carrying
+edges, unresolved endpoint positions, and absent or invalid EDGE tolerance do
+not establish this bounded relation.
+
 | Ref | Role                                                                                       |
 | --- | ------------------------------------------------------------------------------------------ |
 | 0/1 | primary support surface + type-59 second-support bridge (order set by the `0x00cc` marker) |

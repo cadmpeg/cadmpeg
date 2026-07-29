@@ -6740,6 +6740,33 @@ fn intersection_rejection_census_requires_resolved_supports() {
 }
 
 #[test]
+fn uncharted_intersection_requires_exact_topology_bounds() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    for offset in [23, 25, 27] {
+        put_ref(&mut stream, intersection + offset, 1);
+    }
+
+    let scan = crate::intersection::scan(&stream);
+    let [uncharted] = scan.uncharted.as_slice() else {
+        panic!("one bounded uncharted intersection");
+    };
+    assert!(uncharted.supports.iter().all(|support| *support > 1));
+    assert_ne!(uncharted.supports[0], uncharted.supports[1]);
+    assert!(uncharted.tolerance.is_finite() && uncharted.tolerance > 0.0);
+
+    let edge = stream
+        .windows(4)
+        .position(|window| window == [0, 16, 0, 8])
+        .expect("edge record");
+    stream[edge + 10..edge + 18].copy_from_slice(&f64::NAN.to_be_bytes());
+    assert!(crate::intersection::scan(&stream).uncharted.is_empty());
+}
+
+#[test]
 fn intersection_chart_accepts_one_matching_parameter_complement() {
     let ext11 = ext11_charted_intersection_curve_stream();
     let ext11_start = ext11
@@ -10770,6 +10797,48 @@ fn decode_emits_both_intersection_support_pcurves() {
     assert!(context.sides[0].pcurve.is_some());
     assert!(context.sides[1].surface.is_some());
     assert!(context.sides[1].pcurve.is_some());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_retains_uncharted_intersection_without_inventing_a_range() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    for offset in [23, 25, 27] {
+        put_ref(&mut stream, intersection + offset, 1);
+    }
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let procedural = &result.ir.model.procedural_curves[0];
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        supports,
+        parameterization,
+        ..
+    } = &procedural.definition
+    else {
+        panic!("typed tolerant intersection");
+    };
+    assert_ne!(supports[0], supports[1]);
+    assert!(parameterization.is_none());
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == procedural.curve)
+        .expect("intersection carrier");
+    assert!(matches!(curve.geometry, CurveGeometry::Procedural { .. }));
+    assert!(result
+        .ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+        .all(|edge| edge.param_range.is_none()));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 

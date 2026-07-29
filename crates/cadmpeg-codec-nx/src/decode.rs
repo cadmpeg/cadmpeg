@@ -625,11 +625,32 @@ fn try_decode_geometry(
             .into_iter()
             .map(|curve| (curve.xmt, curve))
             .collect();
+        let uncharted_intersections: BTreeMap<_, _> = intersection_scan
+            .uncharted
+            .into_iter()
+            .map(|curve| (curve.xmt, curve))
+            .collect();
         for (ci, construction) in intersection_constructions.into_iter().enumerate() {
             let curve_id = CurveId(format!("nx:s{si}:intersection-crv#{ci}"));
             let procedural_id = ProceduralCurveId(format!("nx:s{si}:intersection#{ci}"));
             let unknown_id = UnknownId(format!("nx:container:parasolid#{si}"));
             let charted = charted_intersections.get(&construction.xmt);
+            let uncharted = uncharted_intersections
+                .get(&construction.xmt)
+                .and_then(|uncharted| {
+                    let supports = uncharted
+                        .supports
+                        .each_ref()
+                        .map(|xmt| surfaces_by_xmt.get(xmt).cloned());
+                    let [Some(first), Some(second)] = supports else {
+                        return None;
+                    };
+                    (first != second).then_some((
+                        [first, second],
+                        uncharted.endpoints,
+                        uncharted.tolerance * 1000.0,
+                    ))
+                });
             if let Some(charted) = charted {
                 pending_ext11_support_uv.push((
                     procedural_id.clone(),
@@ -642,27 +663,30 @@ fn try_decode_geometry(
             annotations
                 .note(&curve_id, source_stream, construction.pos as u64)
                 .tag("INTERSECTION");
-            if charted.is_some() {
+            if charted.is_some() || uncharted.is_some() {
                 annotations.derived(&curve_id, "geometry");
             } else {
                 annotations.exactness(&curve_id, Exactness::Unknown);
             }
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: charted.map_or_else(
-                    || CurveGeometry::Unknown {
+                geometry: if let Some(charted) = charted {
+                    CurveGeometry::Nurbs(NurbsCurve {
+                        degree: 1,
+                        knots: linear_knots(&charted.parameters),
+                        control_points: charted.points.clone(),
+                        weights: None,
+                        periodic: false,
+                    })
+                } else if uncharted.is_some() {
+                    CurveGeometry::Procedural {
+                        construction: procedural_id.clone(),
+                    }
+                } else {
+                    CurveGeometry::Unknown {
                         record: Some(unknown_id.clone()),
-                    },
-                    |charted| {
-                        CurveGeometry::Nurbs(NurbsCurve {
-                            degree: 1,
-                            knots: linear_knots(&charted.parameters),
-                            control_points: charted.points.clone(),
-                            weights: None,
-                            periodic: false,
-                        })
-                    },
-                ),
+                    }
+                },
                 source_object: Some(SourceObjectAssociation {
                     format: "nx".into(),
                     object_id: format!("nx:s{si}:intersection-record#{}", construction.xmt),
@@ -676,7 +700,7 @@ fn try_decode_geometry(
             annotations
                 .note(&procedural_id, source_stream, construction.pos as u64)
                 .tag("INTERSECTION");
-            if charted.is_some() {
+            if charted.is_some() || uncharted.is_some() {
                 annotations.derived(&procedural_id, "definition");
             } else {
                 annotations.exactness(&procedural_id, Exactness::Unknown);
@@ -684,61 +708,67 @@ fn try_decode_geometry(
             ir.model.procedural_curves.push(ProceduralCurve {
                 id: procedural_id,
                 curve: curve_id.clone(),
-                definition: charted.map_or_else(
-                    || ProceduralCurveDefinition::Unknown {
-                        native_kind: Some("nx:intersection".into()),
-                        record: Some(unknown_id),
-                    },
-                    |charted| {
-                        let mut support_uv = charted.support_uv.clone();
-                        if let Some(ext_support_uv) = assign_ext11_support_uv(
-                            &ir,
-                            &surfaces_by_xmt,
-                            charted.supports,
-                            &charted.points,
-                            charted.fit_tolerance,
-                            &charted.ext_support_uv,
-                        ) {
-                            for side in 0..2 {
-                                if support_uv[side].is_none() {
-                                    support_uv[side].clone_from(&ext_support_uv[side]);
-                                }
+                definition: if let Some(charted) = charted {
+                    let mut support_uv = charted.support_uv.clone();
+                    if let Some(ext_support_uv) = assign_ext11_support_uv(
+                        &ir,
+                        &surfaces_by_xmt,
+                        charted.supports,
+                        &charted.points,
+                        charted.fit_tolerance,
+                        &charted.ext_support_uv,
+                    ) {
+                        for side in 0..2 {
+                            if support_uv[side].is_none() {
+                                support_uv[side].clone_from(&ext_support_uv[side]);
                             }
                         }
-                        let first = intersection_side(
-                            &ir,
-                            &surfaces_by_xmt,
-                            charted.supports[0],
-                            support_uv[0]
-                                .as_deref()
-                                .filter(|uv| uv.len() == charted.parameters.len())
-                                .map(|uv| (uv, charted.parameters.as_slice())),
-                        );
-                        let second = intersection_side(
-                            &ir,
-                            &surfaces_by_xmt,
-                            charted.supports[1],
-                            support_uv[1]
-                                .as_deref()
-                                .filter(|uv| uv.len() == charted.parameters.len())
-                                .map(|uv| (uv, charted.parameters.as_slice())),
-                        );
-                        ProceduralCurveDefinition::Intersection {
-                            context: IntcurveSupportContext {
-                                sides: [first, second],
-                                parameter_range: [
-                                    charted.parameters[0],
-                                    *charted
-                                        .parameters
-                                        .last()
-                                        .expect("validated chart has points"),
-                                ],
-                                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                            },
-                            discontinuity_flag: false,
-                        }
-                    },
-                ),
+                    }
+                    let first = intersection_side(
+                        &ir,
+                        &surfaces_by_xmt,
+                        charted.supports[0],
+                        support_uv[0]
+                            .as_deref()
+                            .filter(|uv| uv.len() == charted.parameters.len())
+                            .map(|uv| (uv, charted.parameters.as_slice())),
+                    );
+                    let second = intersection_side(
+                        &ir,
+                        &surfaces_by_xmt,
+                        charted.supports[1],
+                        support_uv[1]
+                            .as_deref()
+                            .filter(|uv| uv.len() == charted.parameters.len())
+                            .map(|uv| (uv, charted.parameters.as_slice())),
+                    );
+                    ProceduralCurveDefinition::Intersection {
+                        context: IntcurveSupportContext {
+                            sides: [first, second],
+                            parameter_range: [
+                                charted.parameters[0],
+                                *charted
+                                    .parameters
+                                    .last()
+                                    .expect("validated chart has points"),
+                            ],
+                            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                        },
+                        discontinuity_flag: false,
+                    }
+                } else if let Some((supports, endpoints, tolerance)) = uncharted {
+                    ProceduralCurveDefinition::TolerantIntersection {
+                        supports,
+                        endpoints,
+                        tolerance,
+                        parameterization: None,
+                    }
+                } else {
+                    ProceduralCurveDefinition::Unknown {
+                        native_kind: Some("nx:intersection".into()),
+                        record: Some(unknown_id),
+                    }
+                },
                 cache_fit_tolerance: charted.map(|charted| charted.fit_tolerance),
             });
             curves_by_xmt.insert(construction.xmt, curve_id);
