@@ -13110,7 +13110,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
     );
     assert_eq!(
         crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[][..], &[18][..]]),
-        None
+        Some(crate::design::edge_resolve::EdgeAssignmentCandidates::Context)
     );
     assert_eq!(
         crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[17][..], &[18][..]]),

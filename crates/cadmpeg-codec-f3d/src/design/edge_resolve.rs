@@ -562,7 +562,10 @@ pub(crate) fn edge_group_assignment_candidates<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<EdgeAssignmentCandidates> {
-    let reference_edge_sets = reference_edge_sets.into_iter().collect::<Vec<_>>();
+    let reference_edge_sets = reference_edge_sets
+        .into_iter()
+        .filter(|edges| !edges.is_empty())
+        .collect::<Vec<_>>();
     if !selector_contexts.is_empty() {
         return edge_assignment_candidates(selector_contexts, reference_edge_sets)
             .map(EdgeAssignmentCandidates::Edges);
@@ -570,9 +573,6 @@ pub(crate) fn edge_group_assignment_candidates<'a>(
     let [first, second, ..] = reference_edge_sets.as_slice() else {
         return Some(EdgeAssignmentCandidates::Context);
     };
-    if first.is_empty() || second.is_empty() {
-        return None;
-    }
     let mut candidates = first.to_vec();
     candidates.retain(|candidate| second.contains(candidate));
     candidates.sort_unstable();
