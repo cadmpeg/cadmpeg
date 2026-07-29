@@ -1236,13 +1236,6 @@ offsets. A terminal suffix links the common frame ending at that suffix. Absence
 of that link does not invalidate the terminal suffix because an outer terminal
 suffix may follow a nested common frame.
 
-A nonzero common-frame object index addresses an offset-only OM data block when
-exactly one offset store contains that index. The common frame retains the
-resolved block identity. A terminal suffix not linked to a common frame applies
-the same unique-store rule. A linked terminal suffix does not repeat the common
-frame's block link. Null, zero, out-of-range, and multiply resolvable indices
-remain unresolved.
-
 An object-ID-bounded record in a section declaring `UGS::EXP_expression` declares a parameter name as `04, declared_len:u8, name[declared_len-2], 00`. `name` is `p`, one or more decimal digits, and an optional underscore-prefixed qualifier composed of ASCII letters, digits, and underscores. A declaration record contains exactly one such name frame. The parameter index is the decimal integer after `p`. The record may contain one additional frame with the same framing whose text is a context-free constant numeric expression; this is the declaration-local literal. Multiple numeric-expression frames make the declaration literal ambiguous without invalidating the parameter declaration. An exact unique name match binds the declaration to the value record carrying `(Number [mm|degrees]) name: expression; `.
 
 An offset-only OM data block references a persistent OM object as `04 00, object_index, 02 0b`, using the same object-index form as feature operation headers. Complete fields retain their decoded object ID, exact serialized token, and block byte order. An object ID resolves to a target record or parameter declaration only when exactly one record with that ID occurs in the same directory entry.
