@@ -3504,10 +3504,10 @@ fn face_references(record: &B5Record) -> Option<Vec<u32>> {
         let references = (0..count)
             .map(|_| wire::object_ref(&record.payload, &mut position, true))
             .collect::<Option<Vec<_>>>()?;
-        if position < record.payload.len() && record.payload[position] != 0x05 {
+        let &[terminal_control] = record.payload.get(position..)? else {
             return None;
-        }
-        Some(references)
+        };
+        matches!(terminal_control, 0x03 | 0x05).then_some(references)
     } else {
         uncounted_references(&record.payload)
     }
@@ -3940,6 +3940,36 @@ mod tests {
             face_surface_references(&bytes),
             vec![(500, 100), (501, 100), (500, 101)]
         );
+    }
+
+    #[test]
+    fn counted_face_references_accept_both_exact_terminal_controls() {
+        for terminal_control in [0x03, 0x05] {
+            let record = B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x5f,
+                object_id: 3,
+                payload: vec![0x82, 0x81, 0x82, terminal_control],
+            };
+            assert_eq!(face_references(&record), Some(vec![1, 2]));
+
+            let mut overlong = record;
+            overlong.payload.push(terminal_control);
+            assert_eq!(face_references(&overlong), None);
+        }
+    }
+
+    #[test]
+    fn counted_face_references_reject_unknown_terminal_controls() {
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x5f,
+            object_id: 3,
+            payload: vec![0x82, 0x81, 0x82, 0x04],
+        };
+        assert_eq!(face_references(&record), None);
     }
 
     #[test]

@@ -51,6 +51,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 ## Object stream
 
 - Multi-surface `b5 03 5f` face semantics.
+- The semantic distinction between `b5 03 5f` terminal controls `03` and `05` is unresolved.
 - The parameter equation for noncircular `b5 03 1a` conics is unresolved.
 - The field or relation fixing each `b5 03 5f` face's normal sense against its surface frame is unresolved. Closed endpoint chains determine coedge traversal but not this face-level sign.
 - The object-stream body-kind and outward-shell sign fields are unresolved; one-body ownership and incidence determine a stable topology gauge but do not identify the source sign bytes.
