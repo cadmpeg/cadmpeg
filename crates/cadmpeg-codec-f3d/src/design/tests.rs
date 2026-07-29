@@ -12272,6 +12272,47 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
 
     let (features, _) = project_parameter_design(
         &[
+            parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1),
+            parameter(64, 65, "rightDistance", "d3", "2 mm", 0.2),
+        ],
+        &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+        std::slice::from_ref(&scopes[1]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Chamfer { groups, .. }
+            if matches!(groups.as_slice(), [ChamferGroup {
+                spec: ChamferSpec::TwoDistances { first, second },
+                ..
+            }] if first.0 == 1.0 && second.0 == 2.0)
+    ));
+
+    let (features, _) = project_parameter_design(
+        &[parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1)],
+        &[owner(54, 22, 55, 0)],
+        std::slice::from_ref(&scopes[1]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Chamfer { groups, .. }
+            if matches!(groups.as_slice(), [ChamferGroup {
+                spec: ChamferSpec::Distance { distance },
+                ..
+            }] if distance.0 == 1.0)
+    ));
+
+    let (features, _) = project_parameter_design(
+        &[
             parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
             parameter(46, 47, "TangencyWeight", "w1", "0.5", 0.5),
         ],

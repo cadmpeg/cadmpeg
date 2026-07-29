@@ -2040,18 +2040,52 @@ fn project_chamfer(
     let distances = ordered_parameters("Distance");
     let first_distances = ordered_parameters("Distance 1");
     let second_distances = ordered_parameters("Distance 2");
+    let left_distances = ordered_parameters("leftDistance");
+    let right_distances = ordered_parameters("rightDistance");
     let angles = ordered_parameters("Angle");
 
     if !parameters.iter().all(|(_, parameter)| {
         matches!(
             parameter.source_kind.as_str(),
-            "Distance" | "Distance 1" | "Distance 2" | "Angle"
+            "Distance" | "Distance 1" | "Distance 2" | "leftDistance" | "rightDistance" | "Angle"
         )
     }) {
         return None;
     }
 
-    let candidates = if !first_distances.is_empty() || !second_distances.is_empty() {
+    let candidates = if !left_distances.is_empty() || !right_distances.is_empty() {
+        if !distances.is_empty()
+            || !first_distances.is_empty()
+            || !second_distances.is_empty()
+            || !angles.is_empty()
+        {
+            return None;
+        }
+        if right_distances.is_empty() {
+            (left_distances.len() == group_count).then(|| {
+                left_distances
+                    .iter()
+                    .map(|distance| {
+                        design_length(distance).map(|distance| ChamferSpec::Distance { distance })
+                    })
+                    .collect::<Vec<_>>()
+            })
+        } else {
+            (left_distances.len() == group_count && right_distances.len() == group_count).then(
+                || {
+                    left_distances
+                        .iter()
+                        .zip(&right_distances)
+                        .map(|(first, second)| {
+                            design_length(first)
+                                .zip(design_length(second))
+                                .map(|(first, second)| ChamferSpec::TwoDistances { first, second })
+                        })
+                        .collect::<Vec<_>>()
+                },
+            )
+        }
+    } else if !first_distances.is_empty() || !second_distances.is_empty() {
         if !distances.is_empty() || !angles.is_empty() {
             return None;
         }
