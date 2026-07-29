@@ -68,8 +68,7 @@ fn finish_decode(
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
     let modeling_graph_scope = modeling_graph_scope(
-        scan.outer.as_ref(),
-        &scan.outer_container_declarations,
+        !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
     );
     let modeling_object_records = native
@@ -1861,8 +1860,7 @@ fn finish_decode(
 }
 
 fn modeling_graph_scope(
-    outer: Option<&container::InnerDir>,
-    declarations: &[container::OuterContainerDeclaration],
+    has_outer_declarations: bool,
     graphs: &[CatiaObjectGraph],
 ) -> Option<HashSet<String>> {
     const MODELING_CONTAINERS: &[&str] = &[
@@ -1871,32 +1869,25 @@ fn modeling_graph_scope(
         "CATSmd_Nom_User_Container",
     ];
 
-    if declarations.is_empty() {
+    if !has_outer_declarations {
         return None;
     }
     let mut scope = HashSet::new();
-    if let Some(outer) = outer {
-        for declaration in declarations
-            .iter()
-            .filter(|declaration| MODELING_CONTAINERS.contains(&declaration.class_name.as_str()))
-        {
-            let mut contained = graphs.iter().filter(|graph| {
-                container::outer_container_for_extent(
-                    outer,
-                    std::slice::from_ref(declaration),
-                    graph.byte_offset,
-                    graph.byte_len,
-                )
-                .is_some()
-            });
-            match (contained.next(), contained.next()) {
-                (Some(graph), None) => {
-                    scope.insert(graph.id.clone());
-                }
-                (None, None) => {}
-                _ => return Some(HashSet::new()),
-            }
+    let mut streams = HashSet::new();
+    for graph in graphs.iter().filter(|graph| {
+        graph
+            .outer_container
+            .as_ref()
+            .is_some_and(|container| MODELING_CONTAINERS.contains(&container.class_name.as_str()))
+    }) {
+        let container = graph
+            .outer_container
+            .as_ref()
+            .expect("filtered graph has an outer container");
+        if !streams.insert(container.stream_name.as_str()) {
+            return Some(HashSet::new());
         }
+        scope.insert(graph.id.clone());
     }
     Some(scope)
 }
@@ -1922,71 +1913,39 @@ fn decode_result(
 #[cfg(test)]
 mod tests {
     use super::modeling_graph_scope;
-    use crate::container::{Descriptor, Extent, InnerDir, OuterContainerDeclaration};
-    use crate::native::CatiaObjectGraph;
+    use crate::native::{CatiaObjectGraph, CatiaObjectGraphContainer};
     use std::collections::HashSet;
 
-    fn graph(id: &str, byte_offset: u64) -> CatiaObjectGraph {
+    fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {
         CatiaObjectGraph {
             id: id.to_string(),
-            byte_offset,
+            byte_offset: 0,
             byte_len: 10,
             finjpl_segment: None,
+            outer_container: Some(CatiaObjectGraphContainer {
+                data_offset: 0,
+                ordinal: 1,
+                class_name: class_name.to_string(),
+                base_class: "CATFeatCont".to_string(),
+                stream_name: stream_name.to_string(),
+            }),
             catalog_byte_offset: None,
             catalog: None,
             records: Vec::new(),
         }
     }
 
-    fn declaration(class_name: &str, stream_name: &str) -> OuterContainerDeclaration {
-        OuterContainerDeclaration {
-            data_offset: 0,
-            ordinal: 1,
-            class_name: class_name.to_string(),
-            base_class: "CATFeatCont".to_string(),
-            stream_name: stream_name.to_string(),
-        }
-    }
-
-    fn descriptor(name: &str, offset: u32, len: u32) -> Descriptor {
-        Descriptor {
-            name: name.to_string(),
-            desc_offset: 0,
-            logical_length: len,
-            extents: vec![Extent {
-                phys_off: offset,
-                phys_len: len,
-                flags: 0,
-            }],
-        }
-    }
-
     #[test]
     fn modeling_scope_includes_part_and_application_feature_graphs() {
-        let outer = InnerDir {
-            inner: 0,
-            descriptors: vec![
-                descriptor("part", 100, 20),
-                descriptor("shape", 200, 20),
-                descriptor("design", 300, 20),
-                descriptor("camera", 400, 20),
-            ],
-        };
-        let declarations = vec![
-            declaration("CATPrtCont", "part"),
-            declaration("CATSm_Nom_User_Container", "shape"),
-            declaration("CATSmd_Nom_User_Container", "design"),
-            declaration("CameraStartupContainer", "camera"),
-        ];
         let graphs = vec![
-            graph("part-graph", 105),
-            graph("shape-graph", 205),
-            graph("design-graph", 305),
-            graph("camera-graph", 405),
+            graph("part-graph", "part", "CATPrtCont"),
+            graph("shape-graph", "shape", "CATSm_Nom_User_Container"),
+            graph("design-graph", "design", "CATSmd_Nom_User_Container"),
+            graph("camera-graph", "camera", "CameraStartupContainer"),
         ];
 
         assert_eq!(
-            modeling_graph_scope(Some(&outer), &declarations, &graphs),
+            modeling_graph_scope(true, &graphs),
             Some(HashSet::from([
                 "part-graph".to_string(),
                 "shape-graph".to_string(),
@@ -1997,23 +1956,13 @@ mod tests {
 
     #[test]
     fn modeling_scope_accepts_empty_part_stream_with_application_graphs() {
-        let outer = InnerDir {
-            inner: 0,
-            descriptors: vec![
-                descriptor("part", 100, 20),
-                descriptor("shape", 200, 20),
-                descriptor("design", 300, 20),
-            ],
-        };
-        let declarations = vec![
-            declaration("CATPrtCont", "part"),
-            declaration("CATSm_Nom_User_Container", "shape"),
-            declaration("CATSmd_Nom_User_Container", "design"),
+        let graphs = vec![
+            graph("shape-graph", "shape", "CATSm_Nom_User_Container"),
+            graph("design-graph", "design", "CATSmd_Nom_User_Container"),
         ];
-        let graphs = vec![graph("shape-graph", 205), graph("design-graph", 305)];
 
         assert_eq!(
-            modeling_graph_scope(Some(&outer), &declarations, &graphs),
+            modeling_graph_scope(true, &graphs),
             Some(HashSet::from([
                 "shape-graph".to_string(),
                 "design-graph".to_string(),
@@ -2023,16 +1972,18 @@ mod tests {
 
     #[test]
     fn modeling_scope_rejects_multiple_graphs_in_one_modeling_stream() {
-        let outer = InnerDir {
-            inner: 0,
-            descriptors: vec![descriptor("shape", 200, 40)],
-        };
-        let declarations = vec![declaration("CATSm_Nom_User_Container", "shape")];
-        let graphs = vec![graph("first", 205), graph("second", 220)];
+        let graphs = vec![
+            graph("first", "shape", "CATSm_Nom_User_Container"),
+            graph("second", "shape", "CATSm_Nom_User_Container"),
+        ];
 
-        assert_eq!(
-            modeling_graph_scope(Some(&outer), &declarations, &graphs),
-            Some(HashSet::new())
-        );
+        assert_eq!(modeling_graph_scope(true, &graphs), Some(HashSet::new()));
+    }
+
+    #[test]
+    fn modeling_scope_without_outer_declarations_remains_unbounded() {
+        let graphs = vec![graph("fragment-graph", "part", "CATPrtCont")];
+
+        assert_eq!(modeling_graph_scope(false, &graphs), None);
     }
 }

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 208;
+pub const CATIA_NATIVE_VERSION: u32 = 209;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -1424,6 +1424,9 @@ pub struct CatiaObjectGraph {
     /// Physically containing FINJPL segment, when the graph is not in the outer preamble.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finjpl_segment: Option<String>,
+    /// Exact declared outer container whose physical stream contains this graph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outer_container: Option<CatiaObjectGraphContainer>,
     /// Byte offset of the associated schema catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog_byte_offset: Option<u64>,
@@ -1433,6 +1436,21 @@ pub struct CatiaObjectGraph {
     /// Consecutive `7C09` records in serialized order.
     #[serde(default)]
     pub records: Vec<CatiaObjectRecord>,
+}
+
+/// Outer `Data` declaration and selected stream containing one object graph.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaObjectGraphContainer {
+    /// Byte offset of the declaration in the reconstructed outer `Data` stream.
+    pub data_offset: u64,
+    /// Source ordinal stored by the declaration.
+    pub ordinal: u32,
+    /// Concrete container class.
+    pub class_name: String,
+    /// Declared base container class.
+    pub base_class: String,
+    /// Resolved UUID-derived outer stream name.
+    pub stream_name: String,
 }
 
 /// One `7C09` object record.
@@ -6667,14 +6685,22 @@ fn validate_native_links(
             }
         }
     }
+    let declared_containers = graphs.iter().any(|graph| graph.outer_container.is_some());
     let maximum_records = graphs
         .iter()
         .map(|graph| graph.records.len())
         .max()
         .unwrap_or(0);
-    let mut primary_graphs = graphs
-        .iter()
-        .filter(|graph| graph.records.len() == maximum_records);
+    let mut primary_graphs = graphs.iter().filter(|graph| {
+        if declared_containers {
+            graph
+                .outer_container
+                .as_ref()
+                .is_some_and(|container| container.class_name == "CATPrtCont")
+        } else {
+            graph.records.len() == maximum_records
+        }
+    });
     let primary_graph = match (primary_graphs.next(), primary_graphs.next()) {
         (Some(graph), None) => Some(graph),
         _ => None,
@@ -6800,7 +6826,19 @@ impl CatiaNative {
                     &finjpl_segments,
                 )
                 .map(str::to_owned);
-                let (graph, mut entities) = native_object_graph(graph, entities, finjpl_segment);
+                let outer_container = outer_directory
+                    .as_ref()
+                    .and_then(|outer| {
+                        container::outer_container_for_extent(
+                            outer,
+                            &outer_container_declarations,
+                            graph.pos as u64,
+                            graph.total_len as u64,
+                        )
+                    })
+                    .map(CatiaObjectGraphContainer::from);
+                let (graph, mut entities) =
+                    native_object_graph(graph, entities, finjpl_segment, outer_container);
                 entity_records.append(&mut entities);
                 graph
             })
@@ -6909,19 +6947,18 @@ impl CatiaNative {
                 })
         });
         let design_objects = design_objects(&object_graphs, &entity_records);
-        let part_graph = outer_directory.as_ref().and_then(|outer| {
+        let part_graph = {
             let mut graphs = object_graphs.iter().filter(|graph| {
-                container::outer_container_for_extent(
-                    outer,
-                    &outer_container_declarations,
-                    graph.byte_offset,
-                    graph.byte_len,
-                )
-                .is_some_and(|container| container.class_name == "CATPrtCont")
+                graph
+                    .outer_container
+                    .as_ref()
+                    .is_some_and(|container| container.class_name == "CATPrtCont")
             });
-            let graph = graphs.next()?;
-            graphs.next().is_none().then_some(graph)
-        });
+            match (graphs.next(), graphs.next()) {
+                (Some(graph), None) => Some(graph),
+                _ => None,
+            }
+        };
         let fragment_primary_graph = outer_container_declarations.is_empty().then(|| {
             let maximum_records = object_graphs
                 .iter()
@@ -8101,6 +8138,7 @@ fn native_object_graph(
     graph: object_graph::ObjectGraph,
     entity_records: Vec<entity_table::EntityRecord>,
     finjpl_segment: Option<String>,
+    outer_container: Option<CatiaObjectGraphContainer>,
 ) -> (CatiaObjectGraph, Vec<CatiaEntityRecord>) {
     let id = format!("catia:outer:object-graph#{:010}", graph.pos);
     let mut records = graph
@@ -8221,10 +8259,23 @@ fn native_object_graph(
             byte_offset: graph.pos as u64,
             byte_len: graph.total_len as u64,
             finjpl_segment,
+            outer_container,
             catalog_byte_offset: graph.catalog_pos.map(|pos| pos as u64),
             catalog: None,
             records,
         },
         entities,
     )
+}
+
+impl From<&container::OuterContainerDeclaration> for CatiaObjectGraphContainer {
+    fn from(declaration: &container::OuterContainerDeclaration) -> Self {
+        Self {
+            data_offset: declaration.data_offset as u64,
+            ordinal: declaration.ordinal,
+            class_name: declaration.class_name.clone(),
+            base_class: declaration.base_class.clone(),
+            stream_name: declaration.stream_name.clone(),
+        }
+    }
 }

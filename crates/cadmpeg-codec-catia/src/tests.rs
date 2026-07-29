@@ -685,6 +685,43 @@ fn outer_directory_catpart() -> Vec<u8> {
     file
 }
 
+fn outer_container_object_graph_catpart() -> (Vec<u8>, u64) {
+    let mut declaration = vec![0; 40];
+    declaration[8..12].copy_from_slice(b"\x01\x00\x03\x00");
+    declaration[12..16].copy_from_slice(&2u32.to_le_bytes());
+    declaration[16..24].copy_from_slice(b"\x01\x00\x6c\x00\x02\x00\x00\x00");
+    declaration[32..36].copy_from_slice(b"\x02\x00\x81\x20");
+    declaration.extend_from_slice(b"CATPrtCont\0CATProdCont\0\0");
+    declaration.extend_from_slice(b"\x03\x00\xf7\x00\x03\x00\x00\x00");
+    declaration.extend_from_slice(&0x4bbc_295cu32.to_be_bytes());
+    declaration.extend_from_slice(&0x0000_1048u32.to_be_bytes());
+    declaration.extend_from_slice(&0x62eb_7b6fu32.to_be_bytes());
+    declaration.extend_from_slice(&0x0000_1825u32.to_be_bytes());
+
+    let graph = object_graph_stream();
+    let data_offset = 16u32;
+    let graph_offset = data_offset + declaration.len() as u32;
+    let mut dir = Vec::new();
+    dir.extend_from_slice(DIR_MAGIC);
+    dir.extend_from_slice(&descriptor("Data", data_offset, declaration.len() as u32));
+    dir.extend_from_slice(&descriptor(
+        "1048_62eb7b6f_1825",
+        graph_offset,
+        graph.len() as u32,
+    ));
+    dir.extend_from_slice(b"CB__END");
+
+    let directory_offset = graph_offset + graph.len() as u32;
+    let mut file = Vec::new();
+    file.extend_from_slice(OUTER_MAGIC);
+    file.extend_from_slice(&be32(directory_offset));
+    file.extend_from_slice(&be32(dir.len() as u32));
+    file.extend(declaration);
+    file.extend(graph);
+    file.extend(dir);
+    (file, u64::from(graph_offset))
+}
+
 fn tetrahedron_topology_catpart() -> Vec<u8> {
     let mut main = Vec::new();
     let boundaries: [[u16; 9]; 4] = [
@@ -13672,6 +13709,43 @@ fn object_graphs_retain_exact_finjpl_containment() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn object_graphs_retain_exact_outer_container_declarations() {
+    let (bytes, graph_offset) = outer_container_object_graph_catpart();
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let graph = native
+        .object_graphs
+        .iter()
+        .find(|graph| graph.byte_offset == graph_offset)
+        .expect("declared-stream object graph");
+    let container = graph
+        .outer_container
+        .as_ref()
+        .expect("outer container binding");
+    assert_eq!(container.data_offset, 0);
+    assert_eq!(container.ordinal, 2);
+    assert_eq!(container.class_name, "CATPrtCont");
+    assert_eq!(container.base_class, "CATProdCont");
+    assert_eq!(container.stream_name, "1048_62eb7b6f_1825");
+    let expected = container.clone();
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store outer container binding");
+    let loaded =
+        crate::native::CatiaNative::load(&namespace).expect("load outer container binding");
+    assert_eq!(
+        loaded
+            .object_graphs
+            .iter()
+            .find(|graph| graph.byte_offset == graph_offset)
+            .and_then(|graph| graph.outer_container.as_ref()),
+        Some(&expected)
+    );
 }
 
 #[test]
