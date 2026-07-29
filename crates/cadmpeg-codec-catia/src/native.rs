@@ -20,13 +20,15 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 200;
+pub const CATIA_NATIVE_VERSION: u32 = 201;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
 const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
 #[cfg(test)]
 const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
+#[cfg(test)]
+const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 201;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1587,6 +1589,35 @@ pub enum CatiaDesignObjectRelationSource {
     },
 }
 
+/// One cell in a row-aligned design-object reference table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDesignReferenceCell {
+    /// Stored target entity identity.
+    pub entity_id: u32,
+    /// Exact field record selected by the stored identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    /// Design object containing the selected field record, when it has an owner group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_object: Option<String>,
+}
+
+/// One source-ordered row in a parallel design-object reference table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDesignReferenceRow {
+    /// Cells in the order of the table's source fields.
+    pub cells: Vec<CatiaDesignReferenceCell>,
+}
+
+/// Equal-cardinality reference lists aligned by list-item ordinal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDesignParallelReferenceTable {
+    /// Source field records forming the table's columns.
+    pub columns: Vec<String>,
+    /// Row-aligned reference cells.
+    pub rows: Vec<CatiaDesignReferenceRow>,
+}
+
 /// One serialized design object formed by a shared `7C09` owner identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaDesignObject {
@@ -1626,6 +1657,9 @@ pub struct CatiaDesignObject {
     /// Exact inter-object reference occurrences in field and payload order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<CatiaDesignObjectRelation>,
+    /// Complete row-aligned table formed by parallel all-reference list fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parallel_reference_table: Option<CatiaDesignParallelReferenceTable>,
 }
 
 fn design_objects(
@@ -1760,10 +1794,83 @@ fn design_objects(
                                     }))
                             })
                             .collect(),
+                        parallel_reference_table: design_parallel_reference_table(
+                            &records,
+                            graph,
+                            &record_indices,
+                        ),
                     }
                 })
         })
         .collect()
+}
+
+fn design_parallel_reference_table(
+    records: &[&CatiaObjectRecord],
+    graph: &CatiaObjectGraph,
+    record_indices: &HashMap<u32, usize>,
+) -> Option<CatiaDesignParallelReferenceTable> {
+    if records.len() < 2 {
+        return None;
+    }
+    let columns = records
+        .iter()
+        .map(|record| {
+            let [PayloadField::List {
+                declared_count,
+                items,
+                ..
+            }, middle @ .., PayloadField::Terminator] = record.payload.fields.as_slice()
+            else {
+                return None;
+            };
+            if *declared_count < 2
+                || usize::try_from(*declared_count).ok() != Some(items.len())
+                || !middle
+                    .iter()
+                    .all(|field| matches!(field, PayloadField::Atom { .. }))
+            {
+                return None;
+            }
+            let references = items
+                .iter()
+                .map(|item| match item {
+                    ListItem::Reference { value, .. } => Some(*value),
+                    ListItem::Atom { .. } => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some((record.id.clone(), references))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let row_count = columns.first()?.1.len();
+    if columns
+        .iter()
+        .any(|(_, references)| references.len() != row_count)
+    {
+        return None;
+    }
+    let rows = (0..row_count)
+        .map(|row| CatiaDesignReferenceRow {
+            cells: columns
+                .iter()
+                .map(|(_, references)| {
+                    let target_entity_id = references[row];
+                    let target = record_indices
+                        .get(&target_entity_id)
+                        .and_then(|index| graph.records.get(*index));
+                    CatiaDesignReferenceCell {
+                        entity_id: target_entity_id,
+                        field: target.map(|record| record.id.clone()),
+                        design_object: target.and_then(|record| record.design_object.clone()),
+                    }
+                })
+                .collect(),
+        })
+        .collect();
+    Some(CatiaDesignParallelReferenceTable {
+        columns: columns.into_iter().map(|(field, _)| field).collect(),
+        rows,
+    })
 }
 
 fn design_class(record: &CatiaObjectRecord) -> Option<CatiaDesignClass> {
@@ -7228,6 +7335,19 @@ impl CatiaNative {
                         object
                             .definition_chain_values
                             .clone_from(&derived.definition_chain_values);
+                    }
+                }
+            }
+            if namespace.version < CATIA_PARALLEL_REFERENCE_TABLE_VERSION {
+                let derived_by_id = design_objects
+                    .iter()
+                    .map(|object| (object.id.as_str(), object))
+                    .collect::<HashMap<_, _>>();
+                for object in &mut stored {
+                    if let Some(derived) = derived_by_id.get(object.id.as_str()) {
+                        object
+                            .parallel_reference_table
+                            .clone_from(&derived.parallel_reference_table);
                     }
                 }
             }

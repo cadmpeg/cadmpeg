@@ -8083,6 +8083,93 @@ fn native_design_objects_preserve_unresolved_owner_identities() {
 }
 
 #[test]
+fn native_design_objects_retain_and_validate_parallel_reference_tables() {
+    let list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x84, 0x85, 0xfe];
+    let list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
+    let bytes = sequential_entity_backed_object_graph(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &list_a),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &list_b),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x85], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x84, 0x86], &[0xfe]),
+    ]);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let table = native.design_objects[0]
+        .parallel_reference_table
+        .as_ref()
+        .expect("parallel reference table");
+    assert_eq!(table.columns, native.design_objects[0].fields);
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(
+        table
+            .rows
+            .iter()
+            .map(|row| {
+                row.cells
+                    .iter()
+                    .map(|cell| cell.entity_id)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>(),
+        [vec![3, 4], vec![4, 3]]
+    );
+    assert!(table
+        .rows
+        .iter()
+        .flat_map(|row| &row.cells)
+        .all(|cell| cell.field.is_some() && cell.design_object.is_some()));
+
+    let expected = table.clone();
+    let mut malformed = native.clone();
+    malformed.design_objects[0]
+        .parallel_reference_table
+        .as_mut()
+        .expect("parallel reference table")
+        .rows[0]
+        .cells[0]
+        .entity_id += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed parallel reference table");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut previous_namespace)
+        .expect("store current parallel reference table");
+    let mut previous_objects: Vec<crate::native::CatiaDesignObject> = previous_namespace
+        .arena_as("design_objects")
+        .expect("load stored design objects");
+    previous_objects[0].parallel_reference_table = None;
+    previous_namespace
+        .set_arena("design_objects", &previous_objects)
+        .expect("store previous design objects");
+    previous_namespace.version = 200;
+    let migrated = crate::native::CatiaNative::load(&previous_namespace)
+        .expect("migrate previous parallel reference table");
+    assert_eq!(
+        migrated.design_objects[0].parallel_reference_table,
+        Some(expected)
+    );
+
+    let three_references = [0x3b, 0x83, 0x81, 0x83, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
+    let mismatched = sequential_entity_backed_object_graph(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &list_a),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &three_references),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x85], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x84, 0x86], &[0xfe]),
+    ]);
+    assert!(
+        crate::native::CatiaNative::decode(&mismatched).design_objects[0]
+            .parallel_reference_table
+            .is_none()
+    );
+}
+
+#[test]
 fn native_design_objects_follow_first_field_order() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x04, 0x01, 0x83, 0x81], &[0xfe]),
