@@ -1472,8 +1472,11 @@ pub fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUseP
 pub fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
     let records = zero_entity_records(data);
     records
-        .into_iter()
-        .filter_map(|record| {
+        .windows(2)
+        .filter_map(|records| {
+            let [record, owner] = records else {
+                return None;
+            };
             let count = match record.tag {
                 [0x05, 0x0b] => 2,
                 [0x05, 0x10] => 3,
@@ -1482,6 +1485,8 @@ pub fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexInciden
             };
             if tagged_u32(data, record.pos + 7) != Some(1)
                 || data.get(record.pos + 12) != Some(&(0x80 + count as u8))
+                || record.end != owner.pos
+                || !zero_entity_vertex_owner(data, *owner)
             {
                 return None;
             }
@@ -1499,6 +1504,26 @@ pub fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexInciden
             })
         })
         .collect()
+}
+
+fn zero_entity_vertex_owner(data: &[u8], record: ZeroEntityRecord) -> bool {
+    let Some(expected_end) = record.pos.checked_add(18) else {
+        return false;
+    };
+    let Some(first_token) = record.pos.checked_add(7) else {
+        return false;
+    };
+    let Some(second_token) = record.pos.checked_add(12) else {
+        return false;
+    };
+    let Some(terminal) = record.pos.checked_add(17) else {
+        return false;
+    };
+    record.tag == [0x5d, 0x06]
+        && record.end == expected_end
+        && tagged_u32(data, first_token) == Some(1)
+        && tagged_u32(data, second_token) == Some(1)
+        && data.get(terminal) == Some(&0)
 }
 
 fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
@@ -2173,6 +2198,16 @@ mod tests {
         assert_eq!(incidence.record_ordinal, 5);
         assert_eq!(incidence.tag, [0x05, 0x10]);
         assert_eq!(incidence.allocations, [1, 2, 5]);
+    }
+
+    #[test]
+    fn vertex_incidence_requires_the_complete_adjacent_owner_production() {
+        for owner_offset in [7usize, 12, 17] {
+            let mut stream = zero_entity_topology_stream();
+            let owner = zero_entity_records(&stream)[5];
+            stream[owner.pos + owner_offset] ^= 1;
+            assert!(zero_entity_vertex_incidences(&stream).is_empty());
+        }
     }
 
     #[test]

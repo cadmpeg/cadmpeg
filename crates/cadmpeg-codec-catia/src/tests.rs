@@ -1265,6 +1265,8 @@ pub(crate) fn zero_entity_topology_stream() -> Vec<u8> {
 
     let mut vertex = vec![0u8; 0x06 + 12];
     vertex[..4].copy_from_slice(&[0xa9, 0x03, 0x5d, 0x06]);
+    write_tagged_u32(&mut vertex, 7, 1);
+    write_tagged_u32(&mut vertex, 12, 1);
     let mut support0 = vec![0u8; 0x18 + 12];
     support0[..4].copy_from_slice(&[0xa9, 0x03, 0x21, 0x18]);
     let mut support1 = vec![0u8; 0x18 + 12];
@@ -5316,16 +5318,12 @@ fn zero_entity_vertex_binding_declines_atomically_when_structure_changes() {
     let mut missing_vertex = bytes;
     missing_vertex[vertex_offset + 2] = 0x60;
     let missing_vertex = crate::native::CatiaNative::decode(&missing_vertex);
-    assert!(missing_vertex.zero_entity_vertex_incidences[0]
-        .vertex_record
-        .is_none());
+    assert!(missing_vertex.zero_entity_vertex_incidences.is_empty());
 
     let mut separated_vertex = zero_entity_topology_stream();
     separated_vertex.insert(vertex_offset, 0xff);
     let separated_vertex = crate::native::CatiaNative::decode(&separated_vertex);
-    assert!(separated_vertex.zero_entity_vertex_incidences[0]
-        .vertex_record
-        .is_none());
+    assert!(separated_vertex.zero_entity_vertex_incidences.is_empty());
 }
 
 #[test]
