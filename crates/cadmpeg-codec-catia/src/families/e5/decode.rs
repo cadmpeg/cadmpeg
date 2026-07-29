@@ -933,10 +933,7 @@ fn plan_e5_boundary(
             continue;
         };
         if !equivalent_e5_curve_carriers(&left.curve, &right.curve)
-            || ((left.curve_range[1] - left.curve_range[0])
-                - (right.curve_range[1] - right.curve_range[0]))
-                .abs()
-                > 1e-9
+            || parameter_range_agreement_tolerance(left.curve_range, right.curve_range).is_none()
         {
             continue;
         }
@@ -1827,13 +1824,7 @@ pub(crate) fn e5_occurrence_intersection_context(
     let [left, right] = sides else {
         return None;
     };
-    let parameter_scale = (left.2[1] - left.2[0])
-        .abs()
-        .max((right.2[1] - right.2[0]).abs());
-    if !parameter_scale.is_finite() || parameter_scale == 0.0 {
-        return None;
-    }
-    let tolerance = 1e-9 * parameter_scale;
+    let tolerance = parameter_range_agreement_tolerance(left.2, right.2)?;
     if (left.2[0] - right.2[0]).abs() > tolerance || (left.2[1] - right.2[1]).abs() > tolerance {
         return None;
     }
@@ -1846,6 +1837,22 @@ pub(crate) fn e5_occurrence_intersection_context(
         parameter_range: left.2,
         discontinuities: std::array::from_fn(|_| Vec::new()),
     })
+}
+
+fn parameter_range_agreement_tolerance(left: [f64; 2], right: [f64; 2]) -> Option<f64> {
+    if !left.into_iter().chain(right).all(f64::is_finite) {
+        return None;
+    }
+    let left_span = (left[1] - left[0]).abs();
+    let right_span = (right[1] - right[0]).abs();
+    let parameter_scale = left_span.max(right_span);
+    if !parameter_scale.is_finite()
+        || parameter_scale == 0.0
+        || (left_span - right_span).abs() > 1e-9 * parameter_scale
+    {
+        return None;
+    }
+    Some(1e-9 * parameter_scale)
 }
 
 pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
