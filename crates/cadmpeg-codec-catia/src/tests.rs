@@ -7278,12 +7278,22 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
     assert!(rejected.model.features.is_empty());
 
     let mut foreign_fields = native.clone();
-    for field in &mut foreign_fields.object_graphs[0].records {
-        field.class_name = Some("EndAngle".to_string());
-    }
-    let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
-    crate::design_feature::transfer_design_features(&mut rejected, &foreign_fields);
-    assert!(rejected.model.features.is_empty());
+    foreign_fields.object_graphs[0].records[0].class_name = Some("Element1".to_string());
+    foreign_fields.object_graphs[0].records[1].class_name = Some("MergeThin".to_string());
+    let mut transferred = CadIr::empty(cadmpeg_ir::units::Units::default());
+    crate::design_feature::transfer_design_features(&mut transferred, &foreign_fields);
+    assert!(matches!(
+        transferred.model.features.as_slice(),
+        [cadmpeg_ir::features::Feature {
+            definition: FeatureDefinition::Pattern {
+                pattern: PatternKind::Unresolved {
+                    form: Some(PatternForm::Circular)
+                },
+                ..
+            },
+            ..
+        }]
+    ));
 
     let mut unsupported_definition = native.clone();
     for entity in &mut unsupported_definition.entity_records {

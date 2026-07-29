@@ -436,12 +436,9 @@ fn pattern_candidate<'a>(
         .then_some(())?;
     let definitions = fields
         .iter()
-        .map(|(record, entity_id)| {
+        .map(|(_, entity_id)| {
             let entity = *entities.get(*entity_id)?;
             let definition = &entity.definition_value.as_ref()?.definition;
-            (record.class_entry.as_deref() == Some(definition.entry.as_str())
-                && record.class_name.as_deref() == Some(definition.value.as_str()))
-            .then_some(())?;
             Some((definition.entry.as_str(), definition.value.as_str()))
         })
         .collect::<Option<Vec<_>>>()?;

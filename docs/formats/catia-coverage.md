@@ -59,12 +59,14 @@ current scores require those matrices and representative fixtures.
   owner sets remain unparented. Child features and parameters share one
   object-field-ordered source-content sequence; other parameters remain
   document-scoped.
-  A design object whose complete empty declaration population has field-class
-  identity equal to one unanimous `CircPattern` or `RectPattern` definition
-  transfers one circular- or linear-pattern feature identity and consumes those
-  declarations. Seeds, directions, counts, spacing, angles, field roles, and
-  outputs remain unresolved. Coverage counts the transferred circular and
-  linear feature identities separately from their consumed declaration records.
+  A design object whose complete empty declaration population has positionally
+  paired definition values selecting one unanimous `CircPattern` or
+  `RectPattern` entry transfers one circular- or linear-pattern feature
+  identity and consumes those declarations. Declaration field classes remain
+  independent operation roles. Seeds, directions, counts, spacing, angles,
+  field roles, and outputs remain unresolved. Coverage counts the transferred
+  circular and linear feature identities separately from their consumed
+  declaration records.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not
   transfer as values of either type.
