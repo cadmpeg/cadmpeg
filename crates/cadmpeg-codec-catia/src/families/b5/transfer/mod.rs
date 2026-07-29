@@ -924,8 +924,9 @@ fn circle_contains_points(geometry: &CurveGeometry, points: &[[f64; 3]]) -> bool
 // the parse graph's reciprocal-multiply (`graph::unit`). The two must NOT be
 // unified: the affected profiles depend on the exact rounding of each form.
 fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
-    let length = length(value);
-    (length > f64::EPSILON).then(|| [value[0] / length, value[1] / length, value[2] / length])
+    let length = value[0].hypot(value[1]).hypot(value[2]);
+    (length.is_finite() && length != 0.0)
+        .then(|| [value[0] / length, value[1] / length, value[2] / length])
 }
 #[cfg(test)]
 mod tests {
@@ -945,6 +946,13 @@ mod tests {
         neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
         sphere_great_circle_geometry, sphere_great_circle_pcurve,
     };
+    use super::unit;
+
+    #[test]
+    fn unit_preserves_tiny_finite_direction() {
+        assert_eq!(unit([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
+        assert_eq!(unit([0.0, 0.0, 0.0]), None);
+    }
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
     use super::{

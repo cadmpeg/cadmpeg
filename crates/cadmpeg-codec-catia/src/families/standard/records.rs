@@ -724,8 +724,8 @@ fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Option<Vector3> {
 }
 
 fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > f64::EPSILON).then(|| vector.scale(1.0 / norm))
+    let norm = vector.x.hypot(vector.y).hypot(vector.z);
+    (norm.is_finite() && norm != 0.0).then(|| vector.scale(1.0 / norm))
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
@@ -745,4 +745,19 @@ fn u24_le(bytes: &[u8], at: usize) -> u32 {
 
 fn all_finite(vs: &[f32]) -> bool {
     vs.iter().all(|v| v.is_finite())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unit_vector;
+    use cadmpeg_ir::math::Vector3;
+
+    #[test]
+    fn unit_vector_preserves_tiny_finite_direction() {
+        assert_eq!(
+            unit_vector(Vector3::new(1e-200, 0.0, 0.0)),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+        assert_eq!(unit_vector(Vector3::new(0.0, 0.0, 0.0)), None);
+    }
 }

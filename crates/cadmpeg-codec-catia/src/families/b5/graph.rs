@@ -2787,12 +2787,8 @@ fn point(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
 // division. The two must NOT be unified: the affected profiles depend on the
 // exact rounding of each form. See `transfer::unit` for the sibling copy.
 fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
-    let length = value
-        .iter()
-        .map(|component| component * component)
-        .sum::<f64>()
-        .sqrt();
-    (length > f64::EPSILON).then(|| scale(value, 1.0 / length))
+    let length = value[0].hypot(value[1]).hypot(value[2]);
+    (length.is_finite() && length != 0.0).then(|| scale(value, 1.0 / length))
 }
 
 fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
@@ -3666,6 +3662,12 @@ fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unit_preserves_tiny_finite_direction() {
+        assert_eq!(unit([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
+        assert_eq!(unit([0.0, 0.0, 0.0]), None);
+    }
 
     fn test_pcurve(object_id: u32, surface: u32) -> B5Pcurve {
         B5Pcurve {

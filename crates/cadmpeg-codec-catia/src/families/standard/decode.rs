@@ -2721,22 +2721,22 @@ pub(crate) fn resolve_standard_endpoint_pairs(
                     end_point.y - start_point.y,
                     end_point.z - start_point.z,
                 );
-                let segment_norm = segment.dot(segment).sqrt();
+                let segment_norm = segment.x.hypot(segment.y).hypot(segment.z);
                 let midpoint = Point3::new(
                     (start_point.x + end_point.x) * 0.5,
                     (start_point.y + end_point.y) * 0.5,
                     (start_point.z + end_point.z) * 0.5,
                 );
                 let follows_direction = direction.is_none_or(|direction| {
-                    let direction_norm = direction.dot(direction).sqrt();
-                    direction_norm > f64::EPSILON
+                    let direction_norm = direction.x.hypot(direction.y).hypot(direction.z);
+                    direction_norm != 0.0
                         && segment
                             .cross(direction)
                             .dot(segment.cross(direction))
                             .sqrt()
                             <= 1e-2 * segment_norm * direction_norm
                 });
-                if segment_norm > f64::EPSILON
+                if segment_norm != 0.0
                     && follows_direction
                     && point_on_surface(midpoint, &surface0.geometry)
                     && point_on_surface(midpoint, &surface1.geometry)
