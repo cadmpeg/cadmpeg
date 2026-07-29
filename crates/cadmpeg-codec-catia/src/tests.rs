@@ -1666,10 +1666,15 @@ pub(crate) fn b2_cone_stream() -> Vec<u8> {
         }
     }
     record[101..109].copy_from_slice(&le_f64(0.25));
-    record[125..133].copy_from_slice(&le_f64(0.5));
+    record[109..117].copy_from_slice(&le_f64(4.0));
+    record[117..125].copy_from_slice(&le_f64(0.5));
+    record[125..133].copy_from_slice(&le_f64(0.5 + std::f64::consts::PI));
     record[133..141].copy_from_slice(&le_f64(2.0));
     record[141..149].copy_from_slice(&le_f64(8.0));
     record[149..157].copy_from_slice(&le_f64(3.0));
+    record[157..165].copy_from_slice(&le_f64(1.0));
+    record[173..181].copy_from_slice(&le_f64(0.5 - std::f64::consts::FRAC_PI_2));
+    record[181..189].copy_from_slice(&le_f64(0.5 + 3.0 * std::f64::consts::FRAC_PI_2));
     record
 }
 
@@ -4431,9 +4436,17 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
     assert_eq!(cone.direction_y, [0.0, 1.0, 0.0]);
     assert_eq!(cone.axis, [0.0, 0.0, 1.0]);
     assert_eq!(cone.half_angle, 0.25);
-    assert_eq!(cone.angular_offset, 0.5);
+    assert_eq!(cone.pre_angular_range_scalar, 4.0);
+    assert_eq!(cone.angular_range, [0.5, 0.5 + std::f64::consts::PI]);
     assert_eq!(cone.slant_range, [2.0, 8.0]);
     assert_eq!(cone.angular_scale, 3.0);
+    assert_eq!(
+        cone.angular_domain,
+        [
+            0.5 - std::f64::consts::FRAC_PI_2,
+            0.5 + 3.0 * std::f64::consts::FRAC_PI_2
+        ]
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA cone");
@@ -4443,7 +4456,7 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
     );
 
     let mut invalid = native;
-    invalid.consolidated_cones[0].slant_range.reverse();
+    invalid.consolidated_cones[0].angular_domain[0] += 0.25;
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 178;
+pub const CATIA_NATIVE_VERSION: u32 = 179;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -175,12 +175,16 @@ pub struct CatiaConsolidatedCone {
     pub axis: [f64; 3],
     /// Cone half-angle in radians.
     pub half_angle: f64,
-    /// Stored angular chart offset.
-    pub angular_offset: f64,
+    /// Scalar immediately preceding the active angular interval.
+    pub pre_angular_range_scalar: f64,
+    /// Active azimuth interval.
+    pub angular_range: [f64; 2],
     /// Native slant-coordinate interval, including zero at the apex.
     pub slant_range: [f64; 2],
     /// Scale from azimuth to stored U parameter.
     pub angular_scale: f64,
+    /// Full-turn azimuth chart domain.
+    pub angular_domain: [f64; 2],
 }
 
 /// One complete consolidated `B:19` arc-length circle support.
@@ -3492,9 +3496,11 @@ fn consolidated_cones(bytes: &[u8]) -> Vec<CatiaConsolidatedCone> {
             direction_y: cone.t2,
             axis: cone.axis,
             half_angle: cone.half_angle,
-            angular_offset: cone.angular_offset,
+            pre_angular_range_scalar: cone.pre_angular_range_scalar,
+            angular_range: cone.angular_range,
             slant_range: cone.slant_range,
             angular_scale: cone.angular_scale,
+            angular_domain: cone.angular_domain,
         })
         .collect()
 }
@@ -4420,10 +4426,14 @@ fn validate_consolidated_cones(
                 .chain(&cone.axis)
                 .chain(&[
                     cone.half_angle,
-                    cone.angular_offset,
+                    cone.pre_angular_range_scalar,
+                    cone.angular_range[0],
+                    cone.angular_range[1],
                     cone.slant_range[0],
                     cone.slant_range[1],
                     cone.angular_scale,
+                    cone.angular_domain[0],
+                    cone.angular_domain[1],
                 ])
                 .any(|value| !value.is_finite())
             || [cone.direction_x, cone.direction_y, cone.axis]
@@ -4434,6 +4444,10 @@ fn validate_consolidated_cones(
                 .zip(cone.axis)
                 .any(|(cross, axis)| (cross - axis).abs() > 1e-9)
             || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle)
+            || !crate::analytic::periodic_angular_range_is_valid(
+                cone.angular_range,
+                cone.angular_domain,
+            )
             || cone.slant_range[0] < 0.0
             || cone.slant_range[0] >= cone.slant_range[1]
             || !(0.0..1e6).contains(&cone.slant_range[1])
@@ -4802,11 +4816,11 @@ fn validate_consolidated_tori(
                 .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
             || torus.major_radius <= 0.0
             || torus.minor_radius <= 0.0
-            || !crate::families::b2::records::torus_angular_range_is_valid(
+            || !crate::analytic::periodic_angular_range_is_valid(
                 torus.major_angular_range,
                 torus.major_angular_domain,
             )
-            || !crate::families::b2::records::torus_angular_range_is_valid(
+            || !crate::analytic::periodic_angular_range_is_valid(
                 torus.minor_angular_range,
                 torus.minor_angular_domain,
             )

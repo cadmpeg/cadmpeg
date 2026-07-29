@@ -2318,6 +2318,10 @@ mod tests {
             axis: [0.0, 0.0, 1.0],
             major_radius: 5.0,
             minor_radius: 2.0,
+            major_angular_range: [0.0, std::f64::consts::TAU],
+            major_angular_domain: [0.0, std::f64::consts::TAU],
+            minor_angular_range: [0.0, std::f64::consts::TAU],
+            minor_angular_domain: [0.0, std::f64::consts::TAU],
             major_scale: 5.0,
             minor_scale: 2.0,
         };

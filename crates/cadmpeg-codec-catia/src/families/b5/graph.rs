@@ -9,6 +9,7 @@ use cadmpeg_ir::le::f64_at;
 use cadmpeg_ir::math::Point2;
 
 use super::vecmath::{add, cross, scale};
+use crate::analytic::periodic_angular_range_is_valid;
 use crate::wire;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
@@ -212,6 +213,14 @@ pub enum B5Surface {
         major_radius: f64,
         /// Minor radius.
         minor_radius: f64,
+        /// Active major-angle interval.
+        major_angular_range: [f64; 2],
+        /// Full-turn major-angle chart domain.
+        major_angular_domain: [f64; 2],
+        /// Active minor-angle interval.
+        minor_angular_range: [f64; 2],
+        /// Full-turn minor-angle chart domain.
+        minor_angular_domain: [f64; 2],
         /// Divisor mapping native U to the major angle.
         major_scale: f64,
         /// Divisor mapping native V to the minor angle.
@@ -1869,11 +1878,21 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
         0x2b => {
             let major_radius = scalar(&record.payload, 97)?;
             let minor_radius = scalar(&record.payload, 105)?;
+            let major_angular_range =
+                [scalar(&record.payload, 113)?, scalar(&record.payload, 121)?];
+            let major_angular_domain =
+                [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
+            let minor_angular_range =
+                [scalar(&record.payload, 145)?, scalar(&record.payload, 153)?];
+            let minor_angular_domain =
+                [scalar(&record.payload, 161)?, scalar(&record.payload, 169)?];
             let major_scale = scalar(&record.payload, 177)?;
             let minor_scale = scalar(&record.payload, 185)?;
             (record.payload.len() == 201
                 && major_radius > 0.0
                 && minor_radius > 0.0
+                && periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
+                && periodic_angular_range_is_valid(minor_angular_range, minor_angular_domain)
                 && major_scale > 0.0
                 && minor_scale > 0.0)
                 .then_some(())?;
@@ -1884,6 +1903,10 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 axis: unit(point(&record.payload, 73)?)?,
                 major_radius,
                 minor_radius,
+                major_angular_range,
+                major_angular_domain,
+                minor_angular_range,
+                minor_angular_domain,
                 major_scale,
                 minor_scale,
             })
@@ -2501,6 +2524,7 @@ fn lift_pcurve_endpoints(
             minor_radius,
             major_scale,
             minor_scale,
+            ..
         } => Some(endpoints.map(|[u, v]| {
             let major_angle = u / major_scale;
             let minor_angle = v / minor_scale;
@@ -3965,6 +3989,18 @@ mod tests {
         }
         payload[97..105].copy_from_slice(&5.0f64.to_le_bytes());
         payload[105..113].copy_from_slice(&2.0f64.to_le_bytes());
+        for (offset, value) in [
+            (113, 0.0),
+            (121, std::f64::consts::TAU),
+            (129, 0.0),
+            (137, std::f64::consts::TAU),
+            (145, 0.0),
+            (153, std::f64::consts::PI),
+            (161, -std::f64::consts::FRAC_PI_2),
+            (169, 3.0 * std::f64::consts::FRAC_PI_2),
+        ] {
+            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
         payload[177..185].copy_from_slice(&4.0f64.to_le_bytes());
         payload[185..193].copy_from_slice(&3.0f64.to_le_bytes());
         let record = B5Record {
@@ -3983,10 +4019,21 @@ mod tests {
                 axis: [0.0, 0.0, 1.0],
                 major_radius: 5.0,
                 minor_radius: 2.0,
+                major_angular_range: [0.0, std::f64::consts::TAU],
+                major_angular_domain: [0.0, std::f64::consts::TAU],
+                minor_angular_range: [0.0, std::f64::consts::PI],
+                minor_angular_domain: [
+                    -std::f64::consts::FRAC_PI_2,
+                    3.0 * std::f64::consts::FRAC_PI_2,
+                ],
                 major_scale: 4.0,
                 minor_scale: 3.0,
             })
         );
+
+        let mut malformed = record;
+        malformed.payload[129..137].copy_from_slice(&0.5f64.to_le_bytes());
+        assert_eq!(parse_surface(&malformed), None);
     }
 
     #[test]
@@ -4392,6 +4439,10 @@ mod tests {
             axis: [0.0, 0.0, 1.0],
             major_radius,
             minor_radius,
+            major_angular_range: [0.0, std::f64::consts::TAU],
+            major_angular_domain: [0.0, std::f64::consts::TAU],
+            minor_angular_range: [0.0, std::f64::consts::TAU],
+            minor_angular_domain: [0.0, std::f64::consts::TAU],
             major_scale: major_radius,
             minor_scale: minor_radius,
         };

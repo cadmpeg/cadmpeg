@@ -10,6 +10,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeMap;
 use std::mem::size_of;
 
+use crate::analytic::periodic_angular_range_is_valid;
 use crate::families::a5a8::records::FreeformSurface;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
@@ -928,12 +929,16 @@ pub struct B2Cone {
     pub axis: [f64; 3],
     /// Cone half-angle in radians.
     pub half_angle: f64,
-    /// Stored angular chart offset.
-    pub angular_offset: f64,
+    /// Scalar immediately preceding the active angular interval.
+    pub pre_angular_range_scalar: f64,
+    /// Active azimuth interval.
+    pub angular_range: [f64; 2],
     /// Native slant-coordinate range.
     pub slant_range: [f64; 2],
     /// Divisor mapping the stored U coordinate to azimuth.
     pub angular_scale: f64,
+    /// Full-turn azimuth chart domain.
+    pub angular_domain: [f64; 2],
 }
 
 /// Axis-and-profile surface of revolution stored in a `b2 03 2d` record.
@@ -1216,9 +1221,11 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
             .expect("three second-direction values");
         let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
         let half_angle = values[12];
-        let angular_offset = values[15];
+        let pre_angular_range_scalar = values[13];
+        let angular_range = [values[14], values[15]];
         let mut slant_range = [values[16], values[17]];
         let angular_scale = values[18];
+        let angular_domain = [values[21], values[22]];
         if slant_range[0].abs() <= 1e-12 {
             slant_range[0] = 0.0;
         }
@@ -1237,7 +1244,10 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
                 .zip(axis)
                 .all(|(cross, axis)| (cross - axis).abs() <= 1e-9)
             && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+            && periodic_angular_range_is_valid(angular_range, angular_domain)
             && (0.0..1e6).contains(&angular_scale)
+            && values[19] == 1.0
+            && values[20] == 0.0
             && 0.0 <= slant_range[0]
             && slant_range[0] < slant_range[1]
             && slant_range[1] < 1e6
@@ -1249,9 +1259,11 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
                 t2,
                 axis,
                 half_angle,
-                angular_offset,
+                pre_angular_range_scalar,
+                angular_range,
                 slant_range,
                 angular_scale,
+                angular_domain,
             });
         }
     }
@@ -1443,8 +1455,8 @@ pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
                     <= 1e-12
                 && major_radius > 0.0
                 && minor_radius > 0.0
-                && torus_angular_range_is_valid(major_angular_range, major_angular_domain)
-                && torus_angular_range_is_valid(minor_angular_range, minor_angular_domain)
+                && periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
+                && periodic_angular_range_is_valid(minor_angular_range, minor_angular_domain)
                 && major_scale > 0.0
                 && minor_scale > 0.0
                 && values[24] == 0.0)
@@ -1465,20 +1477,6 @@ pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
                 })
         })
         .collect()
-}
-
-pub(crate) fn torus_angular_range_is_valid(range: [f64; 2], domain: [f64; 2]) -> bool {
-    const TOLERANCE: f64 = 1e-12;
-    let range_midpoint = (range[0] + range[1]) * 0.5;
-    let domain_midpoint = (domain[0] + domain[1]) * 0.5;
-    range.iter().chain(&domain).all(|value| value.is_finite())
-        && range[0] < range[1]
-        && domain[0] < domain[1]
-        && range[0] >= domain[0] - TOLERANCE
-        && range[1] <= domain[1] + TOLERANCE
-        && range[1] - range[0] <= std::f64::consts::TAU + TOLERANCE
-        && ((domain[1] - domain[0]) - std::f64::consts::TAU).abs() <= TOLERANCE
-        && (range_midpoint - domain_midpoint).abs() <= TOLERANCE
 }
 
 /// Decode `b2 03 2a` radius-scaled sphere charts.

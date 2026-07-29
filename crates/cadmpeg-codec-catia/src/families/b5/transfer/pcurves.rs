@@ -437,6 +437,7 @@ pub(super) fn lifted_curve_geometry(
             minor_radius,
             major_scale,
             minor_scale,
+            ..
         } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
             let u = pcurve.control_points.first()?[0];
             let angle = u / major_scale;

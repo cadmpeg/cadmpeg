@@ -17,6 +17,21 @@ use cadmpeg_ir::math::Point3;
 
 use crate::wire::cursor::Cursor;
 
+/// Validate an active angular interval and its centered full-turn chart domain.
+pub(crate) fn periodic_angular_range_is_valid(range: [f64; 2], domain: [f64; 2]) -> bool {
+    const TOLERANCE: f64 = 1e-12;
+    let range_midpoint = (range[0] + range[1]) * 0.5;
+    let domain_midpoint = (domain[0] + domain[1]) * 0.5;
+    range.iter().chain(&domain).all(|value| value.is_finite())
+        && range[0] < range[1]
+        && domain[0] < domain[1]
+        && range[0] >= domain[0] - TOLERANCE
+        && range[1] <= domain[1] + TOLERANCE
+        && range[1] - range[0] <= std::f64::consts::TAU + TOLERANCE
+        && ((domain[1] - domain[0]) - std::f64::consts::TAU).abs() <= TOLERANCE
+        && (range_midpoint - domain_midpoint).abs() <= TOLERANCE
+}
+
 /// Cylinder from an already-decoded `origin` plus a direction frame.
 ///
 /// Reads two direction rows `u`, `v` then the radius from `c`, which must be
