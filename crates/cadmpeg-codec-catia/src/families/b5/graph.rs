@@ -2026,16 +2026,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let reference_x = point(&record.payload, position.checked_add(24)?)?;
             let reference_y = point(&record.payload, position.checked_add(48)?)?;
             let axis_direction = point(&record.payload, position.checked_add(72)?)?;
-            let directions_are_unit =
-                [reference_x, reference_y, axis_direction]
-                    .iter()
-                    .all(|direction| {
-                        (direction.iter().map(|value| value * value).sum::<f64>() - 1.0).abs()
-                            <= 1e-12
-                    });
             (record.payload.get(position + 128..position + 130) == Some(&[0x05, 0x05])
                 && angular_scale > 0.0
-                && directions_are_unit
+                && directions_are_unit_and_orthogonal(reference_x, reference_y)
                 && distance_squared(cross(reference_x, reference_y), axis_direction) <= 1e-24)
                 .then_some(())?;
             (angular_range[0] < angular_range[1]
@@ -3985,7 +3978,7 @@ mod tests {
     }
 
     #[test]
-    fn revolution_surface_accepts_sparse_profile_reference() {
+    fn revolution_surface_requires_complete_sparse_reference_chart() {
         let mut payload = vec![0; 175];
         payload[0] = 0x80;
         payload[1..4].copy_from_slice(&[0x30, 0x86, 0x16]);
