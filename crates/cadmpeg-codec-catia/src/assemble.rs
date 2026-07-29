@@ -786,7 +786,7 @@ mod route_tests {
 
     #[test]
     fn surface_circle_branch_preserves_tiny_nonzero_sweep() {
-        let sweep = 1e-200;
+        let sweep = 1e-200_f64;
         let surface = SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
