@@ -883,14 +883,14 @@ fn nurbs_carrier_offset(
         let partials = nurbs_surface_partials(surface, u, v)?;
         let point = partials.point;
         let residual = Vector3::new(anchor.x - point.x, anchor.y - point.y, anchor.z - point.z);
-        let residual_length = (residual.x.powi(2) + residual.y.powi(2) + residual.z.powi(2)).sqrt();
-        if residual_length < 1e-6 {
+        if residual == Vector3::new(0.0, 0.0, 0.0) {
             offsets.push(0.0);
             continue;
         }
+        let residual_length = residual.x.hypot(residual.y).hypot(residual.z);
         let normal = partials.du.cross(partials.dv).unit()?;
         let distance = residual.x * normal.x + residual.y * normal.y + residual.z * normal.z;
-        let perpendicular_squared = residual_length.powi(2) - distance.powi(2);
+        let perpendicular_squared = (residual_length.powi(2) - distance.powi(2)).max(0.0);
         if perpendicular_squared > 1e-12 {
             return None;
         }
@@ -900,7 +900,7 @@ fn nurbs_carrier_offset(
     if !first.is_finite() || offsets.iter().any(|value| (value - first).abs() > 1e-6) {
         return None;
     }
-    Some(if first.abs() < 1e-6 { 0.0 } else { first })
+    Some(first)
 }
 
 fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool {
@@ -982,4 +982,41 @@ pub(crate) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
     }
     vertices.extend(scan_vertex_records(&data[region_start..]));
     vertices
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
+
+    use super::nurbs_carrier_offset;
+
+    #[test]
+    fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
+        let surface = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let tiny = 1e-200;
+        let offset = nurbs_carrier_offset(
+            &surface,
+            &[[0.25, 0.25], [0.75, 0.75]],
+            &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
+        )
+        .expect("constant normal offset");
+        assert_eq!(offset, tiny);
+    }
 }
