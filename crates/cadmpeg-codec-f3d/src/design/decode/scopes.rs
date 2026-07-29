@@ -13,11 +13,11 @@ use crate::records::{
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
     DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignDraftOperation,
     DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudeStart, DesignFixedChamferDistance, DesignFixedChamferParameters,
-    DesignFixedExtrudeParameters, DesignFixedFilletGroup, DesignFixedFilletParameters,
-    DesignHemOperation, DesignMoveOperation, DesignObjectKind, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation, DesignSolidPrimitive,
-    DesignSurfaceStitchOperation,
+    DesignExtrudePrologue, DesignExtrudeStart, DesignFixedChamferDistance,
+    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletGroup,
+    DesignFixedFilletParameters, DesignHemOperation, DesignMoveOperation, DesignObjectKind,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation,
+    DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -902,7 +902,10 @@ pub(crate) fn exact_fixed_extrude_parameters(
     scope: &DesignParameterScope,
 ) -> Option<DesignFixedExtrudeParameters> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Extrude)
-        || scope.extrude_extent != Some(DesignExtrudeExtent::OneSidedDistance)
+        || scope
+            .extrude_prologue
+            .and_then(DesignExtrudePrologue::extent)
+            != Some(DesignExtrudeExtent::OneSidedDistance)
     {
         return None;
     }
@@ -1592,22 +1595,13 @@ pub(crate) fn parse_parameter_scope(
     // or, when the stream's sketch entity headers use the `EntityGenesis`
     // form, the generic ordered reference table. Both parse here; the entity
     // binding in `decode_parameter_scopes` requires a unique suffix match.
-    let (
-        extrude_operation,
-        extrude_operation_offset,
-        extrude_extent,
-        extrude_extent_offsets,
-        extrude_direction_reversed,
-        extrude_direction_reversed_offset,
-        extrude_start,
-        extrude_start_offset,
-    ) = if family == Some(DesignFeatureFamily::Extrude) {
+    let extrude_prologue = if family == Some(DesignFeatureFamily::Extrude) {
         // The generic scope envelope is independently self-delimiting. An
         // unrecognized Extrude prologue therefore withholds only the typed
         // fields, not the scope and its ordered reference table.
-        exact_extrude_scope_fields(bytes, start).unwrap_or_default()
+        exact_extrude_prologue(bytes, start)
     } else {
-        (None, None, None, None, None, None, None, None)
+        None
     };
     let (
         coil_operation,
@@ -1687,14 +1681,7 @@ pub(crate) fn parse_parameter_scope(
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
         kind: kind.clone(),
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
-        extrude_operation,
-        extrude_operation_offset,
-        extrude_extent,
-        extrude_extent_offsets,
-        extrude_direction_reversed,
-        extrude_direction_reversed_offset,
-        extrude_start,
-        extrude_start_offset,
+        extrude_prologue,
         coil_operation,
         coil_operation_offset,
         coil_extent,
@@ -1752,23 +1739,17 @@ pub(crate) fn parse_parameter_scope(
     })
 }
 
-type ExtrudeScopeFields = (
-    Option<DesignExtrudeOperation>,
-    Option<u64>,
-    Option<DesignExtrudeExtent>,
-    Option<[u64; 2]>,
-    Option<bool>,
-    Option<u64>,
-    Option<DesignExtrudeStart>,
-    Option<u64>,
-);
+fn exact_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignExtrudePrologue> {
+    exact_current_extrude_prologue(bytes, start)
+        .or_else(|| exact_legacy_shifted_extrude_prologue(bytes, start))
+}
 
-fn exact_extrude_scope_fields(bytes: &[u8], start: usize) -> Option<ExtrudeScopeFields> {
+fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignExtrudePrologue> {
     let direct_offset = start.checked_add(28)?;
     let referenced_offset = start.checked_add(38)?;
-    let operation_offset = if bytes.get(start.checked_add(25)?) == Some(&1)
-        && bytes.get(start.checked_add(30)?..start.checked_add(36)?)? == [0; 6]
-    {
+    let referenced = bytes.get(start.checked_add(25)?) == Some(&1)
+        && bytes.get(start.checked_add(30)?..start.checked_add(36)?)? == [0; 6];
+    let operation_offset = if referenced {
         referenced_offset
     } else {
         direct_offset
@@ -1782,13 +1763,14 @@ fn exact_extrude_scope_fields(bytes: &[u8], start: usize) -> Option<ExtrudeScope
     };
     let side_offset = operation_offset.checked_add(4)?;
     let termination_offset = operation_offset.checked_add(8)?;
-    let extent = match (
+    let extent_discriminators = [
         u32_at(bytes, side_offset)?,
         u32_at(bytes, termination_offset)?,
-    ) {
-        (1, 1) => DesignExtrudeExtent::OneSidedToFace,
-        (1, 2) => DesignExtrudeExtent::OneSidedDistance,
-        (2, 0) => DesignExtrudeExtent::TwoSidedDistance,
+    ];
+    let extent = match extent_discriminators {
+        [1, 1] => DesignExtrudeExtent::OneSidedToFace,
+        [1, 2] => DesignExtrudeExtent::OneSidedDistance,
+        [2, 0] => DesignExtrudeExtent::TwoSidedDistance,
         _ => return None,
     };
     let direction_reversed_offset = operation_offset.checked_add(12)?;
@@ -1807,16 +1789,64 @@ fn exact_extrude_scope_fields(bytes: &[u8], start: usize) -> Option<ExtrudeScope
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
     };
-    Some((
-        Some(operation),
-        Some(operation_offset as u64),
-        Some(extent),
-        Some([side_offset as u64, termination_offset as u64]),
-        Some(direction_reversed),
-        Some(direction_reversed_offset as u64),
-        Some(start),
-        Some(start_offset as u64),
-    ))
+    Some(DesignExtrudePrologue::ReferenceAware {
+        referenced,
+        operation,
+        operation_offset: operation_offset as u64,
+        extent_discriminators,
+        extent,
+        extent_discriminator_offsets: [side_offset as u64, termination_offset as u64],
+        direction_reversed,
+        direction_reversed_offset: direction_reversed_offset as u64,
+        start,
+        start_offset: start_offset as u64,
+    })
+}
+
+fn exact_legacy_shifted_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+) -> Option<DesignExtrudePrologue> {
+    let operation_offset = start.checked_add(27)?;
+    let operation = match u32_at(bytes, operation_offset)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        4 => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let first_extent_offset = operation_offset.checked_add(4)?;
+    let second_extent_offset = operation_offset.checked_add(8)?;
+    let extent_discriminators = [
+        u32_at(bytes, first_extent_offset)?,
+        u32_at(bytes, second_extent_offset)?,
+    ];
+    let direction_reversed_offset = operation_offset.checked_add(12)?;
+    let direction_reversed = match bytes.get(direction_reversed_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    if bytes.get(operation_offset.checked_add(13)?)? != &1 {
+        return None;
+    }
+    let start_offset = operation_offset.checked_add(14)?;
+    let start = match bytes.get(start_offset)? {
+        0 => DesignExtrudeStart::ProfilePlane,
+        1 => DesignExtrudeStart::OffsetProfilePlane,
+        2 => DesignExtrudeStart::FromFace,
+        _ => return None,
+    };
+    Some(DesignExtrudePrologue::LegacyShifted {
+        operation,
+        operation_offset: operation_offset as u64,
+        extent_discriminators,
+        extent_discriminator_offsets: [first_extent_offset as u64, second_extent_offset as u64],
+        direction_reversed,
+        direction_reversed_offset: direction_reversed_offset as u64,
+        start,
+        start_offset: start_offset as u64,
+    })
 }
 
 pub(crate) fn exact_surface_stitch_operation(

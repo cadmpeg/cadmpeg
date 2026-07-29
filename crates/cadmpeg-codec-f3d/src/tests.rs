@@ -9284,7 +9284,7 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
 fn validation_requires_one_exact_extrude_profile_group() {
     use crate::records::{
         DesignConstructionOperandGroup, DesignExtrudeExtent, DesignExtrudeOperandRole,
-        DesignExtrudeOperation, DesignExtrudeStart, DesignParameterScope,
+        DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart, DesignParameterScope,
         DesignSketchProfileOperand,
     };
 
@@ -9310,14 +9310,18 @@ fn validation_requires_one_exact_extrude_profile_group() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 210,
-        extrude_operation: Some(DesignExtrudeOperation::NewBody),
-        extrude_operation_offset: Some(128),
-        extrude_extent: Some(DesignExtrudeExtent::OneSidedDistance),
-        extrude_extent_offsets: Some([132, 136]),
-        extrude_direction_reversed: Some(false),
-        extrude_direction_reversed_offset: Some(140),
-        extrude_start: Some(DesignExtrudeStart::ProfilePlane),
-        extrude_start_offset: Some(141),
+        extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+            referenced: false,
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 128,
+            extent_discriminators: [1, 2],
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            extent_discriminator_offsets: [132, 136],
+            direction_reversed: false,
+            direction_reversed_offset: 140,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 142,
+        }),
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,

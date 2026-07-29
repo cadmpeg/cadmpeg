@@ -850,29 +850,30 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && !scope.kind.is_empty()
-            && match (
-                is_extrude,
-                scope.extrude_operation,
-                scope.extrude_operation_offset,
-                scope.extrude_extent,
-                scope.extrude_extent_offsets,
-                scope.extrude_direction_reversed,
-                scope.extrude_direction_reversed_offset,
-                scope.extrude_start,
-                scope.extrude_start_offset,
-            ) {
+            && match (is_extrude, scope.extrude_prologue) {
                 (
                     true,
-                    Some(_),
-                    Some(operation_offset),
-                    Some(_),
-                    Some(extent_offsets),
-                    Some(_),
-                    Some(direction_reversed_offset),
-                    Some(_),
-                    Some(start_offset),
+                    Some(records::DesignExtrudePrologue::ReferenceAware {
+                        referenced,
+                        operation_offset,
+                        extent_discriminators,
+                        extent,
+                        extent_discriminator_offsets: extent_offsets,
+                        direction_reversed_offset,
+                        start_offset,
+                        ..
+                    }),
                 ) => {
-                    operation_offset > scope.byte_offset
+                    operation_offset
+                        == scope
+                            .byte_offset
+                            .saturating_add(if referenced { 38 } else { 28 })
+                        && matches!(
+                            (extent_discriminators, extent),
+                            ([1, 1], records::DesignExtrudeExtent::OneSidedToFace)
+                                | ([1, 2], records::DesignExtrudeExtent::OneSidedDistance)
+                                | ([2, 0], records::DesignExtrudeExtent::TwoSidedDistance)
+                        )
                         && extent_offsets
                             == [
                                 operation_offset.saturating_add(4),
@@ -882,8 +883,27 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && direction_reversed_offset == operation_offset.saturating_add(12)
                         && extent_offsets[1] < scope.reference_count_offset
                 }
-                (true, _, _, _, _, _, _, _, _) => false,
-                (false, None, None, None, None, None, None, None, None) => true,
+                (
+                    true,
+                    Some(records::DesignExtrudePrologue::LegacyShifted {
+                        operation_offset,
+                        extent_discriminator_offsets: extent_offsets,
+                        direction_reversed_offset,
+                        start_offset,
+                        ..
+                    }),
+                ) => {
+                    operation_offset == scope.byte_offset.saturating_add(27)
+                        && extent_offsets
+                            == [
+                                operation_offset.saturating_add(4),
+                                operation_offset.saturating_add(8),
+                            ]
+                        && start_offset == operation_offset.saturating_add(14)
+                        && direction_reversed_offset == operation_offset.saturating_add(12)
+                        && extent_offsets[1] < scope.reference_count_offset
+                }
+                (true | false, None) => true,
                 _ => false,
             }
             && match (scope.kind.as_str(), scope.surface_stitch_operation.as_ref()) {
@@ -1440,14 +1460,17 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces)
                 })
                 .count();
-            let operation_matches_operands = match scope.extrude_operation {
+            let operation_matches_operands = match scope
+                .extrude_prologue
+                .map(records::DesignExtrudePrologue::operation)
+            {
                 Some(records::DesignExtrudeOperation::NewBody) => !has_body_operands,
                 Some(
                     records::DesignExtrudeOperation::Join
                     | records::DesignExtrudeOperation::Cut
                     | records::DesignExtrudeOperation::Intersect,
                 ) => has_body_operands,
-                None => false,
+                None => true,
             };
             if !operation_matches_operands {
                 findings.push(Finding {
@@ -1458,6 +1481,12 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     entity: Some(scope.id.clone()),
                 });
             }
+            let Some(prologue) = scope.extrude_prologue else {
+                continue;
+            };
+            let Some(extrude_extent) = prologue.extent() else {
+                continue;
+            };
             let parameter_kind_count = |source_kind: &str| {
                 native
                     .design_parameter_owners
@@ -1479,42 +1508,39 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let has_fixed_extrude_parameters = scope.fixed_extrude_parameters.is_some();
             let has_one_along_carrier =
                 along_count <= 1 && (along_count == 1 || has_fixed_extrude_parameters);
-            let extent_matches_operands = match scope.extrude_extent {
-                Some(records::DesignExtrudeExtent::OneSidedDistance) => {
+            let extent_matches_operands = match extrude_extent {
+                records::DesignExtrudeExtent::OneSidedDistance => {
                     has_one_along_carrier
                         && against_count == 0
                         && side_one_offset_count == 0
-                        && scope.extrude_direction_reversed == Some(false)
+                        && !prologue.direction_reversed()
                 }
-                Some(records::DesignExtrudeExtent::OneSidedToFace) => {
+                records::DesignExtrudeExtent::OneSidedToFace => {
                     along_count == 0
                         && !has_fixed_extrude_parameters
                         && against_count == 0
                         && side_one_offset_count == 1
                 }
-                Some(records::DesignExtrudeExtent::TwoSidedDistance) => {
+                records::DesignExtrudeExtent::TwoSidedDistance => {
                     along_count == 1
                         && !has_fixed_extrude_parameters
                         && against_count == 1
                         && side_one_offset_count == 0
-                        && scope.extrude_direction_reversed == Some(false)
+                        && !prologue.direction_reversed()
                 }
-                None => false,
             };
-            let start_matches_operands = match scope.extrude_start {
-                Some(records::DesignExtrudeStart::ProfilePlane) => profile_offset_count == 0,
-                Some(
-                    records::DesignExtrudeStart::OffsetProfilePlane
-                    | records::DesignExtrudeStart::FromFace,
-                ) => profile_offset_count == 1,
-                None => false,
+            let extrude_start = prologue.start();
+            let start_matches_operands = match extrude_start {
+                records::DesignExtrudeStart::ProfilePlane => profile_offset_count == 0,
+                records::DesignExtrudeStart::OffsetProfilePlane
+                | records::DesignExtrudeStart::FromFace => profile_offset_count == 1,
             };
             let expected_face_group_count = usize::from(matches!(
-                scope.extrude_extent,
-                Some(records::DesignExtrudeExtent::OneSidedToFace)
+                extrude_extent,
+                records::DesignExtrudeExtent::OneSidedToFace
             )) + usize::from(matches!(
-                scope.extrude_start,
-                Some(records::DesignExtrudeStart::FromFace)
+                extrude_start,
+                records::DesignExtrudeStart::FromFace
             ));
             let mut face_groups = native
                 .design_construction_operand_groups
@@ -1526,18 +1552,18 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 })
                 .collect::<Vec<_>>();
             face_groups.sort_by_key(|group| group.scope_reference_ordinal);
-            let expected_face_roles = match (scope.extrude_start, scope.extrude_extent) {
+            let expected_face_roles = match (extrude_start, extrude_extent) {
                 (
-                    Some(records::DesignExtrudeStart::FromFace),
-                    Some(records::DesignExtrudeExtent::OneSidedToFace),
+                    records::DesignExtrudeStart::FromFace,
+                    records::DesignExtrudeExtent::OneSidedToFace,
                 ) => vec![
                     records::DesignExtrudeFaceRole::Start,
                     records::DesignExtrudeFaceRole::Termination,
                 ],
-                (Some(records::DesignExtrudeStart::FromFace), _) => {
+                (records::DesignExtrudeStart::FromFace, _) => {
                     vec![records::DesignExtrudeFaceRole::Start]
                 }
-                (_, Some(records::DesignExtrudeExtent::OneSidedToFace)) => {
+                (_, records::DesignExtrudeExtent::OneSidedToFace) => {
                     vec![records::DesignExtrudeFaceRole::Termination]
                 }
                 _ => Vec::new(),

@@ -737,6 +737,92 @@ pub enum DesignExtrudeStart {
     FromFace,
 }
 
+/// Fixed fields preceding an Extrude parameter scope's reference table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "layout")]
+pub enum DesignExtrudePrologue {
+    /// Reference-aware layout with an optional indexed-reference prefix.
+    ReferenceAware {
+        /// Whether the operation follows the indexed-reference prefix.
+        referenced: bool,
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of `operation`.
+        operation_offset: u64,
+        /// Raw side-count and termination discriminators.
+        extent_discriminators: [u32; 2],
+        /// Decoded extent form.
+        extent: DesignExtrudeExtent,
+        /// Byte offsets parallel to `extent_discriminators`.
+        extent_discriminator_offsets: [u64; 2],
+        /// Whether a one-sided to-face extent travels opposite the profile normal.
+        direction_reversed: bool,
+        /// Byte offset of `direction_reversed`.
+        direction_reversed_offset: u64,
+        /// Starting support.
+        start: DesignExtrudeStart,
+        /// Byte offset of `start`.
+        start_offset: u64,
+    },
+    /// Shifted layout whose extent discriminator semantics are not yet classified.
+    LegacyShifted {
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of `operation`.
+        operation_offset: u64,
+        /// Raw extent discriminators.
+        extent_discriminators: [u32; 2],
+        /// Byte offsets parallel to `extent_discriminators`.
+        extent_discriminator_offsets: [u64; 2],
+        /// Direction-reversal state.
+        direction_reversed: bool,
+        /// Byte offset of `direction_reversed`.
+        direction_reversed_offset: u64,
+        /// Starting support.
+        start: DesignExtrudeStart,
+        /// Byte offset of `start`.
+        start_offset: u64,
+    },
+}
+
+impl DesignExtrudePrologue {
+    /// Boolean result operation.
+    pub fn operation(self) -> DesignExtrudeOperation {
+        match self {
+            Self::ReferenceAware { operation, .. } | Self::LegacyShifted { operation, .. } => {
+                operation
+            }
+        }
+    }
+
+    /// Decoded extent form, when the layout's discriminators are classified.
+    pub fn extent(self) -> Option<DesignExtrudeExtent> {
+        match self {
+            Self::ReferenceAware { extent, .. } => Some(extent),
+            Self::LegacyShifted { .. } => None,
+        }
+    }
+
+    /// Direction-reversal state.
+    pub fn direction_reversed(self) -> bool {
+        match self {
+            Self::ReferenceAware {
+                direction_reversed, ..
+            }
+            | Self::LegacyShifted {
+                direction_reversed, ..
+            } => direction_reversed,
+        }
+    }
+
+    /// Starting support.
+    pub fn start(self) -> DesignExtrudeStart {
+        match self {
+            Self::ReferenceAware { start, .. } | Self::LegacyShifted { start, .. } => start,
+        }
+    }
+}
+
 /// Driving-dimension mode stored by a Coil parameter scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -1079,30 +1165,9 @@ pub struct DesignParameterScope {
     pub kind: String,
     /// Byte offset of the kind's UTF-16LE code units.
     pub kind_offset: u64,
-    /// Extrude result operation from the fixed scope prologue.
+    /// Extrude fixed prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_operation: Option<DesignExtrudeOperation>,
-    /// Byte offset of the Extrude operation enum.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_operation_offset: Option<u64>,
-    /// Extrude extent form from the fixed scope prologue.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_extent: Option<DesignExtrudeExtent>,
-    /// Byte offsets of the two u32 enums selecting the Extrude extent form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_extent_offsets: Option<[u64; 2]>,
-    /// Whether a one-sided to-face extent travels opposite the profile normal.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_direction_reversed: Option<bool>,
-    /// Byte offset of the Extrude direction-reversal Boolean.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_direction_reversed_offset: Option<u64>,
-    /// Extrude starting support from the fixed scope prologue.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_start: Option<DesignExtrudeStart>,
-    /// Byte offset of the u8 enum selecting the Extrude starting support.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_start_offset: Option<u64>,
+    pub extrude_prologue: Option<DesignExtrudePrologue>,
     /// Coil result operation from the fixed scope prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_operation: Option<DesignExtrudeOperation>,

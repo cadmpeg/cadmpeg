@@ -16,12 +16,13 @@ use crate::records::{
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignConstructionPersistentIdentity, DesignEdgeIdentityOperand, DesignEdgeOperand,
     DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
-    DesignObjectKind, DesignParameter, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchProfileOperand, DesignTopologyRecipeEntry,
-    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference,
-    PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
+    DesignExtrudeOperandRole, DesignExtrudePrologue, DesignExtrudeSelectionGroup,
+    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup,
+    DesignFilletRadiusLaw, DesignObjectKind, DesignParameter, DesignParameterOwner,
+    DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
+    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
+    LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
+    SketchRelationOperand,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, u32_at, u64_at as read_u64};
@@ -617,7 +618,9 @@ pub(crate) fn assign_extrude_face_roles(
     let mut face_groups = groups
         .iter_mut()
         .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces));
-    if scope.extrude_start == Some(DesignExtrudeStart::FromFace) {
+    if scope.extrude_prologue.map(DesignExtrudePrologue::start)
+        == Some(DesignExtrudeStart::FromFace)
+    {
         if let Some(group) = face_groups.next() {
             group.extrude_face_role = Some(DesignExtrudeFaceRole::Start);
         }

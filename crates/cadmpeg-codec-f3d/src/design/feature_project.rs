@@ -3013,7 +3013,8 @@ pub(crate) fn project_extrude(
     if start_groups.len() + termination_groups.len() != face_groups.len() {
         return None;
     }
-    let start = match scope.extrude_start? {
+    let prologue = scope.extrude_prologue?;
+    let start = match prologue.start() {
         DesignExtrudeStart::ProfilePlane if start_groups.is_empty() => {
             if profile_offset.is_some() {
                 return None;
@@ -3038,10 +3039,10 @@ pub(crate) fn project_extrude(
         }
         _ => return None,
     };
-    let (shape, reverse_direction) = match (scope.extrude_extent?, along, against) {
+    let (shape, reverse_direction) = match (prologue.extent()?, along, against) {
         (DesignExtrudeExtent::OneSidedDistance, Some(along), None)
             if along.0 != 0.0
-                && scope.extrude_direction_reversed == Some(false)
+                && !prologue.direction_reversed()
                 && termination_groups.is_empty()
                 && side_one_offset.is_none() =>
         {
@@ -3055,7 +3056,7 @@ pub(crate) fn project_extrude(
         (DesignExtrudeExtent::TwoSidedDistance, Some(along), Some(against))
             if along.0 != 0.0
                 && against.0 != 0.0
-                && scope.extrude_direction_reversed == Some(false)
+                && !prologue.direction_reversed()
                 && termination_groups.is_empty()
                 && side_one_offset.is_none() =>
         {
@@ -3082,7 +3083,7 @@ pub(crate) fn project_extrude(
                         .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
                     offset: (offset.0 != 0.0).then_some(offset),
                 }),
-                scope.extrude_direction_reversed?,
+                prologue.direction_reversed(),
             )
         }
         _ => return None,
@@ -3142,7 +3143,7 @@ pub(crate) fn project_extrude(
     let has_body_operands = scope_groups
         .iter()
         .any(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Bodies));
-    let op = match (scope.extrude_operation?, has_body_operands) {
+    let op = match (prologue.operation(), has_body_operands) {
         (DesignExtrudeOperation::Join, true) => BooleanOp::Join,
         (DesignExtrudeOperation::Cut, true) => BooleanOp::Cut,
         (DesignExtrudeOperation::Intersect, true) => BooleanOp::Intersect,

@@ -86,14 +86,14 @@ use crate::records::{
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
     DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-    DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFixedChamferParameters,
-    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader, DesignScaleOperation,
-    DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
-    DesignSurfaceStitchOperation, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
-    SketchSurface,
+    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart,
+    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
+    DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecipeReference, DesignRecordHeader, DesignScaleOperation, DesignSketchPlacement,
+    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
 };
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::{
@@ -107,6 +107,64 @@ use cadmpeg_ir::sketches::{
     SketchGeometry, SketchId, SpatialSketch, SpatialSketchConstraintDefinition,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
+    let Some(
+        DesignExtrudePrologue::ReferenceAware {
+            operation: value, ..
+        }
+        | DesignExtrudePrologue::LegacyShifted {
+            operation: value, ..
+        },
+    ) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    *value = operation;
+}
+
+fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExtent) {
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        extent: value,
+        extent_discriminators,
+        ..
+    }) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("test scope must carry a reference-aware Extrude prologue");
+    };
+    *value = extent;
+    *extent_discriminators = match extent {
+        DesignExtrudeExtent::OneSidedToFace => [1, 1],
+        DesignExtrudeExtent::OneSidedDistance => [1, 2],
+        DesignExtrudeExtent::TwoSidedDistance => [2, 0],
+    };
+}
+
+fn set_extrude_direction_reversed(scope: &mut DesignParameterScope, reversed: bool) {
+    let Some(
+        DesignExtrudePrologue::ReferenceAware {
+            direction_reversed, ..
+        }
+        | DesignExtrudePrologue::LegacyShifted {
+            direction_reversed, ..
+        },
+    ) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    *direction_reversed = reversed;
+}
+
+fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart) {
+    let Some(
+        DesignExtrudePrologue::ReferenceAware { start: value, .. }
+        | DesignExtrudePrologue::LegacyShifted { start: value, .. },
+    ) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    *value = start;
+}
 
 #[test]
 fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
@@ -3992,7 +4050,18 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     }
     let mut extrude_scope = scope.clone();
     extrude_scope.kind = "Extrude".into();
-    extrude_scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedDistance);
+    extrude_scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
+        referenced: false,
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 28,
+        extent_discriminators: [1, 2],
+        extent: DesignExtrudeExtent::OneSidedDistance,
+        extent_discriminator_offsets: [32, 36],
+        direction_reversed: false,
+        direction_reversed_offset: 40,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 42,
+    });
     extrude_scope.reference_members = vec![50, 75, 76, 51];
     assert_eq!(
         exact_fixed_extrude_parameters(&bytes, &extrude_scope),
@@ -4762,16 +4831,20 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     let scope = |kind: &str,
                  operation: u32,
                  extent: (u32, u32),
-                 direction_reversed: bool,
+                 direction_reversed: u8,
+                 structural_constant: u8,
                  start: u8,
-                 conditional_reference: bool| {
+                 conditional_reference: bool,
+                 legacy_shifted: bool| {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"301");
         bytes.extend_from_slice(&12u32.to_le_bytes());
         bytes.resize(100, 0);
         bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
-        let operation_offset = if conditional_reference {
+        let operation_offset = if legacy_shifted {
+            27
+        } else if conditional_reference {
             bytes[25] = 1;
             bytes[26..30].copy_from_slice(&77u32.to_le_bytes());
             38
@@ -4781,8 +4854,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes[operation_offset..operation_offset + 4].copy_from_slice(&operation.to_le_bytes());
         bytes[operation_offset + 4..operation_offset + 8].copy_from_slice(&extent.0.to_le_bytes());
         bytes[operation_offset + 8..operation_offset + 12].copy_from_slice(&extent.1.to_le_bytes());
-        bytes[operation_offset + 12] = u8::from(direction_reversed);
-        bytes[operation_offset + 13] = 1;
+        bytes[operation_offset + 12] = direction_reversed;
+        bytes[operation_offset + 13] = structural_constant;
         bytes[operation_offset + 14] = start;
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.push(1);
@@ -4806,47 +4879,77 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         parse_parameter_scope(&bytes, &header).unwrap()
     };
 
-    let direct = scope("Extrude", 1, (1, 2), false, 0, false);
-    assert_eq!(direct.extrude_operation, Some(DesignExtrudeOperation::Join));
-    assert_eq!(direct.extrude_operation_offset, Some(28));
+    let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, false, false);
     assert_eq!(
-        direct.extrude_extent,
-        Some(DesignExtrudeExtent::OneSidedDistance)
+        direct.extrude_prologue,
+        Some(DesignExtrudePrologue::ReferenceAware {
+            referenced: false,
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 28,
+            extent_discriminators: [1, 2],
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            extent_discriminator_offsets: [32, 36],
+            direction_reversed: false,
+            direction_reversed_offset: 40,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 42,
+        })
     );
-    assert_eq!(direct.extrude_extent_offsets, Some([32, 36]));
-    assert_eq!(direct.extrude_direction_reversed, Some(false));
-    assert_eq!(direct.extrude_direction_reversed_offset, Some(40));
-    assert_eq!(direct.extrude_start, Some(DesignExtrudeStart::ProfilePlane));
-    assert_eq!(direct.extrude_start_offset, Some(42));
-    let shifted = scope("Extrude", 3, (2, 0), false, 1, true);
+    let referenced = scope("Extrude", 3, (2, 0), 0, 1, 1, true, false);
     assert_eq!(
-        shifted.extrude_operation,
-        Some(DesignExtrudeOperation::Intersect)
+        referenced.extrude_prologue,
+        Some(DesignExtrudePrologue::ReferenceAware {
+            referenced: true,
+            operation: DesignExtrudeOperation::Intersect,
+            operation_offset: 38,
+            extent_discriminators: [2, 0],
+            extent: DesignExtrudeExtent::TwoSidedDistance,
+            extent_discriminator_offsets: [42, 46],
+            direction_reversed: false,
+            direction_reversed_offset: 50,
+            start: DesignExtrudeStart::OffsetProfilePlane,
+            start_offset: 52,
+        })
     );
-    assert_eq!(shifted.extrude_operation_offset, Some(38));
-    assert_eq!(
-        shifted.extrude_extent,
-        Some(DesignExtrudeExtent::TwoSidedDistance)
-    );
-    assert_eq!(shifted.extrude_extent_offsets, Some([42, 46]));
-    assert_eq!(
-        shifted.extrude_start,
-        Some(DesignExtrudeStart::OffsetProfilePlane)
-    );
-    assert_eq!(shifted.extrude_start_offset, Some(52));
-    let to_face = scope("Extrusion", 2, (1, 1), true, 2, false);
+    let to_face = scope("Extrusion", 2, (1, 1), 1, 1, 2, false, false);
     assert_eq!(to_face.kind, "Extrusion");
-    assert_eq!(
-        to_face.extrude_extent,
-        Some(DesignExtrudeExtent::OneSidedToFace)
-    );
-    assert_eq!(to_face.extrude_direction_reversed, Some(true));
-    assert_eq!(to_face.extrude_start, Some(DesignExtrudeStart::FromFace));
+    let Some(prologue) = to_face.extrude_prologue else {
+        panic!("to-face Extrude prologue");
+    };
+    assert_eq!(prologue.extent(), Some(DesignExtrudeExtent::OneSidedToFace));
+    assert!(prologue.direction_reversed());
+    assert_eq!(prologue.start(), DesignExtrudeStart::FromFace);
 
-    let unrecognized = scope("Extrude", 2, (3, 0), false, 0, false);
+    let legacy = scope("Extrude", 2, (3, 0), 0, 1, 0, false, true);
+    assert_eq!(
+        legacy.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: 27,
+            extent_discriminators: [3, 0],
+            extent_discriminator_offsets: [31, 35],
+            direction_reversed: false,
+            direction_reversed_offset: 39,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 41,
+        })
+    );
+
+    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, false, false);
     assert_eq!(unrecognized.kind, "Extrude");
-    assert_eq!(unrecognized.extrude_operation, None);
-    assert_eq!(unrecognized.extrude_extent, None);
+    assert_eq!(unrecognized.extrude_prologue, None);
+    assert_eq!(
+        scope("Extrude", 2, (3, 0), 2, 1, 0, false, true).extrude_prologue,
+        None
+    );
+    assert_eq!(
+        scope("Extrude", 2, (3, 0), 0, 0, 0, false, true).extrude_prologue,
+        None
+    );
+    assert_eq!(
+        scope("Extrude", 2, (3, 0), 0, 1, 3, false, true).extrude_prologue,
+        None
+    );
 }
 
 #[test]
@@ -5174,14 +5277,7 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 1100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -5815,14 +5911,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 1100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -6243,14 +6332,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         frame_length: 200,
         kind: "Fillet".into(),
         kind_offset: 1100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -10940,14 +11022,18 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 210,
-        extrude_operation: Some(DesignExtrudeOperation::NewBody),
-        extrude_operation_offset: Some(128),
-        extrude_extent: Some(DesignExtrudeExtent::OneSidedDistance),
-        extrude_extent_offsets: Some([132, 136]),
-        extrude_direction_reversed: Some(false),
-        extrude_direction_reversed_offset: Some(140),
-        extrude_start: Some(DesignExtrudeStart::ProfilePlane),
-        extrude_start_offset: Some(142),
+        extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+            referenced: false,
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 128,
+            extent_discriminators: [1, 2],
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            extent_discriminator_offsets: [132, 136],
+            direction_reversed: false,
+            direction_reversed_offset: 140,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 142,
+        }),
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -11093,14 +11179,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         frame_length: 100,
         kind: "CustomFeature".into(),
         kind_offset: 0,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -11270,14 +11349,18 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 210,
-        extrude_operation: Some(DesignExtrudeOperation::NewBody),
-        extrude_operation_offset: Some(128),
-        extrude_extent: Some(DesignExtrudeExtent::OneSidedDistance),
-        extrude_extent_offsets: Some([132, 136]),
-        extrude_direction_reversed: Some(false),
-        extrude_direction_reversed_offset: Some(140),
-        extrude_start: Some(DesignExtrudeStart::ProfilePlane),
-        extrude_start_offset: Some(142),
+        extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+            referenced: false,
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 128,
+            extent_discriminators: [1, 2],
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            extent_discriminator_offsets: [132, 136],
+            direction_reversed: false,
+            direction_reversed_offset: 140,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 142,
+        }),
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -11445,7 +11528,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if native == &selection.id
     ));
-    scope.extrude_direction_reversed = Some(true);
+    set_extrude_direction_reversed(&mut scope, true);
     assert!(project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -11454,7 +11537,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     )
     .is_none());
-    scope.extrude_direction_reversed = Some(false);
+    set_extrude_direction_reversed(&mut scope, false);
     let unsupported = parameter("UnclassifiedControl", "mm", 1.0);
     assert!(project_extrude(
         &scope,
@@ -11498,9 +11581,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .scope_record_index
         .expect("test placement carries a scope record index");
     sketch_scope.kind = "Sketch".into();
-    sketch_scope.extrude_operation = None;
-    sketch_scope.extrude_extent = None;
-    sketch_scope.extrude_start = None;
+    sketch_scope.extrude_prologue = None;
     sketch_scope.extrude_profile = None;
     let scopes = [sketch_scope, scope.clone()];
     let (mut features, _) = project_parameter_design(
@@ -11567,7 +11648,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         paired_class_tag: "259".into(),
         paired_byte_offset: 1125,
     };
-    scope.extrude_operation = Some(DesignExtrudeOperation::Join);
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     let target_body = project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -11639,7 +11720,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces);
     face_group.role = 0x0000_0011_0000_0000;
     let mut ordered_faces = [face_group.clone(), face_group.clone()];
-    scope.extrude_start = Some(DesignExtrudeStart::FromFace);
+    set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     assign_extrude_face_roles(&scope, &mut ordered_faces);
     assert_eq!(
         ordered_faces.map(|group| group.extrude_face_role),
@@ -11648,7 +11729,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             Some(DesignExtrudeFaceRole::Termination)
         ]
     );
-    scope.extrude_start = Some(DesignExtrudeStart::ProfilePlane);
+    set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
     assert!(project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -11667,7 +11748,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     )
     .is_none());
-    scope.extrude_start = Some(DesignExtrudeStart::OffsetProfilePlane);
+    set_extrude_start(&mut scope, DesignExtrudeStart::OffsetProfilePlane);
     let offset_start = project_extrude(
         &scope,
         &[(0, &along), (1, &profile_offset)],
@@ -11685,9 +11766,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         }
     ));
-    scope.extrude_start = Some(DesignExtrudeStart::ProfilePlane);
+    set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
 
-    scope.extrude_operation = Some(DesignExtrudeOperation::NewBody);
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
     let against = parameter("AgainstDistance", "mm", -0.05);
     assert!(project_extrude(
         &scope,
@@ -11697,7 +11778,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     )
     .is_none());
-    scope.extrude_extent = Some(DesignExtrudeExtent::TwoSidedDistance);
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
     let two_sided = project_extrude(
         &scope,
         &[(0, &along), (1, &against), (2, &side_two_taper)],
@@ -11727,7 +11808,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         }
     ));
-    scope.extrude_direction_reversed = Some(true);
+    set_extrude_direction_reversed(&mut scope, true);
     assert!(project_extrude(
         &scope,
         &[(0, &along), (1, &against), (2, &side_two_taper)],
@@ -11736,9 +11817,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     )
     .is_none());
-    scope.extrude_direction_reversed = Some(false);
+    set_extrude_direction_reversed(&mut scope, false);
 
-    scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedDistance);
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
     let reversed_along = parameter("AlongDistance", "mm", -0.6);
     let reversed = project_extrude(
         &scope,
@@ -11764,9 +11845,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
 
-    scope.extrude_operation = Some(DesignExtrudeOperation::Join);
-    scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedToFace);
-    scope.extrude_direction_reversed = Some(true);
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
+    set_extrude_direction_reversed(&mut scope, true);
     face_group.extrude_face_role = Some(DesignExtrudeFaceRole::Termination);
     let side_offset = parameter("Side1Offset", "mm", 0.025);
     let to_face = project_extrude(
@@ -11794,7 +11875,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if id == &face_group.id
     ));
 
-    scope.extrude_start = Some(DesignExtrudeStart::FromFace);
+    set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     let mut start_group = face_group.clone();
     start_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
     start_group.extrude_face_role = Some(DesignExtrudeFaceRole::Start);
@@ -11821,9 +11902,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if id == &start_group.id
     ));
 
-    scope.extrude_operation = Some(DesignExtrudeOperation::NewBody);
-    scope.extrude_extent = Some(DesignExtrudeExtent::TwoSidedDistance);
-    scope.extrude_direction_reversed = Some(false);
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
+    set_extrude_direction_reversed(&mut scope, false);
     let from_face_two_sided = project_extrude(
         &scope,
         &[
@@ -11901,14 +11982,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         frame_length: 200,
         kind: kind.into(),
         kind_offset: byte_offset + 100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -12680,14 +12754,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         frame_length: 200,
         kind: "Congé".into(),
         kind_offset: 210,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -13083,14 +13150,7 @@ fn parameter_expressions_project_feature_dependencies() {
         frame_length: 200,
         kind: kind.into(),
         kind_offset: byte_offset + 100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -13205,14 +13265,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         frame_length: 200,
         kind: kind.into(),
         kind_offset: byte_offset + 100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -13862,14 +13915,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         frame_length: 375,
         kind: "Base Feature".into(),
         kind_offset: 273,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -14030,14 +14076,7 @@ fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
         frame_length: 329,
         kind: "C-Pattern".into(),
         kind_offset: 0,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
