@@ -489,6 +489,65 @@ fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
 }
 
 #[test]
+fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
+    let choices = vec![vec![[0, 1], [0, 2]], vec![[0, 2]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        mesh_quotient: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1), (0, 2)],
+        assignment: vec![None; 2],
+        degrees: vec![vec![0; 3]],
+        solutions: Vec::new(),
+        solution_filter: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        states: 0,
+        exhausted: false,
+    };
+
+    assert!(!search.candidate_fits(0, [0, 1]));
+    assert!(search.candidate_fits(0, [0, 2]));
+}
+
+#[test]
+fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
+    let choices = vec![vec![[0, 1]], vec![[1, 2]]];
+    let edge_faces = [[0, 0], [0, 1]];
+    let face_edges = vec![vec![0, 1], vec![1]];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        mesh_quotient: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1), (0, 2), (1, 1), (1, 2)],
+        assignment: vec![None; 2],
+        degrees: vec![vec![0; 3], vec![0, 0, 2]],
+        solutions: Vec::new(),
+        solution_filter: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        states: 0,
+        exhausted: false,
+    };
+
+    assert!(!search.candidate_fits(0, [0, 1]));
+}
+
+#[test]
 fn incidence_component_does_not_charge_a_forced_viable_pair() {
     let choices = vec![vec![[0, 0], [1, 1]]];
     let edge_faces = [[0, 0]];

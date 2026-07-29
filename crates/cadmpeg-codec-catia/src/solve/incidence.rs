@@ -560,8 +560,53 @@ impl IncidenceComponentSearch<'_> {
         })
     }
 
+    fn degree_support_preserved(&self, edge: usize, pair: [usize; 2]) -> bool {
+        let selected_faces = self.edge_faces[edge];
+        let selected_degree = |face: usize, point: usize| {
+            let incident = selected_faces[0] == face || selected_faces[1] == face;
+            incident.then(|| pair.iter().filter(|candidate| **candidate == point).count())
+        };
+        let degree_after_selection = |face: usize, point: usize| {
+            usize::from(self.degrees[face][point])
+                + selected_degree(face, point).unwrap_or_default()
+        };
+        let supporting_pair_fits = |supporting_edge: usize, supporting_pair: [usize; 2]| {
+            let faces = self.edge_faces[supporting_edge];
+            faces.into_iter().enumerate().all(|(rank, face)| {
+                (rank > 0 && face == faces[0])
+                    || supporting_pair
+                        .iter()
+                        .enumerate()
+                        .all(|(point_rank, &point)| {
+                            let multiplicity = 1 + usize::from(
+                                point_rank == 0 && supporting_pair[0] == supporting_pair[1],
+                            );
+                            degree_after_selection(face, point) + multiplicity <= 2
+                        })
+            })
+        };
+
+        self.constraints.iter().all(|&(face, point)| {
+            degree_after_selection(face, point) != 1
+                || self.face_edges[face]
+                    .iter()
+                    .copied()
+                    .any(|supporting_edge| {
+                        supporting_edge != edge
+                            && self.active[supporting_edge]
+                            && self.assignment[supporting_edge].is_none()
+                            && self.choices[supporting_edge].iter().copied().any(
+                                |supporting_pair| {
+                                    supporting_pair.contains(&point)
+                                        && supporting_pair_fits(supporting_edge, supporting_pair)
+                                },
+                            )
+                    })
+        })
+    }
+
     pub(crate) fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
-        if !self.degree_candidate_fits(edge, pair) {
+        if !self.degree_candidate_fits(edge, pair) || !self.degree_support_preserved(edge, pair) {
             return false;
         }
         let Some(mesh_assignments) = self.mesh_assignments else {
@@ -1470,6 +1515,9 @@ where
         }
         Some(complete)
     })();
+    if exhausted && std::env::var_os("CADMPEG_CATIA_DIAGNOSTIC").is_some() {
+        eprintln!("incidence solve exhausted outside component search");
+    }
     match solution {
         Some(solution) => IncidenceSolve::Solved(solution),
         None if exhausted => IncidenceSolve::Exhausted,
