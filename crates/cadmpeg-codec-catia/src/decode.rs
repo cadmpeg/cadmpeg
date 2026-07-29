@@ -589,15 +589,6 @@ fn finish_decode(
             native.zero_entity_edge_strides.len(),
         ),
         (
-            "decoded_zero_entity_edge_support_binding_count".to_string(),
-            native
-                .zero_entity_edge_strides
-                .iter()
-                .filter(|edge| edge.adjacent_support_records.is_some())
-                .count()
-                * 2,
-        ),
-        (
             "decoded_zero_entity_face_bound_support_run_count".to_string(),
             native
                 .zero_entity_support_runs
@@ -1141,12 +1132,6 @@ fn finish_decode(
             .flat_map(|face| &face.loops)
             .map(|loop_record| loop_record.typed_records.len())
             .sum::<usize>();
-        let edge_support_binding_count = native
-            .zero_entity_edge_strides
-            .iter()
-            .filter(|edge| edge.adjacent_support_records.is_some())
-            .count()
-            * 2;
         let vertex_owner_binding_count = native
             .zero_entity_vertex_incidences
             .iter()
@@ -1173,8 +1158,7 @@ fn finish_decode(
                  {oriented_model_endpoint_count} sense-oriented model-space endpoint pair(s), \
                  {bound_support_member_count} member(s) bound to face-local support records and \
                  {bound_typed_loop_reference_count} typed reference(s) bound to global records; {} \
-                 edge-stride record(s) \
-                 bind {edge_support_binding_count} adjacent support record(s), and \
+                 edge-stride allocation tuple(s) remain separate, and \
                  {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
                  adjacent vertex owner; {} ownership root(s) bind {ownership_face_count} face \
                  allocation(s) through a shell and body; {} radial occurrence endpoint-pair \

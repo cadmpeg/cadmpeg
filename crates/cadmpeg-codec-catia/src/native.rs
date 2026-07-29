@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 184;
+pub const CATIA_NATIVE_VERSION: u32 = 185;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2771,7 +2771,7 @@ pub struct CatiaZeroEntitySupportRun {
     pub supports: Vec<CatiaZeroEntitySupportOccurrence>,
 }
 
-/// One zero-entity `5e1a` edge-stride reference record.
+/// One zero-entity `5e1a` allocation tuple.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaZeroEntityEdgeStride {
     /// Stable native-record identity.
@@ -2780,11 +2780,8 @@ pub struct CatiaZeroEntityEdgeStride {
     pub byte_offset: u64,
     /// One-based global record ordinal in the zero-entity stream.
     pub record_ordinal: u32,
-    /// Six stored global-record references.
-    pub references: [u32; 6],
-    /// Atomically resolved adjacent support-record identities.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub adjacent_support_records: Option<[String; 2]>,
+    /// Five allocation values following the fixed tagged-one prefix.
+    pub allocations: [u32; 5],
 }
 
 /// One positional zero-entity `0638` oriented use.
@@ -2994,7 +2991,7 @@ pub struct CatiaNative {
     /// Framed value blocks adjacent to source-schema catalogs.
     #[serde(default)]
     pub value_blocks: Vec<CatiaValueBlock>,
-    /// Zero-entity edge-stride reference records.
+    /// Zero-entity edge-stride allocation tuples.
     #[serde(default)]
     pub zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride>,
     /// Zero-entity side-pair headers and positional oriented uses.
@@ -3863,30 +3860,15 @@ fn zero_entity_endpoint_locus_candidates(
         .collect()
 }
 
-fn zero_entity_edge_strides(
-    bytes: &[u8],
-    records: &[CatiaZeroEntityRecord],
-) -> Vec<CatiaZeroEntityEdgeStride> {
+fn zero_entity_edge_strides(bytes: &[u8]) -> Vec<CatiaZeroEntityEdgeStride> {
     crate::families::zero_entity::records::zero_entity_edge_strides(bytes)
         .into_iter()
         .enumerate()
-        .map(|(index, record)| {
-            let adjacent_support_records = record.references[2..=3]
-                .iter()
-                .map(|ordinal| {
-                    zero_entity_record(records, *ordinal)
-                        .filter(|record| zero_entity_support_tag(record.tag))
-                        .map(|record| record.id.clone())
-                })
-                .collect::<Option<Vec<_>>>()
-                .and_then(|records| records.try_into().ok());
-            CatiaZeroEntityEdgeStride {
-                id: format!("catia:zero-entity:edge-stride#{index}"),
-                byte_offset: record.pos as u64,
-                record_ordinal: record.record_ordinal,
-                references: record.references,
-                adjacent_support_records,
-            }
+        .map(|(index, record)| CatiaZeroEntityEdgeStride {
+            id: format!("catia:zero-entity:edge-stride#{index}"),
+            byte_offset: record.pos as u64,
+            record_ordinal: record.record_ordinal,
+            allocations: record.allocations,
         })
         .collect()
 }
@@ -5347,14 +5329,6 @@ fn zero_entity_record(
     records.get(index)
 }
 
-fn zero_entity_support_tag(tag: [u8; 2]) -> bool {
-    tag[0] == 0x21
-        || matches!(
-            tag,
-            [0x27, 0x6a] | [0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8] | [0x34, 0xc8 | 0x5e]
-        )
-}
-
 fn zero_entity_vertex_owner(
     records: &[CatiaZeroEntityRecord],
     incidence_ordinal: u32,
@@ -5445,30 +5419,12 @@ fn validate_zero_entity_topology_records(
     records: &[CatiaZeroEntityRecord],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let edge_strides_valid = edge_strides.iter().enumerate().all(|(index, record)| {
-        let expected_supports = record.references[2..=3]
-            .iter()
-            .map(|ordinal| {
-                zero_entity_record(records, *ordinal)
-                    .filter(|record| zero_entity_support_tag(record.tag))
-                    .map(|record| record.id.as_str())
-            })
-            .collect::<Option<Vec<_>>>()
-            .and_then(|records| <[_; 2]>::try_from(records).ok());
         record.id == format!("catia:zero-entity:edge-stride#{index}")
             && record.record_ordinal != 0
-            && !record.references.contains(&0)
+            && !record.allocations.contains(&0)
             && zero_entity_record(records, record.record_ordinal).is_some_and(|source| {
                 source.byte_offset == record.byte_offset && source.tag == [0x5e, 0x1a]
             })
-            && record
-                .references
-                .iter()
-                .all(|reference| zero_entity_record(records, *reference).is_some())
-            && record
-                .adjacent_support_records
-                .as_ref()
-                .map(|records| [records[0].as_str(), records[1].as_str()])
-                == expected_supports
             && (index == 0
                 || edge_strides[index - 1].byte_offset < record.byte_offset
                     && edge_strides[index - 1].record_ordinal < record.record_ordinal)
@@ -6322,7 +6278,7 @@ impl CatiaNative {
         let consolidated_spheres = consolidated_spheres(bytes);
         let consolidated_tori = consolidated_tori(bytes);
         let zero_entity_records = zero_entity_records(bytes);
-        let zero_entity_edge_strides = zero_entity_edge_strides(bytes, &zero_entity_records);
+        let zero_entity_edge_strides = zero_entity_edge_strides(bytes);
         let zero_entity_oriented_use_pairs = zero_entity_oriented_use_pairs(bytes);
         let zero_entity_ownership_roots = zero_entity_ownership_roots(bytes);
         let parsed_zero_entity_support_runs =

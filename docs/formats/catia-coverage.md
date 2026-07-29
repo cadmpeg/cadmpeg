@@ -163,13 +163,13 @@ current scores require those matrices and representative fixtures.
   carriers. Constant-coordinate pcurves on cylinder, cone, torus, and NURBS
   surfaces retain their exact analytic or contracted NURBS carriers.
   Non-isoparametric affine cone pcurves retain exact conical-helix
-  constructions. The independent `5e1a`
-  edge-stride, `2569`/`0638` positional-use, and counted `05xx`
-  vertex-incidence registries retain one-based global record ordinals and exact
-  references against a complete framed-record identity inventory. Each
-  edge-stride atomically binds its two typed adjacent support records. Each
-  counted vertex-incidence record binds its immediately following `5d06`
-  vertex-owner record. The terminal `6142`/`6006`/`6508` hierarchy retains the
+  constructions. The independent `5e1a` edge-stride registry retains its fixed
+  tagged-one prefix and five-value allocation tuples. The `2569`/`0638`
+  positional-use and counted `05xx` vertex-incidence registries retain
+  one-based global record ordinals and exact references against a complete
+  framed-record identity inventory. Each counted vertex-incidence record binds
+  its immediately following `5d06` vertex-owner record. The terminal
+  `6142`/`6006`/`6508` hierarchy retains the
   complete descending face-allocation roster and binds it through one shell and
   body; the `6142` logical extent includes its full continuation beyond the
   nominal frame. Supports with inline UV endpoints lift those endpoints through

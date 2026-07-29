@@ -5118,14 +5118,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
         panic!("one zero-entity edge stride")
     };
     assert_eq!(edge_stride.record_ordinal, 1);
-    assert_eq!(edge_stride.references, [1, 2, 7, 8, 5, 1]);
-    assert_eq!(
-        edge_stride.adjacent_support_records.as_ref(),
-        Some(&[
-            "catia:zero-entity:record#7".to_string(),
-            "catia:zero-entity:record#8".to_string()
-        ])
-    );
+    assert_eq!(edge_stride.allocations, [2, 7, 8, 5, 1]);
 
     let [pair] = native.zero_entity_oriented_use_pairs.as_slice() else {
         panic!("one zero-entity oriented-use pair")
@@ -5155,24 +5148,12 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
         native
     );
 
-    let mut invalid_reference = native.clone();
-    invalid_reference.zero_entity_edge_strides[0].references[0] = 9;
-    let mut invalid_reference_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_reference
-        .store(&mut invalid_reference_namespace)
-        .expect("store invalid CATIA zero-entity record reference");
-    assert!(crate::native::CatiaNative::load(&invalid_reference_namespace).is_err());
-
     let mut invalid = native.clone();
-    invalid.zero_entity_edge_strides[0]
-        .adjacent_support_records
-        .as_mut()
-        .expect("bound adjacent supports")
-        .reverse();
+    invalid.zero_entity_edge_strides[0].allocations[0] = 0;
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid CATIA zero-entity support binding");
+        .expect("store invalid CATIA zero-entity edge allocation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut invalid = native.clone();
@@ -5193,20 +5174,11 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
 }
 
 #[test]
-fn zero_entity_registry_bindings_decline_atomically_when_structure_changes() {
+fn zero_entity_vertex_binding_declines_atomically_when_structure_changes() {
     let bytes = zero_entity_topology_stream();
     let native = crate::native::CatiaNative::decode(&bytes);
-    let support_offset =
-        usize::try_from(native.zero_entity_records[7].byte_offset).expect("fixture byte offset");
     let vertex_offset =
         usize::try_from(native.zero_entity_records[5].byte_offset).expect("fixture byte offset");
-
-    let mut mixed_supports = bytes.clone();
-    mixed_supports[support_offset + 2] = 0x60;
-    let mixed_supports = crate::native::CatiaNative::decode(&mixed_supports);
-    assert!(mixed_supports.zero_entity_edge_strides[0]
-        .adjacent_support_records
-        .is_none());
 
     let mut missing_vertex = bytes;
     missing_vertex[vertex_offset + 2] = 0x60;
@@ -5291,10 +5263,6 @@ fn decode_reports_separate_zero_entity_topology_registries() {
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_edge_support_binding_count"],
-        2
-    );
-    assert_eq!(
         decoded.report.coverage["decoded_zero_entity_oriented_use_pair_count"],
         1
     );
@@ -5308,10 +5276,10 @@ fn decode_reports_separate_zero_entity_topology_registries() {
     );
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::Topology
-            && loss.message.contains("1 edge-stride record(s)")
+            && loss.message.contains("1 edge-stride allocation tuple(s)")
             && loss.message.contains("1 oriented-use pair(s)")
             && loss.message.contains("1 vertex-incidence record(s)")
-            && loss.message.contains("2 adjacent support record(s)")
+            && loss.message.contains("remain separate")
             && loss.message.contains("bind their adjacent vertex owner")
             && loss.message.contains("loop-to-use")
     }));

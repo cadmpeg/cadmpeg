@@ -107,15 +107,15 @@ pub struct ZeroEntityLoop {
     pub oriented_model_endpoints: Vec<[Point3; 2]>,
 }
 
-/// One `5e1a` edge-stride record in the global zero-entity reference namespace.
+/// One `5e1a` allocation tuple.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityEdgeStride {
     /// Offset of the framed record.
     pub pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
     pub record_ordinal: u32,
-    /// Six stored global-record references.
-    pub references: [u32; 6],
+    /// Five allocation values following the fixed tagged-one prefix.
+    pub allocations: [u32; 5],
 }
 
 /// One positional `0638` oriented use.
@@ -1222,33 +1222,30 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
         .then_some(point)
 }
 
-/// Decode complete `5e1a` edge-stride reference records.
+/// Decode complete `5e1a` allocation tuples.
 #[must_use]
 pub fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
     let records = zero_entity_records(data);
-    let Ok(record_count) = u32::try_from(records.len()) else {
-        return Vec::new();
-    };
     records
         .into_iter()
         .filter_map(|record| {
-            if record.tag != [0x5e, 0x1a] || data.get(record.pos + 37) != Some(&0x21) {
+            if record.tag != [0x5e, 0x1a]
+                || tagged_u32(data, record.pos + 7) != Some(1)
+                || data.get(record.pos + 37) != Some(&0x21)
+            {
                 return None;
             }
-            let mut references = [0; 6];
-            for (index, reference) in references.iter_mut().enumerate() {
-                *reference = tagged_u32(data, record.pos.checked_add(7 + index * 5)?)?;
+            let mut allocations = [0; 5];
+            for (index, allocation) in allocations.iter_mut().enumerate() {
+                *allocation = tagged_u32(data, record.pos.checked_add(12 + index * 5)?)?;
             }
-            if references
-                .iter()
-                .any(|reference| !(1..=record_count).contains(reference))
-            {
+            if allocations.contains(&0) {
                 return None;
             }
             Some(ZeroEntityEdgeStride {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
-                references,
+                allocations,
             })
         })
         .collect()
@@ -1928,7 +1925,7 @@ mod tests {
             panic!("one edge stride")
         };
         assert_eq!(edge_stride.record_ordinal, 1);
-        assert_eq!(edge_stride.references, [1, 2, 7, 8, 5, 1]);
+        assert_eq!(edge_stride.allocations, [2, 7, 8, 5, 1]);
 
         let pairs = zero_entity_oriented_use_pairs(&stream);
         let [pair] = pairs.as_slice() else {
@@ -1961,9 +1958,16 @@ mod tests {
     }
 
     #[test]
-    fn topology_global_references_are_one_based() {
+    fn edge_stride_requires_its_fixed_tagged_one_prefix() {
         let mut stream = zero_entity_topology_stream();
-        write_tagged_u32(&mut stream, 7, 0);
+        write_tagged_u32(&mut stream, 7, 2);
+        assert!(zero_entity_edge_strides(&stream).is_empty());
+    }
+
+    #[test]
+    fn edge_stride_rejects_a_zero_allocation() {
+        let mut stream = zero_entity_topology_stream();
+        write_tagged_u32(&mut stream, 12, 0);
         assert!(zero_entity_edge_strides(&stream).is_empty());
     }
 
