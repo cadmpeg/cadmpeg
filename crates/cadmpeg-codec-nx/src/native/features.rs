@@ -1234,6 +1234,41 @@ pub struct FeatureFsetReferenceGraph {
     pub second_source_offsets: [u64; 3],
 }
 
+/// Serialized reference group selecting one logical `FSET` construction payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureFsetReferenceGroup {
+    /// Two-reference group inside the byte-counted angle-bracket frame.
+    First,
+    /// Three-reference group following the angle-bracket frame.
+    Second,
+}
+
+/// Exact logical payload reconstructed from one `FSET` reference group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureFsetConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `FSET` operation label.
+    pub operation_label: String,
+    /// Complete reference graph selecting the source blocks.
+    pub reference_graph: String,
+    /// Serialized group selecting these blocks.
+    pub group: FeatureFsetReferenceGroup,
+    /// Ordered source blocks.
+    pub data_blocks: Vec<String>,
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: Vec<u64>,
+    /// Exact source-block lengths.
+    pub block_byte_lengths: Vec<u64>,
+    /// Absolute source-block offsets.
+    pub block_source_offsets: Vec<u64>,
+}
+
 /// Ordered construction reference carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePatternReference {
@@ -5251,6 +5286,66 @@ pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetRe
         }
     }
     graphs
+}
+
+/// Reconstruct the two ordered logical payloads selected by each complete
+/// same-store `FSET` reference graph.
+pub fn feature_fset_construction_payloads(
+    container: &Container,
+    graphs: &[FeatureFsetReferenceGraph],
+) -> Vec<FeatureFsetConstructionPayload> {
+    let blocks = offset_data_block_bytes(container);
+    graphs
+        .iter()
+        .flat_map(|graph| {
+            let blocks = &blocks;
+            [
+                (
+                    FeatureFsetReferenceGroup::First,
+                    graph.first_data_blocks.iter(),
+                ),
+                (
+                    FeatureFsetReferenceGroup::Second,
+                    graph.second_data_blocks.iter(),
+                ),
+            ]
+            .into_iter()
+            .filter_map(move |(group, source_blocks)| {
+                let data_blocks = source_blocks.cloned().collect::<Option<Vec<_>>>()?;
+                let store = data_blocks.first()?.rsplit_once(":block#")?.0;
+                if data_blocks.iter().any(|block| {
+                    block
+                        .rsplit_once(":block#")
+                        .is_none_or(|(prefix, _)| prefix != store)
+                }) {
+                    return None;
+                }
+                let (bytes, starts, lengths, sources) =
+                    join_data_block_bytes(&data_blocks, &blocks)?;
+                let group_name = match group {
+                    FeatureFsetReferenceGroup::First => "first",
+                    FeatureFsetReferenceGroup::Second => "second",
+                };
+                let operation_key = graph
+                    .operation_label
+                    .strip_prefix("nx:feature-history:operation-label#")?;
+                Some(FeatureFsetConstructionPayload {
+                    id: format!(
+                        "nx:feature-history:fset-construction-payload#{operation_key}-{group_name}"
+                    ),
+                    operation_label: graph.operation_label.clone(),
+                    reference_graph: graph.id.clone(),
+                    group,
+                    data_blocks,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                    block_payload_offsets: starts,
+                    block_byte_lengths: lengths,
+                    block_source_offsets: sources,
+                })
+            })
+        })
+        .collect()
 }
 
 /// Reconstruct ordered logical payloads from projected-curve reference fields.

@@ -2010,6 +2010,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_fset_construction_payloads",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_fset_construction_payloads, r, ns),
+        len: |m| m.features.feature_fset_construction_payloads.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_pattern_references",
         tag: None,
         exactness: Exactness::ByteExact,

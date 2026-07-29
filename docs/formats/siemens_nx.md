@@ -1253,6 +1253,8 @@ A `THICKEN_SHEET` operation with exactly one solid output body has a resolved th
 
 An `FSET` operation payload contains at most one two-group reference graph framed as `01, byte-length:u8, 3c, selector, reference[2], 3e, reference[3], 00 03 00`. `byte-length` counts from `3c` through `3e` inclusive. The selector is nonempty printable ASCII and excludes `3e`. Every reference is the non-null feature object-index form `90, object-index:u16 BE` and independently uses the unique-store resolution rule. The graph retains the selector, the two reference groups without merging or reordering them, exact reference tokens, and source offsets. An incorrect bound or suffix, an empty or nonprintable selector, a malformed reference, an incorrect group cardinality, or multiple complete graphs rejects the graph atomically without rejecting the bounded operation record.
 
+When every reference in one `FSET` group resolves in one offset store, bytewise concatenation of that group's blocks in serialized order is its logical construction payload. The first and second groups remain separate payloads. Physical block boundaries do not delimit payload fields. Each payload retains its group, exact length and hash, ordered block identities, payload-relative block starts, exact block lengths, and absolute source offsets. An unresolved or cross-store group remains unreconstructed without preventing independent reconstruction of the other group.
+
 The operation labels `Pattern Feature`, `Pattern Geometry`, `Geometry Instance`,
 and `Multi Instance Output` identify repetition constructions. Neutral
 projection preserves an unresolved pattern with an unresolved seed selection

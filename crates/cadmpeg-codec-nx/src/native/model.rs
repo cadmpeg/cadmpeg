@@ -134,6 +134,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_projected_curve_construction_strings:
         Vec<FeatureProjectedCurveConstructionString>,
     pub(crate) feature_fset_reference_graphs: Vec<FeatureFsetReferenceGraph>,
+    pub(crate) feature_fset_construction_payloads: Vec<FeatureFsetConstructionPayload>,
     pub(crate) feature_pattern_references: Vec<FeaturePatternReference>,
     pub(crate) feature_pattern_construction_payloads: Vec<FeaturePatternConstructionPayload>,
     pub(crate) feature_pattern_construction_strings: Vec<FeaturePatternConstructionString>,
@@ -457,6 +458,8 @@ impl NativeModel {
                 &feature_projected_curve_construction_payloads,
             );
         let feature_fset_reference_graphs = feature_fset_reference_graphs(container);
+        let feature_fset_construction_payloads =
+            feature_fset_construction_payloads(container, &feature_fset_reference_graphs);
         let feature_pattern_references = feature_pattern_references(container);
         let feature_pattern_construction_payloads = feature_pattern_construction_payloads(
             container,
@@ -826,6 +829,7 @@ impl NativeModel {
                 feature_projected_curve_construction_payloads,
                 feature_projected_curve_construction_strings,
                 feature_fset_reference_graphs,
+                feature_fset_construction_payloads,
                 feature_pattern_references,
                 feature_pattern_construction_payloads,
                 feature_pattern_construction_strings,
