@@ -199,18 +199,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bit meanings to set them correctly in a new header.
 
-**Note.** `f3d.md:191` also states that these bits have no assigned meaning. That statement is an unknown, so it belongs in this document. Trim `f3d.md:191` to the preservation rule.
-
-### DR-02. `design_record_header_flag`
-
-**Question.** What does `design_record_header_flag` mean? How is it related to visibility in the user interface and to an explicit appearance assignment?
-
-**Known.** Nothing. The specification does not define this field.
-
-**Need.** We must know the meaning to set the field when we make a design record.
-
-**Note.** The name `design_record_header_flag` is not present in `f3d.md` and is not present in any source file. This item names a field that no document locates. Anchor the item to a real field, or remove it.
-
 ### DR-03. Second `0x01`-marker u32 of an ACT root-component link
 
 **Question.** What does the second `0x01`-marker u32 of an ACT root-component link record control?
@@ -404,11 +392,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the class-365 whole-body operand fields after the asset UUID and the context UUID hold? This question excludes the bounded nested-record join and the body-recipe join.
 
-**Known.** `f3d.md:784` gives the reference count, the ordered `(Design reference, form)` pairs, the paired header, and the nested indexed headers.
+**Known.** `f3d.md:784` gives the reference count, the ordered `(Design reference, form)` pairs, the asset UUID, the context UUID, the `u32 2`, the four zero bytes, the paired header, and the nested indexed headers. It gives the byte layout of these fields and no meaning for the `u32 2` and the four zero bytes.
 
 **Need.** We must know the field meanings to write a complete class-365 member.
-
-**Note.** `f3d.md:784` does not give the asset UUID, the context UUID, the `u32 2`, and the four zero bytes. The decoder needs all four at `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs:1677`. Add these fields to `f3d.md:784`.
 
 ### DR-25. Base Feature six-byte fields
 
@@ -430,24 +416,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the meanings to write sketch text from a neutral model.
 
-### DR-27. `0m cg` derived-grip fields
-
-**Question.** What do the individual scalar values and index values inside a `0m cg` derived-grip record hold?
-
-**Known.** `f3d.md:36` gives the record category. A `0m cg` record describes derived grip connectivity. It does not replace the primary topology map. The decoder discards the record fields.
-
-**Need.** We must know the field meanings to keep grip connectivity in a neutral model.
-
-**Note.** This item is a `TSplines.BlobParts` topic. Move it to the T-spline section of this document.
-
-### DR-28. Cage-object join for more than one Form scope
-
-**Question.** Which cage-object identity join divides the active TSM entries between two or more Form scopes?
-
-**Known.** `f3d.md:40` gives the single-Form case. One Form whose list count equals every active-folder TSM entry owns those cages in archive order.
-
-**Need.** With two or more Form scopes, we cannot give each cage to the correct Form.
-
 ## 3. External references
 
 ### XR-01. `neutronData` with a different GUID
@@ -460,13 +428,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### XR-02. Non-empty `ComponentReferenceData.json`
 
-**Question.** What is the layout of a non-empty `ComponentReferenceData.json` object?
+**Question.** Which member names occur in a non-empty `ComponentReferenceData.json` object? What does each member control?
 
 **Known.** `f3d.md:74` states that the object is an open document. It keeps member names and values without a closed schema. The decoder checks the envelope and makes no neutral projection.
 
-**Need.** We must know the member set to build component references in a neutral model.
-
-**Conflict.** `f3d.md:74` states the open-document model as a settled fact. This item states that the layout is unknown. Both statements cannot be correct. Decide whether the open-document model is the settled layout.
+**Need.** We must know the member names and their meanings to build component references in a neutral model.
 
 ### XR-03. `DcXRefPCIFeature` eight-byte value
 
@@ -544,4 +510,20 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A target can have more than one colour source. We must know the order to select one neutral colour.
 
-**Note.** An earlier form of this item also named `rh_material`. That name is not present in `f3d.md` and is not present in any source file. Either add the record to `f3d.md` or keep this item without that name.
+## 5. T-splines
+
+### TS-01. `0m cg` derived-grip fields
+
+**Question.** What do the individual scalar values and index values inside a `0m cg` derived-grip record hold?
+
+**Known.** `f3d.md:36` gives the record category. A `0m cg` record describes derived grip connectivity. It does not replace the primary topology map. The decoder discards the record fields.
+
+**Need.** We must know the field meanings to keep grip connectivity in a neutral model.
+
+### TS-02. Cage-object join for more than one Form scope
+
+**Question.** Which cage-object identity join divides the active TSM entries between two or more Form scopes?
+
+**Known.** `f3d.md:40` gives the single-Form case. One Form whose list count equals every active-folder TSM entry owns those cages in archive order.
+
+**Need.** With two or more Form scopes, we cannot give each cage to the correct Form.
