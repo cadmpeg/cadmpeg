@@ -4544,10 +4544,10 @@ fn validate_consolidated_cylinders(
                     && (squared_length(*axis) - 1.0).abs() <= 1e-9
                     && (squared_length(*reference_direction) - 1.0).abs() <= 1e-9
                     && dot(*axis, *reference_direction).abs() <= 1e-9
-                    && ((cylinder.u_range[1] - cylinder.u_range[0])
-                        - std::f64::consts::TAU * cylinder.radius)
-                        .abs()
-                        <= 1e-6
+                    && crate::families::b2::records::circle_range_is_full_turn(
+                        cylinder.radius,
+                        cylinder.u_range,
+                    )
             }
             CatiaConsolidatedCylinderPayload::RangeOrigin {
                 stored_vector,
@@ -4563,8 +4563,10 @@ fn validate_consolidated_cylinders(
                     && (stored_vector[0].hypot(stored_vector[1]) - 1.0).abs() <= 1e-9
                     && *axis == [0.0, 1.0, 0.0]
                     && *reference_direction == [stored_vector[0], 0.0, stored_vector[1]]
-                    && cylinder.u_range[1] - cylinder.u_range[0]
-                        <= std::f64::consts::TAU * cylinder.radius + 1e-6
+                    && crate::families::b2::records::circle_range_is_within_full_turn(
+                        cylinder.radius,
+                        cylinder.u_range,
+                    )
                     && range_origin.to_bits()
                         == crate::families::b2::records::cylinder_range_origin(
                             cylinder.radius,

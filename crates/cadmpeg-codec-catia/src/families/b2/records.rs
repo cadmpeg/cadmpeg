@@ -1672,7 +1672,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
                 || u_range[0] >= u_range[1]
                 || v_range[0] >= v_range[1]
-                || ((u_range[1] - u_range[0]) - 2.0 * std::f64::consts::PI * radius).abs() > 1e-6
+                || !circle_range_is_full_turn(radius, u_range)
             {
                 return None;
             }
@@ -1717,7 +1717,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 || v_range.iter().any(|value| !value.is_finite())
                 || u_range[0] >= u_range[1]
                 || v_range[0] >= v_range[1]
-                || ((u_range[1] - u_range[0]) - 2.0 * std::f64::consts::PI * radius).abs() > 1e-6
+                || !circle_range_is_full_turn(radius, u_range)
             {
                 return None;
             }
@@ -1758,7 +1758,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 || range_origin.to_bits() != expected_range_origin.to_bits()
                 || u_range[0] >= u_range[1]
                 || v_range[0] >= v_range[1]
-                || u_range[1] - u_range[0] > 2.0 * std::f64::consts::PI * radius + 1e-6
+                || !circle_range_is_within_full_turn(radius, u_range)
             {
                 return None;
             }
@@ -1841,6 +1841,11 @@ pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
 pub(crate) fn circle_range_is_full_turn(radius: f64, range: [f64; 2]) -> bool {
     let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
     relative_span.is_finite() && (relative_span - 1.0).abs() < 1e-9
+}
+
+pub(crate) fn circle_range_is_within_full_turn(radius: f64, range: [f64; 2]) -> bool {
+    let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
+    relative_span.is_finite() && relative_span <= 1.0 + 1e-9
 }
 
 /// Decode structurally repeated `b2 03 23` edge-range packets.

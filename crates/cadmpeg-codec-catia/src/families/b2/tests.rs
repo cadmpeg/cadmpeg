@@ -642,6 +642,18 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
             ..
         }
     ));
+
+    let tiny = 1e-200_f64;
+    let mut tiny_full = b2_cylinder_stream();
+    tiny_full[54..62].copy_from_slice(&tiny.to_le_bytes());
+    tiny_full[70..78].copy_from_slice(&(std::f64::consts::TAU * tiny).to_le_bytes());
+    assert_eq!(
+        crate::families::b2::records::b2_cylinders(&tiny_full)[0].radius,
+        tiny
+    );
+
+    tiny_full[70..78].copy_from_slice(&1e-10_f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_cylinders(&tiny_full).is_empty());
 }
 
 #[test]
