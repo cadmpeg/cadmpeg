@@ -3926,8 +3926,8 @@ pub(crate) fn standard_spline_line(
         return None;
     }
     let direction = end.vector_from(start);
-    let length = direction.norm();
-    if !length.is_finite() || length <= f64::EPSILON {
+    let length = direction.x.hypot(direction.y).hypot(direction.z);
+    if !length.is_finite() || length == 0.0 {
         return None;
     }
     let follows_carrier_line = match (&left.geometry, &right.geometry) {
@@ -3942,9 +3942,9 @@ pub(crate) fn standard_spline_line(
             },
         ) => {
             let intersection = (*left_normal).cross(*right_normal);
-            let norm = intersection.norm();
+            let norm = intersection.x.hypot(intersection.y).hypot(intersection.z);
             norm.is_finite()
-                && norm > f64::EPSILON
+                && norm > 0.0
                 && direction.cross(intersection.scale(1.0 / norm)).norm() <= TOLERANCE
         }
         (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Cylinder { .. })
@@ -3963,7 +3963,7 @@ pub(crate) fn standard_spline_line(
             SurfaceGeometry::Cone { .. },
         ) if support.faces[0] == support.faces[1] => {
             let tangent = half_angle.tan();
-            if !tangent.is_finite() || tangent.abs() <= f64::EPSILON {
+            if !tangent.is_finite() || tangent == 0.0 {
                 false
             } else {
                 let apex = (*origin).translated(*axis, -radius / tangent);
@@ -4003,8 +4003,8 @@ pub(crate) fn build_standard_edge_curve(
             let start = ir.model.points[points[0]].position;
             let end = ir.model.points[points[1]].position;
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
-            let length = delta.dot(delta).sqrt();
-            if length <= f64::EPSILON {
+            let length = delta.x.hypot(delta.y).hypot(delta.z);
+            if !length.is_finite() || length == 0.0 {
                 return (None, None);
             }
             (
@@ -5237,6 +5237,11 @@ mod route_tests {
         )
         .is_some());
         assert!(solve(
+            cylinder.clone(),
+            [Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1e-200)]
+        )
+        .is_some());
+        assert!(solve(
             cylinder,
             [Point3::new(2.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0)]
         )
@@ -5292,6 +5297,39 @@ mod route_tests {
             None,
         );
         assert_eq!(range, Some([0.0, 5.0]));
+    }
+
+    #[test]
+    fn standard_line_edge_accepts_a_finite_nonzero_distance() {
+        let mut ir = CadIr::empty(Units::default());
+        for (index, position) in [Point3::new(0.0, 0.0, 0.0), Point3::new(1e-200, 0.0, 0.0)]
+            .into_iter()
+            .enumerate()
+        {
+            ir.model.points.push(Point {
+                id: PointId(format!("p{index}")),
+                position,
+                source_object: None,
+            });
+        }
+        let support = StandardCurveSupport {
+            pos: 12,
+            tag: 7,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Line,
+        };
+        let (curve, range) = build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            None,
+        );
+        assert!(curve.is_some());
+        assert_eq!(range, Some([0.0, 1e-200]));
     }
 
     #[test]
