@@ -283,6 +283,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_body_bindings(&ctx, &mut findings);
     validate_body_bounds(&ctx, &mut findings);
     validate_canvas_images(&ctx, &mut findings);
+    validate_component_occurrences(&ctx, &mut findings);
     validate_parameter_scopes(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings);
     validate_construction_operand_groups(&ctx, &mut findings);
@@ -867,6 +868,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         last[2][3] - first[2][3],
                     ];
                     let distance = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
+                    let component_link = valid_component_pattern_occurrences(
+                        native,
+                        native_stream,
+                        instances,
+                        count,
+                    );
                     instances.record_indices == expected_records
                         && instances.record_indices.len() == count
                         && instances.transforms.len() == count
@@ -902,6 +909,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     .get(&(native_stream, *record_index))
                                     .is_some_and(|header| *offset > header.byte_offset)
                             })
+                        && component_link
                 });
                 design::design_feature_family(&scope.kind)
                     == Some(design::DesignFeatureFamily::RectangularPattern)
@@ -1026,6 +1034,52 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && native.xref_references.iter().any(|reference| {
                         reference.neutron_role == construction.neutron_role
                             && reference.transform == Some(construction.transform)
+                    })
+            }
+        };
+        let copy_paste_component_link = match &scope.copy_paste_component_operation {
+            None => scope.kind != "CopyPaste",
+            Some(operation) => {
+                let source = native
+                    .design_component_occurrences
+                    .iter()
+                    .find(|occurrence| {
+                        design_stream(&occurrence.id) == native_stream
+                            && occurrence.record_index == operation.source_occurrence_record_index
+                    });
+                let copied = native
+                    .design_component_occurrences
+                    .iter()
+                    .find(|occurrence| {
+                        design_stream(&occurrence.id) == native_stream
+                            && occurrence.record_index == operation.copied_occurrence_record_index
+                    });
+                scope.kind == "CopyPaste"
+                    && scope.frame_length == 529
+                    && scope.reference_members == [operation.relation_record_index]
+                    && operation.source_occurrence_record_index
+                        != operation.copied_occurrence_record_index
+                    && operation.source_transform_offset == scope.byte_offset + 38
+                    && operation.copied_transform_offset == scope.byte_offset + 194
+                    && design::decode::sketch::valid_sketch_transform(&operation.source_transform)
+                    && design::decode::sketch::valid_sketch_transform(&operation.copied_transform)
+                    && source.is_some_and(|source| {
+                        source
+                            .component_guid
+                            .eq_ignore_ascii_case(&operation.component_guid)
+                            && source
+                                .occurrence_guid
+                                .eq_ignore_ascii_case(&operation.source_occurrence_guid)
+                            && source.transform.is_none()
+                    })
+                    && copied.is_some_and(|copied| {
+                        copied
+                            .component_guid
+                            .eq_ignore_ascii_case(&operation.component_guid)
+                            && copied
+                                .occurrence_guid
+                                .eq_ignore_ascii_case(&operation.copied_occurrence_guid)
+                            && copied.transform == Some(operation.copied_transform)
                     })
             }
         };
@@ -1217,6 +1271,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && rectangular_pattern_link
             && assembly_alignment_link
             && component_insert_link
+            && copy_paste_component_link
             && draft_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
@@ -1230,6 +1285,102 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             });
         }
     }
+}
+
+fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    let mut identities = HashSet::new();
+    let mut record_indices = HashSet::new();
+    let mut components = HashMap::new();
+    for occurrence in &ctx.native.design_component_occurrences {
+        let stream = design_stream(&occurrence.id);
+        let valid = identities.insert((stream, occurrence.occurrence_guid.to_ascii_lowercase()))
+            && record_indices.insert((stream, occurrence.record_index))
+            && crate::bytes::is_guid_relaxed(&occurrence.component_guid)
+            && crate::bytes::is_guid_relaxed(&occurrence.occurrence_guid)
+            && occurrence.component_guid_offset == occurrence.byte_offset + 48
+            && occurrence.occurrence_guid_offset == occurrence.byte_offset + 124
+            && occurrence.occurrence_ordinal > 0
+            && match (occurrence.transform, occurrence.transform_offset) {
+                (None, None) => occurrence.occurrence_ordinal == 1,
+                (Some(transform), Some(offset)) => {
+                    occurrence.occurrence_ordinal > 1
+                        && offset == occurrence.byte_offset + 209
+                        && design::decode::sketch::valid_sketch_transform(&transform)
+                }
+                _ => false,
+            }
+            && components
+                .entry((stream, occurrence.component_guid.to_ascii_lowercase()))
+                .or_insert(occurrence.component_record_index)
+                == &occurrence.component_record_index;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design component occurrence has an invalid fixed frame".into(),
+                entity: Some(occurrence.id.clone()),
+            });
+        }
+    }
+}
+
+fn valid_component_pattern_occurrences(
+    native: &native::F3dNative,
+    stream: &str,
+    instances: &records::DesignRectangularPatternInstances,
+    count: usize,
+) -> bool {
+    instances
+        .component_occurrences
+        .as_ref()
+        .is_none_or(|component| {
+            component.generated_occurrence_guids.len() + 1 == count
+                && crate::bytes::is_guid_relaxed(&component.component_guid)
+                && crate::bytes::is_guid_relaxed(&component.seed_occurrence_guid)
+                && component
+                    .generated_occurrence_guids
+                    .iter()
+                    .all(|guid| crate::bytes::is_guid_relaxed(guid))
+                && native
+                    .design_component_occurrences
+                    .iter()
+                    .any(|occurrence| {
+                        design_stream(&occurrence.id) == stream
+                            && occurrence
+                                .component_guid
+                                .eq_ignore_ascii_case(&component.component_guid)
+                            && occurrence
+                                .occurrence_guid
+                                .eq_ignore_ascii_case(&component.seed_occurrence_guid)
+                            && occurrence.occurrence_ordinal == 1
+                            && occurrence.transform.is_none()
+                    })
+                && component
+                    .generated_occurrence_guids
+                    .iter()
+                    .zip(instances.transforms.iter().skip(1))
+                    .zip(instances.transform_offsets.iter().skip(1))
+                    .enumerate()
+                    .all(
+                        |(ordinal, ((occurrence_guid, transform), transform_offset))| {
+                            native
+                                .design_component_occurrences
+                                .iter()
+                                .any(|occurrence| {
+                                    design_stream(&occurrence.id) == stream
+                                        && occurrence
+                                            .component_guid
+                                            .eq_ignore_ascii_case(&component.component_guid)
+                                        && occurrence
+                                            .occurrence_guid
+                                            .eq_ignore_ascii_case(occurrence_guid)
+                                        && occurrence.occurrence_ordinal == ordinal as u32 + 2
+                                        && occurrence.transform == Some(*transform)
+                                        && occurrence.transform_offset == Some(*transform_offset)
+                                })
+                        },
+                    )
+        })
 }
 
 /// Validate Extrude selection groups and their counted member frames.

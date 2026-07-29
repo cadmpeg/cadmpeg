@@ -12,13 +12,15 @@ use crate::records::{
     DesignAssemblyAlignment, DesignAssemblyOperandFrame, DesignBaseFeatureConstruction,
     DesignBaseFlangeOperation, DesignCircularPatternConstruction, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
-    DesignComponentInsertConstruction, DesignCopyPasteBodiesOperation, DesignDirectFaceOperation,
-    DesignDraftOperation, DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent,
-    DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudePrologueReference,
-    DesignExtrudeStart, DesignFixedChamferDistance, DesignFixedChamferParameters,
-    DesignFixedExtrudeParameters, DesignFixedFilletGroup, DesignFixedFilletParameters,
-    DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation, DesignObjectKind,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignComponentInsertConstruction, DesignComponentOccurrence,
+    DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
+    DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
+    DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
+    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
+    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
+    DesignMirrorConstruction, DesignMoveOperation, DesignObjectKind, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
     DesignRectangularPatternConstruction, DesignRectangularPatternInstances, DesignScaleOperation,
     DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
@@ -32,6 +34,7 @@ pub fn decode_parameter_scopes(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
     parameter_owners: &[crate::records::DesignParameterOwner],
+    component_occurrences: &[DesignComponentOccurrence],
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -121,6 +124,9 @@ pub fn decode_parameter_scopes(
             scope.assembly_alignment = exact_assembly_alignment(bytes, &scope, parameter_owners);
             scope.component_insert_construction =
                 exact_component_insert_construction(bytes, &scope);
+            scope.copy_paste_component_operation =
+                exact_copy_paste_component_operation(bytes, &scope, component_occurrences);
+            bind_component_pattern_occurrences(&mut scope, component_occurrences);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             out.push(scope);
@@ -254,6 +260,146 @@ pub(crate) fn exact_component_insert_construction(
     })
 }
 
+fn exact_copy_paste_component_operation(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    occurrences: &[DesignComponentOccurrence],
+) -> Option<DesignCopyPasteComponentOperation> {
+    let stream = native_stream(&scope.id)?;
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    let relation_record_index = *scope.reference_members.first()?;
+    if scope.kind != "CopyPaste"
+        || scope.frame_length != 529
+        || scope.class_tag != "454"
+        || scope.paired_class_tag != "259"
+        || scope.reference_members.len() != 1
+    {
+        return None;
+    }
+    let source_transform = rigid_transform_at(bytes, start + 38)?;
+    let copied_transform = rigid_transform_at(bytes, start + 194)?;
+    let relation_at = next_indexed_record_offset_with_index(bytes, 0, relation_record_index)?;
+    if relation_at >= start
+        || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
+        || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
+        || bytes.get(relation_at + 21) != Some(&1)
+        || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
+        || bytes.get(relation_at + 34) != Some(&1)
+        || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
+        || bytes.get(relation_at + 46) != Some(&1)
+        || u32_at(bytes, relation_at + 47)? != scope.record_index
+        || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
+    {
+        return None;
+    }
+    let copied_occurrence_record_index = u32_at(bytes, relation_at + 22)?;
+    let copied_candidates = occurrences
+        .iter()
+        .filter(|occurrence| {
+            native_stream(&occurrence.id) == Some(stream)
+                && occurrence.record_index == copied_occurrence_record_index
+                && occurrence.byte_offset < relation_at as u64
+                && occurrence.transform == Some(copied_transform)
+        })
+        .collect::<Vec<_>>();
+    let [copied] = copied_candidates.as_slice() else {
+        return None;
+    };
+    let source_candidates = occurrences
+        .iter()
+        .filter(|occurrence| {
+            native_stream(&occurrence.id) == Some(stream)
+                && occurrence.byte_offset < copied.byte_offset
+                && occurrence
+                    .component_guid
+                    .eq_ignore_ascii_case(&copied.component_guid)
+                && occurrence.transform.is_none()
+        })
+        .collect::<Vec<_>>();
+    let [source] = source_candidates.as_slice() else {
+        return None;
+    };
+    Some(DesignCopyPasteComponentOperation {
+        relation_record_index,
+        source_occurrence_record_index: source.record_index,
+        copied_occurrence_record_index,
+        component_guid: copied.component_guid.clone(),
+        source_occurrence_guid: source.occurrence_guid.clone(),
+        copied_occurrence_guid: copied.occurrence_guid.clone(),
+        source_transform,
+        source_transform_offset: u64::try_from(start + 38).ok()?,
+        copied_transform,
+        copied_transform_offset: u64::try_from(start + 194).ok()?,
+    })
+}
+
+fn bind_component_pattern_occurrences(
+    scope: &mut DesignParameterScope,
+    occurrences: &[DesignComponentOccurrence],
+) {
+    let Some(stream) = native_stream(&scope.id) else {
+        return;
+    };
+    let Some(instances) = scope
+        .rectangular_pattern_construction
+        .as_mut()
+        .and_then(|construction| construction.instances.as_mut())
+    else {
+        return;
+    };
+    let mut generated = Vec::new();
+    for (ordinal, transform_offset) in instances.transform_offsets.iter().enumerate().skip(1) {
+        let candidates = occurrences
+            .iter()
+            .filter(|occurrence| {
+                native_stream(&occurrence.id) == Some(stream)
+                    && occurrence.transform_offset == Some(*transform_offset)
+                    && occurrence.occurrence_ordinal == ordinal as u32 + 1
+            })
+            .collect::<Vec<_>>();
+        let [candidate] = candidates.as_slice() else {
+            return;
+        };
+        generated.push(*candidate);
+    }
+    let Some(component_guid) = generated
+        .first()
+        .map(|occurrence| &occurrence.component_guid)
+    else {
+        return;
+    };
+    if generated.iter().any(|occurrence| {
+        !occurrence
+            .component_guid
+            .eq_ignore_ascii_case(component_guid)
+    }) {
+        return;
+    }
+    let seed_candidates = occurrences
+        .iter()
+        .filter(|occurrence| {
+            native_stream(&occurrence.id) == Some(stream)
+                && occurrence.byte_offset < scope.byte_offset
+                && occurrence
+                    .component_guid
+                    .eq_ignore_ascii_case(component_guid)
+                && occurrence.occurrence_ordinal == 1
+                && occurrence.transform.is_none()
+        })
+        .collect::<Vec<_>>();
+    let [seed] = seed_candidates.as_slice() else {
+        return;
+    };
+    instances.component_occurrences = Some(DesignComponentPatternOccurrences {
+        component_guid: component_guid.clone(),
+        seed_occurrence_guid: seed.occurrence_guid.clone(),
+        generated_occurrence_guids: generated
+            .iter()
+            .map(|occurrence| occurrence.occurrence_guid.clone())
+            .collect(),
+    });
+}
+
 fn unique_indexed_record_before(bytes: &[u8], record_index: u32, end: usize) -> Option<usize> {
     let mut position = 0;
     let mut found = None;
@@ -270,7 +416,7 @@ fn unique_indexed_record_before(bytes: &[u8], record_index: u32, end: usize) -> 
     found
 }
 
-fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+pub(crate) fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
     let values = f64s_at(bytes, at, 16)?;
     let mut transform = [[0.0; 4]; 4];
     for (ordinal, value) in values.into_iter().enumerate() {
@@ -486,6 +632,7 @@ fn exact_rectangular_pattern_instances(
         record_indices,
         transforms: run.iter().map(|(transform, _)| *transform).collect(),
         transform_offsets: run.iter().map(|(_, offset)| *offset).collect(),
+        component_occurrences: None,
     })
 }
 
@@ -2352,6 +2499,7 @@ pub(crate) fn parse_parameter_scope(
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,

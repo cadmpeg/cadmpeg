@@ -3,6 +3,7 @@
 
 pub mod body;
 pub mod canvas;
+pub mod components;
 pub mod dimension_frames;
 pub mod operands;
 pub mod parameters;

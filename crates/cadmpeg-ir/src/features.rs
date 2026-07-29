@@ -1343,6 +1343,8 @@ pub enum PatternSeed {
     Faces(FaceSelection),
     /// Selected bodies, including bodies in an intermediate regenerated result.
     Bodies(BodySelection),
+    /// Selected placed component occurrences.
+    Occurrences(Vec<crate::products::OccurrenceId>),
 }
 
 /// External model format consumed by an imported-geometry feature.

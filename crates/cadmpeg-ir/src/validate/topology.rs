@@ -3147,6 +3147,38 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         },
                         PatternSeed::Faces(selection) => face_selections.push(selection),
                         PatternSeed::Bodies(selection) => body_selections.push(selection),
+                        PatternSeed::Occurrences(occurrences) => {
+                            if occurrences.is_empty() {
+                                feature_geometry_error(
+                                    findings,
+                                    feature,
+                                    "pattern occurrence seed is empty",
+                                );
+                            }
+                            let mut unique = HashSet::new();
+                            for occurrence in occurrences {
+                                if !unique.insert(occurrence) {
+                                    feature_geometry_error(
+                                        findings,
+                                        feature,
+                                        "pattern occurrence seed is repeated",
+                                    );
+                                }
+                                if !ir
+                                    .model
+                                    .occurrences
+                                    .iter()
+                                    .any(|candidate| candidate.id == *occurrence)
+                                {
+                                    ref_error(
+                                        findings,
+                                        &feature.id.0,
+                                        "seed occurrence",
+                                        &occurrence.0,
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
                 let valid = pattern_is_valid(pattern, false);

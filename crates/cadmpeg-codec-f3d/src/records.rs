@@ -1100,6 +1100,20 @@ pub struct DesignRectangularPatternInstances {
     pub transforms: Vec<[[f64; 4]; 4]>,
     /// Byte offsets of the first transform scalar parallel to `record_indices`.
     pub transform_offsets: Vec<u64>,
+    /// Component occurrences carried by this run when the pattern repeats a component.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component_occurrences: Option<DesignComponentPatternOccurrences>,
+}
+
+/// Component seed and generated occurrences carried by a rectangular pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignComponentPatternOccurrences {
+    /// Reusable local component definition shared by every occurrence.
+    pub component_guid: String,
+    /// Existing seed occurrence.
+    pub seed_occurrence_guid: String,
+    /// Newly generated occurrences in pattern order after the seed.
+    pub generated_occurrence_guids: Vec<String>,
 }
 
 /// Alignment scalars carried by an assembly-operation scope.
@@ -1148,6 +1162,60 @@ pub struct DesignComponentInsertConstruction {
     pub transform_offset: u64,
     /// Byte offset of the equal transform in the grouped carrier.
     pub carrier_transform_offset: u64,
+}
+
+/// One exact local component-occurrence carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignComponentOccurrence {
+    /// Stable native record identity.
+    pub id: String,
+    /// Indexed carrier record.
+    pub record_index: u32,
+    /// Byte offset of the indexed header.
+    pub byte_offset: u64,
+    /// Referenced component-definition record.
+    pub component_record_index: u64,
+    /// Stable component-definition GUID.
+    pub component_guid: String,
+    /// Byte offset of the component GUID payload.
+    pub component_guid_offset: u64,
+    /// Stable placed-occurrence GUID.
+    pub occurrence_guid: String,
+    /// Byte offset of the occurrence GUID payload.
+    pub occurrence_guid_offset: u64,
+    /// One-based occurrence ordinal within the component definition.
+    pub occurrence_ordinal: u32,
+    /// Explicit local-to-model placement for generated occurrences.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the explicit placement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform_offset: Option<u64>,
+}
+
+/// Legacy component copy/paste construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignCopyPasteComponentOperation {
+    /// Scope-owned relation record.
+    pub relation_record_index: u32,
+    /// Existing source occurrence carrier.
+    pub source_occurrence_record_index: u32,
+    /// Newly copied occurrence carrier.
+    pub copied_occurrence_record_index: u32,
+    /// Reusable component definition shared by source and copy.
+    pub component_guid: String,
+    /// Existing source occurrence identity.
+    pub source_occurrence_guid: String,
+    /// Newly copied occurrence identity.
+    pub copied_occurrence_guid: String,
+    /// Source placement embedded by the scope.
+    pub source_transform: [[f64; 4]; 4],
+    /// Byte offset of the source placement.
+    pub source_transform_offset: u64,
+    /// Copied placement embedded by both scope and occurrence carrier.
+    pub copied_transform: [[f64; 4]; 4],
+    /// Byte offset of the scope-local copied placement.
+    pub copied_transform_offset: u64,
 }
 
 /// Exact construction carried by a Mirror scope.
@@ -1408,6 +1476,9 @@ pub struct DesignParameterScope {
     /// Exact external-occurrence construction carried by a `Component Insert` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component_insert_construction: Option<DesignComponentInsertConstruction>,
+    /// Exact local-component construction carried by a legacy `CopyPaste` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_paste_component_operation: Option<DesignCopyPasteComponentOperation>,
     /// Exact construction carried by a Mirror scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mirror_construction: Option<DesignMirrorConstruction>,

@@ -9,7 +9,7 @@ use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-    DesignBodyRecipeOperand, DesignCanvasImage, DesignConfiguration,
+    DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
@@ -25,7 +25,7 @@ use crate::records::{
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
-pub const F3D_NATIVE_VERSION: u32 = 6;
+pub const F3D_NATIVE_VERSION: u32 = 7;
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_entities",
@@ -45,6 +45,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_body_members",
     "design_body_recipe_operands",
     "design_canvas_images",
+    "design_component_occurrences",
     "design_configurations",
     "design_construction_operand_groups",
     "design_construction_operand_identities",
@@ -104,6 +105,7 @@ macro_rules! f3d_arenas {
             design_objects: DesignObject;
             design_body_recipe_operands: DesignBodyRecipeOperand;
             design_canvas_images: DesignCanvasImage;
+            design_component_occurrences: DesignComponentOccurrence;
             design_dimension_annotation_frames: DesignDimensionAnnotationFrame;
             design_dimension_locus_groups: DesignDimensionLocusGroup;
             design_dimension_locus_pairs: DesignDimensionLocusPair;
@@ -231,6 +233,9 @@ pub struct F3dNative {
     /// Exact image-plane bindings owned by Canvas timeline objects.
     #[serde(default)]
     pub design_canvas_images: Vec<DesignCanvasImage>,
+    /// Exact local component-definition and placed-occurrence carriers.
+    #[serde(default)]
+    pub design_component_occurrences: Vec<DesignComponentOccurrence>,
     /// Annotated paired dimension frames governing parameter companions.
     #[serde(default)]
     pub design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
@@ -400,6 +405,7 @@ impl Default for F3dNative {
             design_objects: Vec::new(),
             design_body_recipe_operands: Vec::new(),
             design_canvas_images: Vec::new(),
+            design_component_occurrences: Vec::new(),
             design_dimension_annotation_frames: Vec::new(),
             design_dimension_locus_pairs: Vec::new(),
             design_dimension_locus_groups: Vec::new(),

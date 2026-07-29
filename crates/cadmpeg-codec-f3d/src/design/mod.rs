@@ -5,6 +5,7 @@
 //! selected by [`crate::container`]. Returned records retain source offsets and
 //! stable identifiers for native regeneration.
 
+pub mod components;
 pub mod configurations;
 pub mod constraints;
 pub mod decode;

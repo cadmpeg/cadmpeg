@@ -100,6 +100,19 @@ pub(crate) fn neutral_xref_occurrence_id(
     ))
 }
 
+/// Neutral local component definition projected from its stable Design GUID.
+pub(crate) fn neutral_component_id(guid: &str) -> cadmpeg_ir::products::ComponentId {
+    cadmpeg_ir::products::ComponentId(format!("f3d:model:component#{}", guid.to_ascii_lowercase()))
+}
+
+/// Neutral local occurrence projected from its stable Design GUID.
+pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::products::OccurrenceId {
+    cadmpeg_ir::products::OccurrenceId(format!(
+        "f3d:model:occurrence#{}",
+        guid.to_ascii_lowercase()
+    ))
+}
+
 /// The Design configuration record key for the archive entry `entry_name`.
 pub(crate) fn configuration_entry_id(entry_name: &str) -> String {
     format!("f3d:configuration:entry#{entry_name}")

@@ -1435,6 +1435,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 Ok(None) => {}
                 Err(error) => report.losses.push(xref_parse_loss(&error)),
             }
+            let (components, occurrences) = crate::design::components::project_local_components(
+                &native.design_parameter_scopes,
+                &native.design_component_occurrences,
+            );
+            ir.model.components.extend(components);
+            ir.model.occurrences.extend(occurrences);
             report_design_projection_gaps(&mut report, &ir, &native);
             native.store(ir.native.namespace_mut("f3d"))?;
             let annotations = populate_annotations(
@@ -1785,6 +1791,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         native.xref_designs.clone_from(&table.designs);
         native.xref_references.clone_from(&table.references);
     }
+    let (components, occurrences) = crate::design::components::project_local_components(
+        &native.design_parameter_scopes,
+        &native.design_component_occurrences,
+    );
+    ir.model.components.extend(components);
+    ir.model.occurrences.extend(occurrences);
     native.store(ir.native.namespace_mut("f3d"))?;
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
     let source_image = preserve_source_image(&scan, &mut ir);
@@ -2296,10 +2308,13 @@ fn extend_related_design_records(
             &native.design_parameter_owners,
             &native.design_record_headers,
         )?;
+    native.design_component_occurrences =
+        crate::design::decode::components::decode_component_occurrences(scan)?;
     native.design_parameter_scopes = crate::design::decode::scopes::decode_parameter_scopes(
         scan,
         &native.design_entity_headers,
         &native.design_parameter_owners,
+        &native.design_component_occurrences,
     )?;
     native.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
@@ -3580,6 +3595,7 @@ mod tests {
             rectangular_pattern_construction: None,
             assembly_alignment: None,
             component_insert_construction: None,
+            copy_paste_component_operation: None,
             mirror_construction: None,
             base_flange_profile: None,
             entity_id: None,
@@ -3739,6 +3755,7 @@ mod tests {
             rectangular_pattern_construction: None,
             assembly_alignment: None,
             component_insert_construction: None,
+            copy_paste_component_operation: None,
             mirror_construction: None,
             base_flange_profile: None,
             entity_id: None,

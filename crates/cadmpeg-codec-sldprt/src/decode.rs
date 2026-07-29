@@ -1074,6 +1074,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                         cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
                             incomplete_body_selection(bodies)
                         }
+                        cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => {
+                            occurrences.is_empty()
+                        }
                     })
                     || matches!(pattern, PatternKind::Unresolved { .. })
                     || matches!(pattern, PatternKind::Linear { direction: None, .. })

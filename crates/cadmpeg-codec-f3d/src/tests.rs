@@ -9720,6 +9720,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,

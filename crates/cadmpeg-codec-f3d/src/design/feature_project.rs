@@ -595,6 +595,19 @@ pub fn project_parameter_design_with_edge_identities(
                                 ),
                             },
                         )
+                    } else if scope.kind == "CopyPaste" {
+                        scope.copy_paste_component_operation.as_ref().map_or_else(
+                            || FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: BTreeMap::new(),
+                                properties: native_scope_properties(scope, native_scope),
+                            },
+                            |operation| FeatureDefinition::InsertComponent {
+                                occurrence: crate::ids::neutral_component_occurrence_id(
+                                    &operation.copied_occurrence_guid,
+                                ),
+                            },
+                        )
                     } else if scope.kind == "Base Feature" {
                         scope.base_feature_construction.as_ref().map_or_else(
                             || FeatureDefinition::Native {
@@ -2682,8 +2695,18 @@ fn project_rectangular_pattern_scalars(
         let norm = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
         (norm > 0.0).then_some(Vector3::new(delta.x / norm, delta.y / norm, delta.z / norm))
     });
+    let seeds = construction
+        .instances
+        .as_ref()
+        .and_then(|instances| instances.component_occurrences.as_ref())
+        .map(|occurrences| {
+            vec![cadmpeg_ir::features::PatternSeed::Occurrences(vec![
+                crate::ids::neutral_component_occurrence_id(&occurrences.seed_occurrence_guid),
+            ])]
+        })
+        .unwrap_or_default();
     Some(FeatureDefinition::Pattern {
-        seeds: Vec::new(),
+        seeds,
         pattern: PatternKind::Linear {
             direction,
             spacing: Length(extent.abs() * 10.0 / f64::from(count.saturating_sub(1))),

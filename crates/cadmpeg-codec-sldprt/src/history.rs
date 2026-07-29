@@ -12922,6 +12922,12 @@ pub fn sync_neutral_features(
                                 feature.id
                             )));
                         }
+                        PatternSeed::Occurrences(_) => {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has component-occurrence pattern seeds",
+                                feature.id
+                            )));
+                        }
                     }
                 }
                 if seed_sources.is_empty()
