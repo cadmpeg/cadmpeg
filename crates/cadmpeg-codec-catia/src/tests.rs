@@ -4905,6 +4905,21 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity vertex candidate");
     assert!(crate::native::CatiaNative::load(&invalid_vertex_namespace).is_err());
 
+    let mut invalid_component = native.clone();
+    invalid_component
+        .zero_entity_edge_component_candidates
+        .push(crate::native::CatiaZeroEntityEdgeComponentCandidate {
+            id: "catia:zero-entity:edge-component-candidate#0".to_string(),
+            physical_edges: vec!["catia:zero-entity:physical-edge-candidate#0".to_string()],
+            vertices: vec!["catia:zero-entity:vertex-candidate#0".to_string()],
+            boundary_vertex_count: 1,
+        });
+    let mut invalid_component_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_component
+        .store(&mut invalid_component_namespace)
+        .expect("store invalid CATIA zero-entity edge component");
+    assert!(crate::native::CatiaNative::load(&invalid_component_namespace).is_err());
+
     let mut invalid_model_endpoint = native.clone();
     invalid_model_endpoint.zero_entity_support_runs[0].supports[0]
         .model_endpoints

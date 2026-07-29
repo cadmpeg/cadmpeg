@@ -32,6 +32,14 @@ pub(crate) struct ZeroEntityVertexCandidate {
     pub(crate) maximum_deviation: f64,
 }
 
+/// One connected physical-edge network with complete endpoint incidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ZeroEntityEdgeComponentCandidate {
+    pub(crate) edges: Vec<usize>,
+    pub(crate) vertices: Vec<usize>,
+    pub(crate) boundary_vertex_count: usize,
+}
+
 pub(crate) fn zero_entity_physical_edge_candidates(
     runs: &[ZeroEntitySupportRun],
 ) -> Vec<ZeroEntityPhysicalEdgeCandidate> {
@@ -209,6 +217,73 @@ pub(crate) fn vertex_candidates(
                 .collect(),
             representative_point,
             maximum_deviation,
+        });
+    }
+    candidates
+}
+
+pub(crate) fn edge_component_candidates(
+    edges: &[ZeroEntityPhysicalEdgeCandidate],
+    vertices: &[ZeroEntityVertexCandidate],
+) -> Vec<ZeroEntityEdgeComponentCandidate> {
+    let Some(endpoint_count) = edges.len().checked_mul(2) else {
+        return Vec::new();
+    };
+    let mut endpoint_vertices = vec![None; endpoint_count];
+    for (vertex, candidate) in vertices.iter().enumerate() {
+        for (edge, endpoint) in &candidate.incident_edge_endpoints {
+            let Some(index) = edge
+                .checked_mul(2)
+                .and_then(|index| index.checked_add(usize::from(*endpoint)))
+                .filter(|index| *endpoint < 2 && *index < endpoint_vertices.len())
+            else {
+                return Vec::new();
+            };
+            if endpoint_vertices[index].replace(vertex).is_some() {
+                return Vec::new();
+            }
+        }
+    }
+
+    let mut edge_components = DisjointSet::new(edges.len());
+    for vertex in vertices {
+        let Some((first, rest)) = vertex.incident_edge_endpoints.split_first() else {
+            return Vec::new();
+        };
+        for endpoint in rest {
+            edge_components.union(first.0, endpoint.0);
+        }
+    }
+
+    let mut by_component = BTreeMap::<usize, Vec<usize>>::new();
+    for edge in 0..edges.len() {
+        let component = edge_components.find(edge);
+        by_component.entry(component).or_default().push(edge);
+    }
+
+    let mut candidates = Vec::new();
+    for component_edges in by_component.into_values() {
+        if component_edges
+            .iter()
+            .any(|edge| endpoint_vertices[edge * 2..edge * 2 + 2].contains(&None))
+        {
+            continue;
+        }
+        let mut component_vertices = component_edges
+            .iter()
+            .flat_map(|edge| endpoint_vertices[edge * 2..edge * 2 + 2].iter().flatten())
+            .copied()
+            .collect::<Vec<_>>();
+        component_vertices.sort_unstable();
+        component_vertices.dedup();
+        let boundary_vertex_count = component_vertices
+            .iter()
+            .filter(|vertex| vertices[**vertex].incident_edge_endpoints.len() == 1)
+            .count();
+        candidates.push(ZeroEntityEdgeComponentCandidate {
+            edges: component_edges,
+            vertices: component_vertices,
+            boundary_vertex_count,
         });
     }
     candidates
@@ -410,5 +485,72 @@ mod tests {
         assert!(candidates
             .iter()
             .all(|candidate| candidate.incident_edge_endpoints.len() == 1));
+    }
+
+    #[test]
+    fn edge_components_require_complete_endpoint_incidence() {
+        let edge = |support_record_ordinals, model_endpoints| ZeroEntityPhysicalEdgeCandidate {
+            face_record_ordinals: support_record_ordinals,
+            support_record_ordinals,
+            model_endpoints,
+        };
+        let edges = [
+            edge(
+                [1, 2],
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            ),
+            edge(
+                [3, 4],
+                [Point3::new(1.001, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+            ),
+            edge(
+                [5, 6],
+                [Point3::new(10.0, 0.0, 0.0), Point3::new(11.0, 0.0, 0.0)],
+            ),
+        ];
+        let vertices = vertex_candidates(&edges);
+        let components = edge_component_candidates(&edges, &vertices);
+        assert_eq!(
+            components,
+            [
+                ZeroEntityEdgeComponentCandidate {
+                    edges: vec![0, 1],
+                    vertices: vec![0, 1, 2],
+                    boundary_vertex_count: 2,
+                },
+                ZeroEntityEdgeComponentCandidate {
+                    edges: vec![2],
+                    vertices: vec![3, 4],
+                    boundary_vertex_count: 2,
+                },
+            ]
+        );
+
+        let ambiguous_edges = [
+            edge(
+                [1, 2],
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            ),
+            edge(
+                [3, 4],
+                [Point3::new(10.001, 0.0, 0.0), Point3::new(20.0, 0.0, 0.0)],
+            ),
+            edge(
+                [5, 6],
+                [Point3::new(20.001_5, 0.0, 0.0), Point3::new(30.0, 0.0, 0.0)],
+            ),
+            edge(
+                [7, 8],
+                [Point3::new(20.003, 0.0, 0.0), Point3::new(40.0, 0.0, 0.0)],
+            ),
+            edge(
+                [9, 10],
+                [Point3::new(100.0, 0.0, 0.0), Point3::new(101.0, 0.0, 0.0)],
+            ),
+        ];
+        let vertices = vertex_candidates(&ambiguous_edges);
+        let components = edge_component_candidates(&ambiguous_edges, &vertices);
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].edges, [4]);
     }
 }

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 174;
+pub const CATIA_NATIVE_VERSION: u32 = 175;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -53,6 +53,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "preview_images",
     "value_blocks",
     "value_schema_selections",
+    "zero_entity_edge_component_candidates",
     "zero_entity_edge_strides",
     "zero_entity_oriented_use_pairs",
     "zero_entity_physical_edge_candidates",
@@ -2833,6 +2834,19 @@ pub struct CatiaZeroEntityVertexCandidate {
     pub maximum_deviation: f64,
 }
 
+/// One connected physical-edge network with complete endpoint incidence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaZeroEntityEdgeComponentCandidate {
+    /// Stable derived-component identity.
+    pub id: String,
+    /// Physical-edge candidates in deterministic source-derived order.
+    pub physical_edges: Vec<String>,
+    /// Geometric vertex candidates incident to those edges.
+    pub vertices: Vec<String>,
+    /// Vertices incident to exactly one physical edge.
+    pub boundary_vertex_count: usize,
+}
+
 /// One counted zero-entity `05xx` vertex-incidence record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaZeroEntityVertexIncidence {
@@ -2952,6 +2966,9 @@ pub struct CatiaNative {
     /// Framed value blocks adjacent to source-schema catalogs.
     #[serde(default)]
     pub value_blocks: Vec<CatiaValueBlock>,
+    /// Connected zero-entity edge networks with complete endpoint incidence.
+    #[serde(default)]
+    pub zero_entity_edge_component_candidates: Vec<CatiaZeroEntityEdgeComponentCandidate>,
     /// Zero-entity edge-stride reference records.
     #[serde(default)]
     pub zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride>,
@@ -3006,6 +3023,7 @@ impl Default for CatiaNative {
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
             value_blocks: Vec::new(),
+            zero_entity_edge_component_candidates: Vec::new(),
             zero_entity_edge_strides: Vec::new(),
             zero_entity_oriented_use_pairs: Vec::new(),
             zero_entity_physical_edge_candidates: Vec::new(),
@@ -3802,6 +3820,31 @@ fn zero_entity_vertex_candidates(
                 .collect(),
             representative_point: candidate.representative_point,
             maximum_deviation: candidate.maximum_deviation,
+        })
+        .collect()
+}
+
+fn zero_entity_edge_component_candidates(
+    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEdgeComponentCandidate>,
+    edges: &[CatiaZeroEntityPhysicalEdgeCandidate],
+    vertices: &[CatiaZeroEntityVertexCandidate],
+) -> Vec<CatiaZeroEntityEdgeComponentCandidate> {
+    candidates
+        .into_iter()
+        .enumerate()
+        .map(|(index, candidate)| CatiaZeroEntityEdgeComponentCandidate {
+            id: format!("catia:zero-entity:edge-component-candidate#{index}"),
+            physical_edges: candidate
+                .edges
+                .into_iter()
+                .map(|edge| edges[edge].id.clone())
+                .collect(),
+            vertices: candidate
+                .vertices
+                .into_iter()
+                .map(|vertex| vertices[vertex].id.clone())
+                .collect(),
+            boundary_vertex_count: candidate.boundary_vertex_count,
         })
         .collect()
 }
@@ -5061,6 +5104,33 @@ fn validate_zero_entity_vertex_candidates(
     Ok(())
 }
 
+#[cfg(test)]
+fn validate_zero_entity_edge_component_candidates(
+    components: &[CatiaZeroEntityEdgeComponentCandidate],
+    edges: &[CatiaZeroEntityPhysicalEdgeCandidate],
+    vertices: &[CatiaZeroEntityVertexCandidate],
+    runs: &[CatiaZeroEntitySupportRun],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let derived_edges = derived_zero_entity_physical_edges(runs);
+    let derived_vertices =
+        crate::families::zero_entity::topology::vertex_candidates(&derived_edges);
+    let expected = zero_entity_edge_component_candidates(
+        crate::families::zero_entity::topology::edge_component_candidates(
+            &derived_edges,
+            &derived_vertices,
+        ),
+        edges,
+        vertices,
+    );
+    if components != expected {
+        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "zero-entity edge-component candidates disagree with their endpoint incidence"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn zero_entity_record(
     records: &[CatiaZeroEntityRecord],
     ordinal: u32,
@@ -6003,11 +6073,20 @@ impl CatiaNative {
             );
         let zero_entity_physical_edge_candidates =
             zero_entity_physical_edge_candidates(parsed_zero_entity_physical_edges.clone());
+        let parsed_zero_entity_vertices = crate::families::zero_entity::topology::vertex_candidates(
+            &parsed_zero_entity_physical_edges,
+        );
         let zero_entity_vertex_candidates = zero_entity_vertex_candidates(
-            crate::families::zero_entity::topology::vertex_candidates(
+            parsed_zero_entity_vertices.clone(),
+            &zero_entity_physical_edge_candidates,
+        );
+        let zero_entity_edge_component_candidates = zero_entity_edge_component_candidates(
+            crate::families::zero_entity::topology::edge_component_candidates(
                 &parsed_zero_entity_physical_edges,
+                &parsed_zero_entity_vertices,
             ),
             &zero_entity_physical_edge_candidates,
+            &zero_entity_vertex_candidates,
         );
         let zero_entity_support_runs =
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
@@ -6047,6 +6126,7 @@ impl CatiaNative {
             object_graphs,
             preview_images,
             value_blocks,
+            zero_entity_edge_component_candidates,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
             zero_entity_physical_edge_candidates,
@@ -6504,6 +6584,8 @@ impl CatiaNative {
         consolidated_edge_nodes.sort_by_key(|node| node.byte_offset);
         let consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity> =
             namespace.arena_as("consolidated_vertex_identities")?;
+        let zero_entity_edge_component_candidates: Vec<CatiaZeroEntityEdgeComponentCandidate> =
+            namespace.arena_as("zero_entity_edge_component_candidates")?;
         let mut zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride> =
             namespace.arena_as("zero_entity_edge_strides")?;
         zero_entity_edge_strides.sort_by_key(|record| record.byte_offset);
@@ -6529,6 +6611,12 @@ impl CatiaNative {
         validate_zero_entity_vertex_candidates(
             &zero_entity_vertex_candidates,
             &zero_entity_physical_edge_candidates,
+            &zero_entity_support_runs,
+        )?;
+        validate_zero_entity_edge_component_candidates(
+            &zero_entity_edge_component_candidates,
+            &zero_entity_physical_edge_candidates,
+            &zero_entity_vertex_candidates,
             &zero_entity_support_runs,
         )?;
         let mut zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence> =
@@ -6583,6 +6671,7 @@ impl CatiaNative {
             object_graphs: graphs,
             preview_images,
             value_blocks,
+            zero_entity_edge_component_candidates,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
             zero_entity_physical_edge_candidates,
@@ -6690,6 +6779,10 @@ impl CatiaNative {
         namespace.set_arena("preview_images", &self.preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
+        namespace.set_arena(
+            "zero_entity_edge_component_candidates",
+            &self.zero_entity_edge_component_candidates,
+        )?;
         namespace.set_arena("zero_entity_edge_strides", &self.zero_entity_edge_strides)?;
         namespace.set_arena(
             "zero_entity_oriented_use_pairs",
@@ -6752,6 +6845,7 @@ impl CatiaNative {
             mut object_graphs,
             preview_images,
             mut value_blocks,
+            zero_entity_edge_component_candidates,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
             zero_entity_physical_edge_candidates,
@@ -6816,6 +6910,10 @@ impl CatiaNative {
         namespace.set_arena("preview_images", &preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
+        namespace.set_arena(
+            "zero_entity_edge_component_candidates",
+            &zero_entity_edge_component_candidates,
+        )?;
         namespace.set_arena("zero_entity_edge_strides", &zero_entity_edge_strides)?;
         namespace.set_arena(
             "zero_entity_oriented_use_pairs",
