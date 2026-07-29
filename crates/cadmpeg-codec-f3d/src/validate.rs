@@ -964,9 +964,20 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     alignment.offset[1],
                     alignment.offset[2],
                 ];
+                let operand_frames_link = alignment.operand_frames.as_ref().is_none_or(|frames| {
+                    frames[0].reference_record_index != frames[1].reference_record_index
+                        && frames.iter().enumerate().all(|(ordinal, frame)| {
+                            design::decode::sketch::valid_sketch_transform(&frame.transform)
+                                && frame.reference_offset == scope.byte_offset + [29, 169][ordinal]
+                                && frame.transform_offset == scope.byte_offset + [40, 180][ordinal]
+                                && records_by_index
+                                    .contains_key(&(native_stream, frame.reference_record_index))
+                        })
+                });
                 design::design_feature_family(&scope.kind)
                     == Some(design::DesignFeatureFamily::Assemble)
                     && values.iter().all(|value| value.is_finite())
+                    && operand_frames_link
                     && scope
                         .reference_members
                         .ends_with(&alignment.owner_record_indices)

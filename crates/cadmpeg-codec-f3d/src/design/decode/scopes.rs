@@ -9,17 +9,18 @@ use crate::design::decode::sketch::{
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignAssemblyAlignment, DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
-    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignCombineOperation, DesignCopyPasteBodiesOperation,
-    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeFlangeOperation, DesignEntityHeader,
-    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
-    DesignExtrudePrologueReference, DesignExtrudeStart, DesignFixedChamferDistance,
-    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletGroup,
-    DesignFixedFilletParameters, DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation,
-    DesignObjectKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecordHeader, DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
-    DesignScaleOperation, DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignAssemblyAlignment, DesignAssemblyOperandFrame, DesignBaseFeatureConstruction,
+    DesignBaseFlangeOperation, DesignCircularPatternConstruction, DesignCoilExtent,
+    DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
+    DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignDraftOperation,
+    DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
+    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
+    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
+    DesignMirrorConstruction, DesignMoveOperation, DesignObjectKind, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignRectangularPatternConstruction, DesignRectangularPatternInstances, DesignScaleOperation,
+    DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -117,7 +118,7 @@ pub fn decode_parameter_scopes(
                 exact_circular_pattern_construction_with_owners(bytes, &scope, parameter_owners);
             scope.rectangular_pattern_construction =
                 exact_rectangular_pattern_construction(bytes, &scope, parameter_owners);
-            scope.assembly_alignment = exact_assembly_alignment(&scope, parameter_owners);
+            scope.assembly_alignment = exact_assembly_alignment(bytes, &scope, parameter_owners);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             out.push(scope);
@@ -129,6 +130,7 @@ pub fn decode_parameter_scopes(
 }
 
 pub(crate) fn exact_assembly_alignment(
+    bytes: &[u8],
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignAssemblyAlignment> {
@@ -164,7 +166,7 @@ pub(crate) fn exact_assembly_alignment(
     if !scope.reference_members.ends_with(&owner_record_indices) {
         return None;
     }
-    Some(DesignAssemblyAlignment {
+    let mut alignment = DesignAssemblyAlignment {
         angle: angle.evaluated_value,
         offset: [
             offset_x.evaluated_value,
@@ -178,7 +180,51 @@ pub(crate) fn exact_assembly_alignment(
             offset_y.evaluated_value_offset,
             offset_z.evaluated_value_offset,
         ],
-    })
+        operand_frames: None,
+    };
+    alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
+    Some(alignment)
+}
+
+fn exact_assembly_operand_frames(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<[DesignAssemblyOperandFrame; 2]> {
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    if !matches!(scope.frame_length, 637 | 692)
+        || scope.paired_class_tag != "259"
+        || usize::try_from(scope.paired_byte_offset).ok()?
+            != start.checked_add(usize::try_from(scope.frame_length).ok()?)?
+        || bytes.get(start + 11..start + 20)? != [0; 9]
+        || bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
+        || !matches!(bytes.get(start + 25), Some(0 | 1))
+        || bytes.get(start + 26..start + 28)? != [0; 2]
+        || bytes.get(start + 33..start + 40)? != [0; 7]
+        || bytes.get(start + 173..start + 180)? != [0; 7]
+        || bytes.get(start + 308..start + 312)? != [0; 4]
+    {
+        return None;
+    }
+    let frame = |reference_at: usize, transform_at: usize| {
+        let reference_record_index = marked_record_reference(bytes, reference_at)?;
+        let values = f64s_at(bytes, transform_at, 16)?;
+        let mut transform = [[0.0; 4]; 4];
+        for (ordinal, value) in values.into_iter().enumerate() {
+            transform[ordinal / 4][ordinal % 4] = value;
+        }
+        if !valid_sketch_transform(&transform) {
+            return None;
+        }
+        Some(DesignAssemblyOperandFrame {
+            reference_record_index,
+            reference_offset: (reference_at + 1) as u64,
+            transform,
+            transform_offset: transform_at as u64,
+        })
+    };
+    let first = frame(start + 28, start + 40)?;
+    let second = frame(start + 168, start + 180)?;
+    (first.reference_record_index != second.reference_record_index).then_some([first, second])
 }
 
 pub(crate) fn exact_rectangular_pattern_construction(
