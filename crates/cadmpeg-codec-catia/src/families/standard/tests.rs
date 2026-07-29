@@ -245,6 +245,58 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
 }
 
 #[test]
+fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
+    let boundary = |edges: &[(usize, usize, usize)]| Boundary {
+        coedges: edges
+            .iter()
+            .map(|&(edge_row, start_vertex, end_vertex)| CoedgeUse {
+                edge_row,
+                reversed: false,
+                start_vertex,
+                end_vertex,
+            })
+            .collect(),
+    };
+    let edge_rows = (0..4)
+        .map(|edge| EdgeRow {
+            kind: 1,
+            handles: vec![edge, edge + 1],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let left_topology = StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![
+                boundary(&[(0, 0, 1), (1, 1, 0)]),
+                boundary(&[(2, 2, 3), (3, 3, 2)]),
+            ],
+        }],
+        edge_rows,
+        vertex_points: vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+        ],
+        logical_vertex_count: 4,
+    };
+    let mut right_topology = left_topology.clone();
+    right_topology.faces[0].boundaries.reverse();
+    for boundary in &mut right_topology.faces[0].boundaries {
+        boundary.coedges.reverse();
+        for coedge in &mut boundary.coedges {
+            coedge.reversed = !coedge.reversed;
+            std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
+        }
+    }
+    let left = (left_topology, vec![0, 1, 2, 3]);
+    let right = (right_topology, vec![0, 1, 2, 3]);
+
+    assert_ne!(left, right);
+    assert!(mesh_candidates_equivalent(&left, &right));
+}
+
+#[test]
 fn mesh_candidate_comparison_canonicalizes_equivalent_edge_allocations() {
     let edge_rows = vec![
         EdgeRow {

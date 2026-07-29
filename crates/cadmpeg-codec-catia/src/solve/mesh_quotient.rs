@@ -4,7 +4,8 @@
 
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 use crate::families::standard::topology::{
-    incidence_cycles, orient_face_cycles, reconstruct_mesh_selection, EdgeRow, StandardTopology,
+    incidence_cycles, orient_face_cycles, reconstruct_mesh_selection, CoedgeUse, EdgeRow,
+    StandardTopology,
 };
 use crate::solve::incidence::{
     compact_boundary_domain_viable, deferred_boundary_cycle_matches,
@@ -15,8 +16,8 @@ use crate::solve::matching::{
     distinct_domain_matching_with_budget, domains_have_distinct_matching, MatchingEdgeConstraint,
 };
 use crate::solve::missing_edge::{
-    same_unordered_pair, standard_edge_port_identities, standard_mesh_boundary_assignments,
-    standard_mesh_boundary_domains_impl, MeshBoundaryEdgeCandidate, MeshDeferredFaceBoundary,
+    same_unordered_pair, standard_mesh_boundary_assignments, standard_mesh_boundary_domains_impl,
+    standard_mesh_edge_ports, MeshBoundaryEdgeCandidate, MeshDeferredFaceBoundary,
     MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
 use crate::solve::UnionFind;
@@ -5230,6 +5231,65 @@ impl MeshSelectionSearch<'_> {
     }
 }
 
+fn canonicalize_topology_boundary_gauges(topology: &mut StandardTopology) -> Option<()> {
+    fn signature(coedges: &[CoedgeUse]) -> Vec<(usize, bool, usize, usize)> {
+        coedges
+            .iter()
+            .map(|coedge| {
+                (
+                    coedge.edge_row,
+                    coedge.reversed,
+                    coedge.start_vertex,
+                    coedge.end_vertex,
+                )
+            })
+            .collect()
+    }
+
+    fn rotate_to_minimum(coedges: &mut [CoedgeUse]) -> Option<()> {
+        let len = coedges.len();
+        let best = (0..len).min_by_key(|&start| {
+            (0..len)
+                .map(|offset| {
+                    let coedge = coedges[(start + offset) % len];
+                    (
+                        coedge.edge_row,
+                        coedge.reversed,
+                        coedge.start_vertex,
+                        coedge.end_vertex,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })?;
+        coedges.rotate_left(best);
+        Some(())
+    }
+
+    for face in &mut topology.faces {
+        for boundary in &mut face.boundaries {
+            rotate_to_minimum(&mut boundary.coedges)?;
+            let mut reversed = boundary
+                .coedges
+                .iter()
+                .rev()
+                .copied()
+                .map(|mut coedge| {
+                    coedge.reversed = !coedge.reversed;
+                    std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
+                    coedge
+                })
+                .collect::<Vec<_>>();
+            rotate_to_minimum(&mut reversed)?;
+            if signature(&reversed) < signature(&boundary.coedges) {
+                boundary.coedges = reversed;
+            }
+        }
+        face.boundaries
+            .sort_by_key(|boundary| signature(&boundary.coedges));
+    }
+    Some(())
+}
+
 pub(crate) fn canonicalize_mesh_vertex_labels(
     mut topology: StandardTopology,
     point_assignment: &[usize],
@@ -5288,30 +5348,7 @@ pub(crate) fn canonicalize_mesh_vertex_labels(
             coedge.reversed = !coedge.reversed;
         }
     }
-    for boundary in topology
-        .faces
-        .iter_mut()
-        .flat_map(|face| &mut face.boundaries)
-    {
-        let len = boundary.coedges.len();
-        if len == 0 {
-            return None;
-        }
-        let best = (0..len).min_by_key(|&start| {
-            (0..len)
-                .map(|offset| {
-                    let coedge = boundary.coedges[(start + offset) % len];
-                    (
-                        coedge.edge_row,
-                        coedge.reversed,
-                        coedge.start_vertex,
-                        coedge.end_vertex,
-                    )
-                })
-                .collect::<Vec<_>>()
-        })?;
-        boundary.coedges.rotate_left(best);
-    }
+    canonicalize_topology_boundary_gauges(&mut topology)?;
     Some((topology, (0..point_assignment.len()).collect::<Vec<_>>()))
 }
 
@@ -5388,22 +5425,8 @@ pub(crate) fn mesh_candidates_equivalent_with_edge_classes(
             for coedge in &mut boundary.coedges {
                 coedge.edge_row = *canonical_edge.get(coedge.edge_row)?;
             }
-            let len = boundary.coedges.len();
-            let best = (0..len).min_by_key(|&start| {
-                (0..len)
-                    .map(|offset| {
-                        let coedge = boundary.coedges[(start + offset) % len];
-                        (
-                            coedge.edge_row,
-                            coedge.reversed,
-                            coedge.start_vertex,
-                            coedge.end_vertex,
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            })?;
-            boundary.coedges.rotate_left(best);
         }
+        canonicalize_topology_boundary_gauges(&mut topology)?;
         Some((topology, assignment))
     }
 
@@ -5479,7 +5502,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
         return None;
     }
     deduplicate_mesh_quotient_assignments(&mut assignments);
-    let port_identities = standard_edge_port_identities(bytes)?;
+    let port_identities = standard_mesh_edge_ports(bytes)?;
     resolve_standard_mesh_endpoint_candidates(
         &edge_rows,
         &vertex_points,
@@ -5603,7 +5626,7 @@ where
         let vertex_points = parse_vertex_table(bytes, vertex_header)?;
         let mesh_domains =
             standard_mesh_boundary_domains_impl(bytes, edge_faces, Some(edge_candidates), true)?;
-        let port_identities = standard_edge_port_identities(bytes)?;
+        let port_identities = standard_mesh_edge_ports(bytes)?;
         Some((
             face_count,
             edge_rows,

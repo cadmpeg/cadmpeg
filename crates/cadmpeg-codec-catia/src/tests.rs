@@ -165,6 +165,38 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
 }
 
 #[test]
+fn standard_mesh_resolver_uses_trim_occurrence_port_components() {
+    let mut bytes = standard_quad_topology_stream();
+    let header = bytes
+        .windows(3)
+        .position(|window| window == [0x01, 0x01, 0x04])
+        .expect("edge table header");
+    bytes[header + 2] = 2;
+    let second_table = header + 3 + 2 * 8;
+    bytes.splice(
+        second_table..second_table,
+        [
+            0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x01, 0x02,
+        ],
+    );
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[0, 3]]];
+
+    let (topology, assignment) =
+        crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
+            &bytes,
+            &[[0, 0]; 4],
+            &candidates,
+        )
+        .expect("trim occurrence endpoint quotient");
+
+    assert_eq!(assignment, vec![0, 1, 2, 3]);
+    assert_eq!(
+        topology.edge_vertices().expect("resolved edge endpoints"),
+        vec![[0, 1], [1, 2], [2, 3], [3, 0]]
+    );
+}
+
+#[test]
 fn standard_mesh_ports_are_occurrence_components_not_coordinate_indices() {
     let ports =
         crate::solve::missing_edge::standard_mesh_edge_ports(&standard_quad_topology_stream())
