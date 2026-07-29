@@ -983,6 +983,7 @@ struct SketchSegmentTransferCoverage {
     decoded_rows: usize,
     resolved_geometry: usize,
     missing_rows: usize,
+    by_family: BTreeMap<&'static str, (usize, usize)>,
 }
 
 #[derive(Default)]
@@ -12056,6 +12057,25 @@ fn transfer_sketches(
                 .saturating_sub(usize::from(table.has_elided_prototype));
             coverage.decoded_rows += decoded_rows;
             coverage.missing_rows += expected_rows.saturating_sub(decoded_rows);
+            for segment in &table.rows {
+                let family = match segment.kind {
+                    crate::feature::FeatureSegmentKind::Line => "line",
+                    crate::feature::FeatureSegmentKind::Arc => "arc",
+                    crate::feature::FeatureSegmentKind::Point => "point",
+                };
+                coverage.by_family.entry(family).or_default().0 += 1;
+            }
+            for (family, count) in [
+                ("circle", table.circle_rows.len()),
+                ("point", table.point_rows.len()),
+                ("centered_line", table.centered_line_rows.len()),
+                ("reference_line", table.reference_line_rows.len()),
+                ("bounded_curve", table.bounded_curve_rows.len()),
+                ("conic", table.conic_rows.len()),
+                ("opaque", table.opaque_rows.len()),
+            ] {
+                coverage.by_family.entry(family).or_default().0 += count;
+            }
         }
         let points = resolved_section_points(definition);
         let radii = resolved_section_radii(definition);
@@ -12185,7 +12205,18 @@ fn transfer_sketches(
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(definition);
         coverage.resolved_geometry += resolved_segment_offsets.len();
-        coverage.resolved_geometry += definition
+        for segment in segments
+            .iter()
+            .filter(|segment| resolved_segment_offsets.contains(&segment.offset))
+        {
+            let family = match segment.kind {
+                crate::feature::FeatureSegmentKind::Line => "line",
+                crate::feature::FeatureSegmentKind::Arc => "arc",
+                crate::feature::FeatureSegmentKind::Point => "point",
+            };
+            coverage.by_family.entry(family).or_default().1 += 1;
+        }
+        let resolved_circles = definition
             .segments
             .iter()
             .flat_map(|table| &table.circle_rows)
@@ -12195,7 +12226,9 @@ fn transfer_sketches(
                         && materialized_saved_section_external_ids.contains(&segment.external_id))
             })
             .count();
-        coverage.resolved_geometry += definition
+        coverage.resolved_geometry += resolved_circles;
+        coverage.by_family.entry("circle").or_default().1 += resolved_circles;
+        let resolved_points = definition
             .segments
             .iter()
             .flat_map(|table| &table.point_rows)
@@ -12205,7 +12238,9 @@ fn transfer_sketches(
                         && materialized_saved_section_external_ids.contains(&segment.external_id))
             })
             .count();
-        coverage.resolved_geometry += definition
+        coverage.resolved_geometry += resolved_points;
+        coverage.by_family.entry("point").or_default().1 += resolved_points;
+        let resolved_centered_lines = definition
             .segments
             .iter()
             .flat_map(|table| &table.centered_line_rows)
@@ -12215,13 +12250,17 @@ fn transfer_sketches(
                         && materialized_saved_section_external_ids.contains(&segment.external_id))
             })
             .count();
-        coverage.resolved_geometry += definition
+        coverage.resolved_geometry += resolved_centered_lines;
+        coverage.by_family.entry("centered_line").or_default().1 += resolved_centered_lines;
+        let resolved_reference_lines = definition
             .segments
             .iter()
             .flat_map(|table| &table.reference_line_rows)
             .filter(|segment| reference_line_geometries.contains_key(&segment.offset))
             .count();
-        coverage.resolved_geometry += definition
+        coverage.resolved_geometry += resolved_reference_lines;
+        coverage.by_family.entry("reference_line").or_default().1 += resolved_reference_lines;
+        let resolved_opaque = definition
             .segments
             .iter()
             .flat_map(|table| &table.opaque_rows)
@@ -12230,6 +12269,8 @@ fn transfer_sketches(
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
             })
             .count();
+        coverage.resolved_geometry += resolved_opaque;
+        coverage.by_family.entry("opaque").or_default().1 += resolved_opaque;
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
         let generated_profile_geometries = segments
             .iter()
@@ -27810,6 +27851,17 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 .decoded_rows
                 .saturating_sub(sketch_segment_coverage.resolved_geometry),
         );
+        for (family, (decoded, resolved)) in &sketch_segment_coverage.by_family {
+            coverage.insert(format!("decoded_feature_{family}_segment_count"), *decoded);
+            coverage.insert(
+                format!("resolved_feature_{family}_segment_geometry_count"),
+                *resolved,
+            );
+            coverage.insert(
+                format!("unresolved_feature_{family}_segment_geometry_count"),
+                decoded.saturating_sub(*resolved),
+            );
+        }
         coverage.insert(
             "missing_feature_segment_row_count".to_string(),
             sketch_segment_coverage.missing_rows,

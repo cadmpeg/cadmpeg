@@ -4410,6 +4410,12 @@ fn decode_reports_missing_declared_section_segment_rows() {
     let coverage = &result.report.coverage;
 
     assert_eq!(coverage["decoded_feature_segment_row_count"], 1);
+    assert_eq!(coverage["decoded_feature_line_segment_count"], 1);
+    assert_eq!(coverage["resolved_feature_line_segment_geometry_count"], 0);
+    assert_eq!(
+        coverage["unresolved_feature_line_segment_geometry_count"],
+        1
+    );
     assert_eq!(coverage["missing_feature_segment_row_count"], 1);
     assert!(result.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
@@ -4443,6 +4449,12 @@ fn decode_counts_resolved_section_segment_geometry() {
     assert_eq!(coverage["decoded_feature_segment_row_count"], 1);
     assert_eq!(coverage["resolved_feature_segment_geometry_count"], 1);
     assert_eq!(coverage["unresolved_feature_segment_geometry_count"], 0);
+    assert_eq!(coverage["decoded_feature_line_segment_count"], 1);
+    assert_eq!(coverage["resolved_feature_line_segment_geometry_count"], 1);
+    assert_eq!(
+        coverage["unresolved_feature_line_segment_geometry_count"],
+        0
+    );
     assert_eq!(coverage["missing_feature_segment_row_count"], 0);
     assert_eq!(coverage["decoded_feature_solver_variable_count"], 4);
     assert_eq!(coverage["missing_feature_solver_variable_count"], 0);
