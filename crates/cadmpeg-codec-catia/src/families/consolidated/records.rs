@@ -239,6 +239,7 @@ pub fn consolidated_edge_definition_data(
             && values[0] == values[6]
             && values[1] == values[4]
             && values[1] == values[7]
+            && values[2] == values[5]
             && values[5] == 1.0)
     {
         return None;

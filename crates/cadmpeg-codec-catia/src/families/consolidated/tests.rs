@@ -99,6 +99,35 @@ fn consolidated_edge_definition_decodes_general_scalar_layout() {
 }
 
 #[test]
+fn class23_nine_scalar_definition_requires_three_equal_triples() {
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+
+    let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
+    for value in [0.0_f64, 2.0, 1.0, 0.0, 2.0, 1.0, 0.0, 2.0, 1.0] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(
+        crate::families::consolidated::records::consolidated_edge_definition_data(0x23, &payload),
+        Some(ConsolidatedEdgeDefinitionData::Scalar {
+            operands: [1, 2, 3463],
+            values: vec![0.0, 2.0, 1.0, 0.0, 2.0, 1.0, 0.0, 2.0, 1.0],
+        })
+    );
+
+    let mut unequal_tolerances = payload;
+    for offset in [6 + 2 * 8, 6 + 8 * 8] {
+        unequal_tolerances[offset..offset + 8].copy_from_slice(&2.0_f64.to_le_bytes());
+    }
+    assert!(
+        crate::families::consolidated::records::consolidated_edge_definition_data(
+            0x23,
+            &unequal_tolerances
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn consolidated_topology_edge_run_accepts_b_family_pcurves() {
     let runs = crate::families::consolidated::records::consolidated_topology_edge_runs(
         &b2_topology_edge_run_stream(),
