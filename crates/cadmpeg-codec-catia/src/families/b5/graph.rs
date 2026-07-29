@@ -3588,7 +3588,7 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(Vec<bool>, Vec<bool
     let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
     let controls_end = 3usize.checked_add(controls_len)?;
     if !matches!(bytes.first(), Some(0x03 | 0x05))
-        || bytes.get(1..3) != Some(&[0x05, 0x03])
+        || !matches!(bytes.get(1..3), Some([0x03 | 0x05, 0x03]))
         || controls_end > bytes.len()
     {
         return None;
@@ -3611,7 +3611,9 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(Vec<bool>, Vec<bool
         extended
             if extended.len() == 62
                 && extended[0] == 0x0d
-                && extended.get(33..38) == Some(&[0x05, 0x05, 0x05, 0x05, 0x01]) =>
+                && extended.get(33..35) == Some(&[0x05, 0x05])
+                && extended[35] & 1 == 1
+                && extended.get(36..38) == Some(&[0x05, 0x01]) =>
         {
             let scalar_bits: [u64; 4] = std::array::from_fn(|index| {
                 u64::from_le_bytes(
@@ -3679,13 +3681,13 @@ mod tests {
         }
     }
 
-    fn extended_loop_metadata() -> Vec<u8> {
+    fn extended_loop_metadata(metadata_control: u8) -> Vec<u8> {
         let mut bytes = vec![0x03, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00];
         bytes.push(0x0d);
         for value in [1.0_f64, -2.0, 3.5, 4.25] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
-        bytes.extend_from_slice(&[0x05, 0x05, 0x05, 0x05, 0x01]);
+        bytes.extend_from_slice(&[0x05, 0x05, metadata_control, 0x05, 0x01]);
         for value in [1.0_f32, -2.0, 3.5, 4.25, 5.5, -6.75] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
@@ -3703,10 +3705,21 @@ mod tests {
             Some((vec![false, true], vec![false, true]))
         );
 
-        let extended = extended_loop_metadata();
+        for metadata_control in [0x05, 0x09, 0x21, 0x41, 0x71] {
+            let extended = extended_loop_metadata(metadata_control);
+            assert_eq!(
+                loop_metadata(&extended, 1),
+                Some((vec![false], vec![false]))
+            );
+        }
+
+        let alternate_framing_control = [
+            0x05, 0x03, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0xff,
+            0xff, 0x01,
+        ];
         assert_eq!(
-            loop_metadata(&extended, 1),
-            Some((vec![false], vec![false]))
+            loop_metadata(&alternate_framing_control, 2),
+            Some((vec![false, true], vec![false, true]))
         );
     }
 
@@ -3750,11 +3763,15 @@ mod tests {
         )
         .is_none());
 
-        let mut non_finite_scalar = extended_loop_metadata();
+        for metadata_control in [0x00, 0x04, 0x20, 0x70] {
+            assert!(loop_metadata(&extended_loop_metadata(metadata_control), 1).is_none());
+        }
+
+        let mut non_finite_scalar = extended_loop_metadata(0x05);
         non_finite_scalar[10..18].copy_from_slice(&f64::NAN.to_le_bytes());
         assert!(loop_metadata(&non_finite_scalar, 1).is_none());
 
-        let mut non_finite_float = extended_loop_metadata();
+        let mut non_finite_float = extended_loop_metadata(0x05);
         non_finite_float[47..51].copy_from_slice(&f32::INFINITY.to_le_bytes());
         assert!(loop_metadata(&non_finite_float, 1).is_none());
     }

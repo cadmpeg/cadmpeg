@@ -53,6 +53,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The field or relation fixing each `b5 03 5f` face's normal sense against its surface frame is unresolved. Closed endpoint chains determine coedge traversal but not this face-level sign.
 - The object-stream body-kind and outward-shell sign fields are unresolved; one-body ownership and incidence determine a stable topology gauge but do not identify the source sign bytes.
 - The semantic distinction among object-stream edge terminal controls `01`, `02`, `21`, `22`, `25`, `26`, `29`, and `2a` is unresolved.
+- The semantic roles of the class-`62` secondary framing control and odd extended-metadata control are unresolved.
 - The semantic distinction between object-stream vertex-incidence terminal controls `00` and `04` is unresolved.
 - The semantic role of the positive scalar in the exact `b5 03 21` pcurve suffix is unresolved.
 - The operation name and semantic roles of the six control bytes in `b5 03 37` support-bound surface constructions are unresolved.
