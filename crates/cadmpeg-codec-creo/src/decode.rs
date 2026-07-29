@@ -15859,27 +15859,7 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         }
         return prototype_envelope_round_radius(scan, &generated_rows);
     }
-    let generated_row_count = scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| row.feature_id == feature_id)
-        .count();
-    let cylinder_radii = cylinder_rows
-        .iter()
-        .filter_map(|row| {
-            let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-            ir.model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == id)
-                .and_then(|surface| match surface.geometry {
-                    SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
-                    _ => None,
-                })
-        })
-        .collect::<Vec<_>>();
-    if cylinder_rows.len() == generated_row_count && cylinder_radii.len() == cylinder_rows.len() {
+    if let Some(cylinder_radii) = round_placed_cylinder_radii(scan, ir, feature_id) {
         return unique_positive_length(&cylinder_radii);
     }
     let named_ids = agreed_feature_affected_ids(
@@ -15919,6 +15899,38 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         })
         .collect::<Vec<_>>();
     (support_planes.len() == support_ids.len()).then(|| parallel_support_radius(support_planes))?
+}
+
+fn round_placed_cylinder_radii(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<Vec<f64>> {
+    let generated_rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!generated_rows.is_empty()
+        && generated_rows
+            .iter()
+            .all(|row| row.kind == crate::surface::SurfaceKind::Cylinder))
+    .then_some(())?;
+    generated_rows
+        .iter()
+        .map(|row| {
+            let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+            ir.model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == id)
+                .and_then(|surface| match surface.geometry {
+                    SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
+                    _ => None,
+                })
+        })
+        .collect()
 }
 
 fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>> {
@@ -16173,7 +16185,10 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 913 {
-        let observed_radii = round_observed_radii(scan, feature_id);
+        let mut observed_radii = round_observed_radii(scan, feature_id);
+        if let Some(placed_radii) = round_placed_cylinder_radii(scan, ir, feature_id) {
+            observed_radii.extend(placed_radii);
+        }
         let radius = round_constant_radius(scan, ir, feature_id).map_or_else(
             || RadiusSpec::Unresolved {
                 form: differing_positive_lengths(&observed_radii).then_some(RadiusForm::Variable),

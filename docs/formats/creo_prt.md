@@ -2109,7 +2109,9 @@ support faces. The constant fillet radius is half the perpendicular gap between
 parallel support planes. Multiple parallel support pairs define one constant
 radius only when all nonzero gaps have the same magnitude. When every generated
 cylinder carrier is placed, their common positive radius independently defines
-the constant fillet radius; differing radii define no constant-radius result.
+the constant fillet radius. Differing positive radii across that complete
+placed cylinder set identify the variable-radius form and define no
+constant-radius result.
 An all-cylinder generated set whose rows each carry a complete type-24 round
 envelope, or an all-type-26 set whose rows each carry a complete tagged radius
 trailer, identifies the variable-radius form when its positive rolling radii
