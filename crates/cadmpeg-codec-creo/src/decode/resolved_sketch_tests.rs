@@ -164,6 +164,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
             &[],
             &[],
             &[producer.clone(), consumer.clone()],
+            &[],
             416,
             &[40, 40],
         ),
@@ -175,10 +176,15 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         416
     )
     .is_empty());
-    assert!(
-        native_feature_dependency_ids(&[], &[], &[producer, conflicting, consumer], 416, &[],)
-            .is_empty()
-    );
+    assert!(native_feature_dependency_ids(
+        &[],
+        &[],
+        &[producer, conflicting, consumer],
+        &[],
+        416,
+        &[],
+    )
+    .is_empty());
 }
 
 #[test]
@@ -1679,7 +1685,7 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
 }
 
 #[test]
-fn thicken_surface_transitions_require_complete_unique_predecessor_chains() {
+fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     let entry = |entity_id, class_id, related_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
         class_id,
@@ -1717,17 +1723,21 @@ fn thicken_surface_transitions_require_complete_unique_predecessor_chains() {
     let rows = vec![row(11, 3), row(12, 4), row(201, 17), row(202, 17)];
 
     assert_eq!(
-        thicken_surface_transitions(17, std::slice::from_ref(&table), &rows),
+        feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
         Some(vec![(11, 201), (12, 202)])
     );
 
     let mut partial = table.clone();
     partial.entries.pop();
-    assert_eq!(thicken_surface_transitions(17, &[partial], &rows), None);
+    assert_eq!(feature_surface_transitions(17, &[partial], &rows), None);
 
-    let mut conflicting = table;
+    let mut conflicting = table.clone();
     conflicting.entries[3].related_entity_id = Some(101);
-    assert_eq!(thicken_surface_transitions(17, &[conflicting], &rows), None);
+    assert_eq!(feature_surface_transitions(17, &[conflicting], &rows), None);
+    assert_eq!(
+        surface_transition_dependencies(17, std::slice::from_ref(&table), &rows),
+        [3, 4]
+    );
 }
 
 #[test]

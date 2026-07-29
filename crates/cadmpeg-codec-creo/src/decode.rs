@@ -15020,6 +15020,7 @@ fn feature_dependencies(
         &scan.features.affected_ids,
         &scan.features.operations,
         &scan.features.entity_tables,
+        &scan.surfaces.rows,
         feature_id,
         prototype_dependencies
             .get(&feature_id)
@@ -15041,6 +15042,7 @@ fn native_feature_dependency_ids(
     affected_ids: &[crate::feature::FeatureAffectedIds],
     operations: &[crate::feature::FeatureOperation],
     entity_tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
     prototype_dependencies: &[u32],
 ) -> Vec<u32> {
@@ -15049,6 +15051,11 @@ fn native_feature_dependency_ids(
         .chain(current_feature_recipe_parent(operations, feature_id))
         .chain(prototype_dependencies.iter().copied())
         .chain(feature_entity_dependencies(entity_tables, feature_id))
+        .chain(surface_transition_dependencies(
+            feature_id,
+            entity_tables,
+            surface_rows,
+        ))
         .fold(Vec::new(), |mut dependencies, dependency| {
             if !dependencies.contains(&dependency) {
                 dependencies.push(dependency);
@@ -15235,6 +15242,7 @@ fn reconcile_feature_links(
             &scan.features.affected_ids,
             &scan.features.operations,
             &scan.features.entity_tables,
+            &scan.surfaces.rows,
             feature_id,
             prototype_dependencies
                 .get(&feature_id)
@@ -16030,7 +16038,7 @@ fn filled_surface_feature_definition(
     }
 }
 
-fn thicken_surface_transitions(
+fn feature_surface_transitions(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
@@ -16100,6 +16108,25 @@ fn thicken_surface_transitions(
     output_ids.is_disjoint(&source_ids).then_some(transitions)
 }
 
+fn surface_transition_dependencies(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+) -> Vec<u32> {
+    feature_surface_transitions(feature_id, tables, surface_rows)
+        .into_iter()
+        .flatten()
+        .filter_map(|(source_id, _)| {
+            crate::surface::unique_surface_row(surface_rows, source_id).map(|row| row.feature_id)
+        })
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
+}
+
 fn thicken_plane_offset_magnitude(
     transitions: &[(u32, u32)],
     planes: &BTreeMap<u32, PlaneEquation>,
@@ -16125,7 +16152,7 @@ fn thicken_feature_definition(
     ir: &CadIr,
     feature_id: u32,
 ) -> IrFeatureDefinition {
-    let transitions = thicken_surface_transitions(
+    let transitions = feature_surface_transitions(
         feature_id,
         &scan.features.entity_tables,
         &scan.surfaces.rows,
