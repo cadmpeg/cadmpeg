@@ -35,7 +35,10 @@ This document records unresolved NX `.prt` byte semantics.
 - The geometric roles and coordinate spaces of framed scalar pairs in `SKETCH`, `DATUM_PLANE`, and `DATUM_CSYS` construction payloads are unspecified. Equal scalar pairs do not establish a model-space frame, sketch entity, or constraint relation.
 - The semantic role of the trailing byte in each OM type declaration is unspecified.
 - The semantic roles of bytes in each bounded OM field-registry suffix are unspecified.
-- Feature-history object-index relations not covered by primary-body writers, Boolean tool consumption, and segment body-image bindings are unspecified.
+- The cross-store relation from a primary feature body field's resolved
+  offset-store block to a segment body-image object-index pair is unspecified.
+  Feature-history object-index relations not covered by primary-body writers
+  and Boolean tool consumption are also unspecified.
 - Feature-operation payloads contain recursively nested common frames. Each frame
   ends with a duplicated local ordinal, a canonical nullable object reference,
   and a NUL terminator. Frame ownership, the roles of the preceding state bytes,

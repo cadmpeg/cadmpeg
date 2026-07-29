@@ -214,6 +214,17 @@ pub struct FeatureBodySegmentUse {
     pub segment_body_binding: String,
 }
 
+/// Primary feature body field resolved in its operation's offset-store namespace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBodyDataBlockUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Primary field in the native `feature_body_references` arena.
+    pub feature_body_reference: String,
+    /// Target in the native `data_blocks` arena.
+    pub data_block: String,
+}
+
 /// Operation-header input resolved to one bounded offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureInputBlock {
@@ -2900,6 +2911,50 @@ pub fn feature_body_segment_uses(
                     .replacen("body-reference", "body-segment-use", 1),
                 feature_body_reference: reference.id.clone(),
                 segment_body_binding: binding.id.clone(),
+            })
+        })
+        .collect()
+}
+
+/// Resolve primary feature body fields in an unambiguous operation input store.
+pub fn feature_body_data_block_uses(
+    references: &[FeatureBodyReference],
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
+) -> Vec<FeatureBodyDataBlockUse> {
+    let blocks_by_id = blocks
+        .iter()
+        .map(|block| (block.id.as_str(), block))
+        .collect::<BTreeMap<_, _>>();
+    references
+        .iter()
+        .filter_map(|reference| {
+            let section_ordinals = inputs
+                .iter()
+                .filter(|input| input.operation_label == reference.operation_label)
+                .filter_map(|input| blocks_by_id.get(input.data_block.as_str()))
+                .map(|block| block.section_ordinal)
+                .collect::<BTreeSet<_>>();
+            let section_ordinals = section_ordinals.into_iter().collect::<Vec<_>>();
+            let [section_ordinal] = section_ordinals.as_slice() else {
+                return None;
+            };
+            let matches = blocks
+                .iter()
+                .filter(|block| {
+                    block.section_ordinal == *section_ordinal
+                        && block.block_ordinal == reference.body_object_index
+                })
+                .collect::<Vec<_>>();
+            let [block] = matches.as_slice() else {
+                return None;
+            };
+            Some(FeatureBodyDataBlockUse {
+                id: reference
+                    .id
+                    .replacen("body-reference", "body-data-block-use", 1),
+                feature_body_reference: reference.id.clone(),
+                data_block: block.id.clone(),
             })
         })
         .collect()
@@ -9169,6 +9224,48 @@ mod tests {
         assert_eq!(uses[0].feature_body_reference, reference.id);
         assert_eq!(uses[0].segment_body_binding, binding.id);
         assert!(feature_body_segment_uses(&[reference], &[binding.clone(), binding]).is_empty());
+    }
+
+    #[test]
+    fn feature_body_data_block_uses_inherit_the_operation_input_store() {
+        use super::{feature_body_data_block_uses, FeatureBodyReference, FeatureInputBlock};
+        use crate::native::om::{DataBlock, DataBlockRole};
+
+        let reference = FeatureBodyReference {
+            id: "nx:feature-history:body-reference#0".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 72,
+            raw_body_object_index: vec![72],
+            source_offset: 90,
+        };
+        let input = FeatureInputBlock {
+            id: "input#0".into(),
+            operation_label: "operation#0".into(),
+            input_slot: 0,
+            object_index: 3,
+            raw_object_index: vec![3],
+            data_block: "nx:om-data-blocks-2:block#3".into(),
+            source_offset: 80,
+        };
+        let block = |id: &str, section_ordinal, block_ordinal| DataBlock {
+            id: id.into(),
+            section_ordinal,
+            block_ordinal,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: "00".into(),
+            source_entry: "part".into(),
+            source_offset: 20,
+        };
+        let blocks = [
+            block("nx:om-data-blocks-2:block#3", 2, 3),
+            block("nx:om-data-blocks-1:block#72", 1, 72),
+            block("nx:om-data-blocks-2:block#72", 2, 72),
+        ];
+        let uses = feature_body_data_block_uses(&[reference], &[input], &blocks);
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].data_block, blocks[2].id);
     }
 
     #[test]

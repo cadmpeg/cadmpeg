@@ -109,6 +109,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_simple_hole_construction_groups: Vec<FeatureSimpleHoleConstructionGroup>,
     pub(crate) feature_body_references: Vec<FeatureBodyReference>,
     pub(crate) feature_body_segment_uses: Vec<FeatureBodySegmentUse>,
+    pub(crate) feature_body_data_block_uses: Vec<FeatureBodyDataBlockUse>,
     pub(crate) feature_body_reference_occurrences: Vec<FeatureBodyReferenceOccurrence>,
     pub(crate) feature_input_blocks: Vec<FeatureInputBlock>,
     pub(crate) feature_input_block_identity_groups: Vec<FeatureInputBlockIdentityGroup>,
@@ -321,10 +322,16 @@ impl NativeModel {
             &feature_simple_hole_repeated_scalar_lane_block_references,
         );
         let feature_body_references = feature_body_references(container);
+        let data_blocks = data_blocks(container);
         let feature_body_segment_uses =
             feature_body_segment_uses(&feature_body_references, &segment_body_bindings);
         let feature_body_reference_occurrences = feature_body_reference_occurrences(container);
         let feature_input_blocks = feature_input_blocks(container);
+        let feature_body_data_block_uses = feature_body_data_block_uses(
+            &feature_body_references,
+            &feature_input_blocks,
+            &data_blocks,
+        );
         let feature_input_block_identity_groups =
             feature_input_block_identity_groups(&feature_input_blocks);
         let display_jt_indices = display_jt_indices(container);
@@ -625,7 +632,6 @@ impl NativeModel {
                 Some((table, object_ids)) => (vec![table], object_ids),
                 None => (Vec::new(), Vec::new()),
             };
-        let data_blocks = data_blocks(container);
         let data_block_control_forms = data_block_control_forms(container);
         let data_block_control_values = data_block_control_values(container);
         let data_block_control_class_references = data_block_control_class_references(container);
@@ -784,6 +790,7 @@ impl NativeModel {
                 feature_simple_hole_construction_groups,
                 feature_body_references,
                 feature_body_segment_uses,
+                feature_body_data_block_uses,
                 feature_body_reference_occurrences,
                 feature_input_blocks,
                 feature_input_block_identity_groups,
