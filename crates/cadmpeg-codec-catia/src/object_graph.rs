@@ -507,8 +507,8 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         let head = decode_head(head_bytes);
         let roles = if matches!(head.get(1), Some(HeadToken::Separator)) {
             &head[2..]
-        } else if extended_compact_owner_head(&head) {
-            &head[1..2]
+        } else if let Some(role_count) = extended_compact_role_count(&head) {
+            &head[1..=role_count]
         } else {
             let native_role_count = match lead {
                 0x02 => 1,
@@ -568,8 +568,8 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
     })
 }
 
-fn extended_compact_owner_head(head: &[HeadToken]) -> bool {
-    matches!(
+fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
+    if matches!(
         head,
         [
             HeadToken::Lead(0x12),
@@ -579,7 +579,41 @@ fn extended_compact_owner_head(head: &[HeadToken]) -> bool {
             HeadToken::Literal(0),
             HeadToken::Literal(0),
         ] if *owner != 0 && matches!(head.len(), 6 | 7)
-    )
+    ) {
+        return Some(1);
+    }
+    let extended_class_storage_owner = matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::Reference(owner),
+            HeadToken::Literal(22 | 23),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *owner != 0
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::Reference(owner),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            _,
+            HeadToken::Literal(28),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *owner != 0
+    );
+    extended_class_storage_owner.then_some(3)
 }
 
 pub(crate) fn is_inline_body(body: &[u8]) -> bool {
