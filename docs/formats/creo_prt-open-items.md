@@ -63,7 +63,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The semantics of the multi-valued `relat_ptr` `used` field are unspecified.
   It is solver state, not a Boolean constraint-activation flag.
 - The neutral semantics of a unary type-one or type-two `skamp_ptr` incidence
-  whose sense-zero operand is a `segtab` point are unspecified.
+  whose sense-zero operand is a `segtab` point and lacks the matching
+  `verhor`/type-fourteen axis-line structure are unspecified.
 - The neutral semantics of a unary type-33 `skamp_ptr` incidence with flags 34
   and a sense-10 bounded-curve operand are unspecified.
 - Geometry families beyond the incidence-proven point, endpoint-bearing curve,

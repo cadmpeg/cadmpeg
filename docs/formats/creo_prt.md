@@ -1498,6 +1498,11 @@ point locus also establishes the line role when that entity's geometry remains
 native. Other senses select a locus and do not define an entity-level
 orientation constraint. Disabling the unary equation does not change the
 referenced entity family.
+A `segtab` row with coincident endpoint identifiers is an axis line when its
+`verhor` selector agrees with its unary type-one or type-two incidence
+and the row is the sense-zero axis operand of a type-fourteen symmetry
+incidence. The coincident section point anchors the infinite axis; it is not a
+point entity or a bounded line endpoint pair.
 Stored horizontal/vertical selectors and unique type-one/type-two incidences
 define the line's held `v`/`u` coordinate, respectively. For type three or type
 nine, a selected point on such a line inherits that held coordinate from either

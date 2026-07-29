@@ -10359,11 +10359,43 @@ fn section_skamp_is_line(
         .flat_map(|table| &table.rows)
         .any(|segment| segment.external_id == item.entity_id);
     if has_segment {
-        return unique_decoded_section_segment(definition, item.entity_id)
-            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line);
+        return unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+            segment.kind == crate::feature::FeatureSegmentKind::Line
+                || section_degenerate_axis_line(definition, segment)
+        });
     }
     section_saved_entity(definition, item.entity_id)
         .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Line(_)))
+}
+
+fn section_degenerate_axis_line(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> bool {
+    if segment.kind != crate::feature::FeatureSegmentKind::Point
+        || segment.point_ids[0] != segment.point_ids[1]
+    {
+        return false;
+    }
+    let expected_kind = match segment.vertical_horizontal {
+        Some(0) => 2,
+        Some(1) => 1,
+        _ => return false,
+    };
+    let unary_orientation = complete_section_skamps(definition).any(|skamp| {
+        matches!(
+            (skamp.kind, skamp.items.as_slice()),
+            (kind, [item])
+                if kind == expected_kind && item.entity_id == segment.external_id && item.sense == 0
+        )
+    });
+    let symmetry_axis = complete_section_skamps(definition).any(|skamp| {
+        matches!(
+            (skamp.kind, skamp.items.as_slice()),
+            (14, [axis, _, _]) if axis.entity_id == segment.external_id && axis.sense == 0
+        )
+    });
+    unary_orientation && symmetry_axis
 }
 
 fn section_skamp_is_point(
@@ -10373,8 +10405,10 @@ fn section_skamp_is_point(
     solver_only_section_entity_family(definition, item.entity_id)
         == Some(SectionEntityIncidenceFamily::Point)
         || unique_point_segment(definition, item.entity_id).is_some()
-        || unique_decoded_section_segment(definition, item.entity_id)
-            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
+        || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+            segment.kind == crate::feature::FeatureSegmentKind::Point
+                && !section_degenerate_axis_line(definition, segment)
+        })
 }
 
 fn section_skamp_is_arc(
@@ -11637,8 +11671,10 @@ fn section_skamp_has_proven_point_locus(
 ) -> bool {
     if item.sense == 0 {
         return unique_point_segment(definition, item.entity_id).is_some()
-            || unique_decoded_section_segment(definition, item.entity_id)
-                .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point);
+            || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+                segment.kind == crate::feature::FeatureSegmentKind::Point
+                    && !section_degenerate_axis_line(definition, segment)
+            });
     }
     let solver_family = section_incidence_curve_family_evidence(definition, item.entity_id);
     if solver_family.len() == 1
@@ -11694,6 +11730,14 @@ fn section_incidence_curve_family_evidence(
     entity_id: u32,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
     let mut evidence = BTreeSet::new();
+    if complete_section_skamps(definition).any(|skamp| {
+        matches!(
+            (skamp.kind, skamp.items.as_slice()),
+            (1 | 2, [item]) if item.sense == 0 && item.entity_id == entity_id
+        )
+    }) {
+        evidence.insert(SectionEntityIncidenceFamily::Line);
+    }
     for skamp in definition
         .relations
         .iter()
@@ -11769,19 +11813,21 @@ fn solver_only_section_entity_family(
     }) {
         evidence.insert(SectionEntityIncidenceFamily::Circular);
     }
-    if complete_section_skamps(definition).any(|skamp| {
-        let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
-            return false;
-        };
-        [(first, second), (second, first)]
-            .into_iter()
-            .any(|(point, target)| {
-                point.entity_id == entity_id
-                    && point.sense == 0
-                    && target.sense == 4
-                    && unique_centered_line_segment(definition, target.entity_id).is_some()
-            })
-    }) {
+    if !evidence.contains(&SectionEntityIncidenceFamily::Line)
+        && complete_section_skamps(definition).any(|skamp| {
+            let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
+                return false;
+            };
+            [(first, second), (second, first)]
+                .into_iter()
+                .any(|(point, target)| {
+                    point.entity_id == entity_id
+                        && point.sense == 0
+                        && target.sense == 4
+                        && unique_centered_line_segment(definition, target.entity_id).is_some()
+                })
+        })
+    {
         evidence.insert(SectionEntityIncidenceFamily::Point);
     }
     for skamp in definition
@@ -11894,6 +11940,11 @@ fn transfer_sketches(
             })
             .collect::<BTreeMap<_, _>>();
         let segment_geometry = |segment: &crate::feature::FeatureSegment| {
+            if section_degenerate_axis_line(definition, segment) {
+                return Some(SketchGeometry::Native {
+                    native_kind: "line".to_string(),
+                });
+            }
             segment_geometries.get(&segment.offset).cloned().flatten()
         };
         let circle_geometries = definition
@@ -11950,7 +12001,10 @@ fn transfer_sketches(
         );
         let resolved_segment_offsets = segments
             .iter()
-            .filter(|segment| segment_geometry(segment).is_some())
+            .filter(|segment| {
+                !section_degenerate_axis_line(definition, segment)
+                    && segment_geometry(segment).is_some()
+            })
             .map(|segment| segment.offset)
             .collect::<BTreeSet<_>>();
         let materialized_saved_section_external_ids =
@@ -12061,12 +12115,19 @@ fn transfer_sketches(
                     &id.0,
                     "FeatDefs",
                     segment.offset as u64,
-                    match segment.kind {
-                        crate::feature::FeatureSegmentKind::Line => "solved_section_line",
-                        crate::feature::FeatureSegmentKind::Arc => "solved_section_arc",
-                        crate::feature::FeatureSegmentKind::Point => "solved_section_point",
+                    match (&geometry, segment.kind) {
+                        (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+                            "section_degenerate_axis_line"
+                        }
+                        (_, crate::feature::FeatureSegmentKind::Line) => "solved_section_line",
+                        (_, crate::feature::FeatureSegmentKind::Arc) => "solved_section_arc",
+                        (_, crate::feature::FeatureSegmentKind::Point) => "solved_section_point",
                     },
-                    Exactness::Derived,
+                    if matches!(&geometry, SketchGeometry::Native { .. }) {
+                        Exactness::ByteExact
+                    } else {
+                        Exactness::Derived
+                    },
                 );
                 let construction = !unique_segment_ids.contains(&segment.external_id)
                     || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
@@ -12076,12 +12137,17 @@ fn transfer_sketches(
                     construction,
                     native_ref: Some(sketch_native_ref(&sketch_id)),
                     geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
-                    endpoint_refs: match segment.kind {
-                        crate::feature::FeatureSegmentKind::Arc => {
+                    endpoint_refs: match (&geometry, segment.kind) {
+                        (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+                            vec![segment.point_ids[0]]
+                        }
+                        (_, crate::feature::FeatureSegmentKind::Arc) => {
                             vec![segment.point_ids[1], segment.point_ids[0]]
                         }
-                        crate::feature::FeatureSegmentKind::Line => segment.point_ids.to_vec(),
-                        crate::feature::FeatureSegmentKind::Point => vec![segment.point_ids[0]],
+                        (_, crate::feature::FeatureSegmentKind::Line) => segment.point_ids.to_vec(),
+                        (_, crate::feature::FeatureSegmentKind::Point) => {
+                            vec![segment.point_ids[0]]
+                        }
                     }
                     .into_iter()
                     .map(|point| sketch_point_ref(&sketch_id, point))
@@ -12092,7 +12158,7 @@ fn transfer_sketches(
             .collect::<Vec<_>>();
         for segment in segments
             .iter()
-            .filter(|segment| !resolved_segment_offsets.contains(&segment.offset))
+            .filter(|segment| segment_geometry(segment).is_none())
         {
             let id = sketch_entity_id(
                 &sketch_id,

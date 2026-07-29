@@ -4333,7 +4333,7 @@ fn saved_line_joins_through_order_table() {
     }];
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
-        None
+        Some(SectionEntityIncidenceFamily::Line)
     );
     let solver_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
@@ -7815,6 +7815,58 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:100".to_string()),
         }
     );
+    opaque_line
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps
+        .insert(
+            0,
+            crate::feature::FeatureSkamp {
+                id: 2,
+                kind: 2,
+                flags: 0,
+                status: 1,
+                items: vec![crate::feature::FeatureSkampItem {
+                    entity_id: 101,
+                    sense: 0,
+                }],
+                offset: 82,
+            },
+        );
+    opaque_line
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 2;
+    assert_eq!(
+        solver_only_section_entity_family(&opaque_line, 101),
+        Some(SectionEntityIncidenceFamily::Line)
+    );
+    opaque_line.relations.as_mut().expect("relations").skamps[0].status = 0;
+    assert_eq!(
+        solver_only_section_entity_family(&opaque_line, 101),
+        Some(SectionEntityIncidenceFamily::Line)
+    );
+    opaque_line.relations.as_mut().expect("relations").skamps[0].status = 1;
+    assert!(matches!(
+        section_skamp_constraints_for_geometry(
+            &opaque_line,
+            &SketchId("creo:model:sketch#917".into()),
+            Some(&BTreeMap::from([(
+                SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
+                SketchGeometry::Native {
+                    native_kind: "line".to_string(),
+                },
+            )])),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Vertical { .. }
+    ));
     let mut opaque_family_collision = opaque_point.clone();
     opaque_family_collision
         .segments
