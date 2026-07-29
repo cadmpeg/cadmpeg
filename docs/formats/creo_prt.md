@@ -1959,6 +1959,9 @@ surface-of-revolution reductions require `ratio = 1`.
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
 `Surface`. Reference-backed `Thicken <decimal-ordinal>` and
 `Fill <decimal-ordinal>` names identify thicken and filled-surface operations.
+The fill operation creates a planar quilt from one closed sketch boundary. It
+has no adjacent support faces, imposes positional continuity at the boundary,
+and does not merge the result into an existing quilt.
 `Merge <decimal-ordinal>` identifies a surface-merge operation.
 Root feature-definition class `946` identifies the same surface-merge family
 when the current-state record omits its display name. The class value does not

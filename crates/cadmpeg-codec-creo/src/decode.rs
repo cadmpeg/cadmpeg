@@ -22,7 +22,7 @@ use cadmpeg_ir::features::{
     FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm,
     HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef,
     RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent, SurfaceBoundary,
-    Termination, ThickenSide, VertexSelection,
+    SurfaceContinuity, Termination, ThickenSide, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -16340,9 +16340,9 @@ fn filled_surface_feature_definition(
     );
     IrFeatureDefinition::FilledSurface {
         boundary,
-        support_faces: FaceSelection::Unresolved,
-        continuity: None,
-        merge_result: None,
+        support_faces: FaceSelection::Faces(Vec::new()),
+        continuity: Some(SurfaceContinuity::Contact),
+        merge_result: Some(false),
     }
 }
 
