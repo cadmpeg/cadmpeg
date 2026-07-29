@@ -290,6 +290,171 @@ fn ordered_fixed_candidates<T>(
         .collect()
 }
 
+fn saved_offset_carriers(
+    ir: &CadIr,
+    graph: &Graph,
+    offsets: &[crate::topology::OffsetSurface],
+    surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
+    tolerance: f64,
+) -> BTreeMap<u32, (SurfaceId, f64)> {
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return BTreeMap::new();
+    }
+    let face_surfaces = graph
+        .of_kind(14)
+        .filter_map(Node::face_fields)
+        .map(|face| face.surface)
+        .collect::<BTreeSet<_>>();
+    let candidates = face_surfaces
+        .iter()
+        .filter_map(|xmt| surfaces_by_xmt.get(xmt))
+        .filter_map(|id| {
+            let geometry = &ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| &surface.id == id)?
+                .geometry;
+            matches!(geometry, SurfaceGeometry::Nurbs(_)).then_some((id, geometry))
+        })
+        .collect::<Vec<_>>();
+
+    let mut matches = BTreeMap::<u32, Vec<(SurfaceId, f64)>>::new();
+    let mut candidate_owners = BTreeMap::<SurfaceId, Vec<u32>>::new();
+    for offset in offsets
+        .iter()
+        .filter(|offset| !face_surfaces.contains(&offset.xmt))
+    {
+        let Some(support_id) = surfaces_by_xmt.get(&offset.support) else {
+            continue;
+        };
+        let Some(support) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| &surface.id == support_id)
+            .map(|surface| &surface.geometry)
+        else {
+            continue;
+        };
+        for (candidate_id, candidate) in &candidates {
+            if *candidate_id == support_id {
+                continue;
+            }
+            if let Some(fit) =
+                certified_planar_offset_cache_fit(support, candidate, offset.distance, tolerance)
+            {
+                matches
+                    .entry(offset.xmt)
+                    .or_default()
+                    .push(((*candidate_id).clone(), fit));
+                candidate_owners
+                    .entry((*candidate_id).clone())
+                    .or_default()
+                    .push(offset.xmt);
+            }
+        }
+    }
+
+    matches
+        .into_iter()
+        .filter_map(|(offset, candidates)| {
+            let [(candidate, fit)] = candidates.as_slice() else {
+                return None;
+            };
+            (candidate_owners.get(candidate).map(Vec::as_slice) == Some(&[offset][..]))
+                .then(|| (offset, (candidate.clone(), *fit)))
+        })
+        .collect()
+}
+
+fn certified_planar_offset_cache_fit(
+    support: &SurfaceGeometry,
+    candidate: &SurfaceGeometry,
+    distance: f64,
+    tolerance: f64,
+) -> Option<f64> {
+    let (SurfaceGeometry::Nurbs(support), SurfaceGeometry::Nurbs(candidate)) = (support, candidate)
+    else {
+        return None;
+    };
+    let same_basis = support.u_degree == 1
+        && support.v_degree == 1
+        && candidate.u_degree == support.u_degree
+        && candidate.v_degree == support.v_degree
+        && support.u_count == 2
+        && support.v_count == 2
+        && support.u_knots == candidate.u_knots
+        && support.v_knots == candidate.v_knots
+        && support.u_count == candidate.u_count
+        && support.v_count == candidate.v_count
+        && support.weights == candidate.weights
+        && support.u_periodic == candidate.u_periodic
+        && support.v_periodic == candidate.v_periodic
+        && !support.u_periodic
+        && !support.v_periodic
+        && uniform_positive_weights(support.weights.as_deref());
+    if !same_basis
+        || support.control_points.len() != 4
+        || candidate.control_points.len() != 4
+        || !distance.is_finite()
+        || !tolerance.is_finite()
+        || tolerance < 0.0
+    {
+        return None;
+    }
+    let [p00, p01, p10, p11] = support.control_points.as_slice() else {
+        return None;
+    };
+    let du = Vector3::new(p10.x - p00.x, p10.y - p00.y, p10.z - p00.z);
+    let dv = Vector3::new(p01.x - p00.x, p01.y - p00.y, p01.z - p00.z);
+    let opposite = Vector3::new(p11.x - p01.x, p11.y - p01.y, p11.z - p01.z);
+    let other_opposite = Vector3::new(p11.x - p10.x, p11.y - p10.y, p11.z - p10.z);
+    if opposite != du || other_opposite != dv {
+        return None;
+    }
+    let normal = cross_vector(du, dv);
+    let norm = normal.norm();
+    if !norm.is_finite() || norm == 0.0 {
+        return None;
+    }
+    let translation = Vector3::new(
+        distance * normal.x / norm,
+        distance * normal.y / norm,
+        distance * normal.z / norm,
+    );
+    let maximum_error = support
+        .control_points
+        .iter()
+        .zip(&candidate.control_points)
+        .map(|(support, candidate)| {
+            let expected = Point3::new(
+                support.x + translation.x,
+                support.y + translation.y,
+                support.z + translation.z,
+            );
+            point_distance(expected, *candidate)
+        })
+        .try_fold(0.0_f64, |maximum, error| {
+            error.is_finite().then(|| maximum.max(error))
+        })?;
+    (maximum_error <= tolerance).then_some(maximum_error)
+}
+
+fn uniform_positive_weights(weights: Option<&[f64]>) -> bool {
+    let Some(weights) = weights else {
+        return true;
+    };
+    let Some(first) = weights.first() else {
+        return false;
+    };
+    first.is_finite()
+        && *first > 0.0
+        && weights
+            .iter()
+            .all(|weight| weight.to_bits() == first.to_bits())
+}
+
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
 fn try_decode_geometry(
@@ -417,31 +582,44 @@ fn try_decode_geometry(
             }
         }
 
+        let saved_offset_carriers = saved_offset_carriers(
+            &ir,
+            graph,
+            &view.offset_surfaces,
+            &surfaces_by_xmt,
+            ir.tolerances.linear,
+        );
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
             let Some(support) = surfaces_by_xmt.get(&offset.support).cloned() else {
                 continue;
             };
-            let surface_id = SurfaceId(format!("nx:s{si}:offset-surf#{oi}"));
             let procedural_id = ProceduralSurfaceId(format!("nx:s{si}:offset#{oi}"));
-            annotations
-                .note(&surface_id, source_stream, offset.pos as u64)
-                .tag("OFFSET_SURF");
-            annotations.derived(&surface_id, "geometry");
-            ir.model.surfaces.push(Surface {
-                id: surface_id.clone(),
-                geometry: SurfaceGeometry::Procedural {
-                    construction: procedural_id.clone(),
-                },
-                source_object: Some(SourceObjectAssociation {
-                    format: "nx".into(),
-                    object_id: format!("nx:s{si}:offset-surface-record#{}", offset.xmt),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            let (surface_id, cache_fit_tolerance) =
+                if let Some((surface, fit_tolerance)) = saved_offset_carriers.get(&offset.xmt) {
+                    (surface.clone(), Some(*fit_tolerance))
+                } else {
+                    let surface_id = SurfaceId(format!("nx:s{si}:offset-surf#{oi}"));
+                    annotations
+                        .note(&surface_id, source_stream, offset.pos as u64)
+                        .tag("OFFSET_SURF");
+                    annotations.derived(&surface_id, "geometry");
+                    ir.model.surfaces.push(Surface {
+                        id: surface_id.clone(),
+                        geometry: SurfaceGeometry::Procedural {
+                            construction: procedural_id.clone(),
+                        },
+                        source_object: Some(SourceObjectAssociation {
+                            format: "nx".into(),
+                            object_id: format!("nx:s{si}:offset-surface-record#{}", offset.xmt),
+                            name: None,
+                            color: None,
+                            visible: None,
+                            layer: None,
+                            instance_path: Vec::new(),
+                        }),
+                    });
+                    (surface_id, None)
+                };
             annotations
                 .note(&procedural_id, source_stream, offset.pos as u64)
                 .tag("OFFSET_SURF");
@@ -457,7 +635,7 @@ fn try_decode_geometry(
                     extension_flags: Vec::new(),
                     revision_form: None,
                 },
-                cache_fit_tolerance: None,
+                cache_fit_tolerance,
                 record_bounds: None,
             });
             surfaces_by_xmt.insert(offset.xmt, surface_id);
@@ -2270,16 +2448,6 @@ pub(crate) fn parameterization_equivalent_surfaces(
         if first_geometry == second_geometry {
             return true;
         }
-        let construction = |geometry: &SurfaceGeometry| {
-            let SurfaceGeometry::Procedural { construction } = geometry else {
-                return None;
-            };
-            ir.model
-                .procedural_surfaces
-                .iter()
-                .find(|procedural| &procedural.id == construction)
-                .map(|procedural| &procedural.definition)
-        };
         let (
             Some(ProceduralSurfaceDefinition::Offset {
                 support: first_support,
@@ -2297,7 +2465,10 @@ pub(crate) fn parameterization_equivalent_surfaces(
                 extension_flags: second_extensions,
                 ..
             }),
-        ) = (construction(first_geometry), construction(second_geometry))
+        ) = (
+            procedural_surface_for_carrier(ir, first).map(|surface| &surface.definition),
+            procedural_surface_for_carrier(ir, second).map(|surface| &surface.definition),
+        )
         else {
             return false;
         };
@@ -2309,6 +2480,29 @@ pub(crate) fn parameterization_equivalent_surfaces(
     }
 
     equivalent(ir, first, second, &mut BTreeSet::new())
+}
+
+fn procedural_surface_for_carrier<'a>(
+    ir: &'a CadIr,
+    surface: &SurfaceId,
+) -> Option<&'a ProceduralSurface> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    if let SurfaceGeometry::Procedural { construction } = &carrier.geometry {
+        return ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|candidate| candidate.id == *construction && candidate.surface == *surface);
+    }
+    let mut producers = ir.model.procedural_surfaces.iter().filter(|candidate| {
+        candidate.surface == *surface && candidate.cache_fit_tolerance.is_some()
+    });
+    let producer = producers.next()?;
+    producers.next().is_none().then_some(producer)
 }
 
 pub(crate) fn attach_completed_intersection_pcurves(
@@ -3323,19 +3517,14 @@ fn surface_offset_lineage(
     depth: usize,
 ) -> Option<(SurfaceId, f64)> {
     (depth < 32).then_some(())?;
-    let carrier = ir
-        .model
+    ir.model
         .surfaces
         .iter()
-        .find(|candidate| &candidate.id == surface)?;
-    let SurfaceGeometry::Procedural { construction } = &carrier.geometry else {
+        .any(|candidate| &candidate.id == surface)
+        .then_some(())?;
+    let Some(procedural) = procedural_surface_for_carrier(ir, surface) else {
         return Some((surface.clone(), 0.0));
     };
-    let procedural = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|candidate| candidate.id == *construction && candidate.surface == *surface)?;
     let ProceduralSurfaceDefinition::Offset {
         support, distance, ..
     } = &procedural.definition
@@ -3350,19 +3539,7 @@ fn blend_surface_definition(
     ir: &CadIr,
     surface: &SurfaceId,
 ) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
-    let SurfaceGeometry::Procedural { construction } = &carrier.geometry else {
-        return None;
-    };
-    let procedural = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|candidate| &candidate.id == construction && &candidate.surface == surface)?;
+    let procedural = procedural_surface_for_carrier(ir, surface)?;
     let ProceduralSurfaceDefinition::Blend {
         supports: [Some(first), Some(second)],
         spine: Some(spine),
@@ -8287,12 +8464,115 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve,
-        NurbsSurface, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface,
-        SurfaceGeometry,
+        NurbsSurface, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+        ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::{CurveId, PointId, ProceduralCurveId, SurfaceId, VertexId};
+    use cadmpeg_ir::ids::{
+        CurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, VertexId,
+    };
     use cadmpeg_ir::math::{Point2, Point3};
     use cadmpeg_ir::topology::{Point, Vertex};
+
+    fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
+        SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, z),
+                Point3::new(0.0, 2.0, z),
+                Point3::new(3.0, 0.0, z),
+                Point3::new(3.0, 2.0, z),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        })
+    }
+
+    #[test]
+    fn planar_offset_cache_fit_is_certified_over_the_control_net() {
+        let support = affine_nurbs_surface(0.0);
+        let mut candidate = affine_nurbs_surface(4.0);
+        let SurfaceGeometry::Nurbs(candidate) = &mut candidate else {
+            unreachable!();
+        };
+        candidate.control_points[3].z += 0.000_5;
+
+        let fit = super::certified_planar_offset_cache_fit(
+            &support,
+            &SurfaceGeometry::Nurbs(candidate.clone()),
+            4.0,
+            0.001,
+        )
+        .expect("whole-patch fit");
+        assert!((fit - 0.000_5).abs() < 1.0e-12);
+        assert!(super::certified_planar_offset_cache_fit(
+            &support,
+            &SurfaceGeometry::Nurbs(candidate.clone()),
+            4.0,
+            0.000_4
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn offset_cache_fit_rejects_a_non_affine_support() {
+        let mut support = affine_nurbs_surface(0.0);
+        let SurfaceGeometry::Nurbs(support) = &mut support else {
+            unreachable!();
+        };
+        support.control_points[3].z = 0.25;
+
+        assert!(super::certified_planar_offset_cache_fit(
+            &SurfaceGeometry::Nurbs(support.clone()),
+            &affine_nurbs_surface(4.0),
+            4.0,
+            1.0
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn saved_offset_cache_retains_its_procedural_lineage() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let support = SurfaceId("nx:test:support".into());
+        let cache = SurfaceId("nx:test:cache".into());
+        ir.model.surfaces.extend([
+            Surface {
+                id: support.clone(),
+                geometry: affine_nurbs_surface(0.0),
+                source_object: None,
+            },
+            Surface {
+                id: cache.clone(),
+                geometry: affine_nurbs_surface(4.0),
+                source_object: None,
+            },
+        ]);
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("nx:test:offset".into()),
+            surface: cache.clone(),
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: support.clone(),
+                distance: 4.0,
+                u_sense: Some(0),
+                v_sense: Some(0),
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            cache_fit_tolerance: Some(0.0),
+            record_bounds: None,
+        });
+
+        assert_eq!(
+            super::surface_offset_lineage(&ir, &cache, 0),
+            Some((support, 4.0))
+        );
+    }
 
     #[test]
     fn edge_range_incidence_does_not_inherit_procedural_cache_fit_tolerance() {

@@ -877,6 +877,8 @@ Pu = (Au·W − A·Wu)/W²,  Pv = (Av·W − A·Wv)/W²,  normal = normalize(Pu 
 
 An OFFSET_SURF used by a FACE transfers as a procedural surface carrier. The carrier and offset construction reference each other and the carrier references a complete typed source record. The source record retains the discriminator, true-offset flag, base-surface reference, signed millimeter offset, and inflated-stream offset. Model evaluation follows the base reference recursively, computes the normalized parameter-tangent cross product, and applies the signed offset; cyclic base graphs do not evaluate.
 
+A graph-only OFFSET_SURF produces a FACE-owned B_SURFACE cache when exactly one construction and exactly one cache satisfy the full-domain fit contract. For degree-1, two-by-two, nonperiodic B_SURFACE supports with uniform positive weights, identical U/V knots and weights, and an affine nondegenerate control net, the offset has a constant oriented normal. A candidate cache with the same spline basis is a full-domain fit when every cache pole differs from the corresponding support pole plus the signed normal translation by at most the document linear tolerance. The maximum pole residual is the cache-fit tolerance because the surface residual is a convex combination of the pole residuals. Ambiguous construction-to-cache relations do not transfer.
+
 ### 6.2 B-spline carriers (B_SURFACE 124 / B_CURVE 134)
 
 B_SURFACE / B_CURVE are compact: header through sense `+18`, then `nurbs` ref `+19` and `data` ref `+21` (both large-index capable). The full NURBS resolves through support records:
