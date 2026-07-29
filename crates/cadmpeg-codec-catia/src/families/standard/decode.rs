@@ -3625,18 +3625,20 @@ pub(crate) fn standard_pcurve_geometry(
     } = surface
     {
         let tangent = half_angle.tan();
-        if tangent.abs() > f64::EPSILON {
+        if tangent.is_finite() && tangent != 0.0 {
             let apex_offset = -*radius / tangent;
-            let apex = Point3::new(
-                origin.x + apex_offset * axis.x,
-                origin.y + apex_offset * axis.y,
-                origin.z + apex_offset * axis.z,
-            );
-            if start.distance_squared(apex) <= 1e-6 {
-                uv[0].u = uv[1].u;
-            }
-            if end.distance_squared(apex) <= 1e-6 {
-                uv[1].u = uv[0].u;
+            if apex_offset.is_finite() {
+                let apex = Point3::new(
+                    origin.x + apex_offset * axis.x,
+                    origin.y + apex_offset * axis.y,
+                    origin.z + apex_offset * axis.z,
+                );
+                if start.distance_squared(apex) <= 1e-6 {
+                    uv[0].u = uv[1].u;
+                }
+                if end.distance_squared(apex) <= 1e-6 {
+                    uv[1].u = uv[0].u;
+                }
             }
         }
     }
@@ -4619,19 +4621,11 @@ pub(crate) fn attach_standard_lines(
         let Some((origin_b, normal_b)) = plane_for_face(ir, bindings, line.faces[1]) else {
             continue;
         };
-        let direction = normal_a.cross(normal_b);
-        let denom = direction.dot(direction);
-        if denom <= f64::EPSILON {
+        let Some((origin, direction)) =
+            plane_intersection_line(origin_a, normal_a, origin_b, normal_b)
+        else {
             continue;
-        }
-        let d_a = normal_a.dot(Vector3::new(origin_a.x, origin_a.y, origin_a.z));
-        let d_b = normal_b.dot(Vector3::new(origin_b.x, origin_b.y, origin_b.z));
-        let numerator = Vector3::new(
-            d_a * normal_b.x - d_b * normal_a.x,
-            d_a * normal_b.y - d_b * normal_a.y,
-            d_a * normal_b.z - d_b * normal_a.z,
-        );
-        let point = numerator.cross(direction);
+        };
         let index = ir.model.curves.len();
         let id = CurveId(format!("catia:standard:line#{index}"));
         annotate(
@@ -4647,21 +4641,41 @@ pub(crate) fn attach_standard_lines(
             .derived(&id, "geometry.direction");
         ir.model.curves.push(Curve {
             id,
-            geometry: CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(
-                    point.x / denom,
-                    point.y / denom,
-                    point.z / denom,
-                ),
-                direction: Vector3::new(
-                    direction.x / denom.sqrt(),
-                    direction.y / denom.sqrt(),
-                    direction.z / denom.sqrt(),
-                ),
-            },
+            geometry: CurveGeometry::Line { origin, direction },
             source_object: Some(cgm_source("edge-support", line.tag)),
         });
     }
+}
+
+fn plane_intersection_line(
+    origin_a: Point3,
+    normal_a: Vector3,
+    origin_b: Point3,
+    normal_b: Vector3,
+) -> Option<(Point3, Vector3)> {
+    let direction = normal_a.cross(normal_b);
+    let direction_length = direction.x.hypot(direction.y).hypot(direction.z);
+    if !direction_length.is_finite() || direction_length == 0.0 {
+        return None;
+    }
+    let direction = direction.scale(1.0 / direction_length);
+    let d_a = normal_a.dot(Vector3::new(origin_a.x, origin_a.y, origin_a.z));
+    let d_b = normal_b.dot(Vector3::new(origin_b.x, origin_b.y, origin_b.z));
+    let numerator = Vector3::new(
+        d_a * normal_b.x - d_b * normal_a.x,
+        d_a * normal_b.y - d_b * normal_a.y,
+        d_a * normal_b.z - d_b * normal_a.z,
+    );
+    let scaled_origin = numerator.cross(direction);
+    let origin = Point3::new(
+        scaled_origin.x / direction_length,
+        scaled_origin.y / direction_length,
+        scaled_origin.z / direction_length,
+    );
+    [origin.x, origin.y, origin.z]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some((origin, direction))
 }
 
 pub(crate) fn plane_for_face(
@@ -4693,7 +4707,7 @@ mod route_tests {
         circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
         combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
         include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
-        point_on_known_surface, point_on_standard_face, point_on_surface,
+        plane_intersection_line, point_on_known_surface, point_on_standard_face, point_on_surface,
         resolve_standard_endpoint_pairs, retry_rejected_mesh_solution,
         standard_circle_endpoint_candidates, standard_circle_param_range,
         standard_native_support_endpoint_pair, standard_pcurve_geometry,
@@ -6058,6 +6072,20 @@ mod route_tests {
     }
 
     #[test]
+    fn plane_intersection_preserves_tiny_nonzero_angle_and_finite_origin() {
+        let tiny = 1e-200;
+        assert_eq!(
+            plane_intersection_line(
+                Point3::new(1.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Vector3::new(1.0, tiny, 0.0),
+            ),
+            Some((Point3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),))
+        );
+    }
+
+    #[test]
     fn cylinder_generator_direction_requires_compatible_support_axes() {
         let cylinder = |axis| SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
@@ -6211,40 +6239,41 @@ mod route_tests {
 
     #[test]
     fn standard_cone_apex_uses_the_other_endpoint_angular_gauge() {
-        let half_angle = 0.25f64;
-        let surface = SurfaceGeometry::Cone {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.0,
-            ratio: 1.0,
-            half_angle,
-        };
-        let support = StandardCurveSupport {
-            pos: 0,
-            tag: 1,
-            faces: [0, 1],
-            geometry: StandardCurveGeometry::Line,
-        };
-        let height = 4.0;
-        let radius = height * half_angle.tan();
-        let (geometry, range) = standard_pcurve_geometry(
-            &surface,
-            &support,
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, radius, height),
-            None,
-            None,
-        )
-        .expect("cone generator through the apex");
-        assert_eq!(range, [0.0, 1.0]);
-        assert_eq!(
-            geometry,
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
-                direction: cadmpeg_ir::math::Point2::new(0.0, height),
-            }
-        );
+        for half_angle in [0.25f64, 1e-200] {
+            let surface = SurfaceGeometry::Cone {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 0.0,
+                ratio: 1.0,
+                half_angle,
+            };
+            let support = StandardCurveSupport {
+                pos: 0,
+                tag: 1,
+                faces: [0, 1],
+                geometry: StandardCurveGeometry::Line,
+            };
+            let height = 4.0;
+            let radius = height * half_angle.tan();
+            let (geometry, range) = standard_pcurve_geometry(
+                &surface,
+                &support,
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, radius, height),
+                None,
+                None,
+            )
+            .expect("cone generator through the apex");
+            assert_eq!(range, [0.0, 1.0]);
+            assert_eq!(
+                geometry,
+                PcurveGeometry::Line {
+                    origin: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
+                    direction: cadmpeg_ir::math::Point2::new(0.0, height),
+                }
+            );
+        }
     }
 
     #[test]
