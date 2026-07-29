@@ -177,6 +177,33 @@ fn b5_pcurve_parser_reads_degree5_uv_jet() {
 }
 
 #[test]
+fn object_stream_pcurve_parser_accepts_each_object_frame_flag() {
+    let a8 = a8_pcurve_stream();
+    let payload = &a8[11..];
+    for flag in [0x03, 0x13, 0x83] {
+        let mut stream = vec![
+            0xa8,
+            flag,
+            0x20,
+            u8::try_from(payload.len()).unwrap(),
+            0,
+            0,
+            0,
+        ];
+        stream.extend_from_slice(&0x5678u32.to_le_bytes());
+        stream.extend_from_slice(payload);
+        let [pcurve] = crate::families::a5a8::records::object_stream_pcurves(&stream)
+            .try_into()
+            .expect("one pcurve");
+        assert_eq!(pcurve.object_id, 0x5678);
+    }
+
+    let mut malformed = a8;
+    malformed[1] = 0x23;
+    assert!(crate::families::a5a8::records::object_stream_pcurves(&malformed).is_empty());
+}
+
+#[test]
 fn b5_pcurve_parser_accepts_split_24_bit_support_reference() {
     let a8 = a8_pcurve_stream();
     let mut payload = a8[11..].to_vec();

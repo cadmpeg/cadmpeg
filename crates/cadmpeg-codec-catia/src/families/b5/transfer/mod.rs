@@ -20,7 +20,8 @@ use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::graph::{
-    loop_chain_closes, B5ExtrusionSurface, B5Graph, B5OffsetSurface, B5SupportedSurface, B5Surface,
+    loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph, B5OffsetSurface,
+    B5SupportedSurface, B5Surface,
 };
 
 mod edges;
@@ -238,9 +239,10 @@ fn referenced_surface_ids(
                 extrusions.get(&construction_id).map(|extrusion| {
                     extrusion
                         .directrix
-                        .supports
+                        .supports()
+                        .into_iter()
                         .map(|(support, _, _)| support)
-                        .to_vec()
+                        .collect()
                 })
             })
             .unwrap_or_default();
@@ -719,6 +721,42 @@ pub(crate) struct ResolvedExtrusionSupport {
     pub(crate) pcurve: PcurveGeometry,
     /// Native interval used by this support occurrence.
     pub(crate) pcurve_parameter_range: [f64; 2],
+    /// Exact model-space lift when the support chart admits one.
+    pub(crate) curve: Option<CurveGeometry>,
+}
+
+/// Exact neutral construction of one extrusion directrix.
+#[derive(Clone, PartialEq)]
+pub(crate) enum ResolvedExtrusionDirectrix {
+    /// Intersection of two support surfaces.
+    Intersection {
+        /// Ordered exact support sides.
+        supports: Box<[ResolvedExtrusionSupport; 2]>,
+        /// Positive fit tolerance of the retained sampled cache.
+        cache_fit_tolerance: f64,
+    },
+    /// One pcurve lifted through its exact support surface.
+    SurfaceCurve {
+        /// Exact support side.
+        support: ResolvedExtrusionSupport,
+        /// Exact model-space curve lifted through the support.
+        curve: CurveGeometry,
+    },
+    /// Fixed-direction offset of a one-support source curve.
+    Offset {
+        /// Persistent source-curve wrapper identity.
+        source_object_id: u32,
+        /// Exact source support side.
+        support: ResolvedExtrusionSupport,
+        /// Exact model-space source curve lifted through the support.
+        source_curve: CurveGeometry,
+        /// Increasing source-curve interval.
+        source_parameter_range: [f64; 2],
+        /// Signed offset distance.
+        distance: f64,
+        /// Unit direction defining the positive offset side.
+        direction: Vector3,
+    },
 }
 
 /// Exact two-support directrix and extrusion chart resolved from B5 objects.
@@ -730,14 +768,22 @@ pub(crate) struct ResolvedExtrusionSurface {
     pub(crate) directrix_object_id: u32,
     /// Solved directrix interval shared by the support mappings.
     pub(crate) directrix_parameter_range: [f64; 2],
-    /// Fit tolerance of the retained sampled directrix cache.
-    pub(crate) cache_fit_tolerance: f64,
     /// Unit world-space extrusion direction.
     pub(crate) direction: Vector3,
     /// Ordered native U and V chart bounds.
     pub(crate) parameter_bounds: [[f64; 2]; 2],
-    /// Ordered exact support sides.
-    pub(crate) supports: [ResolvedExtrusionSupport; 2],
+    /// Exact directrix construction.
+    pub(crate) directrix: ResolvedExtrusionDirectrix,
+}
+
+impl ResolvedExtrusionSurface {
+    pub(crate) fn supports(&self) -> Vec<&ResolvedExtrusionSupport> {
+        match &self.directrix {
+            ResolvedExtrusionDirectrix::Intersection { supports, .. } => supports.iter().collect(),
+            ResolvedExtrusionDirectrix::SurfaceCurve { support, .. }
+            | ResolvedExtrusionDirectrix::Offset { support, .. } => vec![support],
+        }
+    }
 }
 
 /// Exact support construction of a resolved offset surface.
@@ -770,53 +816,93 @@ pub(crate) fn resolved_extrusion_surface(
 ) -> Option<ResolvedExtrusionSurface> {
     let construction_id = graph.canonical_surface_id(surface_id)?;
     let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
-    let supports: [ResolvedExtrusionSupport; 2] = extrusion
-        .directrix
-        .supports
-        .each_ref()
-        .map(
-            |&(surface_object_id, pcurve_object_id, pcurve_parameter_range)| {
-                let source_surface = graph.surfaces.get(&surface_object_id)?;
-                let surface = resolved_surface_geometry(graph, surface_object_id)?;
-                let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-                let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
-                let degree = usize::try_from(pcurve.degree).ok()?;
-                let domain = [
-                    *knots.get(degree)?,
-                    *knots.get(knots.len().checked_sub(degree + 1)?)?,
-                ];
-                bounded_occurrence_range(pcurve_parameter_range, domain)?;
-                Some(ResolvedExtrusionSupport {
-                    surface_object_id,
-                    surface,
-                    pcurve: PcurveGeometry::Nurbs {
-                        degree: pcurve.degree,
-                        knots,
-                        control_points: pcurve
-                            .control_points
-                            .iter()
-                            .map(|point| neutral_pcurve_point(*point, source_surface))
-                            .collect(),
-                        weights: pcurve.weights.clone(),
-                        periodic: false,
-                    },
-                    pcurve_parameter_range,
-                })
-            },
-        )
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
-    (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
+    let resolve_support =
+        |(surface_object_id, pcurve_object_id, pcurve_parameter_range): (u32, u32, [f64; 2])| {
+            let source_surface = graph.surfaces.get(&surface_object_id)?;
+            let surface = resolved_surface_geometry(graph, surface_object_id)?;
+            let pcurve = graph.pcurves.get(&pcurve_object_id)?;
+            let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
+            let degree = usize::try_from(pcurve.degree).ok()?;
+            let domain = [
+                *knots.get(degree)?,
+                *knots.get(knots.len().checked_sub(degree + 1)?)?,
+            ];
+            bounded_occurrence_range(pcurve_parameter_range, domain)?;
+            let pcurve_geometry = PcurveGeometry::Nurbs {
+                degree: pcurve.degree,
+                knots,
+                control_points: pcurve
+                    .control_points
+                    .iter()
+                    .map(|point| neutral_pcurve_point(*point, source_surface))
+                    .collect(),
+                weights: pcurve.weights.clone(),
+                periodic: false,
+            };
+            let curve = lifted_curve_geometry(pcurve, source_surface);
+            Some(ResolvedExtrusionSupport {
+                surface_object_id,
+                surface,
+                pcurve: pcurve_geometry,
+                pcurve_parameter_range,
+                curve,
+            })
+        };
+    let directrix = match &extrusion.directrix {
+        B5ExtrusionDirectrix::Intersection {
+            supports,
+            cache_fit_tolerance,
+            ..
+        } => {
+            let supports: [ResolvedExtrusionSupport; 2] = supports
+                .map(resolve_support)
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
+            (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
+            ResolvedExtrusionDirectrix::Intersection {
+                supports: Box::new(supports),
+                cache_fit_tolerance: *cache_fit_tolerance,
+            }
+        }
+        B5ExtrusionDirectrix::SurfaceCurve { support, .. } => {
+            let support = resolve_support(*support)?;
+            let curve = support.curve.clone()?;
+            ResolvedExtrusionDirectrix::SurfaceCurve { support, curve }
+        }
+        B5ExtrusionDirectrix::Offset {
+            source,
+            source_parameter_range,
+            distance,
+            direction,
+            ..
+        } => {
+            let B5ExtrusionDirectrix::SurfaceCurve {
+                object_id, support, ..
+            } = source.as_ref()
+            else {
+                return None;
+            };
+            let support = resolve_support(*support)?;
+            let source_curve = support.curve.clone()?;
+            ResolvedExtrusionDirectrix::Offset {
+                source_object_id: *object_id,
+                support,
+                source_curve,
+                source_parameter_range: *source_parameter_range,
+                distance: *distance,
+                direction: vector(*direction),
+            }
+        }
+    };
     Some(ResolvedExtrusionSurface {
         surface_object_id: surface_id,
-        directrix_object_id: extrusion.directrix.object_id,
-        directrix_parameter_range: extrusion.directrix.parameter_range,
-        cache_fit_tolerance: extrusion.directrix.cache_fit_tolerance,
+        directrix_object_id: extrusion.directrix.object_id(),
+        directrix_parameter_range: extrusion.parameter_bounds[1],
         direction: vector(extrusion.direction),
         parameter_bounds: extrusion.parameter_bounds,
-        supports,
+        directrix,
     })
 }
 
@@ -1030,7 +1116,8 @@ mod tests {
                 object_id: 50,
                 direction: [0.0, 0.0, 1.0],
                 parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
-                directrix: B5ExtrusionDirectrix {
+                controls: [0x05, 0x05],
+                directrix: B5ExtrusionDirectrix::Intersection {
                     object_id: 80,
                     supports: [(90, 91, [0.0, 1.0]), (100, 101, [0.0, 1.0])],
                     parameter_range: [0.0, 1.0],

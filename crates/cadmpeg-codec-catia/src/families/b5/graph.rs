@@ -319,21 +319,82 @@ pub struct B5ExtrusionSurface {
     pub direction: [f64; 3],
     /// Increasing native U and V intervals.
     pub parameter_bounds: [[f64; 2]; 2],
+    /// Terminal construction controls.
+    pub controls: [u8; 2],
     /// Exact two-support directrix construction.
     pub directrix: B5ExtrusionDirectrix,
 }
 
-/// Two pcurve supports and solved range of an `a8 03 25` directrix.
+/// Exact directrix construction selected by a `b5 03 2c` extrusion.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5ExtrusionDirectrix {
-    /// Persistent directrix object id.
-    pub object_id: u32,
-    /// Ordered `(surface, pcurve, pcurve range)` support sides.
-    pub supports: [(u32, u32, [f64; 2]); 2],
-    /// Increasing solved-curve parameter range.
-    pub parameter_range: [f64; 2],
-    /// Positive fit tolerance of the serialized sampled cache.
-    pub cache_fit_tolerance: f64,
+pub enum B5ExtrusionDirectrix {
+    /// Two-support intersection carried by an `a8 03 25` record.
+    Intersection {
+        /// Persistent directrix object id.
+        object_id: u32,
+        /// Ordered `(surface, pcurve, pcurve range)` support sides.
+        supports: [(u32, u32, [f64; 2]); 2],
+        /// Increasing solved-curve parameter range.
+        parameter_range: [f64; 2],
+        /// Positive fit tolerance of the serialized sampled cache.
+        cache_fit_tolerance: f64,
+    },
+    /// One-support curve carried by a `b5 03 24` wrapper.
+    SurfaceCurve {
+        /// Persistent wrapper object id.
+        object_id: u32,
+        /// `(surface, pcurve, pcurve range)` support side.
+        support: (u32, u32, [f64; 2]),
+        /// Increasing curve parameter range.
+        parameter_range: [f64; 2],
+    },
+    /// Fixed-direction offset carried by a `b5 03 14` record.
+    Offset {
+        /// Persistent offset-curve object id.
+        object_id: u32,
+        /// Complete source curve construction.
+        source: Box<B5ExtrusionDirectrix>,
+        /// Increasing interval on the source curve.
+        source_parameter_range: [f64; 2],
+        /// Signed offset distance.
+        distance: f64,
+        /// Unit direction defining the positive offset side.
+        direction: [f64; 3],
+        /// Increasing result-curve parameter range.
+        parameter_range: [f64; 2],
+    },
+}
+
+impl B5ExtrusionDirectrix {
+    pub(crate) fn object_id(&self) -> u32 {
+        match self {
+            Self::Intersection { object_id, .. }
+            | Self::SurfaceCurve { object_id, .. }
+            | Self::Offset { object_id, .. } => *object_id,
+        }
+    }
+
+    fn parameter_range(&self) -> [f64; 2] {
+        match self {
+            Self::Intersection {
+                parameter_range, ..
+            }
+            | Self::SurfaceCurve {
+                parameter_range, ..
+            }
+            | Self::Offset {
+                parameter_range, ..
+            } => *parameter_range,
+        }
+    }
+
+    pub(crate) fn supports(&self) -> Vec<(u32, u32, [f64; 2])> {
+        match self {
+            Self::Intersection { supports, .. } => supports.to_vec(),
+            Self::SurfaceCurve { support, .. } => vec![*support],
+            Self::Offset { source, .. } => source.supports(),
+        }
+    }
 }
 
 /// A class-`37` support-bound surface construction with an explicit result carrier.
@@ -608,9 +669,9 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .flat_map(|extrusion| {
             extrusion
                 .directrix
-                .supports
-                .iter()
-                .map(|(_, pcurve, _)| *pcurve)
+                .supports()
+                .into_iter()
+                .map(|(_, pcurve, _)| pcurve)
         })
         .collect::<HashSet<_>>();
     let mut offset_surfaces = BTreeMap::new();
@@ -2176,6 +2237,57 @@ fn parse_offset_surface(
         None => {
             if let (Some(source), Some(carrier)) = (
                 extrusion_surfaces.get(&source_surface),
+                extrusion_surfaces.get(&carrier_surface),
+            ) {
+                if carrier.direction != source.direction {
+                    return None;
+                }
+                let direct_bounds_match = carrier.parameter_bounds == [[v0, v1], [u0, u1]];
+                let offset_bounds_match = if let B5ExtrusionDirectrix::Offset {
+                    source: offset_source,
+                    source_parameter_range,
+                    distance: curve_distance,
+                    direction,
+                    parameter_range,
+                    ..
+                } = &carrier.directrix
+                {
+                    offset_source.object_id() == source.directrix.object_id()
+                        && offset_source.supports().first().is_some_and(|support| {
+                            source_parameter_range
+                                .iter()
+                                .copied()
+                                .zip(support.2)
+                                .all(|(left, right)| left.to_bits() == right.to_bits())
+                        })
+                        && curve_distance.to_bits() == distance.to_bits()
+                        && *direction == source.direction
+                        && carrier.parameter_bounds[0]
+                            .into_iter()
+                            .zip([v0, v1])
+                            .all(|(left, right)| left.to_bits() == right.to_bits())
+                        && parameter_range
+                            .iter()
+                            .copied()
+                            .zip([u0, u1])
+                            .all(|(left, right)| left.to_bits() == right.to_bits())
+                } else {
+                    false
+                };
+                if !direct_bounds_match && !offset_bounds_match {
+                    return None;
+                }
+                return (carrier_kind == 0x21).then_some(B5OffsetSurface {
+                    object_id: record.object_id,
+                    carrier_surface,
+                    source_surface,
+                    distance,
+                    carrier_kind,
+                    parameter_bounds: [[u0, u1], [v0, v1]],
+                });
+            }
+            if let (Some(source), Some(carrier)) = (
+                extrusion_surfaces.get(&source_surface),
                 records
                     .get(&carrier_surface)
                     .and_then(|record| extrusion_carrier(record)),
@@ -2387,7 +2499,7 @@ fn parse_extrusion_surface(
         object_stream_pcurves,
     )?;
     if directrix
-        .parameter_range
+        .parameter_range()
         .into_iter()
         .zip(carrier.parameter_bounds[1])
         .any(|(left, right)| left.to_bits() != right.to_bits())
@@ -2398,6 +2510,7 @@ fn parse_extrusion_surface(
         object_id: record.object_id,
         direction: carrier.direction,
         parameter_bounds: carrier.parameter_bounds,
+        controls: carrier.controls,
         directrix,
     })
 }
@@ -2406,6 +2519,7 @@ struct B5ExtrusionCarrier {
     directrix_id: u32,
     direction: [f64; 3],
     parameter_bounds: [[f64; 2]; 2],
+    controls: [u8; 2],
 }
 
 fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
@@ -2415,7 +2529,8 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
     let directrix_id = wire::object_ref(&record.payload, &mut position, true)?;
     let values = line_values::<9>(&record.payload, position)?;
     position += 72;
-    (record.payload.get(position..) == Some(&[0x05, 0x05])
+    let controls: [u8; 2] = record.payload.get(position..)?.try_into().ok()?;
+    ((controls == [0x05, 0x05] || (matches!(controls[0], 0x01 | 0x05) && controls[1] == 0x29))
         && unit([values[0], values[1], values[2]]).is_some()
         && values[3] < values[4]
         && values[5].to_bits() == 1.0f64.to_bits()
@@ -2425,6 +2540,7 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
             directrix_id,
             direction: [values[0], values[1], values[2]],
             parameter_bounds: [[values[3], values[4]], [values[7], values[8]]],
+            controls,
         })
 }
 
@@ -2433,6 +2549,12 @@ fn parse_extrusion_directrix(
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2])>,
 ) -> Option<B5ExtrusionDirectrix> {
+    if record.family == 0xb5 && record.class == 0x24 {
+        return parse_surface_curve_directrix(record, records, object_stream_pcurves);
+    }
+    if record.family == 0xb5 && record.class == 0x14 {
+        return parse_offset_curve_directrix(record, records, object_stream_pcurves);
+    }
     (record.family == 0xa8 && record.class == 0x25 && record.payload.first() == Some(&0x82))
         .then_some(())?;
     let mut position = 1;
@@ -2472,7 +2594,7 @@ fn parse_extrusion_directrix(
     let first_surface = pcurve_surface_reference(first)?;
     let first_range = analytic_pcurve_range(first)?;
     let &(second_surface, second_range) = object_stream_pcurves.get(&second_pcurve)?;
-    Some(B5ExtrusionDirectrix {
+    Some(B5ExtrusionDirectrix::Intersection {
         object_id: record.object_id,
         supports: [
             (first_surface, first_pcurve, first_range),
@@ -2480,6 +2602,97 @@ fn parse_extrusion_directrix(
         ],
         parameter_range,
         cache_fit_tolerance,
+    })
+}
+
+fn parse_surface_curve_directrix(
+    record: &B5Record,
+    records: &HashMap<u32, &B5Record>,
+    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2])>,
+) -> Option<B5ExtrusionDirectrix> {
+    (record.family == 0xb5 && record.class == 0x24 && record.payload.first() == Some(&0x81))
+        .then_some(())?;
+    let mut position = 1;
+    let pcurve = wire::object_ref(&record.payload, &mut position, true)?;
+    if record.payload.get(position..position + 2) != Some(&[0x81, 0x01]) {
+        return None;
+    }
+    position += 2;
+    let [start, end, zero] = line_values::<3>(&record.payload, position)?;
+    position += 24;
+    if record.payload.get(position..) != Some(&[0x01])
+        || start >= end
+        || zero.to_bits() != 0.0f64.to_bits()
+    {
+        return None;
+    }
+    let (surface, pcurve_range) = object_stream_pcurves.get(&pcurve).copied().or_else(|| {
+        let pcurve_record = records.get(&pcurve)?;
+        Some((
+            pcurve_surface_reference(pcurve_record)?,
+            analytic_pcurve_range(pcurve_record)?,
+        ))
+    })?;
+    let parameter_range = [start, end];
+    pcurve_range
+        .into_iter()
+        .zip(parameter_range)
+        .all(|(left, right)| left.to_bits() == right.to_bits())
+        .then_some(B5ExtrusionDirectrix::SurfaceCurve {
+            object_id: record.object_id,
+            support: (surface, pcurve, pcurve_range),
+            parameter_range,
+        })
+}
+
+fn parse_offset_curve_directrix(
+    record: &B5Record,
+    records: &HashMap<u32, &B5Record>,
+    object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2])>,
+) -> Option<B5ExtrusionDirectrix> {
+    (record.family == 0xb5 && record.class == 0x14 && record.payload.first() == Some(&0x81))
+        .then_some(())?;
+    let mut position = 1;
+    let source_id = wire::object_ref(&record.payload, &mut position, true)?;
+    let source_parameter_range = line_values::<2>(&record.payload, position)?;
+    position += 16;
+    if record.payload.get(position) != Some(&0x05) {
+        return None;
+    }
+    position += 1;
+    let [distance, x, y, z, start, end] = line_values::<6>(&record.payload, position)?;
+    position += 48;
+    let direction = [x, y, z];
+    let source_record = records.get(&source_id)?;
+    if !((source_record.family == 0xb5 && source_record.class == 0x24)
+        || (source_record.family == 0xa8 && source_record.class == 0x25))
+    {
+        return None;
+    }
+    let source = parse_extrusion_directrix(source_record, records, object_stream_pcurves)?;
+    if position != record.payload.len()
+        || !distance.is_finite()
+        || distance == 0.0
+        || unit(direction).is_none()
+        || source_parameter_range[0] >= source_parameter_range[1]
+        || start >= end
+        || !source.supports().iter().any(|support| {
+            support
+                .2
+                .into_iter()
+                .zip(source_parameter_range)
+                .all(|(left, right)| left.to_bits() == right.to_bits())
+        })
+    {
+        return None;
+    }
+    Some(B5ExtrusionDirectrix::Offset {
+        object_id: record.object_id,
+        source: Box::new(source),
+        source_parameter_range,
+        distance,
+        direction,
+        parameter_range: [start, end],
     })
 }
 
@@ -3422,7 +3635,7 @@ fn is_referenced_geometry_class(family: u8, class: u8) -> bool {
 
 fn is_reference_dependency_class(family: u8, class: u8) -> bool {
     is_referenced_geometry_class(family, class)
-        || (family == 0xb5 && matches!(class, 0x05 | 0x06 | 0x23..=0x25 | 0x5d))
+        || (family == 0xb5 && matches!(class, 0x05 | 0x06 | 0x14 | 0x23..=0x25 | 0x5d))
 }
 
 fn is_surface_class(class: u8) -> bool {
@@ -5624,13 +5837,76 @@ mod tests {
                 object_id: 8,
                 direction: [0.0, 0.0, 1.0],
                 parameter_bounds: [[-2.0, 6.0], [-3.0, 4.0]],
-                directrix: B5ExtrusionDirectrix {
+                controls: [0x05, 0x05],
+                directrix: B5ExtrusionDirectrix::Intersection {
                     object_id: 5,
                     supports: [(6, 3, [-3.0, 4.0]), (7, 4, [10.0, 20.0])],
                     parameter_range: [-3.0, 4.0],
                     cache_fit_tolerance: 0.01,
                 },
             })
+        );
+    }
+
+    #[test]
+    fn offset_curve_directrix_binds_source_support_and_exact_ranges() {
+        let mut source_payload = vec![0x81, 0x83, 0x81, 0x01];
+        for value in [-3.0f64, 4.0, 0.0] {
+            source_payload.extend_from_slice(&value.to_le_bytes());
+        }
+        source_payload.push(0x01);
+        let source = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x24,
+            object_id: 2,
+            payload: source_payload,
+        };
+        let records = HashMap::from([(2, &source)]);
+        let pcurves = BTreeMap::from([(3, (7, [-3.0, 4.0]))]);
+        let mut payload = vec![0x81, 0x82];
+        for value in [-3.0f64, 4.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.push(0x05);
+        for value in [-1.5f64, 0.0, 0.0, 1.0, -5.0, 6.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x14,
+            object_id: 4,
+            payload,
+        };
+
+        assert_eq!(
+            parse_extrusion_directrix(&record, &records, &pcurves),
+            Some(B5ExtrusionDirectrix::Offset {
+                object_id: 4,
+                source: Box::new(B5ExtrusionDirectrix::SurfaceCurve {
+                    object_id: 2,
+                    support: (7, 3, [-3.0, 4.0]),
+                    parameter_range: [-3.0, 4.0],
+                }),
+                source_parameter_range: [-3.0, 4.0],
+                distance: -1.5,
+                direction: [0.0, 0.0, 1.0],
+                parameter_range: [-5.0, 6.0],
+            })
+        );
+
+        let mut wrong_control = record.clone();
+        wrong_control.payload[18] = 0x01;
+        assert_eq!(
+            parse_extrusion_directrix(&wrong_control, &records, &pcurves),
+            None
+        );
+        let mut mismatched_range = record;
+        mismatched_range.payload[1..9].copy_from_slice(&(-2.0f64).to_le_bytes());
+        assert_eq!(
+            parse_extrusion_directrix(&mismatched_range, &records, &pcurves),
+            None
         );
     }
 

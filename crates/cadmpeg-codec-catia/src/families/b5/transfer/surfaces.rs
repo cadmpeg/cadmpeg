@@ -635,53 +635,135 @@ fn emit_extrusion_procedure(
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
 ) {
-    let sides = extrusion.supports.map(|side| IntcurveSupportSide {
-        surface: Some(surface_ids[&side.surface_object_id].clone()),
-        pcurve: Some(side.pcurve),
-        pcurve_parameter_range: (side.pcurve_parameter_range
-            != extrusion.directrix_parameter_range)
-            .then_some(side.pcurve_parameter_range),
-    });
     let directrix_id = CurveId(format!(
         "catia:b5:extrusion-directrix#{}",
         extrusion.directrix_object_id
     ));
-    annotate(
-        annotations,
-        &directrix_id,
-        "object_stream_a8_03_25",
-        "two_support_directrix",
-        Exactness::Unknown,
-    );
-    ir.model.curves.push(Curve {
-        id: directrix_id.clone(),
-        geometry: CurveGeometry::Unknown { record: None },
-        source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
-    });
-    let directrix_procedure = ProceduralCurveId(format!(
-        "catia:b5:extrusion-directrix-procedure#{}",
-        extrusion.directrix_object_id
-    ));
-    annotate(
-        annotations,
-        &directrix_procedure,
-        "object_stream_a8_03_25",
-        "two_surface_pcurve_intersection",
-        Exactness::ByteExact,
-    );
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: directrix_procedure,
-        curve: directrix_id.clone(),
-        definition: ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides,
-                parameter_range: extrusion.directrix_parameter_range,
-                discontinuities: std::array::from_fn(|_| Vec::new()),
-            },
-            discontinuity_flag: false,
-        },
-        cache_fit_tolerance: Some(extrusion.cache_fit_tolerance),
-    });
+    match extrusion.directrix {
+        super::ResolvedExtrusionDirectrix::Intersection {
+            supports,
+            cache_fit_tolerance,
+        } => {
+            let sides = (*supports).map(|side| IntcurveSupportSide {
+                surface: Some(surface_ids[&side.surface_object_id].clone()),
+                pcurve: Some(side.pcurve),
+                pcurve_parameter_range: (side.pcurve_parameter_range
+                    != extrusion.directrix_parameter_range)
+                    .then_some(side.pcurve_parameter_range),
+            });
+            annotate(
+                annotations,
+                &directrix_id,
+                "object_stream_a8_03_25",
+                "two_support_directrix",
+                Exactness::Unknown,
+            );
+            ir.model.curves.push(Curve {
+                id: directrix_id.clone(),
+                geometry: CurveGeometry::Unknown { record: None },
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+            });
+            let procedure_id = ProceduralCurveId(format!(
+                "catia:b5:extrusion-directrix-procedure#{}",
+                extrusion.directrix_object_id
+            ));
+            annotate(
+                annotations,
+                &procedure_id,
+                "object_stream_a8_03_25",
+                "two_surface_pcurve_intersection",
+                Exactness::ByteExact,
+            );
+            ir.model.procedural_curves.push(ProceduralCurve {
+                id: procedure_id,
+                curve: directrix_id.clone(),
+                definition: ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext {
+                        sides,
+                        parameter_range: extrusion.directrix_parameter_range,
+                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                    },
+                    discontinuity_flag: false,
+                },
+                cache_fit_tolerance: Some(cache_fit_tolerance),
+            });
+        }
+        super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
+            annotate(
+                annotations,
+                &directrix_id,
+                "object_stream_b5_03_24",
+                "support_pcurve_lift",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id: directrix_id.clone(),
+                geometry: curve,
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+            });
+        }
+        super::ResolvedExtrusionDirectrix::Offset {
+            source_object_id,
+            support,
+            source_curve,
+            source_parameter_range,
+            distance,
+            direction,
+        } => {
+            let source_id = CurveId(format!(
+                "catia:b5:extrusion-directrix-source#{source_object_id}"
+            ));
+            annotate(
+                annotations,
+                &source_id,
+                "object_stream_b5_03_24",
+                "support_pcurve_lift",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id: source_id.clone(),
+                geometry: source_curve,
+                source_object: Some(cgm_source("curve", source_object_id)),
+            });
+            annotate(
+                annotations,
+                &directrix_id,
+                "object_stream_b5_03_14",
+                "fixed_direction_offset_curve",
+                Exactness::Unknown,
+            );
+            ir.model.curves.push(Curve {
+                id: directrix_id.clone(),
+                geometry: CurveGeometry::Unknown { record: None },
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+            });
+            let procedure_id = ProceduralCurveId(format!(
+                "catia:b5:extrusion-directrix-procedure#{}",
+                extrusion.directrix_object_id
+            ));
+            annotate(
+                annotations,
+                &procedure_id,
+                "object_stream_b5_03_14",
+                "fixed_direction_offset_curve",
+                Exactness::ByteExact,
+            );
+            ir.model.procedural_curves.push(ProceduralCurve {
+                id: procedure_id,
+                curve: directrix_id.clone(),
+                definition: ProceduralCurveDefinition::Offset {
+                    source: source_id,
+                    distance,
+                    direction: Some(direction),
+                    support: Some(surface_ids[&support.surface_object_id].clone()),
+                    normal: None,
+                    parameter_range: Some(source_parameter_range),
+                    distance_law: None,
+                },
+                cache_fit_tolerance: None,
+            });
+        }
+    }
     let procedure_id = ProceduralSurfaceId(format!("catia:b5:extrusion#{surface_object_id}"));
     annotate(
         annotations,
@@ -711,7 +793,9 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Vector3};
     use cadmpeg_ir::units::Units;
 
-    use crate::families::b5::transfer::{ResolvedExtrusionSupport, ResolvedExtrusionSurface};
+    use crate::families::b5::transfer::{
+        ResolvedExtrusionDirectrix, ResolvedExtrusionSupport, ResolvedExtrusionSurface,
+    };
 
     #[test]
     fn extrusion_emits_exact_two_support_intersection() {
@@ -730,31 +814,35 @@ mod tests {
             surface_object_id: 30,
             directrix_object_id: 40,
             directrix_parameter_range: [0.0, 1.0],
-            cache_fit_tolerance: 1e-5,
             direction: Vector3::new(0.0, 0.0, 1.0),
             parameter_bounds: [[-2.0, 3.0], [0.0, 1.0]],
-            supports: [
-                ResolvedExtrusionSupport {
-                    surface_object_id: 10,
-                    surface: SurfaceGeometry::Plane {
-                        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                        normal: Vector3::new(1.0, 0.0, 0.0),
-                        u_axis: Vector3::new(0.0, 1.0, 0.0),
+            directrix: ResolvedExtrusionDirectrix::Intersection {
+                cache_fit_tolerance: 1e-5,
+                supports: Box::new([
+                    ResolvedExtrusionSupport {
+                        surface_object_id: 10,
+                        surface: SurfaceGeometry::Plane {
+                            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                            normal: Vector3::new(1.0, 0.0, 0.0),
+                            u_axis: Vector3::new(0.0, 1.0, 0.0),
+                        },
+                        pcurve: pcurve(0.0),
+                        pcurve_parameter_range: [0.0, 1.0],
+                        curve: None,
                     },
-                    pcurve: pcurve(0.0),
-                    pcurve_parameter_range: [0.0, 1.0],
-                },
-                ResolvedExtrusionSupport {
-                    surface_object_id: 20,
-                    surface: SurfaceGeometry::Plane {
-                        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                        normal: Vector3::new(0.0, 1.0, 0.0),
-                        u_axis: Vector3::new(1.0, 0.0, 0.0),
+                    ResolvedExtrusionSupport {
+                        surface_object_id: 20,
+                        surface: SurfaceGeometry::Plane {
+                            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                            normal: Vector3::new(0.0, 1.0, 0.0),
+                            u_axis: Vector3::new(1.0, 0.0, 0.0),
+                        },
+                        pcurve: pcurve(1.0),
+                        pcurve_parameter_range: [0.25, 0.75],
+                        curve: None,
                     },
-                    pcurve: pcurve(1.0),
-                    pcurve_parameter_range: [0.25, 0.75],
-                },
-            ],
+                ]),
+            },
         };
         let mut ir = CadIr::empty(Units::default());
 

@@ -343,9 +343,39 @@ mod consolidated_analytic_refinement_tests {
     }
 }
 
-/// Decode the standard-nested vertex cloud and analytic surface carriers. Returns
-/// `None` when the reconstructed stream yields neither vertices nor surfaces, so
-/// the caller falls back to the container-metadata path.
+/// Materialize one exact object-stream support surface once.
+fn standard_extrusion_support_id(
+    annotations: &mut AnnotationBuilder,
+    surfaces: &mut Vec<Surface>,
+    procedural_supports: &mut HashMap<u32, SurfaceId>,
+    side: &crate::families::b5::transfer::ResolvedExtrusionSupport,
+) -> SurfaceId {
+    procedural_supports
+        .entry(side.surface_object_id)
+        .or_insert_with(|| {
+            let id = SurfaceId(format!(
+                "catia:standard:procedural-support#{}",
+                side.surface_object_id
+            ));
+            annotate(
+                annotations,
+                &id,
+                "object_stream_b5_03",
+                0,
+                format!("surface:{:08x}", side.surface_object_id),
+                Exactness::ByteExact,
+            );
+            surfaces.push(Surface {
+                id: id.clone(),
+                geometry: side.surface.clone(),
+                source_object: Some(cgm_source("surface", side.surface_object_id)),
+            });
+            id
+        })
+        .clone()
+}
+
+/// Emit one resolved object-stream extrusion construction in the standard family.
 pub(crate) fn emit_standard_extrusion_definition(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -358,80 +388,153 @@ pub(crate) fn emit_standard_extrusion_definition(
         return definition.clone();
     }
     let surface_object_id = extrusion.surface_object_id;
-    let sides = extrusion.supports.map(|side| {
-        let support_id = procedural_supports
-            .entry(side.surface_object_id)
-            .or_insert_with(|| {
-                let id = SurfaceId(format!(
-                    "catia:standard:procedural-support#{}",
-                    side.surface_object_id
-                ));
-                annotate(
-                    annotations,
-                    &id,
-                    "object_stream_b5_03",
-                    0,
-                    format!("surface:{:08x}", side.surface_object_id),
-                    Exactness::ByteExact,
-                );
-                surfaces.push(Surface {
-                    id: id.clone(),
-                    geometry: side.surface,
-                    source_object: Some(cgm_source("surface", side.surface_object_id)),
-                });
-                id
-            })
-            .clone();
-        IntcurveSupportSide {
-            surface: Some(support_id),
-            pcurve: Some(side.pcurve),
-            pcurve_parameter_range: (side.pcurve_parameter_range
-                != extrusion.directrix_parameter_range)
-                .then_some(side.pcurve_parameter_range),
-        }
-    });
     let directrix_id = CurveId(format!(
         "catia:standard:extrusion-directrix#{}",
         extrusion.directrix_object_id
     ));
-    annotate(
-        annotations,
-        &directrix_id,
-        "object_stream_a8_03_25",
-        0,
-        "two_support_directrix",
-        Exactness::Unknown,
-    );
-    ir.model.curves.push(Curve {
-        id: directrix_id.clone(),
-        geometry: CurveGeometry::Unknown { record: None },
-        source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
-    });
-    let directrix_procedure = ProceduralCurveId(format!(
-        "catia:standard:extrusion-directrix-procedure#{}",
-        extrusion.directrix_object_id
-    ));
-    annotate(
-        annotations,
-        &directrix_procedure,
-        "object_stream_a8_03_25",
-        0,
-        "two_surface_pcurve_intersection",
-        Exactness::ByteExact,
-    );
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: directrix_procedure,
-        curve: directrix_id.clone(),
-        definition: ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides,
-                parameter_range: extrusion.directrix_parameter_range,
-                discontinuities: std::array::from_fn(|_| Vec::new()),
-            },
-            discontinuity_flag: false,
-        },
-        cache_fit_tolerance: Some(extrusion.cache_fit_tolerance),
-    });
+    match extrusion.directrix {
+        crate::families::b5::transfer::ResolvedExtrusionDirectrix::Intersection {
+            supports,
+            cache_fit_tolerance,
+        } => {
+            let sides = (*supports).map(|side| IntcurveSupportSide {
+                surface: Some(standard_extrusion_support_id(
+                    annotations,
+                    surfaces,
+                    procedural_supports,
+                    &side,
+                )),
+                pcurve: Some(side.pcurve),
+                pcurve_parameter_range: (side.pcurve_parameter_range
+                    != extrusion.directrix_parameter_range)
+                    .then_some(side.pcurve_parameter_range),
+            });
+            annotate(
+                annotations,
+                &directrix_id,
+                "object_stream_a8_03_25",
+                0,
+                "two_support_directrix",
+                Exactness::Unknown,
+            );
+            ir.model.curves.push(Curve {
+                id: directrix_id.clone(),
+                geometry: CurveGeometry::Unknown { record: None },
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+            });
+            let procedure_id = ProceduralCurveId(format!(
+                "catia:standard:extrusion-directrix-procedure#{}",
+                extrusion.directrix_object_id
+            ));
+            annotate(
+                annotations,
+                &procedure_id,
+                "object_stream_a8_03_25",
+                0,
+                "two_surface_pcurve_intersection",
+                Exactness::ByteExact,
+            );
+            ir.model.procedural_curves.push(ProceduralCurve {
+                id: procedure_id,
+                curve: directrix_id.clone(),
+                definition: ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext {
+                        sides,
+                        parameter_range: extrusion.directrix_parameter_range,
+                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                    },
+                    discontinuity_flag: false,
+                },
+                cache_fit_tolerance: Some(cache_fit_tolerance),
+            });
+        }
+        crate::families::b5::transfer::ResolvedExtrusionDirectrix::SurfaceCurve {
+            curve, ..
+        } => {
+            annotate(
+                annotations,
+                &directrix_id,
+                "object_stream_b5_03_24",
+                0,
+                "support_pcurve_lift",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id: directrix_id.clone(),
+                geometry: curve,
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+            });
+        }
+        crate::families::b5::transfer::ResolvedExtrusionDirectrix::Offset {
+            source_object_id,
+            support,
+            source_curve,
+            source_parameter_range,
+            distance,
+            direction,
+        } => {
+            let source_id = CurveId(format!(
+                "catia:standard:extrusion-directrix-source#{source_object_id}"
+            ));
+            annotate(
+                annotations,
+                &source_id,
+                "object_stream_b5_03_24",
+                0,
+                "support_pcurve_lift",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id: source_id.clone(),
+                geometry: source_curve,
+                source_object: Some(cgm_source("curve", source_object_id)),
+            });
+            annotate(
+                annotations,
+                &directrix_id,
+                "object_stream_b5_03_14",
+                0,
+                "fixed_direction_offset_curve",
+                Exactness::Unknown,
+            );
+            ir.model.curves.push(Curve {
+                id: directrix_id.clone(),
+                geometry: CurveGeometry::Unknown { record: None },
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+            });
+            let procedure_id = ProceduralCurveId(format!(
+                "catia:standard:extrusion-directrix-procedure#{}",
+                extrusion.directrix_object_id
+            ));
+            annotate(
+                annotations,
+                &procedure_id,
+                "object_stream_b5_03_14",
+                0,
+                "fixed_direction_offset_curve",
+                Exactness::ByteExact,
+            );
+            ir.model.procedural_curves.push(ProceduralCurve {
+                id: procedure_id,
+                curve: directrix_id.clone(),
+                definition: ProceduralCurveDefinition::Offset {
+                    source: source_id,
+                    distance,
+                    direction: Some(direction),
+                    support: Some(standard_extrusion_support_id(
+                        annotations,
+                        surfaces,
+                        procedural_supports,
+                        &support,
+                    )),
+                    normal: None,
+                    parameter_range: Some(source_parameter_range),
+                    distance_law: None,
+                },
+                cache_fit_tolerance: None,
+            });
+        }
+    }
     let definition = ProceduralSurfaceDefinition::Extrusion {
         directrix: directrix_id,
         parameter_interval: Some(extrusion.directrix_parameter_range),
@@ -1254,7 +1357,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                         }
                         StandardSurfaceProcedure::RollingBall { .. } => true,
                         StandardSurfaceProcedure::Extrusion(extrusion) => {
-                            extrusion.supports.iter().all(|side| {
+                            extrusion.supports().into_iter().all(|side| {
                                 support_candidates
                                     .get(&side.surface_object_id)
                                     .and_then(Option::as_ref)
@@ -1350,7 +1453,7 @@ fn merge_standard_procedure_supports(
                 .or_insert_with(|| Some(support.clone()));
         }
         StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Extrusion(extrusion)) => {
-            for side in &extrusion.supports {
+            for side in extrusion.supports() {
                 let support = crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
                     side.surface.clone(),
                 );

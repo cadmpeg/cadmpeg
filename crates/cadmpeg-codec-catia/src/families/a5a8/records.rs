@@ -508,7 +508,9 @@ pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
 pub fn object_stream_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
     let mut out = Vec::new();
     for pos in 0..data.len().saturating_sub(11) {
-        if data.get(pos + 1..pos + 3) != Some(&[0x03, 0x20]) {
+        if !matches!(data.get(pos + 1), Some(0x03 | 0x13 | 0x83))
+            || data.get(pos + 2) != Some(&0x20)
+        {
             continue;
         }
         let Some((payload, length, object_id)) = (match data[pos] {

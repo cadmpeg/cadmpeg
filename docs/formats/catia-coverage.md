@@ -237,6 +237,12 @@ current scores require those matrices and representative fixtures.
   grammar, exact redundant chart relations, and a support resolving to the
   exact class-`2a` sphere chart. They transfer as analytic spherical
   great-circle pcurves and exact model-space circles.
+  Class-`24` support curves and class-`14` fixed-direction curve offsets feed
+  class-`2c` extrusion carriers and class-`30` surface offsets. A transferred
+  class-`2c` carrier retains its directrix construction. For a class-`30`
+  construction, the class-`14` result directrix validates the result carrier
+  against the source extrusion and signed surface distance; the neutral surface
+  offset retains the defining source extrusion directly.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.
