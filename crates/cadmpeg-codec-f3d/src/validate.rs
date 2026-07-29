@@ -1102,13 +1102,80 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
         let native_stream = design_stream(&group.id);
         let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
         let header = records_by_index.get(&(native_stream, group.record_index));
-        let member_run_length = u64::try_from(group.members.len())
-            .unwrap_or(u64::MAX)
-            .saturating_mul(11);
-        let tail_offset = group
-            .member_count_offset
-            .saturating_add(4)
-            .saturating_add(member_run_length);
+        let frame_valid = match &group.frame {
+            records::DesignConstructionOperandGroupFrame::Counted {
+                member_count_offset,
+                identity_record_offset,
+                opaque_index,
+                opaque_index_offset,
+                opaque_scalar,
+                opaque_scalar_offset,
+                ..
+            } => {
+                let member_run_length = u64::try_from(group.members.len())
+                    .unwrap_or(u64::MAX)
+                    .saturating_mul(11);
+                let tail_offset = member_count_offset
+                    .saturating_add(4)
+                    .saturating_add(member_run_length);
+                *member_count_offset
+                    == group.byte_offset.saturating_add(
+                        if scope.is_some_and(|scope| {
+                            scope.kind == "SurfaceStitch"
+                                || (scope.kind == "SplitFace"
+                                    && group.role == 0x0000_0021_0000_0000)
+                                || (scope.kind == "Split" && group.role == 0x0000_0009_0000_0000)
+                        }) {
+                            88
+                        } else {
+                            21
+                        },
+                    )
+                    && group.member_offsets.first() == Some(&member_count_offset.saturating_add(5))
+                    && group
+                        .member_offsets
+                        .windows(2)
+                        .all(|offsets| offsets[1] == offsets[0].saturating_add(11))
+                    && *identity_record_offset == tail_offset.saturating_add(7)
+                    && group.role_offset == tail_offset.saturating_add(17)
+                    && *opaque_index != 0
+                    && *opaque_index_offset == tail_offset.saturating_add(35)
+                    && opaque_scalar.is_finite()
+                    && *opaque_scalar_offset == tail_offset.saturating_add(39)
+                    && matches!(
+                        group.paired_byte_offset.saturating_sub(tail_offset),
+                        85 | 87 | 88
+                    )
+            }
+            records::DesignConstructionOperandGroupFrame::Direct {
+                member_count_offset,
+                first_auxiliary_record_index,
+                first_auxiliary_record_offset,
+                second_auxiliary_record_index,
+                second_auxiliary_record_offset,
+                selector,
+                selector_offset,
+                opaque_payload,
+                opaque_payload_offset,
+            } => {
+                *member_count_offset == group.byte_offset.saturating_add(21)
+                    && group.members == [group.record_index.saturating_add(9)]
+                    && group.member_offsets == [group.byte_offset.saturating_add(26)]
+                    && *first_auxiliary_record_index == group.record_index.saturating_add(3)
+                    && *first_auxiliary_record_offset == group.byte_offset.saturating_add(37)
+                    && *second_auxiliary_record_index == group.record_index.saturating_add(6)
+                    && *second_auxiliary_record_offset == group.byte_offset.saturating_add(48)
+                    && *selector != 0
+                    && *selector_offset == group.byte_offset.saturating_add(63)
+                    && group.role == 0x0000_0011_0000_0000
+                    && group.role_offset == group.byte_offset.saturating_add(73)
+                    && opaque_payload.len() == 26
+                    && *opaque_payload_offset == group.byte_offset.saturating_add(81)
+                    && group.paired_byte_offset == group.byte_offset.saturating_add(143)
+                    && record_indices.contains(&(native_stream, *first_auxiliary_record_index))
+                    && record_indices.contains(&(native_stream, *second_auxiliary_record_index))
+            }
+        };
         let valid = group.class_tag.len() == 3
             && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.paired_class_tag.len() == 3
@@ -1296,40 +1363,14 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             && header.is_some_and(|header| {
                 header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
             })
-            && group.member_count_offset
-                == group.byte_offset.saturating_add(
-                    if scope.is_some_and(|scope| {
-                        scope.kind == "SurfaceStitch"
-                            || (scope.kind == "SplitFace" && group.role == 0x0000_0021_0000_0000)
-                            || (scope.kind == "Split" && group.role == 0x0000_0009_0000_0000)
-                    }) {
-                        88
-                    } else {
-                        21
-                    },
-                )
+            && frame_valid
             && !group.members.is_empty()
             && group.members.len() == group.member_offsets.len()
             && group.members.iter().copied().collect::<HashSet<_>>().len() == group.members.len()
-            && group.member_offsets.first() == Some(&group.member_count_offset.saturating_add(5))
-            && group
-                .member_offsets
-                .windows(2)
-                .all(|offsets| offsets[1] == offsets[0].saturating_add(11))
             && group
                 .members
                 .iter()
                 .all(|member| record_indices.contains(&(native_stream, *member)))
-            && group.identity_record_offset == tail_offset.saturating_add(7)
-            && group.role_offset == tail_offset.saturating_add(17)
-            && group.opaque_index != 0
-            && group.opaque_index_offset == tail_offset.saturating_add(35)
-            && group.opaque_scalar.is_finite()
-            && group.opaque_scalar_offset == tail_offset.saturating_add(39)
-            && matches!(
-                group.paired_byte_offset.saturating_sub(tail_offset),
-                85 | 87 | 88
-            )
             && operand_group_slots.insert((
                 native_stream,
                 group.scope_record_index,
@@ -1339,8 +1380,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design construction operand group has an invalid counted frame"
-                    .into(),
+                message: "Fusion Design construction operand group has an invalid frame".into(),
                 entity: Some(group.id.clone()),
             });
         }
@@ -1973,7 +2013,14 @@ fn validate_construction_operand_identities<'a>(
                     && persistent.next_record_index != 0
             });
         let valid = group.is_some_and(|group| {
-            identity.wrapper_record_indices.first() == Some(&group.identity_record_index)
+            let records::DesignConstructionOperandGroupFrame::Counted {
+                identity_record_index,
+                ..
+            } = &group.frame
+            else {
+                return false;
+            };
+            identity.wrapper_record_indices.first() == Some(identity_record_index)
         }) && wrapper_shape
             && following_shape
             && persistent_shape

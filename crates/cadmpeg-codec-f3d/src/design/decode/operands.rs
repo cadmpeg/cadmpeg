@@ -13,16 +13,16 @@ use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand, DesignBodyRecipeReference,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignEdgeIdentityOperand, DesignEdgeOperand,
-    DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudePrologue, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup,
-    DesignFilletRadiusLaw, DesignObjectKind, DesignParameter, DesignParameterOwner,
-    DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
-    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
-    LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
-    SketchRelationOperand,
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignObjectKind,
+    DesignParameter, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    DesignSketchProfileOperand, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
+    SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, u32_at, u64_at as read_u64};
@@ -814,6 +814,11 @@ pub(crate) fn parse_construction_operand_group(
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<DesignConstructionOperandGroup> {
+    if let Some(group) =
+        parse_direct_construction_operand_group(bytes, scope, scope_reference_ordinal, header)
+    {
+        return Some(group);
+    }
     let start = usize::try_from(header.byte_offset).ok()?;
     let count_at = if bytes.get(start + 11..start + 21)? == [0; 10] {
         start.checked_add(21)?
@@ -920,21 +925,92 @@ pub(crate) fn parse_construction_operand_group(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        member_count_offset: u64::try_from(count_at).ok()?,
         members,
         lost_edge_references: Vec::new(),
         member_offsets,
-        identity_record_index,
-        identity_record_offset: u64::try_from(position + 7).ok()?,
+        frame: DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: u64::try_from(count_at).ok()?,
+            identity_record_index,
+            identity_record_offset: u64::try_from(position + 7).ok()?,
+            opaque_index,
+            opaque_index_offset: u64::try_from(position + 35).ok()?,
+            opaque_scalar,
+            opaque_scalar_offset: u64::try_from(position + 39).ok()?,
+            variant,
+        },
         role,
         extrude_role,
         extrude_face_role: None,
         role_offset: u64::try_from(position + 17).ok()?,
-        opaque_index,
-        opaque_index_offset: u64::try_from(position + 35).ok()?,
-        opaque_scalar,
-        opaque_scalar_offset: u64::try_from(position + 39).ok()?,
-        variant,
+        paired_class_tag,
+        paired_byte_offset: u64::try_from(paired_at).ok()?,
+    })
+}
+
+fn parse_direct_construction_operand_group(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Option<DesignConstructionOperandGroup> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Extrude) {
+        return None;
+    }
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10]
+        || u32_at(bytes, start + 21)? != 1
+        || marked_record_reference(bytes, start + 25) != header.record_index.checked_add(9)
+        || marked_record_reference(bytes, start + 36) != header.record_index.checked_add(3)
+        || marked_record_reference(bytes, start + 47) != header.record_index.checked_add(6)
+        || u32_at(bytes, start + 58)? != 1
+        || bytes.get(start + 62) != Some(&1)
+        || bytes.get(start + 67..start + 73)? != [0; 6]
+        || bytes.get(start + 118..start + 120)? != [0; 2]
+        || marked_record_reference(bytes, start + 120) != header.record_index.checked_add(1)
+        || bytes.get(start + 131) != Some(&0)
+        || marked_record_reference(bytes, start + 132) != Some(scope.record_index)
+    {
+        return None;
+    }
+    let selector = u32_at(bytes, start + 63)?;
+    let role = read_u64(bytes, start + 73)?;
+    if selector == 0
+        || role != 0x0000_0011_0000_0000
+        || marked_record_reference(bytes, start + 107) != header.record_index.checked_add(2)
+    {
+        return None;
+    }
+    let paired_at = start.checked_add(143)?;
+    let (paired_class_tag, after_tag) =
+        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+    if u32_at(bytes, after_tag)? != header.record_index {
+        return None;
+    }
+    Some(DesignConstructionOperandGroup {
+        id: String::new(),
+        scope_record_index: scope.record_index,
+        scope_reference_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        members: vec![header.record_index.checked_add(9)?],
+        lost_edge_references: Vec::new(),
+        member_offsets: vec![u64::try_from(start + 26).ok()?],
+        frame: DesignConstructionOperandGroupFrame::Direct {
+            member_count_offset: u64::try_from(start + 21).ok()?,
+            first_auxiliary_record_index: header.record_index.checked_add(3)?,
+            first_auxiliary_record_offset: u64::try_from(start + 37).ok()?,
+            second_auxiliary_record_index: header.record_index.checked_add(6)?,
+            second_auxiliary_record_offset: u64::try_from(start + 48).ok()?,
+            selector,
+            selector_offset: u64::try_from(start + 63).ok()?,
+            opaque_payload: bytes.get(start + 81..start + 107)?.to_vec(),
+            opaque_payload_offset: u64::try_from(start + 81).ok()?,
+        },
+        role,
+        extrude_role: Some(DesignExtrudeOperandRole::Faces),
+        extrude_face_role: None,
+        role_offset: u64::try_from(start + 73).ok()?,
         paired_class_tag,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
@@ -962,7 +1038,14 @@ pub fn decode_construction_operand_identities(
         }) else {
             continue;
         };
-        let Some(wrapper_header) = headers.get(&(stream, group.identity_record_index)) else {
+        let DesignConstructionOperandGroupFrame::Counted {
+            identity_record_index,
+            ..
+        } = group.frame
+        else {
+            continue;
+        };
+        let Some(wrapper_header) = headers.get(&(stream, identity_record_index)) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;

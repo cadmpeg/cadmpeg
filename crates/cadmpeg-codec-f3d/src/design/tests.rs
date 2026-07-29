@@ -3892,21 +3892,24 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         record_index: 200,
         byte_offset: 0,
         class_tag: "264".into(),
-        member_count_offset: 0,
         members: vec![201],
         lost_edge_references: Vec::new(),
         member_offsets: vec![0],
-        identity_record_index: 202,
-        identity_record_offset: 0,
+        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: 0,
+            identity_record_index: 202,
+            identity_record_offset: 0,
+            opaque_index: 1,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+        },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 0,
-        opaque_index: 1,
-        opaque_index_offset: 0,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 0,
-        variant: false,
+
         paired_class_tag: "264".into(),
         paired_byte_offset: 0,
     };
@@ -5324,7 +5327,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
 }
 
 #[test]
-fn construction_operand_groups_have_exact_counted_frames() {
+fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&class_tag);
@@ -5435,15 +5438,21 @@ fn construction_operand_groups_have_exact_counted_frames() {
 
     let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
         .expect("counted Extrude operand group");
-    assert_eq!(group.member_count_offset, 21);
     assert_eq!(group.members, [200, 201]);
     assert_eq!(group.member_offsets, [26, 37]);
-    assert_eq!(group.identity_record_index, 300);
     assert_eq!(group.role, 0x0000_0008_0000_0000);
     assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
-    assert_eq!(group.opaque_index, 180);
-    assert_eq!(group.opaque_scalar, 0.125);
-    assert!(group.variant);
+    assert!(matches!(
+        group.frame,
+        crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: 21,
+            identity_record_index: 300,
+            opaque_index: 180,
+            opaque_scalar: 0.125,
+            variant: true,
+            ..
+        }
+    ));
     assert_eq!(group.paired_byte_offset, paired_at as u64);
 
     let mut flagged = bytes[..11].to_vec();
@@ -5462,7 +5471,13 @@ fn construction_operand_groups_have_exact_counted_frames() {
     flagged.extend_from_slice(&bytes[21..]);
     let flagged = parse_construction_operand_group(&flagged, &scope, 0, &record)
         .expect("operation-flagged counted operand group");
-    assert_eq!(flagged.member_count_offset, flagged_count_at as u64);
+    assert!(matches!(
+        flagged.frame,
+        crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset,
+            ..
+        } if member_count_offset == flagged_count_at as u64
+    ));
     assert_eq!(flagged.members, [200, 201]);
     assert_eq!(flagged.role, 0x0000_0008_0000_0000);
 
@@ -5496,11 +5511,62 @@ fn construction_operand_groups_have_exact_counted_frames() {
         .expect("flagless counted operand group");
     assert_eq!(flagless.members, [200, 201]);
     assert_eq!(flagless.role, 0x0000_0008_0000_0000);
-    assert!(!flagless.variant);
+    assert!(matches!(
+        flagless.frame,
+        crate::records::DesignConstructionOperandGroupFrame::Counted { variant: false, .. }
+    ));
     assert_eq!(
         flagless.paired_byte_offset,
         u64::try_from(flagless_paired_at).unwrap()
     );
+
+    let mut direct = Vec::new();
+    header(&mut direct, *b"283", 100);
+    direct.extend_from_slice(&[0; 10]);
+    direct.extend_from_slice(&1_u32.to_le_bytes());
+    for record_index in [109_u32, 103, 106] {
+        direct.push(1);
+        direct.extend_from_slice(&record_index.to_le_bytes());
+        direct.extend_from_slice(&[0; 6]);
+    }
+    direct.extend_from_slice(&1_u32.to_le_bytes());
+    direct.push(1);
+    direct.extend_from_slice(&31_003_u32.to_le_bytes());
+    direct.extend_from_slice(&[0; 6]);
+    direct.extend_from_slice(&0x0000_0011_0000_0000_u64.to_le_bytes());
+    direct.extend_from_slice(&[0x5a; 26]);
+    direct.push(1);
+    direct.extend_from_slice(&102_u32.to_le_bytes());
+    direct.extend_from_slice(&[0; 8]);
+    direct.push(1);
+    direct.extend_from_slice(&101_u32.to_le_bytes());
+    direct.extend_from_slice(&[0; 7]);
+    direct.push(1);
+    direct.extend_from_slice(&scope.record_index.to_le_bytes());
+    direct.extend_from_slice(&[0; 6]);
+    let direct_paired_at = direct.len();
+    header(&mut direct, *b"259", 100);
+    let direct_record = DesignRecordHeader {
+        class_tag: "283".into(),
+        ..record.clone()
+    };
+    let direct = parse_construction_operand_group(&direct, &scope, 0, &direct_record)
+        .expect("direct Extrude face group");
+    assert_eq!(direct.members, [109]);
+    assert_eq!(direct.member_offsets, [26]);
+    assert_eq!(direct.role, 0x0000_0011_0000_0000);
+    assert_eq!(direct.extrude_role, Some(DesignExtrudeOperandRole::Faces));
+    assert!(matches!(
+        direct.frame,
+        crate::records::DesignConstructionOperandGroupFrame::Direct {
+            first_auxiliary_record_index: 103,
+            second_auxiliary_record_index: 106,
+            selector: 31_003,
+            ref opaque_payload,
+            ..
+        } if opaque_payload == &[0x5a; 26]
+    ));
+    assert_eq!(direct.paired_byte_offset, direct_paired_at as u64);
 
     let mut split_scope = scope.clone();
     split_scope.kind = "SplitFace".into();
@@ -5789,21 +5855,24 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         record_index: 100,
         byte_offset: 1000,
         class_tag: "332".into(),
-        member_count_offset: 1021,
         members: vec![200],
         lost_edge_references: Vec::new(),
         member_offsets: vec![1026],
-        identity_record_index: 300,
-        identity_record_offset: 1043,
+        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: 1021,
+            identity_record_index: 300,
+            identity_record_offset: 1043,
+            opaque_index: 180,
+            opaque_index_offset: 1071,
+            opaque_scalar: 0.125,
+            opaque_scalar_offset: 1075,
+            variant: false,
+        },
         role: 0x0000_0008_0000_0000,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         extrude_face_role: None,
         role_offset: 1053,
-        opaque_index: 180,
-        opaque_index_offset: 1071,
-        opaque_scalar: 0.125,
-        opaque_scalar_offset: 1075,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 1124,
     };
@@ -5886,21 +5955,24 @@ fn nested_entity_selection_member_retains_both_identity_values() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "269".into(),
-        member_count_offset: 921,
         members: vec![100],
         lost_edge_references: Vec::new(),
         member_offsets: vec![926],
-        identity_record_index: 200,
-        identity_record_offset: 943,
+        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: 921,
+            identity_record_index: 200,
+            identity_record_offset: 943,
+            opaque_index: 1,
+            opaque_index_offset: 971,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 975,
+            variant: false,
+        },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 953,
-        opaque_index: 1,
-        opaque_index_offset: 971,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 975,
-        variant: false,
+
         paired_class_tag: "265".into(),
         paired_byte_offset: 1024,
     };
@@ -5956,21 +6028,24 @@ fn body_recipe_operand_decodes_counted_reference_table() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "269".into(),
-        member_count_offset: 921,
         members: vec![100],
         lost_edge_references: Vec::new(),
         member_offsets: vec![926],
-        identity_record_index: 200,
-        identity_record_offset: 943,
+        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: 921,
+            identity_record_index: 200,
+            identity_record_offset: 943,
+            opaque_index: 1,
+            opaque_index_offset: 971,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 975,
+            variant: false,
+        },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 953,
-        opaque_index: 1,
-        opaque_index_offset: 971,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 975,
-        variant: false,
+
         paired_class_tag: "265".into(),
         paired_byte_offset: 1024,
     };
@@ -6731,21 +6806,24 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "288".into(),
-        member_count_offset: 921,
         members: vec![100],
         lost_edge_references: vec!["f3d:Design/BulkStream.dat:lost-edge#1".into()],
         member_offsets: vec![926],
-        identity_record_index: 91,
-        identity_record_offset: 950,
+        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: 921,
+            identity_record_index: 91,
+            identity_record_offset: 950,
+            opaque_index: 1,
+            opaque_index_offset: 968,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 972,
+            variant: false,
+        },
         role: 0x0000_0008_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 960,
-        opaque_index: 1,
-        opaque_index_offset: 968,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 972,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 1_000,
     };
@@ -7446,21 +7524,24 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "306".into(),
-        member_count_offset: 920,
         members: vec![operand.record_index],
         lost_edge_references: Vec::new(),
         member_offsets: vec![924],
-        identity_record_index: 91,
-        identity_record_offset: 935,
+        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: 920,
+            identity_record_index: 91,
+            identity_record_offset: 935,
+            opaque_index: 1,
+            opaque_index_offset: 954,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 958,
+            variant: false,
+        },
         role: 0x0000_0011_0000_0000,
         extrude_role: Some(DesignExtrudeOperandRole::Faces),
         extrude_face_role: Some(DesignExtrudeFaceRole::Termination),
         role_offset: 946,
-        opaque_index: 1,
-        opaque_index_offset: 954,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 958,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 980,
     };
@@ -11889,21 +11970,24 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         record_index: 101,
         byte_offset: 1000,
         class_tag: "332".into(),
-        member_count_offset: 1021,
         members: vec![200],
         lost_edge_references: Vec::new(),
         member_offsets: vec![1026],
-        identity_record_index: 300,
-        identity_record_offset: 1044,
+        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: 1021,
+            identity_record_index: 300,
+            identity_record_offset: 1044,
+            opaque_index: 180,
+            opaque_index_offset: 1072,
+            opaque_scalar: 0.125,
+            opaque_scalar_offset: 1076,
+            variant: false,
+        },
         role: 0x0000_0008_0000_0000,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         extrude_face_role: None,
         role_offset: 1054,
-        opaque_index: 180,
-        opaque_index_offset: 1072,
-        opaque_scalar: 0.125,
-        opaque_scalar_offset: 1076,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 1125,
     };
@@ -12473,21 +12557,23 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
             record_index,
             byte_offset: 1_000 + u64::from(scope_reference_ordinal),
             class_tag: "288".into(),
-            member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
             members: vec![record_index + 100],
             lost_edge_references: Vec::new(),
             member_offsets: vec![1_026 + u64::from(scope_reference_ordinal)],
-            identity_record_index: record_index + 1,
-            identity_record_offset: 1_050 + u64::from(scope_reference_ordinal),
+            frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+                member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
+                identity_record_index: record_index + 1,
+                identity_record_offset: 1_050 + u64::from(scope_reference_ordinal),
+                opaque_index: 100,
+                opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
+                opaque_scalar: 0.5,
+                opaque_scalar_offset: 1_072 + u64::from(scope_reference_ordinal),
+                variant: false,
+            },
             role: 0x0000_0008_0000_0000,
             extrude_role: None,
             extrude_face_role: None,
             role_offset: 1_060 + u64::from(scope_reference_ordinal),
-            opaque_index: 100,
-            opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
-            opaque_scalar: 0.5,
-            opaque_scalar_offset: 1_072 + u64::from(scope_reference_ordinal),
-            variant: false,
             paired_class_tag: "259".into(),
             paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
         };
@@ -13119,23 +13205,26 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         record_index,
         byte_offset: 1000 + u64::from(ordinal) * 200,
         class_tag: "288".into(),
-        member_count_offset: 1021 + u64::from(ordinal) * 200,
         member_offsets: (0..members.len())
             .map(|index| 1026 + u64::from(ordinal) * 200 + index as u64 * 11)
             .collect(),
         members,
         lost_edge_references: Vec::new(),
-        identity_record_index: 300 + ordinal,
-        identity_record_offset: 1100 + u64::from(ordinal) * 200,
+        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+            member_count_offset: 1021 + u64::from(ordinal) * 200,
+            identity_record_index: 300 + ordinal,
+            identity_record_offset: 1100 + u64::from(ordinal) * 200,
+            opaque_index: 100,
+            opaque_index_offset: 1128 + u64::from(ordinal) * 200,
+            opaque_scalar: 0.5,
+            opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
+            variant: false,
+        },
         role: 0x0000_0008_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 1110 + u64::from(ordinal) * 200,
-        opaque_index: 100,
-        opaque_index_offset: 1128 + u64::from(ordinal) * 200,
-        opaque_scalar: 0.5,
-        opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 1200 + u64::from(ordinal) * 200,
     };

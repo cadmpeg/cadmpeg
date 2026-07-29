@@ -1626,7 +1626,7 @@ pub enum DesignExtrudeFaceRole {
     Termination,
 }
 
-/// Counted construction-operand group owned by a feature scope.
+/// Construction-operand group owned by a feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignConstructionOperandGroup {
     /// Globally unique deterministic identifier.
@@ -1641,8 +1641,6 @@ pub struct DesignConstructionOperandGroup {
     pub byte_offset: u64,
     /// Per-file dynamic primary class tag.
     pub class_tag: String,
-    /// Byte offset of the member count.
-    pub member_count_offset: u64,
     /// Ordered operand-record references.
     pub members: Vec<u32>,
     /// Ordered unresolved-edge records whose run terminates at this group's identity.
@@ -1650,10 +1648,8 @@ pub struct DesignConstructionOperandGroup {
     pub lost_edge_references: Vec<String>,
     /// Byte offsets parallel to `members`.
     pub member_offsets: Vec<u64>,
-    /// Indexed identity-wrapper record.
-    pub identity_record_index: u32,
-    /// Byte offset of `identity_record_index`.
-    pub identity_record_offset: u64,
+    /// Exact framing of the operand-member run and its auxiliary fields.
+    pub frame: DesignConstructionOperandGroupFrame,
     /// Source u64 role code.
     pub role: u64,
     /// Extrude-specific semantic role of `role`.
@@ -1664,20 +1660,56 @@ pub struct DesignConstructionOperandGroup {
     pub extrude_face_role: Option<DesignExtrudeFaceRole>,
     /// Byte offset of `role`.
     pub role_offset: u64,
-    /// Opaque repeated nonzero u32.
-    pub opaque_index: u32,
-    /// Byte offset of the first `opaque_index` copy.
-    pub opaque_index_offset: u64,
-    /// Opaque finite f64.
-    pub opaque_scalar: f64,
-    /// Byte offset of `opaque_scalar`.
-    pub opaque_scalar_offset: u64,
-    /// Boolean tail variant.
-    pub variant: bool,
     /// Per-file dynamic paired class tag.
     pub paired_class_tag: String,
     /// Same-index paired-header byte offset.
     pub paired_byte_offset: u64,
+}
+
+/// Serialized framing of a construction-operand group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "layout", rename_all = "snake_case")]
+pub enum DesignConstructionOperandGroupFrame {
+    /// Count followed by its member references and identity tail.
+    Counted {
+        /// Byte offset of the member count.
+        member_count_offset: u64,
+        /// Indexed identity-wrapper record.
+        identity_record_index: u32,
+        /// Byte offset of `identity_record_index`.
+        identity_record_offset: u64,
+        /// Opaque repeated nonzero u32.
+        opaque_index: u32,
+        /// Byte offset of the first `opaque_index` copy.
+        opaque_index_offset: u64,
+        /// Opaque finite f64.
+        opaque_scalar: f64,
+        /// Byte offset of `opaque_scalar`.
+        opaque_scalar_offset: u64,
+        /// Boolean tail variant.
+        variant: bool,
+    },
+    /// One member followed by two auxiliary indexed-record references.
+    Direct {
+        /// Byte offset of the member count.
+        member_count_offset: u64,
+        /// First auxiliary record.
+        first_auxiliary_record_index: u32,
+        /// Byte offset of the first auxiliary record.
+        first_auxiliary_record_offset: u64,
+        /// Second auxiliary record.
+        second_auxiliary_record_index: u32,
+        /// Byte offset of the second auxiliary record.
+        second_auxiliary_record_offset: u64,
+        /// Nonzero persistent-selection discriminator.
+        selector: u32,
+        /// Byte offset of the persistent-selection discriminator.
+        selector_offset: u64,
+        /// Opaque bytes after the role through the first tail reference.
+        opaque_payload: Vec<u8>,
+        /// Byte offset of `opaque_payload`.
+        opaque_payload_offset: u64,
+    },
 }
 
 /// Nested identity chain named by a construction-operand group.

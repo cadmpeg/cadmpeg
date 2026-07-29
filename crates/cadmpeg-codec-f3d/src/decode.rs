@@ -2416,7 +2416,25 @@ fn extend_related_design_records(
                 let stream = crate::ids::native_stream(&group.id)
                     .unwrap_or(crate::ids::DEFAULT_STREAM)
                     .to_owned();
-                std::iter::once((stream, group.identity_record_index))
+                let record_indices = match &group.frame {
+                    crate::records::DesignConstructionOperandGroupFrame::Counted {
+                        identity_record_index,
+                        ..
+                    } => vec![*identity_record_index],
+                    crate::records::DesignConstructionOperandGroupFrame::Direct {
+                        first_auxiliary_record_index,
+                        second_auxiliary_record_index,
+                        ..
+                    } => vec![
+                        group.record_index.saturating_add(1),
+                        group.record_index.saturating_add(2),
+                        *first_auxiliary_record_index,
+                        *second_auxiliary_record_index,
+                    ],
+                };
+                record_indices
+                    .into_iter()
+                    .map(move |record_index| (stream.clone(), record_index))
             }),
     );
     let existing = native
