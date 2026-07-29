@@ -1903,6 +1903,9 @@ pub struct FeatureOperationBodyOperand {
     pub operand_object_index: u32,
     /// Exact serialized compact-index token.
     pub raw_operand_object_index: Vec<u8>,
+    /// Same-store offset data block named by the operand, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operand_data_block: Option<String>,
     /// Segment body bindings naming the same body image.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub segment_body_bindings: Vec<String>,
@@ -6537,41 +6540,100 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
 pub fn feature_operation_body_operands(
     members: &[FeatureOperationBodyMember],
     references: &[FeatureBodyReferenceOccurrence],
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureOperationBodyOperand> {
-    let known = references
+    let input_operations = inputs
         .iter()
-        .map(|reference| reference.body_object_index)
-        .chain(
-            bindings
-                .iter()
-                .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index]),
-        )
+        .map(|input| input.operation_label.as_str())
         .collect::<BTreeSet<_>>();
+    let mut stores_by_operation = BTreeMap::<&str, BTreeSet<&str>>::new();
+    for input in inputs {
+        let Some((store, _)) = input.data_block.rsplit_once(":block#") else {
+            continue;
+        };
+        stores_by_operation
+            .entry(input.operation_label.as_str())
+            .or_default()
+            .insert(store);
+    }
+    let unique_stores = stores_by_operation
+        .into_iter()
+        .filter_map(|(operation, stores)| {
+            let stores = stores.into_iter().collect::<Vec<_>>();
+            let [store] = stores.as_slice() else {
+                return None;
+            };
+            Some((operation, *store))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let block_ids = blocks
+        .iter()
+        .map(|block| block.id.as_str())
+        .collect::<BTreeSet<_>>();
+
     members
         .iter()
-        .filter(|member| {
-            member.member_index != member.body_object_index && known.contains(&member.member_index)
-        })
-        .map(|member| FeatureOperationBodyOperand {
-            id: member
-                .id
-                .replacen("operation-body-member", "operation-body-operand", 1),
-            operation_label: member.operation_label.clone(),
-            body_object_index: member.body_object_index,
-            body_reference_ordinal: member.body_reference_ordinal,
-            ordinal: member.ordinal,
-            operand_object_index: member.member_index,
-            raw_operand_object_index: member.raw_member_index.clone(),
-            segment_body_bindings: bindings
-                .iter()
-                .filter(|binding| {
-                    binding.body_object_index == member.member_index
-                        || binding.body_alias_object_index == member.member_index
-                })
-                .map(|binding| binding.id.clone())
-                .collect(),
-            source_offset: member.source_offset,
+        .filter_map(|member| {
+            if member.member_index == member.body_object_index {
+                return None;
+            }
+            let member_store = unique_stores.get(member.operation_label.as_str()).copied();
+            if member_store.is_none() && input_operations.contains(member.operation_label.as_str())
+            {
+                return None;
+            }
+            let operand_data_block = member_store.and_then(|store| {
+                let id = format!("{store}:block#{}", member.member_index);
+                block_ids.contains(id.as_str()).then_some(id)
+            });
+            let same_namespace_reference = references.iter().any(|reference| {
+                if reference.body_object_index != member.member_index {
+                    return false;
+                }
+                match member_store {
+                    Some(store) => {
+                        unique_stores
+                            .get(reference.operation_label.as_str())
+                            .copied()
+                            == Some(store)
+                    }
+                    None => !input_operations.contains(reference.operation_label.as_str()),
+                }
+            });
+            let segment_body_bindings = if member_store.is_none() {
+                bindings
+                    .iter()
+                    .filter(|binding| {
+                        binding.body_object_index == member.member_index
+                            || binding.body_alias_object_index == member.member_index
+                    })
+                    .map(|binding| binding.id.clone())
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            if member_store.is_some() && operand_data_block.is_none() {
+                return None;
+            }
+            if !same_namespace_reference && segment_body_bindings.is_empty() {
+                return None;
+            }
+            Some(FeatureOperationBodyOperand {
+                id: member
+                    .id
+                    .replacen("operation-body-member", "operation-body-operand", 1),
+                operation_label: member.operation_label.clone(),
+                body_object_index: member.body_object_index,
+                body_reference_ordinal: member.body_reference_ordinal,
+                ordinal: member.ordinal,
+                operand_object_index: member.member_index,
+                raw_operand_object_index: member.raw_member_index.clone(),
+                operand_data_block,
+                segment_body_bindings,
+                source_offset: member.source_offset,
+            })
         })
         .collect()
 }
@@ -8524,7 +8586,8 @@ mod tests {
             stream_role: 0,
             source_offset: 0,
         }];
-        let operands = super::feature_operation_body_operands(&members, &references, &bindings);
+        let operands =
+            super::feature_operation_body_operands(&members, &references, &[], &[], &bindings);
         assert_eq!(
             operands
                 .iter()
@@ -8545,6 +8608,74 @@ mod tests {
             second_clause.source_property_key(),
             "operation_body_operand.1.0"
         );
+
+        let input = |operation: &str, data_block: &str| FeatureInputBlock {
+            id: format!("input-{operation}"),
+            operation_label: operation.to_string(),
+            input_slot: 0,
+            object_index: 1,
+            raw_object_index: vec![1],
+            data_block: data_block.to_string(),
+            source_offset: 0,
+        };
+        let block = |id: &str, section_ordinal| crate::native::om::DataBlock {
+            id: id.to_string(),
+            section_ordinal,
+            block_ordinal: 20,
+            role: crate::native::om::DataBlockRole::Column,
+            section_offset: 0,
+            byte_len: 1,
+            sha256: "hash".to_string(),
+            source_entry: "entry".to_string(),
+            source_offset: 0,
+        };
+        let inputs = [
+            input("operation", "nx:om-data-blocks-1:block#1"),
+            input("earlier", "nx:om-data-blocks-2:block#1"),
+        ];
+        let blocks = [
+            block("nx:om-data-blocks-1:block#20", 1),
+            block("nx:om-data-blocks-2:block#20", 2),
+        ];
+        assert!(super::feature_operation_body_operands(
+            &members,
+            &references,
+            &inputs,
+            &blocks,
+            &bindings,
+        )
+        .is_empty());
+
+        let same_store_reference = FeatureBodyReferenceOccurrence {
+            operation_label: "same-store".to_string(),
+            ..references[0].clone()
+        };
+        let mut same_store_inputs = inputs.to_vec();
+        same_store_inputs.push(input("same-store", "nx:om-data-blocks-1:block#2"));
+        let same_store = super::feature_operation_body_operands(
+            &members,
+            &[same_store_reference],
+            &same_store_inputs,
+            &blocks,
+            &bindings,
+        );
+        assert_eq!(same_store.len(), 1);
+        assert_eq!(
+            same_store[0].operand_data_block.as_deref(),
+            Some("nx:om-data-blocks-1:block#20")
+        );
+        assert!(same_store[0].segment_body_bindings.is_empty());
+        assert!(super::feature_operation_body_operands(
+            &members,
+            &[FeatureBodyReferenceOccurrence {
+                operation_label: "same-store".to_string(),
+                ..references[0].clone()
+            }],
+            &same_store_inputs,
+            &blocks[1..],
+            &bindings,
+        )
+        .is_empty());
     }
 
     #[test]

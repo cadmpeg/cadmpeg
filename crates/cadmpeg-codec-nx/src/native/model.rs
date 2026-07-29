@@ -523,6 +523,8 @@ impl NativeModel {
         let feature_operation_body_operands = feature_operation_body_operands(
             &feature_operation_body_members,
             &feature_body_reference_occurrences,
+            &feature_input_blocks,
+            &data_blocks,
             &segment_body_bindings,
         );
         let feature_operation_body_11_continuations =

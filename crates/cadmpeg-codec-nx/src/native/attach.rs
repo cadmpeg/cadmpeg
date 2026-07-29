@@ -268,7 +268,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(158);
+    namespace.version = namespace.version.max(159);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -645,6 +645,17 @@ fn attach_feature_operations(
             .or_default()
             .push(operand);
     }
+    let mut segment_body_operands_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
+    for operand in operation_body_operands
+        .iter()
+        .filter(|operand| !operand.segment_body_bindings.is_empty())
+    {
+        segment_body_operands_by_operation
+            .entry(operand.operation_label.as_str())
+            .or_default()
+            .push(operand);
+    }
     let sketch_construction_inputs_by_operation = sketch_construction_inputs
         .iter()
         .map(|inputs| (inputs.operation_label.as_str(), inputs))
@@ -887,7 +898,7 @@ fn attach_feature_operations(
                 }
             }
         }
-        for operand in operation_body_operands_by_operation
+        for operand in segment_body_operands_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
@@ -1629,7 +1640,10 @@ fn attach_feature_operations(
         {
             source_properties.insert(
                 operand.source_property_key(),
-                operand.operand_object_index.to_string(),
+                operand
+                    .operand_data_block
+                    .clone()
+                    .unwrap_or_else(|| operand.operand_object_index.to_string()),
             );
         }
         for binding in parameter_bindings_by_operation
@@ -1679,7 +1693,7 @@ fn attach_feature_operations(
             .then(|| {
                 sew_body_feature_definition(
                     *body_references.get(label.id.as_str())?,
-                    operation_body_operands_by_operation
+                    segment_body_operands_by_operation
                         .get(label.id.as_str())?
                         .as_slice(),
                     &bodies_by_object_index,
@@ -1690,7 +1704,7 @@ fn attach_feature_operations(
             .then(|| {
                 trim_body_feature_definition(
                     *body_references.get(label.id.as_str())?,
-                    operation_body_operands_by_operation
+                    segment_body_operands_by_operation
                         .get(label.id.as_str())?
                         .as_slice(),
                     &bodies_by_object_index,
@@ -4732,6 +4746,7 @@ mod tests {
                 ordinal,
                 operand_object_index: object_index,
                 raw_operand_object_index: vec![object_index as u8],
+                operand_data_block: None,
                 segment_body_bindings: vec![format!("binding#{ordinal}")],
                 source_offset: u64::from(ordinal),
             };
@@ -4808,6 +4823,7 @@ mod tests {
             ordinal: 0,
             operand_object_index: 20,
             raw_operand_object_index: vec![20],
+            operand_data_block: None,
             segment_body_bindings: vec!["binding#0".to_string()],
             source_offset: 0,
         }];

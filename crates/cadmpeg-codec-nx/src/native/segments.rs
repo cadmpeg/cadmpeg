@@ -500,7 +500,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-        assert_eq!(namespace.version, 158);
+        assert_eq!(namespace.version, 159);
         let rows = namespace
             .arena_as::<super::SegmentIndexRow>("segment_index_rows")
             .expect("required invariant");
@@ -953,6 +953,7 @@ mod tests {
             ordinal: 0,
             operand_object_index: 30,
             raw_operand_object_index: vec![30],
+            operand_data_block: None,
             segment_body_bindings: vec!["binding#0".to_string()],
             source_offset: 0,
         }];
