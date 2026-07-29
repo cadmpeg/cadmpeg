@@ -6047,12 +6047,16 @@ pub(crate) fn attach_tolerant_edge_intersections(
         let Some(edge_fields) = graph.get(16, xmt).and_then(Node::edge_fields) else {
             continue;
         };
-        if edge_fields.curve != 1
-            || graph
-                .get(17, edge_fields.fin)
-                .and_then(Node::fin_fields)
-                .is_none_or(|fin| fin.curve_xmt != 1)
-        {
+        let Some(first_fin) = graph.get(17, edge_fields.fin).and_then(Node::fin_fields) else {
+            continue;
+        };
+        if edge_fields.curve != 1 || first_fin.curve_xmt != 1 || first_fin.other <= 1 {
+            continue;
+        }
+        let Some(second_fin) = graph.get(17, first_fin.other).and_then(Node::fin_fields) else {
+            continue;
+        };
+        if second_fin.other != edge_fields.fin || second_fin.edge != xmt {
             continue;
         }
         let Some(edge) = ir
@@ -6066,32 +6070,37 @@ pub(crate) fn attach_tolerant_edge_intersections(
         if edge.curve.is_some() || edge.tolerance.is_none() {
             continue;
         }
-        let mut supports = ir
-            .model
-            .coedges
-            .iter()
-            .filter(|coedge| &coedge.edge == edge_id)
-            .filter_map(|coedge| {
-                let face = ir
-                    .model
-                    .loops
-                    .iter()
-                    .find(|loop_| loop_.id == coedge.owner_loop)?
-                    .face
-                    .clone();
-                ir.model
-                    .faces
-                    .iter()
-                    .find(|candidate| candidate.id == face)
-                    .map(|face| face.surface.clone())
-            })
-            .collect::<BTreeSet<_>>();
-        if supports.len() != 2 {
+        let support = |fin_xmt| {
+            let coedge_id = CoedgeId(format!("{prefix}:fin#{fin_xmt}"));
+            ir.model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == coedge_id && &coedge.edge == edge_id)
+                .and_then(|coedge| {
+                    let face = ir
+                        .model
+                        .loops
+                        .iter()
+                        .find(|loop_| loop_.id == coedge.owner_loop)?
+                        .face
+                        .clone();
+                    ir.model
+                        .faces
+                        .iter()
+                        .find(|candidate| candidate.id == face)
+                        .map(|face| face.surface.clone())
+                })
+        };
+        let Some(first_support) = support(edge_fields.fin) else {
+            continue;
+        };
+        let Some(second_support) = support(first_fin.other) else {
+            continue;
+        };
+        if first_support == second_support {
             continue;
         }
-        let second = supports.pop_last().expect("two supports");
-        let first = supports.pop_first().expect("two supports");
-        candidates.push((xmt, edge_id.clone(), [first, second]));
+        candidates.push((xmt, edge_id.clone(), [first_support, second_support]));
     }
 
     for (xmt, edge_id, supports) in candidates {

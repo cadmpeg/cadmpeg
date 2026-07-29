@@ -5352,7 +5352,16 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     ir.model.edges[0].tolerance = Some(0.01);
     let mut edges = std::collections::BTreeMap::new();
     edges.insert(8, edge_id.clone());
-    let mut stream = topology_partition_stream();
+    let mut incident_coedges = ir
+        .model
+        .coedges
+        .iter_mut()
+        .filter(|coedge| coedge.edge == edge_id)
+        .collect::<Vec<_>>();
+    assert_eq!(incident_coedges.len(), 2);
+    incident_coedges[0].id = cadmpeg_ir::ids::CoedgeId("nx:test:fin#7".into());
+    incident_coedges[1].id = cadmpeg_ir::ids::CoedgeId("nx:test:fin#22".into());
+    let mut stream = partnered_trimmed_topology_partition_stream();
     let edge = stream
         .windows(2)
         .position(|window| window == [0, 16])
@@ -5413,7 +5422,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     ir.model.edges[0].param_range = None;
     ir.model.edges[0].tolerance = Some(0.01);
     let edges = std::collections::BTreeMap::from([(8, edge_id.clone())]);
-    let mut stream = topology_partition_stream();
+    let mut stream = partnered_trimmed_topology_partition_stream();
     let edge = stream
         .windows(2)
         .position(|window| window == [0, 16])
