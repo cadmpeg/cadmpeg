@@ -4778,6 +4778,64 @@ mod tests {
     }
 
     #[test]
+    fn line_pcurve_decodes_every_complete_mode() {
+        let record = |mode: u8, values: &[f64]| {
+            let mut payload = vec![0x81, 0x82, mode];
+            for value in values {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x18,
+                object_id: 7,
+                payload,
+            }
+        };
+
+        let general = parse_line_pcurve(&record(0x01, &[2.0, 3.0, 4.0, -2.0, 1.0, 5.0]))
+            .expect("general line pcurve");
+        assert_eq!(general.surface, 2);
+        assert_eq!(general.distinct_knots, [1.0, 5.0]);
+        assert_eq!(general.control_points, [[6.0, 1.0], [22.0, -7.0]]);
+
+        let constant_u =
+            parse_line_pcurve(&record(0x05, &[3.0, -2.0, 7.0])).expect("constant-U pcurve");
+        assert_eq!(constant_u.distinct_knots, [-2.0, 7.0]);
+        assert_eq!(constant_u.control_points, [[3.0, -2.0], [3.0, 7.0]]);
+
+        let constant_v =
+            parse_line_pcurve(&record(0x09, &[3.0, -2.0, 7.0])).expect("constant-V pcurve");
+        assert_eq!(constant_v.distinct_knots, [-2.0, 7.0]);
+        assert_eq!(constant_v.control_points, [[-2.0, 3.0], [7.0, 3.0]]);
+    }
+
+    #[test]
+    fn line_pcurve_rejects_degenerate_or_unclosed_payloads() {
+        let record = |mode: u8, values: &[f64]| {
+            let mut payload = vec![0x81, 0x82, mode];
+            for value in values {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x18,
+                object_id: 7,
+                payload,
+            }
+        };
+
+        assert!(parse_line_pcurve(&record(0x01, &[2.0, 3.0, 0.0, 0.0, 1.0, 5.0])).is_none());
+        assert!(parse_line_pcurve(&record(0x05, &[3.0, 2.0, 2.0])).is_none());
+        assert!(parse_line_pcurve(&record(0x0d, &[3.0, -2.0, 7.0])).is_none());
+
+        let mut tailed = record(0x09, &[3.0, -2.0, 7.0]);
+        tailed.payload.push(0);
+        assert!(parse_line_pcurve(&tailed).is_none());
+    }
+
+    #[test]
     fn circle_pcurve_preserves_arc_length_parameterization() {
         let mut payload = vec![0x81, 0x18, 0x34, 0x12];
         for value in [0.0, 0.0, 2.0, 0.0, 2.0 * std::f64::consts::PI, 1.0, 0.0] {

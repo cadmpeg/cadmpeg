@@ -192,6 +192,10 @@ current scores require those matrices and representative fixtures.
   control, with no residual bytes.
   Object-stream vertex-incidence links require one roster reference and an
   exact `00` or `04` terminal control, with no residual bytes.
+  Object-stream class-`18` pcurves require one complete finite line production:
+  general parametric, constant-U, or constant-V. Object-stream class-`19`
+  pcurves require the complete finite arc-length circle grammar. Both transfer
+  over their stored parameter intervals.
   Object-stream class-`21` pcurves require the exact single-segment clamped
   Bézier grammar, complete finite suffix, and positive scalar domain.
   Object-stream class-`1a` pcurves require the exact circular diameter-period
