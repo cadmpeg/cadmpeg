@@ -119,6 +119,10 @@ current scores require those matrices and representative fixtures.
   malformed chart relations reject the complete record.
   A consolidated sphere retains active azimuth and latitude intervals and
   validates its repeated radius and redundant centered-domain origin exactly.
+  An object-stream sphere retains independent geometric and construction
+  radii, active azimuth and latitude intervals, and its stored construction
+  chart origin. The chart origin must agree with the construction-scaled
+  centered azimuth origin within two binary64 relative epsilon.
 - The freeform fallback transfers complete consolidated cylinder, cone, sphere,
   and torus records as placed analytic surface carriers independently of
   unresolved topology ownership.

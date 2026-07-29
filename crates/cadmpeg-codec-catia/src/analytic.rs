@@ -32,6 +32,22 @@ pub(crate) fn periodic_angular_range_is_valid(range: [f64; 2], domain: [f64; 2])
         && (range_midpoint - domain_midpoint).abs() <= TOLERANCE
 }
 
+/// Validate the active azimuth and latitude intervals of a sphere chart.
+pub(crate) fn sphere_angular_ranges_are_valid(
+    azimuth_range: [f64; 2],
+    latitude_range: [f64; 2],
+) -> bool {
+    azimuth_range
+        .iter()
+        .chain(&latitude_range)
+        .all(|value| value.is_finite())
+        && azimuth_range[0] < azimuth_range[1]
+        && azimuth_range[1] - azimuth_range[0] <= std::f64::consts::TAU
+        && -std::f64::consts::FRAC_PI_2 <= latitude_range[0]
+        && latitude_range[0] < latitude_range[1]
+        && latitude_range[1] <= std::f64::consts::FRAC_PI_2
+}
+
 /// Cylinder from an already-decoded `origin` plus a direction frame.
 ///
 /// Reads two direction rows `u`, `v` then the radius from `c`, which must be

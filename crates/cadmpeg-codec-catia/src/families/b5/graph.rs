@@ -9,7 +9,7 @@ use cadmpeg_ir::le::f64_at;
 use cadmpeg_ir::math::Point2;
 
 use super::vecmath::{add, cross, scale};
-use crate::analytic::periodic_angular_range_is_valid;
+use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::wire;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
@@ -196,8 +196,10 @@ pub enum B5Surface {
         axis: [f64; 3],
         /// Positive sphere radius.
         radius: f64,
-        /// Increasing native azimuth and latitude bounds, in radians.
-        angular_bounds: [[f64; 2]; 2],
+        /// Active azimuth interval, in radians.
+        azimuth_range: [f64; 2],
+        /// Active latitude interval, in radians.
+        latitude_range: [f64; 2],
         /// Positive radius of the enclosing support-bound construction.
         construction_radius: f64,
         /// Origin of the native periodic V coordinate, in length units.
@@ -1857,8 +1859,10 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let stored_y = point(&record.payload, 49)?;
             let stored_axis = point(&record.payload, 73)?;
             let radius = scalar(&record.payload, 97)?;
-            let [u0, u1, v0, v1, construction_radius, chart_origin] =
+            let [azimuth_lo, azimuth_hi, latitude_lo, latitude_hi, construction_radius, chart_origin] =
                 line_values::<6>(&record.payload, 105)?;
+            let azimuth_range = [azimuth_lo, azimuth_hi];
+            let latitude_range = [latitude_lo, latitude_hi];
             let vector_length = |value: [f64; 3]| {
                 value
                     .iter()
@@ -1869,10 +1873,14 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let direction_x = unit(stored_x)?;
             let direction_y = unit(stored_y)?;
             let axis = unit(stored_axis)?;
+            let expected_chart_origin = construction_radius
+                * ((azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI);
+            let chart_origin_tolerance =
+                2.0 * f64::EPSILON * chart_origin.abs().max(expected_chart_origin.abs()).max(1.0);
             (radius > 0.0
-                && u0 < u1
-                && v0 < v1
                 && construction_radius > 0.0
+                && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
+                && (chart_origin - expected_chart_origin).abs() <= chart_origin_tolerance
                 && [stored_x, stored_y, stored_axis].iter().all(|direction| {
                     (vector_length(*direction) - radius).abs() <= 1e-12 * radius.abs().max(1.0)
                 })
@@ -1883,7 +1891,8 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                     direction_y,
                     axis,
                     radius,
-                    angular_bounds: [[u0, u1], [v0, v1]],
+                    azimuth_range,
+                    latitude_range,
                     construction_radius,
                     chart_origin,
                 })
@@ -2932,7 +2941,7 @@ fn parse_sphere_great_circle_pcurve(
 ) -> Option<B5SphereGreatCirclePcurve> {
     let B5Surface::Sphere {
         construction_radius: sphere_chart_scale,
-        angular_bounds,
+        azimuth_range,
         chart_origin,
         ..
     } = surface
@@ -2956,7 +2965,7 @@ fn parse_sphere_great_circle_pcurve(
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 1e-12 * left.abs().max(right.abs()).max(1.0)
     };
-    let surface_u_bounds = angular_bounds[0].map(|angle| chart_scale * angle);
+    let surface_u_bounds = azimuth_range.map(|angle| chart_scale * angle);
     let contains = |outer: [f64; 2], inner: [f64; 2]| {
         let scale = outer
             .into_iter()
@@ -3954,7 +3963,11 @@ mod tests {
     }
 
     #[test]
-    fn sphere_surface_reads_radius_scaled_right_handed_frame() {
+    fn sphere_surface_validates_radius_scaled_frame_and_chart() {
+        let construction_radius = 3.0;
+        let azimuth_range = [0.0, 1.0];
+        let chart_origin = construction_radius
+            * ((azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI);
         let mut payload = vec![0; 153];
         payload[0] = 0x80;
         for (offset, value) in [
@@ -3969,8 +3982,8 @@ mod tests {
             (113, 1.0),
             (121, -1.0),
             (129, 1.0),
-            (137, 3.0),
-            (145, 0.0),
+            (137, construction_radius),
+            (145, chart_origin),
         ] {
             payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
         }
@@ -3989,14 +4002,28 @@ mod tests {
                 direction_y: [0.0, 1.0, 0.0],
                 axis: [0.0, 0.0, 1.0],
                 radius: 2.0,
-                angular_bounds: [[0.0, 1.0], [-1.0, 1.0]],
-                construction_radius: 3.0,
-                chart_origin: 0.0,
+                azimuth_range,
+                latitude_range: [-1.0, 1.0],
+                construction_radius,
+                chart_origin,
             })
         );
-        let mut left_handed = record;
+        let mut left_handed = record.clone();
         left_handed.payload[89..97].copy_from_slice(&(-2.0f64).to_le_bytes());
         assert_eq!(parse_surface(&left_handed), None);
+
+        let mut overlong_azimuth = record.clone();
+        overlong_azimuth.payload[113..121]
+            .copy_from_slice(&(std::f64::consts::TAU + 1.0).to_le_bytes());
+        assert_eq!(parse_surface(&overlong_azimuth), None);
+
+        let mut invalid_latitude = record.clone();
+        invalid_latitude.payload[121..129].copy_from_slice(&(-std::f64::consts::PI).to_le_bytes());
+        assert_eq!(parse_surface(&invalid_latitude), None);
+
+        let mut wrong_chart_origin = record;
+        wrong_chart_origin.payload[145..153].copy_from_slice(&0.0f64.to_le_bytes());
+        assert_eq!(parse_surface(&wrong_chart_origin), None);
     }
 
     #[test]
@@ -4255,7 +4282,8 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius,
-            angular_bounds: [[0.0, 1.5], [-1.0, 1.0]],
+            azimuth_range: [0.0, 1.5],
+            latitude_range: [-1.0, 1.0],
             construction_radius: chart_scale,
             chart_origin,
         };
@@ -4365,7 +4393,8 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 2.0,
-            angular_bounds: [[0.0, 1.0], [-1.0, 1.0]],
+            azimuth_range: [0.0, 1.0],
+            latitude_range: [-1.0, 1.0],
             construction_radius: 2.0,
             chart_origin: -2.0,
         };
@@ -4375,7 +4404,8 @@ mod tests {
             direction_y: [-1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 8.5,
-            angular_bounds: [[0.0, 1.0], [-1.0, 1.0]],
+            azimuth_range: [0.0, 1.0],
+            latitude_range: [-1.0, 1.0],
             construction_radius: 8.5,
             chart_origin: -2.0,
         };

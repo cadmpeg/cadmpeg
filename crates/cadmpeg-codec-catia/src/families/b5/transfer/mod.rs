@@ -2167,7 +2167,8 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 5.0,
-            angular_bounds: [[0.0, std::f64::consts::TAU], [-1.0, 1.0]],
+            azimuth_range: [0.0, std::f64::consts::TAU],
+            latitude_range: [-1.0, 1.0],
             construction_radius: 8.0,
             chart_origin: 0.0,
         };
@@ -2251,10 +2252,8 @@ mod tests {
                     direction_y: [0.0, 1.0, 0.0],
                     axis: [0.0, 0.0, 1.0],
                     radius: 5.0,
-                    angular_bounds: [
-                        [0.0, std::f64::consts::TAU],
-                        [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
-                    ],
+                    azimuth_range: [0.0, std::f64::consts::TAU],
+                    latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
                     construction_radius: chart_scale,
                     chart_origin: 0.0,
                 },

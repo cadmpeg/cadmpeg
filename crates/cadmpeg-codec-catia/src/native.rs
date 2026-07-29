@@ -4747,7 +4747,7 @@ fn validate_consolidated_spheres(
                 .zip(sphere.axis)
                 .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
             || sphere.radius <= 0.0
-            || !crate::families::b2::records::sphere_angular_ranges_are_valid(
+            || !crate::analytic::sphere_angular_ranges_are_valid(
                 sphere.azimuth_range,
                 sphere.latitude_range,
             )
