@@ -2254,8 +2254,11 @@ rotation. Class 911 is a hole definition, class 913 is a round definition,
 class 914 is a chamfer definition, class 923 is a datum-plane definition, and
 class 926 is a saved section. In a DEPDB recipe prefix, the root schema class
 performs the same dispatch. Class 979 with the exact model-reference name
-`PRT_CSYS_DEF` is the default part coordinate-system feature. Its frame remains
-unresolved until a model-space coordinate-system payload is joined.
+`PRT_CSYS_DEF` is the default part coordinate-system feature. A uniquely owned
+definition with one complete `local_sys` stores the coordinate-system x, y,
+and z axes in its first, second, and third triples and the model-space origin
+in its final triple. The three normalized axes must be pairwise orthogonal and
+right-handed. Other class-979 frames remain unresolved.
 
 The labelled feature-row schema stores the ten procedural choice fields in
 order from `blend_choice` through `misc_choice`. Each field ends at the next

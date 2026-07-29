@@ -17251,6 +17251,34 @@ fn schema_feature_definition(
         return knit_surface_feature_definition(scan, feature_id);
     }
     if schema_class == 979 && kind == "PRT_CSYS_DEF" {
+        let definitions = scan
+            .features
+            .definitions
+            .iter()
+            .filter(|definition| definition.owner_feature_id == Some(feature_id))
+            .collect::<Vec<_>>();
+        if let [definition] = definitions.as_slice() {
+            if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+                let x_axis = normalized(values[0..3].try_into().expect("three values"));
+                let y_axis = normalized(values[3..6].try_into().expect("three values"));
+                let z_axis = normalized(values[6..9].try_into().expect("three values"));
+                let origin: [f64; 3] = values[9..12].try_into().expect("three values");
+                if let (Some(x_axis), Some(y_axis), Some(z_axis)) = (x_axis, y_axis, z_axis) {
+                    let right_handed = dot(cross(x_axis, y_axis), z_axis) >= 1.0 - 1e-12;
+                    let orthogonal = dot(x_axis, y_axis).abs() <= 1e-12
+                        && dot(x_axis, z_axis).abs() <= 1e-12
+                        && dot(y_axis, z_axis).abs() <= 1e-12;
+                    if origin.into_iter().all(f64::is_finite) && orthogonal && right_handed {
+                        return IrFeatureDefinition::DatumCoordinateSystem {
+                            origin: Point3::new(origin[0], origin[1], origin[2]),
+                            x_axis: Vector3::new(x_axis[0], x_axis[1], x_axis[2]),
+                            y_axis: Vector3::new(y_axis[0], y_axis[1], y_axis[2]),
+                            z_axis: Vector3::new(z_axis[0], z_axis[1], z_axis[2]),
+                        };
+                    }
+                }
+            }
+        }
         return IrFeatureDefinition::DatumCoordinateSystemUnresolved;
     }
     if numbered_feature_name_has_family(kind, "Extrude") {
