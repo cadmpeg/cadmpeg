@@ -193,6 +193,13 @@ object-namespace primary body has a segment body-image binding, every surviving
 neutral body from that image is an output of the operation. An offset-store
 primary body or unbound object-namespace primary body retains its native
 relation but has no neutral output.
+
+A body selection resolves atomically only when every serialized object identity
+has a segment body-image binding. Bound bodies retain first serialized
+occurrence order. Multiple serialized aliases of the same segment body
+contribute that body once. Alias overlap between distinct selection roles does
+not collapse those roles and leaves them unresolved.
+
 `DELETE` is a body-deletion operation only when its bounded record contains the
 primary-body field. A `DELETE` record without that field does not identify a
 body target and remains native.

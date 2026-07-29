@@ -269,7 +269,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(163);
+    namespace.version = namespace.version.max(164);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -3904,10 +3904,9 @@ fn feature_body_selection(
             return BodySelection::Native(native);
         };
         for body in bound {
-            if bodies.contains(body) {
-                return BodySelection::Native(native);
+            if !bodies.contains(body) {
+                bodies.push(body.clone());
             }
-            bodies.push(body.clone());
         }
     }
     BodySelection::Resolved { bodies, native }
@@ -4776,15 +4775,18 @@ mod tests {
             ),
             BodySelection::Native(_)
         ));
-        let aliases = BTreeMap::from([(94, vec![first.clone()]), (150, vec![first])]);
-        assert!(matches!(
+        let aliases = BTreeMap::from([(94, vec![first.clone()]), (150, vec![first.clone()])]);
+        assert_eq!(
             super::feature_body_selection(
                 &[94, 150],
                 &aliases,
                 "nx:om-object-indices#94,150".to_string(),
             ),
-            BodySelection::Native(_)
-        ));
+            BodySelection::Resolved {
+                bodies: vec![first],
+                native: "nx:om-object-indices#94,150".to_string(),
+            }
+        );
         assert_eq!(
             super::feature_body_outputs(94, &bindings),
             vec![BodyId("nx:s2:body#3".to_string())]
@@ -4838,15 +4840,18 @@ mod tests {
         let alias_bodies = BTreeMap::from([
             (10, vec![primary.clone()]),
             (20, vec![aliased.clone()]),
-            (30, vec![aliased]),
+            (30, vec![aliased.clone()]),
         ]);
-        assert!(matches!(
+        assert_eq!(
             super::sew_body_feature_definition(10, &references, &alias_bodies),
             Some(FeatureDefinition::SewBodies {
-                bodies: BodySelection::Native(native),
-                ..
-            }) if native == "nx:om-object-indices#10,20,30"
-        ));
+                bodies: BodySelection::Resolved {
+                    bodies: vec![primary, aliased],
+                    native: "nx:om-object-indices#10,20,30".to_string(),
+                },
+                gap_tolerance: None,
+            })
+        );
     }
 
     #[test]
