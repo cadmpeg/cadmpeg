@@ -238,82 +238,6 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
     }
 }
 
-fn constraint_parameters(
-    definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
-) -> Vec<&cadmpeg_ir::features::ParameterId> {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
-
-    match definition {
-        Definition::Offset { parameter, .. } | Definition::Native { parameter, .. } => {
-            parameter.iter().collect()
-        }
-        Definition::Distance { parameter, .. }
-        | Definition::DistanceLoci { parameter, .. }
-        | Definition::HorizontalDistance { parameter, .. }
-        | Definition::VerticalDistance { parameter, .. }
-        | Definition::RepeatedDistance { parameter, .. }
-        | Definition::Angle { parameter, .. }
-        | Definition::AngleToAxis { parameter, .. }
-        | Definition::Radius { parameter, .. }
-        | Definition::Diameter { parameter, .. }
-        | Definition::SnellsLaw { parameter, .. }
-        | Definition::Weight { parameter, .. } => vec![parameter],
-        Definition::RectangularPattern { directions, .. } => directions
-            .iter()
-            .flat_map(|direction| {
-                [
-                    direction.span_parameter.as_ref(),
-                    direction.count_parameter.as_ref(),
-                ]
-                .into_iter()
-                .flatten()
-            })
-            .collect(),
-        Definition::CircularPattern {
-            angle_parameter,
-            count_parameter,
-            ..
-        } => [angle_parameter.as_ref(), count_parameter.as_ref()]
-            .into_iter()
-            .flatten()
-            .collect(),
-        Definition::Disabled
-        | Definition::Coincident { .. }
-        | Definition::Polygon { .. }
-        | Definition::SplineGroup { .. }
-        | Definition::TextFrame { .. }
-        | Definition::TextPath { .. }
-        | Definition::CoincidentLoci { .. }
-        | Definition::SameCoordinate { .. }
-        | Definition::PointSymmetric { .. }
-        | Definition::TangentLoci { .. }
-        | Definition::AtIntersection { .. }
-        | Definition::Midpoint { .. }
-        | Definition::Concentric { .. }
-        | Definition::Coradial { .. }
-        | Definition::Collinear { .. }
-        | Definition::Symmetric { .. }
-        | Definition::Horizontal { .. }
-        | Definition::HorizontalLoci { .. }
-        | Definition::HorizontalPoints { .. }
-        | Definition::Vertical { .. }
-        | Definition::VerticalLoci { .. }
-        | Definition::VerticalPoints { .. }
-        | Definition::Parallel { .. }
-        | Definition::Perpendicular { .. }
-        | Definition::Tangent { .. }
-        | Definition::Curvature { .. }
-        | Definition::Equal { .. }
-        | Definition::ArcAngle { .. }
-        | Definition::EllipseAngle { .. }
-        | Definition::Fixed { .. } => Vec::new(),
-        Definition::PointOnObject { .. }
-        | Definition::InternalAlignment { .. }
-        | Definition::Group { .. }
-        | Definition::Text { .. } => Vec::new(),
-    }
-}
-
 fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGaps {
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, Termination,
@@ -422,7 +346,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         ir.model
             .sketch_constraints
             .iter()
-            .flat_map(|constraint| constraint_parameters(&constraint.definition))
+            .flat_map(|constraint| {
+                crate::design::dimensions::constraint_parameters(&constraint.definition)
+            })
             .chain(
                 ir.model.spatial_sketch_constraints.iter().filter_map(
                     |constraint| match &constraint.definition {

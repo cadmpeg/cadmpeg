@@ -416,33 +416,36 @@ fn project_all_dimension_constraints(
             .then(|| (scope.to_owned(), group.companion_record_index))
         })
         .collect::<HashSet<_>>();
-    let locus_companions = pairs
+    let mut projected_dimension_companions = pairs
         .iter()
         .filter_map(|pair| {
             Some((
                 native_stream(&pair.id)?.to_owned(),
-                pair.companion_record_index,
+                pair.governing_companion_record_index,
             ))
         })
-        .chain(groups.iter().filter_map(|group| {
-            Some((
-                native_stream(&group.id)?.to_owned(),
-                group.companion_record_index,
-            ))
-        }))
         .chain(annotation_frames.iter().filter_map(|frame| {
             Some((
                 native_stream(&frame.id)?.to_owned(),
-                frame.companion_record_index?,
+                frame.governing_companion_record_index,
             ))
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
             Some((
                 native_stream(&pair.id)?.to_owned(),
-                pair.companion_record_index,
+                pair.governing_companion_record_index,
             ))
         }))
         .collect::<HashSet<_>>();
+    projected_dimension_companions.extend(groups.iter().filter_map(|group| {
+        let scope = native_stream(&group.id)?;
+        let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
+        let definition = exact_group_definition(scope, group, parameter, parameter_id.clone());
+        (definition
+            .as_ref()
+            .is_none_or(|definition| constraint_parameters(definition).contains(&&parameter_id)))
+        .then(|| (scope.to_owned(), group.companion_record_index))
+    }));
 
     let mut constraints = pairs
         .iter()
@@ -720,7 +723,7 @@ fn project_all_dimension_constraints(
             continue;
         };
         let key = (scope.to_owned(), record.companion_record_index);
-        if !locus_companions.contains(&key) {
+        if !projected_dimension_companions.contains(&key) {
             recipes_by_companion.entry(key).or_default().push(record);
         }
     }
@@ -902,6 +905,82 @@ pub(crate) fn unique_radial_dimension_definition(
         });
     let definition = definitions.next()?;
     definitions.next().is_none().then_some(definition)
+}
+
+pub(crate) fn constraint_parameters(
+    definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
+) -> Vec<&cadmpeg_ir::features::ParameterId> {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+
+    match definition {
+        Definition::Offset { parameter, .. } | Definition::Native { parameter, .. } => {
+            parameter.iter().collect()
+        }
+        Definition::Distance { parameter, .. }
+        | Definition::DistanceLoci { parameter, .. }
+        | Definition::HorizontalDistance { parameter, .. }
+        | Definition::VerticalDistance { parameter, .. }
+        | Definition::RepeatedDistance { parameter, .. }
+        | Definition::Angle { parameter, .. }
+        | Definition::AngleToAxis { parameter, .. }
+        | Definition::Radius { parameter, .. }
+        | Definition::Diameter { parameter, .. }
+        | Definition::SnellsLaw { parameter, .. }
+        | Definition::Weight { parameter, .. } => vec![parameter],
+        Definition::RectangularPattern { directions, .. } => directions
+            .iter()
+            .flat_map(|direction| {
+                [
+                    direction.span_parameter.as_ref(),
+                    direction.count_parameter.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+            })
+            .collect(),
+        Definition::CircularPattern {
+            angle_parameter,
+            count_parameter,
+            ..
+        } => [angle_parameter.as_ref(), count_parameter.as_ref()]
+            .into_iter()
+            .flatten()
+            .collect(),
+        Definition::Disabled
+        | Definition::Coincident { .. }
+        | Definition::Polygon { .. }
+        | Definition::SplineGroup { .. }
+        | Definition::TextFrame { .. }
+        | Definition::TextPath { .. }
+        | Definition::CoincidentLoci { .. }
+        | Definition::SameCoordinate { .. }
+        | Definition::PointSymmetric { .. }
+        | Definition::TangentLoci { .. }
+        | Definition::AtIntersection { .. }
+        | Definition::Midpoint { .. }
+        | Definition::Concentric { .. }
+        | Definition::Coradial { .. }
+        | Definition::Collinear { .. }
+        | Definition::Symmetric { .. }
+        | Definition::Horizontal { .. }
+        | Definition::HorizontalLoci { .. }
+        | Definition::HorizontalPoints { .. }
+        | Definition::Vertical { .. }
+        | Definition::VerticalLoci { .. }
+        | Definition::VerticalPoints { .. }
+        | Definition::Parallel { .. }
+        | Definition::Perpendicular { .. }
+        | Definition::Tangent { .. }
+        | Definition::Curvature { .. }
+        | Definition::Equal { .. }
+        | Definition::ArcAngle { .. }
+        | Definition::EllipseAngle { .. }
+        | Definition::Fixed { .. }
+        | Definition::PointOnObject { .. }
+        | Definition::InternalAlignment { .. }
+        | Definition::Group { .. }
+        | Definition::Text { .. } => Vec::new(),
+    }
 }
 
 /// Attach single-locus offset dimensions to uniquely matching typed offset

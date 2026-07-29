@@ -10723,6 +10723,84 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. }
     )));
 
+    let curves = [40, 41].map(|record_index| SketchCurveIdentity {
+        id: format!("{stream}:sketch-curve#{record_index}"),
+        record_index,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset: 0,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: u64::from(record_index),
+        secondary_id: 0,
+        geometry: None,
+    });
+    let mut entities_with_refs = entities.clone();
+    for (entity, curve) in entities_with_refs.iter_mut().zip(&curves) {
+        entity.native_ref = Some(curve.id.clone());
+    }
+    let relation_group = DesignDimensionLocusGroup {
+        id: format!("{stream}:design-dimension-locus-group#40"),
+        companion_record_index: 22,
+        byte_offset: 0,
+        class_tag: "292".into(),
+        record_index: 40,
+        frame_length: 100,
+        loci: vec![
+            DesignDimensionLocus {
+                geometry_record_index: 40,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+            DesignDimensionLocus {
+                geometry_record_index: 41,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+        ],
+        owner_reference: 100,
+        owner_reference_offset: 0,
+        owner_role: 0,
+        owner_role_offset: 0,
+        state: 0,
+        state_offset: 0,
+        constraint_kinds: vec![SketchConstraintKind::Parallel],
+        unknown_constraint_bits: 0,
+        return_members: vec![40, 41],
+        return_member_offsets: vec![0, 0],
+        next_class_tag: "300".into(),
+        next_record_index: 42,
+        next_byte_offset: 100,
+    };
+    let with_independent_relation = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&relation_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[recipe(1, 31), recipe(0, 30)],
+            points: &[],
+            curves: &curves,
+            entities: &entities_with_refs,
+        },
+        &[],
+    );
+    assert_eq!(with_independent_relation.len(), 2);
+    assert!(with_independent_relation.iter().any(|constraint| matches!(
+        constraint.definition,
+        SketchConstraintDefinition::RepeatedDistance { .. }
+    )));
+    assert!(with_independent_relation.iter().any(|constraint| matches!(
+        constraint.definition,
+        SketchConstraintDefinition::Parallel { .. }
+    )));
+
     let mut incompatible_unit = parameter.clone();
     incompatible_unit.unit = Some("deg".into());
     let constraints = project_dimension_constraints(
