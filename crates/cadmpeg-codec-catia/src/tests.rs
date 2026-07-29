@@ -6999,7 +6999,7 @@ fn outer_object_graph_reads_extended_class_storage_owner_roles() {
 fn outer_object_graph_reads_short_extended_class_storage_owner_roles() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x16, 0x94, 0x95, 0x80, 0x96, 20, 0, 0], &[0xfe]),
-        object_graph_record(&[0x16, 0x94, 0x95, 0x80, 17, 20, 0, 0], &[0xfe]),
+        object_graph_record(&[0x16, 0x94, 0x95, 0x80, 17, 21, 0, 0], &[0xfe]),
     ]);
     let graph = crate::object_graph::parse(&bytes).expect("short extended compact heads");
 

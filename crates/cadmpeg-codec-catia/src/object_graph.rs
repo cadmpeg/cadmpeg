@@ -588,7 +588,7 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
             HeadToken::Reference(storage),
             HeadToken::Reference(0),
             _,
-            HeadToken::Literal(20),
+            HeadToken::Literal(20 | 21),
             HeadToken::Literal(0),
             HeadToken::Literal(0),
         ] if *storage != 0
