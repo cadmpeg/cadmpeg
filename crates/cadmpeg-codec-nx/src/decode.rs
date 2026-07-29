@@ -2612,8 +2612,11 @@ fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
                                     other_surface,
                                     other_pcurve,
                                     parameters[point_index],
-                                    *point,
-                                    effective_fit_tolerance,
+                                    BoundaryInverseTarget {
+                                        point: *point,
+                                        seed,
+                                        tolerance: effective_fit_tolerance,
+                                    },
                                 )
                             })
                             .or_else(|| {
@@ -3541,7 +3544,14 @@ fn blend_boundary_parameter(
         geometry => analytic_surface_parameters(geometry, point),
     }?;
     let pcurve = spine_contact_pcurve(ir, support, &spine, radius, depth + 1)?;
-    closest_pcurve_parameter(pcurve, uv)
+    closest_pcurve_parameter(pcurve, uv, None)
+}
+
+#[derive(Clone, Copy)]
+struct BoundaryInverseTarget {
+    point: Point3,
+    seed: Option<Point2>,
+    tolerance: f64,
 }
 
 fn blend_boundary_parameter_from_support_pcurve(
@@ -3550,8 +3560,7 @@ fn blend_boundary_parameter_from_support_pcurve(
     support: &SurfaceId,
     support_pcurve: &PcurveGeometry,
     curve_parameter: f64,
-    point: Point3,
-    fit_tolerance: f64,
+    target: BoundaryInverseTarget,
 ) -> Option<Point2> {
     let (supports, spine, radius, _) = blend_surface_definition(ir, blend)?;
     let boundary = supports
@@ -3567,13 +3576,18 @@ fn blend_boundary_parameter_from_support_pcurve(
     }
     let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
     let contact_pcurve = spine_contact_pcurve(ir, support, &spine, radius, 0)?;
-    let parameter = closest_pcurve_parameter(contact_pcurve, support_uv)?;
+    let parameter =
+        closest_pcurve_parameter(contact_pcurve, support_uv, target.seed.map(|seed| seed.u))?;
     blend_boundary_point(ir, blend, parameter, boundary, 0)
-        .filter(|candidate| point_distance(*candidate, point) <= fit_tolerance)
+        .filter(|candidate| point_distance(*candidate, target.point) <= target.tolerance)
         .map(|_| Point2::new(parameter, boundary as f64))
 }
 
-pub(crate) fn closest_pcurve_parameter(pcurve: &PcurveGeometry, point: Point2) -> Option<f64> {
+pub(crate) fn closest_pcurve_parameter(
+    pcurve: &PcurveGeometry,
+    point: Point2,
+    seed: Option<f64>,
+) -> Option<f64> {
     let PcurveGeometry::Nurbs {
         degree,
         knots,
@@ -3603,13 +3617,9 @@ pub(crate) fn closest_pcurve_parameter(pcurve: &PcurveGeometry, point: Point2) -
             .iter()
             .map(|parameter| squared_distance(*parameter))
             .collect::<Option<Vec<_>>>()?;
-        let mut best = samples[0];
-        let mut best_distance = distances[0];
+        let mut candidates = vec![(samples[0], distances[0])];
         for (index, &distance) in distances.iter().enumerate() {
-            if distance < best_distance {
-                best = samples[index];
-                best_distance = distance;
-            }
+            candidates.push((samples[index], distance));
             if index > 0
                 && index + 1 < samples.len()
                 && distance <= distances[index - 1]
@@ -3620,13 +3630,10 @@ pub(crate) fn closest_pcurve_parameter(pcurve: &PcurveGeometry, point: Point2) -
                     samples[index + 1],
                     &squared_distance,
                 )?;
-                if distance < best_distance {
-                    best = parameter;
-                    best_distance = distance;
-                }
+                candidates.push((parameter, distance));
             }
         }
-        return Some(best);
+        return closest_parameter_candidate(candidates, seed).map(|candidate| candidate.0);
     }
     let mut candidates = control_points
         .windows(2)
@@ -3659,15 +3666,20 @@ pub(crate) fn closest_pcurve_parameter(pcurve: &PcurveGeometry, point: Point2) -
                 squared_distance,
             ))
         });
-    let first = candidates.next()?;
-    let best = candidates.fold(first, |best, candidate| {
-        if candidate.1 < best.1 {
-            candidate
-        } else {
-            best
-        }
-    });
-    Some(best.0)
+    closest_parameter_candidate(&mut candidates, seed).map(|candidate| candidate.0)
+}
+
+fn closest_parameter_candidate(
+    candidates: impl IntoIterator<Item = (f64, f64)>,
+    seed: Option<f64>,
+) -> Option<(f64, f64)> {
+    candidates.into_iter().min_by(|first, second| {
+        first.1.total_cmp(&second.1).then_with(|| {
+            seed.map_or(std::cmp::Ordering::Equal, |seed| {
+                (first.0 - seed).abs().total_cmp(&(second.0 - seed).abs())
+            })
+        })
+    })
 }
 
 fn spine_contact_point(
@@ -6932,6 +6944,8 @@ fn transfer_intersection_pcurve(
     parameter_range: [f64; 2],
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
+    const CONTINUATION_STEPS: usize = 16;
+
     (parameter_range[0].is_finite()
         && parameter_range[1].is_finite()
         && parameter_range[0] < parameter_range[1]
@@ -6948,29 +6962,38 @@ fn transfer_intersection_pcurve(
         None,
         tolerance,
     )?;
-    let last = transferred_pcurve_sample(
-        ir,
-        curve,
-        source_surface,
-        source_pcurve,
-        target_surface,
-        parameter_range[1],
-        Some(first.1),
-        tolerance,
-    )?;
+    let mut coarse = Vec::with_capacity(CONTINUATION_STEPS + 1);
+    coarse.push(first);
+    for index in 1..=CONTINUATION_STEPS {
+        let parameter = parameter_range[0]
+            + (parameter_range[1] - parameter_range[0]) * index as f64 / CONTINUATION_STEPS as f64;
+        let sample = transferred_pcurve_sample(
+            ir,
+            curve,
+            source_surface,
+            source_pcurve,
+            target_surface,
+            parameter,
+            coarse.last().map(|sample| sample.1),
+            tolerance,
+        )?;
+        coarse.push(sample);
+    }
     let mut samples = vec![first];
-    append_transferred_pcurve_segment(
-        ir,
-        curve,
-        source_surface,
-        source_pcurve,
-        target_surface,
-        first,
-        last,
-        tolerance,
-        0,
-        &mut samples,
-    )?;
+    for pair in coarse.windows(2) {
+        append_transferred_pcurve_segment(
+            ir,
+            curve,
+            source_surface,
+            source_pcurve,
+            target_surface,
+            pair[0],
+            pair[1],
+            tolerance,
+            0,
+            &mut samples,
+        )?;
+    }
     Some(PcurveGeometry::Nurbs {
         degree: 1,
         knots: linear_knots(&samples.iter().map(|sample| sample.0).collect::<Vec<_>>()),
@@ -7002,8 +7025,11 @@ fn transferred_pcurve_sample(
         source_surface,
         source_pcurve,
         parameter,
-        point,
-        tolerance,
+        BoundaryInverseTarget {
+            point,
+            seed,
+            tolerance,
+        },
     )
     .or_else(|| {
         blend_boundary_parameter_from_support_spine(
