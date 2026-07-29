@@ -1790,8 +1790,28 @@ pub(crate) fn standard_object_evidence_from_streams(
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
     for stream in streams {
-        for (object_id, surface) in crate::families::b5::graph::targeted_surfaces(&stream, tags) {
-            let Some(carrier) = crate::families::b5::transfer::resolved_surface_carrier(&surface)
+        let face_surfaces = crate::families::b5::graph::face_surface_references(&stream);
+        let surface_bindings = tags
+            .iter()
+            .map(|&tag| (tag, tag))
+            .chain(
+                face_surfaces
+                    .iter()
+                    .filter(|(face_id, _)| tags.contains(face_id))
+                    .copied(),
+            )
+            .collect::<Vec<_>>();
+        let requested_surfaces = surface_bindings
+            .iter()
+            .map(|(_, surface_id)| *surface_id)
+            .collect::<HashSet<_>>();
+        let targeted_surfaces =
+            crate::families::b5::graph::targeted_surfaces(&stream, &requested_surfaces);
+        for (object_id, surface_id) in surface_bindings {
+            let Some(surface) = targeted_surfaces.get(&surface_id) else {
+                continue;
+            };
+            let Some(carrier) = crate::families::b5::transfer::resolved_surface_carrier(surface)
             else {
                 continue;
             };
@@ -1809,7 +1829,6 @@ pub(crate) fn standard_object_evidence_from_streams(
             };
             merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
         }
-        let face_surfaces = crate::families::b5::graph::face_surface_references(&stream);
         let edge_pcurves =
             crate::families::b5::graph::edge_support_pcurve_references(&stream, edge_tags);
         let requested_pcurves = edge_pcurves
@@ -3298,11 +3317,17 @@ pub(crate) fn standard_native_support_endpoint_pair(
     let [first, second] = <[[Option<Point3>; 2]; 2]>::try_from(lifted).ok()?;
     let first = first.into_iter().collect::<Option<Vec<_>>>()?;
     let second = second.into_iter().collect::<Option<Vec<_>>>()?;
-    if first
+    let direct = first
         .iter()
         .zip(&second)
-        .any(|(left, right)| left.distance_squared(*right).sqrt() > SUPPORT_AGREEMENT_TOLERANCE)
-    {
+        .map(|(left, right)| left.distance_squared(*right).sqrt())
+        .fold(0.0, f64::max);
+    let reversed = first
+        .iter()
+        .zip(second.iter().rev())
+        .map(|(left, right)| left.distance_squared(*right).sqrt())
+        .fold(0.0, f64::max);
+    if direct.min(reversed) > SUPPORT_AGREEMENT_TOLERANCE {
         return None;
     }
     let pair = first
@@ -5873,6 +5898,16 @@ mod route_tests {
 
         assert_eq!(
             standard_native_support_endpoint_pair(&native, &points, &[0, 1]),
+            Some([0, 1])
+        );
+
+        let mut reversed = native.clone();
+        reversed.pcurves[1] = PcurveGeometry::Line {
+            origin: Point2::new(5.0, 0.0),
+            direction: Point2::new(-1.0, 0.0),
+        };
+        assert_eq!(
+            standard_native_support_endpoint_pair(&reversed, &points, &[0, 1]),
             Some([0, 1])
         );
 
