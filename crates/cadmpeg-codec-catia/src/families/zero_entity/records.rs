@@ -692,6 +692,9 @@ fn zero_entity_faces_from_records(
                 .iter()
                 .map(|allocation| first.checked_sub(*allocation))
                 .collect::<Option<Vec<_>>>()?;
+            if loop_terminals.contains(&0) {
+                return None;
+            }
             let terminal_control = *data.get(record.end - 1)?;
             if !matches!(terminal_control, 0x03 | 0x05) {
                 return None;
@@ -2332,6 +2335,14 @@ mod tests {
             write_tagged_u32(&mut stream, face.pos + allocation_offset, 0);
             assert!(zero_entity_support_runs(&stream)[0].face.is_none());
         }
+    }
+
+    #[test]
+    fn face_roster_requires_positive_loop_terminals() {
+        let mut stream = zero_entity_face_support_stream();
+        let face = zero_entity_records(&stream)[2];
+        write_tagged_u32(&mut stream, face.pos + 18, 10);
+        assert!(zero_entity_support_runs(&stream)[0].face.is_none());
     }
 
     #[test]
