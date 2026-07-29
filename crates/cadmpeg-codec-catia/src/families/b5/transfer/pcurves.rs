@@ -347,12 +347,15 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
             Point2::new(point[0] / angular_scale, point[1])
         }
         B5Surface::Cone {
+            direction_x,
+            direction_y,
+            axis,
             half_angle,
             slant_range,
             angular_scale,
             ..
         } => Point2::new(
-            point[0] / angular_scale,
+            dot(cross(*direction_x, *direction_y), *axis).signum() * point[0] / angular_scale,
             (point[1] - slant_range[0]) * half_angle.cos(),
         ),
         B5Surface::Torus {

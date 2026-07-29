@@ -1900,10 +1900,13 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 })
         }
         0x29 => {
+            (record.payload.len() == 185 && record.payload.first() == Some(&0x80)).then_some(())?;
             let apex = point(&record.payload, 1)?;
-            let direction_x = unit(point(&record.payload, 25)?)?;
-            let direction_y = unit(point(&record.payload, 49)?)?;
-            let axis = unit(point(&record.payload, 73)?)?;
+            let direction_x = point(&record.payload, 25)?;
+            let direction_y = point(&record.payload, 49)?;
+            let axis = point(&record.payload, 73)?;
+            let frame_cross = cross(direction_x, direction_y);
+            let opposite_axis = [-axis[0], -axis[1], -axis[2]];
             let half_angle = scalar(&record.payload, 97)?;
             let pre_angular_range_scalar = scalar(&record.payload, 105)?;
             let angular_range = [scalar(&record.payload, 113)?, scalar(&record.payload, 121)?];
@@ -1913,8 +1916,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             }
             let angular_scale = scalar(&record.payload, 145)?;
             let angular_domain = [scalar(&record.payload, 169)?, scalar(&record.payload, 177)?];
-            (record.payload.len() == 185
-                && record.payload.first() == Some(&0x80)
+            ((distance_squared(frame_cross, axis) <= 4e-24
+                || distance_squared(frame_cross, opposite_axis) <= 4e-24)
+                && directions_are_unit_and_orthogonal(direction_x, direction_y)
                 && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
                 && periodic_angular_range_is_valid(angular_range, angular_domain)
                 && slant_range[0] >= 0.0
@@ -4103,9 +4107,25 @@ mod tests {
             })
         );
 
-        let mut malformed = record;
+        let mut opposite_handed = record.clone();
+        opposite_handed.payload[89..97].copy_from_slice(&(-1.0f64).to_le_bytes());
+        assert!(parse_surface(&opposite_handed).is_some());
+
+        let mut malformed = record.clone();
         malformed.payload[169..177].copy_from_slice(&0.0f64.to_le_bytes());
         assert_eq!(parse_surface(&malformed), None);
+        let mut nonunit = record.clone();
+        nonunit.payload[25..33].copy_from_slice(&2.0f64.to_le_bytes());
+        assert_eq!(parse_surface(&nonunit), None);
+        let mut nonorthogonal = record.clone();
+        nonorthogonal.payload[49..57].copy_from_slice(&1.0f64.to_le_bytes());
+        assert_eq!(parse_surface(&nonorthogonal), None);
+        let mut invalid_axis = record.clone();
+        invalid_axis.payload[73..81].copy_from_slice(&1.0f64.to_le_bytes());
+        assert_eq!(parse_surface(&invalid_axis), None);
+        let mut wrong_lead = record;
+        wrong_lead.payload[0] = 0x81;
+        assert_eq!(parse_surface(&wrong_lead), None);
     }
 
     #[test]

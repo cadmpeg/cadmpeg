@@ -127,8 +127,10 @@ current scores require those matrices and representative fixtures.
   orthonormal frame, and zero tail; malformed frame, tail, or range/domain
   relations reject the complete record.
   Consolidated and object-stream cones retain their active azimuth interval,
-  centered full-turn domain, slant interval, and fixed chart-tail scalars;
-  malformed chart relations reject the complete record.
+  centered full-turn domain, slant interval, and fixed chart-tail scalars.
+  Object-stream cones additionally require the complete lead and signed
+  orthonormal frame; neutral pcurve transfer preserves its handedness.
+  Malformed frame or chart relations reject the complete record.
   A consolidated sphere retains active azimuth and latitude intervals and
   validates its repeated radius and redundant centered-domain origin exactly.
   An object-stream sphere retains independent geometric and construction

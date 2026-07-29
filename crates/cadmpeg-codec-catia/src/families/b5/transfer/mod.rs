@@ -2182,6 +2182,15 @@ mod tests {
                 Point2::new(std::f64::consts::PI, 2.0 * half_angle.cos()),
             ]
         );
+        let mut opposite_handed = cone.clone();
+        let B5Surface::Cone { axis, .. } = &mut opposite_handed else {
+            unreachable!();
+        };
+        *axis = [0.0, 0.0, -1.0];
+        assert_eq!(
+            neutral_pcurve_point([3.0 * std::f64::consts::PI, 4.0], &opposite_handed),
+            Point2::new(-std::f64::consts::PI, 2.0 * half_angle.cos())
+        );
         let Some(CurveGeometry::Circle {
             center,
             radius,
