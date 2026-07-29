@@ -12,11 +12,12 @@
 //! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
 //! container view returned by codec inspection.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_ir::be::u32_at as u32_be;
 use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
+use cadmpeg_ir::le::u32_at as u32_le;
 
 use crate::variant::Variant;
 
@@ -86,6 +87,21 @@ pub struct ExternalReference {
     pub offset: usize,
     /// Referenced CATIA document name or path.
     pub target: String,
+}
+
+/// One model-container declaration from the outer `Data` logical stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OuterContainerDeclaration {
+    /// Byte offset within the reconstructed `Data` stream.
+    pub data_offset: usize,
+    /// Source ordinal stored by the declaration.
+    pub ordinal: u32,
+    /// Concrete container class.
+    pub class_name: String,
+    /// Declared base container class.
+    pub base_class: String,
+    /// UUID-derived outer stream name selected by the declaration.
+    pub stream_name: String,
 }
 
 /// Split FINJPL segments within a bounded outer-body range.
@@ -533,6 +549,8 @@ pub struct ContainerScan {
     pub external_references: Vec<ExternalReference>,
     /// Every bounded outer FINJPL block in source order.
     pub finjpl_segments: Vec<FinjplSegment>,
+    /// Exact model-container declarations from the outer `Data` stream.
+    pub outer_container_declarations: Vec<OuterContainerDeclaration>,
     /// Record-family census.
     pub census: Census,
     /// Identified storage variant.
@@ -737,6 +755,118 @@ pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: u
     out
 }
 
+/// Decode model-container declarations whose UUIDs select named outer streams.
+#[must_use]
+pub fn outer_container_declarations(
+    data: &[u8],
+    outer: &InnerDir,
+) -> Vec<OuterContainerDeclaration> {
+    let mut data_descriptors = outer
+        .descriptors
+        .iter()
+        .filter(|descriptor| descriptor.name == "Data");
+    let Some(data_descriptor) = data_descriptors.next() else {
+        return Vec::new();
+    };
+    if data_descriptors.next().is_some() {
+        return Vec::new();
+    }
+    let stream_names = outer
+        .descriptors
+        .iter()
+        .map(|descriptor| descriptor.name.as_str())
+        .collect::<HashSet<_>>();
+    let logical = reconstruct_logical_stream(data, data_descriptor, outer.inner);
+    parse_outer_container_declarations(&logical, &stream_names)
+}
+
+fn parse_outer_container_declarations(
+    data: &[u8],
+    stream_names: &HashSet<&str>,
+) -> Vec<OuterContainerDeclaration> {
+    const HEADER: &[u8] = b"\x01\x00\x03\x00";
+    const PREFIX: &[u8] = b"\x01\x00\x6c\x00\x02\x00\x00\x00";
+    const CLASS_BLOCK: &[u8] = b"\x02\x00\x81\x20";
+    const TERMINAL: &[u8] = b"\x03\x00\xf7\x00\x03\x00\x00\x00";
+
+    let mut declarations = Vec::new();
+    for start in 0..data.len().saturating_sub(64) {
+        if data.get(start + 8..start + 12) != Some(HEADER)
+            || data.get(start + 16..start + 24) != Some(PREFIX)
+            || data.get(start + 32..start + 36) != Some(CLASS_BLOCK)
+        {
+            continue;
+        }
+        let strings_start = start + 40;
+        let search_end = (strings_start + 192).min(data.len());
+        let Some(relative_terminal) =
+            memchr::memmem::find(&data[strings_start..search_end], TERMINAL)
+        else {
+            continue;
+        };
+        let terminal = strings_start + relative_terminal;
+        let Some((class_name, base_class)) = declaration_class_pair(&data[strings_start..terminal])
+        else {
+            continue;
+        };
+        let Some(uuid) = data.get(terminal + TERMINAL.len()..terminal + TERMINAL.len() + 16) else {
+            continue;
+        };
+        let Some((first, middle, last)) = u32_be(uuid, 4)
+            .zip(u32_be(uuid, 8))
+            .zip(u32_be(uuid, 12))
+            .map(|((first, middle), last)| (first, middle, last))
+        else {
+            continue;
+        };
+        let stream_name = format!("{first:x}_{middle:08x}_{last:x}");
+        if !stream_names.contains(stream_name.as_str()) {
+            continue;
+        }
+        let Some(ordinal) = u32_le(data, start + 12) else {
+            continue;
+        };
+        declarations.push(OuterContainerDeclaration {
+            data_offset: start,
+            ordinal,
+            class_name,
+            base_class,
+            stream_name,
+        });
+    }
+    let mut selected_streams = HashSet::new();
+    if declarations
+        .iter()
+        .any(|declaration| !selected_streams.insert(declaration.stream_name.as_str()))
+    {
+        return Vec::new();
+    }
+    declarations
+}
+
+fn declaration_class_pair(data: &[u8]) -> Option<(String, String)> {
+    let first_end = data.iter().position(|byte| *byte == 0)?;
+    let second_start = first_end.checked_add(1)?;
+    let second_end = second_start.checked_add(
+        data.get(second_start..)?
+            .iter()
+            .position(|byte| *byte == 0)?,
+    )?;
+    let first = data.get(..first_end)?;
+    let second = data.get(second_start..second_end)?;
+    if first.is_empty()
+        || second.is_empty()
+        || data.get(second_end..)?.iter().any(|byte| *byte != 0)
+        || !first.iter().chain(second).all(u8::is_ascii_graphic)
+    {
+        return None;
+    }
+    Some((
+        std::str::from_utf8(first).ok()?.to_owned(),
+        std::str::from_utf8(second).ok()?.to_owned(),
+    ))
+}
+
 /// Reconstruct the logical BREP buffer: the largest `MainDataStream` followed by
 /// the largest `SurfacicReps` ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Both are required. A directory that
 /// catalogues the BREP body carries both a substantial `MainDataStream` and a
@@ -821,6 +951,9 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let previews = preview_images_in_segments(&data, &finjpl_segments);
     let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
     let external_references = external_references_in_segments(&data, &finjpl_segments);
+    let outer_container_declarations = outer.as_ref().map_or_else(Vec::new, |directory| {
+        outer_container_declarations(&data, directory)
+    });
 
     let mut census = Census {
         a9_markers: count_subslice(&data, A9_MARKER),
@@ -851,6 +984,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         last_save_version,
         external_references,
         finjpl_segments,
+        outer_container_declarations,
         census,
         variant,
     }
@@ -879,6 +1013,30 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                     .collect::<Vec<_>>()
                     .join(","),
             );
+            if directory == "outer" {
+                if let Some(declaration) = scan
+                    .outer_container_declarations
+                    .iter()
+                    .find(|declaration| declaration.stream_name == d.name)
+                {
+                    attributes.insert(
+                        "container_class".to_string(),
+                        declaration.class_name.clone(),
+                    );
+                    attributes.insert(
+                        "container_base_class".to_string(),
+                        declaration.base_class.clone(),
+                    );
+                    attributes.insert(
+                        "container_ordinal".to_string(),
+                        declaration.ordinal.to_string(),
+                    );
+                    attributes.insert(
+                        "container_data_offset".to_string(),
+                        declaration.data_offset.to_string(),
+                    );
+                }
+            }
             let phys: u64 = d.extents.iter().map(|e| e.phys_len as u64).sum();
             entries.push(ContainerEntry {
                 name: if d.name.is_empty() {
@@ -1017,8 +1175,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 #[cfg(test)]
 mod tests {
     use super::{
-        identify_variant, parse_extents, summarize, Census, ContainerScan, Descriptor, Extent,
-        InnerDir,
+        identify_variant, outer_container_declarations, parse_extents, summarize, Census,
+        ContainerScan, Descriptor, Extent, InnerDir,
     };
     use crate::variant::Variant;
 
@@ -1083,6 +1241,7 @@ mod tests {
             last_save_version: None,
             external_references: Vec::new(),
             finjpl_segments: Vec::new(),
+            outer_container_declarations: Vec::new(),
             census: Census::default(),
             variant: Variant::Unknown,
         };
@@ -1091,5 +1250,83 @@ mod tests {
             summary.entries[0].attributes["extent_flags"],
             "0xa5010080,0x00000000"
         );
+    }
+
+    #[test]
+    fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
+        let mut data = vec![0; 40];
+        data[8..12].copy_from_slice(b"\x01\x00\x03\x00");
+        data[12..16].copy_from_slice(&2u32.to_le_bytes());
+        data[16..24].copy_from_slice(b"\x01\x00\x6c\x00\x02\x00\x00\x00");
+        data[32..36].copy_from_slice(b"\x02\x00\x81\x20");
+        data.extend_from_slice(b"CATPrtCont\0CATProdCont\0\0");
+        data.extend_from_slice(b"\x03\x00\xf7\x00\x03\x00\x00\x00");
+        data.extend_from_slice(&0x4bbc_295cu32.to_be_bytes());
+        data.extend_from_slice(&0x0000_1048u32.to_be_bytes());
+        data.extend_from_slice(&0x62eb_7b6fu32.to_be_bytes());
+        data.extend_from_slice(&0x0000_1825u32.to_be_bytes());
+        let data_len = u32::try_from(data.len()).expect("bounded declaration");
+        let outer = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                Descriptor {
+                    name: "Data".to_string(),
+                    desc_offset: 10,
+                    logical_length: data_len,
+                    extents: vec![Extent {
+                        phys_off: 0,
+                        phys_len: data_len,
+                        flags: 0,
+                    }],
+                },
+                Descriptor {
+                    name: "1048_62eb7b6f_1825".to_string(),
+                    desc_offset: 20,
+                    logical_length: 1,
+                    extents: vec![Extent {
+                        phys_off: data_len,
+                        phys_len: 1,
+                        flags: 0,
+                    }],
+                },
+            ],
+        };
+        data.push(0);
+
+        let declarations = outer_container_declarations(&data, &outer);
+
+        assert_eq!(declarations.len(), 1);
+        assert_eq!(declarations[0].data_offset, 0);
+        assert_eq!(declarations[0].ordinal, 2);
+        assert_eq!(declarations[0].class_name, "CATPrtCont");
+        assert_eq!(declarations[0].base_class, "CATProdCont");
+        assert_eq!(declarations[0].stream_name, "1048_62eb7b6f_1825");
+
+        let scan = ContainerScan {
+            data,
+            outer_dir_offset: 0,
+            outer_dir_length: 0,
+            outer: Some(outer),
+            inner: None,
+            brep: None,
+            previews: Vec::new(),
+            last_save_version: None,
+            external_references: Vec::new(),
+            finjpl_segments: Vec::new(),
+            outer_container_declarations: declarations,
+            census: Census::default(),
+            variant: Variant::Unknown,
+        };
+        let summary = summarize(&scan);
+        assert_eq!(
+            summary.entries[1].attributes["container_class"],
+            "CATPrtCont"
+        );
+        assert_eq!(
+            summary.entries[1].attributes["container_base_class"],
+            "CATProdCont"
+        );
+        assert_eq!(summary.entries[1].attributes["container_ordinal"], "2");
+        assert_eq!(summary.entries[1].attributes["container_data_offset"], "0");
     }
 }

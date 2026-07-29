@@ -38,6 +38,9 @@ current scores require those matrices and representative fixtures.
 
 - Stream-directory inspection retains every extent's raw flags word in logical
   extent order.
+- Admitted outer `Data` declarations bind UUID-named streams to their concrete
+  and base model-container classes and source ordinals. Inspection exposes these
+  bindings on the selected outer stream descriptors.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
   occurrences. Each graph retains its exact containing FINJPL segment when one
