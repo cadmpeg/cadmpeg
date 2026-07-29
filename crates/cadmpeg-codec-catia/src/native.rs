@@ -5422,6 +5422,8 @@ fn validate_zero_entity_topology_records(
         record.id == format!("catia:zero-entity:edge-stride#{index}")
             && record.record_ordinal != 0
             && !record.allocations.contains(&0)
+            && record.allocations[0].checked_sub(1) == Some(record.allocations[3])
+            && record.allocations[0].checked_sub(2) == Some(record.allocations[4])
             && zero_entity_record(records, record.record_ordinal).is_some_and(|source| {
                 source.byte_offset == record.byte_offset && source.tag == [0x5e, 0x1a]
             })

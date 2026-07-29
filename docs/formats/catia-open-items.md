@@ -65,7 +65,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The semantic role of the terminal control byte in each `5fxx` face record is unresolved.
 - The reference-lane rule associating a `0638` oriented use with its owner-local `21xx` support and `05xx` incidence record is unspecified.
 - The fields that bind each `05 0b`/`05 10`/`05 15` incidence lane to physical-edge endpoints are unspecified.
-- The semantic roles and namespace of the five allocation values following the fixed tagged-one prefix in each `5e 1a` edge-stride record remain unresolved.
+- The semantic roles and namespace of the independent `T`, `X`, and `Y` allocations in each `5e 1a` tuple `[T,X,Y,T−1,T−2]` remain unresolved.
 
 ## E5 `0D 03`
 

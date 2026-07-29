@@ -1206,7 +1206,7 @@ pub(crate) fn zero_entity_topology_stream() -> Vec<u8> {
     };
     let mut edge_stride = vec![0u8; 38];
     edge_stride[..4].copy_from_slice(&[0xa9, 0x03, 0x5e, 0x1a]);
-    for (index, value) in [1, 2, 7, 8, 5, 1].into_iter().enumerate() {
+    for (index, value) in [1, 5, 7, 8, 4, 3].into_iter().enumerate() {
         write_tagged_u32(&mut edge_stride, 7 + index * 5, value);
     }
     edge_stride[37] = 0x21;
@@ -5118,7 +5118,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
         panic!("one zero-entity edge stride")
     };
     assert_eq!(edge_stride.record_ordinal, 1);
-    assert_eq!(edge_stride.allocations, [2, 7, 8, 5, 1]);
+    assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
 
     let [pair] = native.zero_entity_oriented_use_pairs.as_slice() else {
         panic!("one zero-entity oriented-use pair")

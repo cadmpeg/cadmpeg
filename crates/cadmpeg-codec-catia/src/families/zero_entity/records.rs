@@ -1242,6 +1242,11 @@ pub fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
             if allocations.contains(&0) {
                 return None;
             }
+            if allocations[0].checked_sub(1) != Some(allocations[3])
+                || allocations[0].checked_sub(2) != Some(allocations[4])
+            {
+                return None;
+            }
             Some(ZeroEntityEdgeStride {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
@@ -1925,7 +1930,7 @@ mod tests {
             panic!("one edge stride")
         };
         assert_eq!(edge_stride.record_ordinal, 1);
-        assert_eq!(edge_stride.allocations, [2, 7, 8, 5, 1]);
+        assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
 
         let pairs = zero_entity_oriented_use_pairs(&stream);
         let [pair] = pairs.as_slice() else {
@@ -1968,6 +1973,13 @@ mod tests {
     fn edge_stride_rejects_a_zero_allocation() {
         let mut stream = zero_entity_topology_stream();
         write_tagged_u32(&mut stream, 12, 0);
+        assert!(zero_entity_edge_strides(&stream).is_empty());
+    }
+
+    #[test]
+    fn edge_stride_requires_its_descending_terminal_tail() {
+        let mut stream = zero_entity_topology_stream();
+        write_tagged_u32(&mut stream, 27, 3);
         assert!(zero_entity_edge_strides(&stream).is_empty());
     }
 

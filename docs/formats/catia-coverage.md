@@ -164,7 +164,7 @@ current scores require those matrices and representative fixtures.
   surfaces retain their exact analytic or contracted NURBS carriers.
   Non-isoparametric affine cone pcurves retain exact conical-helix
   constructions. The independent `5e1a` edge-stride registry retains its fixed
-  tagged-one prefix and five-value allocation tuples. The `2569`/`0638`
+  tagged-one prefix and closed `[T,X,Y,T−1,T−2]` allocation tuples. The `2569`/`0638`
   positional-use and counted `05xx` vertex-incidence registries retain
   one-based global record ordinals and exact references against a complete
   framed-record identity inventory. Each counted vertex-incidence record binds
