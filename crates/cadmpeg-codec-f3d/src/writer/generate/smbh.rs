@@ -2457,16 +2457,19 @@ fn native_tolerant_edge_tail(
         )));
     }
     native_f64(records, tolerance / LEN_TO_MM);
-    let trailing = f3d_native(target)?
+    let (revision, trailing) = f3d_native(target)?
         .and_then(|native| {
             native
                 .tolerant_edge_tails
                 .into_iter()
                 .find(|tail| tail.edge == edge.id)
         })
-        .map_or_else(|| vec![23100, 0], |tail| tail.trailing_integers);
-    for value in trailing {
-        native_i64(records, value);
+        .map_or((23100, Some(0)), |tail| {
+            (tail.entity_revision, tail.trailing_field)
+        });
+    native_i64(records, revision);
+    if let Some(trailing) = trailing {
+        native_i64(records, trailing);
     }
     Ok(())
 }

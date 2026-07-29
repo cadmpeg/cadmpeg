@@ -995,17 +995,15 @@ pub(crate) fn validate_source_less_design_links(
         }
     }
     for tail in &native.tolerant_edge_tails {
-        if tail.trailing_integers.is_empty()
-            || tail.trailing_integers.len() > 2
-            || target
-                .model
-                .edges
-                .iter()
-                .find(|edge| edge.id == tail.edge)
-                .is_none_or(|edge| edge.tolerance.is_none())
+        if target
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id == tail.edge)
+            .is_none_or(|edge| edge.tolerance.is_none())
         {
             return Err(CodecError::Malformed(format!(
-                "F3D tolerant-edge metadata {} requires a tolerant edge and zero final LONG",
+                "F3D tolerant-edge metadata {} requires a tolerant edge",
                 tail.id
             )));
         }

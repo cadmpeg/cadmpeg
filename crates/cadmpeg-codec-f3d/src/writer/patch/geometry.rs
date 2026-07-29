@@ -275,7 +275,7 @@ pub(crate) fn patch_framed_geometry(
         if let Some(tolerance) = tolerant_edges.get(&record.index) {
             if record.head != "tedge"
                 || !matches!(record.chunk(12), Some(sab::Token::Long(_)))
-                || !matches!(record.chunk(13), Some(sab::Token::Long(0)))
+                || !matches!(record.chunk(13), Some(sab::Token::Long(_)))
             {
                 return Err(CodecError::Malformed(format!(
                     "F3D tolerant-edge record {} has the wrong layout",

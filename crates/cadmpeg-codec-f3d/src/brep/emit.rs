@@ -3385,19 +3385,19 @@ pub(crate) fn emit_edges(
                 Sense::Reversed => reversed_curve_id(c),
                 Sense::Forward => CurveId(id(c)),
             });
-            // The trailing tolerance slots are version-gated: older streams
-            // carry a single LONG after the model-space tolerance, newer
-            // streams carry a second LONG valued 0 or 1. All forms are
-            // retained verbatim.
+            // The tedge tail carries the model-space tolerance, then the
+            // per-entity serializer revision stamp, then a version-gated
+            // trailing LONG valued 0 or 1 present only in newer streams. All
+            // forms are retained verbatim.
             let tolerant_tail = match (r.head.as_str(), r.chunk(11), r.chunk(12)) {
-                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(first)))
+                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision)))
                     if tolerance.is_finite() && *tolerance >= 0.0 =>
                 {
-                    let mut trailing = vec![*first];
-                    if let Some(Token::Long(second @ (0 | 1))) = r.chunk(13) {
-                        trailing.push(*second);
-                    }
-                    Some((*tolerance, trailing))
+                    let trailing = match r.chunk(13) {
+                        Some(Token::Long(second @ (0 | 1))) => Some(*second),
+                        _ => None,
+                    };
+                    Some((*tolerance, *revision, trailing))
                 }
                 _ => None,
             };
@@ -3407,16 +3407,15 @@ pub(crate) fn emit_edges(
                 start: VertexId(id(start)),
                 end: VertexId(id(end)),
                 param_range,
-                tolerance: tolerant_tail
-                    .as_ref()
-                    .map(|(tolerance, _)| tolerance * LEN_TO_MM),
+                tolerance: tolerant_tail.map(|(tolerance, _, _)| tolerance * LEN_TO_MM),
             });
-            if let Some((_, trailing_integers)) = tolerant_tail {
+            if let Some((_, entity_revision, trailing_field)) = tolerant_tail {
                 out.tolerant_edge_tails.push(TolerantEdgeTail {
                     id: format!("f3d:asm:tolerant-edge-tail#{i}"),
                     edge: EdgeId(id(i)),
                     record_index: r.index as u32,
-                    trailing_integers,
+                    entity_revision,
+                    trailing_field,
                 });
             }
             out.edge_ownerships.push(EdgeOwnership {

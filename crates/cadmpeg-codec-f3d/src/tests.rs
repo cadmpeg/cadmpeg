@@ -5377,14 +5377,15 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             id: "f3d:asm:tolerant-vertex-tail#generated".into(),
             vertex: tolerant_vertex,
             record_index: 0,
-            leading_tolerances: [1.25, -2.5],
+            leading_tolerances: [-1.0, -1.0],
             trailing_integer: 0,
         }];
         native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
             id: "f3d:asm:tolerant-edge-tail#generated".into(),
             edge: tolerant_edge,
             record_index: 0,
-            trailing_integers: vec![22800, 0],
+            entity_revision: 22800,
+            trailing_field: Some(1),
         }];
         native.tolerant_coedge_parameters = vec![crate::records::TolerantCoedgeParameters {
             id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
@@ -5504,12 +5505,16 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir.model.vertices[0].tolerance, Some(0.025));
     assert_eq!(round_trip.ir.model.edges[0].tolerance, Some(0.035));
     assert_eq!(
-        f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_integers,
-        [22800, 0]
+        f3d_native(&round_trip.ir).tolerant_edge_tails[0].entity_revision,
+        22800
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_field,
+        Some(1)
     );
     assert_eq!(
         f3d_native(&round_trip.ir).tolerant_vertex_tails[0].leading_tolerances,
-        [1.25, -2.5]
+        [-1.0, -1.0]
     );
     assert_eq!(
         f3d_native(&round_trip.ir).tolerant_coedge_parameters[0].parameter_range,
@@ -5566,8 +5571,12 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(retained.ir.model.vertices[0].tolerance, Some(0.05));
     assert_eq!(retained.ir.model.edges[0].tolerance, Some(0.06));
     assert_eq!(
-        f3d_native(&retained.ir).tolerant_edge_tails[0].trailing_integers,
-        [22800, 0]
+        f3d_native(&retained.ir).tolerant_edge_tails[0].entity_revision,
+        22800
+    );
+    assert_eq!(
+        f3d_native(&retained.ir).tolerant_edge_tails[0].trailing_field,
+        Some(1)
     );
     assert_eq!(retained.ir.model.bodies[0].visible, Some(true));
     assert_eq!(
@@ -5587,13 +5596,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 
 #[test]
 fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
-    // The tedge trailing tolerance slot is version-gated: streams carry one
-    // trailing LONG (older) or two (newer, the second valued 0 or 1). The
-    // tvertex trailing LONG likewise takes 0 or 1. Each form must survive a
-    // write/decode cycle byte-for-byte.
-    for (edge_trailing, vertex_trailing) in
-        [(vec![22800, 0], 0), (vec![22800, 1], 1), (vec![22800], 0)]
-    {
+    // The tedge tail carries the serializer revision stamp, then a
+    // version-gated trailing LONG present only in newer streams and valued 0
+    // or 1. The tvertex trailing LONG likewise takes 0 or 1. Each form must
+    // survive a write/decode cycle byte-for-byte.
+    for (edge_trailing, vertex_trailing) in [(Some(0), 0), (Some(1), 1), (None, 0)] {
         let source = f3d_with_smbh(&synthetic_geometry_smbh());
         let decoded = F3dCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -5618,7 +5625,8 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
                 id: "f3d:asm:tolerant-edge-tail#generated".into(),
                 edge: tolerant_edge,
                 record_index: 0,
-                trailing_integers: edge_trailing.clone(),
+                entity_revision: 22800,
+                trailing_field: edge_trailing,
             }];
         }
         let mut encoded = Vec::new();
@@ -5629,7 +5637,11 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("tolerant tail round trip");
         assert_eq!(
-            f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_integers,
+            f3d_native(&round_trip.ir).tolerant_edge_tails[0].entity_revision,
+            22800
+        );
+        assert_eq!(
+            f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_field,
             edge_trailing
         );
         assert_eq!(

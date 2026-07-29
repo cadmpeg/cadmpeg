@@ -154,9 +154,10 @@ pub struct FaceSidedness {
 }
 
 /// Native leading tolerance slots retained from one tolerant ASM vertex
-/// record. The record's three f64 tolerance slots are non-decreasing across
-/// evaluated values; the last slot is always evaluated and becomes the
-/// neutral vertex tolerance, while the first two are retained here verbatim.
+/// record. The record's three f64 tolerance slots are three independent
+/// tolerance evaluations, each using `-1` as its unset sentinel; the third
+/// slot is the effective vertex tolerance and is stored on the vertex, while
+/// the first two are retained here verbatim.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TolerantVertexTail {
     /// Globally unique deterministic identifier for this native record.
@@ -165,15 +166,16 @@ pub struct TolerantVertexTail {
     pub vertex: VertexId,
     /// Source SAB record index.
     pub record_index: u32,
-    /// The first two f64 tolerance slots, retained verbatim in native
-    /// centimetres; `-1` denotes an unevaluated tolerance.
+    /// The first two independent tolerance evaluations, retained verbatim in
+    /// native centimetres; `-1` denotes an unset evaluation.
     pub leading_tolerances: [f64; 2],
     /// Trailing LONG slot following the evaluated tolerance; 0 or 1,
     /// release-dependent, retained verbatim.
     pub trailing_integer: i64,
 }
 
-/// Native integer tail retained from one tolerant ASM edge record.
+/// Native tail retained from one tolerant ASM edge record: the entity
+/// serializer revision stamp followed by a version-gated LONG.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TolerantEdgeTail {
     /// Globally unique deterministic identifier for this native record.
@@ -182,9 +184,13 @@ pub struct TolerantEdgeTail {
     pub edge: EdgeId,
     /// Source SAB record index.
     pub record_index: u32,
-    /// Trailing LONG slots following the model-space tolerance. Older streams
-    /// carry a single slot; newer streams carry two.
-    pub trailing_integers: Vec<i64>,
+    /// Per-entity serializer revision stamp following the model-space
+    /// tolerance, matching the stream's revision value space.
+    pub entity_revision: i64,
+    /// Version-gated trailing LONG following the revision stamp, retained
+    /// verbatim; absent in older streams, `0` or `1` when present. Its
+    /// semantic is unresolved.
+    pub trailing_field: Option<i64>,
 }
 
 /// Parameter interval stored by one tolerant ASM coedge.
