@@ -662,7 +662,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
 
 pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {
     let delta = value - reference;
-    if (-std::f64::consts::PI..=std::f64::consts::PI).contains(&delta) {
+    if (-std::f64::consts::PI..std::f64::consts::PI).contains(&delta) {
         value
     } else {
         reference + (delta + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
@@ -817,6 +817,10 @@ mod route_tests {
         let tiny = 1e-200;
         assert_eq!(crate::assemble::unwrap_angle(tiny, 0.0), tiny);
         assert_eq!(crate::assemble::unwrap_angle(-tiny, 0.0), -tiny);
+        assert_eq!(
+            crate::assemble::unwrap_angle(std::f64::consts::PI, 0.0),
+            -std::f64::consts::PI
+        );
     }
 
     #[test]
