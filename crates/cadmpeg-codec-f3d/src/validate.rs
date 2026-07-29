@@ -3038,6 +3038,7 @@ fn validate_edge_operands<'a>(
                             | design::DesignFeatureFamily::Chamfer
                             | design::DesignFeatureFamily::Revolve
                             | design::DesignFeatureFamily::Loft
+                            | design::DesignFeatureFamily::Sweep
                     )
                 ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem"))
                     && usize::try_from(operand.scope_reference_ordinal)
