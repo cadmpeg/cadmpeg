@@ -15068,23 +15068,7 @@ fn feature_entity_dependencies(
     tables: &[crate::feature::FeatureEntityTable],
     feature_id: u32,
 ) -> Vec<u32> {
-    let producers = tables
-        .iter()
-        .filter_map(|table| table.feature_id.map(|owner| (owner, table)))
-        .flat_map(|(owner, table)| {
-            table
-                .entries
-                .iter()
-                .filter(|entry| entry.source_entity_id.is_some())
-                .map(move |entry| (entry.entity_id, owner))
-        })
-        .fold(
-            BTreeMap::<u32, BTreeSet<u32>>::new(),
-            |mut owners, (entity, owner)| {
-                owners.entry(entity).or_default().insert(owner);
-                owners
-            },
-        );
+    let producers = feature_entity_producers(tables);
     tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
@@ -15104,6 +15088,28 @@ fn feature_entity_dependencies(
             }
             dependencies
         })
+}
+
+fn feature_entity_producers(
+    tables: &[crate::feature::FeatureEntityTable],
+) -> BTreeMap<u32, BTreeSet<u32>> {
+    tables
+        .iter()
+        .filter_map(|table| table.feature_id.map(|owner| (owner, table)))
+        .flat_map(|(owner, table)| {
+            table
+                .entries
+                .iter()
+                .filter(|entry| entry.source_entity_id.is_some())
+                .map(move |entry| (entry.entity_id, owner))
+        })
+        .fold(
+            BTreeMap::<u32, BTreeSet<u32>>::new(),
+            |mut owners, (entity, owner)| {
+                owners.entry(entity).or_default().insert(owner);
+                owners
+            },
+        )
 }
 
 fn agreed_feature_affected_ids(
@@ -16038,6 +16044,47 @@ fn filled_surface_feature_definition(
     }
 }
 
+fn knit_operand_entity_ids(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+) -> Option<Vec<u32>> {
+    let producers = feature_entity_producers(tables);
+    let ids = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .flat_map(|table| table.entries.iter().map(|entry| entry.entity_id))
+        .collect::<Vec<_>>();
+    if ids.is_empty() || ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
+        return None;
+    }
+    ids.iter()
+        .all(|entity_id| {
+            let Some(owners) = producers.get(entity_id) else {
+                return false;
+            };
+            owners.len() == 1 && !owners.contains(&feature_id)
+        })
+        .then_some(ids)
+}
+
+fn knit_surface_feature_definition(scan: &ContainerScan, feature_id: u32) -> IrFeatureDefinition {
+    let faces = knit_operand_entity_ids(feature_id, &scan.features.entity_tables).map_or(
+        FaceSelection::Unresolved,
+        |ids| {
+            FaceSelection::Native(format!(
+                "creo:allfeatur:surface_merge_entities#{feature_id}:{}",
+                ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+            ))
+        },
+    );
+    IrFeatureDefinition::KnitSurface {
+        faces,
+        merge_entities: None,
+        create_solid: None,
+        gap_tolerance: None,
+    }
+}
+
 fn feature_surface_transitions(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
@@ -16208,6 +16255,9 @@ fn schema_feature_definition(
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
         return thicken_feature_definition(scan, ir, feature_id);
+    }
+    if numbered_feature_name_has_family(kind, "Merge") {
+        return knit_surface_feature_definition(scan, feature_id);
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return definition;
@@ -16635,7 +16685,7 @@ fn schema_feature_definition(
         return IrFeatureDefinition::DatumPlaneUnresolved;
     }
     if schema_class == 946 {
-        return unresolved_surface_merge_feature_definition();
+        return knit_surface_feature_definition(scan, feature_id);
     }
     if schema_class == 979 && kind == "PRT_CSYS_DEF" {
         return IrFeatureDefinition::DatumCoordinateSystemUnresolved;
@@ -16874,6 +16924,9 @@ fn named_feature_definition(
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
         return Some(thicken_feature_definition(scan, ir, feature_id));
+    }
+    if numbered_feature_name_has_family(kind, "Merge") {
+        return Some(knit_surface_feature_definition(scan, feature_id));
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);
@@ -29749,6 +29802,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut knit_surface_feature_count = 0;
     let mut incomplete_knit_surface_feature_count = 0;
     let mut unresolved_knit_surface_faces_feature_count = 0;
+    let mut native_knit_surface_faces_feature_count = 0;
     let mut unresolved_knit_surface_merge_feature_count = 0;
     let mut unresolved_knit_surface_solid_feature_count = 0;
     let mut thicken_feature_count = 0;
@@ -30045,14 +30099,20 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 ..
             } => {
                 knit_surface_feature_count += 1;
-                let unresolved_faces = face_selection_has_unresolved_operands(faces);
+                let unresolved_faces = matches!(
+                    faces,
+                    FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                );
+                let native_faces = matches!(faces, FaceSelection::Native(_));
                 let unresolved_merge = merge_entities.is_none();
                 let unresolved_solid = create_solid.is_none();
                 unresolved_knit_surface_faces_feature_count += usize::from(unresolved_faces);
+                native_knit_surface_faces_feature_count += usize::from(native_faces);
                 unresolved_knit_surface_merge_feature_count += usize::from(unresolved_merge);
                 unresolved_knit_surface_solid_feature_count += usize::from(unresolved_solid);
-                incomplete_knit_surface_feature_count +=
-                    usize::from(unresolved_faces || unresolved_merge || unresolved_solid);
+                incomplete_knit_surface_feature_count += usize::from(
+                    unresolved_faces || native_faces || unresolved_merge || unresolved_solid,
+                );
             }
             IrFeatureDefinition::Thicken {
                 faces,
@@ -30379,6 +30439,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_unresolved_knit_surface_faces_feature_count".to_string(),
         unresolved_knit_surface_faces_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_knit_surface_faces_feature_count".to_string(),
+        native_knit_surface_faces_feature_count,
     );
     coverage.insert(
         "transferred_unresolved_knit_surface_merge_feature_count".to_string(),

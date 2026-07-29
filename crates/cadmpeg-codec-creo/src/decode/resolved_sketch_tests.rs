@@ -160,6 +160,10 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         [175]
     );
     assert_eq!(
+        knit_operand_entity_ids(416, &[producer.clone(), consumer.clone()]),
+        Some(vec![192])
+    );
+    assert_eq!(
         native_feature_dependency_ids(
             &[],
             &[],
@@ -176,15 +180,34 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         416
     )
     .is_empty());
+    assert_eq!(
+        knit_operand_entity_ids(
+            416,
+            &[producer.clone(), conflicting.clone(), consumer.clone()]
+        ),
+        None
+    );
     assert!(native_feature_dependency_ids(
         &[],
         &[],
-        &[producer, conflicting, consumer],
+        &[producer.clone(), conflicting, consumer],
         &[],
         416,
         &[],
     )
     .is_empty());
+    let missing = table(417, 100, vec![entry(193, 98, None)]);
+    assert_eq!(knit_operand_entity_ids(417, &[missing]), None);
+    let duplicate = table(418, 100, vec![entry(192, 98, None), entry(192, 98, None)]);
+    assert_eq!(
+        knit_operand_entity_ids(418, &[producer.clone(), duplicate]),
+        None
+    );
+    let self_reference = table(175, 100, vec![entry(192, 98, None)]);
+    assert_eq!(
+        knit_operand_entity_ids(175, &[producer, self_reference]),
+        None
+    );
 }
 
 #[test]
