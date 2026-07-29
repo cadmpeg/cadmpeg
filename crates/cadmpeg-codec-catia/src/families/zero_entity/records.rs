@@ -44,6 +44,8 @@ pub struct ZeroEntitySupportOccurrence {
     pub model_curve: Option<CurveGeometry>,
     /// Exact procedural model-space carrier derived from the pcurve and owning surface.
     pub model_curve_construction: Option<ProceduralCurveDefinition>,
+    /// Model-carrier parameters at the two stored UV endpoints.
+    pub model_parameters: Option<[f64; 2]>,
     /// UV endpoints lifted through the owning surface carrier.
     pub model_endpoints: Option<[Point3; 2]>,
 }
@@ -438,13 +440,20 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
             let record = records[next];
             if let Some(support) = zero_entity_support_occurrence(data, record) {
                 let mut support = support;
-                support.model_curve = support
-                    .pcurve
-                    .as_ref()
-                    .and_then(|pcurve| zero_entity_model_curve(&carrier_geometry, pcurve));
+                if let Some((curve, parameters)) = support.pcurve.as_ref().and_then(|pcurve| {
+                    zero_entity_model_curve(&carrier_geometry, pcurve, support.uv_endpoints?)
+                }) {
+                    support.model_curve = Some(curve);
+                    support.model_parameters = Some(parameters);
+                }
                 support.model_curve_construction = support.pcurve.as_ref().and_then(|pcurve| {
                     zero_entity_model_curve_construction(&carrier_geometry, pcurve)
                 });
+                if support.model_curve_construction.is_some() {
+                    support.model_parameters = support
+                        .uv_endpoints
+                        .map(|endpoints| endpoints.map(|uv| uv[0]));
+                }
                 support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {
                     let [first, second] =
                         endpoints.map(|uv| zero_entity_surface_point(&carrier_geometry, uv));
@@ -770,6 +779,7 @@ fn zero_entity_support_occurrence(
         pcurve,
         model_curve: None,
         model_curve_construction: None,
+        model_parameters: None,
         model_endpoints: None,
     })
 }
@@ -864,7 +874,8 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
 fn zero_entity_model_curve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
-) -> Option<CurveGeometry> {
+    uv_endpoints: [[f64; 2]; 2],
+) -> Option<(CurveGeometry, [f64; 2])> {
     let PcurveGeometry::Nurbs {
         degree,
         knots,
@@ -899,29 +910,40 @@ fn zero_entity_model_curve(
             u_axis,
         } => {
             let v_axis = normal.cross(*u_axis);
-            Some(CurveGeometry::Nurbs(NurbsCurve {
-                degree: *degree,
-                knots: knots.clone(),
-                control_points: control_points
-                    .iter()
-                    .map(|point| {
-                        Point3::new(
-                            origin.x + point.u * u_axis.x + point.v * v_axis.x,
-                            origin.y + point.u * u_axis.y + point.v * v_axis.y,
-                            origin.z + point.u * u_axis.z + point.v * v_axis.z,
-                        )
-                    })
-                    .collect(),
-                weights: weights.clone(),
-                periodic: false,
-            }))
+            let degree_index = usize::try_from(*degree).ok()?;
+            let parameters = [
+                *knots.get(degree_index)?,
+                *knots.get(knots.len().checked_sub(degree_index + 1)?)?,
+            ];
+            Some((
+                CurveGeometry::Nurbs(NurbsCurve {
+                    degree: *degree,
+                    knots: knots.clone(),
+                    control_points: control_points
+                        .iter()
+                        .map(|point| {
+                            Point3::new(
+                                origin.x + point.u * u_axis.x + point.v * v_axis.x,
+                                origin.y + point.u * u_axis.y + point.v * v_axis.y,
+                                origin.z + point.u * u_axis.z + point.v * v_axis.z,
+                            )
+                        })
+                        .collect(),
+                    weights: weights.clone(),
+                    periodic: false,
+                }),
+                parameters,
+            ))
         }
         SurfaceGeometry::Cylinder { axis, .. } if constant_coordinate(0).is_some() => {
             let point = zero_entity_surface_point(surface, [constant_coordinate(0)?, 0.0])?;
-            Some(CurveGeometry::Line {
-                origin: point,
-                direction: *axis,
-            })
+            Some((
+                CurveGeometry::Line {
+                    origin: point,
+                    direction: *axis,
+                },
+                uv_endpoints.map(|uv| uv[1]),
+            ))
         }
         SurfaceGeometry::Cylinder {
             origin,
@@ -930,16 +952,19 @@ fn zero_entity_model_curve(
             radius,
         } if constant_coordinate(1).is_some() => {
             let height = constant_coordinate(1)?;
-            Some(CurveGeometry::Circle {
-                center: Point3::new(
-                    origin.x + height * axis.x,
-                    origin.y + height * axis.y,
-                    origin.z + height * axis.z,
-                ),
-                axis: *axis,
-                ref_direction: *ref_direction,
-                radius: *radius,
-            })
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(
+                        origin.x + height * axis.x,
+                        origin.y + height * axis.y,
+                        origin.z + height * axis.z,
+                    ),
+                    axis: *axis,
+                    ref_direction: *ref_direction,
+                    radius: *radius,
+                },
+                uv_endpoints.map(|uv| uv[0] / radius),
+            ))
         }
         SurfaceGeometry::Cone {
             axis,
@@ -955,14 +980,17 @@ fn zero_entity_model_curve(
                 angle.cos() * ref_direction.y + angle.sin() * transverse.y,
                 angle.cos() * ref_direction.z + angle.sin() * transverse.z,
             );
-            Some(CurveGeometry::Line {
-                origin: zero_entity_surface_point(surface, [angle, 0.0])?,
-                direction: cadmpeg_ir::math::Vector3::new(
-                    half_angle.cos() * axis.x + half_angle.sin() * radial.x,
-                    half_angle.cos() * axis.y + half_angle.sin() * radial.y,
-                    half_angle.cos() * axis.z + half_angle.sin() * radial.z,
-                ),
-            })
+            Some((
+                CurveGeometry::Line {
+                    origin: zero_entity_surface_point(surface, [angle, 0.0])?,
+                    direction: cadmpeg_ir::math::Vector3::new(
+                        half_angle.cos() * axis.x + half_angle.sin() * radial.x,
+                        half_angle.cos() * axis.y + half_angle.sin() * radial.y,
+                        half_angle.cos() * axis.z + half_angle.sin() * radial.z,
+                    ),
+                },
+                uv_endpoints.map(|uv| uv[1]),
+            ))
         }
         SurfaceGeometry::Cone {
             origin,
@@ -975,24 +1003,27 @@ fn zero_entity_model_curve(
             let slant = constant_coordinate(1)?;
             let circle_radius = radius + slant * half_angle.sin();
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
-            Some(CurveGeometry::Circle {
-                center: Point3::new(
-                    origin.x + slant * half_angle.cos() * axis.x,
-                    origin.y + slant * half_angle.cos() * axis.y,
-                    origin.z + slant * half_angle.cos() * axis.z,
-                ),
-                axis: *axis,
-                ref_direction: if circle_radius > 0.0 {
-                    *ref_direction
-                } else {
-                    cadmpeg_ir::math::Vector3::new(
-                        -ref_direction.x,
-                        -ref_direction.y,
-                        -ref_direction.z,
-                    )
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(
+                        origin.x + slant * half_angle.cos() * axis.x,
+                        origin.y + slant * half_angle.cos() * axis.y,
+                        origin.z + slant * half_angle.cos() * axis.z,
+                    ),
+                    axis: *axis,
+                    ref_direction: if circle_radius > 0.0 {
+                        *ref_direction
+                    } else {
+                        cadmpeg_ir::math::Vector3::new(
+                            -ref_direction.x,
+                            -ref_direction.y,
+                            -ref_direction.z,
+                        )
+                    },
+                    radius: circle_radius.abs(),
                 },
-                radius: circle_radius.abs(),
-            })
+                uv_endpoints.map(|uv| uv[0]),
+            ))
         }
         SurfaceGeometry::Torus {
             center,
@@ -1008,16 +1039,19 @@ fn zero_entity_model_curve(
                 angle.cos() * ref_direction.y + angle.sin() * transverse.y,
                 angle.cos() * ref_direction.z + angle.sin() * transverse.z,
             );
-            Some(CurveGeometry::Circle {
-                center: Point3::new(
-                    center.x + major_radius * radial.x,
-                    center.y + major_radius * radial.y,
-                    center.z + major_radius * radial.z,
-                ),
-                axis: radial.cross(*axis),
-                ref_direction: radial,
-                radius: *minor_radius,
-            })
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(
+                        center.x + major_radius * radial.x,
+                        center.y + major_radius * radial.y,
+                        center.z + major_radius * radial.z,
+                    ),
+                    axis: radial.cross(*axis),
+                    ref_direction: radial,
+                    radius: *minor_radius,
+                },
+                uv_endpoints.map(|uv| uv[1] / minor_radius),
+            ))
         }
         SurfaceGeometry::Torus {
             center,
@@ -1029,33 +1063,44 @@ fn zero_entity_model_curve(
             let angle = constant_coordinate(1)? / minor_radius;
             let circle_radius = major_radius + minor_radius * angle.cos();
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
-            Some(CurveGeometry::Circle {
-                center: Point3::new(
-                    center.x + minor_radius * angle.sin() * axis.x,
-                    center.y + minor_radius * angle.sin() * axis.y,
-                    center.z + minor_radius * angle.sin() * axis.z,
-                ),
-                axis: *axis,
-                ref_direction: if circle_radius > 0.0 {
-                    *ref_direction
-                } else {
-                    cadmpeg_ir::math::Vector3::new(
-                        -ref_direction.x,
-                        -ref_direction.y,
-                        -ref_direction.z,
-                    )
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(
+                        center.x + minor_radius * angle.sin() * axis.x,
+                        center.y + minor_radius * angle.sin() * axis.y,
+                        center.z + minor_radius * angle.sin() * axis.z,
+                    ),
+                    axis: *axis,
+                    ref_direction: if circle_radius > 0.0 {
+                        *ref_direction
+                    } else {
+                        cadmpeg_ir::math::Vector3::new(
+                            -ref_direction.x,
+                            -ref_direction.y,
+                            -ref_direction.z,
+                        )
+                    },
+                    radius: circle_radius.abs(),
                 },
-                radius: circle_radius.abs(),
-            })
+                uv_endpoints.map(|uv| uv[0] / major_radius),
+            ))
         }
-        SurfaceGeometry::Nurbs(surface) if constant_coordinate(0).is_some() => {
-            crate::nurbs::nurbs_surface_isocurve(surface, constant_coordinate(0)?, true)
-                .map(CurveGeometry::Nurbs)
-        }
-        SurfaceGeometry::Nurbs(surface) if constant_coordinate(1).is_some() => {
-            crate::nurbs::nurbs_surface_isocurve(surface, constant_coordinate(1)?, false)
-                .map(CurveGeometry::Nurbs)
-        }
+        SurfaceGeometry::Nurbs(surface) if constant_coordinate(0).is_some() => Some((
+            CurveGeometry::Nurbs(crate::nurbs::nurbs_surface_isocurve(
+                surface,
+                constant_coordinate(0)?,
+                true,
+            )?),
+            uv_endpoints.map(|uv| uv[1]),
+        )),
+        SurfaceGeometry::Nurbs(surface) if constant_coordinate(1).is_some() => Some((
+            CurveGeometry::Nurbs(crate::nurbs::nurbs_surface_isocurve(
+                surface,
+                constant_coordinate(1)?,
+                false,
+            )?),
+            uv_endpoints.map(|uv| uv[0]),
+        )),
         _ => None,
     }
 }
@@ -1617,6 +1662,7 @@ mod tests {
             })) if control_points
                 == &[Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
         ));
+        assert_eq!(support.model_parameters, Some([0.0, 1.0]));
         assert_eq!(
             support.model_endpoints,
             Some([Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)])
@@ -1736,6 +1782,42 @@ mod tests {
             assert!((construction_point.x - surface_point.x).abs() < 1e-12);
             assert!((construction_point.y - surface_point.y).abs() < 1e-12);
             assert!((construction_point.z - surface_point.z).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn negative_cone_latitude_radius_flips_the_circle_reference_direction() {
+        use cadmpeg_ir::eval::curve_point;
+        use cadmpeg_ir::math::Vector3;
+
+        let surface = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let endpoints = [[0.0, -2.0], [1.0, -2.0]];
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: endpoints
+                .map(|[u, v]| Point2::new(u, v))
+                .into_iter()
+                .collect(),
+            weights: None,
+            periodic: false,
+        };
+        let (curve, parameters) =
+            zero_entity_model_curve(&surface, &pcurve, endpoints).expect("cone latitude");
+        for index in 0..2 {
+            let curve_point = curve_point(&curve, parameters[index]).expect("circle point");
+            let surface_point =
+                zero_entity_surface_point(&surface, endpoints[index]).expect("cone point");
+            assert!((curve_point.x - surface_point.x).abs() < 1e-12);
+            assert!((curve_point.y - surface_point.y).abs() < 1e-12);
+            assert!((curve_point.z - surface_point.z).abs() < 1e-12);
         }
     }
 

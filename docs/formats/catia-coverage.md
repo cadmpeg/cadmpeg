@@ -163,7 +163,9 @@ current scores require those matrices and representative fixtures.
   carriers. Constant-coordinate pcurves on cylinder, cone, torus, and NURBS
   surfaces retain their exact analytic or contracted NURBS carriers.
   Non-isoparametric affine cone pcurves retain exact conical-helix
-  constructions. The independent `5e1a` edge-stride registry retains its fixed
+  constructions. Each exact model carrier retains the two parameters
+  corresponding to the stored UV endpoints. The independent `5e1a`
+  edge-stride registry retains its fixed
   tagged-one prefix and closed `[T,X,Y,T−1,T−2]` allocation tuples. The `2569`/`0638`
   positional-use and counted `05xx` vertex-incidence registries retain
   one-based global record ordinals and exact references against a complete

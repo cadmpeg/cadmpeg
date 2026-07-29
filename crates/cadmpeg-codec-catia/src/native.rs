@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 185;
+pub const CATIA_NATIVE_VERSION: u32 = 186;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2699,6 +2699,9 @@ pub struct CatiaZeroEntitySupportOccurrence {
     /// Exact procedural model-space carrier derived from the pcurve and owning surface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_curve_construction: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+    /// Model-carrier parameters at the two stored UV endpoints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_parameters: Option<[f64; 2]>,
     /// UV endpoints lifted through the owning surface carrier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
@@ -3809,6 +3812,7 @@ fn zero_entity_support_runs(
                     pcurve: support.pcurve,
                     model_curve: support.model_curve,
                     model_curve_construction: support.model_curve_construction,
+                    model_parameters: support.model_parameters,
                     model_endpoints: support.model_endpoints,
                 })
                 .collect(),
@@ -5047,6 +5051,13 @@ fn validate_zero_entity_support_runs(
                             support.model_curve.as_ref(),
                             support.model_curve_construction.as_ref(),
                         );
+                    let has_model_carrier =
+                        support.model_curve.is_some() || support.model_curve_construction.is_some();
+                    let model_parameters_valid =
+                        support.model_parameters.is_some_and(|parameters| {
+                            parameters.into_iter().all(f64::is_finite)
+                                && parameters[0] != parameters[1]
+                        }) == has_model_carrier;
                     let pcurve_valid = match (&support.tag, &support.pcurve) {
                         (
                             [0x21, tag @ (0x71 | 0x91 | 0x99 | 0xd6)],
@@ -5115,6 +5126,7 @@ fn validate_zero_entity_support_runs(
                         && pcurve_valid
                         && model_curve_valid
                         && model_curve_construction_valid
+                        && model_parameters_valid
                         && model_endpoints_valid
                 });
         if run.id != format!("catia:zero-entity:support-run#{index}")

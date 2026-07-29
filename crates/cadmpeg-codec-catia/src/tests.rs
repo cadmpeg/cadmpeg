@@ -4840,6 +4840,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         )) if control_points.len() == 2
     ));
     assert!(support.model_curve_construction.is_none());
+    assert_eq!(support.model_parameters, Some([0.0, 1.0]));
     assert_eq!(
         support.model_endpoints,
         Some([
@@ -4938,6 +4939,15 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_model_curve_namespace)
         .expect("store invalid CATIA zero-entity support model curve");
     assert!(crate::native::CatiaNative::load(&invalid_model_curve_namespace).is_err());
+
+    let mut invalid_model_parameters = native.clone();
+    invalid_model_parameters.zero_entity_support_runs[0].supports[0].model_parameters =
+        Some([1.0, 1.0]);
+    let mut invalid_model_parameters_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_model_parameters
+        .store(&mut invalid_model_parameters_namespace)
+        .expect("store invalid CATIA zero-entity support model parameters");
+    assert!(crate::native::CatiaNative::load(&invalid_model_parameters_namespace).is_err());
 
     let mut invalid_model_construction = native.clone();
     invalid_model_construction.zero_entity_support_runs[0].supports[0].model_curve_construction =
