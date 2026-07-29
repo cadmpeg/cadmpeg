@@ -7875,6 +7875,10 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     assert_eq!(placement.transform, identity_matrix());
     assert!(placement.member_run_head);
     assert_eq!(placement.scope_record_index, None);
+    assert_eq!(
+        crate::design::decode::sketch::parse_legacy_sketch_container_members(&bytes, 0, 100),
+        Some((Vec::new(), Vec::new()))
+    );
 
     bytes.truncate(head_at);
     bytes.extend_from_slice(&3u32.to_le_bytes());

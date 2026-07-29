@@ -384,11 +384,11 @@ fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Optio
     if !crate::bytes::is_guid_relaxed(&asset_id)
         || !crate::bytes::is_guid_relaxed(&context_id)
         || u32_at(bytes, after_context_id)? != 2
-        || bytes.get(after_context_id + 4..after_context_id + 12)? != [0; 8]
+        || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
     {
         return None;
     }
-    let paired_at = next_indexed_record_offset(bytes, after_context_id + 12)?;
+    let paired_at = next_indexed_record_offset(bytes, after_context_id + 8)?;
     let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
     let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
     let identity_at = next_indexed_record_offset(bytes, nested_two_at + 11)?;
@@ -2354,7 +2354,7 @@ mod mirror_tests {
         utf16(&mut bytes, "dfa12ed5-41e3-47c2-947d-286843e235df");
         utf16(&mut bytes, "15afb570-2968-417f-8485-96c81b2d332f");
         bytes.extend_from_slice(&2_u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&[0; 4]);
         indexed_header(&mut bytes, *b"259", record_index);
         indexed_header(&mut bytes, *b"306", record_index + 1);
         indexed_header(&mut bytes, *b"291", record_index + 2);

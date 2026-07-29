@@ -809,6 +809,37 @@ pub(crate) fn parse_legacy_sketch_member_run(
     Some((member_indices, member_offsets))
 }
 
+/// Recognize either legacy sketch-container tail. A counted container owns
+/// its complete member run. A localized container omits that run and is
+/// accepted only when its paired record names an exact placement-head frame.
+pub(crate) fn parse_legacy_sketch_container_members(
+    bytes: &[u8],
+    primary_at: usize,
+    entity_suffix: u32,
+) -> Option<(Vec<u32>, Vec<u64>)> {
+    if let Some(members) = parse_legacy_sketch_member_run(bytes, primary_at, entity_suffix) {
+        return Some(members);
+    }
+    let entity = DesignEntityHeader {
+        id: String::new(),
+        byte_offset: primary_at as u64,
+        entity_suffix: u64::from(entity_suffix),
+        entity_id: format!("Sketch_{entity_suffix}"),
+        class_tag: String::new(),
+        optional_slot_present: false,
+        object_kind: Some(DesignObjectKind::Sketch),
+        record_reference: None,
+        record_reference_offset: None,
+        declared_reference_count: None,
+        reference_indices: Vec::new(),
+        reference_offsets: Vec::new(),
+        member_indices: Vec::new(),
+        member_offsets: Vec::new(),
+    };
+    parse_member_run_head_placement(bytes, &entity)?;
+    Some((Vec::new(), Vec::new()))
+}
+
 /// Decode every self-validating per-entity design `BulkStream` header (spec
 /// [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
 /// whose numeric suffix must match the header's entity suffix, and, for
@@ -965,7 +996,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 continue;
             }
             let Some((member_indices, member_offsets)) =
-                parse_legacy_sketch_member_run(bytes, start, entity_suffix)
+                parse_legacy_sketch_container_members(bytes, start, entity_suffix)
             else {
                 continue;
             };
