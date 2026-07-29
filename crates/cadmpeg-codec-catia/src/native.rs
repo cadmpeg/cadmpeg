@@ -4940,6 +4940,9 @@ fn validate_zero_entity_support_runs(
                 && face.allocations.len() >= 2
                 && !face.allocations.contains(&0)
                 && !face.loop_terminals.contains(&0)
+                && face.loop_terminals[1..]
+                    .windows(2)
+                    .all(|pair| pair[0] < pair[1])
                 && matches!(face.terminal_control, 0x03 | 0x05)
                 && expected_length == Some(usize::from(face.tag[1]) + 12)
                 && derived_terminals.as_ref() == Some(&face.loop_terminals)
@@ -4950,9 +4953,6 @@ fn validate_zero_entity_support_runs(
                             .first()
                             .is_some_and(|outer| matches!(outer.loop_class, 0x41 | 0xc1))
                         && face.loops[1..].iter().all(|inner| inner.loop_class == 0x50)
-                        && face.loops[1..]
-                            .windows(2)
-                            .all(|pair| pair[0].terminal_id < pair[1].terminal_id)
                         && face.loops.iter().zip(&face.loop_terminals).all(
                             |(loop_record, terminal)| {
                                 let edge_count = loop_record.member_ids.len();

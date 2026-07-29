@@ -547,9 +547,6 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
             face_loops.first().is_some_and(|outer| {
                 matches!(outer.loop_class, 0x41 | 0xc1)
                     && face_loops[1..].iter().all(|inner| inner.loop_class == 0x50)
-                    && face_loops[1..]
-                        .windows(2)
-                        .all(|pair| pair[0].terminal_id < pair[1].terminal_id)
             })
         })
     };
@@ -706,7 +703,9 @@ fn zero_entity_faces_from_records(
                 .iter()
                 .map(|allocation| first.checked_sub(*allocation))
                 .collect::<Option<Vec<_>>>()?;
-            if loop_terminals.contains(&0) {
+            if loop_terminals.contains(&0)
+                || !loop_terminals[1..].windows(2).all(|pair| pair[0] < pair[1])
+            {
                 return None;
             }
             let terminal_control = *data.get(record.end - 1)?;
@@ -2403,7 +2402,7 @@ mod tests {
     }
 
     #[test]
-    fn loop_roster_requires_strictly_ascending_inner_terminals() {
+    fn face_roster_requires_strictly_ascending_inner_terminals() {
         let mut stream = zero_entity_support_stream();
         let mut face = vec![0u8; 0x16 + 12];
         face[..4].copy_from_slice(&[0xa9, 0x03, 0x5f, 0x16]);
@@ -2426,8 +2425,7 @@ mod tests {
         }
 
         let runs = zero_entity_support_runs(&stream);
-        let face = runs[0].face.as_ref().expect("face");
-        assert!(face.loops.is_empty());
+        assert!(runs[0].face.is_none());
     }
 
     #[test]
