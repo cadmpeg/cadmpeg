@@ -542,6 +542,16 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                 HeadToken::Literal(0),
             ]
         );
+        let terminal_lane_roles = matches!(
+            head.as_slice(),
+            [
+                HeadToken::Lead(0x56),
+                HeadToken::Reference(_),
+                HeadToken::Reference(_),
+                HeadToken::Reference(owner),
+                HeadToken::Reference(3),
+            ] if *owner != 0
+        );
         let fixed_role_count = match lead {
             0x02 => 1,
             0x12 => 2,
@@ -553,6 +563,8 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             (Some(2), Some(3), Some(4), false)
         } else if null_lane_roles {
             (Some(4), Some(1), Some(2), true)
+        } else if terminal_lane_roles {
+            (Some(3), Some(1), Some(2), true)
         } else if extended_role_count.is_some() || fixed_roles {
             match lead {
                 0x02 => (Some(1), None, None, false),
