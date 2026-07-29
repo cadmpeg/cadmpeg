@@ -4314,7 +4314,8 @@ fn validate_consolidated_cone_faces(
             || !face.program.ends_with(&[0x03, 0x11])
             || !matches!(frame_overhead, Some(21..=23))
             || !face.angular_scale.is_finite()
-            || !(0.0..std::f64::consts::FRAC_PI_2).contains(&face.half_angle)
+            || face.half_angle <= 0.0
+            || face.half_angle >= std::f64::consts::FRAC_PI_2
             || !parameter_run_valid
             || index > 0 && faces[index - 1].byte_offset >= face.byte_offset
         {
@@ -4384,7 +4385,8 @@ fn validate_consolidated_circles(
                 .chain(&[circle.radius, circle.chart_shift])
                 .any(|value| !value.is_finite())
             || circle.center_pair.iter().any(|value| value.abs() > 1e6)
-            || !(0.0..1e6).contains(&circle.radius)
+            || circle.radius <= 0.0
+            || circle.radius >= 1e6
             || circle.range[0] >= circle.range[1]
             || circle.full_circle != full_circle
             || index > 0 && circles[index - 1].byte_offset >= circle.byte_offset
@@ -4438,15 +4440,18 @@ fn validate_consolidated_cones(
                 .iter()
                 .zip(cone.axis)
                 .any(|(cross, axis)| (cross - axis).abs() > 1e-9)
-            || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle)
+            || cone.half_angle <= 0.0
+            || cone.half_angle >= std::f64::consts::FRAC_PI_2
             || !crate::analytic::periodic_angular_range_is_valid(
                 cone.angular_range,
                 cone.angular_domain,
             )
             || cone.slant_range[0] < 0.0
             || cone.slant_range[0] >= cone.slant_range[1]
-            || !(0.0..1e6).contains(&cone.slant_range[1])
-            || !(0.0..1e6).contains(&cone.angular_scale)
+            || cone.slant_range[1] <= 0.0
+            || cone.slant_range[1] >= 1e6
+            || cone.angular_scale <= 0.0
+            || cone.angular_scale >= 1e6
             || index > 0 && cones[index - 1].byte_offset >= cone.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -4533,7 +4538,8 @@ fn validate_consolidated_cylinders(
                 .chain(&cylinder.v_range)
                 .chain(&[cylinder.radius])
                 .any(|value| !value.is_finite())
-            || !(0.0..1e6).contains(&cylinder.radius)
+            || cylinder.radius <= 0.0
+            || cylinder.radius >= 1e6
             || cylinder.u_range[0] >= cylinder.u_range[1]
             || cylinder.v_range[0] >= cylinder.v_range[1]
             || !payload_valid

@@ -219,6 +219,11 @@ fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
     assert_eq!(records[0].program.len(), 16);
     assert_eq!(records[0].angular_scale, 1.5);
     assert_eq!(records[0].half_angle, std::f64::consts::FRAC_PI_4);
+
+    let mut degenerate = b2_cone_face_stream();
+    let half_angle = degenerate.len() - 8;
+    degenerate[half_angle..].copy_from_slice(&0.0_f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_cone_faces(&degenerate).is_empty());
 }
 
 #[test]
@@ -550,6 +555,10 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     let mut malformed = b2_circle_stream();
     malformed[49..57].copy_from_slice(&f64::NAN.to_le_bytes());
     assert!(crate::families::b2::records::b2_circles(&malformed).is_empty());
+
+    let mut zero_radius = b2_circle_stream();
+    zero_radius[24..32].copy_from_slice(&0.0_f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_circles(&zero_radius).is_empty());
 }
 
 #[test]
@@ -699,6 +708,14 @@ fn b2_cone_parser_rejects_a_left_handed_or_nonfinite_payload() {
 
     let mut stream = b2_cone_stream();
     stream[173..181].copy_from_slice(&0.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
+
+    let mut stream = b2_cone_stream();
+    stream[101..109].copy_from_slice(&0.0_f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
+
+    let mut stream = b2_cone_stream();
+    stream[149..157].copy_from_slice(&0.0_f64.to_le_bytes());
     assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
 }
 

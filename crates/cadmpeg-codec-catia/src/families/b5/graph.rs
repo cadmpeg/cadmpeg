@@ -1928,7 +1928,8 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             ((distance_squared(frame_cross, axis) <= 4e-24
                 || distance_squared(frame_cross, opposite_axis) <= 4e-24)
                 && directions_are_unit_and_orthogonal(direction_x, direction_y)
-                && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+                && 0.0 < half_angle
+                && half_angle < std::f64::consts::FRAC_PI_2
                 && periodic_angular_range_is_valid(angular_range, angular_domain)
                 && slant_range[0] >= 0.0
                 && slant_range[0] < slant_range[1]
@@ -4525,6 +4526,9 @@ mod tests {
         let mut malformed = record.clone();
         malformed.payload[169..177].copy_from_slice(&0.0f64.to_le_bytes());
         assert_eq!(parse_surface(&malformed), None);
+        let mut degenerate = record.clone();
+        degenerate.payload[97..105].copy_from_slice(&0.0_f64.to_le_bytes());
+        assert_eq!(parse_surface(&degenerate), None);
         let mut nonunit = record.clone();
         nonunit.payload[25..33].copy_from_slice(&2.0f64.to_le_bytes());
         assert_eq!(parse_surface(&nonunit), None);

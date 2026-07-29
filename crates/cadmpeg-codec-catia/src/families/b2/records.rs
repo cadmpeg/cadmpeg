@@ -413,7 +413,8 @@ pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
             && program.first() == Some(&0x85)
             && program.ends_with(&[0x03, 0x11])
             && angular_scale.is_finite()
-            && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+            && 0.0 < half_angle
+            && half_angle < std::f64::consts::FRAC_PI_2
         {
             faces.push(B2ConeFace {
                 pos,
@@ -1253,9 +1254,11 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
                 .iter()
                 .zip(axis)
                 .all(|(cross, axis)| (cross - axis).abs() <= 1e-9)
-            && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+            && 0.0 < half_angle
+            && half_angle < std::f64::consts::FRAC_PI_2
             && periodic_angular_range_is_valid(angular_range, angular_domain)
-            && (0.0..1e6).contains(&angular_scale)
+            && 0.0 < angular_scale
+            && angular_scale < 1e6
             && values[19] == 1.0
             && values[20] == 0.0
             && 0.0 <= slant_range[0]
@@ -1668,7 +1671,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let u_range = read_f64_array::<2>(data, p + 57)?;
             let v_range = read_f64_array::<2>(data, p + 73)?;
             if one != 1.0
-                || !(0.0..1e6).contains(&radius)
+                || radius <= 0.0
+                || radius >= 1e6
                 || origin_values.iter().any(|value| !value.is_finite())
                 || vector.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
@@ -1715,7 +1719,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let radius = f64_le(data, p + 41)?;
             let u_range = read_f64_array::<2>(data, p + 49)?;
             let v_range = read_f64_array::<2>(data, p + 65)?;
-            if !(0.0..1e6).contains(&radius)
+            if radius <= 0.0
+                || radius >= 1e6
                 || origin_values.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
                 || v_range.iter().any(|value| !value.is_finite())
@@ -1752,7 +1757,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let range_origin = f64_le(data, p + 90)?;
             let expected_range_origin = cylinder_range_origin(radius, u_range);
             if one != 1.0
-                || !(0.0..1e6).contains(&radius)
+                || radius <= 0.0
+                || radius >= 1e6
                 || origin_values.iter().any(|value| !value.is_finite())
                 || vector.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
@@ -1820,7 +1826,8 @@ pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
         };
         let [c1, c2, radius, lo, hi] = values;
         if values.iter().all(|v| v.is_finite())
-            && (0.0..1e6).contains(&radius)
+            && 0.0 < radius
+            && radius < 1e6
             && c1.abs() <= 1e6
             && c2.abs() <= 1e6
             && hi > lo
