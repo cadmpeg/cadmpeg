@@ -6733,6 +6733,11 @@ impl CatiaNative {
     /// Decode CATIA-native records directly from the complete file image.
     #[must_use]
     pub fn decode(bytes: &[u8]) -> Self {
+        let outer_directory = container::parse_outer_stream_directory(bytes);
+        let outer_container_declarations =
+            outer_directory.as_ref().map_or_else(Vec::new, |outer| {
+                container::outer_container_declarations(bytes, outer)
+            });
         let finjpl_segments = container::finjpl_segments(bytes, 0, bytes.len())
             .into_iter()
             .enumerate()
@@ -6904,15 +6909,32 @@ impl CatiaNative {
                 })
         });
         let design_objects = design_objects(&object_graphs, &entity_records);
-        let maximum_records = object_graphs
-            .iter()
-            .map(|graph| graph.records.len())
-            .max()
-            .unwrap_or(0);
-        let mut primary_graphs = object_graphs
-            .iter()
-            .filter(|graph| graph.records.len() == maximum_records);
-        if let (Some(graph), None) = (primary_graphs.next(), primary_graphs.next()) {
+        let part_graph = outer_directory.as_ref().and_then(|outer| {
+            let mut graphs = object_graphs.iter().filter(|graph| {
+                container::outer_container_for_extent(
+                    outer,
+                    &outer_container_declarations,
+                    graph.byte_offset,
+                    graph.byte_len,
+                )
+                .is_some_and(|container| container.class_name == "CATPrtCont")
+            });
+            let graph = graphs.next()?;
+            graphs.next().is_none().then_some(graph)
+        });
+        let fragment_primary_graph = outer_container_declarations.is_empty().then(|| {
+            let maximum_records = object_graphs
+                .iter()
+                .map(|graph| graph.records.len())
+                .max()
+                .unwrap_or(0);
+            let mut graphs = object_graphs
+                .iter()
+                .filter(|graph| graph.records.len() == maximum_records);
+            let graph = graphs.next()?;
+            graphs.next().is_none().then_some(graph)
+        });
+        if let Some(graph) = part_graph.or(fragment_primary_graph.flatten()) {
             for row in &mut alias_rows {
                 let Some(index) = usize::from(row.entity_record_ordinal).checked_sub(1) else {
                     continue;

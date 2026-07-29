@@ -780,6 +780,37 @@ pub fn outer_container_declarations(
     parse_outer_container_declarations(&logical, &stream_names)
 }
 
+/// Select the unique declared outer container whose physical extent contains
+/// the complete file range.
+#[must_use]
+pub fn outer_container_for_extent<'a>(
+    outer: &InnerDir,
+    declarations: &'a [OuterContainerDeclaration],
+    byte_offset: u64,
+    byte_len: u64,
+) -> Option<&'a OuterContainerDeclaration> {
+    let byte_end = byte_offset.checked_add(byte_len)?;
+    let physical_base = u64::try_from(outer.inner).ok()?;
+    let mut containing = declarations.iter().filter(|declaration| {
+        outer
+            .descriptors
+            .iter()
+            .filter(|descriptor| descriptor.name == declaration.stream_name)
+            .flat_map(|descriptor| &descriptor.extents)
+            .any(|extent| {
+                let extent_start = u64::from(extent.phys_off).checked_add(physical_base);
+                extent_start.is_some_and(|extent_start| {
+                    extent_start <= byte_offset
+                        && extent_start
+                            .checked_add(u64::from(extent.phys_len))
+                            .is_some_and(|extent_end| byte_end <= extent_end)
+                })
+            })
+    });
+    let declaration = containing.next()?;
+    containing.next().is_none().then_some(declaration)
+}
+
 fn parse_outer_container_declarations(
     data: &[u8],
     stream_names: &HashSet<&str>,
@@ -1175,8 +1206,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 #[cfg(test)]
 mod tests {
     use super::{
-        identify_variant, outer_container_declarations, parse_extents, summarize, Census,
-        ContainerScan, Descriptor, Extent, InnerDir,
+        identify_variant, outer_container_declarations, outer_container_for_extent, parse_extents,
+        summarize, Census, ContainerScan, Descriptor, Extent, InnerDir,
     };
     use crate::variant::Variant;
 
@@ -1301,6 +1332,14 @@ mod tests {
         assert_eq!(declarations[0].class_name, "CATPrtCont");
         assert_eq!(declarations[0].base_class, "CATProdCont");
         assert_eq!(declarations[0].stream_name, "1048_62eb7b6f_1825");
+        assert_eq!(
+            outer_container_for_extent(&outer, &declarations, u64::from(data_len), 1)
+                .map(|declaration| declaration.class_name.as_str()),
+            Some("CATPrtCont")
+        );
+        assert!(
+            outer_container_for_extent(&outer, &declarations, u64::from(data_len) - 1, 2).is_none()
+        );
 
         let scan = ContainerScan {
             data,
