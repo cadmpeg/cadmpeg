@@ -30,8 +30,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The semantic assignments of the width-coded `b2/b3/b4 03 5e` header token and terminal byte are unresolved.
 - The field semantics of class-`0x18` descriptors, the operands and individual eight-scalar lanes in analytic-circle class-`0x23` edge definitions, the corresponding roles in standalone class-`0x24` records, and the class-`0x25` scalar lanes are unresolved.
 - The internal coding of the sampled-cache lane in `a8 03 25` extrusion directrices is unresolved. Its enclosing references, solved parameter interval, and fit tolerance are defined independently of that cache.
-- The effect of the positive metric scalar in `b2/b3/b4 03 0e` line profiles on the stored parameter chart is unresolved.
-
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
 - Standard 3D spline cache poles and knots. Exact two-surface constructions use their native class-`20` pcurve jets and shared parameter interval when the standard tag closes through a class-`5e`/`23` dependency chain; the separate serialized 3D cache remains unresolved.
 - `op1` and persistent-tag resolution outside the exact class-`19` analytic-circle identity binding. The mapping from absolute persistent CGM tags to other serialized records remains unresolved for the consolidated `a5` family.

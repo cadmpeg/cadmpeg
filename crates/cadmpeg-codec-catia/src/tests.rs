@@ -1129,7 +1129,7 @@ pub(crate) fn b2_edge_node_stream() -> Vec<u8> {
 
 pub(crate) fn b2_line_profile_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x0e, 0x48, 0x05];
-    for value in [1.0f64, 2.0, 3.0, 0.0, 0.6, 0.8, 2.5, -4.0, 9.0] {
+    for value in [1.0f64, 2.0, 3.0, 0.0, 0.6, 0.8, 1.0, -4.0, 9.0] {
         record.extend_from_slice(&le_f64(value));
     }
     record
@@ -4661,7 +4661,6 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
     };
     assert_eq!(line.origin, [1.0, 2.0, 3.0]);
     assert_eq!(line.direction, [0.0, 0.6, 0.8]);
-    assert_eq!(line.metric_scale, 2.5);
     assert_eq!(line.range, [-4.0, 9.0]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -4683,7 +4682,7 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
 }
 
 #[test]
-fn decode_reports_exact_consolidated_line_profiles() {
+fn decode_transfers_exact_consolidated_line_profiles() {
     let mut file = standard_catpart();
     file.splice(16..16, b2_line_profile_stream());
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
@@ -4705,49 +4704,6 @@ fn decode_reports_exact_consolidated_line_profiles() {
             if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                 && direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
     )));
-    assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
-            && loss
-                .message
-                .contains("1 non-unit consolidated line-profile record(s)")
-            && loss.message.contains("neutral parameter mapping")
-    }));
-}
-
-#[test]
-fn decode_transfers_unit_metric_consolidated_line_profiles() {
-    let mut profile = b2_line_profile_stream();
-    profile[53..61].copy_from_slice(&1.0_f64.to_le_bytes());
-    let mut file = standard_catpart();
-    file.splice(16..16, profile);
-    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
-    file[8..12].copy_from_slice(&be32(file_len));
-
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(file), &DecodeOptions::default())
-        .expect("decode unit-metric line profile");
-    assert_eq!(
-        decoded.report.coverage["transferred_consolidated_line_profile_count"],
-        1
-    );
-    let line = decoded
-        .ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| {
-            curve
-                .id
-                .0
-                .starts_with("catia:consolidated:line-profile-curve#")
-        })
-        .expect("transferred line profile");
-    assert!(matches!(
-        line.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction }
-            if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
-    ));
     assert!(!decoded
         .report
         .losses
@@ -4757,10 +4713,11 @@ fn decode_transfers_unit_metric_consolidated_line_profiles() {
 
 #[test]
 fn transferred_line_profile_identities_retain_their_native_ordinals() {
-    let mut unit_profile = b2_line_profile_stream();
-    unit_profile[53..61].copy_from_slice(&1.0_f64.to_le_bytes());
     let mut file = standard_catpart();
-    file.splice(16..16, [b2_line_profile_stream(), unit_profile].concat());
+    file.splice(
+        16..16,
+        [b2_line_profile_stream(), b2_line_profile_stream()].concat(),
+    );
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
     file[8..12].copy_from_slice(&be32(file_len));
 

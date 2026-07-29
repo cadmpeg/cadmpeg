@@ -345,7 +345,7 @@ fn b2_revolution_profile_requires_one_exact_circle_interval() {
 }
 
 #[test]
-fn b2_line_profile_parser_reads_exact_origin_direction_metric_scalar_and_range() {
+fn b2_line_profile_parser_reads_exact_origin_direction_and_range() {
     let b2 = b2_line_profile_stream();
     for (family, header) in [
         (0xb2, vec![0x05]),
@@ -362,18 +362,18 @@ fn b2_line_profile_parser_reads_exact_origin_direction_metric_scalar_and_range()
         assert_eq!(line.pos, 0);
         assert_eq!(line.origin, [1.0, 2.0, 3.0]);
         assert_eq!(line.direction, [0.0, 0.6, 0.8]);
-        assert_eq!(line.metric_scale, 2.5);
         assert_eq!(line.range, [-4.0, 9.0]);
     }
 }
 
 #[test]
-fn b2_line_profile_parser_requires_its_complete_finite_metric_grammar() {
+fn b2_line_profile_parser_requires_its_complete_fixed_metric_grammar() {
     let valid = b2_line_profile_stream();
     for (offset, bytes) in [
         (3, vec![0x50]),
         (5 + 3 * 8, 2.0f64.to_le_bytes().to_vec()),
         (5 + 6 * 8, 0.0f64.to_le_bytes().to_vec()),
+        (5 + 6 * 8, 2.5f64.to_le_bytes().to_vec()),
         (5 + 7 * 8, 10.0f64.to_le_bytes().to_vec()),
         (5, f64::NAN.to_le_bytes().to_vec()),
     ] {

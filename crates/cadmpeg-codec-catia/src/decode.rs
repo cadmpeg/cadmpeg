@@ -969,24 +969,6 @@ fn finish_decode(
             ir.model.configurations.len(),
         ),
     ]);
-    let unresolved_line_profile_count = native
-        .consolidated_line_profiles
-        .iter()
-        .filter(|line| line.metric_scale.to_bits() != 1.0_f64.to_bits())
-        .count();
-    if unresolved_line_profile_count > 0 {
-        report.losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{unresolved_line_profile_count} non-unit consolidated line-profile record(s) \
-                 transferred exact line carriers and retain their metric scalars and parameter \
-                 intervals, but their neutral parameter mapping remains unresolved."
-            ),
-            provenance: None,
-        });
-    }
     let untransferred_line_profile_count = native
         .consolidated_line_profiles
         .len()

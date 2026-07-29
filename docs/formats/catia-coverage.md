@@ -106,9 +106,8 @@ current scores require those matrices and representative fixtures.
   consolidated circle transfers a placed analytic directrix and neutral
   surface-of-revolution construction. Missing and multiply matching intervals
   remain unbound atomically.
-- Every consolidated line profile transfers its placed analytic line carrier.
-  A non-unit profile retains its metric scalar and interval while its neutral
-  parameter mapping remains unresolved.
+- Every consolidated line profile transfers its placed signed-distance
+  analytic line carrier and stored parameter interval.
 - A standard binary32 cylinder, cone, sphere, or torus face carrier is refined
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;

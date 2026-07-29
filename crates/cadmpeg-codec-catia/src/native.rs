@@ -411,8 +411,6 @@ pub struct CatiaConsolidatedLineProfile {
     pub origin: [f64; 3],
     /// Unit line direction.
     pub direction: [f64; 3],
-    /// Positive metric scalar preceding the stored interval.
-    pub metric_scale: f64,
     /// Increasing stored parameter interval.
     pub range: [f64; 2],
 }
@@ -3674,7 +3672,6 @@ fn consolidated_line_profiles(bytes: &[u8]) -> Vec<CatiaConsolidatedLineProfile>
             byte_offset: line.pos as u64,
             origin: line.origin,
             direction: line.direction,
-            metric_scale: line.metric_scale,
             range: line.range,
         })
         .collect()
@@ -4692,11 +4689,9 @@ fn validate_consolidated_line_profiles(
                 .origin
                 .iter()
                 .chain(&line.direction)
-                .chain(&[line.metric_scale])
                 .chain(&line.range)
                 .any(|value| !value.is_finite())
             || (squared_length - 1.0).abs() > 1e-12
-            || line.metric_scale <= 0.0
             || line.range[0] >= line.range[1]
             || index > 0 && lines[index - 1].byte_offset >= line.byte_offset
         {

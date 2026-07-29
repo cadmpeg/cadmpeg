@@ -351,9 +351,9 @@ Payload layouts `0x32..=0x34` store `<record_id:compact> <center_pair:2f64le> <r
 
 ### 5.10 Line-profile record `b2/b3/b4 03 0e`
 
-The 72-byte payload is `<origin:3f64le> <direction:3f64le> <metric_scale:f64le> <parameter_min:f64le> <parameter_max:f64le>`. The direction is unit length, the metric scale is positive, and the stored parameter interval is strictly increasing.
+The 72-byte payload is `<origin:3f64le> <direction:3f64le> <one:f64le> <parameter_min:f64le> <parameter_max:f64le>`. The direction is unit length, `one=1` bit-exactly, and the stored parameter interval is strictly increasing.
 
-Every record defines a placed line carrier with the stored origin and direction. When `metric_scale=1`, its neutral parameter is signed distance in millimetres. Retain the stored metric scalar and interval independently of unresolved parameter mapping and ownership.
+Every record defines a placed line carrier with the stored origin and direction. Its neutral parameter is signed distance in millimetres over the stored interval.
 
 ### 5.11 Cylinder record `b2 03 28`
 

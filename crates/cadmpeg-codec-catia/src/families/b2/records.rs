@@ -987,8 +987,6 @@ pub struct B2LineProfile {
     pub origin: [f64; 3],
     /// Unit line direction.
     pub direction: [f64; 3],
-    /// Positive metric scalar preceding the stored interval.
-    pub metric_scale: f64,
     /// Increasing stored parameter interval.
     pub range: [f64; 2],
 }
@@ -1391,12 +1389,13 @@ pub fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
                 .iter()
                 .map(|component| component * component)
                 .sum::<f64>();
-            ((squared_length - 1.0).abs() <= 1e-12 && values[6] > 0.0 && values[7] < values[8])
+            ((squared_length - 1.0).abs() <= 1e-12
+                && values[6].to_bits() == 1.0_f64.to_bits()
+                && values[7] < values[8])
                 .then_some(B2LineProfile {
                     pos: frame.pos,
                     origin: values[0..3].try_into().expect("three origin values"),
                     direction,
-                    metric_scale: values[6],
                     range: [values[7], values[8]],
                 })
         })
