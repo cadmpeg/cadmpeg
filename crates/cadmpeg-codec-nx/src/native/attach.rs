@@ -271,7 +271,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(175);
+    namespace.version = namespace.version.max(176);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -2573,8 +2573,8 @@ fn extrude_feature_definition(
     };
     FeatureDefinition::Extrude {
         profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-        start: cadmpeg_ir::features::ExtrudeStart::default(),
+        direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+        start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: Termination::Unresolved,
@@ -5195,7 +5195,7 @@ mod tests {
             ),
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("nx:profile#1".to_string()),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: Termination::Unresolved,
@@ -5204,7 +5204,7 @@ mod tests {
                     },
                 },
                 op: BooleanOp::NewBody,
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
                 direction_source: None,
                 solid: Some(true),
                 face_maker: None,
@@ -5841,7 +5841,7 @@ mod tests {
             super::non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
             FeatureDefinition::Extrude {
                 profile: cadmpeg_ir::features::ProfileRef::Unresolved("EXTRUDE".into()),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved,
                 extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                     side: cadmpeg_ir::features::ExtrudeSide {
                         termination: cadmpeg_ir::features::Termination::Unresolved,
@@ -5850,7 +5850,7 @@ mod tests {
                     },
                 },
                 op: BooleanOp::Unresolved,
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
                 direction_source: None,
                 solid: None,
                 face_maker: None,

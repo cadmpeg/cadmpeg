@@ -808,6 +808,86 @@ fn nx_face_blend_completeness_requires_disjoint_supports() {
 }
 
 #[test]
+fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
+        FeatureDefinition, FeatureId, Length, ProfileRef, Termination,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let output = ir.model.bodies[0].id.clone();
+    let definition = |direction, start, solid| FeatureDefinition::Extrude {
+        profile: ProfileRef::Sketch(cadmpeg_ir::sketches::SketchId("test:sketch#0".into())),
+        direction,
+        start,
+        extent: ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(5.0),
+                },
+                draft: None,
+                offset: None,
+            },
+        },
+        op: BooleanOp::NewBody,
+        direction_source: None,
+        solid,
+        face_maker: None,
+        inner_wire_taper: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
+    };
+    let complete = definition(
+        ExtrudeDirection::ProfileNormal,
+        ExtrudeStart::ProfilePlane,
+        Some(true),
+    );
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#extrude".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: vec![output],
+        definition: complete,
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    for incomplete in [
+        definition(
+            ExtrudeDirection::Unresolved,
+            ExtrudeStart::ProfilePlane,
+            Some(true),
+        ),
+        definition(
+            ExtrudeDirection::ProfileNormal,
+            ExtrudeStart::Unresolved,
+            Some(true),
+        ),
+        definition(
+            ExtrudeDirection::ProfileNormal,
+            ExtrudeStart::ProfilePlane,
+            None,
+        ),
+    ] {
+        ir.model.features[0].definition = incomplete;
+        losses.clear();
+        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("extrude (1)"));
+    }
+}
+
+#[test]
 fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
     use cadmpeg_ir::features::{EdgeSelection, FaceSelection, ProfileRef};
     use cadmpeg_ir::ids::{EdgeId, FaceId};

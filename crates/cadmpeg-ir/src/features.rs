@@ -1253,6 +1253,8 @@ pub enum FeatureDefinition {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ExtrudeDirection {
+    /// Native direction selection is present structurally but unresolved.
+    Unresolved,
     /// Sweep along the profile's positive normal.
     #[default]
     ProfileNormal,
@@ -2090,6 +2092,8 @@ pub struct AxisAngle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExtrudeStart {
+    /// Native start condition is present structurally but unresolved.
+    Unresolved,
     /// Begin on the profile's own plane.
     #[default]
     ProfilePlane,

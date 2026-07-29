@@ -7193,12 +7193,21 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
             FeatureDefinition::Extrude {
                 profile,
+                direction,
+                start,
                 extent,
                 op,
+                solid,
                 ..
             } if profile_ref_is_incomplete(profile)
+                || matches!(
+                    direction,
+                    cadmpeg_ir::features::ExtrudeDirection::Unresolved
+                )
+                || matches!(start, cadmpeg_ir::features::ExtrudeStart::Unresolved)
                 || extrude_extent_is_incomplete(extent)
-                || matches!(op, BooleanOp::Unresolved) =>
+                || matches!(op, BooleanOp::Unresolved)
+                || solid.is_none() =>
             {
                 "extrude"
             }

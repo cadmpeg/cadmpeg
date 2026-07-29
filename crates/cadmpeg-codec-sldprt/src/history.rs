@@ -10842,6 +10842,12 @@ pub fn sync_neutral_features(
                     }
                 }
                 match direction {
+                    cadmpeg_ir::features::ExtrudeDirection::Unresolved => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has an unresolved extrusion direction",
+                            feature.id
+                        )));
+                    }
                     cadmpeg_ir::features::ExtrudeDirection::ProfileNormal => {
                         properties.remove("Direction");
                     }
