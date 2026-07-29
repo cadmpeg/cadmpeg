@@ -212,9 +212,13 @@ current scores require those matrices and representative fixtures.
   pcurve-occurrence senses; transfer requires the oriented edge occurrences to
   close cyclically and retains pcurve direction in each coedge use.
   Object-stream edges require exactly five references and one admitted terminal
-  control, with no residual bytes.
+  control, with no residual bytes. The resolved graph retains the support,
+  ordered vertex and parameter-incidence identities, and exact terminal control;
+  decode coverage counts all eight structurally typed controls independently.
   Object-stream vertex-incidence links require one roster reference and an
-  exact `00` or `04` terminal control, with no residual bytes.
+  exact `00` or `04` terminal control, with no residual bytes. The resolved
+  graph retains the roster identity and exact control; decode coverage counts
+  the two structurally typed controls independently.
   Object-stream class-`18` pcurves require one complete finite line production:
   general parametric, constant-U, or constant-V. Object-stream class-`19`
   pcurves require the complete finite arc-length circle grammar. Both transfer

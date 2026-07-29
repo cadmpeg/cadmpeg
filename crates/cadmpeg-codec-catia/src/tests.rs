@@ -13699,7 +13699,16 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
 
 #[test]
 fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
-    let stream = b5_closed_triangle_stream();
+    let mut stream = b5_closed_triangle_stream();
+    append_b5_record(
+        &mut stream,
+        0x5e,
+        900,
+        &[
+            0x85, 0x81, 0x18, 0x85, 0x03, 0x18, 0x85, 0x03, 0x81, 0x81, 0x2a,
+        ],
+    );
+    append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
     crate::families::b5::graph::parse(&stream).expect("generated B5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
@@ -13752,6 +13761,14 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(
         result.report.coverage["resolved_object_stream_uncounted_face_count"],
         0
+    );
+    assert_eq!(
+        result.report.coverage["typed_object_stream_edge_terminal_control_2a_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["typed_object_stream_vertex_incidence_terminal_control_04_count"],
+        1
     );
     assert!(result
         .ir

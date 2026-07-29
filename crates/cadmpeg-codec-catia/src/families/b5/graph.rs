@@ -48,6 +48,10 @@ pub struct B5Graph {
     pub supported_surfaces: BTreeMap<u32, B5SupportedSurface>,
     /// Native class-`06` curve-parameter incidences, keyed by object id.
     pub parameter_incidences: BTreeMap<u32, B5ParameterIncidence>,
+    /// Native class-`5e` physical-edge records, keyed by object id.
+    pub edges: BTreeMap<u32, B5Edge>,
+    /// Native class-`5d` vertex-to-incidence links, keyed by object id.
+    pub vertex_incidence_links: BTreeMap<u32, B5VertexIncidenceLink>,
     /// World-frame `05 08 01` vertex coordinates, in stream order.
     pub vertex_points: Vec<[f64; 3]>,
     /// Logical vertex coordinates resolved from native `5d` identity. Their
@@ -441,6 +445,32 @@ pub struct B5ParameterIncidence {
     pub parameters: Vec<f64>,
     /// Compact native controls aligned with `curves`.
     pub controls: Vec<u32>,
+}
+
+/// One complete class-`5e` physical-edge reference production.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B5Edge {
+    /// This record's stream object id.
+    pub object_id: u32,
+    /// Referenced curve-support wrapper.
+    pub support: u32,
+    /// Ordered start/end class-`5d` vertex identities.
+    pub vertices: [u32; 2],
+    /// Ordered start/end class-`06` parameter-incidence identities.
+    pub parameter_incidences: [u32; 2],
+    /// Exact admitted terminal control.
+    pub terminal_control: u8,
+}
+
+/// One complete class-`5d` vertex-to-incidence reference production.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B5VertexIncidenceLink {
+    /// This record's stream object id.
+    pub object_id: u32,
+    /// Referenced counted class-`05` incidence roster.
+    pub incidence: u32,
+    /// Exact admitted terminal control.
+    pub terminal_control: u8,
 }
 
 /// A resolved `b5 03 18`, `b5 03 19`, or `b5 03 21` pcurve node, represented as a 2D
@@ -861,25 +891,34 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .map(|point| [point.x, point.y, point.z])
         .collect::<Vec<_>>();
     let geometric_edge_vertices = bind_edge_vertices(&loops, &pcurves, &vertex_points);
-    let native_edge_vertices: BTreeMap<u32, [u32; 2]> = records
+    let edges: BTreeMap<u32, B5Edge> = records
         .iter()
         .filter(|record| record.class == 0x5e)
+        .filter_map(|record| parse_edge(record).map(|edge| (record.object_id, edge)))
+        .collect();
+    let vertex_incidence_links: BTreeMap<u32, B5VertexIncidenceLink> = records
+        .iter()
+        .filter(|record| record.class == 0x5d)
         .filter_map(|record| {
-            parse_edge_vertex_refs(record).map(|vertices| (record.object_id, vertices))
+            parse_vertex_incidence_link(record).map(|link| (record.object_id, link))
         })
         .collect();
-    let edge_parameter_incidences: BTreeMap<u32, [u32; 2]> = records
+    let native_edge_vertices: BTreeMap<u32, [u32; 2]> = edges
         .iter()
-        .filter_map(|record| {
-            let parameters = parse_edge_parameter_refs(record)?;
-            parameters
+        .map(|(&object_id, edge)| (object_id, edge.vertices))
+        .collect();
+    let edge_parameter_incidences: BTreeMap<u32, [u32; 2]> = edges
+        .iter()
+        .filter_map(|(&object_id, edge)| {
+            edge.parameter_incidences
                 .iter()
                 .all(|parameter| parameter_incidences.contains_key(parameter))
-                .then_some((record.object_id, parameters))
+                .then_some((object_id, edge.parameter_incidences))
         })
         .collect();
     let native_vertex_coordinates = incidence_vertex_coordinates(
         &native_edge_vertices,
+        &vertex_incidence_links,
         &by_id,
         &pcurves,
         &surfaces,
@@ -940,6 +979,8 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         extrusion_surfaces,
         supported_surfaces,
         parameter_incidences,
+        edges,
+        vertex_incidence_links,
         vertex_points,
         logical_vertex_points,
         logical_vertex_refs,
@@ -1097,9 +1138,10 @@ pub fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
             object_id,
             payload: bytes[offset + 8..end].to_vec(),
         };
-        let Some(vertices) = parse_edge_vertex_refs(&record) else {
+        let Some(edge) = parse_edge(&record) else {
             continue;
         };
+        let vertices = edge.vertices;
         if edges
             .insert(object_id, vertices)
             .is_some_and(|existing| existing != vertices)
@@ -1133,7 +1175,7 @@ pub(crate) fn edge_support_pcurve_references(
             payload: bytes[offset + header..end].to_vec(),
         };
         if class == 0x5e && edge_ids.contains(&object_id) {
-            let Some(wrapper) = parse_edge_refs(&record).map(|references| references[0]) else {
+            let Some(wrapper) = parse_edge(&record).map(|edge| edge.support) else {
                 continue;
             };
             edge_wrappers
@@ -1286,7 +1328,7 @@ fn resolve_targeted_surface(
     }
 }
 
-fn parse_edge_refs(record: &B5Record) -> Option<[u32; 5]> {
+fn parse_edge(record: &B5Record) -> Option<B5Edge> {
     (record.class == 0x5e && record.payload.first() == Some(&0x85)).then_some(())?;
     let mut position = 1;
     let references: [u32; 5] = (0..5)
@@ -1294,24 +1336,25 @@ fn parse_edge_refs(record: &B5Record) -> Option<[u32; 5]> {
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
-    let &[tail] = record.payload.get(position..)? else {
+    let &[terminal_control] = record.payload.get(position..)? else {
         return None;
     };
-    matches!(tail, 0x01 | 0x02 | 0x21 | 0x22 | 0x25 | 0x26 | 0x29 | 0x2a).then_some(references)
-}
-
-fn parse_edge_vertex_refs(record: &B5Record) -> Option<[u32; 2]> {
-    let references = parse_edge_refs(record)?;
-    Some([references[1], references[2]])
-}
-
-fn parse_edge_parameter_refs(record: &B5Record) -> Option<[u32; 2]> {
-    let references = parse_edge_refs(record)?;
-    Some([references[3], references[4]])
+    matches!(
+        terminal_control,
+        0x01 | 0x02 | 0x21 | 0x22 | 0x25 | 0x26 | 0x29 | 0x2a
+    )
+    .then_some(B5Edge {
+        object_id: record.object_id,
+        support: references[0],
+        vertices: [references[1], references[2]],
+        parameter_incidences: [references[3], references[4]],
+        terminal_control,
+    })
 }
 
 fn incidence_vertex_coordinates(
     native_edges: &BTreeMap<u32, [u32; 2]>,
+    vertex_incidence_links: &BTreeMap<u32, B5VertexIncidenceLink>,
     by_id: &HashMap<u32, &B5Record>,
     pcurves: &BTreeMap<u32, B5Pcurve>,
     surfaces: &BTreeMap<u32, B5Surface>,
@@ -1324,7 +1367,7 @@ fn incidence_vertex_coordinates(
         .collect::<HashSet<_>>()
         .into_iter()
         .filter_map(|vertex| {
-            let incidence = vertex_incidence_ref(by_id.get(&vertex)?)?;
+            let incidence = vertex_incidence_links.get(&vertex)?.incidence;
             let incidence_records = counted_references(by_id.get(&incidence)?, 0x05)?;
             let point = incidence_records.into_iter().find_map(|incidence_record| {
                 let incidence = parameter_incidence(by_id.get(&incidence_record)?)?;
@@ -1344,14 +1387,18 @@ fn incidence_vertex_coordinates(
         .collect()
 }
 
-fn vertex_incidence_ref(record: &B5Record) -> Option<u32> {
+fn parse_vertex_incidence_link(record: &B5Record) -> Option<B5VertexIncidenceLink> {
     (record.class == 0x5d && record.payload.first() == Some(&0x81)).then_some(())?;
     let mut position = 1;
     let incidence = wire::object_ref(&record.payload, &mut position, true)?;
     let &[terminal_control] = record.payload.get(position..)? else {
         return None;
     };
-    matches!(terminal_control, 0x00 | 0x04).then_some(incidence)
+    matches!(terminal_control, 0x00 | 0x04).then_some(B5VertexIncidenceLink {
+        object_id: record.object_id,
+        incidence,
+        terminal_control,
+    })
 }
 
 fn counted_references(record: &B5Record, class: u8) -> Option<Vec<u32>> {
@@ -1416,10 +1463,7 @@ fn implicit_pcurve_bindings(
             {
                 continue;
             }
-            let Some(edge_references) = by_id
-                .get(&occurrence[1])
-                .and_then(|edge| parse_edge_refs(edge))
-            else {
+            let Some(edge) = by_id.get(&occurrence[1]).and_then(|edge| parse_edge(edge)) else {
                 continue;
             };
             let endpoint_incidence_contains = |reference_id| {
@@ -1428,12 +1472,12 @@ fn implicit_pcurve_bindings(
                     .and_then(|incidence| parameter_incidence(incidence))
                     .is_some_and(|incidence| incidence.curves.contains(&pcurve))
             };
-            let curve_wrapper_contains = by_id.get(&edge_references[0]).is_some_and(|wrapper| {
+            let curve_wrapper_contains = by_id.get(&edge.support).is_some_and(|wrapper| {
                 matches!(wrapper.class, 0x23..=0x25) && record_references(wrapper).contains(&pcurve)
             });
             if !(curve_wrapper_contains
-                || endpoint_incidence_contains(edge_references[3])
-                    && endpoint_incidence_contains(edge_references[4]))
+                || endpoint_incidence_contains(edge.parameter_incidences[0])
+                    && endpoint_incidence_contains(edge.parameter_incidences[1]))
             {
                 continue;
             }
@@ -6374,7 +6418,7 @@ mod tests {
     }
 
     #[test]
-    fn edge_record_exposes_native_start_and_end_vertex_refs() {
+    fn edge_record_retains_references_and_each_admitted_terminal_control() {
         let record = B5Record {
             offset: 0,
             family: 0xb5,
@@ -6382,23 +6426,32 @@ mod tests {
             object_id: 17,
             payload: vec![0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
         };
-        assert_eq!(parse_edge_vertex_refs(&record), Some([15, 21]));
-        assert_eq!(parse_edge_parameter_refs(&record), Some([19, 20]));
+        assert_eq!(
+            parse_edge(&record),
+            Some(B5Edge {
+                object_id: 17,
+                support: 18,
+                vertices: [15, 21],
+                parameter_incidences: [19, 20],
+                terminal_control: 0x21,
+            })
+        );
 
         let mut standard = record;
-        *standard.payload.last_mut().expect("tail") = 0x01;
-        assert_eq!(parse_edge_vertex_refs(&standard), Some([15, 21]));
-        for tail in [0x02, 0x22, 0x25, 0x26, 0x29, 0x2a] {
-            *standard.payload.last_mut().expect("tail") = tail;
-            assert_eq!(parse_edge_vertex_refs(&standard), Some([15, 21]));
+        for terminal_control in [0x01, 0x02, 0x21, 0x22, 0x25, 0x26, 0x29, 0x2a] {
+            *standard.payload.last_mut().expect("tail") = terminal_control;
+            assert_eq!(
+                parse_edge(&standard).map(|edge| edge.terminal_control),
+                Some(terminal_control)
+            );
         }
         standard.payload.pop();
-        assert!(parse_edge_vertex_refs(&standard).is_none());
+        assert!(parse_edge(&standard).is_none());
         standard.payload.extend_from_slice(&[0x21, 0x00]);
-        assert!(parse_edge_vertex_refs(&standard).is_none());
+        assert!(parse_edge(&standard).is_none());
         standard.payload.truncate(6);
         standard.payload.push(0x03);
-        assert!(parse_edge_vertex_refs(&standard).is_none());
+        assert!(parse_edge(&standard).is_none());
         *standard.payload.last_mut().expect("tail") = 0x01;
 
         let mut bytes = vec![0xb5, 0x03, 0x5e, 7];
@@ -6419,17 +6472,25 @@ mod tests {
             object_id: 17,
             payload: vec![0x81, 0x92, terminal_control],
         };
-        assert_eq!(vertex_incidence_ref(&record(0x00)), Some(18));
-        assert_eq!(vertex_incidence_ref(&record(0x04)), Some(18));
-        assert_eq!(vertex_incidence_ref(&record(0x01)), None);
+        for terminal_control in [0x00, 0x04] {
+            assert_eq!(
+                parse_vertex_incidence_link(&record(terminal_control)),
+                Some(B5VertexIncidenceLink {
+                    object_id: 17,
+                    incidence: 18,
+                    terminal_control,
+                })
+            );
+        }
+        assert_eq!(parse_vertex_incidence_link(&record(0x01)), None);
 
         let mut missing = record(0x00);
         missing.payload.pop();
-        assert_eq!(vertex_incidence_ref(&missing), None);
+        assert_eq!(parse_vertex_incidence_link(&missing), None);
 
         let mut residual = record(0x04);
         residual.payload.push(0);
-        assert_eq!(vertex_incidence_ref(&residual), None);
+        assert_eq!(parse_vertex_incidence_link(&residual), None);
     }
 
     #[test]

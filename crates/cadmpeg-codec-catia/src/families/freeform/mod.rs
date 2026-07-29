@@ -44,6 +44,36 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
             counts
         })
     });
+    let edge_terminal_controls = b5_graph.as_ref().map(|graph| {
+        graph.edges.values().fold([0usize; 8], |mut counts, edge| {
+            let index = match edge.terminal_control {
+                0x01 => 0,
+                0x02 => 1,
+                0x21 => 2,
+                0x22 => 3,
+                0x25 => 4,
+                0x26 => 5,
+                0x29 => 6,
+                0x2a => 7,
+                _ => unreachable!("the edge parser admits only declared controls"),
+            };
+            counts[index] += 1;
+            counts
+        })
+    });
+    let vertex_incidence_terminal_controls = b5_graph.as_ref().map(|graph| {
+        graph
+            .vertex_incidence_links
+            .values()
+            .fold([0usize; 2], |mut counts, link| {
+                match link.terminal_control {
+                    0x00 => counts[0] += 1,
+                    0x04 => counts[1] += 1,
+                    _ => unreachable!("the vertex-incidence parser admits only controls 00 and 04"),
+                }
+                counts
+            })
+    });
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
@@ -140,6 +170,27 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         coverage.insert(
             "resolved_object_stream_uncounted_face_count".to_string(),
             uncounted,
+        );
+    }
+    if let Some(counts) = edge_terminal_controls {
+        for (control, count) in [0x01, 0x02, 0x21, 0x22, 0x25, 0x26, 0x29, 0x2a]
+            .into_iter()
+            .zip(counts)
+        {
+            coverage.insert(
+                format!("typed_object_stream_edge_terminal_control_{control:02x}_count"),
+                count,
+            );
+        }
+    }
+    if let Some([control_00, control_04]) = vertex_incidence_terminal_controls {
+        coverage.insert(
+            "typed_object_stream_vertex_incidence_terminal_control_00_count".to_string(),
+            control_00,
+        );
+        coverage.insert(
+            "typed_object_stream_vertex_incidence_terminal_control_04_count".to_string(),
+            control_04,
         );
     }
     Some(FamilyOutput {
