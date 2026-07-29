@@ -76,6 +76,10 @@ current scores require those matrices and representative fixtures.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, trigonometric calls, absolute values, and
   square roots.
+  Complete constraint-range productions are counted separately as dimension or
+  complex-constraint ranges, finite or unset evaluations, and structurally
+  owned or owner-unresolved records. These classifications do not establish
+  constraint identity, operands, or sketch incidence.
 - Owner-bound `PRTSketch` class fields transfer one neutral planar
   sketch identity and its linked ordered sketch-history feature independently
   of unresolved geometry payloads. Complete empty declaration records are

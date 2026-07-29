@@ -9812,6 +9812,30 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode constraint range");
     assert_eq!(decoded.report.coverage["decoded_constraint_range_count"], 1);
+    assert_eq!(
+        decoded.report.coverage["decoded_dimension_constraint_range_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_complex_constraint_range_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_evaluated_constraint_range_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_unset_constraint_range_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_structurally_owned_constraint_range_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_constraint_range_owner_count"],
+        0
+    );
 
     let mut malformed = native;
     malformed.entity_records[0]
@@ -9873,6 +9897,34 @@ fn constraint_range_requires_an_exact_role_and_framing_pair() {
             expected
         );
     }
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_two_selector_value(
+                "Range",
+                "ComplexCst",
+                &[0x84, 0x96, 0x82, 0xc9, 0xe7],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset complex constraint range");
+    assert_eq!(decoded.report.coverage["decoded_constraint_range_count"], 1);
+    assert_eq!(
+        decoded.report.coverage["decoded_dimension_constraint_range_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_complex_constraint_range_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_evaluated_constraint_range_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_unset_constraint_range_count"],
+        1
+    );
 
     for (range, constraint, code) in [
         ("Tolerance", "CstAttr_Dimension", 0xc1),
