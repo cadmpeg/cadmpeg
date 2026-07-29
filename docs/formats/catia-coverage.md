@@ -123,8 +123,13 @@ current scores require those matrices and representative fixtures.
   remains unbound atomically.
 - A consolidated revolution whose profile interval selects exactly one
   consolidated circle transfers a placed analytic directrix and neutral
-  surface-of-revolution construction. Missing and multiply matching intervals
-  remain unbound atomically.
+  surface-of-revolution construction. A profile circle offset from the
+  revolution axis transfers its exact torus carrier, including spindle form.
+  Face-local carriers whose complete boundary vertices select exactly one such
+  torus receive that geometry. Same-carrier seams transfer as exact meridian
+  arcs when their endpoints select one tube-circle center and their sweep
+  equals the stored profile sweep. Missing and multiply matching intervals,
+  carriers, or seam centers remain unbound atomically.
 - Every consolidated line profile transfers its placed signed-distance
   analytic line carrier and stored parameter interval.
 - Consolidated edge-run coverage partitions runs with zero, one, or two

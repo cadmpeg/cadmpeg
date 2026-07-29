@@ -4823,12 +4823,21 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .iter()
         .find(|surface| surface.id.0.starts_with("catia:standard:revolution#"))
         .expect("transferred revolution construction");
-    assert!(decoded
-        .ir
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| surface.id == revolution.surface));
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| {
+        surface.id == revolution.surface
+            && matches!(
+                surface.geometry,
+                cadmpeg_ir::geometry::SurfaceGeometry::Torus {
+                    center,
+                    axis,
+                    ref_direction,
+                    major_radius: 2.0,
+                    minor_radius: 3.0,
+                } if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, -2.0)
+                    && axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                    && ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+            )
+    }));
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
     assert!(matches!(
         &revolution.definition,

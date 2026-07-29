@@ -33,12 +33,19 @@ use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
 use crate::solve::{mesh_quotient, missing_edge};
 
+#[derive(Clone)]
+struct ConsolidatedRevolutionBinding {
+    geometry: SurfaceGeometry,
+    profile_sweep: f64,
+}
+
 fn append_consolidated_revolutions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bytes: &[u8],
-) -> usize {
+) -> (usize, Vec<ConsolidatedRevolutionBinding>) {
     let resolved = crate::families::b2::records::b2_resolved_revolutions(bytes);
+    let mut bindings = Vec::new();
     for resolved in &resolved {
         let index = resolved.revolution_index;
         let revolution = &resolved.revolution;
@@ -92,6 +99,54 @@ fn append_consolidated_revolutions(
             source_object: Some(cgm_source("profile-circle", profile.record_id)),
         });
         let surface = SurfaceId(format!("catia:standard:revolution-surface#{index}"));
+        let center_offset = Vector3::new(
+            center.x - origin.x,
+            center.y - origin.y,
+            center.z - origin.z,
+        );
+        let axis_coordinate =
+            center_offset.x * axis.x + center_offset.y * axis.y + center_offset.z * axis.z;
+        let radial = Vector3::new(
+            center_offset.x - axis.x * axis_coordinate,
+            center_offset.y - axis.y * axis_coordinate,
+            center_offset.z - axis.z * axis_coordinate,
+        );
+        let major_radius = radial.x.hypot(radial.y).hypot(radial.z);
+        let profile_plane_contains_axis =
+            (direction_x.x * axis.x + direction_x.y * axis.y + direction_x.z * axis.z).abs()
+                <= 1e-12;
+        let radial_follows_profile_reference = major_radius > 0.0
+            && ((radial.x * direction_y.x + radial.y * direction_y.y + radial.z * direction_y.z)
+                .abs()
+                / major_radius
+                - 1.0)
+                .abs()
+                <= 1e-12;
+        let torus_geometry = (major_radius > 0.0
+            && major_radius.is_finite()
+            && profile.radius > 0.0
+            && profile.radius.is_finite()
+            && profile_plane_contains_axis
+            && radial_follows_profile_reference)
+            .then(|| {
+                let ref_direction = Vector3::new(
+                    radial.x / major_radius,
+                    radial.y / major_radius,
+                    radial.z / major_radius,
+                );
+                let torus_center = Point3::new(
+                    center.x - radial.x,
+                    center.y - radial.y,
+                    center.z - radial.z,
+                );
+                SurfaceGeometry::Torus {
+                    center: torus_center,
+                    axis,
+                    ref_direction,
+                    major_radius,
+                    minor_radius: profile.radius,
+                }
+            });
         annotate(
             annotations,
             &surface,
@@ -102,7 +157,9 @@ fn append_consolidated_revolutions(
         );
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: torus_geometry
+                .clone()
+                .unwrap_or(SurfaceGeometry::Unknown { record: None }),
             source_object: Some(cgm_source(
                 "revolution",
                 u32::from(revolution.profile_allocation_id),
@@ -126,8 +183,505 @@ fn append_consolidated_revolutions(
             cache_fit_tolerance: None,
             record_bounds: None,
         });
+        if let Some(geometry) = torus_geometry {
+            bindings.push(ConsolidatedRevolutionBinding {
+                geometry,
+                profile_sweep: (revolution.profile_range[1] - revolution.profile_range[0]).abs()
+                    / profile.radius,
+            });
+        }
     }
-    resolved.len()
+    (resolved.len(), bindings)
+}
+
+fn bind_consolidated_revolution_faces_and_seams(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    revolutions: &[ConsolidatedRevolutionBinding],
+) -> (usize, usize) {
+    const TOLERANCE: f64 = 2e-3;
+
+    fn vector(from: Point3, to: Point3) -> Vector3 {
+        Vector3::new(to.x - from.x, to.y - from.y, to.z - from.z)
+    }
+
+    fn dot(left: Vector3, right: Vector3) -> f64 {
+        left.x * right.x + left.y * right.y + left.z * right.z
+    }
+
+    fn cross(left: Vector3, right: Vector3) -> Vector3 {
+        Vector3::new(
+            left.y * right.z - left.z * right.y,
+            left.z * right.x - left.x * right.z,
+            left.x * right.y - left.y * right.x,
+        )
+    }
+
+    fn norm(value: Vector3) -> f64 {
+        value.x.hypot(value.y).hypot(value.z)
+    }
+
+    fn point_on_torus(point: Point3, geometry: &SurfaceGeometry, tolerance: f64) -> bool {
+        let SurfaceGeometry::Torus {
+            center,
+            axis,
+            major_radius,
+            minor_radius,
+            ..
+        } = geometry
+        else {
+            return false;
+        };
+        let offset = vector(*center, point);
+        let axial = dot(offset, *axis);
+        let radial = Vector3::new(
+            offset.x - axial * axis.x,
+            offset.y - axial * axis.y,
+            offset.z - axial * axis.z,
+        );
+        let radial = norm(radial);
+        [
+            (radial - major_radius).hypot(axial),
+            (radial + major_radius).hypot(axial),
+        ]
+        .into_iter()
+        .any(|distance| (distance - minor_radius).abs() < tolerance)
+    }
+
+    fn meridian_arc(
+        start: Point3,
+        end: Point3,
+        geometry: &SurfaceGeometry,
+        expected_sweep: f64,
+    ) -> Option<(CurveGeometry, [f64; 2])> {
+        let SurfaceGeometry::Torus {
+            center,
+            axis,
+            major_radius,
+            minor_radius,
+            ..
+        } = geometry
+        else {
+            return None;
+        };
+        if !expected_sweep.is_finite()
+            || expected_sweep <= 0.0
+            || expected_sweep > std::f64::consts::PI
+        {
+            return None;
+        }
+        let start_offset = vector(*center, start);
+        let start_axial = dot(start_offset, *axis);
+        let start_radial = Vector3::new(
+            start_offset.x - start_axial * axis.x,
+            start_offset.y - start_axial * axis.y,
+            start_offset.z - start_axial * axis.z,
+        );
+        let radial_norm = norm(start_radial);
+        if !radial_norm.is_finite() || radial_norm == 0.0 {
+            return None;
+        }
+        let radial_direction = Vector3::new(
+            start_radial.x / radial_norm,
+            start_radial.y / radial_norm,
+            start_radial.z / radial_norm,
+        );
+        let mut centers = [-1.0, 1.0].into_iter().filter_map(|sign| {
+            let circle_center = Point3::new(
+                center.x + sign * major_radius * radial_direction.x,
+                center.y + sign * major_radius * radial_direction.y,
+                center.z + sign * major_radius * radial_direction.z,
+            );
+            let first = vector(circle_center, start);
+            let second = vector(circle_center, end);
+            (((norm(first) - minor_radius).abs() < TOLERANCE)
+                && ((norm(second) - minor_radius).abs() < TOLERANCE))
+                .then_some((circle_center, first, second))
+        });
+        let (circle_center, first, second) = centers.next()?;
+        if centers.next().is_some() {
+            return None;
+        }
+        let first_norm = norm(first);
+        let second_norm = norm(second);
+        let cosine = (dot(first, second) / (first_norm * second_norm)).clamp(-1.0, 1.0);
+        let sweep = cosine.acos();
+        if (sweep - expected_sweep).abs() > TOLERANCE / minor_radius.max(1.0) {
+            return None;
+        }
+        let normal = cross(first, second);
+        let normal_norm = norm(normal);
+        if !normal_norm.is_finite()
+            || normal_norm == 0.0
+            || (dot(normal, *axis) / normal_norm).abs() > 1e-6
+        {
+            return None;
+        }
+        Some((
+            CurveGeometry::Circle {
+                center: circle_center,
+                axis: Vector3::new(
+                    normal.x / normal_norm,
+                    normal.y / normal_norm,
+                    normal.z / normal_norm,
+                ),
+                ref_direction: Vector3::new(
+                    first.x / first_norm,
+                    first.y / first_norm,
+                    first.z / first_norm,
+                ),
+                radius: *minor_radius,
+            },
+            [0.0, expected_sweep],
+        ))
+    }
+
+    let point_positions = ir
+        .model
+        .points
+        .iter()
+        .map(|point| (point.id.clone(), point.position))
+        .collect::<HashMap<_, _>>();
+    let vertex_positions = ir
+        .model
+        .vertices
+        .iter()
+        .filter_map(|vertex| Some((vertex.id.clone(), *point_positions.get(&vertex.point)?)))
+        .collect::<HashMap<_, _>>();
+    let edge_indices = ir
+        .model
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(index, edge)| (edge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let coedge_indices = ir
+        .model
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let loop_indices = ir
+        .model
+        .loops
+        .iter()
+        .enumerate()
+        .map(|(index, loop_)| (loop_.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let unknown_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
+        .map(|surface| surface.id.clone())
+        .collect::<HashSet<_>>();
+    let curve_indices = ir
+        .model
+        .curves
+        .iter()
+        .enumerate()
+        .map(|(index, curve)| (curve.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let mut surface_bindings = HashMap::<SurfaceId, usize>::new();
+    for face in &ir.model.faces {
+        if !unknown_surfaces.contains(&face.surface) {
+            continue;
+        }
+        let face_edges = face
+            .loops
+            .iter()
+            .filter_map(|id| loop_indices.get(id))
+            .flat_map(|index| &ir.model.loops[*index].coedges)
+            .filter_map(|id| coedge_indices.get(id))
+            .filter_map(|index| edge_indices.get(&ir.model.coedges[*index].edge))
+            .collect::<Vec<_>>();
+        let mut witnesses = Vec::with_capacity(3 * face_edges.len());
+        for index in face_edges {
+            let edge = &ir.model.edges[*index];
+            witnesses.extend(
+                [&edge.start, &edge.end]
+                    .into_iter()
+                    .filter_map(|id| vertex_positions.get(id).copied()),
+            );
+            let Some(curve) = edge
+                .curve
+                .as_ref()
+                .and_then(|id| curve_indices.get(id))
+                .map(|index| &ir.model.curves[*index].geometry)
+            else {
+                continue;
+            };
+            let Some([start, end]) = edge.param_range else {
+                continue;
+            };
+            let parameter = start + (end - start) * 0.5;
+            if let Some(point) = cadmpeg_ir::eval::curve_point(curve, parameter) {
+                witnesses.push(point);
+            }
+        }
+        if witnesses.len() < 2 {
+            continue;
+        }
+        let mut matches = revolutions
+            .iter()
+            .enumerate()
+            .filter(|(_, revolution)| {
+                witnesses
+                    .iter()
+                    .all(|point| point_on_torus(*point, &revolution.geometry, TOLERANCE))
+            })
+            .map(|(index, _)| index);
+        let Some(binding) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
+        }
+        surface_bindings
+            .entry(face.surface.clone())
+            .and_modify(|stored| {
+                if *stored != binding {
+                    *stored = usize::MAX;
+                }
+            })
+            .or_insert(binding);
+    }
+    surface_bindings.retain(|_, binding| *binding != usize::MAX);
+    for (surface_id, binding) in &surface_bindings {
+        if let Some(surface) = ir
+            .model
+            .surfaces
+            .iter_mut()
+            .find(|surface| &surface.id == surface_id)
+        {
+            surface.geometry = revolutions[*binding].geometry.clone();
+            annotations.derived(&surface.id, "geometry");
+        }
+    }
+
+    let mut procedural_bindings = HashMap::<CurveId, Option<usize>>::new();
+    for procedure in &ir.model.procedural_curves {
+        let binding = (|| {
+            let ProceduralCurveDefinition::Intersection { context, .. } = &procedure.definition
+            else {
+                return None;
+            };
+            let [Some(first), Some(second)] =
+                std::array::from_fn(|side| context.sides[side].surface.as_ref())
+            else {
+                return None;
+            };
+            let binding = *surface_bindings.get(first)?;
+            (surface_bindings.get(second) == Some(&binding)).then_some(binding)
+        })();
+        let Some(binding) = binding else {
+            continue;
+        };
+        procedural_bindings
+            .entry(procedure.curve.clone())
+            .and_modify(|stored| *stored = None)
+            .or_insert(Some(binding));
+    }
+    let curve_edge_counts = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| edge.curve.as_ref())
+        .fold(HashMap::<CurveId, usize>::new(), |mut counts, curve| {
+            *counts.entry(curve.clone()).or_default() += 1;
+            counts
+        });
+    let mut seam_count = 0usize;
+    for edge in &mut ir.model.edges {
+        let Some(curve_id) = edge.curve.as_ref() else {
+            continue;
+        };
+        let Some(&curve_index) = curve_indices.get(curve_id) else {
+            continue;
+        };
+        if !matches!(
+            ir.model.curves[curve_index].geometry,
+            CurveGeometry::Unknown { .. }
+        ) || curve_edge_counts.get(curve_id) != Some(&1)
+        {
+            continue;
+        }
+        let Some(Some(binding)) = procedural_bindings.get(curve_id) else {
+            continue;
+        };
+        let Some(start) = vertex_positions.get(&edge.start).copied() else {
+            continue;
+        };
+        let Some(end) = vertex_positions.get(&edge.end).copied() else {
+            continue;
+        };
+        let Some((geometry, parameter_range)) = meridian_arc(
+            start,
+            end,
+            &revolutions[*binding].geometry,
+            revolutions[*binding].profile_sweep,
+        ) else {
+            continue;
+        };
+        ir.model.curves[curve_index].geometry = geometry;
+        edge.param_range = Some(parameter_range);
+        annotations
+            .derived(&ir.model.curves[curve_index].id, "geometry")
+            .derived(&edge.id, "param_range");
+        seam_count += 1;
+    }
+    (surface_bindings.len(), seam_count)
+}
+
+#[cfg(test)]
+mod consolidated_revolution_binding_tests {
+    use super::{bind_consolidated_revolution_faces_and_seams, ConsolidatedRevolutionBinding};
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralCurveDefinition, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{
+        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, ShellId, SurfaceId,
+        VertexId,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::AnnotationBuilder;
+
+    #[test]
+    fn one_revolution_torus_closes_face_aliases_and_meridian_seam() {
+        let mut ir = CadIr::empty(Units::default());
+        let surface_ids = [
+            SurfaceId("face-surface#0".to_string()),
+            SurfaceId("face-surface#1".to_string()),
+        ];
+        for id in &surface_ids {
+            ir.model.surfaces.push(Surface {
+                id: id.clone(),
+                geometry: SurfaceGeometry::Unknown { record: None },
+                source_object: None,
+            });
+        }
+        let geometry = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 2.0,
+            minor_radius: 3.0,
+        };
+        let profile_end = std::f64::consts::PI - 0.5;
+        let positions = [
+            Point3::new(-1.0, 0.0, 0.0),
+            Point3::new(2.0 + 3.0 * profile_end.cos(), 0.0, 3.0 * profile_end.sin()),
+        ];
+        for (index, position) in positions.into_iter().enumerate() {
+            let point = PointId(format!("point#{index}"));
+            ir.model.points.push(Point {
+                id: point.clone(),
+                position,
+                source_object: None,
+            });
+            ir.model.vertices.push(Vertex {
+                id: VertexId(format!("vertex#{index}")),
+                point,
+                tolerance: None,
+            });
+        }
+        let curve_id = CurveId("seam-curve".to_string());
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: EdgeId("seam-edge".to_string()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("vertex#0".to_string()),
+            end: VertexId("vertex#1".to_string()),
+            param_range: Some([0.0, 1.0]),
+            tolerance: None,
+        });
+        for (side, surface) in surface_ids.iter().enumerate() {
+            let face = FaceId(format!("face#{side}"));
+            let loop_id = LoopId(format!("loop#{side}"));
+            let coedge = CoedgeId(format!("coedge#{side}"));
+            ir.model.faces.push(Face {
+                id: face.clone(),
+                shell: ShellId("shell".to_string()),
+                surface: surface.clone(),
+                sense: Sense::Forward,
+                loops: vec![loop_id.clone()],
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            ir.model.loops.push(Loop {
+                id: loop_id.clone(),
+                face,
+                boundary_role: LoopBoundaryRole::Unspecified,
+                coedges: vec![coedge.clone()],
+                vertex_uses: Vec::new(),
+            });
+            ir.model.coedges.push(Coedge {
+                id: coedge.clone(),
+                owner_loop: loop_id,
+                edge: EdgeId("seam-edge".to_string()),
+                next: coedge.clone(),
+                previous: coedge.clone(),
+                radial_next: CoedgeId(format!("coedge#{}", 1 - side)),
+                sense: if side == 0 {
+                    Sense::Forward
+                } else {
+                    Sense::Reversed
+                },
+                pcurves: Vec::new(),
+                use_curve: None,
+                use_curve_parameter_range: None,
+            });
+        }
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId("seam-construction".to_string()),
+            curve: curve_id.clone(),
+            definition: ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: std::array::from_fn(|side| IntcurveSupportSide {
+                        surface: Some(surface_ids[side].clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    }),
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: std::array::from_fn(|_| Vec::new()),
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: None,
+        });
+
+        assert_eq!(
+            bind_consolidated_revolution_faces_and_seams(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &[ConsolidatedRevolutionBinding {
+                    geometry: geometry.clone(),
+                    profile_sweep: 0.5,
+                }],
+            ),
+            (2, 1)
+        );
+        assert!(ir
+            .model
+            .surfaces
+            .iter()
+            .all(|surface| surface.geometry == geometry));
+        assert!(matches!(
+            ir.model.curves[0].geometry,
+            CurveGeometry::Circle { radius: 3.0, .. }
+        ));
+        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 0.5]));
+    }
 }
 
 fn refine_consolidated_analytic_surfaces(
@@ -965,7 +1519,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         });
     }
     ir.model.surfaces = surfaces;
-    let resolved_revolution_count =
+    let (resolved_revolution_count, consolidated_revolutions) =
         append_consolidated_revolutions(&mut ir, &mut annotations, &scan.data);
 
     for (i, p) in points.iter().enumerate() {
@@ -1044,6 +1598,12 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             );
         }
     }
+    let (bound_revolution_face_surface_count, resolved_revolution_seam_curve_count) =
+        bind_consolidated_revolution_faces_and_seams(
+            &mut ir,
+            &mut annotations,
+            &consolidated_revolutions,
+        );
     let consolidated_curve_bindings =
         append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
@@ -1057,6 +1617,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         analytic_record_count,
         &crate::assemble::UnresolvedSurfaceCounts {
             face_local_freeform: unresolved_freeform_record_count
+                .saturating_sub(bound_revolution_face_surface_count)
                 .saturating_sub(consolidated_curve_bindings.standard_face_surfaces),
             unbound_revolution: revolution_record_count.saturating_sub(resolved_revolution_count),
         },
@@ -1065,6 +1626,14 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
     report.coverage.insert(
         "refined_consolidated_analytic_surface_count".to_string(),
         refined_analytic_surfaces.len(),
+    );
+    report.coverage.insert(
+        "bound_consolidated_revolution_face_surface_count".to_string(),
+        bound_revolution_face_surface_count,
+    );
+    report.coverage.insert(
+        "resolved_consolidated_revolution_seam_curve_count".to_string(),
+        resolved_revolution_seam_curve_count,
     );
     report.coverage.insert(
         "bound_consolidated_standard_edge_count".to_string(),

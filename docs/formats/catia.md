@@ -385,6 +385,8 @@ The `00 33 30` byte is only the kind tag; geometry is a dedicated 174-byte `b2 0
 
 A revolution profile binds when exactly one complete `b2 03 19` circle has a bit-identical arc-length interval. Let `(X,Y,A)` be the revolution's right-handed frame, `O` its axis origin, and `(c1,c2,r)` the circle fields. The model-space profile circle has center `(O·X)X + c1Y + c2A`, normal `X`, zero-angle direction `Y`, radius `r`, and the stored profile interval. The surface revolves that directrix about `(O,A)` over `[angular_lo/scale, angular_hi/scale]`. No binding is assigned when the interval is absent or selects multiple circle records.
 
+For `c1 != 0`, the construction is an exact torus with center `(O·X)X + c2A`, axis `A`, zero-azimuth direction `sign(c1)Y`, major radius `|c1|`, and minor radius `r`. The minor radius may exceed the major radius. A face-local free-form carrier binds to this torus only when every boundary vertex lies on exactly one resolved revolution carrier. When an edge construction names two face carriers bound to the same torus, its endpoints select a unique meridian-circle center and its endpoint sweep equals the stored profile-interval length divided by `r`; that edge is the corresponding exact meridian arc. Missing or multiple face-carrier or meridian-center matches remain unresolved.
+
 ---
 
 ## 6. Object-stream record framing (`a5 03` / `a8 03` / `b5 03`)
