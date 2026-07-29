@@ -14,7 +14,7 @@
 
 use crate::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition,
-    SurfaceGeometry,
+    SurfaceGeometry, SurfaceParameterAxis,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
@@ -451,6 +451,96 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
         }
     }
     (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
+}
+
+/// Extract the exact rational NURBS curve obtained by fixing one parameter of
+/// a tensor-product NURBS surface.
+pub fn nurbs_surface_isocurve(
+    surface: &NurbsSurface,
+    fixed_axis: SurfaceParameterAxis,
+    fixed_parameter: f64,
+) -> Option<NurbsCurve> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    if surface.control_points.len() != u_count.checked_mul(v_count)?
+        || surface
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != surface.control_points.len())
+    {
+        return None;
+    }
+    let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
+        SurfaceParameterAxis::U => (u_degree, u_count, &surface.u_knots, surface.u_periodic),
+        SurfaceParameterAxis::V => (v_degree, v_count, &surface.v_knots, surface.v_periodic),
+    };
+    let fixed_parameter = periodic_parameter(
+        fixed_knots,
+        fixed_degree,
+        fixed_count,
+        fixed_periodic,
+        fixed_parameter,
+    )?;
+    let fixed_span = bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter)?;
+    let fixed_basis = bspline_basis(fixed_knots, fixed_degree, fixed_span, fixed_parameter);
+    let varying_count = match fixed_axis {
+        SurfaceParameterAxis::U => v_count,
+        SurfaceParameterAxis::V => u_count,
+    };
+    let mut control_points = Vec::with_capacity(varying_count);
+    let mut derived_weights = Vec::with_capacity(varying_count);
+    for varying in 0..varying_count {
+        let mut weighted = [0.0; 3];
+        let mut weight_sum = 0.0;
+        for (local, basis) in fixed_basis.iter().copied().enumerate() {
+            let fixed = fixed_span - fixed_degree + local;
+            let index = match fixed_axis {
+                SurfaceParameterAxis::U => fixed * v_count + varying,
+                SurfaceParameterAxis::V => varying * v_count + fixed,
+            };
+            let weight = surface
+                .weights
+                .as_ref()
+                .and_then(|weights| weights.get(index).copied())
+                .unwrap_or(1.0);
+            let factor = basis * weight;
+            let point = surface.control_points.get(index)?;
+            weighted[0] += factor * point.x;
+            weighted[1] += factor * point.y;
+            weighted[2] += factor * point.z;
+            weight_sum += factor;
+        }
+        if !weight_sum.is_finite() || weight_sum <= 0.0 {
+            return None;
+        }
+        control_points.push(Point3::new(
+            weighted[0] / weight_sum,
+            weighted[1] / weight_sum,
+            weighted[2] / weight_sum,
+        ));
+        derived_weights.push(weight_sum);
+    }
+    let (degree, knots, periodic) = match fixed_axis {
+        SurfaceParameterAxis::U => (
+            surface.v_degree,
+            surface.v_knots.clone(),
+            surface.v_periodic,
+        ),
+        SurfaceParameterAxis::V => (
+            surface.u_degree,
+            surface.u_knots.clone(),
+            surface.u_periodic,
+        ),
+    };
+    Some(NurbsCurve {
+        degree,
+        knots,
+        control_points,
+        weights: surface.weights.as_ref().map(|_| derived_weights),
+        periodic,
+    })
 }
 
 /// Point and first partial derivatives of a NURBS surface in its stored
@@ -1050,8 +1140,10 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 
 #[cfg(test)]
 mod tests {
-    use super::{nurbs_surface_partials, pcurve_uv};
-    use crate::geometry::{NurbsSurface, PcurveGeometry};
+    use super::{
+        curve_point, nurbs_surface_isocurve, nurbs_surface_partials, nurbs_surface_point, pcurve_uv,
+    };
+    use crate::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceParameterAxis};
     use crate::math::{Point2, Point3, Vector3};
 
     #[test]
@@ -1104,6 +1196,48 @@ mod tests {
         assert!((partials.du.x - 16.0 / 9.0).abs() < 1e-12);
         assert!(partials.du.y.abs() < 1e-12);
         assert!((partials.dv.y - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
+        let surface = NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 3.0, 0.0),
+                Point3::new(2.0, 0.0, 1.0),
+                Point3::new(2.0, 3.0, 1.0),
+            ],
+            weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
+            u_periodic: false,
+            v_periodic: false,
+        };
+        for (axis, fixed) in [
+            (SurfaceParameterAxis::U, 0.25),
+            (SurfaceParameterAxis::V, 0.75),
+        ] {
+            let isocurve = nurbs_surface_isocurve(&surface, axis, fixed).expect("exact isocurve");
+            let geometry = CurveGeometry::Nurbs(isocurve);
+            for varying in [0.0, 0.2, 0.7, 1.0] {
+                let expected = match axis {
+                    SurfaceParameterAxis::U => {
+                        nurbs_surface_point(&surface, fixed, varying).expect("surface point")
+                    }
+                    SurfaceParameterAxis::V => {
+                        nurbs_surface_point(&surface, varying, fixed).expect("surface point")
+                    }
+                };
+                let actual = curve_point(&geometry, varying).expect("isocurve point");
+                assert!((actual.x - expected.x).abs() < 1e-12);
+                assert!((actual.y - expected.y).abs() < 1e-12);
+                assert!((actual.z - expected.z).abs() < 1e-12);
+            }
+        }
     }
 
     #[test]

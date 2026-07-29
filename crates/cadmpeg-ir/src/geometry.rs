@@ -42,6 +42,16 @@ pub struct NurbsSurface {
     pub v_periodic: bool,
 }
 
+/// Fixed parameter axis used to extract an isoparametric surface curve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceParameterAxis {
+    /// Hold the surface U parameter constant and vary V.
+    U,
+    /// Hold the surface V parameter constant and vary U.
+    V,
+}
+
 /// A NURBS curve knot/pole payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct NurbsCurve {
