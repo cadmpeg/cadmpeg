@@ -5402,6 +5402,7 @@ fn emit_topology(
         })
         .flatten()
         .collect();
+    let mut serialized_branch_pcurves = BTreeSet::new();
     for &fin_xmt in fin_ids.keys() {
         let Some(node) = graph.get(17, fin_xmt) else {
             continue;
@@ -5457,6 +5458,25 @@ fn emit_topology(
                 carrier.fit_tolerance,
             )
         });
+        let edge_curve = ir
+            .model
+            .edges
+            .iter()
+            .find(|candidate| candidate.id == edge)
+            .and_then(|edge| edge.curve.as_ref());
+        if let (Some(pcurve), Some(edge_curve), Some(support)) =
+            (pcurve.as_ref(), edge_curve, support.as_ref())
+        {
+            if curves.get(&fields.curve_xmt) == Some(edge_curve)
+                && pcurve_supports.get(&fields.curve_xmt) == Some(support)
+            {
+                serialized_branch_pcurves.insert((
+                    edge_curve.clone(),
+                    support.clone(),
+                    pcurve.clone(),
+                ));
+            }
+        }
         let attached_pcurve_use_range = pcurve.as_ref().and(pcurve_use_range);
         if pcurve.is_none() {
             let carrier = ir
@@ -5529,6 +5549,11 @@ fn emit_topology(
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
     complete_intersection_supports_from_edge_incidence(ir);
     complete_intersection_pcurves_from_coedge_incidence(ir);
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
+        ir,
+        &serialized_branch_pcurves,
+        annotations,
+    );
     complete_exact_boundary_intersection_pcurves(ir, annotations);
     complete_intersection_pcurves_from_opposite_charts(ir);
 
@@ -5706,6 +5731,200 @@ pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr
                 continue;
             };
             side.pcurve = Some(carrier.geometry.clone());
+        }
+    }
+}
+
+fn complete_tolerant_intersection_pcurves_from_serialized_branches(
+    ir: &mut CadIr,
+    serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
+    annotations: &mut AnnotationBuilder,
+) {
+    let loop_faces = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.clone(), loop_.face.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let face_surfaces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.clone(), face.surface.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let edge_curves = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
+        .collect::<BTreeMap<_, _>>();
+    let mut incident = BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveId, Option<[f64; 2]>)>>::new();
+    for coedge in &ir.model.coedges {
+        let Some(curve) = edge_curves.get(&coedge.edge) else {
+            continue;
+        };
+        let Some(surface) = loop_faces
+            .get(&coedge.owner_loop)
+            .and_then(|face| face_surfaces.get(face))
+        else {
+            continue;
+        };
+        for use_ in &coedge.pcurves {
+            if !serialized.contains(&(curve.clone(), surface.clone(), use_.pcurve.clone())) {
+                continue;
+            }
+            let candidates = incident
+                .entry((curve.clone(), surface.clone()))
+                .or_default();
+            let candidate = (use_.pcurve.clone(), use_.parameter_range);
+            if !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
+        }
+    }
+
+    let vertex_points = ir
+        .model
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            let point = ir
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)?;
+            Some((vertex.id.clone(), point.position))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut replacements = Vec::new();
+    for procedural in &ir.model.procedural_curves {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            supports,
+            endpoints,
+            tolerance,
+            parameterization: None,
+        } = &procedural.definition
+        else {
+            continue;
+        };
+        let edges = ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+            .collect::<Vec<_>>();
+        let [edge] = edges.as_slice() else {
+            continue;
+        };
+        if vertex_points.get(&edge.start) != Some(&endpoints[0])
+            || vertex_points.get(&edge.end) != Some(&endpoints[1])
+        {
+            continue;
+        }
+        let candidates = supports.each_ref().map(|support| {
+            incident
+                .get(&(procedural.curve.clone(), support.clone()))
+                .map(Vec::as_slice)
+        });
+        let [Some([(first_id, first_use_range)]), Some([(second_id, second_use_range)])] =
+            candidates
+        else {
+            continue;
+        };
+        let carriers = [first_id, second_id].map(|id| {
+            ir.model
+                .pcurves
+                .iter()
+                .find(|candidate| &candidate.id == id)
+        });
+        let [Some(first), Some(second)] = carriers else {
+            continue;
+        };
+        let ranges = [
+            first_use_range
+                .or(first.parameter_range)
+                .or_else(|| pcurve_parameter_range(&first.geometry)),
+            second_use_range
+                .or(second.parameter_range)
+                .or_else(|| pcurve_parameter_range(&second.geometry)),
+        ];
+        let [Some(first_range), Some(second_range)] = ranges else {
+            continue;
+        };
+        if !first_range
+            .iter()
+            .zip(second_range)
+            .all(|(first, second)| first.to_bits() == second.to_bits())
+            || !first_range[0].is_finite()
+            || !first_range[1].is_finite()
+            || first_range[0] >= first_range[1]
+        {
+            continue;
+        }
+        if edge.param_range.is_some_and(|range| {
+            !range
+                .iter()
+                .zip(first_range)
+                .all(|(existing, branch)| existing.to_bits() == branch.to_bits())
+        }) {
+            continue;
+        }
+        let Some(()) = first
+            .fit_tolerance
+            .zip(second.fit_tolerance)
+            .map(|(first, second)| first + second)
+            .filter(|bound| bound.is_finite() && *bound <= *tolerance)
+            .map(|_| ())
+        else {
+            continue;
+        };
+        let pcurves = [first.geometry.clone(), second.geometry.clone()];
+        let endpoints_match = supports.iter().zip(&pcurves).all(|(support, pcurve)| {
+            first_range
+                .iter()
+                .zip(endpoints)
+                .all(|(parameter, endpoint)| {
+                    pcurve_uv(pcurve, *parameter)
+                        .and_then(|uv| decoded_surface_point(ir, support, uv.u, uv.v))
+                        .is_some_and(|point| point_distance(point, *endpoint) <= *tolerance)
+                })
+        });
+        if endpoints_match {
+            replacements.push((
+                procedural.id.clone(),
+                edge.id.clone(),
+                TolerantIntersectionParameterization {
+                    pcurves,
+                    parameter_range: first_range,
+                },
+            ));
+        }
+    }
+
+    for (procedural_id, edge_id, parameterization) in replacements {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::TolerantIntersection {
+            parameterization: slot,
+            ..
+        } = &mut procedural.definition
+        else {
+            continue;
+        };
+        if slot.is_some() {
+            continue;
+        }
+        let range = parameterization.parameter_range;
+        *slot = Some(parameterization);
+        if let Some(edge) = ir.model.edges.iter_mut().find(|edge| edge.id == edge_id) {
+            edge.param_range = Some(range);
+            annotations.derived(&edge.id, "param_range");
         }
     }
 }
@@ -8511,14 +8730,16 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve,
-        NurbsSurface, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+        NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
         ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
-        CurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, VertexId,
+        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+        ProceduralSurfaceId, ShellId, SurfaceId, VertexId,
     };
-    use cadmpeg_ir::math::{Point2, Point3};
-    use cadmpeg_ir::topology::{Point, Vertex};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex};
+    use cadmpeg_ir::AnnotationBuilder;
 
     fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
         SurfaceGeometry::Nurbs(NurbsSurface {
@@ -8653,6 +8874,181 @@ mod tests {
         assert_eq!(
             super::surface_offset_lineage(&ir, &cache, 0),
             Some((support, 4.0))
+        );
+    }
+
+    #[test]
+    fn serialized_surface_curves_select_a_terminal_intersection_branch() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let surfaces = [
+            SurfaceId("nx:test:surface#0".into()),
+            SurfaceId("nx:test:surface#1".into()),
+        ];
+        for surface in &surfaces {
+            ir.model.surfaces.push(Surface {
+                id: surface.clone(),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            });
+        }
+        let curve = CurveId("nx:test:curve".into());
+        let procedural = ProceduralCurveId("nx:test:intersection".into());
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Procedural {
+                construction: procedural.clone(),
+            },
+            source_object: None,
+        });
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: procedural,
+            curve: curve.clone(),
+            definition: ProceduralCurveDefinition::TolerantIntersection {
+                supports: surfaces.clone(),
+                endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                tolerance: 0.03,
+                parameterization: None,
+            },
+            cache_fit_tolerance: None,
+        });
+        let points = [
+            PointId("nx:test:point#0".into()),
+            PointId("nx:test:point#1".into()),
+        ];
+        let vertices = [
+            VertexId("nx:test:vertex#0".into()),
+            VertexId("nx:test:vertex#1".into()),
+        ];
+        for index in 0..2 {
+            ir.model.points.push(Point {
+                id: points[index].clone(),
+                position: Point3::new(10.0 * index as f64, 0.0, 0.0),
+                source_object: None,
+            });
+            ir.model.vertices.push(Vertex {
+                id: vertices[index].clone(),
+                point: points[index].clone(),
+                tolerance: None,
+            });
+        }
+        let edge = EdgeId("nx:test:edge".into());
+        ir.model.edges.push(Edge {
+            id: edge.clone(),
+            curve: Some(curve),
+            start: vertices[0].clone(),
+            end: vertices[1].clone(),
+            param_range: None,
+            tolerance: Some(0.03),
+        });
+        let pcurves = [
+            PcurveId("nx:test:pcurve#0".into()),
+            PcurveId("nx:test:pcurve#1".into()),
+        ];
+        let faces = [
+            FaceId("nx:test:face#0".into()),
+            FaceId("nx:test:face#1".into()),
+        ];
+        let loops = [
+            LoopId("nx:test:loop#0".into()),
+            LoopId("nx:test:loop#1".into()),
+        ];
+        let coedges = [
+            CoedgeId("nx:test:coedge#0".into()),
+            CoedgeId("nx:test:coedge#1".into()),
+        ];
+        for index in 0..2 {
+            ir.model.pcurves.push(Pcurve {
+                id: pcurves[index].clone(),
+                geometry: PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 0.0),
+                    direction: Point2::new(1.0, 0.0),
+                },
+                wrapper_reversed: None,
+                native_tail_flags: None,
+                parameter_range: Some([0.0, 10.0]),
+                fit_tolerance: Some(0.02),
+            });
+            ir.model.faces.push(Face {
+                id: faces[index].clone(),
+                shell: ShellId("nx:test:shell".into()),
+                surface: surfaces[index].clone(),
+                sense: Sense::Forward,
+                loops: vec![loops[index].clone()],
+                name: None,
+                color: None,
+                tolerance: Some(0.03),
+            });
+            ir.model.loops.push(Loop {
+                id: loops[index].clone(),
+                face: faces[index].clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                coedges: vec![coedges[index].clone()],
+                vertex_uses: Vec::new(),
+            });
+            ir.model.coedges.push(Coedge {
+                id: coedges[index].clone(),
+                owner_loop: loops[index].clone(),
+                edge: edge.clone(),
+                next: coedges[index].clone(),
+                previous: coedges[index].clone(),
+                radial_next: coedges[1 - index].clone(),
+                sense: Sense::Forward,
+                pcurves: vec![PcurveUse {
+                    pcurve: pcurves[index].clone(),
+                    isoparametric: None,
+                    parameter_range: Some([0.0, 10.0]),
+                }],
+                use_curve: None,
+                use_curve_parameter_range: None,
+            });
+        }
+        let serialized = [0, 1]
+            .map(|index| {
+                (
+                    ir.model.procedural_curves[0].curve.clone(),
+                    surfaces[index].clone(),
+                    pcurves[index].clone(),
+                )
+            })
+            .into_iter()
+            .collect();
+        super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+            &mut ir,
+            &serialized,
+            &mut AnnotationBuilder::new(),
+        );
+        assert!(matches!(
+            ir.model.procedural_curves[0].definition,
+            ProceduralCurveDefinition::TolerantIntersection {
+                parameterization: None,
+                ..
+            }
+        ));
+        for pcurve in &mut ir.model.pcurves {
+            pcurve.fit_tolerance = Some(0.01);
+        }
+        super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+            &mut ir,
+            &serialized,
+            &mut AnnotationBuilder::new(),
+        );
+
+        let ProceduralCurveDefinition::TolerantIntersection {
+            parameterization: Some(parameterization),
+            ..
+        } = &ir.model.procedural_curves[0].definition
+        else {
+            panic!("serialized branch transferred");
+        };
+        assert_eq!(parameterization.parameter_range, [0.0, 10.0]);
+        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 10.0]));
+        assert_eq!(
+            cadmpeg_ir::eval::model_surface_point_by_id(&ir, &surfaces[0], 5.0, 0.0),
+            cadmpeg_ir::eval::model_surface_point_by_id(&ir, &surfaces[1], 5.0, 0.0)
         );
     }
 

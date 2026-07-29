@@ -946,6 +946,8 @@ surface parameters, solves the axial affine map, and applies the complete
 two-support forward check. Other cylindrical and conical endpoint relations do
 not become generator charts.
 
+A FIN-carried SP_CURVE is a serialized terminal-branch witness when its original-curve reference resolves to the same type-38/`0x5a` construction and its support reference is the FIN's FACE carrier. Two such witnesses establish the bounded parameterization when exactly one belongs to each ordered support, their effective trimmed parameter intervals are bit-identical and increasing, both interval endpoints reproduce the ordered EDGE vertices within the EDGE tolerance, and the sum of their finite SP_CURVE fit tolerances does not exceed the EDGE tolerance. The shared interval becomes the EDGE and tolerant-intersection parameter range. The two pcurves retain their serialized geometry; their fit contracts bound their separation throughout the interval through their common original curve. Missing, repeated, oppositely oriented, differently bounded, or insufficiently precise witnesses do not select a branch.
+
 | Ref | Role                                                                                       |
 | --- | ------------------------------------------------------------------------------------------ |
 | 0/1 | primary support surface + type-59 second-support bridge (order set by the `0x00cc` marker) |

@@ -5,7 +5,7 @@ This document records unresolved NX `.prt` byte semantics.
 ## Parasolid streams
 
 - Compact tombstones whose explicit `(type, xmt)` key does not match a partition entity have no specified target relation. Exact-key tombstones delete that entity; unmatched range or revision semantics remain unspecified.
-- Finite branch selection remains unspecified for terminal type-38/`0x5a` procedural intersections with no usable support-parameter lane and for terminal cases where distinct endpoints map to one procedural-curve parameter.
+- Finite branch selection remains unspecified for terminal type-38/`0x5a` procedural intersections with no usable support-parameter lane or paired FIN-carried SP_CURVE witnesses, and for terminal cases where distinct endpoints map to one procedural-curve parameter.
 - The relation between graph-only `OFFSET_SURF` constructions and FACE-owned NURBS carriers remains unspecified outside full-domain certified planar translation-net fits. Common signed distance and partition identity do not establish that the NURBS faces are solved caches of those constructions.
 - Terminal folds and selection among multiple corrected branches remain unspecified for procedural curves with degenerate support-0 arrays, sentinel-truncated marker-4 plane-support arrays, and NURBS-offset spines whose graph-only offset supports have no established saved-carrier identity.
 - Full-record layouts for deltas-stream node types outside the topology and procedural families defined in the specification are unspecified.

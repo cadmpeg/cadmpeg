@@ -33,7 +33,7 @@ the assembly gates, not the single-part body, feature, or sketch gates.
 | --- | --- | --- |
 | L0 | Claimed in the current envelope | Representative release and layout fixtures with closed physical ledgers. |
 | L1 | Claimed in the current envelope | Representative release and layout fixtures with closed logical ledgers for every classified stream family. |
-| L2 | Incomplete | Extend graph-only NURBS-base OFFSET_SURF saved-carrier identity beyond certified planar translation-net fits. Close finite branch/range selection for terminal or parameter-lane-free procedural intersections. |
+| L2 | Incomplete | Extend graph-only NURBS-base OFFSET_SURF saved-carrier identity beyond certified planar translation-net fits. Close terminal branches without paired FIN-carried SP_CURVE witnesses and cases whose distinct endpoints map to one procedural parameter. |
 | L3 | Incomplete | Resolve cached-body ownership and terminal lineage for every multi-partition history. |
 | L4 | Incomplete | Resolve suppression, sketch placement and entities, complete operands and outputs, configuration body state, and every admitted operation construction. |
 | L5 | Incomplete | Close all L2/L3 families and transfer body/face appearance with source precedence. |
