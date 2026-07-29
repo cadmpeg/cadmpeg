@@ -285,6 +285,7 @@ fn attach_feature_operations(
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
     let body_references = features.feature_body_references.as_slice();
+    let body_data_block_uses = features.feature_body_data_block_uses.as_slice();
     let body_reference_occurrences = features.feature_body_reference_occurrences.as_slice();
     let input_blocks = features.feature_input_blocks.as_slice();
     let input_block_identity_groups = features.feature_input_block_identity_groups.as_slice();
@@ -388,8 +389,13 @@ fn attach_feature_operations(
         .iter()
         .map(|operation| (operation.operation_label.as_str(), operation))
         .collect::<BTreeMap<_, _>>();
+    let offset_store_body_references = body_data_block_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
     let body_references = body_references
         .iter()
+        .filter(|reference| !offset_store_body_references.contains(reference.id.as_str()))
         .map(|reference| {
             (
                 reference.operation_label.as_str(),

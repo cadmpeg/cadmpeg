@@ -171,14 +171,14 @@ pub enum SimpleHoleEndTreatment {
     Chamfer,
 }
 
-/// Primary body object read or written by one feature-history operation.
+/// Primary body reference read or written by one feature-history operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureBodyReference {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning operation-label identity.
     pub operation_label: String,
-    /// Primary body object index.
+    /// Serialized reference index interpreted through its resolved namespace.
     pub body_object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_body_object_index: Vec<u8>,
@@ -195,7 +195,7 @@ pub struct FeatureBodyReferenceOccurrence {
     pub operation_label: String,
     /// Zero-based field order within the bounded operation record.
     pub ordinal: u32,
-    /// Serialized body object index.
+    /// Serialized reference index interpreted through its resolved namespace.
     pub body_object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_body_object_index: Vec<u8>,
@@ -2887,13 +2887,19 @@ pub fn feature_body_reference_occurrences(
     references
 }
 
-/// Join primary feature body fields to exactly one segment body alias pair.
+/// Join object-index primary body fields to exactly one segment body alias pair.
 pub fn feature_body_segment_uses(
     references: &[FeatureBodyReference],
+    data_block_uses: &[FeatureBodyDataBlockUse],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureBodySegmentUse> {
+    let offset_store_references = data_block_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
     references
         .iter()
+        .filter(|reference| !offset_store_references.contains(reference.id.as_str()))
         .filter_map(|reference| {
             let matches = bindings
                 .iter()
@@ -9218,12 +9224,45 @@ mod tests {
         };
         let uses = feature_body_segment_uses(
             std::slice::from_ref(&reference),
+            &[],
             std::slice::from_ref(&binding),
         );
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].feature_body_reference, reference.id);
         assert_eq!(uses[0].segment_body_binding, binding.id);
-        assert!(feature_body_segment_uses(&[reference], &[binding.clone(), binding]).is_empty());
+        assert!(
+            feature_body_segment_uses(&[reference], &[], &[binding.clone(), binding]).is_empty()
+        );
+    }
+
+    #[test]
+    fn feature_body_segment_uses_exclude_offset_store_indices() {
+        use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
+        use crate::native::segments::SegmentBodyBinding;
+
+        let reference = FeatureBodyReference {
+            id: "reference#0".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 11,
+            raw_body_object_index: vec![11],
+            source_offset: 90,
+        };
+        let data_block_use = FeatureBodyDataBlockUse {
+            id: "data-block-use#0".into(),
+            feature_body_reference: reference.id.clone(),
+            data_block: "block#11".into(),
+        };
+        let binding = SegmentBodyBinding {
+            id: "binding#0".into(),
+            stream_link: "stream#0".into(),
+            stream_ordinal: 0,
+            stream_kind: "partition".into(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 40,
+        };
+        assert!(feature_body_segment_uses(&[reference], &[data_block_use], &[binding]).is_empty());
     }
 
     #[test]

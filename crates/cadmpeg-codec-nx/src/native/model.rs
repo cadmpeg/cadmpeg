@@ -323,14 +323,17 @@ impl NativeModel {
         );
         let feature_body_references = feature_body_references(container);
         let data_blocks = data_blocks(container);
-        let feature_body_segment_uses =
-            feature_body_segment_uses(&feature_body_references, &segment_body_bindings);
         let feature_body_reference_occurrences = feature_body_reference_occurrences(container);
         let feature_input_blocks = feature_input_blocks(container);
         let feature_body_data_block_uses = feature_body_data_block_uses(
             &feature_body_references,
             &feature_input_blocks,
             &data_blocks,
+        );
+        let feature_body_segment_uses = feature_body_segment_uses(
+            &feature_body_references,
+            &feature_body_data_block_uses,
+            &segment_body_bindings,
         );
         let feature_input_block_identity_groups =
             feature_input_block_identity_groups(&feature_input_blocks);
@@ -613,9 +616,18 @@ impl NativeModel {
             &feature_datum_csys_constructions,
         );
         let feature_boolean_operations = feature_boolean_operations(container);
+        let segment_body_references = feature_body_references
+            .iter()
+            .filter(|reference| {
+                !feature_body_data_block_uses
+                    .iter()
+                    .any(|use_| use_.feature_body_reference == reference.id)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
         let segment_body_lineage_statuses = segment_body_lineage_statuses(
             &feature_operation_labels,
-            &feature_body_references,
+            &segment_body_references,
             &feature_boolean_operations,
             &feature_operation_body_operands,
             &segment_body_bindings,

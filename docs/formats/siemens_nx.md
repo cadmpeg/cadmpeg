@@ -104,12 +104,14 @@ can cross a 12-byte row boundary. The body-image binding is valid only when the
 wrapper word resolves to the exact compressed stream position and both aliases
 are non-zero.
 
-A primary feature body field reuses a segment body image when its object index
-equals either alias of exactly one partition or plain cached-body tuple. The
-relation retains the primary field and segment binding identities; those
-records retain the operation, stream classification and ordinal, object
-indices, and token offsets. No relation transfers when the object index matches
-zero or multiple segment bindings.
+A primary feature body field whose operation does not select an offset-store
+namespace reuses a segment body image when its index equals either alias of
+exactly one partition or plain cached-body tuple. The relation retains the
+primary field and segment binding identities; those records retain the
+operation, stream classification and ordinal, indices, and token offsets. A
+field resolved to an offset-store block cannot reuse a segment image by integer
+equality. No relation transfers when an object-namespace index matches zero or
+multiple segment bindings.
 
 A deltas stream applies to the nearest preceding partition stream in segment
 order with the same Parasolid schema token. Non-history compressed streams do
@@ -180,15 +182,17 @@ unresolved body binding, or alias overlap leaves both native
 selections unresolved without discarding the operation family or Boolean kind.
 
 A body-affecting operation record contains exactly one primary-body field
-`01 02 10 body_object_index ff`. The object index uses the operation-header
-encoding and retains its exact token and offset. Operations sharing the index
-form one ordered body lineage. An operation depends on the preceding operation
-in its primary-body lineage. A
+`01 02 10 reference_index ff`. The index uses the operation-header encoding and
+retains its exact token and offset. The operation-selected namespace determines
+whether it addresses an offset-store block or an object identity. Operations
+sharing an object-namespace index form one ordered body lineage. An operation
+depends on the preceding operation in its primary-body lineage. A
 Boolean additionally depends on the preceding operation in each tool-body
 lineage, preserving tool order and omitting duplicate dependencies. When the
-primary body object has a segment body-image binding, every surviving neutral
-body from that image is an output of the operation. An unbound primary body
-retains its object index but has no neutral output.
+object-namespace primary body has a segment body-image binding, every surviving
+neutral body from that image is an output of the operation. An offset-store
+primary body or unbound object-namespace primary body retains its native
+relation but has no neutral output.
 `DELETE` is a body-deletion operation only when its bounded record contains the
 primary-body field. A `DELETE` record without that field does not identify a
 body target and remains native.
