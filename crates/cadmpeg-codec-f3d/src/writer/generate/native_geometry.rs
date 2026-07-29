@@ -633,6 +633,11 @@ fn native_procedural_surface_definition(
                     solved_cache,
                     procedural.cache_fit_tolerance,
                 )?;
+                // Orthogonal sense is the record's own trailing logical, written
+                // after the shared tail's illegal-region flag.
+                if let cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense } = taper {
+                    bytes.push(native_bool(*sense));
+                }
                 bytes.push(0x10);
                 return Ok(true);
             }

@@ -2843,14 +2843,17 @@ fn decode_taper_spl_sur(
         let parameter = take_f64(span, &mut position)?;
         let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
             decode_revision_surface_tail(span, &mut position, int_width)?;
-        let trailing_flags = vec![take_bool(span, &mut position)?];
+        // The single trailing logical after the shared tail is the record's own
+        // orthogonal-sense field, positionally matching the text form's single
+        // boolean. `tail_flag` above is the shared-tail illegal-region flag.
+        let sense = take_bool(span, &mut position)?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Taper {
                 support,
                 reference,
                 pcurve,
                 parameter,
-                taper: TaperSurfaceKind::Orthogonal { sense: false },
+                taper: TaperSurfaceKind::Orthogonal { sense },
                 revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
                     revision,
                     support_bounds,
@@ -2860,7 +2863,7 @@ fn decode_taper_spl_sur(
                     tail_enum,
                     discontinuities,
                     tail_flag,
-                    trailing_flags,
+                    trailing_flags: Vec::new(),
                 }),
             },
             cache_fit_tolerance: Some(fit_tolerance),
@@ -3008,9 +3011,11 @@ fn decode_off_spl_sur(
         )?;
         let support = support?;
         let distance = take_f64(span, &mut position)? * LEN_TO_MM;
-        // The four booleans split into a leading pair occupying the slots the
-        // pre-revision layout reads as the U/V sense enums, followed by a
-        // two-boolean ASM extension prefix.
+        // The four booleans split into a leading pair carrying record-level
+        // progenitor sense state (a reversal flag and a reflection flag, not a
+        // per-axis U/V decomposition), followed by a two-boolean ASM extension
+        // prefix. The pair reuses the slots the pre-revision layout reads as
+        // the U/V sense enums, so it round-trips through the same IR fields.
         let u_sense = i64::from(take_bool(span, &mut position)?);
         let v_sense = i64::from(take_bool(span, &mut position)?);
         let mut extension_flags = Vec::with_capacity(2);

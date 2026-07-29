@@ -2421,6 +2421,45 @@ fn generated_revision_orthogonal_taper_round_trips() {
 }
 
 #[test]
+fn generated_revision_orthogonal_taper_decodes_sense_true() {
+    let smbh = synthetic_revision_surface_smbh("ortho_spl_sur", |surface| {
+        t_ident(surface, "spline");
+        surface.extend_from_slice(&generated_surface_block());
+        surface.extend_from_slice(&[0x0b; 4]);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x0a);
+        t_dbl(surface, -1.0);
+        surface.push(0x0a);
+        t_dbl(surface, 2.0);
+        surface.extend_from_slice(&generated_pcurve_block());
+        t_dbl(surface, 0.5);
+        push_revision_surface_tail(surface);
+        // Trailing orthogonal-sense logical set true.
+        surface.push(0x0a);
+    });
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("ortho revision decode");
+    let definition = &result
+        .ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("ortho construction")
+        .definition;
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Taper { taper, .. } = definition else {
+        panic!("expected taper definition, got {definition:?}");
+    };
+    assert_eq!(
+        *taper,
+        cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense: true }
+    );
+}
+
+#[test]
 fn generated_revision_sweep_surface_round_trips() {
     let smbh = synthetic_revision_surface_smbh("sweep_sur", |surface| {
         surface.push(0x0b);
