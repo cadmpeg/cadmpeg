@@ -3018,10 +3018,13 @@ fn decode_off_spl_sur(
         let support = support?;
         let distance = take_f64(span, &mut position)? * LEN_TO_MM;
         // The four booleans split into a leading pair carrying record-level
-        // progenitor sense state (a reversal flag and a reflection flag, not a
-        // per-axis U/V decomposition), followed by a two-boolean ASM extension
-        // prefix. The pair reuses the slots the pre-revision layout reads as
-        // the U/V sense enums, so it round-trips through the same IR fields.
+        // progenitor sense state, followed by a two-boolean ASM extension
+        // prefix. The first boolean is the offset-direction reversal (true
+        // places the solved surface opposite the stored signed distance along
+        // the support normal); the second occurs only alongside a true first
+        // boolean and selects no geometric change within the record. The pair
+        // reuses the slots the pre-revision layout reads as the U/V sense
+        // enums, so it round-trips through the same IR fields.
         let u_sense = i64::from(take_bool(span, &mut position)?);
         let v_sense = i64::from(take_bool(span, &mut position)?);
         let mut extension_flags = Vec::with_capacity(2);
