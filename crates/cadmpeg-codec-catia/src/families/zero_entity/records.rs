@@ -534,12 +534,26 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
         .iter()
         .flat_map(|face| face.loop_terminals.iter().copied())
         .collect::<Vec<_>>();
-    if flattened_terminals
-        == loops
-            .iter()
-            .map(|loop_record| loop_record.terminal_id)
-            .collect::<Vec<_>>()
-    {
+    let loop_terminals = loops
+        .iter()
+        .map(|loop_record| loop_record.terminal_id)
+        .collect::<Vec<_>>();
+    let loop_roster_is_valid = flattened_terminals == loop_terminals && {
+        let mut loop_index = 0;
+        faces.iter().all(|face| {
+            let loop_end = loop_index + face.loop_terminals.len();
+            let face_loops = &loops[loop_index..loop_end];
+            loop_index = loop_end;
+            face_loops.first().is_some_and(|outer| {
+                matches!(outer.loop_class, 0x41 | 0xc1)
+                    && face_loops[1..].iter().all(|inner| inner.loop_class == 0x50)
+                    && face_loops[1..]
+                        .windows(2)
+                        .all(|pair| pair[0].terminal_id < pair[1].terminal_id)
+            })
+        })
+    };
+    if loop_roster_is_valid {
         let mut loop_index = 0;
         for face in &mut faces {
             let loop_end = loop_index + face.loop_terminals.len();
@@ -2376,6 +2390,44 @@ mod tests {
         assert_eq!(loop_record.loop_class, 0x41);
         assert_eq!(loop_record.forward_senses, [true]);
         assert!(loop_record.support_record_ordinals.is_empty());
+    }
+
+    #[test]
+    fn loop_roster_requires_one_leading_outer_loop() {
+        let mut stream = zero_entity_face_loop_support_stream();
+        let loop_record = zero_entity_records(&stream)[3];
+        stream[loop_record.end - 3] = 0x50;
+        let runs = zero_entity_support_runs(&stream);
+        let face = runs[0].face.as_ref().expect("face");
+        assert!(face.loops.is_empty());
+    }
+
+    #[test]
+    fn loop_roster_requires_strictly_ascending_inner_terminals() {
+        let mut stream = zero_entity_support_stream();
+        let mut face = vec![0u8; 0x16 + 12];
+        face[..4].copy_from_slice(&[0xa9, 0x03, 0x5f, 0x16]);
+        write_tagged_u32(&mut face, 7, 1);
+        face[12] = 0x84;
+        for (index, allocation) in [20, 13, 10, 11].into_iter().enumerate() {
+            write_tagged_u32(&mut face, 13 + index * 5, allocation);
+        }
+        face[33] = 0x05;
+        stream.extend(face);
+        for (terminal, class) in [(7, 0x41), (10, 0x50), (9, 0x50)] {
+            let mut loop_record = vec![0u8; 0x14 + 12];
+            loop_record[..4].copy_from_slice(&[0xa9, 0x03, 0x62, 0x14]);
+            loop_record[12] = 0x83;
+            for (index, value) in [terminal - 1, 1, terminal].into_iter().enumerate() {
+                write_tagged_u32(&mut loop_record, 13 + index * 5, value);
+            }
+            loop_record[28..].copy_from_slice(&[0x81, class, 0x07, 0x01]);
+            stream.extend(loop_record);
+        }
+
+        let runs = zero_entity_support_runs(&stream);
+        let face = runs[0].face.as_ref().expect("face");
+        assert!(face.loops.is_empty());
     }
 
     #[test]
