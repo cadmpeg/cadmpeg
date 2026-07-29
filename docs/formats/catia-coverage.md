@@ -41,6 +41,10 @@ current scores require those matrices and representative fixtures.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
   occurrences.
+- Complete two-definition value chains retain the repeated schema selector,
+  second role definition, catalog-resolved selected value, and structural
+  ownership. Finite and unset evaluations, atoms, controls, separators, and
+  nested schema selectors are counted independently.
 - Legacy typed relations retain their `body` and `param` role selectors and
   exact parameter identities when those selectors close within one identity
   run.
