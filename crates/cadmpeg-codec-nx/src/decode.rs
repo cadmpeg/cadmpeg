@@ -378,54 +378,83 @@ fn certified_offset_cache_fit(
     else {
         return None;
     };
-    let same_basis = support.u_degree > 0
+    let compatible_parameterization = support.u_degree > 0
         && support.v_degree > 0
-        && candidate.u_degree == support.u_degree
-        && candidate.v_degree == support.v_degree
-        && support.u_knots == candidate.u_knots
-        && support.v_knots == candidate.v_knots
-        && support.u_count == candidate.u_count
-        && support.v_count == candidate.v_count
-        && support.weights == candidate.weights
+        && candidate.u_degree > 0
+        && candidate.v_degree > 0
         && support.u_periodic == candidate.u_periodic
         && support.v_periodic == candidate.v_periodic
+        && nurbs_active_domain(support)
+            .zip(nurbs_active_domain(candidate))
+            .is_some_and(|(support, candidate)| support == candidate)
         && support
             .weights
             .as_ref()
             .is_none_or(|weights| weights.len() == support.control_points.len())
-        && positive_weights(support.weights.as_deref());
-    if !same_basis
-        || support.control_points.len() != candidate.control_points.len()
+        && candidate
+            .weights
+            .as_ref()
+            .is_none_or(|weights| weights.len() == candidate.control_points.len())
+        && positive_weights(support.weights.as_deref())
+        && positive_weights(candidate.weights.as_deref());
+    if !compatible_parameterization
         || !distance.is_finite()
         || !tolerance.is_finite()
         || tolerance < 0.0
     {
         return None;
     }
-    if let Some(normal) = translation_net_normal(support) {
-        let translation = Vector3::new(
-            distance * normal.x,
-            distance * normal.y,
-            distance * normal.z,
-        );
-        let maximum_error = support
-            .control_points
-            .iter()
-            .zip(&candidate.control_points)
-            .map(|(support, candidate)| {
-                let expected = Point3::new(
-                    support.x + translation.x,
-                    support.y + translation.y,
-                    support.z + translation.z,
-                );
-                point_distance(expected, *candidate)
-            })
-            .try_fold(0.0_f64, |maximum, error| {
-                error.is_finite().then(|| maximum.max(error))
-            })?;
-        return (maximum_error <= tolerance).then_some(maximum_error);
+    let same_basis = candidate.u_degree == support.u_degree
+        && candidate.v_degree == support.v_degree
+        && support.u_knots == candidate.u_knots
+        && support.v_knots == candidate.v_knots
+        && support.u_count == candidate.u_count
+        && support.v_count == candidate.v_count
+        && support.weights == candidate.weights
+        && support.control_points.len() == candidate.control_points.len();
+    if same_basis {
+        if let Some(normal) = translation_net_normal(support) {
+            let translation = Vector3::new(
+                distance * normal.x,
+                distance * normal.y,
+                distance * normal.z,
+            );
+            let maximum_error = support
+                .control_points
+                .iter()
+                .zip(&candidate.control_points)
+                .map(|(support, candidate)| {
+                    let expected = Point3::new(
+                        support.x + translation.x,
+                        support.y + translation.y,
+                        support.z + translation.z,
+                    );
+                    point_distance(expected, *candidate)
+                })
+                .try_fold(0.0_f64, |maximum, error| {
+                    error.is_finite().then(|| maximum.max(error))
+                })?;
+            return (maximum_error <= tolerance).then_some(maximum_error);
+        }
     }
-    certified_curved_offset_cache_fit(support, candidate, distance, tolerance)
+    certified_curved_offset_cache_fit(support, candidate, distance, tolerance, same_basis)
+}
+
+fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2]> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    Some([
+        [
+            surface.u_knots.get(u_degree)?.to_bits(),
+            surface.u_knots.get(u_count)?.to_bits(),
+        ],
+        [
+            surface.v_knots.get(v_degree)?.to_bits(),
+            surface.v_knots.get(v_count)?.to_bits(),
+        ],
+    ])
 }
 
 #[derive(Clone)]
@@ -613,13 +642,24 @@ fn certified_curved_offset_cache_fit(
     candidate: &NurbsSurface,
     distance: f64,
     tolerance: f64,
+    same_basis: bool,
 ) -> Option<f64> {
     const MAX_RECTANGLES: usize = 1_000_000;
 
     let support_net = HomogeneousSurfaceNet::from_homogeneous_surface(support)?;
-    let residual_net = HomogeneousSurfaceNet::from_homogeneous_residual(support, candidate)?;
     let support_bounds = rational_surface_derivative_bounds(&support_net)?;
-    let residual_bounds = rational_surface_derivative_bounds(&residual_net)?;
+    let candidate_net = HomogeneousSurfaceNet::from_homogeneous_surface(candidate)?;
+    let candidate_bounds = rational_surface_derivative_bounds(&candidate_net)?;
+    let (residual_u_bound, residual_v_bound) = if same_basis {
+        let residual_net = HomogeneousSurfaceNet::from_homogeneous_residual(support, candidate)?;
+        let bounds = rational_surface_derivative_bounds(&residual_net)?;
+        (bounds.u, bounds.v)
+    } else {
+        (
+            support_bounds.u + candidate_bounds.u,
+            support_bounds.v + candidate_bounds.v,
+        )
+    };
     let normal_u_numerator =
         support_bounds.uu * support_bounds.v + support_bounds.u * support_bounds.uv;
     let normal_v_numerator =
@@ -683,8 +723,8 @@ fn certified_curved_offset_cache_fit(
             continue;
         }
         let normal = unit_vector(normal_vector)?;
-        let u_lipschitz = residual_bounds.u + distance.abs() * normal_u_numerator / minimum_normal;
-        let v_lipschitz = residual_bounds.v + distance.abs() * normal_v_numerator / minimum_normal;
+        let u_lipschitz = residual_u_bound + distance.abs() * normal_u_numerator / minimum_normal;
+        let v_lipschitz = residual_v_bound + distance.abs() * normal_v_numerator / minimum_normal;
         let expected = Point3::new(
             support_point.x + distance * normal.x,
             support_point.y + distance * normal.y,
@@ -9151,6 +9191,28 @@ mod tests {
         })
     }
 
+    fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
+        SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 2,
+            v_degree: 2,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            u_count: 3,
+            v_count: 3,
+            control_points: [0.0, 1.5, 3.0]
+                .into_iter()
+                .flat_map(|x| {
+                    [0.0, 1.0, 2.0]
+                        .into_iter()
+                        .map(move |y| Point3::new(x, y, z))
+                })
+                .collect(),
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        })
+    }
+
     fn quadratic_paraboloid_surface() -> SurfaceGeometry {
         let coordinates = [0.0, 0.5, 1.0];
         let square_controls = [0.0, 0.0, 1.0];
@@ -9234,6 +9296,18 @@ mod tests {
             super::certified_offset_cache_fit(&support, &candidate, 0.0, 0.0),
             Some(0.0)
         );
+    }
+
+    #[test]
+    fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
+        let bound = super::certified_offset_cache_fit(
+            &affine_nurbs_surface(0.0),
+            &degree_elevated_affine_surface(4.0),
+            4.0,
+            0.1,
+        )
+        .expect("degree-elevated cache fit");
+        assert!(bound <= 0.1);
     }
 
     #[test]
