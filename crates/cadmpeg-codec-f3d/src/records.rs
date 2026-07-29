@@ -1061,6 +1061,37 @@ pub struct DesignCircularPatternConstruction {
     pub selection_record_index: u32,
 }
 
+/// Exact construction carried by a Mirror scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignMirrorConstruction {
+    /// Fixed instance count, including the seed.
+    pub count: u32,
+    /// Parameter-owner record carrying `count`.
+    pub count_record_index: u32,
+    /// Byte offset of the evaluated count scalar.
+    pub count_offset: u64,
+    /// Positive model-space stitch tolerance in source centimetres.
+    pub stitch_tolerance: f64,
+    /// Parameter-owner record carrying `stitch_tolerance`.
+    pub stitch_tolerance_record_index: u32,
+    /// Byte offset of the evaluated stitch-tolerance scalar.
+    pub stitch_tolerance_offset: u64,
+    /// Role-`0x8` seed group.
+    pub seed_group_record_index: u32,
+    /// Role-`0x5` mirror-plane group.
+    pub plane_group_record_index: u32,
+    /// Referenced seed feature scope when the seed is a complete feature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_feature_scope_record_index: Option<u32>,
+    /// Byte offset of the optional seed-feature reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_feature_reference_offset: Option<u64>,
+    /// Referenced `WorkPlane` scope.
+    pub plane_scope_record_index: u32,
+    /// Byte offset of the `WorkPlane` reference.
+    pub plane_reference_offset: u64,
+}
+
 /// Exact fixed scalar lanes carried by a Chamfer scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1279,6 +1310,9 @@ pub struct DesignParameterScope {
     /// Exact construction carried by a circular-pattern scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub circular_pattern_construction: Option<DesignCircularPatternConstruction>,
+    /// Exact construction carried by a Mirror scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror_construction: Option<DesignMirrorConstruction>,
     /// Exact source-to-copy body mapping carried by a `CopyPasteBodies` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copy_paste_bodies_operation: Option<DesignCopyPasteBodiesOperation>,

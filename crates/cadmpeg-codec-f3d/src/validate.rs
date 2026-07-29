@@ -1197,6 +1197,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    Some(design::DesignFeatureFamily::Mirror) => {
+                        matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000)
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     Some(design::DesignFeatureFamily::SurfacePatch) => {
                         ((scope.frame_length == 339 && group.role == 0x0000_0041_0000_0000)
                             || (scope.frame_length != 339 && group.role == 0x0000_0004_0000_0000))
@@ -2827,6 +2832,11 @@ fn validate_face_operands<'a>(
                                     })
                                 }
                                 Some(design::DesignFeatureFamily::CircularPattern) => {
+                                    group.is_some_and(|group| group.role == 0x0000_0008_0000_0000)
+                                        && operand.recipe_kind
+                                            == records::ConstructionRecipeKind::Face
+                                }
+                                Some(design::DesignFeatureFamily::Mirror) => {
                                     group.is_some_and(|group| group.role == 0x0000_0008_0000_0000)
                                         && operand.recipe_kind
                                             == records::ConstructionRecipeKind::Face

@@ -2382,6 +2382,13 @@ fn extend_related_design_records(
             &native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
+    crate::design::decode::scopes::bind_mirror_constructions(
+        scan,
+        &mut native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_record_headers,
+        &native.design_parameter_owners,
+    )?;
     native.design_extrude_selection_groups =
         crate::design::decode::operands::decode_extrude_selection_groups(
             scan,
@@ -3540,6 +3547,7 @@ mod tests {
             extrude_profile: None,
             sweep_profile: None,
             circular_pattern_construction: None,
+            mirror_construction: None,
             base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -3695,6 +3703,7 @@ mod tests {
             extrude_profile: None,
             sweep_profile: None,
             circular_pattern_construction: None,
+            mirror_construction: None,
             base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,

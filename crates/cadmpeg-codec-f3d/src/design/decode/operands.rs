@@ -213,6 +213,9 @@ pub fn decode_face_operands(
         let is_circular_pattern_seed = design_feature_family(&scope.kind)
             == Some(DesignFeatureFamily::CircularPattern)
             && group.role == 0x0000_0008_0000_0000;
+        let is_mirror_seed = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::Mirror)
+            && group.role == 0x0000_0008_0000_0000;
         let is_split_face_operand = scope.kind == "SplitFace";
         let is_delete_face_operand = scope.kind == "DeleteFace";
         let is_draft_operand =
@@ -223,6 +226,7 @@ pub fn decode_face_operands(
             && !is_loft_profile
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
+            && !is_mirror_seed
             && !is_split_face_operand
             && !is_delete_face_operand
             && !is_draft_operand
@@ -569,6 +573,7 @@ pub fn decode_construction_operand_groups(
             || scope.kind == "SplitFace"
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Mirror)
             || scope.kind == "RemoveBody"
             || scope.kind == "SurfaceStitch"
             || scope.kind == "DeleteFace"

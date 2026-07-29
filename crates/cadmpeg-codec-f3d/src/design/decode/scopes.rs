@@ -15,9 +15,10 @@ use crate::records::{
     DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
     DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
     DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation, DesignMoveOperation,
-    DesignObjectKind, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignScaleOperation, DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
+    DesignMirrorConstruction, DesignMoveOperation, DesignObjectKind, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation,
+    DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -236,6 +237,184 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         axis_record_index: *record_index,
         selection_record_index: *selection_record_index,
     })
+}
+
+/// Join a Mirror scope's two operand groups, fixed parameters, compact feature
+/// reference, and `WorkPlane` reference into one exact construction.
+pub fn bind_mirror_constructions(
+    scan: &ContainerScan,
+    scopes: &mut [DesignParameterScope],
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+    owners: &[DesignParameterOwner],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    for index in 0..scopes.len() {
+        if design_feature_family(&scopes[index].kind) != Some(DesignFeatureFamily::Mirror) {
+            continue;
+        }
+        let Some(stream) = native_stream(&scopes[index].id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let scope_record_index = scopes[index].record_index;
+        let scope_groups = groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == Some(stream)
+                    && group.scope_record_index == scope_record_index
+            })
+            .collect::<Vec<_>>();
+        let seed_groups = scope_groups
+            .iter()
+            .copied()
+            .filter(|group| group.role == 0x0000_0008_0000_0000)
+            .collect::<Vec<_>>();
+        let plane_groups = scope_groups
+            .iter()
+            .copied()
+            .filter(|group| group.role == 0x0000_0005_0000_0000)
+            .collect::<Vec<_>>();
+        let ([seed_group], [plane_group]) = (seed_groups.as_slice(), plane_groups.as_slice())
+        else {
+            continue;
+        };
+        let [plane_member] = plane_group.members.as_slice() else {
+            continue;
+        };
+        let Some(plane_header) = headers.get(&(stream, *plane_member)) else {
+            continue;
+        };
+        let Some((plane_reference, plane_reference_offset)) =
+            compact_feature_reference(bytes, plane_header)
+        else {
+            continue;
+        };
+        let plane_scope_record_index = plane_reference.checked_add(1);
+        let Some(plane_scope_record_index) = plane_scope_record_index.filter(|record_index| {
+            scopes.iter().any(|scope| {
+                native_stream(&scope.id) == Some(stream)
+                    && scope.record_index == *record_index
+                    && scope.kind == "WorkPlane"
+                    && scope.work_plane_transform.is_some()
+            })
+        }) else {
+            continue;
+        };
+        let seed_feature = match seed_group.members.as_slice() {
+            [member] => headers
+                .get(&(stream, *member))
+                .and_then(|header| compact_feature_reference(bytes, header))
+                .filter(|(record_index, _)| {
+                    scopes.iter().any(|scope| {
+                        native_stream(&scope.id) == Some(stream)
+                            && scope.record_index == *record_index
+                    })
+                }),
+            _ => None,
+        };
+        let scope_owners = owners
+            .iter()
+            .filter(|owner| {
+                native_stream(&owner.id) == Some(stream)
+                    && owner.scope_record_index == scope_record_index
+            })
+            .collect::<Vec<_>>();
+        let count = scope_owners
+            .iter()
+            .copied()
+            .filter(|owner| {
+                owner.local_ordinal == 0
+                    && owner.evaluated_value == 2.0
+                    && owner.evaluated_value.is_finite()
+            })
+            .collect::<Vec<_>>();
+        let tolerance = scope_owners
+            .iter()
+            .copied()
+            .filter(|owner| {
+                owner.local_ordinal == 1
+                    && owner.evaluated_value.is_finite()
+                    && owner.evaluated_value > 0.0
+            })
+            .collect::<Vec<_>>();
+        let ([count], [tolerance]) = (count.as_slice(), tolerance.as_slice()) else {
+            continue;
+        };
+        scopes[index].mirror_construction = Some(DesignMirrorConstruction {
+            count: 2,
+            count_record_index: count.record_index,
+            count_offset: count.evaluated_value_offset,
+            stitch_tolerance: tolerance.evaluated_value,
+            stitch_tolerance_record_index: tolerance.record_index,
+            stitch_tolerance_offset: tolerance.evaluated_value_offset,
+            seed_group_record_index: seed_group.record_index,
+            plane_group_record_index: plane_group.record_index,
+            seed_feature_scope_record_index: seed_feature.map(|(record_index, _)| record_index),
+            seed_feature_reference_offset: seed_feature.map(|(_, offset)| offset),
+            plane_scope_record_index,
+            plane_reference_offset,
+        });
+    }
+    Ok(())
+}
+
+fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Option<(u32, u64)> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10]
+        || bytes.get(start + 21) != Some(&1)
+        || u32_at(bytes, start + 22)? != header.record_index.checked_add(3)?
+        || bytes.get(start + 26..start + 32)? != [0; 6]
+        || u32_at(bytes, start + 32)? != 1
+    {
+        return None;
+    }
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 36, 1..=256)?;
+    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    if !crate::bytes::is_guid_relaxed(&asset_id)
+        || !crate::bytes::is_guid_relaxed(&context_id)
+        || u32_at(bytes, after_context_id)? != 2
+        || bytes.get(after_context_id + 4..after_context_id + 12)? != [0; 8]
+    {
+        return None;
+    }
+    let paired_at = next_indexed_record_offset(bytes, after_context_id + 12)?;
+    let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
+    let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
+    let identity_at = next_indexed_record_offset(bytes, nested_two_at + 11)?;
+    let next_at = next_indexed_record_offset(bytes, identity_at + 11)?;
+    for (offset, expected) in [
+        (paired_at, header.record_index),
+        (nested_one_at, header.record_index.checked_add(1)?),
+        (nested_two_at, header.record_index.checked_add(2)?),
+        (identity_at, header.record_index.checked_add(3)?),
+        (next_at, header.record_index.checked_add(4)?),
+    ] {
+        let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
+        if u32_at(bytes, after_tag)? != expected {
+            return None;
+        }
+    }
+    if identity_at.checked_add(29)? != next_at
+        || bytes.get(identity_at + 11..identity_at + 21)? != [0; 10]
+        || bytes.get(identity_at + 25..identity_at + 29)? != [0; 4]
+    {
+        return None;
+    }
+    Some((
+        u32_at(bytes, identity_at + 21)?,
+        u64::try_from(identity_at + 21).ok()?,
+    ))
 }
 
 fn exact_circular_pattern_axis(
@@ -1768,6 +1947,7 @@ pub(crate) fn parse_parameter_scope(
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -2135,4 +2315,66 @@ fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
         .ok()?
         .checked_mul(2)?;
     scope.frame_length.checked_sub(kind_bytes)
+}
+
+#[cfg(test)]
+mod mirror_tests {
+    use super::*;
+
+    fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> usize {
+        let start = bytes.len();
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(&class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+        start
+    }
+
+    fn utf16(bytes: &mut Vec<u8>, value: &str) {
+        bytes.extend_from_slice(
+            &u32::try_from(value.encode_utf16().count())
+                .expect("test GUID length fits u32")
+                .to_le_bytes(),
+        );
+        for unit in value.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    #[test]
+    fn compact_mirror_reference_uses_the_identity_record_lane() {
+        let record_index = 40;
+        let reference = 17_u32;
+        let mut bytes = Vec::new();
+        let start = indexed_header(&mut bytes, *b"320", record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&(record_index + 3).to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        utf16(&mut bytes, "dfa12ed5-41e3-47c2-947d-286843e235df");
+        utf16(&mut bytes, "15afb570-2968-417f-8485-96c81b2d332f");
+        bytes.extend_from_slice(&2_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        indexed_header(&mut bytes, *b"259", record_index);
+        indexed_header(&mut bytes, *b"306", record_index + 1);
+        indexed_header(&mut bytes, *b"291", record_index + 2);
+        let identity = indexed_header(&mut bytes, *b"428", record_index + 3);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        indexed_header(&mut bytes, *b"457", record_index + 4);
+        let header = DesignRecordHeader {
+            id: String::new(),
+            record_index,
+            class_tag: "320".into(),
+            byte_offset: start as u64,
+        };
+
+        assert_eq!(
+            compact_feature_reference(&bytes, &header),
+            Some((reference, (identity + 21) as u64))
+        );
+        bytes[identity + 20] = 1;
+        assert_eq!(compact_feature_reference(&bytes, &header), None);
+    }
 }

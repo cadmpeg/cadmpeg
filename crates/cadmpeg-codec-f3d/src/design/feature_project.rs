@@ -271,20 +271,24 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     })
                 }
-                Some(DesignFeatureFamily::CircularPattern | DesignFeatureFamily::Mirror) => (family
-                    == Some(DesignFeatureFamily::CircularPattern))
-                .then(|| project_circular_pattern(scope, construction_groups, face_operands))
-                .flatten()
-                .unwrap_or_else(|| FeatureDefinition::Pattern {
-                    seeds: Vec::new(),
-                    pattern: PatternKind::Unresolved {
-                        form: Some(if family == Some(DesignFeatureFamily::CircularPattern) {
-                            PatternForm::Circular
-                        } else {
-                            PatternForm::Mirror
-                        }),
-                    },
-                }),
+                Some(DesignFeatureFamily::CircularPattern) => {
+                    project_circular_pattern(scope, construction_groups, face_operands)
+                        .unwrap_or_else(|| FeatureDefinition::Pattern {
+                            seeds: Vec::new(),
+                            pattern: PatternKind::Unresolved {
+                                form: Some(PatternForm::Circular),
+                            },
+                        })
+                }
+                Some(DesignFeatureFamily::Mirror) => {
+                    project_mirror(scope, construction_groups, face_operands, scopes)
+                        .unwrap_or_else(|| FeatureDefinition::Pattern {
+                            seeds: Vec::new(),
+                            pattern: PatternKind::Unresolved {
+                                form: Some(PatternForm::Mirror),
+                            },
+                        })
+                }
                 Some(DesignFeatureFamily::OffsetFaces) => {
                     project_offset_faces(scope, &parameters, face_operands, construction_groups)
                         .unwrap_or_else(|| FeatureDefinition::Native {
@@ -661,6 +665,19 @@ pub fn project_parameter_design_with_edge_identities(
         )) {
             if predecessor != &feature.id && !feature.dependencies.contains(predecessor) {
                 feature.dependencies.push(predecessor.clone());
+            }
+        }
+    }
+    for feature in &mut features {
+        let FeatureDefinition::Pattern { seeds, .. } = &feature.definition else {
+            continue;
+        };
+        for dependency in seeds.iter().filter_map(|seed| match seed {
+            cadmpeg_ir::features::PatternSeed::Feature(feature) => Some(feature),
+            _ => None,
+        }) {
+            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                feature.dependencies.push(dependency.clone());
             }
         }
     }
@@ -2551,6 +2568,92 @@ pub(crate) fn project_circular_pattern(
             ),
             angle: Angle(construction.angle),
             count: construction.count,
+        },
+    })
+}
+
+pub(crate) fn project_mirror(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+    scopes: &[DesignParameterScope],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FeatureDefinition, PatternKind, PatternSeed};
+
+    let construction = scope.mirror_construction.as_ref()?;
+    if construction.count != 2 {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let matching_groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let seed_groups = matching_groups
+        .iter()
+        .copied()
+        .filter(|group| {
+            group.record_index == construction.seed_group_record_index
+                && group.role == 0x0000_0008_0000_0000
+                && !group.members.is_empty()
+        })
+        .collect::<Vec<_>>();
+    let plane_groups = matching_groups
+        .iter()
+        .copied()
+        .filter(|group| {
+            group.record_index == construction.plane_group_record_index
+                && group.role == 0x0000_0005_0000_0000
+                && group.members.len() == 1
+        })
+        .collect::<Vec<_>>();
+    let ([seed_group], [_plane_group]) = (seed_groups.as_slice(), plane_groups.as_slice()) else {
+        return None;
+    };
+    let seed = if let Some(record_index) = construction.seed_feature_scope_record_index {
+        let matching_scopes = scopes
+            .iter()
+            .filter(|candidate| {
+                native_stream(&candidate.id) == Some(stream)
+                    && candidate.record_index == record_index
+            })
+            .collect::<Vec<_>>();
+        let [seed_scope] = matching_scopes.as_slice() else {
+            return None;
+        };
+        PatternSeed::Feature(neutral_feature_id(seed_scope))
+    } else {
+        PatternSeed::Faces(
+            resolved_historical_face_group(scope, seed_group, face_operands).unwrap_or_else(|| {
+                cadmpeg_ir::features::FaceSelection::Native(seed_group.id.clone())
+            }),
+        )
+    };
+    let matching_planes = scopes
+        .iter()
+        .filter(|candidate| {
+            native_stream(&candidate.id) == Some(stream)
+                && candidate.record_index == construction.plane_scope_record_index
+                && candidate.kind == "WorkPlane"
+                && candidate.work_plane_transform.is_some()
+        })
+        .collect::<Vec<_>>();
+    let [plane] = matching_planes.as_slice() else {
+        return None;
+    };
+    let transform = plane.work_plane_transform?;
+    Some(FeatureDefinition::Pattern {
+        seeds: vec![seed],
+        pattern: PatternKind::Mirror {
+            plane_origin: Point3::new(
+                transform[0][3] * 10.0,
+                transform[1][3] * 10.0,
+                transform[2][3] * 10.0,
+            ),
+            plane_normal: Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
         },
     })
 }
