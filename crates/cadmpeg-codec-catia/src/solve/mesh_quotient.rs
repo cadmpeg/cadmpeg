@@ -8,7 +8,7 @@ use crate::families::standard::topology::{
 };
 use crate::solve::incidence::{
     compact_boundary_domain_viable, deferred_boundary_cycle_matches,
-    incidence_endpoint_pair_solution_outcome, labeled_assignment_endpoint_cycles_viable,
+    labeled_assignment_endpoint_cycles_viable, visit_incidence_endpoint_pair_solutions,
     IncidenceSolve,
 };
 use crate::solve::matching::{
@@ -22,6 +22,7 @@ use crate::solve::missing_edge::{
 use crate::solve::UnionFind;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
@@ -5539,7 +5540,10 @@ where
         pair_solution_valid(pairs)
             && edge_class_assignment_is_canonical(&class_constraint.ordered, pairs)
     };
-    let pair_solutions = incidence_endpoint_pair_solution_outcome(
+    let mut incidence_solution = None;
+    let mut incidence_ambiguous = false;
+    let mut incidence_exhausted = false;
+    let pair_solutions = visit_incidence_endpoint_pair_solutions(
         &edge_rows,
         &vertex_points,
         edge_faces,
@@ -5554,49 +5558,61 @@ where
         &|pairs| {
             constrained_pair_solution_valid(&pairs.iter().copied().map(Some).collect::<Vec<_>>())
         },
-    );
-    let incidence_solution = match pair_solutions {
-        IncidenceSolve::Solved(pair_solutions) => {
-            let mut solution = None;
-            for pairs in pair_solutions {
-                let singleton = pairs.into_iter().map(|pair| vec![pair]).collect::<Vec<_>>();
-                let Some(mut mesh_assignments) =
-                    standard_mesh_boundary_assignments(bytes, edge_faces, Some(&singleton))
-                else {
-                    continue;
-                };
-                deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
-                let candidate = match resolve_standard_mesh_endpoint_candidates(
-                    &edge_rows,
-                    &vertex_points,
-                    &singleton,
-                    mesh_assignments,
-                    &port_identities,
-                ) {
-                    MeshEndpointResolve::Solved(topology, assignment) => (topology, assignment),
-                    MeshEndpointResolve::Rejected => continue,
-                    MeshEndpointResolve::Ambiguous => return MeshCandidateSolve::Ambiguous,
-                    MeshEndpointResolve::Exhausted => return MeshCandidateSolve::Exhausted,
-                };
-                match &solution {
-                    Some(stored)
-                        if !mesh_candidates_equivalent_with_edge_classes(
-                            stored,
-                            &candidate,
-                            edge_classes,
-                        ) =>
-                    {
-                        return MeshCandidateSolve::Ambiguous;
-                    }
-                    None => solution = Some(candidate),
-                    Some(_) => {}
+        &mut |pairs| {
+            let singleton = pairs
+                .iter()
+                .copied()
+                .map(|pair| vec![pair])
+                .collect::<Vec<_>>();
+            let Some(mut mesh_assignments) =
+                standard_mesh_boundary_assignments(bytes, edge_faces, Some(&singleton))
+            else {
+                return ControlFlow::Continue(());
+            };
+            deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
+            let candidate = match resolve_standard_mesh_endpoint_candidates(
+                &edge_rows,
+                &vertex_points,
+                &singleton,
+                mesh_assignments,
+                &port_identities,
+            ) {
+                MeshEndpointResolve::Solved(topology, assignment) => (topology, assignment),
+                MeshEndpointResolve::Rejected => return ControlFlow::Continue(()),
+                MeshEndpointResolve::Ambiguous => {
+                    incidence_ambiguous = true;
+                    return ControlFlow::Break(());
                 }
+                MeshEndpointResolve::Exhausted => {
+                    incidence_exhausted = true;
+                    return ControlFlow::Break(());
+                }
+            };
+            match &incidence_solution {
+                Some(stored)
+                    if !mesh_candidates_equivalent_with_edge_classes(
+                        stored,
+                        &candidate,
+                        edge_classes,
+                    ) =>
+                {
+                    incidence_ambiguous = true;
+                    ControlFlow::Break(())
+                }
+                None => {
+                    incidence_solution = Some(candidate);
+                    ControlFlow::Continue(())
+                }
+                Some(_) => ControlFlow::Continue(()),
             }
-            solution
-        }
-        IncidenceSolve::Rejected => None,
-        IncidenceSolve::Exhausted => return MeshCandidateSolve::Exhausted,
-    };
+        },
+    );
+    if incidence_ambiguous {
+        return MeshCandidateSolve::Ambiguous;
+    }
+    if incidence_exhausted || matches!(pair_solutions, IncidenceSolve::Exhausted) {
+        return MeshCandidateSolve::Exhausted;
+    }
     if let Some((topology, assignment)) = incidence_solution {
         return MeshCandidateSolve::Solved(topology, assignment);
     }

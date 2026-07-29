@@ -1642,6 +1642,40 @@ fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
 }
 
 #[test]
+fn incidence_component_products_stream_until_the_consumer_stops() {
+    use crate::solve::incidence::{visit_component_incidence_pair_solutions, IncidenceSolve};
+    use std::ops::ControlFlow;
+
+    let choices = (0..9)
+        .map(|edge| vec![[edge * 2, edge * 2], [edge * 2 + 1, edge * 2 + 1]])
+        .collect::<Vec<_>>();
+    let edge_faces = (0..9).map(|face| [face, face]).collect::<Vec<_>>();
+    let mut visited = 0usize;
+
+    let outcome = visit_component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        9,
+        18,
+        None,
+        None,
+        None,
+        &|_| true,
+        &mut |_| {
+            visited += 1;
+            if visited == 2 {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        },
+    );
+
+    assert_eq!(outcome, IncidenceSolve::Solved(2));
+    assert_eq!(visited, 2);
+}
+
+#[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
     let use_ = |edge, start, end| MeshBoundaryEdgeCandidate {
         edge,
