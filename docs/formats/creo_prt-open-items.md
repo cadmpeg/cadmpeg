@@ -18,6 +18,9 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   trailer are unspecified.
 - Positional plane-envelope scalar prefixes outside the defined row lane are
   unspecified.
+- Unsuffixed terminal scalar frames with six coordinate-like trailing values
+  have unspecified field roles. Equality between one trailing coordinate pair
+  does not by itself identify the plane normal or offset.
 - The joins from later positional spline rows to their prototype data and from
   spline surfaces to surface-intersection curves are unspecified.
 - The prototype-adjacent `tab_cyl` instance rows use a construction distinct
