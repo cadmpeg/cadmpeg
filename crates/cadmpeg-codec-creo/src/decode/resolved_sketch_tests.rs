@@ -3537,6 +3537,129 @@ fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
 }
 
 #[test]
+fn ordered_parallel_caps_define_blind_direction_and_depth() {
+    let start = PlaneEquation {
+        origin: [2.0, 7.0, 3.0],
+        normal: [0.0, 0.0, -2.0],
+    };
+    let end = PlaneEquation {
+        origin: [-4.0, 11.0, 13.0],
+        normal: [0.0, 0.0, 5.0],
+    };
+
+    assert_eq!(
+        ordered_parallel_cap_extent(start, end),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(10.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, 0.0, 1.0],
+        ))
+    );
+    assert_eq!(
+        ordered_parallel_cap_extent(end, start),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(10.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, 0.0, -1.0],
+        ))
+    );
+
+    let tilted = PlaneEquation {
+        origin: end.origin,
+        normal: [0.0, 1.0, 1.0],
+    };
+    assert!(ordered_parallel_cap_extent(start, tilted).is_none());
+    assert!(ordered_parallel_cap_extent(start, start).is_none());
+}
+
+#[test]
+fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(7),
+        table_class_id: 29,
+        entry_ids: vec![31, 32, 33],
+        entries: vec![
+            entry(31, 204, None),
+            entry(32, 203, None),
+            entry(33, 200, Some(11)),
+        ],
+        surface_ids: vec![31, 32, 33],
+        non_surface_entity_ids: Vec::new(),
+        offset: 0,
+    };
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 7,
+        reversed: id == 31,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let plane = |id, z| Surface {
+        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(4.0, -2.0, z),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.entity_tables.push(table.clone());
+    scan.surfaces.rows.extend([row(31), row(32), row(33)]);
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
+
+    assert_eq!(
+        generated_cap_plane_extent(&scan, &ir, 7),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(6.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, 0.0, 1.0],
+        ))
+    );
+
+    scan.features.entity_tables[0].entries[2].source_entity_id = None;
+    assert!(generated_cap_plane_extent(&scan, &ir, 7).is_none());
+    scan.features.entity_tables[0] = table.clone();
+    scan.features.entity_tables.push(table);
+    assert!(generated_cap_plane_extent(&scan, &ir, 7).is_none());
+}
+
+#[test]
 fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     let row = |id, reversed| crate::surface::SurfaceRow {
         id,

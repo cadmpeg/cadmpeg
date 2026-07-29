@@ -5054,6 +5054,100 @@ fn generated_arc_cylinder_extent(
     agreed_generated_cylinder_extent(transform, &frames)
 }
 
+fn ordered_parallel_cap_extent(
+    start: PlaneEquation,
+    end: PlaneEquation,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let start = canonical_plane(start)?;
+    let end = canonical_plane(end)?;
+    start
+        .normal
+        .into_iter()
+        .zip(end.normal)
+        .all(|(left, right)| (left - right).abs() <= 1e-10)
+        .then_some(())?;
+    let signed_length = dot(
+        std::array::from_fn(|axis| end.origin[axis] - start.origin[axis]),
+        start.normal,
+    );
+    let scale = start
+        .origin
+        .into_iter()
+        .chain(end.origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    (signed_length.abs() > 1e-9 * scale).then_some(())?;
+    Some((
+        ExtrudeExtent::OneSided {
+            side: blind_extrude_side(signed_length.abs()),
+        },
+        start
+            .normal
+            .map(|component| component * signed_length.signum()),
+    ))
+}
+
+fn generated_cap_plane_extent(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let tables = scan
+        .features
+        .entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    table
+        .entries
+        .iter()
+        .map(|entry| entry.entity_id)
+        .eq(table.entry_ids.iter().copied())
+        .then_some(())?;
+    let mut start_id = None;
+    let mut end_id = None;
+    let mut side_count = 0_usize;
+    for entry in &table.entries {
+        match (entry.class_id, entry.source_entity_id) {
+            (204, None) if start_id.replace(entry.entity_id).is_none() => {}
+            (203, None) if end_id.replace(entry.entity_id).is_none() => {}
+            (200, Some(_)) => side_count += 1,
+            _ => return None,
+        }
+    }
+    (side_count > 0
+        && table.surface_ids.contains(&start_id?)
+        && table.surface_ids.contains(&end_id?))
+    .then_some(())?;
+    let plane = |surface_id: u32| {
+        let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
+        (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        let [Surface {
+            geometry: SurfaceGeometry::Plane { origin, normal, .. },
+            ..
+        }] = surfaces.as_slice()
+        else {
+            return None;
+        };
+        Some(PlaneEquation {
+            origin: [origin.x, origin.y, origin.z],
+            normal: [normal.x, normal.y, normal.z],
+        })
+    };
+    ordered_parallel_cap_extent(plane(start_id?)?, plane(end_id?)?)
+}
+
 fn unique_available_positional_cylinder_frames(
     surface_ids: &BTreeSet<u32>,
     parameters: &[crate::surface::SurfaceParameterRecord],
@@ -16783,6 +16877,7 @@ fn schema_feature_definition(
             } else {
                 None
             }
+            .or_else(|| generated_cap_plane_extent(scan, ir, feature_id))
             .or_else(|| {
                 unique_transform.and_then(|transform| {
                     generated_bounded_cylinder_extent(scan, ir, feature_id, transform)

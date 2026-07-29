@@ -2441,6 +2441,13 @@ A class-916 or class-917 section sweep with one complete section transform and
 parallel generated cap-plane equations is a linear extrusion even when its
 current feature-state record omits the recipe discriminator. A stored
 rotational recipe excludes this classification.
+In a table-class `29` linear section sweep, a source-less class-`204` entry is
+the start cap and a source-less class-`203` entry is the end cap when each is
+unique and every remaining entry is class `200` with a populated source section
+entity. Both cap identifiers must be materialized by the table and resolve to
+unique same-feature plane rows. Parallel placed cap equations define a blind
+extent: their absolute normal separation is the length, and their ordered
+signed separation is the direction.
 Without complete placement or cap equations, the same non-rotational class
 remains a linear extrusion with unresolved direction and extent. Its uniquely
 owned section definition still supplies the native profile reference. That
