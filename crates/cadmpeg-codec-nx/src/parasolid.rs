@@ -320,7 +320,7 @@ fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Ve
             prefixed_at += 1;
             references.push(read_xmt(bytes, &mut prefixed_at)?);
         }
-        (bytes.get(prefixed_at) == Some(&0)).then_some(())?;
+        matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
         *at = prefixed_at + 1;
         return Some(references);
     }

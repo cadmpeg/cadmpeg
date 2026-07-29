@@ -6057,6 +6057,15 @@ fn deltas_walks_complete_status_prefixed_entity_51_records() {
     assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));
 
     stream[entity_len - 1] = 1;
+    assert_eq!(
+        crate::deltas::walk(&stream)
+            .records
+            .iter()
+            .filter(|record| record.kind == 81)
+            .count(),
+        1
+    );
+    stream[entity_len - 1] = 2;
     assert!(crate::deltas::walk(&stream)
         .records
         .iter()

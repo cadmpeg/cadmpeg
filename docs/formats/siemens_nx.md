@@ -1426,7 +1426,8 @@ compact or extended XMT encoding. `xmt` is non-null, `sequence` is nonzero, and
 `flags` is in `1..=0x20`. The reference count is seven for `flags = 02`, nine
 for `flags = 04`, and in general five plus `flags`. The discriminator does not
 affect framing. References are either consecutive XMT values or individually
-binary-status-prefixed XMT values followed by `00`; the two forms are atomic. A
+binary-status-prefixed XMT values followed by a binary terminal; the two forms
+are atomic. A
 topology attribute-list identity resolves only when exactly one type-81 record
 in the same stream has that xmt.
 
