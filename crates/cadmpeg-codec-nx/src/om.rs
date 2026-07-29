@@ -854,10 +854,21 @@ pub struct PatternPayloadReferenceField {
 /// Scalar width selected by one pattern-transform row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatternTransformEncoding {
-    /// Four-byte shifted IEEE-754 binary32 rows.
+    /// Single-byte exact one used by a wide row terminal value.
+    ExactOne,
+    /// Four-byte shifted IEEE-754 binary32 atom.
     Binary32,
-    /// Eight-byte shifted IEEE-754 binary64 rows.
+    /// Eight-byte shifted IEEE-754 binary64 atom.
     Binary64,
+}
+
+/// Byte layout selected by a counted pattern-transform lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternTransformLayout {
+    /// One shifted scalar per row and terminal mode `01`.
+    ScalarRows,
+    /// Four shifted binary64 values and one terminal value per row, with terminal mode `02`.
+    WideRows,
 }
 
 /// One exact counted transform lane in a pattern operation payload.
@@ -867,11 +878,13 @@ pub struct PatternPayloadTransformLane {
     pub offset: usize,
     /// Schema index framing every row in the lane.
     pub row_schema_index: u8,
+    /// Row byte layout selected by the terminal mode.
+    pub layout: PatternTransformLayout,
     /// Count including the implicit seed row.
     pub declared_count: u8,
-    /// Scalar encoding selected independently by each row.
+    /// Scalar encodings in row-major order.
     pub encodings: Vec<PatternTransformEncoding>,
-    /// Ordered finite row scalars.
+    /// Finite scalars in row-major order.
     pub values: Vec<f64>,
     /// Absolute offsets of the scalar encodings.
     pub value_offsets: Vec<usize>,
@@ -2233,6 +2246,7 @@ pub fn pattern_payload_transform_lane(
         Some(PatternPayloadTransformLane {
             offset: record.payload_offset + start,
             row_schema_index,
+            layout: PatternTransformLayout::ScalarRows,
             declared_count,
             encodings,
             values,
@@ -2243,9 +2257,95 @@ pub fn pattern_payload_transform_lane(
             selector_offsets,
         })
     };
-    let matches = (0..record.payload.len().saturating_sub(1))
+    let decode_wide = |start: usize| {
+        (record.label.value == "Pattern Feature").then_some(())?;
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 1)?;
+        (declared_count >= 2).then_some(())?;
+        let row_count = usize::from(declared_count - 1);
+        let mut at = start + 2;
+        let row_schema_index = *record.payload.get(at)?;
+        let mut encodings = Vec::with_capacity(row_count * 5);
+        let mut values = Vec::with_capacity(row_count * 5);
+        let mut value_offsets = Vec::with_capacity(row_count * 5);
+        let mut raw_values = Vec::with_capacity(row_count * 5);
+        let mut selectors = Vec::with_capacity(row_count);
+        let mut raw_selectors = Vec::with_capacity(row_count);
+        let mut selector_offsets = Vec::with_capacity(row_count);
+        for ordinal in 1..declared_count {
+            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            at += 1;
+            for value_ordinal in 0..4 {
+                let value_offset = at;
+                let (value, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                (encoding == PayloadScalarEncoding::Binary64 && width == 8).then_some(())?;
+                values.push(value);
+                encodings.push(PatternTransformEncoding::Binary64);
+                value_offsets.push(record.payload_offset + value_offset);
+                raw_values.push(record.payload.get(at..at + width)?.to_vec());
+                at += width;
+                if value_ordinal == 1 {
+                    (record.payload.get(at..at + 2) == Some(&[0x00, 0x00])).then_some(())?;
+                    at += 2;
+                }
+            }
+            (record.payload.get(at..at + 4) == Some(&[0x00; 4])).then_some(())?;
+            at += 4;
+            let terminal_value_offset = at;
+            let (terminal_value, encoding, width) = if record.payload.get(at) == Some(&0x01) {
+                (1.0, PatternTransformEncoding::ExactOne, 1)
+            } else {
+                let (value, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                let encoding = match encoding {
+                    PayloadScalarEncoding::Binary32 => PatternTransformEncoding::Binary32,
+                    _ => return None,
+                };
+                (value, encoding, width)
+            };
+            values.push(terminal_value);
+            encodings.push(encoding);
+            value_offsets.push(record.payload_offset + terminal_value_offset);
+            raw_values.push(record.payload.get(at..at + width)?.to_vec());
+            at += width;
+            (record.payload.get(at..at + 7) == Some(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03]))
+                .then_some(())?;
+            at += 7;
+            let selector_offset = at;
+            let (selector, width) = compact_index(record.payload.get(at..)?)?;
+            let CompactIndex::Value(selector) = selector else {
+                return None;
+            };
+            selectors.push(selector);
+            raw_selectors.push(record.payload.get(at..at + width)?.to_vec());
+            selector_offsets.push(record.payload_offset + selector_offset);
+            at += width;
+            (record.payload.get(at) == Some(&0x01)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
+                .then_some(())?;
+            at += 2 + ROW_TAIL.len();
+        }
+        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload.get(at + 1..at + 4) == Some(&[0x00, 0x00, 0x02])).then_some(())?;
+        Some(PatternPayloadTransformLane {
+            offset: record.payload_offset + start,
+            row_schema_index,
+            layout: PatternTransformLayout::WideRows,
+            declared_count,
+            encodings,
+            values,
+            value_offsets,
+            raw_values,
+            selectors,
+            raw_selectors,
+            selector_offsets,
+        })
+    };
+    let mut matches = (0..record.payload.len().saturating_sub(1))
         .filter_map(decode)
         .collect::<Vec<_>>();
+    matches.extend((0..record.payload.len().saturating_sub(1)).filter_map(decode_wide));
     let [lane] = matches.as_slice() else {
         return None;
     };

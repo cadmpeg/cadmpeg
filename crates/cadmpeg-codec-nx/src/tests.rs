@@ -2620,6 +2620,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     let lane = crate::om::pattern_payload_transform_lane(record).expect("feature lane");
     assert_eq!(lane.offset, 201);
     assert_eq!(lane.row_schema_index, 0x60);
+    assert_eq!(lane.layout, crate::om::PatternTransformLayout::ScalarRows);
     assert_eq!(lane.declared_count, 3);
     assert_eq!(
         lane.encodings,
@@ -2646,6 +2647,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     };
     let lane = crate::om::pattern_payload_transform_lane(geometry_record).expect("geometry lane");
     assert_eq!(lane.row_schema_index, 0x60);
+    assert_eq!(lane.layout, crate::om::PatternTransformLayout::ScalarRows);
     assert_eq!(
         lane.encodings,
         [
@@ -2670,6 +2672,10 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     })
     .expect("schema-relative feature lane");
     assert_eq!(relative_lane.row_schema_index, 0x3d);
+    assert_eq!(
+        relative_lane.layout,
+        crate::om::PatternTransformLayout::ScalarRows
+    );
     assert_eq!(relative_lane.declared_count, 4);
     assert_eq!(
         relative_lane.encodings,
@@ -2680,6 +2686,61 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         ]
     );
     assert_eq!(relative_lane.selectors, [2, 3, 4]);
+
+    let wide_payload = b"\x01\x03\
+        \x35\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\xb0\x0e\x6f\x0e\x13\x44\x54\xfd\x00\x00\x30\x0e\x6f\x0e\x13\x44\x54\xfd\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\
+        \x35\xb0\x09\xe3\x77\x9b\x97\xf4\xb9\x30\x02\xcf\x23\x04\x75\x5a\x46\x00\x00\xb0\x02\xcf\x23\x04\x75\x5a\x46\xb0\x09\xe3\x77\x9b\x97\xf4\xb9\x00\x00\x00\x00\x50\x0f\xff\xff\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\
+        \x34\x00\x00\x02";
+    let wide_lane = crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+        bytes: wide_payload,
+        payload: wide_payload,
+        ..record
+    })
+    .expect("wide feature lane");
+    assert_eq!(wide_lane.row_schema_index, 0x35);
+    assert_eq!(
+        wide_lane.layout,
+        crate::om::PatternTransformLayout::WideRows
+    );
+    assert_eq!(wide_lane.declared_count, 3);
+    assert_eq!(wide_lane.values.len(), 10);
+    assert_eq!(
+        wide_lane.encodings,
+        [
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::ExactOne,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary32,
+        ]
+    );
+    assert_eq!(wide_lane.selectors, [2, 3]);
+
+    let mut zero_terminal_value = wide_payload.to_vec();
+    let terminal_value = zero_terminal_value
+        .windows(12)
+        .position(|bytes| {
+            bytes
+                == [
+                    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03,
+                ]
+        })
+        .expect("exact-one terminal value")
+        + 4;
+    zero_terminal_value[terminal_value] = 0x00;
+    assert!(
+        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+            bytes: &zero_terminal_value,
+            payload: &zero_terminal_value,
+            ..record
+        })
+        .is_none()
+    );
 
     let mut changed_schema = feature_payload.to_vec();
     let second_row = changed_schema

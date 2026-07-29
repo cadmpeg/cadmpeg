@@ -1300,10 +1300,22 @@ pub struct FeaturePatternConstructionFixedLane {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeaturePatternTransformEncoding {
-    /// Four-byte shifted IEEE-754 binary32 rows.
+    /// Single-byte exact one used by a wide row terminal value.
+    ExactOne,
+    /// Four-byte shifted IEEE-754 binary32 atom.
     Binary32,
-    /// Eight-byte shifted IEEE-754 binary64 rows.
+    /// Eight-byte shifted IEEE-754 binary64 atom.
     Binary64,
+}
+
+/// Byte layout selected by one exact pattern-transform lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeaturePatternTransformLayout {
+    /// One shifted scalar per row and terminal mode `01`.
+    ScalarRows,
+    /// Four shifted binary64 values and one terminal value per row, with terminal mode `02`.
+    WideRows,
 }
 
 /// Exact counted transform lane carried by a bounded pattern payload.
@@ -1315,6 +1327,8 @@ pub struct FeaturePatternTransformLane {
     pub operation_label: String,
     /// Schema index framing every row in the lane.
     pub row_schema_index: u8,
+    /// Row byte layout selected by the terminal mode.
+    pub layout: FeaturePatternTransformLayout,
     /// Count including the implicit seed row.
     pub declared_count: u8,
     /// Scalar encodings selected independently in row order.
@@ -5467,11 +5481,22 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 row_schema_index: lane.row_schema_index,
+                layout: match lane.layout {
+                    crate::om::PatternTransformLayout::ScalarRows => {
+                        FeaturePatternTransformLayout::ScalarRows
+                    }
+                    crate::om::PatternTransformLayout::WideRows => {
+                        FeaturePatternTransformLayout::WideRows
+                    }
+                },
                 declared_count: lane.declared_count,
                 encodings: lane
                     .encodings
                     .into_iter()
                     .map(|encoding| match encoding {
+                        crate::om::PatternTransformEncoding::ExactOne => {
+                            FeaturePatternTransformEncoding::ExactOne
+                        }
                         crate::om::PatternTransformEncoding::Binary32 => {
                             FeaturePatternTransformEncoding::Binary32
                         }
