@@ -1068,6 +1068,7 @@ mod tests {
             control_points: vec![[0.0, 0.0], [1.0, 0.0]],
             weights: None,
             parameter_range: Some([2.0, 8.0]),
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let knots = vec![0.0, 0.0, 10.0, 10.0];
@@ -1265,6 +1266,7 @@ mod tests {
                     control_points: vec![[0.0, 0.0], [1.0, 0.0]],
                     weights: None,
                     parameter_range: None,
+                    class_21_suffix_scalar: None,
                     lifted_endpoints: None,
                 },
             )]),
@@ -1910,6 +1912,7 @@ mod tests {
             control_points: vec![[0.0, 2.0], [3.0, 2.0]],
             weights: None,
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let plane = B5Surface::Plane {
@@ -1961,6 +1964,7 @@ mod tests {
             control_points: vec![[0.0, 0.0], [0.5 * scale, 0.0]],
             weights: None,
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let cylinder = B5Surface::Cylinder {
@@ -2056,6 +2060,7 @@ mod tests {
             control_points: vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
             weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let plane = B5Surface::Plane {
@@ -2138,6 +2143,7 @@ mod tests {
             control_points: vec![[4.0, 2.0], [4.0, 6.0], [4.0, 10.0]],
             weights: Some(vec![1.0, 2.0, 1.0]),
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         assert_eq!(
@@ -2231,6 +2237,7 @@ mod tests {
             control_points: vec![[11.0, 3.0], [13.0, 3.0]],
             weights: None,
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
@@ -2447,6 +2454,7 @@ mod tests {
             control_points: vec![[0.0, 4.0], [3.0 * std::f64::consts::PI, 4.0]],
             weights: None,
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         assert_eq!(
@@ -2691,6 +2699,7 @@ mod tests {
             control_points: vec![[0.0, 0.0], [0.0, 4.0 * std::f64::consts::PI]],
             weights: None,
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         assert_eq!(
@@ -2765,6 +2774,7 @@ mod tests {
             control_points: vec![[0.0, 3.0], [4.0, 7.0]],
             weights: None,
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let cylinder = B5Surface::Cylinder {

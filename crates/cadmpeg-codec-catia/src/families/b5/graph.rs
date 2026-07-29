@@ -495,6 +495,8 @@ pub struct B5Pcurve {
     pub weights: Option<Vec<f64>>,
     /// Explicit native parameter interval when the pcurve record stores one.
     pub parameter_range: Option<[f64; 2]>,
+    /// Positive scalar stored in the exact class-`21` suffix.
+    pub class_21_suffix_scalar: Option<f64>,
     /// The curve's two clamped-end poles lifted through `surface` into
     /// world-frame 3D points, or `None` before [`parse`] resolves them or
     /// when the lift fails (unresolved surface, degenerate revolution
@@ -1156,6 +1158,7 @@ fn object_stream_pcurve_candidate(
         control_points,
         weights: None,
         parameter_range: Some(jet.range),
+        class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })
 }
@@ -3180,10 +3183,11 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         position += 16;
     }
     let tail = record.payload.get(position..)?;
+    let suffix_scalar = scalar(tail, 10)?;
     if tail.len() != 36
         || tail.get(..2) != Some(&[0x05, 0x05])
         || scalar(tail, 2)? != 0.0
-        || scalar(tail, 10)? <= 0.0
+        || suffix_scalar <= 0.0
         || scalar(tail, 18)? != 1.0
         || scalar(tail, 26)? != 0.0
         || tail.get(34..) != Some(&[0x00, 0x07])
@@ -3199,6 +3203,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         control_points,
         weights: None,
         parameter_range: None,
+        class_21_suffix_scalar: Some(suffix_scalar),
         lifted_endpoints: None,
     })
 }
@@ -3353,6 +3358,7 @@ fn rational_arc_pcurve(
         control_points,
         weights: Some(weights),
         parameter_range: None,
+        class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })
 }
@@ -3517,6 +3523,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         control_points,
         weights: None,
         parameter_range: None,
+        class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })
 }
@@ -4018,6 +4025,7 @@ mod tests {
             control_points: vec![[0.0, 0.0], [1.0, 0.0]],
             weights: None,
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         }
     }
@@ -4160,7 +4168,21 @@ mod tests {
             object_id: 2,
             payload,
         };
-        assert!(parse_pcurve(&record(payload.clone())).is_some());
+        assert_eq!(
+            parse_pcurve(&record(payload.clone()))
+                .expect("complete class-21 pcurve")
+                .class_21_suffix_scalar,
+            Some(1.0)
+        );
+        let tail = payload.len() - 36;
+        let mut alternate_scalar = payload.clone();
+        alternate_scalar[tail + 10..tail + 18].copy_from_slice(&2.5_f64.to_le_bytes());
+        assert_eq!(
+            parse_pcurve(&record(alternate_scalar))
+                .expect("alternate positive suffix scalar")
+                .class_21_suffix_scalar,
+            Some(2.5)
+        );
         let mut wrong_family = record(payload.clone());
         wrong_family.family = 0xa8;
         assert!(parse_pcurve(&wrong_family).is_none());
@@ -4179,7 +4201,6 @@ mod tests {
         residual.push(0);
         assert!(parse_pcurve(&record(residual)).is_none());
 
-        let tail = payload.len() - 36;
         for (offset, value) in [
             (tail + 2, 1.0_f64),
             (tail + 10, 0.0),
@@ -4626,6 +4647,7 @@ mod tests {
             control_points: vec![[0.0, 0.0], [1.0, 0.0]],
             weights: None,
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: Some(endpoints),
         };
         let pcurves = BTreeMap::from([
@@ -5421,6 +5443,7 @@ mod tests {
             control_points: vec![[2.0, 3.0], [4.0, 7.0]],
             weights: None,
             parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         assert_eq!(evaluate_pcurve(&pcurve, 0.0), Some([3.0, 5.0]));

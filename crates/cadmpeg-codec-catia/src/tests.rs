@@ -13814,6 +13814,10 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         result.report.coverage["resolved_object_stream_extended_loop_metadata_count"],
         0
     );
+    assert_eq!(
+        result.report.coverage["resolved_object_stream_class_21_pcurve_suffix_scalar_count"],
+        3
+    );
     assert!(result
         .ir
         .model

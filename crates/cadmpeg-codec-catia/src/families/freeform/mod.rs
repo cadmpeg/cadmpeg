@@ -88,6 +88,13 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
             counts
         })
     });
+    let class_21_suffix_scalar_count = b5_graph.as_ref().map(|graph| {
+        graph
+            .pcurves
+            .values()
+            .filter(|pcurve| pcurve.class_21_suffix_scalar.is_some())
+            .count()
+    });
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
@@ -224,6 +231,12 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         coverage.insert(
             "resolved_object_stream_extended_loop_metadata_count".to_string(),
             extended,
+        );
+    }
+    if let Some(count) = class_21_suffix_scalar_count {
+        coverage.insert(
+            "resolved_object_stream_class_21_pcurve_suffix_scalar_count".to_string(),
+            count,
         );
     }
     Some(FamilyOutput {
