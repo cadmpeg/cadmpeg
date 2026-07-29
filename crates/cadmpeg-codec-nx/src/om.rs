@@ -791,30 +791,44 @@ pub struct OperationRecord<'a> {
     pub label: OperationLabel<'a>,
 }
 
-/// Exactly framed state prefix immediately preceding a terminal common-frame suffix.
+/// Exactly framed common record in one bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationTerminalStatePrefix {
-    /// Three compact indices preceding the fixed state marker.
+pub struct OperationCommonFrame {
+    /// Three compact prefix indices.
     pub indices: [u32; 3],
-    /// Exact compact-index tokens in prefix order.
+    /// Exact compact-index tokens in order.
     pub raw_indices: [Vec<u8>; 3],
-    /// Fixed marker selecting the prefix-index layout.
+    /// Fixed marker selecting the index layout.
     pub marker: [u8; 3],
     /// Exact eight-byte state lane following the fixed state marker.
     pub state: [u8; 8],
-    /// Absolute offset of the first compact prefix-index token.
+    /// Absolute offset of the first compact index token.
     pub offset: usize,
     /// Absolute offsets of the compact prefix-index tokens.
     pub index_offsets: [usize; 3],
     /// Absolute offset of the first state byte.
     pub state_offset: usize,
+    /// Duplicated frame-local ordinal.
+    pub local_ordinal: u32,
+    /// Exact canonical token repeated for the local ordinal.
+    pub raw_local_ordinal: Vec<u8>,
+    /// Nullable object reference following the duplicated ordinal.
+    pub object_index: Option<u32>,
+    /// Exact canonical nullable object-reference token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the first local-ordinal token.
+    pub local_ordinal_offset: usize,
+    /// Absolute offset of the object-reference token.
+    pub object_index_offset: usize,
+    /// Exclusive absolute end offset after the frame terminator.
+    pub end_offset: usize,
 }
 
 /// Canonical terminal common-frame suffix in one bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationTerminalFrame {
-    /// Exactly framed state prefix when it occurs immediately before this suffix.
-    pub immediate_state_prefix: Option<OperationTerminalStatePrefix>,
+    /// Absolute offset of the exact common frame immediately preceding this suffix.
+    pub immediate_common_frame_offset: Option<usize>,
     /// Duplicated frame-local ordinal.
     pub local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
@@ -4554,10 +4568,88 @@ fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {
     )
 }
 
-/// Decode the unique terminal common-frame suffix and its exact immediate state prefix.
+/// Decode every exact common frame in one bounded operation payload.
+pub fn operation_common_frames(record: OperationRecord<'_>) -> Vec<OperationCommonFrame> {
+    let decode = |prefix_start: usize, widths: [usize; 3], marker: [u8; 3]| {
+        if marker == [0x01, 0x01, 0x01] && record.label.value != "DELETE" {
+            return None;
+        }
+        let mut at = prefix_start;
+        let mut indices = Vec::with_capacity(3);
+        let mut raw_indices = Vec::with_capacity(3);
+        let mut index_offsets = Vec::with_capacity(3);
+        for width in widths {
+            let token = record.payload.get(at..at + width)?;
+            let (index, end) = compact_index(record.payload.get(at..)?)?;
+            let CompactIndex::Value(index) = index else {
+                return None;
+            };
+            (end == width).then_some(())?;
+            indices.push(index);
+            raw_indices.push(token.to_vec());
+            index_offsets.push(record.payload_offset + at);
+            at += width;
+        }
+        (record.payload.get(at..at + marker.len()) == Some(&marker)).then_some(())?;
+        at += marker.len();
+        let state_offset = at;
+        let state = record.payload.get(at..at + 8)?.try_into().ok()?;
+        at += 8;
+        let local_ordinal_offset = at;
+        let (Some(local_ordinal), first_end) = feature_object_index(record.payload, at)? else {
+            return None;
+        };
+        let first_raw = &record.payload[at..first_end];
+        canonical_feature_object_index(Some(local_ordinal), first_raw).then_some(())?;
+        let (Some(repeated), second_end) = feature_object_index(record.payload, first_end)? else {
+            return None;
+        };
+        let second_raw = &record.payload[first_end..second_end];
+        (repeated == local_ordinal && second_raw == first_raw).then_some(())?;
+        let object_index_offset = second_end;
+        let (object_index, object_end) = feature_object_index(record.payload, second_end)?;
+        let object_raw = &record.payload[second_end..object_end];
+        canonical_feature_object_index(object_index, object_raw).then_some(())?;
+        (record.payload.get(object_end) == Some(&0)).then_some(())?;
+        let indices: [u32; 3] = indices.try_into().ok()?;
+        let raw_indices: [Vec<u8>; 3] = raw_indices.try_into().ok()?;
+        let index_offsets: [usize; 3] = index_offsets.try_into().ok()?;
+        Some(OperationCommonFrame {
+            indices,
+            raw_indices,
+            marker,
+            state,
+            offset: record.payload_offset + prefix_start,
+            index_offsets,
+            state_offset: record.payload_offset + state_offset,
+            local_ordinal,
+            raw_local_ordinal: first_raw.to_vec(),
+            object_index,
+            raw_object_index: object_raw.to_vec(),
+            local_ordinal_offset: record.payload_offset + local_ordinal_offset,
+            object_index_offset: record.payload_offset + object_index_offset,
+            end_offset: record.payload_offset + object_end + 1,
+        })
+    };
+
+    let mut frames = Vec::new();
+    for start in 0..record.payload.len() {
+        if let Some(frame) = decode(start, [1, 2, 2], [0x01, 0x03, 0x02]) {
+            frames.push(frame);
+        }
+        if let Some(frame) = decode(start, [1, 1, 1], [0x01, 0x01, 0x01]) {
+            frames.push(frame);
+        }
+    }
+    frames.sort_by_key(|frame| frame.offset);
+    frames
+}
+
+/// Decode the unique terminal common-frame suffix and its exact immediate common frame.
 pub fn operation_terminal_frame(record: OperationRecord<'_>) -> Option<OperationTerminalFrame> {
     let terminator = record.payload.len().checked_sub(1)?;
     (record.payload.get(terminator) == Some(&0)).then_some(())?;
+    let common_frames = operation_common_frames(record);
     let mut matches = Vec::new();
     for start in terminator.saturating_sub(9)..terminator {
         let Some((Some(local_ordinal), first_end)) = feature_object_index(record.payload, start)
@@ -4584,65 +4676,21 @@ pub fn operation_terminal_frame(record: OperationRecord<'_>) -> Option<Operation
         if object_end != terminator || !canonical_feature_object_index(object_index, object_raw) {
             continue;
         }
-        let immediate_state_prefix = (|| {
-            let marker_offset = start.checked_sub(11)?;
-            let marker: [u8; 3] = record
-                .payload
-                .get(marker_offset..marker_offset + 3)?
-                .try_into()
-                .ok()?;
-            let prefix_width = match (record.label.value, marker) {
-                (_, [0x01, 0x03, 0x02]) => 5,
-                ("DELETE", [0x01, 0x01, 0x01]) => 3,
-                _ => return None,
-            };
-            let state = record
-                .payload
-                .get(marker_offset + 3..start)?
-                .try_into()
-                .ok()?;
-            let prefix_start = marker_offset.checked_sub(prefix_width)?;
-            let mut at = prefix_start;
-            let mut indices = Vec::with_capacity(3);
-            let mut raw = Vec::with_capacity(3);
-            let mut offsets = Vec::with_capacity(3);
-            for _ in 0..3 {
-                let (index, width) = compact_index(record.payload.get(at..)?)?;
-                let CompactIndex::Value(index) = index else {
-                    return None;
-                };
-                indices.push(index);
-                raw.push(record.payload[at..at + width].to_vec());
-                offsets.push(record.payload_offset + at);
-                at += width;
-            }
-            (at == marker_offset).then_some(())?;
-            let expected_widths = if prefix_width == 5 {
-                [1, 2, 2]
-            } else {
-                [1, 1, 1]
-            };
-            raw.iter().map(Vec::len).eq(expected_widths).then_some(())?;
-            let indices: [u32; 3] = indices.try_into().ok()?;
-            let raw_indices: [Vec<u8>; 3] = raw.try_into().ok()?;
-            let index_offsets: [usize; 3] = offsets.try_into().ok()?;
-            Some(OperationTerminalStatePrefix {
-                indices,
-                raw_indices,
-                marker,
-                state,
-                offset: index_offsets[0],
-                index_offsets,
-                state_offset: record.payload_offset + marker_offset + 3,
+        let local_ordinal_offset = record.payload_offset + start;
+        let immediate_common_frame_offset = common_frames
+            .iter()
+            .find(|frame| {
+                frame.local_ordinal_offset == local_ordinal_offset
+                    && frame.end_offset == record.payload_offset + object_end + 1
             })
-        })();
+            .map(|frame| frame.offset);
         matches.push(OperationTerminalFrame {
-            immediate_state_prefix,
+            immediate_common_frame_offset,
             local_ordinal,
             raw_local_ordinal: first_raw.to_vec(),
             object_index,
             raw_object_index: object_raw.to_vec(),
-            offset: record.payload_offset + start,
+            offset: local_ordinal_offset,
             object_index_offset: record.payload_offset + second_end,
         });
     }

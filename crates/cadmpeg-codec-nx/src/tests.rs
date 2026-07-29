@@ -2253,15 +2253,7 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     assert_eq!(
         crate::om::operation_terminal_frame(record),
         Some(crate::om::OperationTerminalFrame {
-            immediate_state_prefix: Some(crate::om::OperationTerminalStatePrefix {
-                indices: [0, 351, 171],
-                raw_indices: [vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
-                marker: [1, 3, 2],
-                state: [1, 2, 1, 1, 1, 0, 0, 0],
-                offset: 104,
-                index_offsets: [104, 105, 107],
-                state_offset: 112,
-            }),
+            immediate_common_frame_offset: Some(104),
             local_ordinal: 0x0123,
             raw_local_ordinal: vec![0x81, 0x23],
             object_index: None,
@@ -2284,15 +2276,7 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
             label,
         }),
         Some(crate::om::OperationTerminalFrame {
-            immediate_state_prefix: Some(crate::om::OperationTerminalStatePrefix {
-                indices: [0, 351, 171],
-                raw_indices: [vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
-                marker: [1, 3, 2],
-                state: [1, 2, 1, 1, 1, 0, 0, 0],
-                offset: 200,
-                index_offsets: [200, 201, 203],
-                state_offset: 208,
-            }),
+            immediate_common_frame_offset: Some(200),
             local_ordinal: 41,
             raw_local_ordinal: vec![0x29],
             object_index: Some(65),
@@ -2346,12 +2330,22 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         },
     })
     .expect("DELETE common-frame variant");
-    let delete_prefix = delete_frame
-        .immediate_state_prefix
-        .expect("DELETE state prefix");
-    assert_eq!(delete_prefix.indices, [1, 0, 0]);
-    assert_eq!(delete_prefix.marker, [1, 1, 1]);
-    assert_eq!(delete_prefix.state, [6, 1, 1, 0, 1, 0, 0, 0]);
+    assert_eq!(delete_frame.immediate_common_frame_offset, Some(300));
+    let [delete_common] = crate::om::operation_common_frames(crate::om::OperationRecord {
+        offset: 0,
+        bytes: &delete,
+        payload_offset: 300,
+        payload: &delete,
+        label: crate::om::OperationLabel {
+            value: "DELETE",
+            ..label
+        },
+    })
+    .try_into()
+    .expect("one DELETE common frame");
+    assert_eq!(delete_common.indices, [1, 0, 0]);
+    assert_eq!(delete_common.marker, [1, 1, 1]);
+    assert_eq!(delete_common.state, [6, 1, 1, 0, 1, 0, 0, 0]);
 
     let suffix_only = [0x02, 0x02, 0xff, 0x00];
     let suffix = crate::om::operation_terminal_frame(crate::om::OperationRecord {
@@ -2362,9 +2356,27 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         label,
     })
     .expect("canonical suffix without immediate state prefix");
-    assert!(suffix.immediate_state_prefix.is_none());
+    assert!(suffix.immediate_common_frame_offset.is_none());
     assert_eq!(suffix.local_ordinal, 2);
     assert_eq!(suffix.offset, 400);
+
+    let mut embedded = direct.to_vec();
+    embedded.extend_from_slice(&[0xaa, 0x02, 0x02, 0xff, 0x00]);
+    let embedded_record = crate::om::OperationRecord {
+        offset: 0,
+        bytes: &embedded,
+        payload_offset: 500,
+        payload: &embedded,
+        label,
+    };
+    let [common] = crate::om::operation_common_frames(embedded_record)
+        .try_into()
+        .expect("one embedded common frame");
+    assert_eq!(common.offset, 500);
+    assert_eq!(common.end_offset, 520);
+    let outer = crate::om::operation_terminal_frame(embedded_record).expect("outer suffix");
+    assert_eq!(outer.offset, 521);
+    assert!(outer.immediate_common_frame_offset.is_none());
 }
 
 #[test]
@@ -11850,6 +11862,7 @@ mod golden {
         "feature_operation_body_scalar_triples",
         "feature_operation_labels",
         "feature_operation_records",
+        "feature_operation_common_frames",
         "feature_operation_terminal_frames",
         "feature_parameter_bindings",
         "feature_parameter_uses",
@@ -12641,7 +12654,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (204), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (205), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -12650,7 +12663,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 204, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 205, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

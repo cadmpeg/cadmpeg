@@ -101,6 +101,7 @@ pub(crate) struct SegmentRecords {
 pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_labels: Vec<FeatureOperationLabel>,
     pub(crate) feature_operation_records: Vec<FeatureOperationRecord>,
+    pub(crate) feature_operation_common_frames: Vec<FeatureOperationCommonFrame>,
     pub(crate) feature_operation_terminal_frames: Vec<FeatureOperationTerminalFrame>,
     pub(crate) feature_payload_strings: Vec<FeaturePayloadString>,
     pub(crate) feature_simple_hole_templates: Vec<FeatureSimpleHoleTemplate>,
@@ -313,7 +314,9 @@ impl NativeModel {
         let om_record_areas = om_record_areas(container);
         let feature_operation_labels = feature_operation_labels(container);
         let feature_operation_records = feature_operation_records(container);
-        let feature_operation_terminal_frames = feature_operation_terminal_frames(container);
+        let feature_operation_common_frames = feature_operation_common_frames(container);
+        let feature_operation_terminal_frames =
+            feature_operation_terminal_frames(container, &feature_operation_common_frames);
         let feature_payload_strings = feature_payload_strings(container);
         let feature_simple_hole_templates = feature_simple_hole_templates(
             &feature_operation_labels,
@@ -804,6 +807,7 @@ impl NativeModel {
             features: FeatureRecords {
                 feature_operation_labels,
                 feature_operation_records,
+                feature_operation_common_frames,
                 feature_operation_terminal_frames,
                 feature_payload_strings,
                 feature_simple_hole_templates,

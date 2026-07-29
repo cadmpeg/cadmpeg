@@ -52,23 +52,43 @@ pub struct FeatureOperationRecord {
     pub source_offset: u64,
 }
 
-/// Exactly framed state prefix immediately preceding a terminal common-frame suffix.
+/// Exactly framed common record in one bounded feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationTerminalStatePrefix {
-    /// Three compact indices preceding the fixed state marker.
+pub struct FeatureOperationCommonFrame {
+    /// Globally unique common-frame identity.
+    pub id: String,
+    /// Owning bounded operation record.
+    pub operation_record: String,
+    /// Zero-based frame order within the operation payload.
+    pub ordinal: u32,
+    /// Three compact prefix indices.
     pub indices: [u32; 3],
-    /// Exact compact-index tokens in prefix order.
+    /// Exact compact-index tokens in order.
     pub raw_indices: [Vec<u8>; 3],
-    /// Fixed marker selecting the prefix-index layout.
+    /// Fixed marker selecting the index layout.
     pub marker: [u8; 3],
     /// Exact eight-byte state lane following the fixed state marker.
     pub state: [u8; 8],
-    /// Absolute offset of the first compact prefix-index token.
+    /// Duplicated frame-local ordinal.
+    pub local_ordinal: u32,
+    /// Exact canonical token repeated for the local ordinal.
+    pub raw_local_ordinal: Vec<u8>,
+    /// Nullable object reference following the duplicated ordinal.
+    pub object_index: Option<u32>,
+    /// Exact canonical nullable object-reference token.
+    pub raw_object_index: Vec<u8>,
+    /// Exact serialized frame byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the first compact index token.
     pub source_offset: u64,
     /// Absolute offsets of the compact prefix-index tokens.
     pub index_source_offsets: [u64; 3],
     /// Absolute offset of the first state byte.
     pub state_source_offset: u64,
+    /// Absolute offset of the first local-ordinal token.
+    pub local_ordinal_source_offset: u64,
+    /// Absolute offset of the object-reference token.
+    pub object_index_source_offset: u64,
 }
 
 /// Canonical terminal common-frame suffix of one feature operation.
@@ -78,9 +98,9 @@ pub struct FeatureOperationTerminalFrame {
     pub id: String,
     /// Owning bounded operation record.
     pub operation_record: String,
-    /// Exactly framed state prefix when it occurs immediately before this suffix.
+    /// Exact common frame when it occurs immediately before this suffix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub immediate_state_prefix: Option<FeatureOperationTerminalStatePrefix>,
+    pub immediate_common_frame: Option<String>,
     /// Duplicated frame-local ordinal.
     pub local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
@@ -2696,9 +2716,65 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
     records
 }
 
+/// Decode every exact common frame from bounded feature operations.
+pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOperationCommonFrame> {
+    let sections = container.om_sections();
+    let mut frames = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            for (ordinal, frame) in crate::om::operation_common_frames(record)
+                .into_iter()
+                .enumerate()
+            {
+                frames.push(FeatureOperationCommonFrame {
+                    id: format!(
+                        "nx:feature-history:operation-common-frame#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_record: operation_record.clone(),
+                    ordinal: ordinal as u32,
+                    indices: frame.indices,
+                    raw_indices: frame.raw_indices,
+                    marker: frame.marker,
+                    state: frame.state,
+                    local_ordinal: frame.local_ordinal,
+                    raw_local_ordinal: frame.raw_local_ordinal,
+                    object_index: frame.object_index,
+                    raw_object_index: frame.raw_object_index,
+                    byte_len: (frame.end_offset - frame.offset) as u64,
+                    source_offset: entry_offset + frame.offset as u64,
+                    index_source_offsets: frame
+                        .index_offsets
+                        .map(|offset| entry_offset + offset as u64),
+                    state_source_offset: entry_offset + frame.state_offset as u64,
+                    local_ordinal_source_offset: entry_offset
+                        + frame.local_ordinal_offset as u64,
+                    object_index_source_offset: entry_offset + frame.object_index_offset as u64,
+                });
+            }
+        }
+    }
+    frames
+}
+
 /// Decode canonical terminal common-frame suffixes from bounded operations.
 pub fn feature_operation_terminal_frames(
     container: &Container,
+    common_frames: &[FeatureOperationCommonFrame],
 ) -> Vec<FeatureOperationTerminalFrame> {
     let sections = container.om_sections();
     let mut frames = Vec::new();
@@ -2719,26 +2795,28 @@ pub fn feature_operation_terminal_frames(
             let Some(frame) = crate::om::operation_terminal_frame(record) else {
                 continue;
             };
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            let immediate_common_frame = frame.immediate_common_frame_offset.and_then(|offset| {
+                let matches = common_frames
+                    .iter()
+                    .filter(|common| {
+                        common.operation_record == operation_record
+                            && common.source_offset == entry_offset + offset as u64
+                    })
+                    .collect::<Vec<_>>();
+                let [common] = matches.as_slice() else {
+                    return None;
+                };
+                Some(common.id.clone())
+            });
             frames.push(FeatureOperationTerminalFrame {
                 id: format!(
                     "nx:feature-history:operation-terminal-frame#{section_key}-{operation_ordinal:010}"
                 ),
-                operation_record: format!(
-                    "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-                ),
-                immediate_state_prefix: frame.immediate_state_prefix.map(|prefix| {
-                    FeatureOperationTerminalStatePrefix {
-                        indices: prefix.indices,
-                        raw_indices: prefix.raw_indices,
-                        marker: prefix.marker,
-                        state: prefix.state,
-                        source_offset: entry_offset + prefix.offset as u64,
-                        index_source_offsets: prefix
-                            .index_offsets
-                            .map(|offset| entry_offset + offset as u64),
-                        state_source_offset: entry_offset + prefix.state_offset as u64,
-                    }
-                }),
+                operation_record,
+                immediate_common_frame,
                 local_ordinal: frame.local_ordinal,
                 raw_local_ordinal: frame.raw_local_ordinal,
                 object_index: frame.object_index,

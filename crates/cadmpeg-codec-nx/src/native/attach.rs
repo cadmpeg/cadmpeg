@@ -269,7 +269,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(170);
+    namespace.version = namespace.version.max(171);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -380,6 +380,7 @@ fn attach_feature_operations(
     let parameter_bindings = features.feature_parameter_bindings.as_slice();
     let parameter_uses = features.feature_parameter_uses.as_slice();
     let operation_records = features.feature_operation_records.as_slice();
+    let operation_common_frames = features.feature_operation_common_frames.as_slice();
     let operation_terminal_frames = features.feature_operation_terminal_frames.as_slice();
     let payload_strings = features.feature_payload_strings.as_slice();
     let simple_hole_templates = features.feature_simple_hole_templates.as_slice();
@@ -1004,6 +1005,7 @@ fn attach_feature_operations(
         source_properties.extend(operation_source_properties(
             &label.id,
             operation_records,
+            operation_common_frames,
             operation_terminal_frames,
         ));
         for (use_ordinal, block_use) in datum_csys_uses_by_input_operation
@@ -1979,6 +1981,7 @@ fn records_by_operation<'a, T>(
 fn operation_source_properties(
     operation_label: &str,
     records: &[crate::native::features::FeatureOperationRecord],
+    common_frames: &[crate::native::features::FeatureOperationCommonFrame],
     terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame],
 ) -> BTreeMap<String, String> {
     let mut matching_records = records
@@ -1992,6 +1995,22 @@ fn operation_source_properties(
     }
 
     let mut properties = BTreeMap::from([("operation_record".to_string(), record.id.clone())]);
+    let matching_common_frames = common_frames
+        .iter()
+        .filter(|frame| frame.operation_record == record.id)
+        .collect::<Vec<_>>();
+    if matching_common_frames
+        .iter()
+        .enumerate()
+        .all(|(ordinal, frame)| frame.ordinal == ordinal as u32)
+    {
+        for frame in matching_common_frames {
+            properties.insert(
+                format!("operation_common_frame.{}", frame.ordinal),
+                frame.id.clone(),
+            );
+        }
+    }
     let mut matching_frames = terminal_frames
         .iter()
         .filter(|frame| frame.operation_record == record.id);
@@ -4474,20 +4493,29 @@ mod tests {
             payload_source_offset: 110,
             source_offset: 100,
         };
+        let common = crate::native::features::FeatureOperationCommonFrame {
+            id: "common".into(),
+            operation_record: record.id.clone(),
+            ordinal: 0,
+            indices: [0, 351, 171],
+            raw_indices: [vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
+            marker: [1, 3, 2],
+            state: [1, 2, 1, 1, 1, 0, 0, 0],
+            local_ordinal: 41,
+            raw_local_ordinal: vec![0x29],
+            object_index: Some(65),
+            raw_object_index: vec![0x41],
+            byte_len: 20,
+            source_offset: 101,
+            index_source_offsets: [101, 102, 104],
+            state_source_offset: 109,
+            local_ordinal_source_offset: 117,
+            object_index_source_offset: 119,
+        };
         let frame = crate::native::features::FeatureOperationTerminalFrame {
             id: "frame".into(),
             operation_record: record.id.clone(),
-            immediate_state_prefix: Some(
-                crate::native::features::FeatureOperationTerminalStatePrefix {
-                    indices: [0, 351, 171],
-                    raw_indices: [vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
-                    marker: [1, 3, 2],
-                    state: [1, 2, 1, 1, 1, 0, 0, 0],
-                    source_offset: 101,
-                    index_source_offsets: [101, 102, 104],
-                    state_source_offset: 109,
-                },
-            ),
+            immediate_common_frame: Some(common.id.clone()),
             local_ordinal: 41,
             raw_local_ordinal: vec![0x29],
             object_index: Some(65),
@@ -4499,6 +4527,32 @@ mod tests {
             super::operation_source_properties(
                 &record.operation_label,
                 std::slice::from_ref(&record),
+                std::slice::from_ref(&common),
+                std::slice::from_ref(&frame),
+            ),
+            BTreeMap::from([
+                ("operation_common_frame.0".into(), "common".into()),
+                ("operation_record".into(), "record".into()),
+                ("operation_terminal_frame".into(), "frame".into()),
+            ])
+        );
+        assert!(super::operation_source_properties("missing", &[], &[], &[]).is_empty());
+        assert_eq!(
+            super::operation_source_properties(
+                &record.operation_label,
+                std::slice::from_ref(&record),
+                &[],
+                &[],
+            ),
+            BTreeMap::from([("operation_record".into(), "record".into())])
+        );
+        let mut noncontiguous_common = common.clone();
+        noncontiguous_common.ordinal = 1;
+        assert_eq!(
+            super::operation_source_properties(
+                &record.operation_label,
+                std::slice::from_ref(&record),
+                std::slice::from_ref(&noncontiguous_common),
                 std::slice::from_ref(&frame),
             ),
             BTreeMap::from([
@@ -4506,18 +4560,10 @@ mod tests {
                 ("operation_terminal_frame".into(), "frame".into()),
             ])
         );
-        assert!(super::operation_source_properties("missing", &[], &[]).is_empty());
-        assert_eq!(
-            super::operation_source_properties(
-                &record.operation_label,
-                std::slice::from_ref(&record),
-                &[],
-            ),
-            BTreeMap::from([("operation_record".into(), "record".into())])
-        );
         assert!(super::operation_source_properties(
             &record.operation_label,
             &[record.clone(), record.clone()],
+            std::slice::from_ref(&common),
             std::slice::from_ref(&frame),
         )
         .is_empty());
@@ -4525,6 +4571,7 @@ mod tests {
             super::operation_source_properties(
                 &record.operation_label,
                 std::slice::from_ref(&record),
+                &[],
                 &[frame.clone(), frame],
             ),
             BTreeMap::from([("operation_record".into(), "record".into())])
