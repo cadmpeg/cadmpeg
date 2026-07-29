@@ -850,10 +850,16 @@ fn parse_outer_container_declarations(
         else {
             continue;
         };
-        let stream_name = format!("{first:x}_{middle:08x}_{last:x}");
-        if !stream_names.contains(stream_name.as_str()) {
-            continue;
-        }
+        let canonical_stream_name = format!("{first:x}_{middle:08x}_{last:x}");
+        let prefixed_stream_name = format!("_{canonical_stream_name}");
+        let stream_name = match (
+            stream_names.contains(canonical_stream_name.as_str()),
+            stream_names.contains(prefixed_stream_name.as_str()),
+        ) {
+            (true, false) => canonical_stream_name,
+            (false, true) => prefixed_stream_name,
+            (false, false) | (true, true) => continue,
+        };
         let Some(ordinal) = u32_le(data, start + 12) else {
             continue;
         };
@@ -1340,6 +1346,35 @@ mod tests {
         assert!(
             outer_container_for_extent(&outer, &declarations, u64::from(data_len) - 1, 2).is_none()
         );
+
+        let mut prefixed_outer = outer.clone();
+        prefixed_outer.descriptors[1].name = "_1048_62eb7b6f_1825".to_string();
+        let prefixed_declarations = outer_container_declarations(&data, &prefixed_outer);
+        assert_eq!(prefixed_declarations.len(), 1);
+        assert_eq!(prefixed_declarations[0].stream_name, "_1048_62eb7b6f_1825");
+        assert_eq!(
+            outer_container_for_extent(
+                &prefixed_outer,
+                &prefixed_declarations,
+                u64::from(data_len),
+                1
+            )
+            .map(|declaration| declaration.class_name.as_str()),
+            Some("CATPrtCont")
+        );
+
+        let mut ambiguous_outer = prefixed_outer;
+        ambiguous_outer.descriptors.push(Descriptor {
+            name: "1048_62eb7b6f_1825".to_string(),
+            desc_offset: 30,
+            logical_length: 1,
+            extents: vec![Extent {
+                phys_off: data_len,
+                phys_len: 1,
+                flags: 0,
+            }],
+        });
+        assert!(outer_container_declarations(&data, &ambiguous_outer).is_empty());
 
         let scan = ContainerScan {
             data,
