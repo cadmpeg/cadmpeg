@@ -134,14 +134,16 @@ pub(super) fn neutral_surface(
             profile_curve,
             axis_origin,
             axis_direction,
-            gauge_radius,
+            profile_range,
+            angular_range,
+            angular_scale,
             ..
         } => revolution_surface(
             graph.profiles.get(profile_curve),
             *axis_origin,
             *axis_direction,
-            *gauge_radius,
-            surface_parameter_bounds(graph, surface_id),
+            *angular_scale,
+            [*profile_range, *angular_range],
         )
         .map_or_else(
             || SurfaceGeometry::Unknown {
@@ -165,48 +167,27 @@ pub(super) fn neutral_surface(
     }
 }
 
-pub(super) fn surface_parameter_bounds(graph: &B5Graph, surface_id: u32) -> Option<[[f64; 2]; 2]> {
-    let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
-    for point in graph
-        .pcurves
-        .values()
-        .filter(|pcurve| pcurve.surface == surface_id)
-        .flat_map(|pcurve| &pcurve.control_points)
-    {
-        for dimension in 0..2 {
-            bounds[dimension][0] = bounds[dimension][0].min(point[dimension]);
-            bounds[dimension][1] = bounds[dimension][1].max(point[dimension]);
-        }
-    }
-    bounds
-        .iter()
-        .all(|range| range[0].is_finite() && range[0] < range[1])
-        .then_some(bounds)
-}
-
 pub(super) fn revolution_surface(
     profile: Option<&B5Profile>,
     axis_origin: [f64; 3],
     axis_direction: [f64; 3],
-    gauge_radius: f64,
-    bounds: Option<[[f64; 2]; 2]>,
+    angular_scale: f64,
+    bounds: [[f64; 2]; 2],
 ) -> Option<(NurbsSurface, RevolutionPlan)> {
     let profile = profile?;
-    let [parameter_interval, native_angular_interval] = bounds?;
+    let [parameter_interval, native_angular_interval] = bounds;
     let directrix = profile_nurbs(profile, parameter_interval)?;
-    let sign = gauge_radius.signum();
-    if sign == 0.0 {
+    if angular_scale <= 0.0 {
         return None;
     }
-    let effective_axis = scale(axis_direction, sign);
     let angular_interval = [
-        native_angular_interval[0] / gauge_radius.abs(),
-        native_angular_interval[1] / gauge_radius.abs(),
+        native_angular_interval[0] / angular_scale,
+        native_angular_interval[1] / angular_scale,
     ];
     let surface = revolve_nurbs(
         &directrix,
         axis_origin,
-        effective_axis,
+        axis_direction,
         angular_interval,
         native_angular_interval,
     )?;
@@ -215,7 +196,7 @@ pub(super) fn revolution_surface(
         RevolutionPlan {
             directrix,
             axis_origin: point(axis_origin),
-            axis_direction: vector(effective_axis),
+            axis_direction: vector(axis_direction),
             angular_interval,
             parameter_interval,
         },

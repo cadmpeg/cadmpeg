@@ -116,6 +116,11 @@ current scores require those matrices and representative fixtures.
   independent geometric radius and angular gauge, active circumferential and
   axial intervals, and the full-turn chart origin; pcurve lifting uses the
   stored gauge rather than assuming radius-scaled U.
+  Object-stream revolution surfaces require their complete reference-width
+  dependent payload, retain the stored profile and angular intervals, and
+  validate the right-handed frame, fixed controls, positive angular gauge, and
+  exact half-turn relation. Their exact NURBS cache uses the stored ranges
+  directly rather than deriving a patch from available pcurves.
   A consolidated torus retains independent active major- and minor-angle
   intervals and their centered full-turn chart domains; malformed range/domain
   relations reject the complete record.

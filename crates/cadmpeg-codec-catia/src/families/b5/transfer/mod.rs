@@ -1739,7 +1739,7 @@ mod tests {
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
             1.0,
-            Some([[-1.0, 1.0], [0.0, std::f64::consts::PI]]),
+            [[-1.0, 1.0], [0.0, std::f64::consts::PI]],
         )
         .expect("exact revolution cache");
         assert_eq!(plan.parameter_interval, [-1.0, 1.0]);

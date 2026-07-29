@@ -100,13 +100,28 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
         profile[offset..offset + 8].copy_from_slice(&le_f64(value));
     }
     append_b5_record(&mut bytes, 0x0e, 110, &profile);
-    let mut revolution = vec![0; 143];
+    let mut revolution = vec![0; 176];
+    revolution[0] = 0x80;
     revolution[1] = 0x38;
     revolution[2..5].copy_from_slice(&[110, 0, 0]);
     revolution[29..37].copy_from_slice(&le_f64(1.0));
     revolution[61..69].copy_from_slice(&le_f64(1.0));
     revolution[93..101].copy_from_slice(&le_f64(1.0));
-    revolution[135..143].copy_from_slice(&le_f64(1.0));
+    for (offset, value) in [
+        (101usize, 0.0f64),
+        (109, std::f64::consts::PI),
+        (117, -1.0),
+        (125, 2.0),
+        (135, 1.0),
+        (143, 1.0),
+        (151, 1.0),
+        (159, 0.0),
+        (168, std::f64::consts::PI),
+    ] {
+        revolution[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    revolution[133..135].copy_from_slice(&[0x05, 0x05]);
+    revolution[167] = 0x01;
     append_b5_record(&mut bytes, 0x2d, 120, &revolution);
     append_b5_record(
         &mut bytes,

@@ -255,9 +255,12 @@ pub enum B5Surface {
         reference_y: [f64; 3],
         /// Unit revolution axis.
         axis_direction: [f64; 3],
-        /// Nonzero scale mapping a pcurve's `v` parameter to a revolution
-        /// angle in radians (`angle = v / gauge_radius`).
-        gauge_radius: f64,
+        /// Active parameter interval of the swept profile.
+        profile_range: [f64; 2],
+        /// Active native arc-length interval of the revolution.
+        angular_range: [f64; 2],
+        /// Positive divisor mapping native V to a revolution angle.
+        angular_scale: f64,
     },
     /// An `a8 03 34` inline-pole B-spline surface, resolved through
     /// [`crate::families::a5a8::records::a8_surfaces`] and merged into the same
@@ -2007,7 +2010,19 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
         0x2d => {
             let mut position = 1;
             let profile_curve = wire::object_ref(&record.payload, &mut position, true)?;
-            let gauge_radius = scalar(&record.payload, position.checked_add(130)?)?;
+            (record.payload.len() == position.checked_add(171)?
+                && record.payload.first() == Some(&0x80))
+            .then_some(())?;
+            let angular_range = [
+                scalar(&record.payload, position.checked_add(96)?)?,
+                scalar(&record.payload, position.checked_add(104)?)?,
+            ];
+            let profile_range = [
+                scalar(&record.payload, position.checked_add(112)?)?,
+                scalar(&record.payload, position.checked_add(120)?)?,
+            ];
+            let angular_scale = scalar(&record.payload, position.checked_add(130)?)?;
+            let angular_half_turn = scalar(&record.payload, position.checked_add(163)?)?;
             let reference_x = point(&record.payload, position.checked_add(24)?)?;
             let reference_y = point(&record.payload, position.checked_add(48)?)?;
             let axis_direction = point(&record.payload, position.checked_add(72)?)?;
@@ -2018,17 +2033,30 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                         (direction.iter().map(|value| value * value).sum::<f64>() - 1.0).abs()
                             <= 1e-12
                     });
-            (gauge_radius.abs() > f64::EPSILON
+            (record.payload.get(position + 128..position + 130) == Some(&[0x05, 0x05])
+                && angular_scale > 0.0
                 && directions_are_unit
                 && distance_squared(cross(reference_x, reference_y), axis_direction) <= 1e-24)
-                .then_some(B5Surface::Revolution {
-                    profile_curve,
-                    axis_origin: point(&record.payload, position)?,
-                    reference_x,
-                    reference_y,
-                    axis_direction,
-                    gauge_radius,
-                })
+                .then_some(())?;
+            (angular_range[0] < angular_range[1]
+                && angular_range[0] >= 0.0
+                && angular_range[1] <= 2.0 * angular_half_turn
+                && profile_range[0] < profile_range[1]
+                && scalar(&record.payload, position + 138)? == 1.0
+                && scalar(&record.payload, position + 146)? == 1.0
+                && scalar(&record.payload, position + 154)? == 0.0
+                && record.payload.get(position + 162) == Some(&0x01)
+                && angular_half_turn.to_bits() == (std::f64::consts::PI * angular_scale).to_bits())
+            .then_some(B5Surface::Revolution {
+                profile_curve,
+                axis_origin: point(&record.payload, position)?,
+                reference_x,
+                reference_y,
+                axis_direction,
+                profile_range,
+                angular_range,
+                angular_scale,
+            })
         }
         _ => None,
     }
@@ -2643,7 +2671,7 @@ fn lift_pcurve_endpoints(
             profile_curve,
             axis_origin,
             axis_direction,
-            gauge_radius,
+            angular_scale,
             ..
         } => {
             let profile = profiles.get(profile_curve)?;
@@ -2669,7 +2697,7 @@ fn lift_pcurve_endpoints(
                         )
                     }
                 };
-                rotate_about_axis(point, *axis_origin, *axis_direction, v / gauge_radius)
+                rotate_about_axis(point, *axis_origin, *axis_direction, v / angular_scale)
             }))
         }
         B5Surface::Nurbs(surface) => Some([
@@ -3959,12 +3987,27 @@ mod tests {
     #[test]
     fn revolution_surface_accepts_sparse_profile_reference() {
         let mut payload = vec![0; 175];
+        payload[0] = 0x80;
         payload[1..4].copy_from_slice(&[0x30, 0x86, 0x16]);
         payload[4..12].copy_from_slice(&1.0f64.to_le_bytes());
         payload[28..36].copy_from_slice(&1.0f64.to_le_bytes());
         payload[60..68].copy_from_slice(&1.0f64.to_le_bytes());
         payload[92..100].copy_from_slice(&1.0f64.to_le_bytes());
-        payload[134..142].copy_from_slice(&2.0f64.to_le_bytes());
+        for (offset, value) in [
+            (100, 0.0f64),
+            (108, 2.0 * std::f64::consts::PI),
+            (116, -1.0),
+            (124, 1.0),
+            (134, 2.0),
+            (142, 1.0),
+            (150, 1.0),
+            (158, 0.0),
+            (167, 2.0 * std::f64::consts::PI),
+        ] {
+            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[132..134].copy_from_slice(&[0x05, 0x05]);
+        payload[166] = 0x01;
         let record = B5Record {
             offset: 0,
             family: 0xb5,
@@ -3980,12 +4023,17 @@ mod tests {
                 reference_x: [1.0, 0.0, 0.0],
                 reference_y: [0.0, 1.0, 0.0],
                 axis_direction: [0.0, 0.0, 1.0],
-                gauge_radius: 2.0,
+                profile_range: [-1.0, 1.0],
+                angular_range: [0.0, 2.0 * std::f64::consts::PI],
+                angular_scale: 2.0,
             })
         );
-        let mut left_handed = record;
+        let mut left_handed = record.clone();
         left_handed.payload[92..100].copy_from_slice(&(-1.0f64).to_le_bytes());
         assert_eq!(parse_surface(&left_handed), None);
+        let mut wrong_half_period = record;
+        wrong_half_period.payload[167..175].copy_from_slice(&1.0f64.to_le_bytes());
+        assert_eq!(parse_surface(&wrong_half_period), None);
     }
 
     #[test]
