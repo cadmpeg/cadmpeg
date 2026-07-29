@@ -4554,8 +4554,9 @@ pub(crate) fn circle_axis_from_carrier(
             ..
         } => {
             let offset = center.vector_from(*sphere_center);
-            let distance = offset.norm();
-            (distance > f64::EPSILON
+            let distance = offset.x.hypot(offset.y).hypot(offset.z);
+            (distance.is_finite()
+                && distance != 0.0
                 && close_squared(
                     distance * distance + circle_radius * circle_radius,
                     sphere_radius * sphere_radius,
@@ -6500,6 +6501,18 @@ mod circle_axis_tests {
             Some(z())
         );
         assert_eq!(circle_axis_from_carrier(origin(), 5.0, &sphere), None);
+
+        let tiny = 1e-200;
+        let unit_sphere = SurfaceGeometry::Sphere {
+            center: origin(),
+            axis: z(),
+            ref_direction: x(),
+            radius: 1.0,
+        };
+        assert_eq!(
+            circle_axis_from_carrier(Point3::new(tiny, 0.0, 0.0), 1.0, &unit_sphere),
+            Some(x())
+        );
 
         let torus = SurfaceGeometry::Torus {
             center: origin(),
