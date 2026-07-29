@@ -16472,7 +16472,12 @@ fn schema_feature_definition(
         return IrFeatureDefinition::DatumCoordinateSystemUnresolved;
     }
     if numbered_feature_name_has_family(kind, "Extrude") {
-        return unresolved_extrude_feature_definition(feature_id);
+        return extrude_feature_definition_with_profile(
+            scan,
+            ir,
+            feature_id,
+            BooleanOp::Unresolved,
+        );
     }
     if schema_class == 942
         && class_942_boundary_surface_entity_graph(
@@ -16786,13 +16791,6 @@ fn named_or_referenced_feature_definition(
                 named_feature_definition(scan, ir, feature_id, reference_name)
             })
     })
-}
-
-fn unresolved_extrude_feature_definition(feature_id: u32) -> IrFeatureDefinition {
-    extrude_feature_definition(
-        ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
-        BooleanOp::Unresolved,
-    )
 }
 
 fn extrude_feature_definition(profile: ProfileRef, op: BooleanOp) -> IrFeatureDefinition {

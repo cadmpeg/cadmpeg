@@ -1666,22 +1666,6 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
         })
     ));
     assert!(reference_named_feature_definition("Extrude 2").is_none());
-    assert!(matches!(
-        unresolved_extrude_feature_definition(42),
-        IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: Termination::Unresolved,
-                    ..
-                }
-            },
-            op: BooleanOp::Unresolved,
-            solid: None,
-            ..
-        }
-    ));
 }
 
 #[test]
