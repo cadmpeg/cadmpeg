@@ -3211,7 +3211,7 @@ fn non_boolean_feature_definition_with_parameters(
             thickness: None,
             side: None,
         },
-        "Pattern Feature" | "Pattern Geometry" | "Geometry Instance" => {
+        "Pattern Feature" | "Pattern Geometry" | "Geometry Instance" | "Multi Instance Output" => {
             FeatureDefinition::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::Unresolved { form: None },
@@ -4398,6 +4398,24 @@ mod tests {
                 }
             ));
         }
+    }
+
+    #[test]
+    fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
+        assert!(matches!(
+            super::non_boolean_feature_definition_with_parameters(
+                "Multi Instance Output",
+                &[],
+                None,
+                None,
+                super::HoleProjection::default(),
+                std::collections::BTreeMap::default(),
+            ),
+            cadmpeg_ir::features::FeatureDefinition::Pattern {
+                seeds,
+                pattern: cadmpeg_ir::features::PatternKind::Unresolved { form: None },
+            } if seeds.is_empty()
+        ));
     }
 
     #[test]
