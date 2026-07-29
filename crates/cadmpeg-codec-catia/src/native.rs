@@ -5734,7 +5734,7 @@ struct ConsolidatedSupportArenas<'a> {
 fn validate_consolidated_edge_runs(
     runs: &[CatiaConsolidatedEdgeRun],
     pcurves: &[CatiaConsolidatedPcurve],
-    supports: ConsolidatedSupportArenas<'_>,
+    supports: &ConsolidatedSupportArenas<'_>,
     nodes: &[CatiaConsolidatedEdgeNode],
     vertex_identities: &[CatiaConsolidatedVertexIdentity],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -7088,7 +7088,7 @@ impl CatiaNative {
         validate_consolidated_edge_runs(
             &consolidated_edge_runs,
             &consolidated_pcurves,
-            ConsolidatedSupportArenas {
+            &ConsolidatedSupportArenas {
                 circles: &consolidated_circles,
                 cones: &consolidated_cones,
                 cylinders: &consolidated_cylinders,
