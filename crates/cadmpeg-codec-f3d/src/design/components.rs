@@ -23,6 +23,24 @@ pub(crate) fn project_local_components(
     }
 
     for scope in scopes {
+        if let Some(paths) = scope
+            .assembly_alignment
+            .as_ref()
+            .and_then(|alignment| alignment.operand_paths.as_ref())
+        {
+            for path in paths {
+                let Some(root) = path
+                    .occurrence_guids
+                    .first()
+                    .and_then(|guid| native_by_guid.get(&guid.to_ascii_lowercase()))
+                    .copied()
+                    .flatten()
+                else {
+                    continue;
+                };
+                project_component(&mut components, &root.component_guid);
+            }
+        }
         if let Some(operation) = &scope.copy_paste_component_operation {
             project_occurrence(
                 &mut components,
@@ -97,23 +115,7 @@ fn project_occurrence(
 ) {
     let component_id = crate::ids::neutral_component_id(component_guid);
     let transform = neutral_transform(transform);
-    components
-        .entry(component_id.0.clone())
-        .or_insert_with(|| Component {
-            id: component_id.clone(),
-            kind: ComponentKind::Part,
-            source_name: None,
-            label: None,
-            description: None,
-            part_number: None,
-            bom_properties: BTreeMap::new(),
-            parent: None,
-            local_transform: identity_transform(),
-            resolved_transform: identity_transform(),
-            components: Vec::new(),
-            occurrences: Vec::new(),
-            native_ref: None,
-        });
+    project_component(components, component_guid);
     let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
     occurrences
         .entry(occurrence_id.0.clone())
@@ -142,6 +144,27 @@ fn project_occurrence(
                 .copied()
                 .flatten()
                 .map(|occurrence| occurrence.id.clone()),
+        });
+}
+
+fn project_component(components: &mut BTreeMap<String, Component>, component_guid: &str) {
+    let component_id = crate::ids::neutral_component_id(component_guid);
+    components
+        .entry(component_id.0.clone())
+        .or_insert_with(|| Component {
+            id: component_id,
+            kind: ComponentKind::Part,
+            source_name: None,
+            label: None,
+            description: None,
+            part_number: None,
+            bom_properties: BTreeMap::new(),
+            parent: None,
+            local_transform: identity_transform(),
+            resolved_transform: identity_transform(),
+            components: Vec::new(),
+            occurrences: Vec::new(),
+            native_ref: None,
         });
 }
 

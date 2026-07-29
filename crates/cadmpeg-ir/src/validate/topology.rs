@@ -2289,6 +2289,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     );
                 }
             }
+            FeatureDefinition::AssemblyJoint { joint } => {
+                if !ir
+                    .model
+                    .assembly_joints
+                    .iter()
+                    .any(|candidate| candidate.id == *joint)
+                {
+                    ref_error(findings, &feature.id.0, "assembly joint", &joint.0);
+                }
+            }
             FeatureDefinition::Form { cages } => {
                 if cages.is_empty() {
                     feature_geometry_error(findings, feature, "Form operation has no control cage");

@@ -982,10 +982,51 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     .contains_key(&(native_stream, frame.reference_record_index))
                         })
                 });
+                let operand_paths_link = match (
+                    alignment.operand_frames.as_ref(),
+                    alignment.operand_paths.as_ref(),
+                ) {
+                    (None, None) => true,
+                    (Some(frames), Some(paths)) => {
+                        paths[0].record_index.checked_add(5)
+                            == Some(frames[0].reference_record_index)
+                            && paths[1].record_index.checked_add(2)
+                                == Some(frames[0].reference_record_index)
+                            && paths[0].byte_offset < paths[1].byte_offset
+                            && paths.iter().all(|path| {
+                                !path.occurrence_guids.is_empty()
+                                    && path.occurrence_guids.len()
+                                        == path.occurrence_guid_offsets.len()
+                                    && path
+                                        .occurrence_guid_offsets
+                                        .windows(2)
+                                        .all(|offsets| offsets[0] < offsets[1])
+                                    && path
+                                        .occurrence_guid_offsets
+                                        .iter()
+                                        .all(|offset| *offset > path.byte_offset)
+                                    && path.occurrence_guids.first().is_some_and(|guid| {
+                                        native
+                                            .design_component_occurrences
+                                            .iter()
+                                            .filter(|occurrence| {
+                                                design_stream(&occurrence.id) == native_stream
+                                                    && occurrence
+                                                        .occurrence_guid
+                                                        .eq_ignore_ascii_case(guid)
+                                            })
+                                            .count()
+                                            == 1
+                                    })
+                            })
+                    }
+                    _ => false,
+                };
                 design::design_feature_family(&scope.kind)
                     == Some(design::DesignFeatureFamily::Assemble)
                     && values.iter().all(|value| value.is_finite())
                     && operand_frames_link
+                    && operand_paths_link
                     && scope
                         .reference_members
                         .ends_with(&alignment.owner_record_indices)

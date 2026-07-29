@@ -9,7 +9,7 @@ use crate::ids::{
     HistoricalFaceId, SubdId, VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
-use crate::products::OccurrenceId;
+use crate::products::{JointId, OccurrenceId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -374,6 +374,11 @@ pub enum FeatureDefinition {
     InsertComponent {
         /// Placed occurrence created by this history operation.
         occurrence: OccurrenceId,
+    },
+    /// Assembly constraint introduced into the product structure.
+    AssemblyJoint {
+        /// Joint created by this history operation.
+        joint: JointId,
     },
     /// Freeform modeling session represented by its final subdivision cages.
     Form {

@@ -284,6 +284,9 @@ pub struct AssemblyJoint {
     /// Angular offset in radians.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle: Option<f64>,
+    /// Connector-local translation offset in document length units.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation_offset: Option<[f64; 3]>,
     /// Primary linear offset in document length units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distance: Option<f64>,

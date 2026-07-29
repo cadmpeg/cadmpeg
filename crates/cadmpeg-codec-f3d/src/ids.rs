@@ -113,6 +113,19 @@ pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::product
     ))
 }
 
+/// Neutral assembly-joint key projected from one Design parameter scope.
+pub(crate) fn neutral_assembly_joint_id(
+    scope: &crate::records::DesignParameterScope,
+) -> cadmpeg_ir::products::JointId {
+    let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
+    cadmpeg_ir::products::JointId(format!(
+        "f3d:model:joint#{}:{}{}",
+        stream.len(),
+        stream,
+        scope.record_index
+    ))
+}
+
 /// The Design configuration record key for the archive entry `entry_name`.
 pub(crate) fn configuration_entry_id(entry_name: &str) -> String {
     format!("f3d:configuration:entry#{entry_name}")

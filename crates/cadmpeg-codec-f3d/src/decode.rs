@@ -1441,6 +1441,10 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             );
             ir.model.components.extend(components);
             ir.model.occurrences.extend(occurrences);
+            ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
+                &native.design_parameter_scopes,
+                &native.design_component_occurrences,
+            );
             report_design_projection_gaps(&mut report, &ir, &native);
             native.store(ir.native.namespace_mut("f3d"))?;
             let annotations = populate_annotations(
@@ -1797,6 +1801,10 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     );
     ir.model.components.extend(components);
     ir.model.occurrences.extend(occurrences);
+    ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
+        &native.design_parameter_scopes,
+        &native.design_component_occurrences,
+    );
     native.store(ir.native.namespace_mut("f3d"))?;
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
     let source_image = preserve_source_image(&scan, &mut ir);

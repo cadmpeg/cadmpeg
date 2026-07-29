@@ -11,7 +11,9 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use zip::write::SimpleFileOptions;
 
 use crate::nurbs::reader::LEN_TO_MM;
-use crate::writer::primitives::{f3d_native, validate_configuration_projection};
+use crate::writer::primitives::{
+    f3d_native, validate_assembly_projection, validate_configuration_projection,
+};
 use crate::{decode, F3dCodec};
 pub(crate) mod edits;
 pub(crate) mod geometry;
@@ -56,6 +58,9 @@ pub fn write_semantic(
 ) -> Result<(), CodecError> {
     if let Some(native) = f3d_native(target)? {
         validate_configuration_projection(target, &native)?;
+        validate_assembly_projection(target, Some(&native))?;
+    } else {
+        validate_assembly_projection(target, None)?;
     }
     let baseline = F3dCodec.decode(&mut Cursor::new(source_image), &DecodeOptions::default())?;
     let baseline_point_ids = baseline

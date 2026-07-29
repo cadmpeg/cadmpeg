@@ -9,7 +9,9 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use zip::write::SimpleFileOptions;
 
-use crate::writer::primitives::{f3d_native, validate_configuration_projection};
+use crate::writer::primitives::{
+    f3d_native, validate_assembly_projection, validate_configuration_projection,
+};
 pub(crate) mod attributes;
 pub(crate) mod native_bytes;
 pub(crate) mod native_geometry;
@@ -30,6 +32,7 @@ use smbh::encode_planar_triangle_smbh;
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
     let native = f3d_native(target)?;
+    validate_assembly_projection(target, native.as_ref())?;
     if !target.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),

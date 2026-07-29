@@ -14813,6 +14813,50 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             (80, 169, 180, [4.0, 5.0, 6.0]),
         ]
     );
+    let push_path = |bytes: &mut Vec<u8>, record_index: u32, guids: &[&str]| {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(b"329");
+        bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&(guids.len() as u32).to_le_bytes());
+        for guid in guids {
+            let encoded = guid.encode_utf16().collect::<Vec<_>>();
+            bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+            bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+        }
+    };
+    push_path(
+        &mut assembly_bytes,
+        65,
+        &[
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ],
+    );
+    push_path(
+        &mut assembly_bytes,
+        68,
+        &["33333333-3333-3333-3333-333333333333"],
+    );
+    assembly_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    assembly_bytes.extend_from_slice(b"396");
+    assembly_bytes.extend_from_slice(&70_u32.to_le_bytes());
+    let paths = exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)
+        .and_then(|alignment| alignment.operand_paths)
+        .expect("exact assembly occurrence paths");
+    assert_eq!(
+        paths.map(|path| (path.record_index, path.occurrence_guids)),
+        [
+            (
+                65,
+                vec![
+                    "11111111-1111-1111-1111-111111111111".into(),
+                    "22222222-2222-2222-2222-222222222222".into(),
+                ],
+            ),
+            (68, vec!["33333333-3333-3333-3333-333333333333".into()],),
+        ]
+    );
     assembly_bytes[25] = 0;
     assert!(
         exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)

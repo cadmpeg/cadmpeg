@@ -1130,6 +1130,22 @@ pub struct DesignAssemblyAlignment {
     /// Exact operand frames embedded by the assembly scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operand_frames: Option<[DesignAssemblyOperandFrame; 2]>,
+    /// Exact occurrence paths qualifying the two operand constructions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operand_paths: Option<[DesignAssemblyOperandPath; 2]>,
+}
+
+/// Counted occurrence path qualifying one assembly operand construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignAssemblyOperandPath {
+    /// Class-329 path record.
+    pub record_index: u32,
+    /// Byte offset of the class-329 indexed header.
+    pub byte_offset: u64,
+    /// Ordered occurrence GUIDs from the outermost occurrence to the selected occurrence.
+    pub occurrence_guids: Vec<String>,
+    /// Byte offsets of the UTF-16 GUID code units parallel to `occurrence_guids`.
+    pub occurrence_guid_offsets: Vec<u64>,
 }
 
 /// One operand frame embedded by an assembly-operation scope.

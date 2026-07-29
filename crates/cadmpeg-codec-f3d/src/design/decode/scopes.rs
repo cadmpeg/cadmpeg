@@ -9,9 +9,9 @@ use crate::design::decode::sketch::{
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignAssemblyAlignment, DesignAssemblyOperandFrame, DesignBaseFeatureConstruction,
-    DesignBaseFlangeOperation, DesignCircularPatternConstruction, DesignCoilExtent,
-    DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
+    DesignAssemblyAlignment, DesignAssemblyOperandFrame, DesignAssemblyOperandPath,
+    DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignCircularPatternConstruction,
+    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
     DesignComponentInsertConstruction, DesignComponentOccurrence,
     DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
     DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
@@ -189,8 +189,13 @@ pub(crate) fn exact_assembly_alignment(
             offset_z.evaluated_value_offset,
         ],
         operand_frames: None,
+        operand_paths: None,
     };
     alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
+    alignment.operand_paths = alignment
+        .operand_frames
+        .as_ref()
+        .and_then(|frames| exact_assembly_operand_paths(bytes, scope, frames));
     Some(alignment)
 }
 
@@ -464,6 +469,68 @@ fn exact_assembly_operand_frames(
     let first = frame(start + 28, start + 40)?;
     let second = frame(start + 168, start + 180)?;
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
+}
+
+fn exact_assembly_operand_paths(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    frames: &[DesignAssemblyOperandFrame; 2],
+) -> Option<[DesignAssemblyOperandPath; 2]> {
+    let search_start = usize::try_from(scope.paired_byte_offset).ok()?;
+    let construction_at = next_indexed_record_offset_with_index(
+        bytes,
+        search_start,
+        frames[0].reference_record_index,
+    )?;
+    let first_record_index = frames[0].reference_record_index.checked_sub(5)?;
+    let second_record_index = frames[0].reference_record_index.checked_sub(2)?;
+    let first_at = next_indexed_record_offset_with_index(bytes, search_start, first_record_index)?;
+    let second_at =
+        next_indexed_record_offset_with_index(bytes, first_at + 11, second_record_index)?;
+    if !(first_at < second_at && second_at < construction_at) {
+        return None;
+    }
+    let first = exact_assembly_operand_path(bytes, first_at, first_record_index, second_at)?;
+    let second =
+        exact_assembly_operand_path(bytes, second_at, second_record_index, construction_at)?;
+    Some([first, second])
+}
+
+fn exact_assembly_operand_path(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+    limit: usize,
+) -> Option<DesignAssemblyOperandPath> {
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 1..=8, u8::is_ascii_digit)?;
+    if class_tag != "329"
+        || read_u64(bytes, after_tag)? != u64::from(record_index)
+        || bytes.get(after_tag + 8..after_tag + 14)? != [0; 6]
+    {
+        return None;
+    }
+    let count = usize::try_from(u32_at(bytes, after_tag + 14)?).ok()?;
+    if !(1..=64).contains(&count) {
+        return None;
+    }
+    let mut position = after_tag + 18;
+    let mut occurrence_guids = Vec::with_capacity(count);
+    let mut occurrence_guid_offsets = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (guid, after_guid) = lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
+        if !crate::bytes::is_guid_relaxed(&guid) {
+            return None;
+        }
+        occurrence_guid_offsets.push(u64::try_from(position + 4).ok()?);
+        occurrence_guids.push(guid);
+        position = after_guid;
+    }
+    Some(DesignAssemblyOperandPath {
+        record_index,
+        byte_offset: u64::try_from(start).ok()?,
+        occurrence_guids,
+        occurrence_guid_offsets,
+    })
 }
 
 pub(crate) fn exact_rectangular_pattern_construction(

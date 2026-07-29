@@ -214,6 +214,7 @@ pub(crate) fn transfer_neutral(
                     bool_value("Detach2").unwrap_or(false),
                 ],
                 angle: scalar("Angle").map(f64::to_radians),
+                translation_offset: None,
                 distance: scalar("Distance"),
                 distance2: scalar("Distance2"),
                 angular_limits: enabled_limits(

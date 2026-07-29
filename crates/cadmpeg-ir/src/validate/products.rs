@@ -192,6 +192,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .chain(joint.offset_frames.iter().flatten().flatten())
             .copied()
             .chain(joint.angle)
+            .chain(joint.translation_offset.into_iter().flatten())
             .chain(joint.distance)
             .chain(joint.distance2)
             .chain(
