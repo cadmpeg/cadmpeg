@@ -4601,9 +4601,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &[],
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanOp::NewBody
-            },
+            mode: cadmpeg_ir::features::SweepMode::Unresolved,
             ..
         })
     ));

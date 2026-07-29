@@ -2891,8 +2891,12 @@ pub(crate) fn project_fixed_sweep(
         profile: Some(ProfileRef::Native(profile.id.clone())),
         sections: Vec::new(),
         path: Some(path),
-        mode: SweepMode::Solid {
-            op: fixed_boolean_operation(*operation),
+        mode: if *operation == DesignExtrudeOperation::NewBody {
+            SweepMode::Unresolved
+        } else {
+            SweepMode::Solid {
+                op: fixed_boolean_operation(*operation),
+            }
         },
         orientation: None,
         transition: None,

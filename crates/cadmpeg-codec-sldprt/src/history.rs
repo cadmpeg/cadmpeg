@@ -13511,6 +13511,7 @@ fn profile_source(
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
         ProfileRef::SketchProfiles { sketch, .. }
         | ProfileRef::SketchRegions { sketch, .. }
+        | ProfileRef::SketchEntities { sketch, .. }
         | ProfileRef::SketchSelection { sketch, .. } => sketches.get(sketch).cloned(),
         ProfileRef::SpatialSketchProfiles { .. }
         | ProfileRef::SpatialSketchSelection { .. }

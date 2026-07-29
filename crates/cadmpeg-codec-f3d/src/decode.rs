@@ -1141,6 +1141,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 &native.asm_histories,
                 &ir.model.bodies,
             );
+            crate::history::bind_sweep_result_modes(&mut ir.model.features, &ir.model.bodies);
             crate::history::bind_feature_body_selections(
                 &mut ir.model.features,
                 &native.design_parameter_scopes,
@@ -1540,6 +1541,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &native.asm_histories,
         &ir.model.bodies,
     );
+    crate::history::bind_sweep_result_modes(&mut ir.model.features, &ir.model.bodies);
     crate::history::bind_feature_body_selections(
         &mut ir.model.features,
         &native.design_parameter_scopes,

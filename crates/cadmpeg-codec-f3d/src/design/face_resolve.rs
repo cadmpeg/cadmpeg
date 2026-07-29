@@ -336,6 +336,7 @@ pub(crate) fn bind_extrude_start_planes(
             ProfileRef::Sketch(sketch)
             | ProfileRef::SketchProfiles { sketch, .. }
             | ProfileRef::SketchRegions { sketch, .. }
+            | ProfileRef::SketchEntities { sketch, .. }
             | ProfileRef::SketchSelection { sketch, .. } => sketch,
             ProfileRef::Native(_)
             | ProfileRef::Unresolved(_)

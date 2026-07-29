@@ -7262,6 +7262,7 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
         ProfileRef::Sketch(_) => false,
         ProfileRef::Feature(_) | ProfileRef::Generated { .. } => false,
         ProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
+        ProfileRef::SketchEntities { entities, .. } => selection_ids_are_incomplete(entities),
         ProfileRef::SketchProfiles { .. }
         | ProfileRef::SketchRegions { .. }
         | ProfileRef::SketchSelection { .. }

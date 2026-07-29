@@ -3277,7 +3277,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
         ProfileRef, SketchProfileRegion, Termination,
     };
-    use crate::sketches::{Sketch, SketchId};
+    use crate::sketches::{Sketch, SketchEntityId, SketchId};
 
     let mut ir = unit_cube();
     let sketch_id = SketchId("synthetic:test:sketch#selection".into());
@@ -3347,9 +3347,18 @@ fn sketch_profile_subselections_are_bounds_checked() {
             }],
         },
     ));
+    let selected_entity = SketchEntityId("synthetic:test:entity#missing".into());
+    ir.model.features.push(feature(
+        "repeated-profile-entity",
+        3,
+        ProfileRef::SketchEntities {
+            sketch: sketch_id.clone(),
+            entities: vec![selected_entity.clone(), selected_entity],
+        },
+    ));
     ir.model.features.push(feature(
         "empty-native-selection",
-        3,
+        4,
         ProfileRef::SketchSelection {
             sketch: sketch_id,
             selections: Vec::new(),
@@ -3369,6 +3378,10 @@ fn sketch_profile_subselections_are_bounds_checked() {
     assert!(findings.iter().any(|finding| {
         finding.message
             == "sketch regions have empty, repeated, invalid, or out-of-range boundaries"
+    }));
+    assert!(findings.iter().any(|finding| {
+        finding.message
+            == "sketch profile entities are empty, repeated, missing, or owned by another sketch"
     }));
 }
 

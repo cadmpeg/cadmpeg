@@ -598,6 +598,39 @@ pub(crate) fn bind_feature_outputs(
     }
 }
 
+pub(crate) fn bind_sweep_result_modes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    bodies: &[cadmpeg_ir::topology::Body],
+) {
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, SweepMode};
+    use cadmpeg_ir::topology::BodyKind;
+
+    let body_kinds = bodies
+        .iter()
+        .map(|body| (body.id.clone(), body.kind))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let FeatureDefinition::Sweep { mode, .. } = &mut feature.definition else {
+            continue;
+        };
+        if *mode != SweepMode::Unresolved || feature.outputs.is_empty() {
+            continue;
+        }
+        let output_kinds = feature
+            .outputs
+            .iter()
+            .map(|output| body_kinds.get(output).copied())
+            .collect::<Option<Vec<_>>>();
+        *mode = match output_kinds.as_deref() {
+            Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Sheet) => SweepMode::Surface,
+            Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Solid) => SweepMode::Solid {
+                op: BooleanOp::NewBody,
+            },
+            _ => SweepMode::Unresolved,
+        };
+    }
+}
+
 pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::DesignParameterScope],
@@ -4412,6 +4445,83 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SweepMode};
+        use cadmpeg_ir::ids::BodyId;
+        use cadmpeg_ir::topology::{Body, BodyKind};
+
+        let body = |id: &str, kind| Body {
+            id: BodyId(id.into()),
+            kind,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        let sweep = |id: &str, outputs| Feature {
+            id: FeatureId(id.into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs,
+            definition: FeatureDefinition::Sweep {
+                profile: None,
+                sections: Vec::new(),
+                path: None,
+                mode: SweepMode::Unresolved,
+                orientation: None,
+                transition: None,
+                transformation: None,
+                path_tangent: false,
+                linearize: false,
+                twist: None,
+                path_extent: None,
+                guide_rail: None,
+                taper: None,
+                scale: None,
+                allow_multi_profile_faces: None,
+            },
+            native_ref: None,
+        };
+        let bodies = [
+            body("sheet", BodyKind::Sheet),
+            body("solid", BodyKind::Solid),
+        ];
+        let mut features = [
+            sweep("sheet-sweep", vec![BodyId("sheet".into())]),
+            sweep("solid-sweep", vec![BodyId("solid".into())]),
+            sweep(
+                "mixed-sweep",
+                vec![BodyId("sheet".into()), BodyId("solid".into())],
+            ),
+            sweep("missing-sweep", vec![BodyId("missing".into())]),
+        ];
+
+        bind_sweep_result_modes(&mut features, &bodies);
+
+        let modes = features.map(|feature| match feature.definition {
+            FeatureDefinition::Sweep { mode, .. } => mode,
+            _ => unreachable!(),
+        });
+        assert_eq!(modes[0], SweepMode::Surface);
+        assert_eq!(
+            modes[1],
+            SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanOp::NewBody
+            }
+        );
+        assert_eq!(modes[2], SweepMode::Unresolved);
+        assert_eq!(modes[3], SweepMode::Unresolved);
+    }
 
     #[test]
     fn historical_brep_source_qualifies_state_local_candidates() {

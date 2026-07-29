@@ -8962,6 +8962,7 @@ pub(crate) fn bind_profile_revolution_axes(
             cadmpeg_ir::features::ProfileRef::Generated { .. }
             | cadmpeg_ir::features::ProfileRef::SketchProfiles { .. }
             | cadmpeg_ir::features::ProfileRef::SketchRegions { .. }
+            | cadmpeg_ir::features::ProfileRef::SketchEntities { .. }
             | cadmpeg_ir::features::ProfileRef::SketchSelection { .. }
             | cadmpeg_ir::features::ProfileRef::SpatialSketchProfiles { .. }
             | cadmpeg_ir::features::ProfileRef::SpatialSketchSelection { .. }

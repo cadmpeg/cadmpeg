@@ -2815,6 +2815,13 @@ pub enum ProfileRef {
         /// Connected regions in source selection order.
         regions: Vec<SketchProfileRegion>,
     },
+    /// Exact ordered sketch entities forming an open or closed profile.
+    SketchEntities {
+        /// Sketch containing every selected entity.
+        sketch: crate::sketches::SketchId,
+        /// Selected entities in source order.
+        entities: Vec<crate::sketches::SketchEntityId>,
+    },
     /// Source-native selection within a known neutral sketch.
     SketchSelection {
         /// Sketch containing the unresolved selected geometry.

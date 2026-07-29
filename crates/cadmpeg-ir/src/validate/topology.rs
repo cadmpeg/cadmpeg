@@ -4576,6 +4576,7 @@ fn check_feature_sketch_references(
                 ProfileRef::Sketch(sketch)
                 | ProfileRef::SketchProfiles { sketch, .. }
                 | ProfileRef::SketchRegions { sketch, .. }
+                | ProfileRef::SketchEntities { sketch, .. }
                 | ProfileRef::SketchSelection { sketch, .. } => sketch,
                 ProfileRef::Native(_)
                 | ProfileRef::Unresolved(_)
@@ -4674,6 +4675,23 @@ fn check_feature_sketch_references(
                             findings,
                             feature,
                             "sketch regions have empty, repeated, invalid, or out-of-range boundaries",
+                        );
+                    }
+                }
+                ProfileRef::SketchEntities { entities, .. } => {
+                    let unique = entities.iter().collect::<HashSet<_>>();
+                    if entities.is_empty()
+                        || unique.len() != entities.len()
+                        || entities.iter().any(|entity| {
+                            sketch_entity_owners
+                                .get(entity.0.as_str())
+                                .is_none_or(|owner| *owner != sketch.0.as_str())
+                        })
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "sketch profile entities are empty, repeated, missing, or owned by another sketch",
                         );
                     }
                 }
