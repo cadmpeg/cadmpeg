@@ -2687,6 +2687,55 @@ fn unique_parallel_round_supports_define_constant_radius() {
 }
 
 #[test]
+fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for (id, kind) in [
+        (11, crate::surface::SurfaceKind::Cylinder),
+        (12, crate::surface::SurfaceKind::TorusOrSphere),
+        (13, crate::surface::SurfaceKind::Cylinder),
+    ] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: 0,
+            kind,
+            feature_id: 5,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: id as usize,
+        });
+    }
+    let mut ir = CadIr::empty(Units::default());
+    for (id, radius) in [(11, 15.0), (13, 1.0)] {
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            },
+            source_object: None,
+        });
+    }
+
+    assert!(matches!(
+        schema_feature_definition(&scan, &ir, 5, 913, "Round"),
+        IrFeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(
+            groups.as_slice(),
+            [cadmpeg_ir::features::FilletGroup {
+                radius: RadiusSpec::Unresolved {
+                    form: Some(RadiusForm::Variable),
+                },
+                ..
+            }]
+        )
+    ));
+}
+
+#[test]
 fn opposite_reference_caps_select_one_round_envelope_axis() {
     let circle = |entity_id, axis, start, end| crate::reference::ReferenceCircle {
         entity_id,

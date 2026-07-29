@@ -15859,7 +15859,16 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         }
         return prototype_envelope_round_radius(scan, &generated_rows);
     }
-    if let Some(cylinder_radii) = round_placed_cylinder_radii(scan, ir, feature_id) {
+    let cylinder_radii = round_placed_cylinder_radii(scan, ir, feature_id);
+    if cylinder_radii.len() == cylinder_rows.len()
+        && cylinder_rows.len()
+            == scan
+                .surfaces
+                .rows
+                .iter()
+                .filter(|row| row.feature_id == feature_id)
+                .count()
+    {
         return unique_positive_length(&cylinder_radii);
     }
     let named_ids = agreed_feature_affected_ids(
@@ -15901,25 +15910,14 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
     (support_planes.len() == support_ids.len()).then(|| parallel_support_radius(support_planes))?
 }
 
-fn round_placed_cylinder_radii(
-    scan: &ContainerScan,
-    ir: &CadIr,
-    feature_id: u32,
-) -> Option<Vec<f64>> {
-    let generated_rows = scan
-        .surfaces
+fn round_placed_cylinder_radii(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<f64> {
+    scan.surfaces
         .rows
         .iter()
-        .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    (!generated_rows.is_empty()
-        && generated_rows
-            .iter()
-            .all(|row| row.kind == crate::surface::SurfaceKind::Cylinder))
-    .then_some(())?;
-    generated_rows
-        .iter()
-        .map(|row| {
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+        })
+        .filter_map(|row| {
             let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
             ir.model
                 .surfaces
@@ -16186,9 +16184,7 @@ fn schema_feature_definition(
     }
     if schema_class == 913 {
         let mut observed_radii = round_observed_radii(scan, feature_id);
-        if let Some(placed_radii) = round_placed_cylinder_radii(scan, ir, feature_id) {
-            observed_radii.extend(placed_radii);
-        }
+        observed_radii.extend(round_placed_cylinder_radii(scan, ir, feature_id));
         let radius = round_constant_radius(scan, ir, feature_id).map_or_else(
             || RadiusSpec::Unresolved {
                 form: differing_positive_lengths(&observed_radii).then_some(RadiusForm::Variable),
