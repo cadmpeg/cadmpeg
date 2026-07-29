@@ -101,6 +101,8 @@ pub enum B5Profile {
         point: [f64; 3],
         /// Unit direction of the line.
         direction: [f64; 3],
+        /// Complete native line parameter interval.
+        parameter_range: [f64; 2],
     },
     /// `b5 03 0f`: an arc with a positive radius.
     Arc {
@@ -113,7 +115,22 @@ pub enum B5Profile {
         direction_y: [f64; 3],
         /// Positive arc radius.
         radius: f64,
+        /// Complete native arc-length parameter interval.
+        parameter_range: [f64; 2],
     },
+}
+
+impl B5Profile {
+    pub(crate) fn parameter_range(&self) -> [f64; 2] {
+        match self {
+            Self::Line {
+                parameter_range, ..
+            }
+            | Self::Arc {
+                parameter_range, ..
+            } => *parameter_range,
+        }
+    }
 }
 
 /// A resolved `b5 03` surface node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
@@ -1705,19 +1722,45 @@ pub(crate) fn loop_chain_senses(
 }
 
 fn parse_profile(record: &B5Record) -> Option<B5Profile> {
+    (record.family == 0xb5).then_some(())?;
     match record.class {
-        0x0e => Some(B5Profile::Line {
-            point: point(&record.payload, 1)?,
-            direction: unit(point(&record.payload, 25)?)?,
-        }),
-        0x0f if record.payload.first() == Some(&0x80) => {
+        0x0e => {
+            (record.payload.len() == 73 && record.payload.first() == Some(&0x80)).then_some(())?;
+            let direction = point(&record.payload, 25)?;
+            let parameter_range = [scalar(&record.payload, 57)?, scalar(&record.payload, 65)?];
+            (direction_is_unit(direction)
+                && scalar(&record.payload, 49)? == 1.0
+                && parameter_range[0] < parameter_range[1])
+                .then_some(B5Profile::Line {
+                    point: point(&record.payload, 1)?,
+                    direction,
+                    parameter_range,
+                })
+        }
+        0x0f => {
+            (record.payload.len() == 113 && record.payload.first() == Some(&0x80)).then_some(())?;
+            let direction_x = point(&record.payload, 25)?;
+            let direction_y = point(&record.payload, 49)?;
             let radius = scalar(&record.payload, 73)?;
-            (radius > 0.0).then_some(B5Profile::Arc {
-                center: point(&record.payload, 1)?,
-                direction_x: unit(point(&record.payload, 25)?)?,
-                direction_y: unit(point(&record.payload, 49)?)?,
-                radius,
-            })
+            let parameter_range = [scalar(&record.payload, 81)?, scalar(&record.payload, 89)?];
+            let chart_origin = scalar(&record.payload, 105)?;
+            (radius > 0.0
+                && directions_are_unit_and_orthogonal(direction_x, direction_y)
+                && periodic_angular_range_is_valid(
+                    [parameter_range[0] / radius, parameter_range[1] / radius],
+                    [
+                        chart_origin / radius,
+                        chart_origin / radius + std::f64::consts::TAU,
+                    ],
+                )
+                && scalar(&record.payload, 97)? == 1.0)
+                .then_some(B5Profile::Arc {
+                    center: point(&record.payload, 1)?,
+                    direction_x,
+                    direction_y,
+                    radius,
+                    parameter_range,
+                })
         }
         _ => None,
     }
@@ -1811,21 +1854,17 @@ fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
     (left[0] - right[0]).powi(2) + (left[1] - right[1]).powi(2) + (left[2] - right[2]).powi(2)
 }
 
+fn direction_is_unit(direction: [f64; 3]) -> bool {
+    (distance_squared(direction, [0.0; 3]) - 1.0).abs() <= 1e-12
+}
+
 fn directions_are_unit_and_orthogonal(first: [f64; 3], second: [f64; 3]) -> bool {
-    let squared_length = |direction: [f64; 3]| {
-        direction
-            .iter()
-            .map(|component| component * component)
-            .sum::<f64>()
-    };
     let dot = first
         .iter()
         .zip(second)
         .map(|(left, right)| left * right)
         .sum::<f64>();
-    (squared_length(first) - 1.0).abs() <= 1e-12
-        && (squared_length(second) - 1.0).abs() <= 1e-12
-        && dot.abs() <= 1e-12
+    direction_is_unit(first) && direction_is_unit(second) && dot.abs() <= 1e-12
 }
 
 fn directions_form_right_handed_orthonormal_frame(
@@ -2687,18 +2726,28 @@ fn lift_pcurve_endpoints(
             profile_curve,
             axis_origin,
             axis_direction,
+            profile_range,
             angular_scale,
             ..
         } => {
             let profile = profiles.get(profile_curve)?;
+            (profile
+                .parameter_range()
+                .into_iter()
+                .zip(*profile_range)
+                .all(|(profile, surface)| profile.to_bits() == surface.to_bits()))
+            .then_some(())?;
             Some(endpoints.map(|[u, v]| {
                 let point = match profile {
-                    B5Profile::Line { point, direction } => add(*point, scale(*direction, u)),
+                    B5Profile::Line {
+                        point, direction, ..
+                    } => add(*point, scale(*direction, u)),
                     B5Profile::Arc {
                         center,
                         direction_x,
                         direction_y,
                         radius,
+                        ..
                     } => {
                         let angle = u / radius;
                         add(
@@ -4050,6 +4099,106 @@ mod tests {
         let mut wrong_half_period = record;
         wrong_half_period.payload[167..175].copy_from_slice(&1.0f64.to_le_bytes());
         assert_eq!(parse_surface(&wrong_half_period), None);
+    }
+
+    #[test]
+    fn line_profile_requires_its_complete_unit_metric_chart() {
+        let mut payload = vec![0; 73];
+        payload[0] = 0x80;
+        for (offset, values) in [(1, [1.0f64, 2.0, 3.0]), (25, [0.0, 0.0, 1.0])] {
+            for (index, value) in values.into_iter().enumerate() {
+                payload[offset + 8 * index..offset + 8 * index + 8]
+                    .copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        payload[49..57].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[57..65].copy_from_slice(&(-2.0f64).to_le_bytes());
+        payload[65..73].copy_from_slice(&4.0f64.to_le_bytes());
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x0e,
+            object_id: 7,
+            payload,
+        };
+        assert_eq!(
+            parse_profile(&record),
+            Some(B5Profile::Line {
+                point: [1.0, 2.0, 3.0],
+                direction: [0.0, 0.0, 1.0],
+                parameter_range: [-2.0, 4.0],
+            })
+        );
+
+        let mut nonunit = record.clone();
+        nonunit.payload[41..49].copy_from_slice(&2.0f64.to_le_bytes());
+        assert_eq!(parse_profile(&nonunit), None);
+        let mut wrong_metric = record.clone();
+        wrong_metric.payload[49..57].copy_from_slice(&2.0f64.to_le_bytes());
+        assert_eq!(parse_profile(&wrong_metric), None);
+        let mut unordered = record.clone();
+        unordered.payload[65..73].copy_from_slice(&(-3.0f64).to_le_bytes());
+        assert_eq!(parse_profile(&unordered), None);
+        let mut wrong_lead = record;
+        wrong_lead.payload[0] = 0x81;
+        assert_eq!(parse_profile(&wrong_lead), None);
+    }
+
+    #[test]
+    fn arc_profile_requires_its_complete_centered_periodic_chart() {
+        let mut payload = vec![0; 113];
+        payload[0] = 0x80;
+        for (offset, values) in [
+            (1, [1.0f64, 2.0, 3.0]),
+            (25, [1.0, 0.0, 0.0]),
+            (49, [0.0, 1.0, 0.0]),
+        ] {
+            for (index, value) in values.into_iter().enumerate() {
+                payload[offset + 8 * index..offset + 8 * index + 8]
+                    .copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        let radius = 2.0f64;
+        let parameter_range = [0.5 * radius, 1.5 * radius];
+        let chart_origin =
+            (parameter_range[0] + parameter_range[1]) * 0.5 - std::f64::consts::PI * radius;
+        payload[73..81].copy_from_slice(&radius.to_le_bytes());
+        payload[81..89].copy_from_slice(&parameter_range[0].to_le_bytes());
+        payload[89..97].copy_from_slice(&parameter_range[1].to_le_bytes());
+        payload[97..105].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[105..113].copy_from_slice(&chart_origin.to_le_bytes());
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x0f,
+            object_id: 8,
+            payload,
+        };
+        assert_eq!(
+            parse_profile(&record),
+            Some(B5Profile::Arc {
+                center: [1.0, 2.0, 3.0],
+                direction_x: [1.0, 0.0, 0.0],
+                direction_y: [0.0, 1.0, 0.0],
+                radius,
+                parameter_range,
+            })
+        );
+
+        let mut nonorthogonal = record.clone();
+        nonorthogonal.payload[49..57].copy_from_slice(&1.0f64.to_le_bytes());
+        assert_eq!(parse_profile(&nonorthogonal), None);
+        let mut overlong = record.clone();
+        overlong.payload[89..97].copy_from_slice(
+            &(parameter_range[0] + std::f64::consts::TAU * radius + 1.0).to_le_bytes(),
+        );
+        assert_eq!(parse_profile(&overlong), None);
+        let mut wrong_fixed = record.clone();
+        wrong_fixed.payload[97..105].copy_from_slice(&0.0f64.to_le_bytes());
+        assert_eq!(parse_profile(&wrong_fixed), None);
+        let mut wrong_origin = record;
+        wrong_origin.payload[105..113].copy_from_slice(&0.0f64.to_le_bytes());
+        assert_eq!(parse_profile(&wrong_origin), None);
     }
 
     #[test]

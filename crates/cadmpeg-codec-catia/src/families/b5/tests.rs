@@ -88,7 +88,8 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
         let payload = b5_linear_pcurve_payload(100, [offset, 0.0], [offset + 1.0, 0.0]);
         append_b5_record(&mut bytes, 0x21, id, &payload);
     }
-    let mut profile = vec![0; 49];
+    let mut profile = vec![0; 73];
+    profile[0] = 0x80;
     for (offset, value) in [
         (1usize, 1.0f64),
         (9, 0.0),
@@ -99,6 +100,9 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     ] {
         profile[offset..offset + 8].copy_from_slice(&le_f64(value));
     }
+    profile[49..57].copy_from_slice(&le_f64(1.0));
+    profile[57..65].copy_from_slice(&le_f64(-1.0));
+    profile[65..73].copy_from_slice(&le_f64(2.0));
     append_b5_record(&mut bytes, 0x0e, 110, &profile);
     let mut revolution = vec![0; 176];
     revolution[0] = 0x80;

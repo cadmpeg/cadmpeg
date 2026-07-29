@@ -204,8 +204,16 @@ pub(super) fn revolution_surface(
 }
 
 pub(super) fn profile_nurbs(profile: &B5Profile, interval: [f64; 2]) -> Option<NurbsCurve> {
+    (profile
+        .parameter_range()
+        .into_iter()
+        .zip(interval)
+        .all(|(profile, surface)| profile.to_bits() == surface.to_bits()))
+    .then_some(())?;
     match profile {
-        B5Profile::Line { point, direction } => Some(NurbsCurve {
+        B5Profile::Line {
+            point, direction, ..
+        } => Some(NurbsCurve {
             degree: 1,
             knots: vec![interval[0], interval[0], interval[1], interval[1]],
             control_points: interval
@@ -219,6 +227,7 @@ pub(super) fn profile_nurbs(profile: &B5Profile, interval: [f64; 2]) -> Option<N
             direction_x,
             direction_y,
             radius,
+            ..
         } => rational_arc(*center, *direction_x, *direction_y, *radius, interval),
     }
 }

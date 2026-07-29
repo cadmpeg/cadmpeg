@@ -1733,6 +1733,7 @@ mod tests {
         let profile = B5Profile::Line {
             point: [2.0, 0.0, 0.0],
             direction: [0.0, 0.0, 1.0],
+            parameter_range: [-1.0, 1.0],
         };
         let (surface, plan) = revolution_surface(
             Some(&profile),
@@ -1753,6 +1754,14 @@ mod tests {
         assert!(evaluated.x.abs() < 1e-12);
         assert!((evaluated.y - 2.0).abs() < 1e-12);
         assert!((evaluated.z - 0.5).abs() < 1e-12);
+        assert!(revolution_surface(
+            Some(&profile),
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            1.0,
+            [[-0.5, 1.0], [0.0, std::f64::consts::PI]],
+        )
+        .is_none());
     }
 
     #[test]

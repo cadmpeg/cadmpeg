@@ -119,8 +119,11 @@ current scores require those matrices and representative fixtures.
   Object-stream revolution surfaces require their complete reference-width
   dependent payload, retain the stored profile and angular intervals, and
   validate the right-handed frame, fixed controls, positive angular gauge, and
-  exact half-turn relation. Their exact NURBS cache uses the stored ranges
-  directly rather than deriving a patch from available pcurves.
+  exact half-turn relation. Their line and arc profiles require complete unit
+  frames, fixed metric controls, ordered intervals, and centered periodic arc
+  domains. A revolution transfers only when its profile interval equals the
+  referenced profile's complete interval. Its exact NURBS cache uses the stored
+  ranges directly rather than deriving a patch from available pcurves.
   Consolidated and object-stream tori retain independent active major- and
   minor-angle intervals and their centered full-turn chart domains.
   Object-stream tori additionally require the complete lead, right-handed
