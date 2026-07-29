@@ -29,13 +29,13 @@ use crate::design::decode::parameters::{
     parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::decode::scopes::{
-    exact_base_feature_construction, exact_circular_pattern_construction_with_owners,
-    exact_combine_operation, exact_direct_face_operation, exact_draft_operation,
-    exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters, exact_fixed_fillet_parameters,
-    exact_joint_origin_frame, exact_path_feature_construction,
-    exact_rectangular_pattern_construction, exact_scale_operation, exact_solid_primitive,
-    exact_surface_stitch_operation, exact_work_plane_frame, exact_work_point_position,
-    parse_parameter_scope,
+    exact_assembly_alignment, exact_base_feature_construction,
+    exact_circular_pattern_construction_with_owners, exact_combine_operation,
+    exact_direct_face_operation, exact_draft_operation, exact_fixed_chamfer_parameters,
+    exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_joint_origin_frame,
+    exact_path_feature_construction, exact_rectangular_pattern_construction, exact_scale_operation,
+    exact_solid_primitive, exact_surface_stitch_operation, exact_work_plane_frame,
+    exact_work_point_position, parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -5393,6 +5393,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -6204,6 +6205,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -6627,6 +6629,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -11340,6 +11343,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -11488,6 +11492,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -11683,6 +11688,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -12382,6 +12388,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -13199,6 +13206,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -13600,6 +13608,7 @@ fn parameter_expressions_project_feature_dependencies() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -13717,6 +13726,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -14369,6 +14379,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -14537,6 +14548,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -14651,6 +14663,17 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         exact_rectangular_pattern_construction(&scope, &excess_lane),
         None
     );
+
+    scope.kind = "Assemble".into();
+    scope.reference_members = vec![50, 51, 52, 53];
+    let alignment =
+        exact_assembly_alignment(&scope, &rectangular_owners).expect("exact assembly scalar lanes");
+    assert_eq!(alignment.angle, 3.0);
+    assert_eq!(alignment.offset, [1.0, 10.0, 0.0]);
+    assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
+    assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
+    scope.reference_members.push(99);
+    assert_eq!(exact_assembly_alignment(&scope, &rectangular_owners), None);
 }
 
 #[test]

@@ -147,6 +147,16 @@ pub fn project_parameter_design_with_edge_identities(
                     space: cadmpeg_ir::features::SketchSpace::Unresolved,
                     sketch: None,
                 },
+                Some(DesignFeatureFamily::Assemble) => FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: parameters
+                        .iter()
+                        .map(|(_, parameter)| {
+                            (parameter.name.clone(), parameter.expression.clone())
+                        })
+                        .collect(),
+                    properties: native_scope_properties(scope, native_scope),
+                },
                 Some(DesignFeatureFamily::Extrude) => project_extrude(
                     scope,
                     &parameters,

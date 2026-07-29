@@ -9371,6 +9371,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,

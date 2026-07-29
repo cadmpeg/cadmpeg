@@ -1078,6 +1078,19 @@ pub struct DesignRectangularPatternConstruction {
     pub value_offsets: [u64; 4],
 }
 
+/// Alignment scalars carried by an assembly-operation scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignAssemblyAlignment {
+    /// Signed alignment rotation in radians.
+    pub angle: f64,
+    /// Signed local-frame translation in source centimetres.
+    pub offset: [f64; 3],
+    /// Parameter-owner records for angle, X offset, Y offset, and Z offset.
+    pub owner_record_indices: [u32; 4],
+    /// Evaluated-value offsets parallel to `owner_record_indices`.
+    pub value_offsets: [u64; 4],
+}
+
 /// Exact construction carried by a Mirror scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignMirrorConstruction {
@@ -1330,6 +1343,9 @@ pub struct DesignParameterScope {
     /// Exact scalar lanes carried by a rectangular-pattern scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rectangular_pattern_construction: Option<DesignRectangularPatternConstruction>,
+    /// Exact alignment scalars carried by an `Assemble` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assembly_alignment: Option<DesignAssemblyAlignment>,
     /// Exact construction carried by a Mirror scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mirror_construction: Option<DesignMirrorConstruction>,

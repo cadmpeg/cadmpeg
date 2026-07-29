@@ -876,6 +876,51 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
             }
         };
+        let assembly_alignment_link = match &scope.assembly_alignment {
+            None => {
+                design::design_feature_family(&scope.kind)
+                    != Some(design::DesignFeatureFamily::Assemble)
+            }
+            Some(alignment) => {
+                let values = [
+                    alignment.angle,
+                    alignment.offset[0],
+                    alignment.offset[1],
+                    alignment.offset[2],
+                ];
+                design::design_feature_family(&scope.kind)
+                    == Some(design::DesignFeatureFamily::Assemble)
+                    && values.iter().all(|value| value.is_finite())
+                    && scope
+                        .reference_members
+                        .ends_with(&alignment.owner_record_indices)
+                    && native
+                        .design_parameter_owners
+                        .iter()
+                        .filter(|owner| {
+                            design_stream(&owner.id) == native_stream
+                                && owner.scope_record_index == scope.record_index
+                        })
+                        .count()
+                        == 4
+                    && alignment
+                        .owner_record_indices
+                        .iter()
+                        .zip(alignment.value_offsets)
+                        .zip(values)
+                        .enumerate()
+                        .all(|(ordinal, ((record_index, value_offset), value))| {
+                            native.design_parameter_owners.iter().any(|owner| {
+                                design_stream(&owner.id) == native_stream
+                                    && owner.record_index == *record_index
+                                    && owner.scope_record_index == scope.record_index
+                                    && owner.local_ordinal == ordinal as u32
+                                    && owner.evaluated_value == value
+                                    && owner.evaluated_value_offset == value_offset
+                            })
+                        })
+            }
+        };
         let draft_link = match (
             scope.draft_operation.as_ref(),
             design::design_feature_family(&scope.kind),
@@ -1062,6 +1107,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && hem_link
             && copy_paste_link
             && rectangular_pattern_link
+            && assembly_alignment_link
             && draft_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))

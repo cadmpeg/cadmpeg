@@ -9,17 +9,17 @@ use crate::design::decode::sketch::{
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignCircularPatternConstruction,
-    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
-    DesignCopyPasteBodiesOperation, DesignDirectFaceOperation, DesignDraftOperation,
-    DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
-    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
-    DesignMirrorConstruction, DesignMoveOperation, DesignObjectKind, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignRectangularPatternConstruction, DesignScaleOperation, DesignSolidPrimitive,
-    DesignSurfaceStitchOperation,
+    DesignAssemblyAlignment, DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
+    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
+    DesignCoilSectionPlacement, DesignCombineOperation, DesignCopyPasteBodiesOperation,
+    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeFlangeOperation, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
+    DesignExtrudePrologueReference, DesignExtrudeStart, DesignFixedChamferDistance,
+    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletGroup,
+    DesignFixedFilletParameters, DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation,
+    DesignObjectKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecordHeader, DesignRectangularPatternConstruction, DesignScaleOperation,
+    DesignSolidPrimitive, DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -117,6 +117,7 @@ pub fn decode_parameter_scopes(
                 exact_circular_pattern_construction_with_owners(bytes, &scope, parameter_owners);
             scope.rectangular_pattern_construction =
                 exact_rectangular_pattern_construction(&scope, parameter_owners);
+            scope.assembly_alignment = exact_assembly_alignment(&scope, parameter_owners);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             out.push(scope);
@@ -125,6 +126,59 @@ pub fn decode_parameter_scopes(
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+pub(crate) fn exact_assembly_alignment(
+    scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
+) -> Option<DesignAssemblyAlignment> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Assemble) {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let mut lanes = parameter_owners
+        .iter()
+        .filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+                && owner.evaluated_value.is_finite()
+        })
+        .collect::<Vec<_>>();
+    lanes.sort_by_key(|owner| owner.local_ordinal);
+    let [angle, offset_x, offset_y, offset_z] = lanes.as_slice() else {
+        return None;
+    };
+    if [angle, offset_x, offset_y, offset_z]
+        .iter()
+        .enumerate()
+        .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+    {
+        return None;
+    }
+    let owner_record_indices = [
+        angle.record_index,
+        offset_x.record_index,
+        offset_y.record_index,
+        offset_z.record_index,
+    ];
+    if !scope.reference_members.ends_with(&owner_record_indices) {
+        return None;
+    }
+    Some(DesignAssemblyAlignment {
+        angle: angle.evaluated_value,
+        offset: [
+            offset_x.evaluated_value,
+            offset_y.evaluated_value,
+            offset_z.evaluated_value,
+        ],
+        owner_record_indices,
+        value_offsets: [
+            angle.evaluated_value_offset,
+            offset_x.evaluated_value_offset,
+            offset_y.evaluated_value_offset,
+            offset_z.evaluated_value_offset,
+        ],
+    })
 }
 
 pub(crate) fn exact_rectangular_pattern_construction(
@@ -2016,6 +2070,7 @@ pub(crate) fn parse_parameter_scope(
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
+        assembly_alignment: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
