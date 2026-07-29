@@ -8011,188 +8011,26 @@ fn complete_prt_sketch_declaration_transfers_neutral_identity() {
 }
 
 #[test]
-fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternForm, PatternKind};
-
+fn pattern_schema_definition_does_not_create_a_feature_instance() {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0];
     let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
         &definition,
         &[0xfe],
         &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
     ));
-    let definition_value = native.entity_records[0]
+    native.entity_records[0]
         .definition_value
         .as_mut()
-        .expect("definition value");
-    definition_value.definition.value = "CircPattern".to_string();
-    native.object_graphs[0].records[0].class_entry =
-        Some(definition_value.definition.entry.clone());
-    native.object_graphs[0].records[0].class_name = Some("CircPattern".to_string());
-    native.object_graphs[0].records[0].owner = Some(crate::native::CatiaObjectOwner::Entity(
-        native.design_objects[0].owner_entity_id,
-    ));
-    native.object_graphs[0].records[0].storage_ref = None;
-    native.object_graphs[0].records[0].references.clear();
-
-    let mut second_entity = native.entity_records[0].clone();
-    second_entity.id.push_str("-second");
-    let mut second_field = native.object_graphs[0].records[0].clone();
-    second_field.id.push_str("-second");
-    second_entity.object_record = second_field.id.clone();
-    second_field.entity_record = Some(second_entity.id.clone());
-    second_field.byte_offset += 1;
-    native.design_objects[0]
-        .fields
-        .push(second_field.id.clone());
-    native.design_objects[0]
-        .definition_values
-        .push(second_entity.id.clone());
-    native.entity_records.push(second_entity);
-    native.object_graphs[0].records.push(second_field);
-
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
-    assert_eq!(
-        transfer.pattern_records,
-        native.design_objects[0].fields.iter().cloned().collect()
-    );
-    assert_eq!(transfer.consumed_records(), transfer.pattern_records);
-    assert_eq!(transfer.circular_pattern_feature_count, 1);
-    assert_eq!(transfer.linear_pattern_feature_count, 0);
-    assert_eq!(ir.model.features.len(), 1);
-    assert_eq!(
-        ir.model.features[0].source_tag.as_deref(),
-        Some("CircPattern")
-    );
-    assert_eq!(
-        ir.model.features[0].definition,
-        FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Circular),
-            },
-        }
-    );
-    assert_eq!(
-        ir.model.features[0].native_ref.as_deref(),
-        Some(native.design_objects[0].id.as_str())
-    );
-
-    let mut conflicting = native.clone();
-    conflicting.entity_records[1]
-        .definition_value
-        .as_mut()
-        .expect("second definition")
-        .definition
-        .value = "RectPattern".to_string();
-    let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
-    crate::design_feature::transfer_design_features(&mut rejected, &conflicting);
-    assert!(rejected.model.features.is_empty());
-
-    let mut foreign_fields = native.clone();
-    foreign_fields.object_graphs[0].records[0].class_name = Some("Element1".to_string());
-    foreign_fields.object_graphs[0].records[1].class_name = Some("MergeThin".to_string());
-    let mut transferred = CadIr::empty(cadmpeg_ir::units::Units::default());
-    crate::design_feature::transfer_design_features(&mut transferred, &foreign_fields);
-    assert!(matches!(
-        transferred.model.features.as_slice(),
-        [cadmpeg_ir::features::Feature {
-            definition: FeatureDefinition::Pattern {
-                pattern: PatternKind::Unresolved {
-                    form: Some(PatternForm::Circular)
-                },
-                ..
-            },
-            ..
-        }]
-    ));
-
-    let mut unsupported_definition = native.clone();
-    for entity in &mut unsupported_definition.entity_records {
-        entity
-            .definition_value
-            .as_mut()
-            .expect("complete definition")
-            .definition
-            .value = "AxisSystem".to_string();
-    }
-    for field in &mut unsupported_definition.object_graphs[0].records {
-        field.class_name = Some("AxisSystem".to_string());
-    }
-    let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
-    crate::design_feature::transfer_design_features(&mut rejected, &unsupported_definition);
-    assert!(rejected.model.features.is_empty());
-
-    let mut payload_bearing = native.clone();
-    payload_bearing.object_graphs[0].records[0].storage_ref = Some(1);
-    let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
-    crate::design_feature::transfer_design_features(&mut rejected, &payload_bearing);
-    assert!(rejected.model.features.is_empty());
-
-    let mut incomplete = native;
-    incomplete.design_objects[0].definition_values.pop();
-    let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
-    crate::design_feature::transfer_design_features(&mut rejected, &incomplete);
-    assert!(rejected.model.features.is_empty());
-
-    let mut misordered = conflicting;
-    misordered.entity_records[1]
-        .definition_value
-        .as_mut()
-        .expect("second definition")
+        .expect("definition value")
         .definition
         .value = "CircPattern".to_string();
-    misordered.design_objects[0].definition_values.swap(0, 1);
-    let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
-    crate::design_feature::transfer_design_features(&mut rejected, &misordered);
-    assert!(rejected.model.features.is_empty());
-}
-
-#[test]
-fn unanimous_complete_rectangular_pattern_definitions_transfer_feature_identity() {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternForm, PatternKind};
-
-    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0];
-    let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
-        &definition,
-        &[0xfe],
-        &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
-    ));
-    let definition_value = native.entity_records[0]
-        .definition_value
-        .as_mut()
-        .expect("definition value");
-    definition_value.definition.value = "RectPattern".to_string();
-    native.object_graphs[0].records[0].class_entry =
-        Some(definition_value.definition.entry.clone());
-    native.object_graphs[0].records[0].class_name = Some("RectPattern".to_string());
-    native.object_graphs[0].records[0].owner = Some(crate::native::CatiaObjectOwner::Entity(
-        native.design_objects[0].owner_entity_id,
-    ));
-    native.object_graphs[0].records[0].storage_ref = None;
-    native.object_graphs[0].records[0].references.clear();
+    native.object_graphs[0].records[0].class_name = Some("Element1".to_string());
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
-    assert_eq!(
-        transfer.pattern_records,
-        native.design_objects[0].fields.iter().cloned().collect()
-    );
-    assert_eq!(
-        ir.model.features[0].definition,
-        FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Linear),
-            },
-        }
-    );
-    assert_eq!(
-        ir.model.features[0].source_tag.as_deref(),
-        Some("RectPattern")
-    );
-    assert_eq!(transfer.circular_pattern_feature_count, 0);
-    assert_eq!(transfer.linear_pattern_feature_count, 1);
+    assert!(ir.model.features.is_empty());
+    assert!(transfer.consumed_records().is_empty());
+    assert!(transfer.features_by_design_object.is_empty());
 }
 
 #[test]
@@ -8878,18 +8716,6 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
         decoded.report.coverage["transferred_sketch_placement_record_count"],
         0
     );
-    assert_eq!(
-        decoded.report.coverage["transferred_pattern_declaration_record_count"],
-        0
-    );
-    assert_eq!(
-        decoded.report.coverage["transferred_circular_pattern_feature_count"],
-        0
-    );
-    assert_eq!(
-        decoded.report.coverage["transferred_linear_pattern_feature_count"],
-        0
-    );
     assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 1);
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
@@ -8899,11 +8725,6 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
             && loss
                 .message
                 .contains("0 exact sketch placement field record(s)")
-            && loss
-                .message
-                .contains("0 exact pattern declaration field record(s)")
-            && loss.message.contains("0 circular pattern feature(s)")
-            && loss.message.contains("0 linear pattern feature(s)")
             && loss.message.contains("1 field record(s)")
     }));
 }

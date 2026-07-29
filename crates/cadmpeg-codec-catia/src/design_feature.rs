@@ -5,13 +5,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, PatternForm, PatternKind,
-    PrincipalPlane, SketchSpace,
+    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, PrincipalPlane, SketchSpace,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
-use crate::native::{CatiaDesignObject, CatiaEntityRecord, CatiaNative, CatiaObjectRecord};
+use crate::native::{CatiaDesignObject, CatiaNative, CatiaObjectRecord};
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -19,9 +18,6 @@ pub(crate) struct DesignFeatureTransfer {
     pub(crate) declaration_records: HashSet<String>,
     pub(crate) placement_records: HashSet<String>,
     pub(crate) principal_plane_records: HashSet<String>,
-    pub(crate) pattern_records: HashSet<String>,
-    pub(crate) circular_pattern_feature_count: usize,
-    pub(crate) linear_pattern_feature_count: usize,
     pub(crate) features_by_design_object: HashMap<String, FeatureId>,
 }
 
@@ -30,7 +26,6 @@ impl DesignFeatureTransfer {
         self.declaration_records
             .union(&self.placement_records)
             .chain(&self.principal_plane_records)
-            .chain(&self.pattern_records)
             .cloned()
             .collect()
     }
@@ -47,15 +42,10 @@ pub(crate) fn transfer_design_features(
         .flat_map(|graph| &graph.records)
         .map(|record| (record.id.as_str(), record))
         .collect::<HashMap<_, _>>();
-    let entities = native
-        .entity_records
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<HashMap<_, _>>();
     let candidates = native
         .design_objects
         .iter()
-        .filter_map(|object| design_feature_candidate(object, &records, &entities))
+        .filter_map(|object| design_feature_candidate(object, &records))
         .collect::<Vec<_>>();
     let sketch_feature_ids = candidates
         .iter()
@@ -175,38 +165,6 @@ pub(crate) fn transfer_design_features(
                             .into_iter()
                             .map(|declaration| declaration.id.clone()),
                     );
-                }
-            }
-            DesignFeatureDefinition::Pattern {
-                declarations,
-                definition_name,
-                form,
-            } => {
-                ir.model.features.push(Feature {
-                    id: feature_id.clone(),
-                    ordinal: ir.model.features.len() as u64,
-                    name: None,
-                    suppressed: None,
-                    parent: None,
-                    dependencies: Vec::new(),
-                    source_properties: BTreeMap::new(),
-                    source_tag: Some(definition_name.to_string()),
-                    source_text: None,
-                    source_content: Vec::new(),
-                    outputs: Vec::new(),
-                    definition: FeatureDefinition::Pattern {
-                        seeds: Vec::new(),
-                        pattern: PatternKind::Unresolved { form: Some(form) },
-                    },
-                    native_ref: Some(object.id.clone()),
-                });
-                transfer
-                    .pattern_records
-                    .extend(declarations.into_iter().map(|record| record.id.clone()));
-                match form {
-                    PatternForm::Circular => transfer.circular_pattern_feature_count += 1,
-                    PatternForm::Linear => transfer.linear_pattern_feature_count += 1,
-                    _ => unreachable!("only admitted CATIA pattern forms reach transfer"),
                 }
             }
         }
@@ -395,71 +353,13 @@ enum DesignFeatureDefinition<'a> {
         declarations: Vec<&'a CatiaObjectRecord>,
         declaration_class: &'a str,
     },
-    Pattern {
-        declarations: Vec<&'a CatiaObjectRecord>,
-        definition_name: &'a str,
-        form: PatternForm,
-    },
 }
 
 fn design_feature_candidate<'a>(
     object: &'a CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
-    entities: &HashMap<&str, &'a CatiaEntityRecord>,
 ) -> Option<DesignFeatureCandidate<'a>> {
-    principal_plane_candidate(object, records)
-        .or_else(|| sketch_candidate(object, records))
-        .or_else(|| pattern_candidate(object, records, entities))
-}
-
-fn pattern_candidate<'a>(
-    object: &'a CatiaDesignObject,
-    records: &HashMap<&str, &'a CatiaObjectRecord>,
-    entities: &HashMap<&str, &'a CatiaEntityRecord>,
-) -> Option<DesignFeatureCandidate<'a>> {
-    if object.fields.is_empty() || object.definition_values.len() != object.fields.len() {
-        return None;
-    }
-    let fields = object
-        .fields
-        .iter()
-        .map(|field| {
-            let record = records.get(field.as_str()).copied()?;
-            complete_empty_declaration(record, &object.id, object.owner_entity_id).then_some(())?;
-            Some((record, record.entity_record.as_deref()?))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    fields
-        .iter()
-        .zip(&object.definition_values)
-        .all(|((_, entity), definition)| *entity == definition)
-        .then_some(())?;
-    let definitions = fields
-        .iter()
-        .map(|(_, entity_id)| {
-            let entity = *entities.get(*entity_id)?;
-            let definition = &entity.definition_value.as_ref()?.definition;
-            Some((definition.entry.as_str(), definition.value.as_str()))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let &(entry, name) = definitions.first()?;
-    definitions
-        .iter()
-        .all(|candidate| *candidate == (entry, name))
-        .then_some(())?;
-    let form = match name {
-        "CircPattern" => PatternForm::Circular,
-        "RectPattern" => PatternForm::Linear,
-        _ => return None,
-    };
-    Some(DesignFeatureCandidate {
-        object,
-        definition: DesignFeatureDefinition::Pattern {
-            declarations: fields.into_iter().map(|(record, _)| record).collect(),
-            definition_name: name,
-            form,
-        },
-    })
+    principal_plane_candidate(object, records).or_else(|| sketch_candidate(object, records))
 }
 
 fn principal_plane_candidate<'a>(
