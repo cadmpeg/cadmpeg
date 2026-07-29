@@ -878,10 +878,10 @@ pub fn model_curve_point_by_id(
 
 /// Invert a model curve near a caller-selected branch parameter.
 ///
-/// Charted tolerant intersections use an exact NURBS isocurve from any support
-/// whose chart fixes one surface parameter. The seed selects between repeated
-/// model-space points. The returned parameter is forward-validated against the
-/// complete two-support construction.
+/// Charted tolerant intersections use an exact affine line on planar supports
+/// or an exact NURBS isocurve from a chart that fixes one surface parameter.
+/// The seed selects between repeated model-space points. The returned parameter
+/// is forward-validated against the complete two-support construction.
 pub fn model_curve_parameter_near_point(
     ir: &CadIr,
     curve_id: &crate::ids::CurveId,
@@ -924,30 +924,51 @@ pub fn model_curve_parameter_near_point(
         else {
             continue;
         };
-        let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
-            continue;
-        };
         let PcurveGeometry::Line { origin, direction } = pcurve else {
             continue;
         };
-        let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
-            if direction.u == 0.0 && direction.v != 0.0 {
-                (SurfaceParameterAxis::U, origin.u, origin.v, direction.v)
-            } else if direction.v == 0.0 && direction.u != 0.0 {
-                (SurfaceParameterAxis::V, origin.v, origin.u, direction.u)
-            } else {
-                continue;
-            };
-        let Some(isocurve) = nurbs_surface_isocurve(surface, fixed_axis, fixed_parameter) else {
+        let parameter = match &surface.geometry {
+            SurfaceGeometry::Plane { .. } => {
+                let Some(base) = model_surface_point_by_id(ir, support_id, origin.u, origin.v)
+                else {
+                    continue;
+                };
+                let Some(next) = model_surface_point_by_id(
+                    ir,
+                    support_id,
+                    origin.u + direction.u,
+                    origin.v + direction.v,
+                ) else {
+                    continue;
+                };
+                let tangent = Vector3::new(next.x - base.x, next.y - base.y, next.z - base.z);
+                let offset = Vector3::new(point.x - base.x, point.y - base.y, point.z - base.z);
+                let denominator = tangent.dot(tangent);
+                (denominator.is_finite() && denominator > 0.0)
+                    .then(|| offset.dot(tangent) / denominator)
+            }
+            SurfaceGeometry::Nurbs(surface) => {
+                let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
+                    if direction.u == 0.0 && direction.v != 0.0 {
+                        (SurfaceParameterAxis::U, origin.u, origin.v, direction.v)
+                    } else if direction.v == 0.0 && direction.u != 0.0 {
+                        (SurfaceParameterAxis::V, origin.v, origin.u, direction.u)
+                    } else {
+                        continue;
+                    };
+                let Some(isocurve) = nurbs_surface_isocurve(surface, fixed_axis, fixed_parameter)
+                else {
+                    continue;
+                };
+                let isocurve_seed = varying_origin + varying_scale * seed;
+                nurbs_curve_parameter_near_point(&isocurve, point, *tolerance, isocurve_seed)
+                    .map(|parameter| (parameter - varying_origin) / varying_scale)
+            }
+            _ => continue,
+        };
+        let Some(parameter) = parameter else {
             continue;
         };
-        let isocurve_seed = varying_origin + varying_scale * seed;
-        let Some(isocurve_parameter) =
-            nurbs_curve_parameter_near_point(&isocurve, point, *tolerance, isocurve_seed)
-        else {
-            continue;
-        };
-        let parameter = (isocurve_parameter - varying_origin) / varying_scale;
         if parameter < range[0] || parameter > range[1] {
             continue;
         }

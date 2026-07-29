@@ -5955,7 +5955,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     });
 
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::complete_isoparametric_intersection_pcurves(&mut ir, &mut annotations);
+    crate::decode::complete_exact_boundary_intersection_pcurves(&mut ir, &mut annotations);
 
     let ProceduralCurveDefinition::TolerantIntersection {
         supports,
@@ -10839,6 +10839,59 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .iter()
         .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
         .all(|edge| edge.param_range.is_none()));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 21, 13);
+    for offset in [23, 25, 27] {
+        put_ref(&mut stream, intersection + offset, 1);
+    }
+    let second_support_source = two_support_charted_intersection_curve_stream();
+    let second_support = second_support_source
+        .windows(4)
+        .position(|window| window == [0, 50, 0, 13])
+        .expect("second plane");
+    stream.extend_from_slice(&second_support_source[second_support..second_support + 91]);
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let procedural = &result.ir.model.procedural_curves[0];
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        parameterization: Some(parameterization),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("charted tolerant intersection");
+    };
+    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
+    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let point =
+            cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
+                .expect("exact plane intersection evaluates");
+        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
+            &result.ir,
+            &procedural.curve,
+            point,
+            parameter,
+        )
+        .expect("exact plane intersection inverts");
+        assert!((inverse - parameter).abs() < 1.0e-10);
+    }
+    let edge = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+        .expect("carrying edge");
+    assert_eq!(edge.param_range, Some([0.0, 1.0]));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 

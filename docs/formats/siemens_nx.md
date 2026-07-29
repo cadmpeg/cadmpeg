@@ -920,6 +920,14 @@ charts are established. Missing, repeated, or equal supports, multiple carrying
 edges, unresolved endpoint positions, and absent or invalid EDGE tolerance do
 not establish this bounded relation.
 
+For a planar support, inverse mapping of the two distinct EDGE endpoints defines
+one affine line pcurve over the neutral interval `[0,1]`. Two planar charts
+establish the bounded intersection parameterization when their model-space
+lines coincide throughout that interval within the EDGE tolerance. Forward
+evaluation requires both support points to agree. Inverse evaluation projects
+onto the exact model-space line and accepts the parameter only after the
+two-support forward check.
+
 | Ref | Role                                                                                       |
 | --- | ------------------------------------------------------------------------------------------ |
 | 0/1 | primary support surface + type-59 second-support bridge (order set by the `0x00cc` marker) |

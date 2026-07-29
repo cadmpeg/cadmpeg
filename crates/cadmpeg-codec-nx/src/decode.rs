@@ -5304,7 +5304,7 @@ fn emit_topology(
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
     complete_intersection_supports_from_edge_incidence(ir);
     complete_intersection_pcurves_from_coedge_incidence(ir);
-    complete_isoparametric_intersection_pcurves(ir, annotations);
+    complete_exact_boundary_intersection_pcurves(ir, annotations);
     complete_intersection_pcurves_from_opposite_charts(ir);
 
     let owned_edges: BTreeSet<_> = ir
@@ -5574,7 +5574,7 @@ pub(crate) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
     }
 }
 
-pub(crate) fn complete_isoparametric_intersection_pcurves(
+pub(crate) fn complete_exact_boundary_intersection_pcurves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
@@ -5644,9 +5644,8 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(
                 _ => return None,
             };
             let [first_surface, second_surface] = supports;
-            let candidates = [first_surface, second_surface].map(|surface| {
-                isoparametric_boundary_pcurve(ir, surface, endpoints, range, tolerance)
-            });
+            let candidates = [first_surface, second_surface]
+                .map(|surface| exact_boundary_pcurve(ir, surface, endpoints, range, tolerance));
             let pcurves = match candidates {
                 [Some(first), Some(second)] => coincident_pcurve_pair(
                     ir,
@@ -5752,7 +5751,7 @@ fn curve_is_cache_backed(ir: &CadIr, curve: &CurveId) -> bool {
         .is_some_and(|carrier| !matches!(&carrier.geometry, CurveGeometry::Procedural { .. }))
 }
 
-fn isoparametric_boundary_pcurve(
+fn exact_boundary_pcurve(
     ir: &CadIr,
     surface: &SurfaceId,
     endpoints: [Point3; 2],
@@ -5765,6 +5764,30 @@ fn isoparametric_boundary_pcurve(
         .surfaces
         .iter()
         .find(|candidate| &candidate.id == surface)?;
+    if matches!(&carrier.geometry, SurfaceGeometry::Plane { .. }) {
+        let [first, second] =
+            endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
+        let [first, second] = [first?, second?];
+        for (endpoint, parameter) in endpoints.into_iter().zip([first, second]) {
+            let mapped = decoded_surface_point(ir, surface, parameter.u, parameter.v)?;
+            if point_distance(mapped, endpoint) > tolerance {
+                return None;
+            }
+        }
+        let parameter_span = range[1] - range[0];
+        let direction = Point2::new(
+            (second.u - first.u) / parameter_span,
+            (second.v - first.v) / parameter_span,
+        );
+        (direction.u != 0.0 || direction.v != 0.0).then_some(())?;
+        return Some(PcurveGeometry::Line {
+            origin: Point2::new(
+                first.u - direction.u * range[0],
+                first.v - direction.v * range[0],
+            ),
+            direction,
+        });
+    }
     let SurfaceGeometry::Nurbs(nurbs) = &carrier.geometry else {
         return None;
     };
