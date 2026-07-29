@@ -15652,6 +15652,9 @@ fn schema_feature_definition(
         let stepped_dimensions = (stepped_form == Some(HoleForm::Counterbore))
             .then(|| counterbore_dimensions(scan, ir, feature_id))
             .flatten();
+        let stepped_axis = (stepped_form == Some(HoleForm::Counterbore))
+            .then(|| counterbore_axis_placement(scan, ir, feature_id))
+            .flatten();
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -15713,7 +15716,7 @@ fn schema_feature_definition(
             face,
             position,
             direction,
-            placements: Vec::new(),
+            placements: stepped_axis.into_iter().collect(),
             kind: match (simple_form, stepped_form, stepped_dimensions) {
                 (true, None, None) => HoleKind::Simple,
                 (false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
@@ -16861,6 +16864,30 @@ fn counterbore_patch_geometries(
     feature_id: u32,
 ) -> Option<Vec<(u32, SurfaceGeometry)>> {
     let (bore_diameter, counterbore_diameter, _) = counterbore_dimensions(scan, ir, feature_id)?;
+    let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
+    let existing_geometries = ir
+        .model
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            let id = surface
+                .id
+                .0
+                .strip_prefix("creo:visibgeom:surface#")?
+                .parse::<u32>()
+                .ok()?;
+            Some((id, surface.geometry.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    counterbore_source_patch_geometries(
+        &cylinder_sources,
+        &existing_geometries,
+        bore_diameter,
+        counterbore_diameter,
+    )
+}
+
+fn counterbore_cylinder_sources(scan: &ContainerScan, feature_id: u32) -> Option<Vec<Vec<u32>>> {
     let tables = scan
         .features
         .entity_tables
@@ -16884,11 +16911,22 @@ fn counterbore_patch_geometries(
                 .push(entry.entity_id);
         }
     }
-    let cylinder_sources = cylinders_by_source
-        .values()
-        .filter(|ids| ids.len() == 2)
-        .cloned()
-        .collect::<Vec<_>>();
+    Some(
+        cylinders_by_source
+            .values()
+            .filter(|ids| ids.len() == 2)
+            .cloned()
+            .collect(),
+    )
+}
+
+fn counterbore_axis_placement(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    let (_, counterbore_diameter, _) = counterbore_dimensions(scan, ir, feature_id)?;
+    let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
     let existing_geometries = ir
         .model
         .surfaces
@@ -16903,12 +16941,34 @@ fn counterbore_patch_geometries(
             Some((id, surface.geometry.clone()))
         })
         .collect::<BTreeMap<_, _>>();
-    counterbore_source_patch_geometries(
+    counterbore_axis_placement_from_sources(
         &cylinder_sources,
         &existing_geometries,
-        bore_diameter,
         counterbore_diameter,
     )
+}
+
+fn counterbore_axis_placement_from_sources(
+    cylinder_sources: &[Vec<u32>],
+    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    counterbore_diameter: f64,
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    let carriers = cylinder_sources
+        .iter()
+        .filter_map(|ids| {
+            complete_cylinder_source_carrier(ids, existing_geometries, 0.5 * counterbore_diameter)
+        })
+        .collect::<Vec<_>>();
+    let [carrier] = carriers.as_slice() else {
+        return None;
+    };
+    let SurfaceGeometry::Cylinder { origin, axis, .. } = carrier else {
+        unreachable!("cylinder carrier helper returns a cylinder")
+    };
+    Some(cadmpeg_ir::features::HolePlacement::Axis {
+        origin: *origin,
+        axis: *axis,
+    })
 }
 
 fn counterbore_source_patch_geometries(
@@ -16921,26 +16981,14 @@ fn counterbore_source_patch_geometries(
         return None;
     };
     let counterbore_radius = 0.5 * counterbore_diameter;
-    let source_carrier = |ids: &[u32]| {
-        let carriers = ids
-            .iter()
-            .filter_map(|id| existing_geometries.get(id))
-            .filter(|geometry| {
-                matches!(geometry, SurfaceGeometry::Cylinder { radius, .. } if (*radius - counterbore_radius).abs() <= 1e-9)
-            })
-            .collect::<Vec<_>>();
-        let first = (*carriers.first()?).clone();
-        carriers
-            .iter()
-            .all(|candidate| **candidate == first)
-            .then_some(first)
+    let (counterbore_source, bore_source, carrier) = match (
+        observed_cylinder_source_carrier(first_source, existing_geometries, counterbore_radius),
+        observed_cylinder_source_carrier(second_source, existing_geometries, counterbore_radius),
+    ) {
+        (Some(carrier), None) => (first_source, second_source, carrier),
+        (None, Some(carrier)) => (second_source, first_source, carrier),
+        _ => return None,
     };
-    let (counterbore_source, bore_source, carrier) =
-        match (source_carrier(first_source), source_carrier(second_source)) {
-            (Some(carrier), None) => (first_source, second_source, carrier),
-            (None, Some(carrier)) => (second_source, first_source, carrier),
-            _ => return None,
-        };
     let SurfaceGeometry::Cylinder {
         origin,
         axis,
@@ -16967,6 +17015,42 @@ fn counterbore_source_patch_geometries(
             )
             .collect(),
     )
+}
+
+fn complete_cylinder_source_carrier(
+    ids: &[u32],
+    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    radius: f64,
+) -> Option<SurfaceGeometry> {
+    let carriers = ids
+        .iter()
+        .map(|id| existing_geometries.get(id))
+        .collect::<Option<Vec<_>>>()?;
+    let first = (*carriers.first()?).clone();
+    (matches!(&first, SurfaceGeometry::Cylinder { radius: candidate, .. }
+        if (*candidate - radius).abs() <= 1e-9)
+        && carriers.iter().all(|candidate| **candidate == first))
+    .then_some(first)
+}
+
+fn observed_cylinder_source_carrier(
+    ids: &[u32],
+    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    radius: f64,
+) -> Option<SurfaceGeometry> {
+    let carriers = ids
+        .iter()
+        .filter_map(|id| existing_geometries.get(id))
+        .filter(|geometry| {
+            matches!(geometry, SurfaceGeometry::Cylinder { radius: candidate, .. }
+                if (*candidate - radius).abs() <= 1e-9)
+        })
+        .collect::<Vec<_>>();
+    let first = (*carriers.first()?).clone();
+    carriers
+        .iter()
+        .all(|candidate| **candidate == first)
+        .then_some(first)
 }
 
 fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {

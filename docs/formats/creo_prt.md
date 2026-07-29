@@ -2270,7 +2270,9 @@ a resolved counterbore entry; otherwise the identified counterbore form remains
 unresolved. The two source-entity cylinder pairs are coaxial. The pair whose
 materialized carrier radius equals ID `3` uses the counterbore cylinder; the
 other pair uses the same origin, axis, and reference direction with radius ID
-`0`. This carrier derivation does not assign an axial trim or hole direction.
+`0`. When both patches of the ID-3 cylinder have the same complete carrier,
+that carrier supplies the hole's unoriented axis placement. This carrier
+derivation does not assign an axial trim, entry position, or hole direction.
 
 A cylinder patch may end with two scalar coordinate pairs separated by
 `00 0c 98`, followed by orientation scalar `-1`. The pairs are opposite

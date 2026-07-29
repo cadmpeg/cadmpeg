@@ -1005,9 +1005,33 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
                     && *axis == Vector3::new(0.0, 0.0, 1.0)
                     && (*radius - 0.098).abs() < 1e-12)
         }));
+    assert_eq!(
+        counterbore_axis_placement_from_sources(&sources, &existing, 0.625),
+        Some(cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        })
+    );
+    let mut conflicting_patch = existing.clone();
+    let SurfaceGeometry::Cylinder { radius, .. } =
+        conflicting_patch.get_mut(&31).expect("second patch")
+    else {
+        unreachable!()
+    };
+    *radius = 0.25;
+    assert_eq!(
+        counterbore_axis_placement_from_sources(&sources, &conflicting_patch, 0.625),
+        None
+    );
     existing.insert(10, carrier);
     assert_eq!(
         counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625),
+        None
+    );
+    let duplicate = existing[&30].clone();
+    existing.insert(11, duplicate);
+    assert_eq!(
+        counterbore_axis_placement_from_sources(&sources, &existing, 0.625),
         None
     );
 }
