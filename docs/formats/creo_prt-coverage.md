@@ -110,6 +110,9 @@ fixtures, claims above L1 remain unproven.
   when the selected section-point identifier matches exactly one endpoint of
   the sense-zero entity. This structural join is independent of solver
   activity and does not require evaluated tangent vectors.
+- A type-37 incidence transfers as a projected-copy relation when its two
+  sense-zero operands are consecutive reference/result identities and the
+  result has a unique row in the trimmed profile.
 - A sense-four incidence item establishes a solver-only entity's circular
   family independently of solver activity. A disabled type-three incidence can
   therefore transfer its selected center onto a sense-zero curve. A disabled

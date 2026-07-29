@@ -1557,6 +1557,12 @@ establishes the other sense-zero solver-only entity as a point independently of
 incidence activity. The point operand is either a sense-zero point entity or an
 endpoint or center locus selected by sense `2`, `3`, or `4`. Operand order does
 not change these roles. A circle is not a bounded midpoint target.
+A two-item type-37 incidence with two sense-zero operands binds a projected
+reference entity to the regular profile entity copied from it. The reference
+entity identifier immediately precedes the profile entity identifier. The
+profile entity occurs exactly once in the trim table. The relation retains the
+ordered source and result identities independently of solver activity. Other
+type-37 operand shapes remain native.
 An incidence item may reference a complete saved-section entity through its
 `order_table.ext_id`. When its type/sense pattern has no neutral constraint
 mapping, retain the incidence type, ordered entity identifiers, and sense values

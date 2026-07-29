@@ -6295,6 +6295,60 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         saved_section: None,
         offset: 0,
     };
+    let mut projected_copy = definition.clone();
+    projected_copy.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+        declared_count: None,
+        entity_ref: None,
+        entry_ref: None,
+        buckets: Vec::new(),
+        rows: vec![crate::feature::FeatureTrimEntity {
+            external_id: 13,
+            mode: Some(0),
+            vertices: [2, 3],
+            center_vertex: None,
+            kind: crate::feature::TrimEntityKind::Line,
+            offset: 84,
+        }],
+        solved_external_ids: vec![13],
+        offset: 83,
+    });
+    projected_copy.relations.as_mut().expect("relations").skamps =
+        vec![crate::feature::FeatureSkamp {
+            id: 19,
+            kind: 37,
+            flags: 98_304,
+            status: 34,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 13,
+                    sense: 0,
+                },
+            ],
+            offset: 85,
+        }];
+    synchronize_skamp_count(&mut projected_copy);
+    assert_eq!(
+        section_skamp_constraints(&projected_copy, &SketchId("creo:model:sketch#917".into()))[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::ProjectedCopy {
+            source: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+            result: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+        }
+    );
+    projected_copy.relations.as_mut().expect("relations").skamps[0]
+        .items
+        .swap(0, 1);
+    assert!(matches!(
+        section_skamp_constraints(&projected_copy, &SketchId("creo:model:sketch#917".into()))[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
     for (kind, angle) in [
         (10, std::f64::consts::FRAC_PI_2),
         (11, std::f64::consts::PI),

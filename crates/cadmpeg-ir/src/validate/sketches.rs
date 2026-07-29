@@ -1068,6 +1068,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && distance.0 > 0.0
                     && valid_parameter
             }
+            Constraint::ProjectedCopy { source, result } => source != result,
             Constraint::Group { elements } | Constraint::Text { elements, .. } => {
                 !elements.is_empty()
             }
@@ -1162,6 +1163,20 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         "sketch offset pair does not match its oriented distance",
                     );
                 }
+            }
+        }
+        if let Constraint::ProjectedCopy { source, result } = &constraint.definition {
+            let valid = entity_geometry
+                .get(source)
+                .zip(entity_geometry.get(result))
+                .is_none_or(|(source, result)| source == result);
+            if !valid {
+                finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    &constraint.id.0,
+                    "projected-copy entities do not have identical geometry",
+                );
             }
         }
     }

@@ -777,6 +777,13 @@ pub enum SketchConstraintDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameter_factor: Option<f64>,
     },
+    /// A regular profile entity copied from a projected reference entity.
+    ProjectedCopy {
+        /// Projected reference entity that supplies the geometry.
+        source: SketchEntityId,
+        /// Regular entity used by the profile.
+        result: SketchEntityId,
+    },
     /// A point locus lies at the intersection of two entities.
     AtIntersection {
         /// Point constrained to the intersection.

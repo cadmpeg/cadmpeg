@@ -9012,6 +9012,10 @@ fn reconcile_constraint_entity_references(
         SketchConstraintDefinition::Concentric { first, second }
         | SketchConstraintDefinition::Coradial { first, second }
         | SketchConstraintDefinition::Collinear { first, second }
+        | SketchConstraintDefinition::ProjectedCopy {
+            source: first,
+            result: second,
+        }
         | SketchConstraintDefinition::Parallel { first, second }
         | SketchConstraintDefinition::Perpendicular { first, second }
         | SketchConstraintDefinition::Tangent { first, second }
@@ -10910,6 +10914,25 @@ fn section_skamp_constraints_for_geometry(
                             SketchConstraintDefinition::HorizontalLoci { first, second }
                         } else {
                             SketchConstraintDefinition::VerticalLoci { first, second }
+                        }
+                    }
+                    (37, [source, result])
+                        if source.sense == 0
+                            && result.sense == 0
+                            && source
+                                .entity_id
+                                .checked_add(1)
+                                .is_some_and(|expected| expected == result.entity_id)
+                            && definition
+                                .trim_entities
+                                .iter()
+                                .filter(|table| table.has_unique_external_ids())
+                                .flat_map(|table| &table.rows)
+                                .any(|row| row.external_id == result.entity_id) =>
+                    {
+                        SketchConstraintDefinition::ProjectedCopy {
+                            source: sketch_entity_id(sketch, source.entity_id),
+                            result: sketch_entity_id(sketch, result.entity_id),
                         }
                     }
                     (14, [axis, first, second])

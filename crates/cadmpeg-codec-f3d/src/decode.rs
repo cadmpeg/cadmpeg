@@ -263,6 +263,7 @@ fn constraint_parameters(
         | Definition::Concentric { .. }
         | Definition::Coradial { .. }
         | Definition::Collinear { .. }
+        | Definition::ProjectedCopy { .. }
         | Definition::Symmetric { .. }
         | Definition::Horizontal { .. }
         | Definition::HorizontalLoci { .. }
