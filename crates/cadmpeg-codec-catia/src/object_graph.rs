@@ -507,6 +507,8 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         let head = decode_head(head_bytes);
         let roles = if matches!(head.get(1), Some(HeadToken::Separator)) {
             &head[2..]
+        } else if extended_compact_owner_head(&head) {
+            &head[1..2]
         } else {
             let native_role_count = match lead {
                 0x02 => 1,
@@ -564,6 +566,20 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         catalog_pos: None,
         records,
     })
+}
+
+fn extended_compact_owner_head(head: &[HeadToken]) -> bool {
+    matches!(
+        head,
+        [
+            HeadToken::Lead(0x12),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            ..,
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *owner != 0 && matches!(head.len(), 6 | 7)
+    )
 }
 
 pub(crate) fn is_inline_body(body: &[u8]) -> bool {
