@@ -3105,6 +3105,12 @@ fn parse_sphere_great_circle_pcurve(
         line_values::<5>(&record.payload, position + 1)?;
 
     let surface_u_bounds = azimuth_range.map(|angle| chart_scale * angle);
+    let u_scale = surface_u_bounds
+        .into_iter()
+        .chain([u0, u1])
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let u_tolerance = 1e-12 * u_scale;
     (direction.abs() == 1.0
         && zero0 == 0.0
         && zero1 == 0.0
@@ -3112,8 +3118,8 @@ fn parse_sphere_great_circle_pcurve(
         && u0 < u1
         && chart_scale == *sphere_chart_scale
         && reciprocal_scale == -direction / chart_scale
-        && u0 >= surface_u_bounds[0]
-        && u1 <= surface_u_bounds[1]
+        && u0 >= surface_u_bounds[0] - u_tolerance
+        && u1 <= surface_u_bounds[1] + u_tolerance
         && v0 == *chart_origin
         && v1 == chart_origin + std::f64::consts::TAU * chart_scale)
         .then_some(B5SphereGreatCirclePcurve {
@@ -4986,7 +4992,7 @@ mod tests {
             })
         );
 
-        let mut outside_surface_chart = record;
+        let mut outside_surface_chart = record.clone();
         outside_surface_chart.payload[2..10].copy_from_slice(&(-1.0_f64).to_le_bytes());
         assert_eq!(
             parse_sphere_great_circle_pcurve(&outside_surface_chart, &sphere),
@@ -5012,6 +5018,14 @@ mod tests {
             parse_sphere_great_circle_pcurve(&approximate_chart_scale, &sphere),
             None
         );
+
+        let mut rounded_surface_bounds = sphere;
+        let rounded_lower = f64::from_bits(0.25_f64.to_bits() + 1);
+        let B5Surface::Sphere { azimuth_range, .. } = &mut rounded_surface_bounds else {
+            unreachable!()
+        };
+        *azimuth_range = [rounded_lower, 1.5];
+        assert!(parse_sphere_great_circle_pcurve(&record, &rounded_surface_bounds).is_some());
     }
 
     #[test]
