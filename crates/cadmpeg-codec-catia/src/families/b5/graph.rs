@@ -551,7 +551,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         }
         let Some(record) = by_id
             .get(&surface_id)
-            .filter(|record| is_opaque_surface_class(record.class))
+            .filter(|record| record.family == 0xb5 && is_opaque_surface_class(record.class))
         else {
             continue;
         };
@@ -1847,6 +1847,7 @@ fn directions_form_right_handed_orthonormal_frame(
 }
 
 fn parse_surface(record: &B5Record) -> Option<B5Surface> {
+    (record.family == 0xb5).then_some(())?;
     match record.class {
         0x27 => {
             (record.payload.len() == 121 && record.payload.first() == Some(&0x80)).then_some(())?;
@@ -2795,7 +2796,7 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 }
 
 fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
-    if record.payload.first() != Some(&0x81) {
+    if record.family != 0xb5 || record.class != 0x21 || record.payload.first() != Some(&0x81) {
         return None;
     }
     let mut position = 1;
@@ -2890,7 +2891,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
 }
 
 fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
-    if record.payload.first() != Some(&0x81) {
+    if record.family != 0xb5 || record.class != 0x19 || record.payload.first() != Some(&0x81) {
         return None;
     }
     let mut position = 1;
@@ -2923,7 +2924,7 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
 }
 
 fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
-    if record.class != 0x1a || record.payload.first() != Some(&0x81) {
+    if record.family != 0xb5 || record.class != 0x1a || record.payload.first() != Some(&0x81) {
         return None;
     }
     let mut position = 1;
@@ -3044,7 +3045,10 @@ fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
     if parse_class_1a_pcurve(record).is_some() {
         return None;
     }
-    if !matches!(record.class, 0x1a | 0x1d) || record.payload.first() != Some(&0x81) {
+    if record.family != 0xb5
+        || !matches!(record.class, 0x1a | 0x1d)
+        || record.payload.first() != Some(&0x81)
+    {
         return None;
     }
     let mut position = 1;
@@ -3153,7 +3157,7 @@ fn circle_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
 }
 
 fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
-    if record.payload.first() != Some(&0x81) {
+    if record.family != 0xb5 || record.class != 0x18 || record.payload.first() != Some(&0x81) {
         return None;
     }
     let mut position = 1;
@@ -3780,6 +3784,9 @@ mod tests {
             payload,
         };
         assert!(parse_pcurve(&record(payload.clone())).is_some());
+        let mut wrong_family = record(payload.clone());
+        wrong_family.family = 0xa8;
+        assert!(parse_pcurve(&wrong_family).is_none());
 
         for (offset, value) in [(6, 0), (7, 0), (8, 0x0d), (9, 0x08), (26, 0x0d)] {
             let mut malformed = payload.clone();
@@ -4579,6 +4586,9 @@ mod tests {
                 v_range: [-2.0, 6.0],
             })
         );
+        let mut wrong_family = record.clone();
+        wrong_family.family = 0xa8;
+        assert_eq!(parse_surface(&wrong_family), None);
 
         let mut nonunit = record.clone();
         nonunit.payload[25..33].copy_from_slice(&2.0f64.to_le_bytes());
@@ -4802,6 +4812,9 @@ mod tests {
         assert_eq!(general.surface, 2);
         assert_eq!(general.distinct_knots, [1.0, 5.0]);
         assert_eq!(general.control_points, [[6.0, 1.0], [22.0, -7.0]]);
+        let mut wrong_family = record(0x01, &[2.0, 3.0, 4.0, -2.0, 1.0, 5.0]);
+        wrong_family.family = 0xa8;
+        assert!(parse_line_pcurve(&wrong_family).is_none());
 
         let constant_u =
             parse_line_pcurve(&record(0x05, &[3.0, -2.0, 7.0])).expect("constant-U pcurve");
@@ -4869,6 +4882,9 @@ mod tests {
         assert!((weights[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
         assert!((pcurve.control_points[0][0] - 2.0).abs() < 1e-12);
         assert!((pcurve.control_points[4][0] + 2.0).abs() < 1e-12);
+        let mut wrong_family = record;
+        wrong_family.family = 0xa8;
+        assert!(parse_circle_pcurve(&wrong_family).is_none());
     }
 
     #[test]
@@ -4908,6 +4924,9 @@ mod tests {
         let end = evaluate_pcurve(&pcurve, std::f64::consts::PI).expect("end point");
         assert!((end[0] - 2.0).abs() < 1e-12);
         assert!((end[1] - 4.0).abs() < 1e-12);
+        let mut wrong_family = record;
+        wrong_family.family = 0xa8;
+        assert!(parse_class_1a_pcurve(&wrong_family).is_none());
     }
 
     #[test]
@@ -4994,6 +5013,9 @@ mod tests {
                 sphere_great_circle: None,
             })
         );
+        let mut wrong_family = class_1d_record;
+        wrong_family.family = 0xa8;
+        assert_eq!(parse_opaque_pcurve(&wrong_family), None);
     }
 
     #[test]
