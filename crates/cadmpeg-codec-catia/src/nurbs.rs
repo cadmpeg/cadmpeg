@@ -47,7 +47,8 @@ pub(crate) fn circular_helix_cache(
     else {
         return None;
     };
-    let radius = major.norm();
+    let radius = major.x.hypot(major.y).hypot(major.z);
+    let minor_radius = minor.x.hypot(minor.y).hypot(minor.z);
     let frame_finite = [center.x, center.y, center.z]
         .into_iter()
         .chain(
@@ -56,14 +57,19 @@ pub(crate) fn circular_helix_cache(
                 .flat_map(|vector| [vector.x, vector.y, vector.z]),
         )
         .all(f64::is_finite);
-    let major_minor_dot = major.x * minor.x + major.y * minor.y + major.z * minor.z;
+    let normalized_dot = (major.x / radius) * (minor.x / minor_radius)
+        + (major.y / radius) * (minor.y / minor_radius)
+        + (major.z / radius) * (minor.z / minor_radius);
     if !requested_tolerance.is_finite()
         || requested_tolerance <= 0.0
         || !frame_finite
         || !radius.is_finite()
-        || radius <= f64::EPSILON
-        || (radius - minor.norm()).abs() > 1e-9 * (1.0 + radius)
-        || major_minor_dot.abs() > 1e-9 * (1.0 + radius * radius)
+        || radius <= 0.0
+        || !minor_radius.is_finite()
+        || minor_radius <= 0.0
+        || (radius - minor_radius).abs() > 1e-9 * radius.max(minor_radius)
+        || !normalized_dot.is_finite()
+        || normalized_dot.abs() > 1e-9
         || *apex_factor != 0.0
     {
         return None;
@@ -359,5 +365,30 @@ mod tests {
         let cache = circular_helix_cache(&definition, 1.0e-4).expect("valid helix");
         assert_eq!(cache.curve.knots[1], range[0]);
         assert_eq!(cache.curve.knots[cache.curve.knots.len() - 2], range[1]);
+    }
+
+    #[test]
+    fn circular_helix_frame_validation_is_scale_independent() {
+        let radius = 1e-200;
+        let definition = |minor| ProceduralCurveDefinition::Helix {
+            angle_range: [0.0, 1.0],
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(radius, 0.0, 0.0),
+            minor,
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            apex_factor: 0.0,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        };
+
+        assert!(
+            circular_helix_cache(&definition(Vector3::new(0.0, radius, 0.0)), 1.0e-4).is_some()
+        );
+        assert!(
+            circular_helix_cache(&definition(Vector3::new(0.0, 2.0 * radius, 0.0)), 1.0e-4)
+                .is_none()
+        );
+        assert!(
+            circular_helix_cache(&definition(Vector3::new(radius, 0.0, 0.0)), 1.0e-4).is_none()
+        );
     }
 }
