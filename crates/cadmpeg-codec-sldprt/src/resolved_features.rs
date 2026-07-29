@@ -962,23 +962,6 @@ fn extended_compact_linked_profile_point_coordinates(
     {
         return None;
     }
-    let cells = [78, 86].map(|relative| {
-        let cell = payload.get(offset + relative..offset + relative + 8)?;
-        Some((
-            u16::from_le_bytes(cell[..2].try_into().ok()?),
-            u16::from_le_bytes(cell[2..4].try_into().ok()?),
-            cell[4..8] == [0xff; 4],
-        ))
-    });
-    let valid_cells = matches!(
-        cells,
-        [Some((first_tag, first_id, true)), Some((second_tag, second_id, true))]
-            if first_tag != 0
-                && first_tag == second_tag
-                && first_id != 0
-                && second_id != 0
-                && first_id != second_id
-    );
     let identity = |relative| {
         payload
             .get(offset + relative..offset + relative + 4)
@@ -1005,6 +988,22 @@ fn extended_compact_linked_profile_point_coordinates(
         && payload.get(offset + 74..offset + 78) == Some(&[0x00, 0x00, 0x02, 0x00])
         && identity(142) == Some(u32::MAX)
         && sketch_marker_prefix_at(payload, offset.saturating_add(146));
+    let cells = [78, 86].map(|relative| {
+        let cell = payload.get(offset + relative..offset + relative + 8)?;
+        Some((
+            u16::from_le_bytes(cell[..2].try_into().ok()?),
+            u16::from_le_bytes(cell[2..4].try_into().ok()?),
+            cell[4..8] == [0xff; 4],
+        ))
+    });
+    let valid_cells = matches!(
+        cells,
+        [Some((first_tag, first_id, true)), Some((second_tag, second_id, true))]
+            if first_tag != 0
+                && first_tag == second_tag
+                && first_id != second_id
+                && (terminal_sentinel || first_id != 0 && second_id != 0)
+    );
     if !valid_cells
         || payload.get(offset + 94..offset + 100) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         || !(single_identity || paired_identities || terminal_sentinel)
@@ -7868,11 +7867,22 @@ mod marker_tests {
             Some([0.8, 0.0125])
         );
         payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[80..82].fill(0);
+        assert_eq!(
+            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            None
+        );
         payload[142..146].fill(0xff);
         assert_eq!(
             extended_compact_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
+        payload[88..90].fill(0);
+        assert_eq!(
+            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            None
+        );
+        payload[88..90].copy_from_slice(&7u16.to_le_bytes());
         payload[74..76].copy_from_slice(&1u16.to_le_bytes());
         assert_eq!(
             extended_compact_linked_profile_point_coordinates(&payload, 0),
@@ -7891,6 +7901,7 @@ mod marker_tests {
             None
         );
         payload[141] = 0;
+        payload[80..82].copy_from_slice(&6u16.to_le_bytes());
         payload[142..146].copy_from_slice(&6u32.to_le_bytes());
         payload[74..76].copy_from_slice(&1u16.to_le_bytes());
         assert_eq!(
