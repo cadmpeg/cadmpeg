@@ -134,8 +134,9 @@ fixtures, claims above L1 remain unproven.
   Solver activity controls constraint activity, not the stored arc role or
   endpoint selection.
 - Two-locus type-fifteen incidences transfer the same flag-selected
-  same-coordinate constraint as type seventeen. Unsupported flags remain
-  native.
+  same-coordinate constraint as type seventeen. Disabled forms retain
+  endpoint-selected loci on emitted solver-only carriers without requiring a
+  solved section-point identity. Unsupported flags remain native.
 - A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`

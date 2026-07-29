@@ -1543,7 +1543,9 @@ A two-item type-fifteen or type-seventeen incidence stores two endpoint or
 center loci that share one sketch coordinate. Flag `1` selects the section `u`
 coordinate and flag `2` selects the section `v` coordinate. This discriminator
 defines the neutral same-coordinate axis without requiring solved locus
-coordinates. When both loci are solved, their selected coordinates must agree.
+coordinates. A disabled incidence retains endpoint loci established by its
+sense fields even when an emitted solver-only carrier has no section-point
+identity. When both loci are solved, their selected coordinates must agree.
 Other flag values and contradictory solved coordinates retain the native
 incidence.
 Types 30 and 31 store the same two-locus relation with a fixed coordinate:

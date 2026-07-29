@@ -11089,6 +11089,25 @@ fn section_skamp_constraints_for_geometry(
                                 second,
                                 axis,
                             }
+                        } else if !active {
+                            let [first, second] = skamp.items.as_slice() else {
+                                unreachable!();
+                            };
+                            match (
+                                inactive_point_locus(first),
+                                inactive_point_locus(second),
+                                section_skamp_same_coordinate_axis(skamp),
+                            ) {
+                                (Some(first), Some(second), Some(axis)) => {
+                                    SketchConstraintDefinition::SameCoordinate {
+                                        first,
+                                        second,
+                                        axis: [SketchCoordinateAxis::U, SketchCoordinateAxis::V]
+                                            [axis],
+                                    }
+                                }
+                                _ => native_constraint()?,
+                            }
                         } else {
                             native_constraint()?
                         }

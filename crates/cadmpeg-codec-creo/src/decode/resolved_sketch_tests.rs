@@ -7022,6 +7022,60 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .as_mut()
         .expect("relations")
         .skamps[0]
+        .items = vec![
+        crate::feature::FeatureSkampItem {
+            entity_id: 99,
+            sense: 3,
+        },
+        crate::feature::FeatureSkampItem {
+            entity_id: 13,
+            sense: 3,
+        },
+    ];
+    unresolved_arc_geometry.insert(
+        SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
+        SketchGeometry::Native {
+            native_kind: "solver_only_section_entity".to_string(),
+        },
+    );
+    assert_eq!(
+        section_skamp_constraints_for_geometry(
+            &point_coincidence_definition,
+            &SketchId("creo:model:sketch#917".into()),
+            Some(&unresolved_arc_geometry),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:99".to_string()
+            )),
+            second: SketchLocus::Start(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:13".to_string()
+            )),
+            axis: SketchCoordinateAxis::U,
+        }
+    );
+    point_coincidence_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items = vec![
+        crate::feature::FeatureSkampItem {
+            entity_id: 13,
+            sense: 2,
+        },
+        crate::feature::FeatureSkampItem {
+            entity_id: 13,
+            sense: 4,
+        },
+    ];
+    point_coincidence_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
         .kind = 15;
     let inactive_type_fifteen = section_skamp_constraints_for_geometry(
         &point_coincidence_definition,
