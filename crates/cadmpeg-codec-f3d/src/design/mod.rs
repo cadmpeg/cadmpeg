@@ -29,6 +29,7 @@ pub(crate) enum DesignFeatureFamily {
     Combine,
     Draft,
     CircularPattern,
+    RectangularPattern,
     Mirror,
     Move,
     OffsetFaces,
@@ -57,6 +58,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "C-Pattern" | "Circular Pattern" | "Réseau C" => {
             Some(DesignFeatureFamily::CircularPattern)
         }
+        "R-Pattern" | "Rectangular Pattern" => Some(DesignFeatureFamily::RectangularPattern),
         "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
         "Move" => Some(DesignFeatureFamily::Move),
         "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),

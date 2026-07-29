@@ -1061,6 +1061,23 @@ pub struct DesignCircularPatternConstruction {
     pub selection_record_index: u32,
 }
 
+/// Ordered scalar lanes carried by a rectangular-pattern scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignRectangularPatternConstruction {
+    /// Positive U-direction instance count, including the seed.
+    pub u_count: u32,
+    /// Positive V-direction instance count, including the seed.
+    pub v_count: u32,
+    /// Signed U-direction instance spacing in source centimetres.
+    pub u_spacing: f64,
+    /// Signed V-direction instance spacing in source centimetres.
+    pub v_spacing: f64,
+    /// Parameter-owner records for U count, V count, U spacing, and V spacing.
+    pub owner_record_indices: [u32; 4],
+    /// Evaluated-value offsets parallel to `owner_record_indices`.
+    pub value_offsets: [u64; 4],
+}
+
 /// Exact construction carried by a Mirror scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignMirrorConstruction {
@@ -1310,6 +1327,9 @@ pub struct DesignParameterScope {
     /// Exact construction carried by a circular-pattern scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub circular_pattern_construction: Option<DesignCircularPatternConstruction>,
+    /// Exact scalar lanes carried by a rectangular-pattern scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rectangular_pattern_construction: Option<DesignRectangularPatternConstruction>,
     /// Exact construction carried by a Mirror scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mirror_construction: Option<DesignMirrorConstruction>,

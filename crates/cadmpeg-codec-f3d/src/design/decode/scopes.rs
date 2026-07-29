@@ -17,8 +17,9 @@ use crate::records::{
     DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
     DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
     DesignMirrorConstruction, DesignMoveOperation, DesignObjectKind, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignScaleOperation,
-    DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignRectangularPatternConstruction, DesignScaleOperation, DesignSolidPrimitive,
+    DesignSurfaceStitchOperation,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
@@ -43,6 +44,7 @@ pub fn decode_parameter_scopes(
             let Some(mut scope) = parse_parameter_scope(bytes, &header) else {
                 continue;
             };
+            scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
             if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch) {
                 let start = usize::try_from(scope.byte_offset).ok();
                 let end = usize::try_from(scope.paired_byte_offset).ok();
@@ -113,15 +115,77 @@ pub fn decode_parameter_scopes(
             scope.draft_operation = exact_draft_operation(bytes, &scope);
             scope.circular_pattern_construction =
                 exact_circular_pattern_construction_with_owners(bytes, &scope, parameter_owners);
+            scope.rectangular_pattern_construction =
+                exact_rectangular_pattern_construction(&scope, parameter_owners);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
-            scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
             out.push(scope);
         }
     }
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+pub(crate) fn exact_rectangular_pattern_construction(
+    scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
+) -> Option<DesignRectangularPatternConstruction> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::RectangularPattern) {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let mut lanes = parameter_owners
+        .iter()
+        .filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+                && owner.evaluated_value.is_finite()
+        })
+        .collect::<Vec<_>>();
+    lanes.sort_by_key(|owner| owner.local_ordinal);
+    let [u_count, v_count, u_spacing, v_spacing] = lanes.as_slice() else {
+        return None;
+    };
+    if [u_count, v_count, u_spacing, v_spacing]
+        .iter()
+        .enumerate()
+        .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+    {
+        return None;
+    }
+    let exact_count = |value: f64| {
+        (value > 0.0 && value <= f64::from(u32::MAX) && value.fract() == 0.0)
+            .then_some(value as u32)
+    };
+    let u_count_value = exact_count(u_count.evaluated_value)?;
+    let v_count_value = exact_count(v_count.evaluated_value)?;
+    if u_count_value == 1 && v_count_value == 1
+        || (u_count_value > 1 && u_spacing.evaluated_value == 0.0)
+        || (v_count_value > 1 && v_spacing.evaluated_value == 0.0)
+        || (u_count_value == 1 && u_spacing.evaluated_value != 0.0)
+        || (v_count_value == 1 && v_spacing.evaluated_value != 0.0)
+    {
+        return None;
+    }
+    Some(DesignRectangularPatternConstruction {
+        u_count: u_count_value,
+        v_count: v_count_value,
+        u_spacing: u_spacing.evaluated_value,
+        v_spacing: v_spacing.evaluated_value,
+        owner_record_indices: [
+            u_count.record_index,
+            v_count.record_index,
+            u_spacing.record_index,
+            v_spacing.record_index,
+        ],
+        value_offsets: [
+            u_count.evaluated_value_offset,
+            v_count.evaluated_value_offset,
+            u_spacing.evaluated_value_offset,
+            v_spacing.evaluated_value_offset,
+        ],
+    })
 }
 
 pub(crate) fn exact_circular_pattern_construction_with_owners(
@@ -1951,6 +2015,7 @@ pub(crate) fn parse_parameter_scope(
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,

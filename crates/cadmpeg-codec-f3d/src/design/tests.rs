@@ -32,9 +32,10 @@ use crate::design::decode::scopes::{
     exact_base_feature_construction, exact_circular_pattern_construction_with_owners,
     exact_combine_operation, exact_direct_face_operation, exact_draft_operation,
     exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters, exact_fixed_fillet_parameters,
-    exact_joint_origin_frame, exact_path_feature_construction, exact_scale_operation,
-    exact_solid_primitive, exact_surface_stitch_operation, exact_work_plane_frame,
-    exact_work_point_position, parse_parameter_scope,
+    exact_joint_origin_frame, exact_path_feature_construction,
+    exact_rectangular_pattern_construction, exact_scale_operation, exact_solid_primitive,
+    exact_surface_stitch_operation, exact_work_plane_frame, exact_work_point_position,
+    parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -5391,6 +5392,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -6201,6 +6203,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -6623,6 +6626,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -11335,6 +11339,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -11482,6 +11487,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -11676,6 +11682,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }),
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -12374,6 +12381,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -13190,6 +13198,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -13590,6 +13599,7 @@ fn parameter_expressions_project_feature_dependencies() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -13706,6 +13716,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -14357,6 +14368,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -14375,7 +14387,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
 }
 
 #[test]
-fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
+fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let scope_record_index = 10_u32;
     let count_record_index = 20_u32;
     let angle_record_index = 30_u32;
@@ -14524,6 +14536,7 @@ fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
@@ -14601,6 +14614,41 @@ fn circular_pattern_construction_requires_exact_count_angle_and_axis_frames() {
         .extend([axis_record_index, selection_record_index]);
     assert_eq!(
         exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]),
+        None
+    );
+
+    scope.kind = "R-Pattern".into();
+    let rectangular_owners = [
+        owner(50, 0, 3.0, 501),
+        owner(51, 1, 1.0, 502),
+        owner(52, 2, 10.0, 503),
+        owner(53, 3, 0.0, 504),
+    ];
+    let rectangular = exact_rectangular_pattern_construction(&scope, &rectangular_owners)
+        .expect("exact rectangular-pattern scalar lanes");
+    assert_eq!(rectangular.u_count, 3);
+    assert_eq!(rectangular.v_count, 1);
+    assert_eq!(rectangular.u_spacing, 10.0);
+    assert_eq!(rectangular.v_spacing, 0.0);
+    assert_eq!(rectangular.owner_record_indices, [50, 51, 52, 53]);
+    assert_eq!(rectangular.value_offsets, [501, 502, 503, 504]);
+
+    let mut invalid_inactive_spacing = rectangular_owners.clone();
+    invalid_inactive_spacing[3].evaluated_value = 1.0;
+    assert_eq!(
+        exact_rectangular_pattern_construction(&scope, &invalid_inactive_spacing),
+        None
+    );
+    let mut duplicate_lane = rectangular_owners.clone();
+    duplicate_lane[3].local_ordinal = 2;
+    assert_eq!(
+        exact_rectangular_pattern_construction(&scope, &duplicate_lane),
+        None
+    );
+    let mut excess_lane = rectangular_owners.to_vec();
+    excess_lane.push(owner(54, 4, 1.0, 505));
+    assert_eq!(
+        exact_rectangular_pattern_construction(&scope, &excess_lane),
         None
     );
 }

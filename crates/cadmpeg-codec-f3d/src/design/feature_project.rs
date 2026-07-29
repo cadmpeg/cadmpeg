@@ -280,6 +280,16 @@ pub fn project_parameter_design_with_edge_identities(
                             },
                         })
                 }
+                Some(DesignFeatureFamily::RectangularPattern) => {
+                    project_rectangular_pattern_scalars(scope).unwrap_or_else(|| {
+                        FeatureDefinition::Pattern {
+                            seeds: Vec::new(),
+                            pattern: PatternKind::Unresolved {
+                                form: Some(PatternForm::Linear),
+                            },
+                        }
+                    })
+                }
                 Some(DesignFeatureFamily::Mirror) => {
                     project_mirror(scope, construction_groups, face_operands, scopes)
                         .unwrap_or_else(|| FeatureDefinition::Pattern {
@@ -2617,6 +2627,44 @@ pub(crate) fn project_circular_pattern(
             ),
             angle: Angle(construction.angle),
             count: construction.count,
+        },
+    })
+}
+
+fn project_rectangular_pattern_scalars(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind};
+
+    let construction = scope.rectangular_pattern_construction.as_ref()?;
+    let active = [
+        (
+            construction.u_count,
+            construction.u_spacing,
+            construction.v_count,
+        ),
+        (
+            construction.v_count,
+            construction.v_spacing,
+            construction.u_count,
+        ),
+    ]
+    .into_iter()
+    .filter(|(count, _, _)| *count > 1)
+    .collect::<Vec<_>>();
+    let [(count, spacing, inactive_count)] = active.as_slice() else {
+        return None;
+    };
+    if *inactive_count != 1 || *spacing <= 0.0 {
+        return None;
+    }
+    Some(FeatureDefinition::Pattern {
+        seeds: Vec::new(),
+        pattern: PatternKind::Linear {
+            direction: None,
+            spacing: Length(*spacing * 10.0),
+            count: *count,
+            second: None,
         },
     })
 }

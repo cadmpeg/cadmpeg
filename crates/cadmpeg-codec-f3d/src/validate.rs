@@ -822,6 +822,60 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     })
             }
         };
+        let rectangular_pattern_link = match &scope.rectangular_pattern_construction {
+            None => {
+                design::design_feature_family(&scope.kind)
+                    != Some(design::DesignFeatureFamily::RectangularPattern)
+            }
+            Some(construction) => {
+                design::design_feature_family(&scope.kind)
+                    == Some(design::DesignFeatureFamily::RectangularPattern)
+                    && construction.u_count > 0
+                    && construction.v_count > 0
+                    && (construction.u_count > 1 || construction.v_count > 1)
+                    && construction.u_spacing.is_finite()
+                    && construction.v_spacing.is_finite()
+                    && (construction.u_count == 1) == (construction.u_spacing == 0.0)
+                    && (construction.v_count == 1) == (construction.v_spacing == 0.0)
+                    && native
+                        .design_parameter_owners
+                        .iter()
+                        .filter(|owner| {
+                            design_stream(&owner.id) == native_stream
+                                && owner.scope_record_index == scope.record_index
+                        })
+                        .count()
+                        == 4
+                    && construction
+                        .owner_record_indices
+                        .iter()
+                        .all(|record_index| {
+                            scope.reference_members.contains(record_index)
+                                && record_indices.contains(&(native_stream, *record_index))
+                        })
+                    && construction
+                        .owner_record_indices
+                        .iter()
+                        .zip(construction.value_offsets)
+                        .zip([
+                            f64::from(construction.u_count),
+                            f64::from(construction.v_count),
+                            construction.u_spacing,
+                            construction.v_spacing,
+                        ])
+                        .enumerate()
+                        .all(|(ordinal, ((record_index, value_offset), value))| {
+                            native.design_parameter_owners.iter().any(|owner| {
+                                design_stream(&owner.id) == native_stream
+                                    && owner.record_index == *record_index
+                                    && owner.scope_record_index == scope.record_index
+                                    && owner.local_ordinal == ordinal as u32
+                                    && owner.evaluated_value == value
+                                    && owner.evaluated_value_offset == value_offset
+                            })
+                        })
+            }
+        };
         let draft_link = match (
             scope.draft_operation.as_ref(),
             design::design_feature_family(&scope.kind),
@@ -1007,6 +1061,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && edge_flange_link
             && hem_link
             && copy_paste_link
+            && rectangular_pattern_link
             && draft_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))

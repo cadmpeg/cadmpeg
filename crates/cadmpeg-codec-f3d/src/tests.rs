@@ -9370,6 +9370,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         extrude_profile: Some(profile),
         sweep_profile: None,
         circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
         mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
