@@ -5517,7 +5517,8 @@ mod route_tests {
         point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
         retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
         standard_circle_param_range, standard_native_support_endpoint_pair,
-        standard_pcurve_geometry, standard_plane_normal_from_adjacent_circle_carriers,
+        standard_object_evidence_from_streams, standard_pcurve_geometry,
+        standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
         unique_native_identity_points, witness_arc_end, StandardEdgeSupport,
@@ -5542,7 +5543,57 @@ mod route_tests {
     use cadmpeg_ir::AnnotationBuilder;
     use std::cell::Cell;
     use std::collections::BTreeMap;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn targeted_face_surface_evidence_follows_an_analytic_offset() {
+        let append = |bytes: &mut Vec<u8>, class, object_id: u32, payload: &[u8]| {
+            bytes.extend_from_slice(&[
+                0xb5,
+                0x03,
+                class,
+                u8::try_from(payload.len()).expect("small payload"),
+            ]);
+            bytes.extend_from_slice(&object_id.to_le_bytes());
+            bytes.extend_from_slice(payload);
+        };
+        let plane_payload = |origin_z: f64| {
+            let mut payload = vec![0; 121];
+            payload[0] = 0x80;
+            for (offset, value) in [
+                (17usize, origin_z),
+                (25, 1.0),
+                (57, 1.0),
+                (73, 1.0),
+                (81, 1.0),
+                (89, -1.0),
+                (97, 1.0),
+                (105, -1.0),
+                (113, 1.0),
+            ] {
+                payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+            }
+            payload
+        };
+        let mut stream = Vec::new();
+        append(&mut stream, 0x27, 2, &plane_payload(0.0));
+        append(&mut stream, 0x27, 3, &plane_payload(0.5));
+        let mut offset = vec![0x82, 0x82, 0x83];
+        offset.extend_from_slice(&(-0.5f64).to_le_bytes());
+        offset.push(0x15);
+        for value in [-2.0f64, 3.0, -4.0, 5.0] {
+            offset.extend_from_slice(&value.to_le_bytes());
+        }
+        append(&mut stream, 0x30, 9, &offset);
+        append(&mut stream, 0x5f, 10, &[0x82, 0x89, 0x8b, 0x05]);
+
+        let evidence =
+            standard_object_evidence_from_streams([stream], &HashSet::from([10]), &HashSet::new());
+        assert!(matches!(
+            evidence.surface_geometries.get(&10),
+            Some(SurfaceGeometry::Plane { origin, .. }) if *origin == Point3::new(0.0, 0.0, 0.0)
+        ));
+    }
 
     #[test]
     fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {

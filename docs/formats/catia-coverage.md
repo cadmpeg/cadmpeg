@@ -305,7 +305,10 @@ current scores require those matrices and representative fixtures.
   extrusion V span agree. For a class-`30`
   construction, the class-`14` result directrix validates the result carrier
   against the source extrusion and signed surface distance; the neutral surface
-  offset retains the defining source extrusion directly.
+  offset retains the defining source extrusion directly. Face-local class-`30`
+  analytic offsets also resolve from length-closed surface frames when their
+  result carrier, source carrier, kind code, and signed distance equation agree,
+  without requiring the surrounding topology run to close.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.

@@ -1488,13 +1488,30 @@ fn merge_targeted_surface(
 }
 
 fn resolve_targeted_surface(
-    mut object_id: u32,
+    object_id: u32,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
 ) -> Option<B5Surface> {
-    let mut visited = HashSet::new();
+    resolve_targeted_surface_inner(
+        object_id,
+        records,
+        headers,
+        resolved,
+        rolling,
+        HashSet::new(),
+    )
+}
+
+fn resolve_targeted_surface_inner(
+    mut object_id: u32,
+    records: &HashMap<u32, Option<B5Record>>,
+    headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
+    resolved: &HashMap<u32, Option<B5Surface>>,
+    rolling: &HashMap<u32, Option<B5Surface>>,
+    mut visited: HashSet<u32>,
+) -> Option<B5Surface> {
     loop {
         if !visited.insert(object_id) || records.get(&object_id).is_some_and(Option::is_none) {
             return None;
@@ -1516,8 +1533,49 @@ fn resolve_targeted_surface(
             object_id = construction.carrier_surface;
             continue;
         }
+        if record.family == 0xb5 && record.class == 0x30 {
+            return resolve_targeted_analytic_offset(
+                record, records, headers, resolved, rolling, &visited,
+            );
+        }
         return surface_node(record, headers.get(&object_id));
     }
+}
+
+fn resolve_targeted_analytic_offset(
+    record: &B5Record,
+    records: &HashMap<u32, Option<B5Record>>,
+    headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
+    resolved: &HashMap<u32, Option<B5Surface>>,
+    rolling: &HashMap<u32, Option<B5Surface>>,
+    visited: &HashSet<u32>,
+) -> Option<B5Surface> {
+    (record.payload.first() == Some(&0x82)).then_some(())?;
+    let mut position = 1;
+    let carrier_id = wire::object_ref(&record.payload, &mut position, true)?;
+    let source_id = wire::object_ref(&record.payload, &mut position, true)?;
+    let carrier = resolve_targeted_surface_inner(
+        carrier_id,
+        records,
+        headers,
+        resolved,
+        rolling,
+        visited.clone(),
+    )?;
+    let mut surfaces = BTreeMap::from([(carrier_id, carrier.clone())]);
+    if !matches!(carrier, B5Surface::RollingBall { .. }) {
+        let source = resolve_targeted_surface_inner(
+            source_id,
+            records,
+            headers,
+            resolved,
+            rolling,
+            visited.clone(),
+        )?;
+        surfaces.insert(source_id, source);
+    }
+    parse_offset_surface(record, &surfaces, &BTreeMap::new(), &HashMap::new())?;
+    Some(carrier)
 }
 
 fn parse_edge(record: &B5Record) -> Option<B5Edge> {
@@ -4087,20 +4145,25 @@ pub(crate) fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<
 
 /// Read each face's leading surface reference independently of its loop grammar.
 pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
-    records(bytes)
-        .into_iter()
-        .filter_map(|record| {
-            if record.class != 0x5f {
-                return None;
-            }
-            let mut position = usize::from(*record.payload.first()? >= 0x80);
-            if position == 1 && record.payload[0] == 0x80 {
-                return None;
-            }
-            let surface = wire::object_ref(&record.payload, &mut position, true)?;
-            Some((record.object_id, surface))
-        })
-        .collect()
+    let mut references = Vec::new();
+    for offset in 0..bytes.len().saturating_sub(8) {
+        let Some((end, 0xb5, 0x5f, object_id)) = object_frame(bytes, offset) else {
+            continue;
+        };
+        let payload = &bytes[offset + 8..end];
+        let Some(&lead) = payload.first() else {
+            continue;
+        };
+        let mut position = usize::from(lead >= 0x80);
+        if position == 1 && lead == 0x80 {
+            continue;
+        }
+        let Some(surface) = wire::object_ref(payload, &mut position, true) else {
+            continue;
+        };
+        references.push((object_id, surface));
+    }
+    references
 }
 
 fn parse_loop(
@@ -4640,6 +4703,65 @@ mod tests {
             resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling),
             rolling.get(&1).cloned().flatten()
         );
+    }
+
+    #[test]
+    fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
+        let carrier = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
+        };
+        let source = B5Surface::Plane {
+            origin: [0.0, 0.0, 0.5],
+            direction_u: [0.0, 1.0, 0.0],
+            direction_v: [-1.0, 0.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
+        };
+        let mut payload = vec![0x82, 0x82, 0x83];
+        payload.extend_from_slice(&(-0.5f64).to_le_bytes());
+        payload.push(0x15);
+        for value in [-2.0f64, 3.0, -4.0, 5.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let offset = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x30,
+            object_id: 9,
+            payload,
+        };
+        let records = HashMap::from([(9, Some(offset.clone()))]);
+        let resolved = HashMap::from([(2, Some(carrier.clone())), (3, Some(source))]);
+
+        assert_eq!(
+            resolve_targeted_surface(9, &records, &HashMap::new(), &resolved, &HashMap::new(),),
+            Some(carrier)
+        );
+
+        let mut wrong_distance = offset.clone();
+        wrong_distance.payload[3..11].copy_from_slice(&(-0.25f64).to_le_bytes());
+        assert!(resolve_targeted_surface(
+            9,
+            &HashMap::from([(9, Some(wrong_distance))]),
+            &HashMap::new(),
+            &resolved,
+            &HashMap::new(),
+        )
+        .is_none());
+        let mut wrong_kind = offset;
+        wrong_kind.payload[11] = 0x05;
+        assert!(resolve_targeted_surface(
+            9,
+            &HashMap::from([(9, Some(wrong_kind))]),
+            &HashMap::new(),
+            &resolved,
+            &HashMap::new(),
+        )
+        .is_none());
     }
 
     #[test]
