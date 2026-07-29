@@ -2303,6 +2303,67 @@ fn om_operation_terminal_frame_requires_one_canonical_suffix() {
 }
 
 #[test]
+fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
+    fn record(payload: &[u8]) -> crate::om::OperationRecord<'_> {
+        crate::om::OperationRecord {
+            offset: 0,
+            bytes: payload,
+            payload_offset: 100,
+            payload,
+            label: crate::om::OperationLabel {
+                header_offset: 0,
+                offset: 0,
+                value: "FSET",
+                object_indices: [None; 4],
+                object_index_offsets: [0; 4],
+            },
+        }
+    }
+
+    let payload = [
+        0x01, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3', 0x90,
+        0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90, 0x19, 0x32,
+        0x00, 0x03, 0x00,
+    ];
+    let graph = crate::om::fset_payload_reference_graph(record(&payload)).unwrap();
+    assert_eq!(graph.selector, "T;:S567R893");
+    assert_eq!(graph.offset, 100);
+    assert_eq!(
+        graph
+            .first
+            .each_ref()
+            .map(|reference| reference.object_index),
+        [6464, 6465]
+    );
+    assert_eq!(
+        graph
+            .second
+            .each_ref()
+            .map(|reference| reference.object_index),
+        [6448, 6449, 6450]
+    );
+    assert_eq!(
+        graph
+            .first
+            .each_ref()
+            .map(|reference| reference.raw_object_index.as_slice()),
+        [[0x90, 0x19, 0x40].as_slice(), [0x90, 0x19, 0x41].as_slice(),]
+    );
+
+    let mut wrong_length = payload;
+    wrong_length[1] -= 1;
+    assert!(crate::om::fset_payload_reference_graph(record(&wrong_length)).is_none());
+    let mut wrong_suffix = payload;
+    wrong_suffix[31] = 0x04;
+    assert!(crate::om::fset_payload_reference_graph(record(&wrong_suffix)).is_none());
+    let mut wrong_reference_form = payload;
+    wrong_reference_form[14] = 0xf1;
+    assert!(crate::om::fset_payload_reference_graph(record(&wrong_reference_form)).is_none());
+    let duplicate = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(crate::om::fset_payload_reference_graph(record(&duplicate)).is_none());
+}
+
+#[test]
 fn om_data_block_object_references_require_complete_field_frames() {
     let bytes = [
         0x04, 0x00, 0x2a, 0x02, 0x0b, 0xff, 0x04, 0x00, 0x80, 0xc9, 0x02, 0x0b, 0x04, 0x00, 0x90,
@@ -11656,6 +11717,7 @@ mod golden {
         "feature_extrude_payload_footers",
         "feature_extrude_payload_headers",
         "feature_extrude_profile_references",
+        "feature_fset_reference_graphs",
         "feature_input_block_identity_groups",
         "feature_input_blocks",
         "feature_input_column_row_uses",
@@ -12460,7 +12522,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (200), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (201), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -12469,7 +12531,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 200, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 201, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

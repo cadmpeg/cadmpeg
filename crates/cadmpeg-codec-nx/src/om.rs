@@ -851,6 +851,19 @@ pub struct PatternPayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
+/// Exact two-group reference graph in an `FSET` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FsetPayloadReferenceGraph {
+    /// Printable selector preceding the reference groups.
+    pub selector: String,
+    /// Two references before the group separator.
+    pub first: [PayloadObjectReference; 2],
+    /// Three references after the group separator.
+    pub second: [PayloadObjectReference; 3],
+    /// Absolute offset of the graph prefix.
+    pub offset: usize,
+}
+
 /// Scalar width selected by one pattern-transform row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatternTransformEncoding {
@@ -2167,6 +2180,79 @@ pub fn pattern_payload_references(
         return None;
     };
     Some(field.clone())
+}
+
+/// Decode the unique exactly bounded two-group reference graph in an `FSET`
+/// payload without assigning selection roles to either group.
+pub fn fset_payload_reference_graph(
+    record: OperationRecord<'_>,
+) -> Option<FsetPayloadReferenceGraph> {
+    const SUFFIX: [u8; 3] = [0x00, 0x03, 0x00];
+    if record.label.value != "FSET" {
+        return None;
+    }
+    let decode_reference = |at: &mut usize| {
+        let offset = *at;
+        (record.payload.get(offset) == Some(&0x90)).then_some(())?;
+        let object_index = u32::from(u16::from_be_bytes([
+            *record.payload.get(offset + 1)?,
+            *record.payload.get(offset + 2)?,
+        ]));
+        let width = 3;
+        *at += width;
+        Some(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+            raw_object_index: record.payload[offset..offset + width].to_vec(),
+        })
+    };
+    let decode = |start: usize| {
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_len = usize::from(*record.payload.get(start + 1)?);
+        let body_start = start.checked_add(2)?;
+        let body_end = body_start.checked_add(declared_len)?;
+        (declared_len >= 9
+            && record.payload.get(body_start) == Some(&0x3c)
+            && record.payload.get(body_end.checked_sub(1)?) == Some(&0x3e))
+        .then_some(())?;
+        let first = (body_start + 2..body_end - 1)
+            .filter_map(|selector_end| {
+                let selector = record.payload.get(body_start + 1..selector_end)?;
+                (!selector.is_empty()
+                    && selector
+                        .iter()
+                        .all(|byte| byte.is_ascii_graphic() && *byte != 0x3e))
+                .then_some(())?;
+                let mut at = selector_end;
+                let first = [decode_reference(&mut at)?, decode_reference(&mut at)?];
+                (at == body_end - 1)
+                    .then_some((std::str::from_utf8(selector).ok()?.to_string(), first))
+            })
+            .collect::<Vec<_>>();
+        let [(selector, first)] = first.as_slice() else {
+            return None;
+        };
+        let mut at = body_end;
+        let second = [
+            decode_reference(&mut at)?,
+            decode_reference(&mut at)?,
+            decode_reference(&mut at)?,
+        ];
+        (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
+        Some(FsetPayloadReferenceGraph {
+            selector: selector.clone(),
+            first: first.clone(),
+            second,
+            offset: record.payload_offset + start,
+        })
+    };
+    let matches = (0..record.payload.len().saturating_sub(1))
+        .filter_map(decode)
+        .collect::<Vec<_>>();
+    let [graph] = matches.as_slice() else {
+        return None;
+    };
+    Some(graph.clone())
 }
 
 /// Decode the unique exactly counted transform lane in a bounded pattern payload.

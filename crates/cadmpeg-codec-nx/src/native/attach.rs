@@ -269,7 +269,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(166);
+    namespace.version = namespace.version.max(167);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -306,6 +306,7 @@ fn attach_feature_operations(
     let projected_curve_construction_strings = features
         .feature_projected_curve_construction_strings
         .as_slice();
+    let fset_reference_graphs = features.feature_fset_reference_graphs.as_slice();
     let pattern_references = features.feature_pattern_references.as_slice();
     let pattern_construction_payloads = features.feature_pattern_construction_payloads.as_slice();
     let pattern_construction_strings = features.feature_pattern_construction_strings.as_slice();
@@ -522,6 +523,8 @@ fn attach_feature_operations(
         records_by_operation(projected_curve_construction_strings, |value| {
             &value.operation_label
         });
+    let fset_reference_graphs_by_operation =
+        records_by_operation(fset_reference_graphs, |graph| &graph.operation_label);
     let pattern_references_by_operation =
         records_by_operation(pattern_references, |reference| &reference.operation_label);
     let pattern_construction_payloads_by_operation =
@@ -1349,6 +1352,13 @@ fn attach_feature_operations(
                 format!("projected_curve_construction_string.{}", value.ordinal),
                 value.id.clone(),
             );
+        }
+        for graph in fset_reference_graphs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert("fset_reference_graph".to_string(), graph.id.clone());
         }
         for reference in pattern_references_by_operation
             .get(label.id.as_str())

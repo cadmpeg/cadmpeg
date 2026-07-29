@@ -2001,6 +2001,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_fset_reference_graphs",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_fset_reference_graphs, r, ns),
+        len: |m| m.features.feature_fset_reference_graphs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_pattern_references",
         tag: None,
         exactness: Exactness::ByteExact,

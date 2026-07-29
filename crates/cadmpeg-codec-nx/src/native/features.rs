@@ -1205,6 +1205,35 @@ pub struct FeatureProjectedCurveConstructionString {
     pub source_offset: u64,
 }
 
+/// Exact two-group object-reference graph carried by an `FSET` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureFsetReferenceGraph {
+    /// Globally unique graph identity.
+    pub id: String,
+    /// Owning `FSET` operation label.
+    pub operation_label: String,
+    /// Exact nonempty printable selector preceding the first group.
+    pub selector: String,
+    /// Serialized object indices in the bounded first group.
+    pub first_object_indices: [u32; 2],
+    /// Exact variable-width object-index tokens in the first group.
+    pub raw_first_object_indices: [Vec<u8>; 2],
+    /// Unique native data-block targets for the first group.
+    pub first_data_blocks: [Option<String>; 2],
+    /// Serialized object indices in the trailing second group.
+    pub second_object_indices: [u32; 3],
+    /// Exact variable-width object-index tokens in the second group.
+    pub raw_second_object_indices: [Vec<u8>; 3],
+    /// Unique native data-block targets for the second group.
+    pub second_data_blocks: [Option<String>; 3],
+    /// Absolute source offset of the graph's `01` marker.
+    pub source_offset: u64,
+    /// Absolute source offsets of the first-group width markers.
+    pub first_source_offsets: [u64; 2],
+    /// Absolute source offsets of the second-group width markers.
+    pub second_source_offsets: [u64; 3],
+}
+
 /// Ordered construction reference carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePatternReference {
@@ -5152,6 +5181,76 @@ pub fn feature_projected_curve_references(
         }
     })
     .collect()
+}
+
+/// Decode and resolve exact `FSET` reference graphs without assigning semantic
+/// roles to either reference group.
+pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetReferenceGraph> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut graphs = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(graph) = crate::om::fset_payload_reference_graph(record) else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            graphs.push(FeatureFsetReferenceGraph {
+                id: format!(
+                    "nx:feature-history:fset-reference-graph#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label,
+                selector: graph.selector,
+                first_object_indices: graph
+                    .first
+                    .each_ref()
+                    .map(|reference| reference.object_index),
+                raw_first_object_indices: graph
+                    .first
+                    .each_ref()
+                    .map(|reference| reference.raw_object_index.clone()),
+                first_data_blocks: graph
+                    .first
+                    .each_ref()
+                    .map(|reference| unique_offset_data_block(&indexed, reference.object_index)),
+                second_object_indices: graph
+                    .second
+                    .each_ref()
+                    .map(|reference| reference.object_index),
+                raw_second_object_indices: graph
+                    .second
+                    .each_ref()
+                    .map(|reference| reference.raw_object_index.clone()),
+                second_data_blocks: graph
+                    .second
+                    .each_ref()
+                    .map(|reference| unique_offset_data_block(&indexed, reference.object_index)),
+                source_offset: entry_offset + graph.offset as u64,
+                first_source_offsets: graph
+                    .first
+                    .each_ref()
+                    .map(|reference| entry_offset + reference.offset as u64),
+                second_source_offsets: graph
+                    .second
+                    .each_ref()
+                    .map(|reference| entry_offset + reference.offset as u64),
+            });
+        }
+    }
+    graphs
 }
 
 /// Reconstruct ordered logical payloads from projected-curve reference fields.
