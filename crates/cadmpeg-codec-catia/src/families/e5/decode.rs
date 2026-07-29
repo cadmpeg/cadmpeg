@@ -1753,17 +1753,12 @@ pub(crate) fn reverse_e5_boundary_curve(
         CurveGeometry::Nurbs(nurbs) => {
             let first = *nurbs.knots.first()?;
             let last = *nurbs.knots.last()?;
-            let mut knots = nurbs
+            let knots = nurbs
                 .knots
                 .iter()
                 .rev()
-                .map(|knot| first + last - knot)
+                .map(|knot| first + (last - knot))
                 .collect::<Vec<_>>();
-            for knot in &mut knots {
-                if knot.abs() <= 1e-15 {
-                    *knot = 0.0;
-                }
-            }
             Some((
                 CurveGeometry::Nurbs(NurbsCurve {
                     degree: nurbs.degree,
@@ -2083,7 +2078,7 @@ mod route_tests {
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
         e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_e5_plane_axes,
-        fit_rank_one_e5_plane_axes, parameter_ranges_reversed,
+        fit_rank_one_e5_plane_axes, parameter_ranges_reversed, reverse_e5_boundary_curve,
     };
 
     use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Topology};
@@ -2593,5 +2588,28 @@ mod route_tests {
             assert!((v_axis.x - 1.0).abs() < 1e-12);
             assert!((u_axis.z - 1.0).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn reversing_nurbs_preserves_tiny_knot_domain() {
+        let tiny = 1e-200;
+        let curve = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![tiny, tiny, 2.0 * tiny, 2.0 * tiny],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        });
+        let (reversed, range) =
+            reverse_e5_boundary_curve(&curve, [tiny, 2.0 * tiny]).expect("reversed NURBS");
+        let CurveGeometry::Nurbs(reversed) = reversed else {
+            panic!("expected NURBS");
+        };
+        assert_eq!(range, [tiny, 2.0 * tiny]);
+        assert_eq!(reversed.knots, [tiny, tiny, 2.0 * tiny, 2.0 * tiny]);
+        assert_eq!(
+            reversed.control_points,
+            [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
+        );
     }
 }
