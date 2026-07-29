@@ -39,14 +39,7 @@ pub(super) fn sphere_great_circle_geometry(
     else {
         return None;
     };
-    if (pcurve.chart_scale - construction_radius).abs()
-        > 1e-12
-            * pcurve
-                .chart_scale
-                .abs()
-                .max(construction_radius.abs())
-                .max(1.0)
-    {
+    if pcurve.chart_scale != *construction_radius {
         return None;
     }
     let phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
@@ -73,11 +66,20 @@ pub(super) fn sphere_great_circle_pcurve(
     pcurve: &B5SphereGreatCirclePcurve,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     let parameter_range = pcurve.chart_bounds[0];
-    (pcurve.chart_scale > 0.0 && parameter_range[0] < parameter_range[1]).then_some((
+    let azimuth_rate = pcurve.chart_scale.recip();
+    let plane_phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
+    (pcurve.chart_scale.is_finite()
+        && pcurve.chart_scale > 0.0
+        && parameter_range.into_iter().all(f64::is_finite)
+        && parameter_range[0] < parameter_range[1]
+        && azimuth_rate.is_finite()
+        && plane_phase.is_finite()
+        && pcurve.slope.is_finite())
+    .then_some((
         PcurveGeometry::SphericalGreatCircle {
             azimuth_origin: 0.0,
-            azimuth_rate: pcurve.chart_scale.recip(),
-            plane_phase: pcurve.chart_shift / pcurve.chart_scale + pcurve.phase,
+            azimuth_rate,
+            plane_phase,
             plane_slope: pcurve.slope,
         },
         parameter_range,

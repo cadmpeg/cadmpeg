@@ -2376,6 +2376,32 @@ mod tests {
         let uv = cadmpeg_ir::eval::pcurve_uv(&geometry, 8.0).expect("chart endpoint");
         assert_eq!(uv.u, 1.0);
         assert!((uv.v - (-(1.0 + std::f64::consts::FRAC_PI_2).cos()).atan()).abs() < 1e-12);
+
+        let tiny = 1e-200;
+        let mut tiny_sphere = sphere;
+        let B5Surface::Sphere {
+            construction_radius,
+            radius,
+            ..
+        } = &mut tiny_sphere
+        else {
+            unreachable!()
+        };
+        *construction_radius = tiny;
+        *radius = tiny;
+        let tiny_pcurve = B5SphereGreatCirclePcurve {
+            chart_bounds: [[0.0, tiny], [0.0, std::f64::consts::TAU * tiny]],
+            chart_shift: 0.0,
+            chart_scale: tiny,
+            slope: -1.0,
+            phase: 0.0,
+        };
+        assert!(sphere_great_circle_geometry(&tiny_pcurve, &tiny_sphere).is_some());
+        let (geometry, range) =
+            sphere_great_circle_pcurve(&tiny_pcurve).expect("tiny parameter-space curve");
+        assert_eq!(range, [0.0, tiny]);
+        let uv = cadmpeg_ir::eval::pcurve_uv(&geometry, tiny).expect("tiny chart endpoint");
+        assert_eq!(uv.u, 1.0);
     }
 
     #[test]
