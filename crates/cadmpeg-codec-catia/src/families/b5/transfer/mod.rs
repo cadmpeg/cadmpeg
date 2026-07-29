@@ -2070,6 +2070,18 @@ mod tests {
         assert_eq!(tolerant.cache_fit_tolerance, None);
         assert!(oriented_line_plan(&line, [1.01, 2.0, 5.0], [1.0, 2.0, 9.0]).is_none());
         assert!(oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 5.0]).is_none());
+
+        let tiny_direction = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1e-200, 0.0, 0.0),
+        };
+        let tiny = oriented_line_plan(&tiny_direction, [2.0, 0.0, 0.0], [3.0, 0.0, 0.0])
+            .expect("finite nonzero line direction");
+        assert!(matches!(
+            tiny.geometry,
+            CurveGeometry::Line { direction, .. }
+                if direction == Vector3::new(1.0, 0.0, 0.0)
+        ));
     }
 
     #[test]

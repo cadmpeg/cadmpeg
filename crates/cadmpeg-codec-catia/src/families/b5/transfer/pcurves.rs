@@ -19,8 +19,8 @@ use super::super::graph::{
 use super::super::vecmath::{add, cross, scale};
 use super::edges::{edge_pcurve_parameters, ordered_subrange};
 use super::{
-    annotate, distance, dot, expand_knots, length, point3, subtract, unit, vector, CurvePlan,
-    HelixPlan, TransferPlan, POINT_TOLERANCE,
+    annotate, distance, dot, expand_knots, point3, subtract, unit, vector, CurvePlan, HelixPlan,
+    TransferPlan, POINT_TOLERANCE,
 };
 
 pub(super) fn sphere_great_circle_geometry(
@@ -94,8 +94,8 @@ pub(super) fn oriented_line_plan(
     };
     let origin = [origin.x, origin.y, origin.z];
     let mut direction = [direction.x, direction.y, direction.z];
-    let direction_length = length(direction);
-    if !direction_length.is_finite() || direction_length <= f64::EPSILON {
+    let direction_length = direction[0].hypot(direction[1]).hypot(direction[2]);
+    if !direction_length.is_finite() || direction_length == 0.0 {
         return None;
     }
     direction = scale(direction, 1.0 / direction_length);
