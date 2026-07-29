@@ -3163,7 +3163,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     let (start, end, control_points) = match mode {
         0x01 if record.payload.len() == position.checked_add(48)? => {
             let [u, v, du, dv, start, end] = line_values::<6>(&record.payload, position)?;
-            if du.abs().max(dv.abs()) <= f64::EPSILON {
+            if du == 0.0 && dv == 0.0 {
                 return None;
             }
             (
@@ -4831,6 +4831,9 @@ mod tests {
         assert_eq!(general.surface, 2);
         assert_eq!(general.distinct_knots, [1.0, 5.0]);
         assert_eq!(general.control_points, [[6.0, 1.0], [22.0, -7.0]]);
+        let tiny = parse_line_pcurve(&record(0x01, &[0.0, 0.0, 1e-200, -1e-200, 1.0, 5.0]))
+            .expect("tiny nonzero line direction");
+        assert_eq!(tiny.control_points, [[1e-200, -1e-200], [5e-200, -5e-200]]);
         let mut wrong_family = record(0x01, &[2.0, 3.0, 4.0, -2.0, 1.0, 5.0]);
         wrong_family.family = 0xa8;
         assert!(parse_line_pcurve(&wrong_family).is_none());
