@@ -1515,9 +1515,6 @@ where
         }
         Some(complete)
     })();
-    if exhausted && std::env::var_os("CADMPEG_CATIA_DIAGNOSTIC").is_some() {
-        eprintln!("incidence solve exhausted outside component search");
-    }
     match solution {
         Some(solution) => IncidenceSolve::Solved(solution),
         None if exhausted => IncidenceSolve::Exhausted,
