@@ -16,9 +16,9 @@ use cadmpeg_ir::features::{
     ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, DesignParameter, EdgeSelection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RibConstruction,
-    RibDraft, SketchSpace, SweepMode, Termination, ThickenSide, TrimRegion,
+    FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, HolePlacement, Length,
+    ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
+    RibConstruction, RibDraft, SketchSpace, SweepMode, Termination, ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -271,7 +271,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(174);
+    namespace.version = namespace.version.max(175);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -1000,10 +1000,8 @@ fn attach_feature_operations(
         simple_hole_construction_groups,
         &hole_outputs,
     );
-    let simple_hole_directions =
-        hole_directions_for_operations(ir, &simple_hole_operations, &hole_outputs);
-    let simple_hole_positions =
-        hole_positions_for_operations(ir, &simple_hole_operations, &hole_outputs);
+    let simple_hole_placements =
+        hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
     let hole_package_operations = labels
         .iter()
         .filter(|label| label.value == "HOLE PACKAGE")
@@ -1021,10 +1019,8 @@ fn attach_feature_operations(
         .collect::<BTreeMap<_, _>>();
     let hole_package_diameters =
         hole_diameters_for_operations(ir, &hole_package_operations, &hole_package_outputs);
-    let hole_package_directions =
-        hole_directions_for_operations(ir, &hole_package_operations, &hole_package_outputs);
-    let hole_package_positions =
-        hole_positions_for_operations(ir, &hole_package_operations, &hole_package_outputs);
+    let hole_package_placements =
+        hole_axis_placements_for_operations(ir, &hole_package_operations, &hole_package_outputs);
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterBinding>>::new();
@@ -2049,17 +2045,13 @@ fn attach_feature_operations(
                             block_dimension_values,
                             block_placement,
                             HoleProjection {
-                                position: simple_hole_positions
+                                placement: simple_hole_placements
                                     .get(label.id.as_str())
-                                    .or_else(|| hole_package_positions.get(label.id.as_str()))
-                                    .copied(),
+                                    .or_else(|| hole_package_placements.get(label.id.as_str()))
+                                    .cloned(),
                                 diameter: simple_hole_diameters
                                     .get(label.id.as_str())
                                     .or_else(|| hole_package_diameters.get(label.id.as_str()))
-                                    .copied(),
-                                direction: simple_hole_directions
-                                    .get(label.id.as_str())
-                                    .or_else(|| hole_package_directions.get(label.id.as_str()))
                                     .copied(),
                                 chamfer: simple_hole_chamfers.get(label.id.as_str()).copied(),
                             },
@@ -3362,11 +3354,10 @@ fn non_boolean_feature_definition(
 }
 
 /// Permutation-invariant hole properties derived from one complete body partition.
-#[derive(Clone, Copy, Default)]
+#[derive(Default)]
 struct HoleProjection {
-    pub(crate) position: Option<Point3>,
+    pub(crate) placement: Option<HolePlacement>,
     pub(crate) diameter: Option<Length>,
-    pub(crate) direction: Option<Vector3>,
     pub(crate) chamfer: Option<HoleKind>,
 }
 
@@ -3457,9 +3448,9 @@ fn non_boolean_feature_definition_with_parameters(
             profile: None,
             profile_filter: None,
             face: None,
-            position: hole.position,
-            direction: hole.direction,
-            placements: Vec::new(),
+            position: None,
+            direction: None,
+            placements: hole.placement.into_iter().collect(),
             kind: hole.chamfer.unwrap_or_else(|| {
                 if simple_hole_template.is_some() {
                     HoleKind::Unresolved {
@@ -3497,9 +3488,9 @@ fn non_boolean_feature_definition_with_parameters(
             profile: None,
             profile_filter: None,
             face: None,
-            position: hole.position,
-            direction: hole.direction,
-            placements: Vec::new(),
+            position: None,
+            direction: None,
+            placements: hole.placement.into_iter().collect(),
             kind: HoleKind::Unresolved {
                 form: None,
                 counterbore_diameter: None,
@@ -3711,15 +3702,15 @@ fn hole_diameters_for_operations(
     diameters
 }
 
-/// Derive one canonical model-space direction per operation when every bore
-/// in a body partition has one common axis direction. Radii need not match:
-/// direction remains invariant when operation-to-bore diameter ownership is
-/// ambiguous.
-fn hole_directions_for_operations(
+/// Derive one complete unoriented placement when one operation owns exactly
+/// one through bore. The closest point to the model origin is invariant under
+/// axial shifts of the serialized cylinder origin. Canonical axis sign makes
+/// serialization deterministic but carries no drilling-direction semantics.
+fn hole_axis_placements_for_operations(
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, Vector3> {
+) -> BTreeMap<String, HolePlacement> {
     if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
     {
         return BTreeMap::new();
@@ -3729,64 +3720,7 @@ fn hole_directions_for_operations(
     };
 
     let angular_tolerance = ir.tolerances.angular.max(1e-12);
-    let mut directions = BTreeMap::new();
-    for (body, operations) in operations_by_body {
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return BTreeMap::new();
-        };
-        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
-            return BTreeMap::new();
-        };
-        if bores.len() != operations.len() {
-            return BTreeMap::new();
-        }
-        let Some((_, first_axis, _)) = bores.first().copied() else {
-            return BTreeMap::new();
-        };
-        let Some(mut direction) = unit_vector(first_axis) else {
-            return BTreeMap::new();
-        };
-        let Some(leading) = [direction.x, direction.y, direction.z]
-            .into_iter()
-            .find(|component| component.abs() > angular_tolerance)
-        else {
-            return BTreeMap::new();
-        };
-        if leading < 0.0 {
-            direction = Vector3::new(-direction.x, -direction.y, -direction.z);
-        }
-        if bores.iter().any(|(_, axis, _)| {
-            unit_vector(*axis)
-                .is_none_or(|axis| (1.0 - dot_vector(direction, axis).abs()) > angular_tolerance)
-        }) {
-            return BTreeMap::new();
-        }
-        directions.extend(
-            operations
-                .into_iter()
-                .map(|operation| (operation, direction)),
-        );
-    }
-    directions
-}
-
-/// Derive the canonical point on a hole axis when one operation owns exactly
-/// one through bore. The closest point to the model origin is invariant under
-/// axial shifts of the serialized cylinder origin.
-fn hole_positions_for_operations(
-    ir: &CadIr,
-    operations: &[String],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, Point3> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-    {
-        return BTreeMap::new();
-    }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
-        return BTreeMap::new();
-    };
-
-    let mut positions = BTreeMap::new();
+    let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             continue;
@@ -3800,21 +3734,30 @@ fn hole_positions_for_operations(
         let [(origin, axis, _)] = bores.as_slice() else {
             continue;
         };
-        let Some(axis) = unit_vector(*axis) else {
+        let Some(mut axis) = unit_vector(*axis) else {
             continue;
         };
+        let Some(leading) = [axis.x, axis.y, axis.z]
+            .into_iter()
+            .find(|component| component.abs() > angular_tolerance)
+        else {
+            continue;
+        };
+        if leading < 0.0 {
+            axis = Vector3::new(-axis.x, -axis.y, -axis.z);
+        }
         let axial_offset = origin.x * axis.x + origin.y * axis.y + origin.z * axis.z;
-        let position = Point3::new(
+        let origin = Point3::new(
             origin.x - axial_offset * axis.x,
             origin.y - axial_offset * axis.y,
             origin.z - axial_offset * axis.z,
         );
-        if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
+        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
             continue;
         }
-        positions.insert(operation.clone(), position);
+        placements.insert(operation.clone(), HolePlacement::Axis { origin, axis });
     }
-    positions
+    placements
 }
 
 /// Resolve hole operations to their explicit output bodies, or to the one
@@ -5204,6 +5147,40 @@ mod tests {
     }
 
     #[test]
+    fn topology_inferred_hole_axis_is_not_an_authored_direction() {
+        use cadmpeg_ir::features::{FeatureDefinition, HolePlacement};
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        for kind in ["SIMPLE HOLE", "HOLE PACKAGE"] {
+            assert!(matches!(
+                super::non_boolean_feature_definition_with_parameters(
+                    kind,
+                    &[],
+                    None,
+                    None,
+                    super::HoleProjection {
+                        placement: Some(HolePlacement::Axis {
+                            origin: Point3::new(1.0, 2.0, 3.0),
+                            axis: Vector3::new(0.0, 0.0, 1.0),
+                        }),
+                        ..super::HoleProjection::default()
+                    },
+                    std::collections::BTreeMap::new(),
+                ),
+                FeatureDefinition::Hole {
+                    position: None,
+                    direction: None,
+                    placements,
+                    ..
+                } if placements == [HolePlacement::Axis {
+                    origin: Point3::new(1.0, 2.0, 3.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                }]
+            ));
+        }
+    }
+
+    #[test]
     fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
         use cadmpeg_ir::features::{
             BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, ProfileRef, Termination,
@@ -6172,6 +6149,7 @@ mod tests {
             SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
         };
         use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
+        use cadmpeg_ir::features::HolePlacement;
         use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
         use cadmpeg_ir::ids::{
             BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
@@ -6323,23 +6301,13 @@ mod tests {
                 ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
             ])
         );
-        let expected_directions = std::collections::BTreeMap::from([
-            ("hole-a".into(), Vector3::new(0.0, 1.0, 0.0)),
-            ("hole-b".into(), Vector3::new(0.0, 1.0, 0.0)),
-        ]);
-        assert_eq!(
-            super::hole_directions_for_operations(&ir, &operations, &outputs),
-            expected_directions
-        );
-        assert_eq!(
-            super::hole_directions_for_operations(
-                &ir,
-                &operations,
-                &std::collections::BTreeMap::new(),
-            ),
-            expected_directions
-        );
-        assert!(super::hole_positions_for_operations(&ir, &operations, &outputs).is_empty());
+        assert!(super::hole_axis_placements_for_operations(&ir, &operations, &outputs).is_empty());
+        assert!(super::hole_axis_placements_for_operations(
+            &ir,
+            &operations,
+            &std::collections::BTreeMap::new(),
+        )
+        .is_empty());
         let mut single_hole = ir.clone();
         single_hole.model.shells[0].faces = vec![FaceId("face-1".into())];
         let single_operation = [operations[1].clone()];
@@ -6348,10 +6316,18 @@ mod tests {
             outputs[&operations[1]].clone(),
         )]);
         assert_eq!(
-            super::hole_positions_for_operations(&single_hole, &single_operation, &single_output,),
-            std::collections::BTreeMap::from([
-                (operations[1].clone(), Point3::new(1.0, 0.0, 0.0),)
-            ])
+            super::hole_axis_placements_for_operations(
+                &single_hole,
+                &single_operation,
+                &single_output,
+            ),
+            std::collections::BTreeMap::from([(
+                operations[1].clone(),
+                HolePlacement::Axis {
+                    origin: Point3::new(1.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 1.0, 0.0),
+                },
+            )])
         );
         let SurfaceGeometry::Cylinder { origin, .. } = &mut single_hole.model.surfaces[1].geometry
         else {
@@ -6359,12 +6335,20 @@ mod tests {
         };
         origin.y = 91.0;
         assert_eq!(
-            super::hole_positions_for_operations(&single_hole, &single_operation, &single_output,),
-            std::collections::BTreeMap::from([
-                (operations[1].clone(), Point3::new(1.0, 0.0, 0.0),)
-            ])
+            super::hole_axis_placements_for_operations(
+                &single_hole,
+                &single_operation,
+                &single_output,
+            ),
+            std::collections::BTreeMap::from([(
+                operations[1].clone(),
+                HolePlacement::Axis {
+                    origin: Point3::new(1.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 1.0, 0.0),
+                },
+            )])
         );
-        let mut opposite_axis = ir.clone();
+        let mut opposite_axis = single_hole.clone();
         let SurfaceGeometry::Cylinder { axis, .. } = &mut opposite_axis.model.surfaces[1].geometry
         else {
             unreachable!()
@@ -6382,8 +6366,18 @@ mod tests {
             *axis = Vector3::new(0.0, -1.0, 0.0);
         }
         assert_eq!(
-            super::hole_directions_for_operations(&opposite_axis, &operations, &outputs),
-            expected_directions
+            super::hole_axis_placements_for_operations(
+                &opposite_axis,
+                &single_operation,
+                &single_output,
+            ),
+            std::collections::BTreeMap::from([(
+                operations[1].clone(),
+                HolePlacement::Axis {
+                    origin: Point3::new(1.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 1.0, 0.0),
+                },
+            )])
         );
         let mut different_radii = ir.clone();
         let SurfaceGeometry::Cylinder { radius, .. } =
@@ -6406,10 +6400,6 @@ mod tests {
         assert!(
             super::hole_diameters_for_operations(&different_radii, &operations, &outputs,)
                 .is_empty()
-        );
-        assert_eq!(
-            super::hole_directions_for_operations(&different_radii, &operations, &outputs),
-            expected_directions
         );
         assert_eq!(
             super::simple_hole_diameters(
@@ -6452,15 +6442,18 @@ mod tests {
             &outputs,
         )
         .is_empty());
-        let mut nonparallel = ir.clone();
+        let mut nonparallel = single_hole.clone();
         let SurfaceGeometry::Cylinder { axis, .. } = &mut nonparallel.model.surfaces[1].geometry
         else {
             unreachable!()
         };
         *axis = Vector3::new(0.0, 0.0, 1.0);
-        assert!(
-            super::hole_directions_for_operations(&nonparallel, &operations, &outputs).is_empty()
-        );
+        assert!(super::hole_axis_placements_for_operations(
+            &nonparallel,
+            &single_operation,
+            &single_output,
+        )
+        .is_empty());
         let mut sheet = ir.clone();
         sheet.model.bodies[0].kind = BodyKind::Sheet;
         assert!(super::hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
