@@ -7831,7 +7831,6 @@ mod tests {
     #[test]
     fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
         use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
-        use cadmpeg_ir::ids::BodyId;
         use std::collections::BTreeMap;
 
         let operation = super::FeatureBooleanOperation {
@@ -7846,11 +7845,10 @@ mod tests {
             tool_source_offsets: vec![1],
             source_offset: 0,
         };
-        let body = BodyId("body#10".to_string());
-        let bodies = BTreeMap::from([(10, vec![body.clone()]), (20, vec![body])]);
+        let roots = BTreeMap::from([(10, 10), (20, 10)]);
 
         assert_eq!(
-            crate::native::attach::boolean_feature_definition(&operation, &bodies),
+            crate::native::attach::boolean_feature_definition(&operation, &roots),
             FeatureDefinition::Combine {
                 target: BodySelection::Native("nx:om-object-index#10".to_string()),
                 tools: BodySelection::Native("nx:om-object-indices#20".to_string()),
@@ -7858,7 +7856,7 @@ mod tests {
             }
         );
 
-        let missing_tool = BTreeMap::from([(10, vec![BodyId("body#10".to_string())])]);
+        let missing_tool = BTreeMap::from([(10, 10)]);
         assert!(matches!(
             crate::native::attach::boolean_feature_definition(&operation, &missing_tool),
             FeatureDefinition::Combine {

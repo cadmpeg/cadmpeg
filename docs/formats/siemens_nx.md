@@ -175,11 +175,12 @@ order.
 
 Each of these labels projects as a neutral combine with join, cut, or intersect
 semantics respectively. A complete Boolean header supplies the target and
-ordered tool selections. Target and tool selections resolve atomically only
-when every serialized participant maps to a nonempty neutral body set and the
-participant sets are pairwise disjoint. An absent or invalid header, an
-unresolved body binding, or alias overlap leaves both native
-selections unresolved without discarding the operation family or Boolean kind.
+ordered tool selections. Target and tool selections retain input-local body
+identities atomically only when every serialized participant belongs to a
+segment body-image alias component and the participant sets are pairwise
+disjoint. An absent or invalid header, an unresolved body binding, or alias
+overlap leaves both native selections unresolved without discarding the
+operation family or Boolean kind.
 
 A body-affecting operation record contains exactly one primary-body field
 `01 02 10 reference_index ff`. The index uses the operation-header encoding and
@@ -194,11 +195,14 @@ neutral body from that image is an output of the operation. An offset-store
 primary body or unbound object-namespace primary body retains its native
 relation but has no neutral output.
 
-A body selection resolves atomically only when every serialized object identity
-has a segment body-image binding. Bound bodies retain first serialized
-occurrence order. Multiple serialized aliases of the same segment body
-contribute that body once. Alias overlap between distinct selection roles does
-not collapse those roles and leaves them unresolved.
+A body selection retains input-local identity atomically only when every
+serialized object identity belongs to a segment body-image alias component.
+The identity is the smallest object index in the complete transitive alias
+component. Local identities retain first serialized occurrence order. Multiple
+serialized aliases in the same component contribute that identity once. Alias
+overlap between distinct selection roles does not collapse those roles and
+leaves them unresolved. A local identity does not assert that the segment's
+saved terminal image is the body's pre-operation geometry.
 
 `DELETE` is a body-deletion operation only when its bounded record contains the
 primary-body field. A `DELETE` record without that field does not identify a
