@@ -8642,6 +8642,16 @@ mod marker_tests {
 
         payload[27..29].copy_from_slice(&1u16.to_le_bytes());
         payload[56..58].fill(0);
+        assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
+        let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+        assert_eq!(
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "fourth"]
+        );
+        payload[56..58].fill(0xff);
         assert!(!super::extended_marker84_line_uses_point_roster(
             &payload, 0
         ));
@@ -38529,10 +38539,10 @@ fn extended_marker84_line_uses_point_roster(payload: &[u8], offset: usize) -> bo
         && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
         && payload
             .get(offset + 56..offset + 58)
-            .is_some_and(|first| first != [0; 2] && first != [0xff; 2])
+            .is_some_and(|first| first != [0xff; 2])
         && payload
             .get(offset + 58..offset + 60)
-            .is_some_and(|second| second != [0; 2] && second != [0xff; 2])
+            .is_some_and(|second| second != [0xff; 2])
         && payload.get(offset + 56..offset + 58) != payload.get(offset + 58..offset + 60)
         && matches!(
             payload.get(offset + 60..offset + 64),
