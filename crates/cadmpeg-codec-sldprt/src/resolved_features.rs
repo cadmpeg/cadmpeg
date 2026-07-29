@@ -988,6 +988,13 @@ fn extended_compact_linked_profile_point_coordinates(
         && payload.get(offset + 74..offset + 78) == Some(&[0x00, 0x00, 0x02, 0x00])
         && identity(142) == Some(u32::MAX)
         && sketch_marker_prefix_at(payload, offset.saturating_add(146));
+    let continuation = payload.get(offset + 100..offset + 136) == Some(&[0; 36])
+        && payload.get(offset + 74..offset + 78) == Some(&[0x00, 0x00, 0x02, 0x00])
+        && identity(136).is_some_and(|identity| !matches!(identity, 0 | u32::MAX))
+        && payload.get(offset + 140..offset + 142) == Some(&[0; 2])
+        && payload.get(offset + 142..offset + 146) == Some(&1u32.to_le_bytes())
+        && identity(146).is_some_and(|identity| !matches!(identity, 0 | u32::MAX))
+        && sketch_marker_prefix_at(payload, offset.saturating_add(150));
     let cells = [78, 86].map(|relative| {
         let cell = payload.get(offset + relative..offset + relative + 8)?;
         Some((
@@ -1006,7 +1013,7 @@ fn extended_compact_linked_profile_point_coordinates(
     );
     if !valid_cells
         || payload.get(offset + 94..offset + 100) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
-        || !(single_identity || paired_identities || terminal_sentinel)
+        || !(single_identity || paired_identities || terminal_sentinel || continuation)
     {
         return None;
     }
@@ -7997,6 +8004,38 @@ mod marker_tests {
         assert_eq!(
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
+        );
+        let mut continuation = vec![0; 150 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        continuation[..146].copy_from_slice(&payload[..146]);
+        continuation[136..140].copy_from_slice(&6u32.to_le_bytes());
+        continuation[140..142].fill(0);
+        continuation[142..146].copy_from_slice(&1u32.to_le_bytes());
+        continuation[146..150].copy_from_slice(&1u32.to_le_bytes());
+        continuation[150..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert_eq!(
+            extended_compact_linked_profile_point_coordinates(&continuation, 0),
+            Some([0.8, 0.0125])
+        );
+        assert_eq!(
+            sketch_input_entities(&continuation, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        continuation[142..146].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            extended_compact_linked_profile_point_coordinates(&continuation, 0),
+            None
+        );
+        continuation[142..146].copy_from_slice(&1u32.to_le_bytes());
+        continuation[76..78].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(
+            extended_compact_linked_profile_point_coordinates(&continuation, 0),
+            None
+        );
+        continuation[76..78].copy_from_slice(&2u16.to_le_bytes());
+        continuation[136..140].fill(0);
+        assert_eq!(
+            extended_compact_linked_profile_point_coordinates(&continuation, 0),
+            None
         );
         payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         assert_eq!(
