@@ -6,22 +6,21 @@ This document records F3D semantics that the format specification does not yet d
 
 - The payload grammars for `VBL_OFFSURF` / `offsetvbsur` and `skin_spl_sur2` are undefined. A valid final solved cache supplies the exact face shape while the complete construction record remains opaque. Cacheless occurrences cannot select the existing vertex-blend offset or skin layouts without subtype-specific field boundaries.
 - The basic surface record names `offset` and `sur-sur-int` are registered carrier names, but their record payloads and exact-geometry relations are undefined. They remain unknown surface carriers unless a spline subtype supplies a solved cache and construction graph.
-- The roles of the two boolean flags terminating a cache-first `par_int_cur` are unresolved. The second flag is false in every observed instance; the first varies.
+- The role of the second boolean flag terminating a cache-first `par_int_cur` is unresolved. It takes both values, varies within a single stream, and has no identified correlate.
 - Which of the leading two-boolean sense pair in a revision-gated `off_spl_sur` carries the U sense and which the V sense, and the meaning of the following two-boolean ASM extension prefix, are unresolved. An instance whose extension-prefix flags are both true carries an additional run before the shared tail — a boolean, six integers, a boolean, an embedded cache-first intcurve with optional endpoints, further booleans, a small tolerance scalar, and four `-1` integers; which flag gates the run and the field roles are unresolved, and such records are retained verbatim.
-- The role of the boolean following the shared revision-gated surface tail in a revision-gated `ortho_spl_sur` is unresolved, as is which of the two trailing booleans is the orthogonal sense. Both trailing booleans are false in every observed instance.
+- The role of the boolean following the shared revision-gated surface tail in a revision-gated `ortho_spl_sur` is unresolved. The shared-tail boolean is false in every observed instance; the final boolean varies and positionally corresponds to the single boolean of the text form, but which boolean is the orthogonal sense remains unresolved.
 - The role of the enum opening the shared revision-gated surface tail is unresolved. Only its zero value has a defined tail grammar; a non-zero value selects a native branch in which the containing record is retained verbatim.
 - Variable-arity algebraic `readLaw` operators `MIN`, `MAX`, and `STEP` have no defined serialized child-count or terminating delimiter. Their recursive boundaries cannot yet be decoded or written losslessly inside law, net, skin, and sweep payloads.
-- The semantic role of the integer between the secondary and tertiary pcurves in a variable-blend support side is unresolved; it is zero in every observed side.
+- The semantic role of the integer between the secondary and tertiary pcurves in a variable-blend support side is unresolved; it is zero whether the secondary pcurve is null or present, and the tertiary pcurve slot is null in every observed side.
 - The semantic roles of the four optional parameter values between the shared revision-gated surface tail and the trailing enum of revision-gated `exact_spl_sur` and `t_spl_sur` are unresolved.
-- The semantic roles and coordinate ordering of the four optional scalar fields between the sections and flags of revision-gated `loft_spl_sur` are unresolved.
+- The semantic roles within each of the two scalar pairs between the sections and flags of revision-gated `loft_spl_sur` are unresolved.
 - Revision-gated `cl_loft_spl_sur` tail kinds other than zero are unobserved and undefined. The condition selecting the optional trailing values and BS3 curve of the kind-zero payload beyond their structural presence is unresolved.
 - Whether a pre-revision `var_blend_spl_sur` / `srf_srf_v_bl_spl_sur` layout exists in which the leading integer is a subtype definition-table index rather than the serializer revision is unresolved.
-- Which of the three `fixed_width` blend-value scalars are the endpoint parameters and which is the width is unresolved.
 - The token tags of a revision-gated `VBL_SURF` `deg` boundary are unobserved.
 - The semantic roles of the variable-blend tail Boolean and of the three integers that follow it are unresolved.
-- Blend-value payloads have incomplete selector namespaces: two-radii chamfer-selector values other than `0` and `3`, single-radius selector values other than `0`, `1`, and `7`, the roles of the two scalars selected by values `1` and `7`, and the semantics of the optional `interp` scalar-pair tail are unresolved.
-- The roles of the two leading `tvertex` tolerance slots are unresolved; only the last slot is the vertex tolerance.
-- The role of the `tedge` trailing LONG zero (`chunk[13]`) is unresolved.
+- Blend-value payloads have incomplete selector namespaces: two-radii chamfer-selector values other than `0` and `3`, single-radius selector values other than `0`, `1`, and `7`, what distinguishes single-radius selector `1` from `7`, and the semantics of the optional `interp` scalar-pair tail are unresolved.
+- The role of the second of the two leading `tvertex` tolerance slots is unresolved. The first slot is the unevaluated sentinel `-1` in every observed instance; the second is an earlier tolerance evaluation satisfying second ≤ third ≤ second + 1e-6, where the third slot is the vertex tolerance.
+- The `tedge` trailing LONG (`chunk[13]`) is version-gated, absent in older streams and taking values `0` and `1` when present. It is retained verbatim; its role is unresolved.
 
 ## Container, header, and design records
 
