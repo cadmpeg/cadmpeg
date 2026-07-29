@@ -16,8 +16,8 @@ use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, curve_point, model_surface_point_by_id, nurbs_surface_partials,
-    pcurve_uv, surface_point,
+    analytic_surface_parameters, curve_point, model_surface_point_by_id, nurbs_curve_speed_bound,
+    nurbs_surface_isocurve, nurbs_surface_partials, pcurve_uv, surface_point,
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
@@ -30,7 +30,8 @@ use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
     IntcurveSupportSide, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceCurveFamily, SurfaceGeometry, TolerantIntersectionParameterization,
+    SurfaceCurveFamily, SurfaceGeometry, SurfaceParameterAxis,
+    TolerantIntersectionParameterization,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -5899,15 +5900,176 @@ fn coincident_pcurve_pair(
     range: [f64; 2],
     tolerance: f64,
 ) -> bool {
-    (0..=32).all(|index| {
-        let fraction = f64::from(index) / 32.0;
-        let parameter = range[0] + fraction * (range[1] - range[0]);
+    const MAX_INTERVALS: usize = 100_000;
+
+    if !range[0].is_finite()
+        || !range[1].is_finite()
+        || range[0] >= range[1]
+        || !tolerance.is_finite()
+        || tolerance < 0.0
+    {
+        return false;
+    }
+    let separation = |parameter| {
         let points = [0usize, 1usize].map(|side| {
             let uv = pcurve_uv(pcurves[side], parameter)?;
             decoded_surface_point(ir, surfaces[side], uv.u, uv.v)
         });
-        matches!(points, [Some(first), Some(second)] if point_distance(first, second) <= tolerance)
-    })
+        let [Some(first), Some(second)] = points else {
+            return None;
+        };
+        let distance = point_distance(first, second);
+        distance.is_finite().then_some(distance)
+    };
+    let affine_breaks = [0usize, 1usize]
+        .map(|side| boundary_curve_affine_breaks(ir, surfaces[side], pcurves[side], range));
+    if let [Some(first), Some(second)] = affine_breaks {
+        let mut breaks = first;
+        breaks.extend(second);
+        breaks.sort_by(f64::total_cmp);
+        breaks.dedup();
+        return breaks
+            .into_iter()
+            .all(|parameter| separation(parameter).is_some_and(|value| value <= tolerance));
+    }
+    let Some(speed_bound) = [0usize, 1usize]
+        .into_iter()
+        .map(|side| boundary_curve_speed_bound(ir, surfaces[side], pcurves[side]))
+        .sum::<Option<f64>>()
+    else {
+        return false;
+    };
+    if range
+        .into_iter()
+        .any(|parameter| !separation(parameter).is_some_and(|value| value <= tolerance))
+    {
+        return false;
+    }
+    let mut intervals = vec![range];
+    let mut examined = 0usize;
+    while let Some([start, end]) = intervals.pop() {
+        examined += 1;
+        if examined > MAX_INTERVALS {
+            return false;
+        }
+        let middle = start + (end - start) * 0.5;
+        let Some(middle_separation) = separation(middle) else {
+            return false;
+        };
+        if middle_separation > tolerance {
+            return false;
+        }
+        let maximum_separation = middle_separation + speed_bound * (end - start) * 0.5;
+        if maximum_separation <= tolerance {
+            continue;
+        }
+        if middle == start || middle == end {
+            return false;
+        }
+        intervals.push([middle, end]);
+        intervals.push([start, middle]);
+    }
+    true
+}
+
+fn boundary_curve_affine_breaks(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    pcurve: &PcurveGeometry,
+    range: [f64; 2],
+) -> Option<Vec<f64>> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    let PcurveGeometry::Line { origin, direction } = pcurve else {
+        return None;
+    };
+    match &carrier.geometry {
+        SurfaceGeometry::Plane { .. } => Some(range.to_vec()),
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
+            if direction.u == 0.0 && direction.v != 0.0 =>
+        {
+            Some(range.to_vec())
+        }
+        SurfaceGeometry::Nurbs(nurbs) => {
+            let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
+                if direction.u == 0.0 && direction.v != 0.0 {
+                    (SurfaceParameterAxis::U, origin.u, origin.v, direction.v)
+                } else if direction.v == 0.0 && direction.u != 0.0 {
+                    (SurfaceParameterAxis::V, origin.v, origin.u, direction.u)
+                } else {
+                    return None;
+                };
+            let isocurve = nurbs_surface_isocurve(nurbs, fixed_axis, fixed_parameter)?;
+            if isocurve.degree != 1
+                || isocurve.weights.as_ref().is_some_and(|weights| {
+                    weights
+                        .windows(2)
+                        .any(|pair| pair[0].to_bits() != pair[1].to_bits())
+                })
+            {
+                return None;
+            }
+            let degree = usize::try_from(isocurve.degree).ok()?;
+            let count = isocurve.control_points.len();
+            let mut breaks = isocurve.knots.get(degree..=count)?.to_vec();
+            for parameter in &mut breaks {
+                *parameter = (*parameter - varying_origin) / varying_scale;
+            }
+            breaks.retain(|parameter| {
+                parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
+            });
+            breaks.extend(range);
+            Some(breaks)
+        }
+        _ => None,
+    }
+}
+
+fn boundary_curve_speed_bound(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    pcurve: &PcurveGeometry,
+) -> Option<f64> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    let PcurveGeometry::Line { origin, direction } = pcurve else {
+        return None;
+    };
+    let affine_speed = || {
+        let first = decoded_surface_point(ir, surface, origin.u, origin.v)?;
+        let second =
+            decoded_surface_point(ir, surface, origin.u + direction.u, origin.v + direction.v)?;
+        let speed = point_distance(first, second);
+        speed.is_finite().then_some(speed)
+    };
+    match &carrier.geometry {
+        SurfaceGeometry::Plane { .. } => affine_speed(),
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
+            if direction.u == 0.0 && direction.v != 0.0 =>
+        {
+            affine_speed()
+        }
+        SurfaceGeometry::Nurbs(nurbs) => {
+            let (fixed_axis, fixed_parameter, varying_scale) =
+                if direction.u == 0.0 && direction.v != 0.0 {
+                    (SurfaceParameterAxis::U, origin.u, direction.v)
+                } else if direction.v == 0.0 && direction.u != 0.0 {
+                    (SurfaceParameterAxis::V, origin.v, direction.u)
+                } else {
+                    return None;
+                };
+            let isocurve = nurbs_surface_isocurve(nurbs, fixed_axis, fixed_parameter)?;
+            let bound = nurbs_curve_speed_bound(&isocurve)? * varying_scale.abs();
+            bound.is_finite().then_some(bound)
+        }
+        _ => None,
+    }
 }
 
 fn transfer_intersection_pcurve(
@@ -8125,10 +8287,11 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve,
-        ProceduralCurve, ProceduralCurveDefinition,
+        NurbsSurface, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface,
+        SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::{CurveId, PointId, ProceduralCurveId, VertexId};
-    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::ids::{CurveId, PointId, ProceduralCurveId, SurfaceId, VertexId};
+    use cadmpeg_ir::math::{Point2, Point3};
     use cadmpeg_ir::topology::{Point, Vertex};
 
     #[test]
@@ -8201,5 +8364,68 @@ mod tests {
         ]);
 
         assert!(super::orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
+    }
+
+    #[test]
+    fn boundary_coincidence_is_certified_between_uniform_samples() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let surfaces = [
+            SurfaceId("nx:test:surface#0".into()),
+            SurfaceId("nx:test:surface#1".into()),
+        ];
+        let surface = || NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0],
+            u_count: 2,
+            v_count: 4,
+            control_points: [0.0, 1.0]
+                .into_iter()
+                .flat_map(|y| {
+                    [0.0, 0.1, 0.2, 10.0]
+                        .into_iter()
+                        .map(move |x| Point3::new(x, y, 0.0))
+                })
+                .collect(),
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        ir.model.surfaces.extend([
+            Surface {
+                id: surfaces[0].clone(),
+                geometry: SurfaceGeometry::Nurbs(surface()),
+                source_object: None,
+            },
+            Surface {
+                id: surfaces[1].clone(),
+                geometry: SurfaceGeometry::Nurbs(surface()),
+                source_object: None,
+            },
+        ]);
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(0.0, 1.0),
+        };
+        assert!(super::coincident_pcurve_pair(
+            &ir,
+            [&surfaces[0], &surfaces[1]],
+            [&pcurve, &pcurve],
+            [0.0, 1.0],
+            0.1,
+        ));
+
+        let SurfaceGeometry::Nurbs(second) = &mut ir.model.surfaces[1].geometry else {
+            unreachable!()
+        };
+        second.control_points[1].z = 1.0;
+        assert!(!super::coincident_pcurve_pair(
+            &ir,
+            [&surfaces[0], &surfaces[1]],
+            [&pcurve, &pcurve],
+            [0.0, 1.0],
+            0.1,
+        ));
     }
 }

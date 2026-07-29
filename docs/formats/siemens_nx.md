@@ -809,7 +809,15 @@ common interval are present or all three are absent. Evaluation maps the common
 parameter through both charts and succeeds only while the resulting support
 points agree within the EDGE tolerance. Inverse parameterization on a
 constant-parameter NURBS support extracts the exact rational isocurve from the
-surface tensor product. A supplied branch seed selects among repeated
+surface tensor product. Chart coincidence is certified over the complete
+interval. Affine analytic charts and degree-one equal-weight NURBS isocurves
+use the union of their exact knot breaks; endpoint agreement on each resulting
+piece bounds the complete affine piece. Other rational isocurves subdivide
+against the sum of the two model-space speed bounds; an interval is accepted
+only when its midpoint separation plus the maximum possible travel to either
+endpoint is within tolerance. Search exhaustion, non-finite evaluation, or an
+interval that cannot be certified leaves the parameterization absent. A
+supplied branch seed selects among repeated
 model-space points; interval rejection uses a rational speed bound, and the
 selected parameter must forward-evaluate through both support charts within
 the EDGE tolerance. Transfer does not synthesize a model-space line between

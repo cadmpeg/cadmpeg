@@ -274,75 +274,14 @@ pub fn nurbs_curve_parameter_near_point(
     {
         return None;
     }
-    let owned_weights;
-    let weights = match &curve.weights {
-        Some(weights) if weights.len() == count => weights,
-        Some(_) => return None,
-        None => {
-            owned_weights = vec![1.0; count];
-            &owned_weights
-        }
-    };
-    if curve
-        .control_points
-        .iter()
-        .zip(weights)
-        .any(|(control, weight)| {
-            !control.x.is_finite()
-                || !control.y.is_finite()
-                || !control.z.is_finite()
-                || !weight.is_finite()
-                || *weight <= 0.0
-        })
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
-    {
-        return None;
-    }
-
-    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
-    let radius = |control: &Point3| {
-        ((control.x - point.x).powi(2)
-            + (control.y - point.y).powi(2)
-            + (control.z - point.z).powi(2))
-        .sqrt()
-    };
-    let maximum_weighted_radius = curve
-        .control_points
-        .iter()
-        .zip(weights)
-        .map(|(control, weight)| weight * radius(control))
-        .fold(0.0_f64, f64::max);
-    let mut maximum_numerator_speed = 0.0_f64;
-    let mut maximum_weight_speed = 0.0_f64;
-    for index in 0..count - 1 {
-        let denominator = curve.knots[index + degree + 1] - curve.knots[index + 1];
-        if denominator == 0.0 {
-            continue;
-        }
-        let factor = f64::from(curve.degree) / denominator;
-        let first = curve.control_points[index];
-        let second = curve.control_points[index + 1];
-        let numerator_delta = Vector3::new(
-            weights[index + 1] * (second.x - point.x) - weights[index] * (first.x - point.x),
-            weights[index + 1] * (second.y - point.y) - weights[index] * (first.y - point.y),
-            weights[index + 1] * (second.z - point.z) - weights[index] * (first.z - point.z),
-        );
-        maximum_numerator_speed = maximum_numerator_speed.max(factor * numerator_delta.norm());
-        maximum_weight_speed =
-            maximum_weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
-    }
-    let speed_bound = maximum_numerator_speed / minimum_weight
-        + maximum_weighted_radius * maximum_weight_speed / minimum_weight.powi(2);
-    if !speed_bound.is_finite() {
-        return None;
-    }
+    let weights = validated_nurbs_curve_weights(curve)?;
+    let speed_bound = nurbs_curve_speed_bound_about(curve, &weights, point)?;
     let distance = |parameter| {
         let position = nurbs_curve_point(
             curve.degree,
             &curve.knots,
             &curve.control_points,
-            Some(weights),
+            Some(&weights),
             parameter,
         )?;
         Some(
@@ -398,6 +337,84 @@ pub fn nurbs_curve_parameter_near_point(
         intervals.push(halves[nearer]);
     }
     None
+}
+
+/// Global model-space speed bound for a structurally valid rational NURBS
+/// curve over its effective knot domain.
+pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<f64> {
+    let weights = validated_nurbs_curve_weights(curve)?;
+    nurbs_curve_speed_bound_about(curve, &weights, Point3::new(0.0, 0.0, 0.0))
+}
+
+fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Vec<f64>> {
+    nurbs_curve_parameter_domain(curve)?;
+    let count = curve.control_points.len();
+    let weights = match &curve.weights {
+        Some(weights) if weights.len() == count => weights.clone(),
+        Some(_) => return None,
+        None => vec![1.0; count],
+    };
+    if curve
+        .control_points
+        .iter()
+        .zip(&weights)
+        .any(|(control, weight)| {
+            !control.x.is_finite()
+                || !control.y.is_finite()
+                || !control.z.is_finite()
+                || !weight.is_finite()
+                || *weight <= 0.0
+        })
+        || curve.knots.iter().any(|knot| !knot.is_finite())
+        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
+    Some(weights)
+}
+
+fn nurbs_curve_speed_bound_about(
+    curve: &NurbsCurve,
+    weights: &[f64],
+    origin: Point3,
+) -> Option<f64> {
+    let degree = usize::try_from(curve.degree).ok()?;
+    let count = curve.control_points.len();
+    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
+    let radius = |control: &Point3| {
+        ((control.x - origin.x).powi(2)
+            + (control.y - origin.y).powi(2)
+            + (control.z - origin.z).powi(2))
+        .sqrt()
+    };
+    let maximum_weighted_radius = curve
+        .control_points
+        .iter()
+        .zip(weights)
+        .map(|(control, weight)| weight * radius(control))
+        .fold(0.0_f64, f64::max);
+    let mut maximum_numerator_speed = 0.0_f64;
+    let mut maximum_weight_speed = 0.0_f64;
+    for index in 0..count - 1 {
+        let denominator = curve.knots[index + degree + 1] - curve.knots[index + 1];
+        if denominator == 0.0 {
+            continue;
+        }
+        let factor = f64::from(curve.degree) / denominator;
+        let first = curve.control_points[index];
+        let second = curve.control_points[index + 1];
+        let numerator_delta = Vector3::new(
+            weights[index + 1] * (second.x - origin.x) - weights[index] * (first.x - origin.x),
+            weights[index + 1] * (second.y - origin.y) - weights[index] * (first.y - origin.y),
+            weights[index + 1] * (second.z - origin.z) - weights[index] * (first.z - origin.z),
+        );
+        maximum_numerator_speed = maximum_numerator_speed.max(factor * numerator_delta.norm());
+        maximum_weight_speed =
+            maximum_weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
+    }
+    let speed_bound = maximum_numerator_speed / minimum_weight
+        + maximum_weighted_radius * maximum_weight_speed / minimum_weight.powi(2);
+    speed_bound.is_finite().then_some(speed_bound)
 }
 
 fn interval_distance_to_parameter(interval: [f64; 2], parameter: f64) -> f64 {
@@ -1423,8 +1440,8 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 #[cfg(test)]
 mod tests {
     use super::{
-        curve_point, nurbs_curve_parameter_near_point, nurbs_surface_isocurve,
-        nurbs_surface_partials, nurbs_surface_point, pcurve_uv,
+        curve_point, nurbs_curve_parameter_near_point, nurbs_curve_speed_bound,
+        nurbs_surface_isocurve, nurbs_surface_partials, nurbs_surface_point, pcurve_uv,
     };
     use crate::geometry::{
         CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceParameterAxis,
@@ -1551,6 +1568,7 @@ mod tests {
             nurbs_curve_parameter_near_point(&curve, Point3::new(0.5, 1.0, 0.0), 1.0e-12, 0.5,),
             None
         );
+        assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound >= 2.0));
     }
 
     #[test]
