@@ -1155,6 +1155,12 @@ pub(crate) fn zero_entity_support_stream() -> Vec<u8> {
     support[..4].copy_from_slice(&[0xa9, 0x03, 0x21, 0x71]);
     support[12] = 0x10;
     support[13..17].copy_from_slice(&42u32.to_le_bytes());
+    support[67..75].copy_from_slice(&0.0f64.to_le_bytes());
+    support[75..83].copy_from_slice(&1.0f64.to_le_bytes());
+    support[83] = 0x10;
+    support[84..88].copy_from_slice(&2u32.to_le_bytes());
+    support[88] = 0x10;
+    support[89..93].copy_from_slice(&2u32.to_le_bytes());
     for (offset, value) in [(93, -2.0f64), (101, 4.0), (109, 6.0), (117, 8.0)] {
         support[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
@@ -4811,6 +4817,16 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(support.record_ordinal, 2);
     assert_eq!(support.face_local_slot, 1);
     assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
+    assert!(matches!(
+        support.pcurve,
+        Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+            degree: 1,
+            ref control_points,
+            weights: None,
+            periodic: false,
+            ..
+        }) if control_points.len() == 2
+    ));
     assert_eq!(
         support.model_endpoints,
         Some([
@@ -4879,6 +4895,21 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_binding_namespace)
         .expect("store invalid CATIA zero-entity loop support binding");
     assert!(crate::native::CatiaNative::load(&invalid_binding_namespace).is_err());
+
+    let mut invalid_pcurve = native.clone();
+    let Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree, .. }) =
+        invalid_pcurve.zero_entity_support_runs[0].supports[0]
+            .pcurve
+            .as_mut()
+    else {
+        panic!("NURBS support pcurve")
+    };
+    *degree = 2;
+    let mut invalid_pcurve_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_pcurve
+        .store(&mut invalid_pcurve_namespace)
+        .expect("store invalid CATIA zero-entity support pcurve");
+    assert!(crate::native::CatiaNative::load(&invalid_pcurve_namespace).is_err());
 
     let mut invalid_oriented_endpoints = native.clone();
     invalid_oriented_endpoints.zero_entity_support_runs[0]

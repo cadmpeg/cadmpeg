@@ -155,7 +155,9 @@ current scores require those matrices and representative fixtures.
   unresolved topology ownership.
 - Zero-entity surface carriers retain their complete face-local `21xx` support
   tapes. Every occurrence keeps its framed local slot, record family, and
-  inline UV endpoint pair when that family stores one. The independent `5e1a`
+  complete clamped `2171`, `2191`, `2199`, or `21d6` parameter-space NURBS
+  curve, including rational `2199` weights, together with its inline UV
+  endpoint pair. The independent `5e1a`
   edge-stride, `2569`/`0638` positional-use, and counted `05xx`
   vertex-incidence registries retain one-based global record ordinals and exact
   references against a complete framed-record identity inventory. Each

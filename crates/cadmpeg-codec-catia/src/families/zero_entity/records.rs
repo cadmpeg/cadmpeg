@@ -6,9 +6,9 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::eval::nurbs_surface_point;
-use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::le::u32_at as u32_le;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point2, Point3};
 
 use crate::nurbs::expand_knots;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector};
@@ -35,6 +35,8 @@ pub struct ZeroEntitySupportOccurrence {
     pub face_local_slot: u32,
     /// Stored UV endpoints when this support family carries them inline.
     pub uv_endpoints: Option<[[f64; 2]; 2]>,
+    /// Complete parameter-space curve carried by the support record.
+    pub pcurve: Option<PcurveGeometry>,
     /// UV endpoints lifted through the owning surface carrier.
     pub model_endpoints: Option<[Point3; 2]>,
 }
@@ -741,13 +743,105 @@ fn zero_entity_support_occurrence(
     } else {
         None
     };
+    let pcurve = zero_entity_support_pcurve(data, record);
+    if matches!(record.tag, [0x21, 0x71 | 0x91 | 0x99 | 0xd6]) && pcurve.is_none() {
+        return None;
+    }
     Some(ZeroEntitySupportOccurrence {
         pos: record.pos,
         record_ordinal: record.ordinal,
         tag: record.tag,
         face_local_slot,
         uv_endpoints,
+        pcurve,
         model_endpoints: None,
+    })
+}
+
+fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<PcurveGeometry> {
+    let (
+        knot_offsets,
+        multiplicity_start,
+        expected_multiplicities,
+        pole_start,
+        control_count,
+        weight_start,
+        required_end,
+    ) = match record.tag {
+        [0x21, 0x71] => (&[67, 75][..], 83, &[2, 2][..], 93, 2, None, 125),
+        [0x21, 0x91] => (&[67, 75][..], 83, &[4, 4][..], 93, 4, None, 157),
+        [0x21, 0x99] => (&[67, 75][..], 83, &[3, 3][..], 93, 3, Some(141), 165),
+        [0x21, 0xd6] => (&[67, 75, 83][..], 91, &[3, 2, 3][..], 106, 5, None, 186),
+        _ => return None,
+    };
+    if record.pos.checked_add(required_end)? > record.end {
+        return None;
+    }
+    let distinct_knots = knot_offsets
+        .iter()
+        .map(|offset| f64_le(data, record.pos.checked_add(*offset)?))
+        .collect::<Option<Vec<_>>>()?;
+    if !distinct_knots
+        .windows(2)
+        .all(|pair| pair[0].is_finite() && pair[0] < pair[1])
+        || !distinct_knots.last().is_some_and(|knot| knot.is_finite())
+    {
+        return None;
+    }
+    let multiplicities = (0..distinct_knots.len())
+        .map(|index| {
+            tagged_u32(
+                data,
+                record
+                    .pos
+                    .checked_add(multiplicity_start + index.checked_mul(5)?)?,
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if multiplicities != expected_multiplicities {
+        return None;
+    }
+    let degree = multiplicities.first().copied()?.checked_sub(1)?;
+    let derived_control_count = multiplicities
+        .iter()
+        .try_fold(0u32, |sum, multiplicity| sum.checked_add(*multiplicity))?
+        .checked_sub(degree.checked_add(1)?)?;
+    if derived_control_count != u32::try_from(control_count).ok()? {
+        return None;
+    }
+    let knots = expand_knots(&distinct_knots, &multiplicities)?;
+    let control_points = (0usize..control_count)
+        .map(|index| {
+            let at = record
+                .pos
+                .checked_add(pole_start + index.checked_mul(16)?)?;
+            let point = Point2::new(f64_le(data, at)?, f64_le(data, at.checked_add(8)?)?);
+            (point.u.is_finite() && point.v.is_finite()).then_some(point)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let weights = if let Some(weight_start) = weight_start {
+        Some(
+            (0usize..control_count)
+                .map(|index| {
+                    let weight = f64_le(
+                        data,
+                        record
+                            .pos
+                            .checked_add(weight_start + index.checked_mul(8)?)?,
+                    )?;
+                    (weight.is_finite() && weight > 0.0).then_some(weight)
+                })
+                .collect::<Option<Vec<_>>>()?,
+        )
+    } else {
+        None
+    };
+    Some(PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic: false,
     })
 }
 
@@ -1144,6 +1238,64 @@ mod tests {
         record[at + 1..at + 5].copy_from_slice(&value.to_le_bytes());
     }
 
+    fn support_pcurve_record(tag: u8) -> Vec<u8> {
+        let mut record = vec![0u8; usize::from(tag) + 12];
+        record[..4].copy_from_slice(&[0xa9, 0x03, 0x21, tag]);
+        write_tagged_u32(&mut record, 12, 1);
+        let (knots, multiplicities, pole_start, points, weights): (
+            &[_],
+            &[_],
+            usize,
+            &[_],
+            Option<&[_]>,
+        ) = match tag {
+            0x91 => (
+                &[0.0, 1.0],
+                &[4, 4],
+                93,
+                &[[0.0, 0.0], [0.25, 0.5], [0.75, 0.5], [1.0, 1.0]],
+                None,
+            ),
+            0x99 => (
+                &[0.0, 1.0],
+                &[3, 3],
+                93,
+                &[[0.0, 0.0], [0.5, 1.0], [1.0, 0.0]],
+                Some(&[1.0, 0.5, 1.0]),
+            ),
+            0xd6 => (
+                &[0.0, 0.5, 1.0],
+                &[3, 2, 3],
+                106,
+                &[[0.0, 0.0], [0.25, 0.5], [0.5, 1.0], [0.75, 0.5], [1.0, 0.0]],
+                None,
+            ),
+            _ => unreachable!(),
+        };
+        let knot_start = 67;
+        for (index, knot) in knots.iter().enumerate() {
+            record[knot_start + index * 8..knot_start + (index + 1) * 8]
+                .copy_from_slice(&f64::to_le_bytes(*knot));
+        }
+        let multiplicity_start = knot_start + knots.len() * 8;
+        for (index, multiplicity) in multiplicities.iter().copied().enumerate() {
+            write_tagged_u32(&mut record, multiplicity_start + index * 5, multiplicity);
+        }
+        for (index, point) in points.iter().enumerate() {
+            let at = pole_start + index * 16;
+            record[at..at + 8].copy_from_slice(&f64::to_le_bytes(point[0]));
+            record[at + 8..at + 16].copy_from_slice(&f64::to_le_bytes(point[1]));
+        }
+        if let Some(weights) = weights {
+            let weight_start = pole_start + points.len() * 16;
+            for (index, weight) in weights.iter().enumerate() {
+                let at = weight_start + index * 8;
+                record[at..at + 8].copy_from_slice(&f64::to_le_bytes(*weight));
+            }
+        }
+        record
+    }
+
     #[test]
     fn support_run_binds_maximal_21xx_lane_to_preceding_surface() {
         let runs = zero_entity_support_runs(&zero_entity_support_stream());
@@ -1158,9 +1310,57 @@ mod tests {
         assert_eq!(support.face_local_slot, 42);
         assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
         assert_eq!(
+            support.pcurve,
+            Some(PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point2::new(-2.0, 4.0), Point2::new(6.0, 8.0)],
+                weights: None,
+                periodic: false,
+            })
+        );
+        assert_eq!(
             support.model_endpoints,
             Some([Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)])
         );
+    }
+
+    #[test]
+    fn support_pcurves_decode_each_complete_clamped_family() {
+        for (tag, degree, control_count, rational) in
+            [(0x91, 3, 4, false), (0x99, 2, 3, true), (0xd6, 2, 5, false)]
+        {
+            let bytes = support_pcurve_record(tag);
+            let records = zero_entity_records(&bytes);
+            let [record] = records.as_slice() else {
+                panic!("one support record")
+            };
+            let support =
+                zero_entity_support_occurrence(&bytes, *record).expect("complete support pcurve");
+            let Some(PcurveGeometry::Nurbs {
+                degree: actual_degree,
+                control_points,
+                weights,
+                ..
+            }) = support.pcurve
+            else {
+                panic!("NURBS support pcurve")
+            };
+            assert_eq!(actual_degree, degree);
+            assert_eq!(control_points.len(), control_count);
+            assert_eq!(weights.is_some(), rational);
+        }
+    }
+
+    #[test]
+    fn rational_support_pcurve_rejects_a_nonpositive_weight_atomically() {
+        let mut bytes = support_pcurve_record(0x99);
+        bytes[149..157].copy_from_slice(&0.0f64.to_le_bytes());
+        let records = zero_entity_records(&bytes);
+        let [record] = records.as_slice() else {
+            panic!("one support record")
+        };
+        assert!(zero_entity_support_occurrence(&bytes, *record).is_none());
     }
 
     #[test]

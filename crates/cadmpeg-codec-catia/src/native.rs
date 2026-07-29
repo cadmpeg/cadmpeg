@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 181;
+pub const CATIA_NATIVE_VERSION: u32 = 182;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2690,6 +2690,9 @@ pub struct CatiaZeroEntitySupportOccurrence {
     /// Stored UV endpoints when the record family carries them inline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uv_endpoints: Option<[[f64; 2]; 2]>,
+    /// Complete parameter-space curve carried by the support record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve: Option<cadmpeg_ir::geometry::PcurveGeometry>,
     /// UV endpoints lifted through the owning surface carrier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
@@ -3800,6 +3803,7 @@ fn zero_entity_support_runs(
                     tag: support.tag,
                     face_local_slot: support.face_local_slot,
                     uv_endpoints: support.uv_endpoints,
+                    pcurve: support.pcurve,
                     model_endpoints: support.model_endpoints,
                 })
                 .collect(),
@@ -5043,6 +5047,55 @@ fn validate_zero_entity_support_runs(
                                 [point.x, point.y, point.z].into_iter().all(f64::is_finite)
                             })
                     });
+                    let pcurve_valid = match (&support.tag, &support.pcurve) {
+                        (
+                            [0x21, tag @ (0x71 | 0x91 | 0x99 | 0xd6)],
+                            Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+                                degree,
+                                knots,
+                                control_points,
+                                weights,
+                                periodic: false,
+                            }),
+                        ) => {
+                            let (expected_degree, expected_controls, rational) = match tag {
+                                0x71 => (1, 2, false),
+                                0x91 => (3, 4, false),
+                                0x99 => (2, 3, true),
+                                0xd6 => (2, 5, false),
+                                _ => unreachable!(),
+                            };
+                            *degree == expected_degree
+                                && control_points.len() == expected_controls
+                                && knots.len() == expected_controls + expected_degree as usize + 1
+                                && knots.iter().all(|knot| knot.is_finite())
+                                && knots.windows(2).all(|pair| pair[0] <= pair[1])
+                                && knots[..=expected_degree as usize]
+                                    .iter()
+                                    .all(|knot| *knot == knots[0])
+                                && knots[expected_controls..]
+                                    .iter()
+                                    .all(|knot| *knot == knots[expected_controls])
+                                && knots[expected_degree as usize] < knots[expected_controls]
+                                && (*tag != 0xd6
+                                    || knots[3] == knots[4]
+                                        && knots[2] < knots[3]
+                                        && knots[4] < knots[5])
+                                && control_points
+                                    .iter()
+                                    .all(|point| point.u.is_finite() && point.v.is_finite())
+                                && weights.as_ref().is_some_and(|weights| {
+                                    rational
+                                        && weights.len() == expected_controls
+                                        && weights
+                                            .iter()
+                                            .all(|weight| weight.is_finite() && *weight > 0.0)
+                                }) == rational
+                        }
+                        ([0x21, 0x71 | 0x91 | 0x99 | 0xd6], _) => false,
+                        ([0x21, _], None) => true,
+                        _ => false,
+                    };
                     let expected_ordinal = u32::try_from(support_index)
                         .ok()
                         .and_then(|index| index.checked_add(1))
@@ -5059,6 +5112,7 @@ fn validate_zero_entity_support_runs(
                         && (support_index == 0
                             || run.supports[support_index - 1].byte_offset < support.byte_offset)
                         && endpoints_valid
+                        && pcurve_valid
                         && model_endpoints_valid
                 });
         if run.id != format!("catia:zero-entity:support-run#{index}")
