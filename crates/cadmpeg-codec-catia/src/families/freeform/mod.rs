@@ -44,6 +44,30 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
             counts
         })
     });
+    let typed_face_counts = b5_graph.as_ref().map(|graph| {
+        let controls = graph
+            .face_records
+            .values()
+            .fold([0usize; 3], |mut counts, face| {
+                match face.terminal_control {
+                    Some(0x03) => counts[0] += 1,
+                    Some(0x05) => counts[1] += 1,
+                    None => counts[2] += 1,
+                    Some(_) => unreachable!("the face parser admits only controls 03 and 05"),
+                }
+                counts
+            });
+        [
+            controls[0],
+            controls[1],
+            controls[2],
+            graph
+                .face_records
+                .len()
+                .checked_sub(graph.faces.len())
+                .expect("resolved faces are a subset of typed face records"),
+        ]
+    });
     let edge_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.edges.values().fold([0usize; 8], |mut counts, edge| {
             let index = match edge.terminal_control {
@@ -191,6 +215,24 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         coverage.insert(
             "resolved_object_stream_uncounted_face_count".to_string(),
             uncounted,
+        );
+    }
+    if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
+        coverage.insert(
+            "typed_object_stream_face_terminal_control_03_count".to_string(),
+            control_03,
+        );
+        coverage.insert(
+            "typed_object_stream_face_terminal_control_05_count".to_string(),
+            control_05,
+        );
+        coverage.insert(
+            "typed_object_stream_uncounted_face_count".to_string(),
+            uncounted,
+        );
+        coverage.insert(
+            "typed_unresolved_object_stream_face_count".to_string(),
+            unresolved,
         );
     }
     if let Some(counts) = edge_terminal_controls {

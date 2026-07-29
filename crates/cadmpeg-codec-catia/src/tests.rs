@@ -13921,6 +13921,44 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
 }
 
 #[test]
+fn decode_reports_structurally_typed_unresolved_b5_faces() {
+    let mut stream = b5_closed_triangle_stream();
+    append_b5_record(
+        &mut stream,
+        0x5f,
+        902,
+        &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
+    );
+    append_b5_record(&mut stream, 0x5e, 903, &[]);
+    let graph = crate::families::b5::graph::parse(&stream).expect("typed unresolved face graph");
+    assert_eq!(graph.face_records.len(), 2);
+    assert_eq!(graph.faces.len(), 1);
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode typed unresolved face");
+
+    assert_eq!(
+        result.report.coverage["typed_object_stream_face_terminal_control_03_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["typed_object_stream_face_terminal_control_05_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["resolved_object_stream_face_terminal_control_03_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["typed_unresolved_object_stream_face_count"],
+        1
+    );
+}
+
+#[test]
 fn decode_inner_no_directory_transfers_a8_nurbs() {
     assert_eq!(
         crate::container::scan_bytes(inner_no_directory_a8_catpart()).variant,

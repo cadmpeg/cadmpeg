@@ -1190,6 +1190,7 @@ mod tests {
         let mut graph = B5Graph {
             complete: false,
             faces: Vec::new(),
+            face_records: BTreeMap::new(),
             loops: BTreeMap::new(),
             pcurves: BTreeMap::new(),
             opaque_pcurves: BTreeMap::new(),
@@ -1245,6 +1246,7 @@ mod tests {
                 loops: vec![2],
                 terminal_control: None,
             }],
+            face_records: BTreeMap::new(),
             loops: BTreeMap::from([(
                 2,
                 B5Loop {
@@ -1584,6 +1586,7 @@ mod tests {
                 loops: vec![2],
                 terminal_control: None,
             }],
+            face_records: BTreeMap::new(),
             loops: BTreeMap::from([(
                 2,
                 B5Loop {
@@ -1698,6 +1701,7 @@ mod tests {
         let mut graph = B5Graph {
             complete: true,
             faces: Vec::new(),
+            face_records: BTreeMap::new(),
             loops: BTreeMap::from([(1, loop_(1, vec![3])), (2, loop_(2, vec![4, 5, 3]))]),
             pcurves: BTreeMap::new(),
             opaque_pcurves: BTreeMap::new(),
@@ -1757,6 +1761,7 @@ mod tests {
         let graph = B5Graph {
             complete: true,
             faces: Vec::new(),
+            face_records: BTreeMap::new(),
             loops: BTreeMap::from([(
                 1,
                 B5Loop {
@@ -2576,6 +2581,7 @@ mod tests {
                 loops: vec![3],
                 terminal_control: None,
             }],
+            face_records: BTreeMap::new(),
             loops: BTreeMap::from([(
                 3,
                 B5Loop {

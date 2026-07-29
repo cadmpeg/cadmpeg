@@ -209,9 +209,12 @@ current scores require those matrices and representative fixtures.
   they do not discard other pcurve records or override the edge's serialized
   vertex identities and parameter incidences.
   Counted object-stream faces require and retain an exact `03` or `05` terminal
-  control; either form owns its first referenced carrier and remaining
-  referenced loops. Decode coverage counts the two controls independently from
-  uncounted framing among reference-resolved faces.
+  control. Structurally complete face records require a nonempty reference lane
+  and retain every ordered reference before target roles resolve; the
+  reference-resolved subset assigns the first reference as carrier and remaining
+  references as loops only when every target closes under that grammar. Decode
+  coverage counts controls and uncounted framing independently for typed and
+  reference-resolved faces.
   Counted object-stream loops require an exact edge-count lane and complete
   control tail: the loop control, three signed controls per edge, and the
   optional finite binary64/binary32 numeric extension. The resolved graph

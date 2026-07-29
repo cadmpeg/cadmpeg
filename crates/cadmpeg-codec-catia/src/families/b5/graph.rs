@@ -24,6 +24,8 @@ pub struct B5Graph {
     /// `b5 03 5f` face nodes, in stream declaration order (equal to STEP
     /// `ADVANCED_FACE` order, [spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
     pub faces: Vec<B5Face>,
+    /// Structurally complete `b5 03 5f` records, keyed by object id.
+    pub face_records: BTreeMap<u32, B5FaceRecord>,
     /// `b5 03 62` loop nodes, keyed by `object_id`.
     pub loops: BTreeMap<u32, B5Loop>,
     /// `b5 03 21` pcurve nodes, keyed by `object_id`.
@@ -578,6 +580,18 @@ pub struct B5Face {
     pub terminal_control: Option<u8>,
 }
 
+/// One structurally complete class-`5f` face reference production.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B5FaceRecord {
+    /// This record's stream object id.
+    pub object_id: u32,
+    /// Ordered native references.
+    pub references: Vec<u32>,
+    /// Exact counted-production terminal control. Uncounted framing has no
+    /// terminal control.
+    pub terminal_control: Option<u8>,
+}
+
 /// A resolved `b5 03 62` loop node: payload `<0x80 + n_refs>
 /// (pcurve_ref edge_ref)* surface_ref` ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
@@ -919,9 +933,14 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             .map(|loop_| (record.object_id, loop_))
         })
         .collect();
-    let faces: Vec<B5Face> = records
+    let face_records: BTreeMap<u32, B5FaceRecord> = records
         .iter()
         .filter(|record| record.class == 0x5f)
+        .filter_map(|record| parse_face_record(record).map(|face| (record.object_id, face)))
+        .collect();
+    let faces: Vec<B5Face> = records
+        .iter()
+        .filter_map(|record| face_records.get(&record.object_id))
         .filter_map(|record| parse_face(record, &loops, &surfaces))
         .collect();
     if faces.is_empty() || loops.is_empty() {
@@ -1010,6 +1029,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     Some(B5Graph {
         complete,
         faces,
+        face_records,
         loops,
         pcurves,
         opaque_pcurves,
@@ -3784,12 +3804,11 @@ fn is_topology_class(class: u8) -> bool {
 }
 
 fn parse_face(
-    record: &B5Record,
+    record: &B5FaceRecord,
     loops: &BTreeMap<u32, B5Loop>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Face> {
-    let face_references = face_references(record)?;
-    let references = &face_references.references;
+    let references = &record.references;
     let surface = *references.first()?;
     if !surfaces.contains_key(&surface) {
         return None;
@@ -3806,17 +3825,11 @@ fn parse_face(
         object_id: record.object_id,
         surface,
         loops: loop_ids,
-        terminal_control: face_references.terminal_control,
+        terminal_control: record.terminal_control,
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct B5FaceReferences {
-    references: Vec<u32>,
-    terminal_control: Option<u8>,
-}
-
-fn face_references(record: &B5Record) -> Option<B5FaceReferences> {
+fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
     if record.class != 0x5f {
         return None;
     }
@@ -3825,6 +3838,7 @@ fn face_references(record: &B5Record) -> Option<B5FaceReferences> {
         .first()
         .and_then(|lead| lead.checked_sub(0x80))
     {
+        (count != 0).then_some(())?;
         let mut position = 1;
         let references = (0..count)
             .map(|_| wire::object_ref(&record.payload, &mut position, true))
@@ -3832,12 +3846,15 @@ fn face_references(record: &B5Record) -> Option<B5FaceReferences> {
         let &[terminal_control] = record.payload.get(position..)? else {
             return None;
         };
-        matches!(terminal_control, 0x03 | 0x05).then_some(B5FaceReferences {
+        matches!(terminal_control, 0x03 | 0x05).then_some(B5FaceRecord {
+            object_id: record.object_id,
             references,
             terminal_control: Some(terminal_control),
         })
     } else {
-        uncounted_references(&record.payload).map(|references| B5FaceReferences {
+        let references = uncounted_references(&record.payload)?;
+        (!references.is_empty()).then_some(B5FaceRecord {
+            object_id: record.object_id,
             references,
             terminal_control: None,
         })
@@ -4533,8 +4550,9 @@ mod tests {
                 payload: vec![0x82, 0x81, 0x82, terminal_control],
             };
             assert_eq!(
-                face_references(&record),
-                Some(B5FaceReferences {
+                parse_face_record(&record),
+                Some(B5FaceRecord {
+                    object_id: 3,
                     references: vec![1, 2],
                     terminal_control: Some(terminal_control),
                 })
@@ -4542,7 +4560,7 @@ mod tests {
 
             let mut overlong = record;
             overlong.payload.push(terminal_control);
-            assert_eq!(face_references(&overlong), None);
+            assert_eq!(parse_face_record(&overlong), None);
         }
     }
 
@@ -4555,7 +4573,13 @@ mod tests {
             object_id: 3,
             payload: vec![0x82, 0x81, 0x82, 0x04],
         };
-        assert_eq!(face_references(&record), None);
+        assert_eq!(parse_face_record(&record), None);
+
+        let mut empty = record;
+        empty.payload.clear();
+        assert_eq!(parse_face_record(&empty), None);
+        empty.payload.extend_from_slice(&[0x80, 0x03]);
+        assert_eq!(parse_face_record(&empty), None);
     }
 
     #[test]
