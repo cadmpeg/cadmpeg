@@ -751,6 +751,32 @@ fn zero_entity_cylinder_catpart() -> Vec<u8> {
     f
 }
 
+fn zero_entity_cylinder_parametric_support_catpart() -> Vec<u8> {
+    let mut file = zero_entity_cylinder_catpart();
+    file.truncate(16 + 4 + 146);
+
+    let mut support = vec![0u8; 0x91 + 12];
+    support[..4].copy_from_slice(&[0xa9, 0x03, 0x21, 0x91]);
+    support[12] = 0x10;
+    support[13..17].copy_from_slice(&1u32.to_le_bytes());
+    support[67..75].copy_from_slice(&0.0f64.to_le_bytes());
+    support[75..83].copy_from_slice(&1.0f64.to_le_bytes());
+    for offset in [83, 88] {
+        support[offset] = 0x10;
+        support[offset + 1..offset + 5].copy_from_slice(&4u32.to_le_bytes());
+    }
+    for (index, [u, v]) in [[0.0f64, 0.0], [0.25, 0.2], [0.75, 0.8], [1.0, 1.0]]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = 93 + index * 16;
+        support[offset..offset + 8].copy_from_slice(&u.to_le_bytes());
+        support[offset + 8..offset + 16].copy_from_slice(&v.to_le_bytes());
+    }
+    file.extend(support);
+    file
+}
+
 fn zero_entity_nurbs_catpart() -> Vec<u8> {
     let mut f = vec![0u8; 16];
     f[..8].copy_from_slice(OUTER_MAGIC);
@@ -3862,6 +3888,92 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(zero_entity_cylinder_parametric_support_catpart()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode zero-entity parametric support");
+
+    assert_eq!(
+        result.report.coverage["transferred_zero_entity_support_curve_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_zero_entity_parametric_surface_curve_count"],
+        1
+    );
+    let [curve] = result.ir.model.curves.as_slice() else {
+        panic!("one transferred support curve")
+    };
+    let [construction] = result.ir.model.procedural_curves.as_slice() else {
+        panic!("one cacheless support construction")
+    };
+    assert!(matches!(
+        &curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Procedural {
+            construction: id
+        } if id == &construction.id
+    ));
+    assert_eq!(construction.curve, curve.id);
+    assert_eq!(construction.cache_fit_tolerance, None);
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+        family,
+        context,
+        tail: None,
+    } = &construction.definition
+    else {
+        panic!("parametric surface-curve construction")
+    };
+    assert_eq!(
+        *family,
+        cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric
+    );
+    assert_eq!(context.parameter_range, [0.0, 1.0]);
+    assert_eq!(
+        context.sides[0].surface.as_ref(),
+        Some(&result.ir.model.surfaces[0].id)
+    );
+    assert!(context.sides[0].pcurve.is_some());
+    assert_eq!(context.sides[1].surface, None);
+    assert_eq!(context.sides[1].pcurve, None);
+
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_zero_entity_transfers_exact_model_curve_directly() {
+    let mut file = vec![0u8; 16];
+    file[..8].copy_from_slice(OUTER_MAGIC);
+    file.extend(zero_entity_support_stream());
+    let result = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode zero-entity exact support");
+
+    assert_eq!(
+        result.report.coverage["transferred_zero_entity_support_curve_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_zero_entity_parametric_surface_curve_count"],
+        0
+    );
+    assert!(matches!(
+        result.ir.model.curves.as_slice(),
+        [cadmpeg_ir::geometry::Curve {
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(_),
+            ..
+        }]
+    ));
+    assert!(result.ir.model.procedural_curves.is_empty());
+
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }

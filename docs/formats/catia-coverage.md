@@ -161,11 +161,13 @@ current scores require those matrices and representative fixtures.
   complete clamped `2145`, `2171`, `2172`, `2191`, `2199`, `219f`, `21d6`, or
   `21e8` parameter-space NURBS curve, including rational `2199` weights,
   together with its inline UV endpoint pair. Plane pcurves lift affinely to
-  exact model-space NURBS
-  carriers. Constant-coordinate pcurves on cylinder, cone, torus, and NURBS
-  surfaces retain their exact analytic or contracted NURBS carriers.
+  exact model-space NURBS carriers. Constant-coordinate pcurves on cylinder,
+  cone, torus, and NURBS surfaces retain their exact analytic or contracted
+  NURBS carriers.
   Non-isoparametric affine cone pcurves retain exact conical-helix
-  constructions. Each exact model carrier retains the two parameters
+  constructions. Other complete pcurves transfer as cacheless one-sided
+  parametric surface-curve constructions over their exact active NURBS domain.
+  Each exact model carrier retains the two parameters
   corresponding to the stored UV endpoints and the model-space point at the
   midpoint of its bounded pcurve parameter interval. The independent `5e1a`
   edge-stride registry retains its fixed
