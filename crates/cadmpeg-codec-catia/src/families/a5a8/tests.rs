@@ -9,7 +9,7 @@ use crate::tests::{
     a8_elided_surface_stream, a8_freeform_curve_stream, a8_pcurve_stream,
     a8_rational_surface_stream, a8_surface_stream, le_f64,
 };
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
 #[test]
@@ -376,6 +376,34 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
     let mut invalid_header_token = a5_freeform_curve_stream();
     invalid_header_token[7] = 17;
     assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_header_token).is_empty());
+}
+
+#[test]
+fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
+    let [jet] = crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream())
+        .try_into()
+        .expect("one rolling-ball jet");
+    for second_limit in [false, true] {
+        let curve = crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
+            .expect("exact limiting curve");
+        let geometry = CurveGeometry::Nurbs(curve);
+        let expected = [jet.sites.first().unwrap(), jet.sites.last().unwrap()].map(|site| {
+            let point = if second_limit {
+                site.limit2
+            } else {
+                site.limit1
+            };
+            Point3::new(point[0], point[1], point[2])
+        });
+        assert_eq!(
+            cadmpeg_ir::eval::curve_point(&geometry, jet.knots[0]),
+            Some(expected[0])
+        );
+        assert_eq!(
+            cadmpeg_ir::eval::curve_point(&geometry, jet.knots[1]),
+            Some(expected[1])
+        );
+    }
 }
 
 #[test]

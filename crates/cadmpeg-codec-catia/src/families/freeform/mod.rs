@@ -635,6 +635,28 @@ pub(crate) fn append_freeform_surface_pools(
     }
 
     for jet in crate::families::a5a8::records::a5_freeform_curves(data) {
+        for second_limit in [false, true] {
+            let Some(curve) =
+                crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
+            else {
+                continue;
+            };
+            let side = usize::from(second_limit);
+            let id = CurveId(format!("catia:rolling-ball:limit#{}:{side}", jet.pos));
+            annotate(
+                annotations,
+                &id,
+                "consolidated_a5_03_32",
+                jet.pos as u64,
+                format!("limit_{}", side + 1),
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id,
+                geometry: CurveGeometry::Nurbs(curve),
+                source_object: None,
+            });
+        }
         let sites = jet
             .sites
             .iter()
@@ -1697,9 +1719,9 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 #[cfg(test)]
 mod tests {
     use super::{
-        append_resolved_consolidated_surface_curves, freeform_surface_carriers,
-        rechart_equivalent_surface_pcurve, same_surface_locus, unique_endpoint_pair_match,
-        unique_paired_surface_lift_match,
+        append_freeform_surface_pools, append_resolved_consolidated_surface_curves,
+        freeform_surface_carriers, rechart_equivalent_surface_pcurve, same_surface_locus,
+        unique_endpoint_pair_match, unique_paired_surface_lift_match,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
@@ -1714,6 +1736,30 @@ mod tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
+
+    #[test]
+    fn rolling_ball_pool_retains_both_exact_limiting_curves() {
+        let mut ir = CadIr::empty(Units::default());
+        append_freeform_surface_pools(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &crate::tests::a5_freeform_curve_stream(),
+        );
+
+        assert!(matches!(
+            ir.model.curves.as_slice(),
+            [Curve {
+                geometry: CurveGeometry::Nurbs(first),
+                ..
+            }, Curve {
+                geometry: CurveGeometry::Nurbs(second),
+                ..
+            }] if first.degree == 5
+                && second.degree == 5
+                && first.control_points.first() == Some(&Point3::new(1.0, 0.0, 0.0))
+                && second.control_points.first() == Some(&Point3::new(0.0, 1.0, 0.0))
+        ));
+    }
 
     #[test]
     fn freeform_fallback_distinguishes_grouped_and_standalone_cylinders() {

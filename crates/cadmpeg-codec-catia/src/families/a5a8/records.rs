@@ -9,8 +9,8 @@ use crate::wire::records::{
     a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
 };
 use cadmpeg_ir::geometry::{
-    NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-    SurfaceGeometry,
+    NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
+    RollingBallJetSite, SurfaceGeometry,
 };
 use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -145,6 +145,48 @@ pub struct A5FreeformCurve {
     pub first_derivatives: Vec<[f64; 10]>,
     /// Ten second-derivative channels per knot.
     pub second_derivatives: Vec<[f64; 10]>,
+}
+
+/// Lower either limiting locus of a complete rolling-ball jet to its exact
+/// degree-5 NURBS representation.
+pub(crate) fn rolling_ball_limit_curve(
+    jet: &A5FreeformCurve,
+    second_limit: bool,
+) -> Option<NurbsCurve> {
+    let offset = usize::from(second_limit) * 3;
+    let positions = jet
+        .sites
+        .iter()
+        .map(|site| {
+            if second_limit {
+                site.limit2
+            } else {
+                site.limit1
+            }
+        })
+        .collect::<Vec<_>>();
+    let first = jet
+        .first_derivatives
+        .iter()
+        .map(|values| [values[offset], values[offset + 1], values[offset + 2]])
+        .collect::<Vec<_>>();
+    let second = jet
+        .second_derivatives
+        .iter()
+        .map(|values| [values[offset], values[offset + 1], values[offset + 2]])
+        .collect::<Vec<_>>();
+    let (knots, control_points) =
+        crate::nurbs::quintic_jet_bspline3(jet.degree, &jet.knots, &positions, &first, &second)?;
+    Some(NurbsCurve {
+        degree: jet.degree,
+        knots,
+        control_points: control_points
+            .into_iter()
+            .map(|point| Point3::new(point[0], point[1], point[2]))
+            .collect(),
+        weights: None,
+        periodic: false,
+    })
 }
 
 /// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
