@@ -926,33 +926,34 @@ fn curve_on_parameter_range(
     let target_span = target[1] - target[0];
     if !source_span.is_finite()
         || source_span <= 0.0
-        || !parameter_spans_agree(source_span, target_span)
+        || !target_span.is_finite()
+        || target_span <= 0.0
     {
         return None;
     }
-    let shift = target[0] - source[0];
+    let target_per_source = target_span / source_span;
+    let source_per_target = source_span / target_span;
     match curve {
         CurveGeometry::Nurbs(mut curve) => {
             for knot in &mut curve.knots {
-                *knot += shift;
+                *knot = target[0] + (*knot - source[0]) * target_per_source;
             }
             Some(CurveGeometry::Nurbs(curve))
         }
         CurveGeometry::Line { origin, direction } => Some(CurveGeometry::Line {
             origin: Point3::new(
-                origin.x - shift * direction.x,
-                origin.y - shift * direction.y,
-                origin.z - shift * direction.z,
+                origin.x + (source[0] - target[0] * source_per_target) * direction.x,
+                origin.y + (source[0] - target[0] * source_per_target) * direction.y,
+                origin.z + (source[0] - target[0] * source_per_target) * direction.z,
             ),
-            direction,
+            direction: Vector3::new(
+                direction.x * source_per_target,
+                direction.y * source_per_target,
+                direction.z * source_per_target,
+            ),
         }),
         _ => None,
     }
-}
-
-fn parameter_spans_agree(left: f64, right: f64) -> bool {
-    let scale = left.abs().max(right.abs()).max(1.0);
-    (left - right).abs() <= 64.0 * f64::EPSILON * scale
 }
 
 fn parameter_range_contains(domain: [f64; 2], active: [f64; 2]) -> bool {
@@ -1117,7 +1118,7 @@ mod tests {
     use std::collections::{BTreeMap, HashMap, HashSet};
 
     #[test]
-    fn equal_span_curve_ranges_translate_without_changing_geometry() {
+    fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         let nurbs = NurbsCurve {
             degree: 1,
             knots: vec![10.0, 10.0, 20.0, 20.0],
@@ -1155,9 +1156,26 @@ mod tests {
             ),
             Some(CurveGeometry::Nurbs(nurbs.clone()))
         );
+        let CurveGeometry::Nurbs(scaled) =
+            curve_on_parameter_range(CurveGeometry::Nurbs(nurbs), [10.0, 20.0], [0.0, 2.0])
+                .expect("positive affine NURBS mapping")
+        else {
+            unreachable!();
+        };
+        assert_eq!(scaled.knots, [0.0, 0.0, 2.0, 2.0]);
         assert_eq!(
-            curve_on_parameter_range(CurveGeometry::Nurbs(nurbs), [10.0, 20.0], [0.0, 9.0]),
-            None
+            curve_on_parameter_range(
+                CurveGeometry::Line {
+                    origin: Point3::new(10.0, 0.0, 0.0),
+                    direction: Vector3::new(1.0, 0.0, 0.0),
+                },
+                [10.0, 20.0],
+                [0.0, 2.0],
+            ),
+            Some(CurveGeometry::Line {
+                origin: Point3::new(20.0, 0.0, 0.0),
+                direction: Vector3::new(5.0, 0.0, 0.0),
+            })
         );
     }
 

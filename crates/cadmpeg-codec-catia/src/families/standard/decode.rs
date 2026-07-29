@@ -1807,7 +1807,7 @@ pub(crate) fn standard_object_evidence_from_streams(
             .collect::<HashSet<_>>();
         let targeted_surfaces =
             crate::families::b5::graph::targeted_surfaces(&stream, &requested_surfaces);
-        for (object_id, surface_id) in surface_bindings {
+        for &(object_id, surface_id) in &surface_bindings {
             let Some(surface) = targeted_surfaces.get(&surface_id) else {
                 continue;
             };
@@ -1828,6 +1828,18 @@ pub(crate) fn standard_object_evidence_from_streams(
                 }),
             };
             merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
+        }
+        if let Some(graph) = crate::families::b5::graph::targeted_geometry_graph(&stream) {
+            for &(object_id, surface_id) in &surface_bindings {
+                if surface_candidates.contains_key(&object_id) {
+                    continue;
+                }
+                let Some(evidence) = standard_surface_evidence(&graph, surface_id) else {
+                    continue;
+                };
+                merge_standard_procedure_supports(&mut support_candidates, &evidence);
+                merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
+            }
         }
         let edge_pcurves =
             crate::families::b5::graph::edge_support_pcurve_references(&stream, edge_tags);

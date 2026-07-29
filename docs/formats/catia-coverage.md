@@ -302,8 +302,9 @@ current scores require those matrices and representative fixtures.
   class-`2c` carrier retains its directrix construction and may trim it to a
   contained active parameter interval. A class-`21` jet directrix may translate
   its parameter origin when the wrapper interval, native tail span, and
-  extrusion V span agree. Class-`2c` controls `05 11` require that translated
-  chart and reject an ordinary contained trim. For a class-`30`
+  extrusion V span agree. Class-`2c` controls `05 11` map four uniform
+  class-`21` knot spans onto one V interval by an exact affine
+  reparameterization. For a class-`30`
   construction, the class-`14` result directrix validates the result carrier
   against the source extrusion and signed surface distance; the neutral surface
   offset retains the defining source extrusion directly. Face-local class-`30`
