@@ -114,9 +114,9 @@ current scores require those matrices and representative fixtures.
   A consolidated torus retains independent active major- and minor-angle
   intervals and their centered full-turn chart domains; malformed range/domain
   relations reject the complete record.
-  A consolidated cone retains its active azimuth interval, centered full-turn
-  domain, slant interval, and fixed chart-tail scalars; malformed chart relations
-  reject the complete record.
+  Consolidated and object-stream cones retain their active azimuth interval,
+  centered full-turn domain, slant interval, and fixed chart-tail scalars;
+  malformed chart relations reject the complete record.
   A consolidated sphere retains active azimuth and latitude intervals and
   validates its repeated radius and redundant centered-domain origin exactly.
 - The freeform fallback transfers complete consolidated cylinder, cone, sphere,

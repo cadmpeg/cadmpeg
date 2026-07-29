@@ -173,12 +173,16 @@ pub enum B5Surface {
         axis: [f64; 3],
         /// Cone half-angle in radians.
         half_angle: f64,
-        /// Stored angular-origin offset.
-        angular_offset: f64,
+        /// Scalar immediately preceding the active angular interval.
+        pre_angular_range_scalar: f64,
+        /// Active azimuth interval.
+        angular_range: [f64; 2],
         /// Native slant-coordinate range.
         slant_range: [f64; 2],
         /// Divisor mapping native U to azimuth.
         angular_scale: f64,
+        /// Full-turn azimuth chart domain.
+        angular_domain: [f64; 2],
     },
     /// `b5 03 2a`: a sphere with a radius-scaled right-handed frame.
     Sphere {
@@ -1816,25 +1820,34 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let direction_y = unit(point(&record.payload, 49)?)?;
             let axis = unit(point(&record.payload, 73)?)?;
             let half_angle = scalar(&record.payload, 97)?;
-            let angular_offset = scalar(&record.payload, 121)?;
+            let pre_angular_range_scalar = scalar(&record.payload, 105)?;
+            let angular_range = [scalar(&record.payload, 113)?, scalar(&record.payload, 121)?];
             let mut slant_range = [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
             if slant_range[0].abs() <= 1e-12 {
                 slant_range[0] = 0.0;
             }
             let angular_scale = scalar(&record.payload, 145)?;
-            ((0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+            let angular_domain = [scalar(&record.payload, 169)?, scalar(&record.payload, 177)?];
+            (record.payload.len() == 185
+                && record.payload.first() == Some(&0x80)
+                && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+                && periodic_angular_range_is_valid(angular_range, angular_domain)
                 && slant_range[0] >= 0.0
                 && slant_range[0] < slant_range[1]
-                && angular_scale > 0.0)
+                && angular_scale > 0.0
+                && scalar(&record.payload, 153)? == 1.0
+                && scalar(&record.payload, 161)? == 0.0)
                 .then_some(B5Surface::Cone {
                     apex,
                     direction_x,
                     direction_y,
                     axis,
                     half_angle,
-                    angular_offset,
+                    pre_angular_range_scalar,
+                    angular_range,
                     slant_range,
                     angular_scale,
+                    angular_domain,
                 })
         }
         0x2a => {
@@ -3897,10 +3910,15 @@ mod tests {
         }
         for (offset, value) in [
             (97, 0.25f64),
-            (121, 0.5),
+            (105, 4.0),
+            (113, 0.5),
+            (121, 0.5 + std::f64::consts::PI),
             (129, 0.0),
             (137, 8.0),
             (145, 3.0),
+            (153, 1.0),
+            (169, 0.5 - std::f64::consts::FRAC_PI_2),
+            (177, 0.5 + 3.0 * std::f64::consts::FRAC_PI_2),
         ] {
             payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
         }
@@ -3919,11 +3937,20 @@ mod tests {
                 direction_y: [0.0, 1.0, 0.0],
                 axis: [0.0, 0.0, 1.0],
                 half_angle: 0.25,
-                angular_offset: 0.5,
+                pre_angular_range_scalar: 4.0,
+                angular_range: [0.5, 0.5 + std::f64::consts::PI],
                 slant_range: [0.0, 8.0],
                 angular_scale: 3.0,
+                angular_domain: [
+                    0.5 - std::f64::consts::FRAC_PI_2,
+                    0.5 + 3.0 * std::f64::consts::FRAC_PI_2,
+                ],
             })
         );
+
+        let mut malformed = record;
+        malformed.payload[169..177].copy_from_slice(&0.0f64.to_le_bytes());
+        assert_eq!(parse_surface(&malformed), None);
     }
 
     #[test]
@@ -4388,9 +4415,11 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             half_angle: 0.25,
-            angular_offset: 0.0,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
             slant_range: [-2.0, 4.0],
             angular_scale: 3.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
         };
         let surfaces = BTreeMap::from([(2, carrier)]);
         let mut payload = vec![0x82, 0x82, 0x83];
@@ -4657,9 +4686,11 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             half_angle: std::f64::consts::FRAC_PI_4,
-            angular_offset: 0.0,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
             slant_range: [0.0, 1.0],
             angular_scale: 1.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
         };
         assert!(supported_surface_parameters_match_carrier(
             &cone_parameters,
@@ -4671,9 +4702,11 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             half_angle: std::f64::consts::FRAC_PI_6,
-            angular_offset: 0.0,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
             slant_range: [0.0, 1.0],
             angular_scale: 1.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
         };
         assert!(!supported_surface_parameters_match_carrier(
             &cone_parameters,

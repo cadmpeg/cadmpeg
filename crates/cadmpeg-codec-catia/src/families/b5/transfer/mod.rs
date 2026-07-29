@@ -2025,9 +2025,11 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             half_angle,
-            angular_offset: 0.0,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
             slant_range: [-4.0, 0.0],
             angular_scale: 2.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
         };
         let cone_pcurve = B5Pcurve {
             control_points: vec![[0.0, -4.0], [2.0, -4.0]],
@@ -2115,9 +2117,11 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             half_angle,
-            angular_offset: 0.0,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
             slant_range: [2.0, 8.0],
             angular_scale: 3.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
         };
         let pcurve = B5Pcurve {
             object_id: 1,
