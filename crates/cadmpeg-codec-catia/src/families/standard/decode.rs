@@ -1658,7 +1658,20 @@ fn attach_standard_topology(
                 &ir.model.points,
                 *center,
                 *radius,
-                Some((&surface0.geometry, &surface1.geometry)),
+                Some([
+                    (
+                        &surface0.geometry,
+                        face_bounds
+                            .as_ref()
+                            .and_then(|bounds| bounds[support.faces[0]]),
+                    ),
+                    (
+                        &surface1.geometry,
+                        face_bounds
+                            .as_ref()
+                            .and_then(|bounds| bounds[support.faces[1]]),
+                    ),
+                ]),
             ),
             crate::families::standard::records::StandardCurveGeometry::Line
             | crate::families::standard::records::StandardCurveGeometry::Bspline => {
@@ -3166,16 +3179,22 @@ pub(crate) fn standard_circle_endpoint_candidates(
     points: &[Point],
     center: Point3,
     radius: f64,
-    surfaces: Option<(&SurfaceGeometry, &SurfaceGeometry)>,
+    faces: Option<
+        [(
+            &SurfaceGeometry,
+            Option<crate::families::standard::records::StandardFaceBounds>,
+        ); 2],
+    >,
 ) -> Vec<usize> {
     points
         .iter()
         .enumerate()
         .filter_map(|(index, point)| {
             let on_circle = (point.position.distance_squared(center).sqrt() - radius).abs() <= 1e-3;
-            let incident = surfaces.is_none_or(|(left, right)| {
-                point_on_known_surface(point.position, left)
-                    && point_on_known_surface(point.position, right)
+            let incident = faces.is_none_or(|faces| {
+                faces.into_iter().all(|(surface, bounds)| {
+                    point_on_standard_face(point.position, surface, bounds)
+                })
             });
             (on_circle && incident).then_some(index)
         })
@@ -5775,7 +5794,40 @@ mod route_tests {
                 &points,
                 Point3::new(0.0, 0.0, 0.0),
                 5.0,
-                Some((&left, &right)),
+                Some([(&left, None), (&right, None)]),
+            ),
+            [0]
+        );
+    }
+
+    #[test]
+    fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
+        let points = [
+            Point {
+                id: PointId("incident".to_string()),
+                position: Point3::new(3.0, 4.0, 0.0),
+                source_object: None,
+            },
+            Point {
+                id: PointId("other-occurrence".to_string()),
+                position: Point3::new(3.0, -4.0, 0.0),
+                source_object: None,
+            },
+        ];
+        let surface = SurfaceGeometry::Unknown { record: None };
+        let bounds = crate::families::standard::records::StandardFaceBounds {
+            aabb_center: [3.0, 4.0, 0.0],
+            aabb_half_extents: [0.1, 0.1, 0.1],
+            sphere_center: [3.0, 4.0, 0.0],
+            sphere_radius: 0.2,
+        };
+
+        assert_eq!(
+            standard_circle_endpoint_candidates(
+                &points,
+                Point3::new(0.0, 0.0, 0.0),
+                5.0,
+                Some([(&surface, Some(bounds)), (&surface, Some(bounds))]),
             ),
             [0]
         );
