@@ -471,23 +471,98 @@ fn jt_vertex_flags_require_a_complete_binary_value_packet() {
 
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
-    use cadmpeg_ir::features::{FaceSelection, HoleKind, Length, ProfileRef, Termination};
+    use cadmpeg_ir::features::{
+        FaceSelection, HoleKind, HolePlacement, Length, ProfileRef, Termination,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
 
     assert!(!crate::decode::hole_feature_is_incomplete(
         None,
         None,
-        Some(Point3::new(1.0, 2.0, 3.0)),
-        Some(Vector3::new(0.0, 0.0, 1.0)),
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&Termination::ThroughAll),
     ));
+    assert!(crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (
+            Some(Point3::new(f64::NAN, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
+        (&HoleKind::Simple, None),
+        Some(Length(5.0)),
+        Some(&Termination::ThroughAll),
+    ));
+    let directed = HolePlacement::Directed {
+        position: Point3::new(1.0, 2.0, 3.0),
+        direction: Vector3::new(0.0, 0.0, 1.0),
+    };
+    assert!(!crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (None, None),
+        std::slice::from_ref(&directed),
+        (&HoleKind::Simple, None),
+        Some(Length(5.0)),
+        Some(&Termination::ThroughAll),
+    ));
+    let axis = HolePlacement::Axis {
+        origin: Point3::new(1.0, 2.0, 3.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+    };
+    assert!(!crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (None, None),
+        std::slice::from_ref(&axis),
+        (&HoleKind::Simple, None),
+        Some(Length(5.0)),
+        Some(&Termination::ThroughAll),
+    ));
+    for (placements, exit, extent) in [
+        (
+            vec![axis.clone()],
+            None,
+            Termination::Blind {
+                length: Length(10.0),
+            },
+        ),
+        (
+            vec![axis],
+            Some(HoleKind::Chamfer {
+                diameter: Length(7.0),
+                angle: cadmpeg_ir::features::Angle(0.5),
+            }),
+            Termination::ThroughAll,
+        ),
+        (
+            vec![directed.clone(), directed],
+            None,
+            Termination::ThroughAll,
+        ),
+    ] {
+        assert!(crate::decode::hole_feature_is_incomplete(
+            None,
+            None,
+            (None, None),
+            &placements,
+            (&HoleKind::Simple, exit.as_ref()),
+            Some(Length(5.0)),
+            Some(&extent),
+        ));
+    }
     assert!(crate::decode::hole_feature_is_incomplete(
         Some(&ProfileRef::Unresolved("hole".into())),
         Some(&FaceSelection::Unresolved),
-        None,
-        None,
+        (None, None),
+        &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&Termination::ThroughAll),
@@ -495,8 +570,11 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(crate::decode::hole_feature_is_incomplete(
         None,
         None,
-        Some(Point3::new(1.0, 2.0, 3.0)),
-        Some(Vector3::new(0.0, 0.0, 1.0)),
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&Termination::Unresolved),
@@ -504,8 +582,11 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(crate::decode::hole_feature_is_incomplete(
         None,
         None,
-        Some(Point3::new(1.0, 2.0, 3.0)),
-        Some(Vector3::new(0.0, 0.0, 1.0)),
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
         (
             &HoleKind::Simple,
             Some(&HoleKind::Unresolved {
@@ -917,8 +998,11 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
         crate::decode::hole_feature_is_incomplete(
             profile,
             face,
-            Some(Point3::new(0.0, 0.0, 0.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
+            (
+                Some(Point3::new(0.0, 0.0, 0.0)),
+                Some(Vector3::new(0.0, 0.0, 1.0)),
+            ),
+            &[],
             (&HoleKind::Simple, None),
             Some(Length(1.0)),
             Some(&Termination::ThroughAll),
