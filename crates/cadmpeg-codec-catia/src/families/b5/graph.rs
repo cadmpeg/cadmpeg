@@ -2224,8 +2224,9 @@ fn analytic_offset_magnitude_agrees(
     source: &B5Surface,
     distance: f64,
 ) -> bool {
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= 1e-10 * left.abs().max(right.abs()).max(1.0)
+    const RELATIVE_TOLERANCE: f64 = 1e-10;
+    let relative_close = |left: f64, right: f64| {
+        (left - right).abs() <= RELATIVE_TOLERANCE * left.abs().max(right.abs())
     };
     let dot = |left: [f64; 3], right: [f64; 3]| {
         left.into_iter().zip(right).map(|(a, b)| a * b).sum::<f64>()
@@ -2233,14 +2234,28 @@ fn analytic_offset_magnitude_agrees(
     let difference = |left: [f64; 3], right: [f64; 3]| {
         [left[0] - right[0], left[1] - right[1], left[2] - right[2]]
     };
-    let parallel = |left: [f64; 3], right: [f64; 3]| close(dot(left, right).abs(), 1.0);
-    let collinear = |delta: [f64; 3], axis: [f64; 3]| {
-        close(dot(delta, delta), dot(delta, axis) * dot(delta, axis))
+    let length = |value: [f64; 3]| value[0].hypot(value[1]).hypot(value[2]);
+    let parallel = |left: [f64; 3], right: [f64; 3]| relative_close(dot(left, right).abs(), 1.0);
+    let projected_distance_close = |measured: f64, expected: f64, delta_length: f64| {
+        (measured - expected).abs()
+            <= RELATIVE_TOLERANCE * measured.abs().max(expected.abs())
+                + 4.0 * f64::EPSILON * delta_length
     };
-    let same_point = |left: [f64; 3], right: [f64; 3]| {
-        difference(left, right)
-            .into_iter()
-            .all(|component| close(component, 0.0))
+    let collinear = |delta: [f64; 3], axis: [f64; 3]| {
+        let delta_length = length(delta);
+        if delta_length == 0.0 {
+            return true;
+        }
+        let axial_distance = dot(delta, axis);
+        let transverse = [
+            delta[0] - axial_distance * axis[0],
+            delta[1] - axial_distance * axis[1],
+            delta[2] - axial_distance * axis[2],
+        ];
+        length(transverse) <= RELATIVE_TOLERANCE * delta_length
+    };
+    let same_point = |left: [f64; 3], right: [f64; 3], geometric_scale: f64| {
+        length(difference(left, right)) <= RELATIVE_TOLERANCE * geometric_scale
     };
     match (carrier, source) {
         (
@@ -2263,10 +2278,12 @@ fn analytic_offset_magnitude_agrees(
             ) else {
                 return false;
             };
+            let delta = difference(*carrier_origin, *source_origin);
             parallel(carrier_normal, source_normal)
-                && close(
-                    dot(difference(*carrier_origin, *source_origin), source_normal).abs(),
+                && projected_distance_close(
+                    dot(delta, source_normal).abs(),
                     distance.abs(),
+                    length(delta),
                 )
         }
         (
@@ -2286,7 +2303,7 @@ fn analytic_offset_magnitude_agrees(
             let delta = difference(*carrier_origin, *source_origin);
             parallel(*carrier_axis, *source_axis)
                 && collinear(delta, *source_axis)
-                && close((carrier_radius - source_radius).abs(), distance.abs())
+                && relative_close((carrier_radius - source_radius).abs(), distance.abs())
         }
         (
             B5Surface::Sphere {
@@ -2300,8 +2317,12 @@ fn analytic_offset_magnitude_agrees(
                 ..
             },
         ) => {
-            same_point(*carrier_center, *source_center)
-                && close((carrier_radius - source_radius).abs(), distance.abs())
+            let geometric_scale = carrier_radius
+                .abs()
+                .max(source_radius.abs())
+                .max(distance.abs());
+            same_point(*carrier_center, *source_center, geometric_scale)
+                && relative_close((carrier_radius - source_radius).abs(), distance.abs())
         }
         (
             B5Surface::Torus {
@@ -2319,10 +2340,16 @@ fn analytic_offset_magnitude_agrees(
                 ..
             },
         ) => {
-            same_point(*carrier_center, *source_center)
+            let geometric_scale = carrier_major
+                .abs()
+                .max(source_major.abs())
+                .max(carrier_minor.abs())
+                .max(source_minor.abs())
+                .max(distance.abs());
+            same_point(*carrier_center, *source_center, geometric_scale)
                 && parallel(*carrier_axis, *source_axis)
-                && close(*carrier_major, *source_major)
-                && close((carrier_minor - source_minor).abs(), distance.abs())
+                && relative_close(*carrier_major, *source_major)
+                && relative_close((carrier_minor - source_minor).abs(), distance.abs())
         }
         _ => false,
     }
@@ -5376,6 +5403,25 @@ mod tests {
 
     #[test]
     fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
+        let plane = |origin| B5Surface::Plane {
+            origin,
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
+        };
+        let tiny = 1e-200_f64;
+        assert!(analytic_offset_magnitude_agrees(
+            &plane([0.0, 0.0, tiny]),
+            &plane([0.0; 3]),
+            tiny
+        ));
+        assert!(!analytic_offset_magnitude_agrees(
+            &plane([0.0, 0.0, tiny]),
+            &plane([0.0; 3]),
+            1e-13
+        ));
+
         let cylinder = |origin, radius| B5Surface::Cylinder {
             origin,
             reference_x: [1.0, 0.0, 0.0],
@@ -5395,6 +5441,21 @@ mod tests {
             &cylinder([0.25, 0.0, 4.0], 3.0),
             &cylinder([0.0; 3], 5.0),
             -2.0
+        ));
+        assert!(analytic_offset_magnitude_agrees(
+            &cylinder([0.0, 0.0, tiny], 2.0 * tiny),
+            &cylinder([0.0; 3], tiny),
+            tiny
+        ));
+        assert!(!analytic_offset_magnitude_agrees(
+            &cylinder([0.0, 0.0, tiny], 2.0 * tiny),
+            &cylinder([0.0; 3], tiny),
+            1e-13
+        ));
+        assert!(!analytic_offset_magnitude_agrees(
+            &cylinder([tiny, 0.0, tiny], 2.0 * tiny),
+            &cylinder([0.0; 3], tiny),
+            tiny
         ));
 
         let torus = |center, major_radius, minor_radius| B5Surface::Torus {
@@ -5420,6 +5481,33 @@ mod tests {
             &torus([0.0; 3], 9.0, 3.0),
             &torus([0.0; 3], 8.0, 2.5),
             0.5
+        ));
+        assert!(!analytic_offset_magnitude_agrees(
+            &torus([0.0; 3], 2.0 * tiny, 2.0 * tiny),
+            &torus([0.0; 3], tiny, tiny),
+            tiny
+        ));
+
+        let sphere = |center, radius| B5Surface::Sphere {
+            center,
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius,
+            azimuth_range: [0.0, 1.0],
+            latitude_range: [-1.0, 1.0],
+            construction_radius: radius,
+            chart_origin: 0.0,
+        };
+        assert!(analytic_offset_magnitude_agrees(
+            &sphere([0.0; 3], 2.0 * tiny),
+            &sphere([0.0; 3], tiny),
+            tiny
+        ));
+        assert!(!analytic_offset_magnitude_agrees(
+            &sphere([1e-13, 0.0, 0.0], 2.0 * tiny),
+            &sphere([0.0; 3], tiny),
+            tiny
         ));
     }
 
