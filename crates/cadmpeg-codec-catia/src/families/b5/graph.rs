@@ -2534,9 +2534,8 @@ fn supported_surface_parameters_match_carrier(
     parameters: &B5SupportedSurfaceParameters,
     carrier: &B5Surface,
 ) -> bool {
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= 1e-12 * left.abs().max(right.abs()).max(1.0)
-    };
+    let relative_close =
+        |left: f64, right: f64| (left - right).abs() <= 1e-12 * left.abs().max(right.abs());
     match (parameters, carrier) {
         (
             B5SupportedSurfaceParameters::Radius {
@@ -2544,14 +2543,14 @@ fn supported_surface_parameters_match_carrier(
                 ..
             },
             B5Surface::Cylinder { radius, .. },
-        ) => close(*construction_radius, *radius),
+        ) => relative_close(*construction_radius, *radius),
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
                 ..
             },
             B5Surface::Torus { minor_radius, .. },
-        ) => close(*construction_radius, *minor_radius),
+        ) => relative_close(*construction_radius, *minor_radius),
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
@@ -2561,13 +2560,13 @@ fn supported_surface_parameters_match_carrier(
                 construction_radius: carrier_radius,
                 ..
             },
-        ) => close(*construction_radius, *carrier_radius),
+        ) => relative_close(*construction_radius, *carrier_radius),
         (B5SupportedSurfaceParameters::Radius { .. }, B5Surface::RollingBall { .. }) => true,
         (B5SupportedSurfaceParameters::ScalarPair { .. }, B5Surface::Plane { .. }) => true,
         (
             B5SupportedSurfaceParameters::ScalarPair { scalars, .. },
             B5Surface::Cone { half_angle, .. },
-        ) => close(scalars[1], *half_angle),
+        ) => relative_close(scalars[1], *half_angle),
         _ => false,
     }
 }
@@ -5677,6 +5676,93 @@ mod tests {
             &construction,
             &HashMap::from([(5, &pcurve0), (6, &wrong)]),
             &HashMap::new()
+        ));
+    }
+
+    #[test]
+    fn supported_surface_parameter_matching_is_scale_independent() {
+        let radius = 1e-200_f64;
+        let parameters = B5SupportedSurfaceParameters::Radius {
+            controls: [0; 6],
+            construction_radius: radius,
+        };
+        let cylinder = |carrier_radius| B5Surface::Cylinder {
+            origin: [0.0; 3],
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: carrier_radius,
+            u_range: [0.0, std::f64::consts::TAU * carrier_radius],
+            v_range: [-1.0, 1.0],
+            angular_scale: carrier_radius,
+            chart_origin: 0.0,
+        };
+        let torus = |carrier_radius| B5Surface::Torus {
+            center: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            major_radius: 1.0,
+            minor_radius: carrier_radius,
+            major_angular_range: [0.0, std::f64::consts::TAU],
+            major_angular_domain: [0.0, std::f64::consts::TAU],
+            minor_angular_range: [0.0, std::f64::consts::TAU],
+            minor_angular_domain: [0.0, std::f64::consts::TAU],
+            major_scale: 1.0,
+            minor_scale: carrier_radius,
+        };
+        let sphere = |carrier_radius| B5Surface::Sphere {
+            center: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 1.0,
+            azimuth_range: [0.0, 1.0],
+            latitude_range: [-1.0, 1.0],
+            construction_radius: carrier_radius,
+            chart_origin: 0.0,
+        };
+
+        for carrier in [cylinder(radius), torus(radius), sphere(radius)] {
+            assert!(supported_surface_parameters_match_carrier(
+                &parameters,
+                &carrier
+            ));
+        }
+        for carrier in [
+            cylinder(2.0 * radius),
+            torus(2.0 * radius),
+            sphere(2.0 * radius),
+        ] {
+            assert!(!supported_surface_parameters_match_carrier(
+                &parameters,
+                &carrier
+            ));
+        }
+
+        let half_angle = 1e-200_f64;
+        let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
+            controls: [0; 6],
+            scalars: [1.0, half_angle],
+        };
+        let cone = |carrier_half_angle| B5Surface::Cone {
+            apex: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            half_angle: carrier_half_angle,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
+            slant_range: [0.0, 1.0],
+            angular_scale: 1.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
+        };
+        assert!(supported_surface_parameters_match_carrier(
+            &cone_parameters,
+            &cone(half_angle)
+        ));
+        assert!(!supported_surface_parameters_match_carrier(
+            &cone_parameters,
+            &cone(2.0 * half_angle)
         ));
     }
 
