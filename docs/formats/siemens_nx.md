@@ -65,6 +65,16 @@ Other arrangements have no body membership without a distinct body-state relatio
 An absent declaration, duplicate declaration, multiple defaults, type mismatch,
 or unequal name does not form the relation.
 
+When exactly one active configuration has complete body membership, every
+feature producing one of those bodies is active in that configuration. Its
+transitive exact feature dependencies are also active. Each member of this
+closed graph has `suppressed=false` and one configuration-local feature state
+retaining its neutral definition, ordered dependencies, and outputs. The graph
+is rejected atomically when a dependency has no feature, any member is
+explicitly suppressed, active configuration identity is ambiguous, or body
+membership is unresolved. Operations outside the closed graph retain
+unresolved suppression.
+
 The canonical `/Root/UG_PART/UG_PART` payload begins with a segment index of
 12-byte little-endian rows:
 

@@ -40,8 +40,9 @@ This document records unresolved NX `.prt` byte semantics.
   Feature-history object-index relations not covered by primary-body writers
   and Boolean tool consumption are also unspecified.
 - Ownership roles of embedded operation common frames, the roles of their
-  exactly framed eight-byte state lanes, and the relation of any field to
-  operation suppression are unspecified.
+  exactly framed eight-byte state lanes, and their relation to operation
+  suppression are unspecified. Suppression outside the closed active
+  configuration output-and-dependency graph is unspecified.
 - The target object family and slot roles of the five nullable references at the start of a `DELETE` payload are unspecified.
 - Body membership and per-body state for inactive arrangements are unspecified.
 - The semantic roles of the extrusion terminal discriminator lane's type indices, fixed counted values, flags, and trailing indices are unspecified.

@@ -13,12 +13,12 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
-    ConfigurationBodies, ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState,
-    DesignConfiguration, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm,
-    HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm,
-    RadiusSpec, RibConstruction, RibDraft, SketchSpace, SweepMode, Termination, ThickenSide,
-    TrimRegion,
+    ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
+    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, EdgeSelection,
+    ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
+    FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId,
+    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RibConstruction,
+    RibDraft, SketchSpace, SweepMode, Termination, ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -265,15 +265,120 @@ pub(crate) fn attach(
         &model.features.feature_block_dimensions,
         annotations,
     );
+    attach_active_configuration_feature_states(ir, annotations);
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(171);
+    namespace.version = namespace.version.max(172);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
     Ok(())
+}
+
+fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let active_configuration_indices = ir
+        .model
+        .configurations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, configuration)| configuration.active.then_some(index))
+        .collect::<Vec<_>>();
+    let [configuration_index] = active_configuration_indices.as_slice() else {
+        return;
+    };
+    let Some(configuration_bodies) = ir.model.configurations[*configuration_index]
+        .bodies
+        .resolved()
+        .map(<[BodyId]>::to_vec)
+    else {
+        return;
+    };
+    if !ir.model.configurations[*configuration_index]
+        .feature_states
+        .is_empty()
+    {
+        return;
+    }
+    let feature_indices = ir
+        .model
+        .features
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (feature.id.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let active_bodies = configuration_bodies.iter().collect::<BTreeSet<_>>();
+    let mut active_features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            feature
+                .outputs
+                .iter()
+                .any(|output| active_bodies.contains(output))
+        })
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
+    if active_features.is_empty() {
+        return;
+    }
+    let mut pending = active_features.iter().cloned().collect::<Vec<_>>();
+    while let Some(feature_id) = pending.pop() {
+        let Some(feature) = feature_indices
+            .get(&feature_id)
+            .and_then(|index| ir.model.features.get(*index))
+        else {
+            return;
+        };
+        for dependency in &feature.dependencies {
+            if !feature_indices.contains_key(dependency) {
+                return;
+            }
+            if active_features.insert(dependency.clone()) {
+                pending.push(dependency.clone());
+            }
+        }
+    }
+    if active_features.iter().any(|id| {
+        feature_indices
+            .get(id)
+            .and_then(|index| ir.model.features.get(*index))
+            .is_some_and(|feature| feature.suppressed == Some(true))
+    }) {
+        return;
+    }
+
+    let states = active_features
+        .iter()
+        .map(|id| {
+            let feature = feature_indices
+                .get(id)
+                .and_then(|index| ir.model.features.get(*index))
+                .expect("active feature has a validated index");
+            (
+                id.clone(),
+                ConfigurationFeatureState {
+                    suppressed: false,
+                    dependencies: feature.dependencies.clone(),
+                    outputs: feature.outputs.clone(),
+                    definition: feature.definition.clone(),
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    for id in &active_features {
+        let feature = feature_indices
+            .get(id)
+            .and_then(|index| ir.model.features.get_mut(*index))
+            .expect("active feature has a validated index");
+        feature.suppressed = Some(false);
+        annotations.derived(&feature.id, "suppressed");
+    }
+    let configuration = &mut ir.model.configurations[*configuration_index];
+    configuration.feature_states = states;
+    annotations.derived(&configuration.id.0, "feature_states");
 }
 
 fn attach_feature_operations(
@@ -4479,6 +4584,187 @@ mod tests {
     use crate::NxCodec;
 
     use super::*;
+
+    #[test]
+    fn active_configuration_body_writers_close_false_suppression_through_dependencies() {
+        let feature =
+            |id: &str, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>, suppressed| Feature {
+                id: FeatureId(id.into()),
+                ordinal: 0,
+                name: None,
+                suppressed,
+                parent: None,
+                dependencies,
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs,
+                definition: FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: Vec::new(),
+                    active_child: None,
+                },
+                native_ref: None,
+            };
+        let configuration = |active, bodies| DesignConfiguration {
+            id: ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active,
+            source_index: Some(0),
+            name: "Model".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            bodies,
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        };
+        let body = BodyId("body".into());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features = vec![
+            feature("dependency", Vec::new(), Vec::new(), None),
+            feature(
+                "writer",
+                vec![FeatureId("dependency".into())],
+                vec![body.clone()],
+                None,
+            ),
+            feature("unrelated", Vec::new(), Vec::new(), None),
+        ];
+        ir.model.configurations = vec![configuration(
+            true,
+            ConfigurationBodies::Resolved(vec![body]),
+        )];
+        let mut annotations = AnnotationBuilder::new();
+
+        super::attach_active_configuration_feature_states(&mut ir, &mut annotations);
+
+        assert_eq!(ir.model.features[0].suppressed, Some(false));
+        assert_eq!(ir.model.features[1].suppressed, Some(false));
+        assert_eq!(ir.model.features[2].suppressed, None);
+        let states = &ir.model.configurations[0].feature_states;
+        assert_eq!(
+            states.keys().cloned().collect::<Vec<_>>(),
+            [FeatureId("dependency".into()), FeatureId("writer".into())]
+        );
+        assert_eq!(
+            states[&FeatureId("writer".into())].dependencies,
+            [FeatureId("dependency".into())]
+        );
+        assert_eq!(
+            states[&FeatureId("writer".into())].outputs,
+            [BodyId("body".into())]
+        );
+    }
+
+    #[test]
+    fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_atomically() {
+        let producer = |dependency: &str| Feature {
+            id: FeatureId("writer".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: vec![FeatureId(dependency.into())],
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![BodyId("body".into())],
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
+            },
+            native_ref: None,
+        };
+        let configuration = |id: &str, active, bodies| DesignConfiguration {
+            id: ConfigurationId(id.into()),
+            ordinal: 0,
+            active,
+            source_index: Some(0),
+            name: id.into(),
+            material: None,
+            properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            bodies,
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        };
+        let mut missing_dependency = CadIr::empty(cadmpeg_ir::units::Units::default());
+        missing_dependency.model.features = vec![producer("missing")];
+        missing_dependency.model.configurations = vec![configuration(
+            "active",
+            true,
+            ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
+        )];
+        let mut annotations = AnnotationBuilder::new();
+        super::attach_active_configuration_feature_states(
+            &mut missing_dependency,
+            &mut annotations,
+        );
+        assert_eq!(missing_dependency.model.features[0].suppressed, None);
+        assert!(missing_dependency.model.configurations[0]
+            .feature_states
+            .is_empty());
+
+        let mut unresolved_bodies = CadIr::empty(cadmpeg_ir::units::Units::default());
+        unresolved_bodies.model.features = vec![producer("writer")];
+        unresolved_bodies.model.features[0].dependencies.clear();
+        unresolved_bodies.model.configurations = vec![configuration(
+            "active",
+            true,
+            ConfigurationBodies::Unresolved,
+        )];
+        super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations);
+        assert_eq!(unresolved_bodies.model.features[0].suppressed, None);
+        assert!(unresolved_bodies.model.configurations[0]
+            .feature_states
+            .is_empty());
+
+        let mut contradicted = CadIr::empty(cadmpeg_ir::units::Units::default());
+        contradicted.model.features = vec![producer("writer")];
+        contradicted.model.features[0].dependencies.clear();
+        contradicted.model.features[0].suppressed = Some(true);
+        contradicted.model.configurations = vec![configuration(
+            "active",
+            true,
+            ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
+        )];
+        super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
+        assert_eq!(contradicted.model.features[0].suppressed, Some(true));
+        assert!(contradicted.model.configurations[0]
+            .feature_states
+            .is_empty());
+
+        let mut ambiguous = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ambiguous.model.features = vec![producer("writer")];
+        ambiguous.model.features[0].dependencies.clear();
+        ambiguous.model.configurations = vec![
+            configuration(
+                "first",
+                true,
+                ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
+            ),
+            configuration(
+                "second",
+                true,
+                ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
+            ),
+        ];
+        super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations);
+        assert_eq!(ambiguous.model.features[0].suppressed, None);
+        assert!(ambiguous
+            .model
+            .configurations
+            .iter()
+            .all(|configuration| configuration.feature_states.is_empty()));
+    }
 
     #[test]
     fn operation_source_properties_require_unique_owned_structures() {
