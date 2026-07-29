@@ -13159,6 +13159,24 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
         ]),
         None
     );
+    assert_eq!(
+        crate::design::edge_resolve::unique_deleted_reference_assignment(
+            &[vec![16, 17, 18], vec![19, 20, 21]],
+            &[vec![17, 20, 22], vec![17, 20, 22]],
+        ),
+        Some(vec![17, 20])
+    );
+    assert_eq!(
+        crate::design::edge_resolve::unique_deleted_reference_assignment(
+            &[vec![16, 17, 18], vec![16, 17, 18]],
+            &[vec![17, 18], vec![17, 18]],
+        ),
+        None
+    );
+    assert_eq!(
+        crate::design::edge_resolve::unique_deleted_reference_assignment(&[vec![17]], &[vec![]],),
+        None
+    );
 }
 
 #[test]

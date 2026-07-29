@@ -299,6 +299,7 @@ pub(crate) fn resolved_edge_group(
                         .map(|operand| operand.recipe_selectors.as_slice()),
                 )
             })
+            .or_else(|| deleted_reference_edge_group_candidates(&matched_operands))
             .or_else(|| {
                 common_deleted_edge_group_candidates(matched_operands.iter().map(|operand| {
                     (
@@ -493,6 +494,53 @@ pub(crate) fn changed_reference_edge_group_candidates(
             for changed in changed_sets {
                 candidates.retain(|candidate| changed.contains(candidate));
             }
+            candidates.sort_unstable();
+            candidates.dedup();
+            (!candidates.is_empty()).then_some(candidates)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    unique_bipartite_assignment(&candidate_sets)
+}
+
+pub(crate) fn deleted_reference_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+) -> Option<Vec<i64>> {
+    let reference_candidates = operands
+        .iter()
+        .map(|operand| {
+            let mut candidates = operand
+                .recipe_reference_contexts
+                .iter()
+                .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
+                .collect::<Vec<_>>();
+            candidates.sort_unstable();
+            candidates.dedup();
+            candidates
+        })
+        .collect::<Vec<_>>();
+    let deleted_candidates = operands
+        .iter()
+        .map(|operand| operand.deleted_boundary_edge_slots.clone())
+        .collect::<Vec<_>>();
+    unique_deleted_reference_assignment(&reference_candidates, &deleted_candidates)
+}
+
+pub(crate) fn unique_deleted_reference_assignment(
+    reference_candidates: &[Vec<i64>],
+    deleted_candidates: &[Vec<i64>],
+) -> Option<Vec<i64>> {
+    if reference_candidates.len() != deleted_candidates.len() {
+        return None;
+    }
+    let candidate_sets = reference_candidates
+        .iter()
+        .zip(deleted_candidates)
+        .map(|(references, deleted)| {
+            let mut candidates = references
+                .iter()
+                .copied()
+                .filter(|edge| deleted.contains(edge))
+                .collect::<Vec<_>>();
             candidates.sort_unstable();
             candidates.dedup();
             (!candidates.is_empty()).then_some(candidates)
