@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 206;
+pub const CATIA_NATIVE_VERSION: u32 = 207;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -28,7 +28,7 @@ const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
 #[cfg(test)]
 const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
 #[cfg(test)]
-const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 205;
+const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 207;
 #[cfg(test)]
 const CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION: u32 = 206;
 
@@ -1613,9 +1613,9 @@ pub struct CatiaDesignReferenceCell {
 pub struct CatiaDesignReferenceRow {
     /// Cells in the order of the table's source fields.
     pub cells: Vec<CatiaDesignReferenceCell>,
-    /// Design object whose distinct selected fields exactly match every classified column.
+    /// Design object containing distinct selected fields whose classes equal every column class.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub schema_member: Option<String>,
+    pub matching_design_object: Option<String>,
 }
 
 /// Equal-cardinality reference lists aligned by list-item ordinal.
@@ -1878,7 +1878,7 @@ fn design_parallel_reference_table(
                     }
                 })
                 .collect::<Vec<_>>();
-            let schema_member = cells
+            let matching_design_object = cells
                 .first()
                 .and_then(|cell| cell.design_object.clone())
                 .filter(|member| {
@@ -1899,7 +1899,7 @@ fn design_parallel_reference_table(
                 });
             CatiaDesignReferenceRow {
                 cells,
-                schema_member,
+                matching_design_object,
             }
         })
         .collect();

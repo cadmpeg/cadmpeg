@@ -166,15 +166,15 @@ fn finish_decode(
         design_parallel_reference_cell_count - design_parallel_reference_resolved_cell_count;
     let design_parallel_reference_unclassified_cell_count =
         design_parallel_reference_cell_count - design_parallel_reference_classified_cell_count;
-    let design_parallel_reference_schema_membership_count = native
+    let design_parallel_reference_matched_row_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
         .flat_map(|table| &table.rows)
-        .filter(|row| row.schema_member.is_some())
+        .filter(|row| row.matching_design_object.is_some())
         .count();
-    let design_parallel_reference_unresolved_schema_membership_count =
-        design_parallel_reference_row_count - design_parallel_reference_schema_membership_count;
+    let design_parallel_reference_unmatched_row_count =
+        design_parallel_reference_row_count - design_parallel_reference_matched_row_count;
     let design_unowned_field_relation_count = native
         .design_objects
         .iter()
@@ -1149,12 +1149,12 @@ fn finish_decode(
             design_parallel_reference_classified_column_count,
         ),
         (
-            "decoded_design_parallel_reference_schema_membership_count".to_string(),
-            design_parallel_reference_schema_membership_count,
+            "decoded_design_parallel_reference_matched_row_count".to_string(),
+            design_parallel_reference_matched_row_count,
         ),
         (
-            "unresolved_design_parallel_reference_schema_membership_count".to_string(),
-            design_parallel_reference_unresolved_schema_membership_count,
+            "unmatched_design_parallel_reference_row_count".to_string(),
+            design_parallel_reference_unmatched_row_count,
         ),
         (
             "decoded_design_unowned_field_relation_count".to_string(),

@@ -8172,11 +8172,11 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         cell.field.is_some() && cell.field_class.is_some() && cell.design_object.is_some()
     }));
     assert_eq!(
-        table.rows[0].schema_member,
+        table.rows[0].matching_design_object,
         table.rows[0].cells[0].design_object
     );
-    assert!(table.rows[0].schema_member.is_some());
-    assert!(table.rows[1].schema_member.is_none());
+    assert!(table.rows[0].matching_design_object.is_some());
+    assert!(table.rows[1].matching_design_object.is_none());
 
     let expected = table.clone();
     let mut malformed = native.clone();
@@ -8218,7 +8218,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     let mut version_203_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_203_namespace)
-        .expect("store current parallel reference memberships");
+        .expect("store current parallel reference row matches");
     let mut version_203_objects: Vec<crate::native::CatiaDesignObject> = version_203_namespace
         .arena_as("design_objects")
         .expect("load version 203 design objects");
@@ -8228,14 +8228,14 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .expect("parallel reference table")
         .rows
     {
-        row.schema_member = None;
+        row.matching_design_object = None;
     }
     version_203_namespace
         .set_arena("design_objects", &version_203_objects)
         .expect("store version 203 design objects");
     version_203_namespace.version = 203;
     let migrated = crate::native::CatiaNative::load(&version_203_namespace)
-        .expect("migrate version 203 schema memberships");
+        .expect("migrate version 203 parallel reference row matches");
     assert_eq!(
         migrated.design_objects[0].parallel_reference_table,
         Some(expected.clone())
@@ -8308,7 +8308,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
 }
 
 #[test]
-fn parallel_reference_schema_membership_requires_distinct_target_fields() {
+fn parallel_reference_row_match_requires_distinct_target_fields() {
     let list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x83, 0x85, 0xfe];
     let list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
     let mut bytes = sequential_entity_backed_object_graph(&[
@@ -8333,14 +8333,14 @@ fn parallel_reference_schema_membership_requires_distinct_target_fields() {
         .as_ref()
         .expect("parallel reference table");
 
-    assert!(table.rows[0].schema_member.is_some());
-    assert!(table.rows[1].schema_member.is_none());
+    assert!(table.rows[0].matching_design_object.is_some());
+    assert!(table.rows[1].matching_design_object.is_none());
     assert_eq!(table.rows[1].cells[0].field, table.rows[1].cells[1].field);
 
     let mut version_204_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_204_namespace)
-        .expect("store current parallel reference memberships");
+        .expect("store current parallel reference row matches");
     let mut version_204_objects: Vec<crate::native::CatiaDesignObject> = version_204_namespace
         .arena_as("design_objects")
         .expect("load version 204 design objects");
@@ -8349,20 +8349,20 @@ fn parallel_reference_schema_membership_requires_distinct_target_fields() {
         .as_mut()
         .expect("parallel reference table")
         .rows[1]
-        .schema_member = table.rows[1].cells[0].design_object.clone();
+        .matching_design_object = table.rows[1].cells[0].design_object.clone();
     version_204_namespace
         .set_arena("design_objects", &version_204_objects)
         .expect("store version 204 design objects");
     version_204_namespace.version = 204;
 
     let migrated = crate::native::CatiaNative::load(&version_204_namespace)
-        .expect("migrate version 204 schema memberships");
+        .expect("migrate version 204 parallel reference row matches");
     assert!(migrated.design_objects[0]
         .parallel_reference_table
         .as_ref()
         .expect("migrated parallel reference table")
         .rows[1]
-        .schema_member
+        .matching_design_object
         .is_none());
 }
 
