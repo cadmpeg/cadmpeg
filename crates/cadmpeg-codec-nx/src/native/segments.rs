@@ -4,8 +4,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::native::features::{
-    FeatureBodyReference, FeatureBooleanOperation, FeatureOperationBodyOperand,
-    FeatureOperationLabel,
+    FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation,
+    FeatureOperationBodyOperand, FeatureOperationLabel,
 };
 use crate::native::om::OmSchemaRole;
 
@@ -140,15 +140,26 @@ pub struct SegmentOmLink {
 
 /// Return body objects whose latest decoded writer is not consumed by a later
 /// Boolean, sewing, or trimming operation. Segment-bound bodies exist before
-/// the retained history area unless a decoded operation writes them.
+/// the retained history area unless a decoded operation writes them. Primary
+/// references resolved in an offset-store block namespace do not participate
+/// in object-identity lineage.
 pub fn terminal_feature_body_indices(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
+    data_block_uses: &[FeatureBodyDataBlockUse],
     booleans: &[FeatureBooleanOperation],
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
 ) -> Option<BTreeSet<u32>> {
-    if references.is_empty() && bindings.is_empty() {
+    let offset_store_references = data_block_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
+    let object_references = references
+        .iter()
+        .filter(|reference| !offset_store_references.contains(reference.id.as_str()))
+        .collect::<Vec<_>>();
+    if object_references.is_empty() && bindings.is_empty() {
         return None;
     }
     let positions = labels
@@ -167,7 +178,7 @@ pub fn terminal_feature_body_indices(
         .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index])
         .map(|identity| (canonical(identity), None))
         .collect::<BTreeMap<u32, Option<usize>>>();
-    for reference in references {
+    for reference in &object_references {
         let position = *positions.get(reference.operation_label.as_str())?;
         if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
             continue;
@@ -187,7 +198,7 @@ pub fn terminal_feature_body_indices(
             }
         }
     }
-    for reference in references {
+    for reference in &object_references {
         if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
             let position = *positions.get(reference.operation_label.as_str())?;
             let body = canonical(reference.body_object_index);
@@ -220,7 +231,7 @@ pub fn terminal_feature_body_indices(
         .filter(|body| !consumed.contains(body))
         .collect::<BTreeSet<_>>();
     Some(
-        references
+        object_references
             .iter()
             .map(|reference| reference.body_object_index)
             .chain(
@@ -237,11 +248,19 @@ pub fn terminal_feature_body_indices(
 pub fn segment_body_lineage_statuses(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
+    data_block_uses: &[FeatureBodyDataBlockUse],
     booleans: &[FeatureBooleanOperation],
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
 ) -> Option<Vec<SegmentBodyLineageStatus>> {
-    let terminal = terminal_feature_body_indices(labels, references, booleans, operands, bindings)?;
+    let terminal = terminal_feature_body_indices(
+        labels,
+        references,
+        data_block_uses,
+        booleans,
+        operands,
+        bindings,
+    )?;
     bindings
         .iter()
         .map(|binding| {
@@ -661,7 +680,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &booleans, &[], &[]),
+            super::terminal_feature_body_indices(&labels, &references, &[], &booleans, &[], &[]),
             Some([10].into_iter().collect())
         );
     }
@@ -699,9 +718,61 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &[], &[], &bindings,),
+            super::terminal_feature_body_indices(&labels, &references, &[], &[], &[], &bindings,),
             Some(std::collections::BTreeSet::new())
         );
+    }
+
+    #[test]
+    fn feature_body_lineage_excludes_offset_store_reference_collisions() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{
+            FeatureBodyDataBlockUse, FeatureBodyReference, FeatureOperationLabel,
+        };
+
+        let labels = [FeatureOperationLabel {
+            id: "operation#delete".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "DELETE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let references = [FeatureBodyReference {
+            id: "reference#11".to_string(),
+            operation_label: "operation#delete".to_string(),
+            body_object_index: 11,
+            raw_body_object_index: vec![11],
+            source_offset: 0,
+        }];
+        let data_block_uses = [FeatureBodyDataBlockUse {
+            id: "data-block-use#11".to_string(),
+            feature_body_reference: references[0].id.clone(),
+            data_block: "block#11".to_string(),
+        }];
+        let bindings = [SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: "partition".to_string(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+
+        let statuses = super::segment_body_lineage_statuses(
+            &labels,
+            &references,
+            &data_block_uses,
+            &[],
+            &[],
+            &bindings,
+        )
+        .expect("segment binding establishes lineage");
+        assert_eq!(statuses.len(), 1);
+        assert!(statuses[0].terminal);
     }
 
     #[test]
@@ -739,7 +810,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &[], &[], &bindings,),
+            super::terminal_feature_body_indices(&labels, &references, &[], &[], &[], &bindings,),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -785,7 +856,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &booleans, &[], &[],),
+            super::terminal_feature_body_indices(&labels, &references, &[], &booleans, &[], &[],),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -839,7 +910,14 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &booleans, &[], &bindings,),
+            super::terminal_feature_body_indices(
+                &labels,
+                &references,
+                &[],
+                &booleans,
+                &[],
+                &bindings,
+            ),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -879,7 +957,7 @@ mod tests {
             source_offset: 0,
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &[], &[], &operands, &bindings),
+            super::terminal_feature_body_indices(&labels, &[], &[], &[], &operands, &bindings),
             Some(std::collections::BTreeSet::new())
         );
     }

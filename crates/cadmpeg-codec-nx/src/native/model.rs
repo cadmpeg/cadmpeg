@@ -616,18 +616,10 @@ impl NativeModel {
             &feature_datum_csys_constructions,
         );
         let feature_boolean_operations = feature_boolean_operations(container);
-        let segment_body_references = feature_body_references
-            .iter()
-            .filter(|reference| {
-                !feature_body_data_block_uses
-                    .iter()
-                    .any(|use_| use_.feature_body_reference == reference.id)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
         let segment_body_lineage_statuses = segment_body_lineage_statuses(
             &feature_operation_labels,
-            &segment_body_references,
+            &feature_body_references,
+            &feature_body_data_block_uses,
             &feature_boolean_operations,
             &feature_operation_body_operands,
             &segment_body_bindings,

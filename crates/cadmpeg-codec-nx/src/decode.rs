@@ -1236,6 +1236,7 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeM
     // reference-occurrence families the legacy code computed inline.
     let labels = model.features.feature_operation_labels.as_slice();
     let body_references = model.features.feature_body_references.as_slice();
+    let body_data_block_uses = model.features.feature_body_data_block_uses.as_slice();
     let booleans = model.features.feature_boolean_operations.as_slice();
     let bindings = model.segments.segment_body_bindings.as_slice();
     let body_operands = model.features.feature_operation_body_operands.as_slice();
@@ -1245,6 +1246,7 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeM
     let Some(statuses) = crate::native::segment_body_lineage_statuses(
         labels,
         body_references,
+        body_data_block_uses,
         booleans,
         body_operands,
         bindings,
