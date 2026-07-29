@@ -794,6 +794,58 @@ fn finish_decode(
                 .sum(),
         ),
         (
+            "decoded_zero_entity_loop_class_41_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .flat_map(|face| &face.loops)
+                .filter(|loop_| loop_.loop_class == 0x41)
+                .count(),
+        ),
+        (
+            "decoded_zero_entity_loop_class_50_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .flat_map(|face| &face.loops)
+                .filter(|loop_| loop_.loop_class == 0x50)
+                .count(),
+        ),
+        (
+            "decoded_zero_entity_loop_class_c1_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .flat_map(|face| &face.loops)
+                .filter(|loop_| loop_.loop_class == 0xc1)
+                .count(),
+        ),
+        (
+            "decoded_zero_entity_forward_loop_member_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .flat_map(|face| &face.loops)
+                .flat_map(|loop_| &loop_.forward_senses)
+                .filter(|sense| **sense)
+                .count(),
+        ),
+        (
+            "decoded_zero_entity_reversed_loop_member_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .flat_map(|face| &face.loops)
+                .flat_map(|loop_| &loop_.forward_senses)
+                .filter(|sense| !**sense)
+                .count(),
+        ),
+        (
             "decoded_zero_entity_oriented_loop_member_count".to_string(),
             native
                 .zero_entity_support_runs

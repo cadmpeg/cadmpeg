@@ -5472,6 +5472,26 @@ fn decode_reports_zero_entity_surface_support_runs() {
         1
     );
     assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_loop_class_41_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_loop_class_50_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_loop_class_c1_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_forward_loop_member_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_reversed_loop_member_count"],
+        0
+    );
+    assert_eq!(
         decoded.report.coverage["decoded_zero_entity_oriented_loop_member_count"],
         1
     );

@@ -186,7 +186,8 @@ current scores require those matrices and representative fixtures.
   independently.
   Complete `62xx` loop rosters bind to those terminals and retain alternating
   logical-member and typed-reference lanes, loop class, and absolute member
-  senses. Each loop member binds to the unique face-local support occurrence
+  senses. Decode coverage counts each admitted loop class and forward/reversed
+  member senses independently. Each loop member binds to the unique face-local support occurrence
   whose slot equals the loop terminal minus that member; the complete
   face-local binding is atomic and retained as support-record ordinals. A loop
   retains its complete sense-oriented model endpoint tape when every support
