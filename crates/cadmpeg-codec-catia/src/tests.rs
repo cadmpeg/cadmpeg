@@ -1327,9 +1327,9 @@ pub(crate) fn b2_sphere_stream() -> Vec<u8> {
     values[6..9].copy_from_slice(&[0.0, 5.0, 0.0]);
     values[9..12].copy_from_slice(&[0.0, 0.0, 5.0]);
     values[12] = 5.0;
-    values[13..17].copy_from_slice(&[-2.0, 4.0, -1.0, 3.0]);
-    values[17] = 7.0;
-    values[18] = 0.25;
+    values[13..17].copy_from_slice(&[-2.0, 4.0, -1.0, std::f64::consts::FRAC_PI_2]);
+    values[17] = values[12];
+    values[18] = values[12] * ((values[13] + values[14]) * 0.5 - std::f64::consts::PI);
     for value in values {
         record.extend_from_slice(&le_f64(value));
     }
@@ -5300,9 +5300,8 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
     assert_eq!(sphere.direction_y, [0.0, 1.0, 0.0]);
     assert_eq!(sphere.axis, [0.0, 0.0, 1.0]);
     assert_eq!(sphere.radius, 5.0);
-    assert_eq!(sphere.angular_bounds, [[-2.0, 4.0], [-1.0, 3.0]]);
-    assert_eq!(sphere.construction_radius, 7.0);
-    assert_eq!(sphere.chart_origin, 0.25);
+    assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
+    assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA sphere");
@@ -5312,7 +5311,7 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
     );
 
     let mut invalid = native;
-    invalid.consolidated_spheres[0].angular_bounds[1].reverse();
+    invalid.consolidated_spheres[0].latitude_range.reverse();
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)

@@ -459,7 +459,7 @@ fn b2_torus_parser_rejects_invalid_frames_and_nonpositive_scales() {
 }
 
 #[test]
-fn b2_sphere_parser_reads_radius_scaled_frame_bounds_and_construction_values() {
+fn b2_sphere_parser_reads_radius_scaled_frame_and_active_ranges() {
     let records = crate::families::b2::records::b2_spheres(&b2_sphere_stream());
     let [sphere] = records.as_slice() else {
         panic!("one B2 sphere")
@@ -470,9 +470,8 @@ fn b2_sphere_parser_reads_radius_scaled_frame_bounds_and_construction_values() {
     assert_eq!(sphere.direction_y, [0.0, 1.0, 0.0]);
     assert_eq!(sphere.axis, [0.0, 0.0, 1.0]);
     assert_eq!(sphere.radius, 5.0);
-    assert_eq!(sphere.angular_bounds, [[-2.0, 4.0], [-1.0, 3.0]]);
-    assert_eq!(sphere.construction_radius, 7.0);
-    assert_eq!(sphere.chart_origin, 0.25);
+    assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
+    assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
 }
 
 #[test]
@@ -487,6 +486,14 @@ fn b2_sphere_parser_rejects_invalid_scaled_frames_and_bounds() {
 
     let mut stream = b2_sphere_stream();
     stream[5 + 18 * 8..5 + 19 * 8].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+
+    let mut stream = b2_sphere_stream();
+    stream[5 + 17 * 8..5 + 18 * 8].copy_from_slice(&7.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+
+    let mut stream = b2_sphere_stream();
+    stream[5 + 18 * 8..5 + 19 * 8].copy_from_slice(&0.25f64.to_le_bytes());
     assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
 }
 

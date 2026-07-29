@@ -117,6 +117,8 @@ current scores require those matrices and representative fixtures.
   A consolidated cone retains its active azimuth interval, centered full-turn
   domain, slant interval, and fixed chart-tail scalars; malformed chart relations
   reject the complete record.
+  A consolidated sphere retains active azimuth and latitude intervals and
+  validates its repeated radius and redundant centered-domain origin exactly.
 - The freeform fallback transfers complete consolidated cylinder, cone, sphere,
   and torus records as placed analytic surface carriers independently of
   unresolved topology ownership.

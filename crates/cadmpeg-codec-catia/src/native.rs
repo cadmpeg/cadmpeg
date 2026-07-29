@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 179;
+pub const CATIA_NATIVE_VERSION: u32 = 180;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -361,12 +361,10 @@ pub struct CatiaConsolidatedSphere {
     pub axis: [f64; 3],
     /// Sphere radius.
     pub radius: f64,
-    /// Stored angular U and V intervals.
-    pub angular_bounds: [[f64; 2]; 2],
-    /// Positive construction radius.
-    pub construction_radius: f64,
-    /// Stored chart-origin scalar.
-    pub chart_origin: f64,
+    /// Active azimuth interval.
+    pub azimuth_range: [f64; 2],
+    /// Active latitude interval.
+    pub latitude_range: [f64; 2],
 }
 
 /// One structurally complete consolidated `B:2b` torus chart.
@@ -3693,9 +3691,8 @@ fn consolidated_spheres(bytes: &[u8]) -> Vec<CatiaConsolidatedSphere> {
             direction_y: sphere.direction_y,
             axis: sphere.axis,
             radius: sphere.radius,
-            angular_bounds: sphere.angular_bounds,
-            construction_radius: sphere.construction_radius,
-            chart_origin: sphere.chart_origin,
+            azimuth_range: sphere.azimuth_range,
+            latitude_range: sphere.latitude_range,
         })
         .collect()
 }
@@ -4735,12 +4732,9 @@ fn validate_consolidated_spheres(
                 .chain(&sphere.direction_x)
                 .chain(&sphere.direction_y)
                 .chain(&sphere.axis)
-                .chain(sphere.angular_bounds.iter().flatten())
-                .chain(&[
-                    sphere.radius,
-                    sphere.construction_radius,
-                    sphere.chart_origin,
-                ])
+                .chain(&sphere.azimuth_range)
+                .chain(&sphere.latitude_range)
+                .chain(&[sphere.radius])
                 .any(|value| !value.is_finite())
             || [sphere.direction_x, sphere.direction_y, sphere.axis]
                 .into_iter()
@@ -4753,11 +4747,10 @@ fn validate_consolidated_spheres(
                 .zip(sphere.axis)
                 .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
             || sphere.radius <= 0.0
-            || sphere.construction_radius <= 0.0
-            || sphere
-                .angular_bounds
-                .iter()
-                .any(|range| range[0] >= range[1])
+            || !crate::families::b2::records::sphere_angular_ranges_are_valid(
+                sphere.azimuth_range,
+                sphere.latitude_range,
+            )
             || index > 0 && spheres[index - 1].byte_offset >= sphere.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

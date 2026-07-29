@@ -369,7 +369,7 @@ The 184-byte payload is `<apex:3f64le> <direction_x:3f64le> <direction_y:3f64le>
 
 ### 5.13 Sphere record `b2 03 2a`
 
-The 152-byte payload is `<center:3f64le> <stored_x:3f64le> <stored_y:3f64le> <stored_axis:3f64le> <radius:f64le> <u0:f64le> <u1:f64le> <v0:f64le> <v1:f64le> <construction_radius:f64le> <chart_origin:f64le>`. The radius and construction radius are positive and both angular intervals are increasing. Each stored direction has length `radius`; dividing the three directions by `radius` produces a right-handed orthonormal frame.
+The 152-byte payload is `<center:3f64le> <stored_x:3f64le> <stored_y:3f64le> <stored_axis:3f64le> <radius:f64le> <azimuth_range:2f64le> <latitude_range:2f64le> <repeated_radius:f64le> <range_origin:f64le>`. The radius is positive. The azimuth interval is strictly increasing with span at most `2π`; the latitude interval lies inside `[-π/2,π/2]`. `repeated_radius` is bit-identical to `radius`. `range_origin` is bit-identical to `radius·((azimuth_lo+azimuth_hi)/2−π)` and is the redundant origin of the centered full-turn azimuth domain. Each stored direction has length `radius`; dividing the three directions by `radius` produces a right-handed orthonormal frame.
 
 ### 5.14 Torus record `b2 03 2b`
 

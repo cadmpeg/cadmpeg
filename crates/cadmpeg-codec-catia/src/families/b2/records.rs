@@ -1008,12 +1008,10 @@ pub struct B2Sphere {
     pub axis: [f64; 3],
     /// Sphere radius.
     pub radius: f64,
-    /// Stored angular U and V intervals.
-    pub angular_bounds: [[f64; 2]; 2],
-    /// Positive construction radius.
-    pub construction_radius: f64,
-    /// Stored chart-origin scalar.
-    pub chart_origin: f64,
+    /// Active azimuth interval.
+    pub azimuth_range: [f64; 2],
+    /// Active latitude interval.
+    pub latitude_range: [f64; 2],
 }
 
 /// Doubly periodic torus chart stored in a `b2 03 2b` record.
@@ -1497,7 +1495,8 @@ pub fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
                 .expect("three second-direction values");
             let stored_axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
             let radius = values[12];
-            let angular_bounds = [[values[13], values[14]], [values[15], values[16]]];
+            let azimuth_range = [values[13], values[14]];
+            let latitude_range = [values[15], values[16]];
             let construction_radius = values[17];
             let chart_origin = values[18];
             let squared_length = |value: [f64; 3]| {
@@ -1511,9 +1510,12 @@ pub fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
             };
             (values.iter().all(|value| value.is_finite())
                 && radius > 0.0
-                && construction_radius > 0.0
-                && angular_bounds[0][0] < angular_bounds[0][1]
-                && angular_bounds[1][0] < angular_bounds[1][1]
+                && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
+                && construction_radius.to_bits() == radius.to_bits()
+                && chart_origin.to_bits()
+                    == (radius
+                        * ((azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI))
+                        .to_bits()
                 && scaled_length_is_radius(stored_x)
                 && scaled_length_is_radius(stored_y)
                 && scaled_length_is_radius(stored_axis))
@@ -1537,12 +1539,26 @@ pub fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
                     direction_y,
                     axis,
                     radius,
-                    angular_bounds,
-                    construction_radius,
-                    chart_origin,
+                    azimuth_range,
+                    latitude_range,
                 })
         })
         .collect()
+}
+
+pub(crate) fn sphere_angular_ranges_are_valid(
+    azimuth_range: [f64; 2],
+    latitude_range: [f64; 2],
+) -> bool {
+    azimuth_range
+        .iter()
+        .chain(&latitude_range)
+        .all(|value| value.is_finite())
+        && azimuth_range[0] < azimuth_range[1]
+        && azimuth_range[1] - azimuth_range[0] <= std::f64::consts::TAU
+        && -std::f64::consts::FRAC_PI_2 <= latitude_range[0]
+        && latitude_range[0] < latitude_range[1]
+        && latitude_range[1] <= std::f64::consts::FRAC_PI_2
 }
 
 /// Decode constant `b2 03 65` group separators.
