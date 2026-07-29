@@ -220,10 +220,12 @@ current scores require those matrices and representative fixtures.
   optional finite binary64/binary32 numeric extension. The resolved graph
   retains both framing controls, every signed edge-occurrence control, and the
   extension's four binary64 fields, odd control, and six binary32 fields.
-  Decode coverage counts each framing-control pair and the extended form. The
-  first and third controls in each edge triple supply the source-native edge-
-  and pcurve-occurrence senses; transfer requires the oriented edge occurrences
-  to close cyclically and retains pcurve direction in each coedge use.
+  Decode coverage counts each framing-control pair and the extended form
+  independently for structurally typed and reference-resolved loops, including
+  when no topology graph closes. The first and third controls in each edge
+  triple supply the source-native edge- and pcurve-occurrence senses; transfer
+  requires the oriented edge occurrences to close cyclically and retains
+  pcurve direction in each coedge use.
   Object-stream edges require exactly five references and one admitted terminal
   control, with no residual bytes. The resolved graph retains the support,
   ordered vertex and parameter-incidence identities, and exact terminal control;

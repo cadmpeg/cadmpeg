@@ -921,16 +921,17 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     let mut loops: BTreeMap<u32, B5Loop> = records
         .iter()
         .filter(|record| record.class == 0x62)
-        .filter_map(|record| {
+        .filter_map(|record| parse_loop_record(record).map(|loop_| (record.object_id, loop_)))
+        .filter_map(|(object_id, record)| {
             parse_loop(
-                record,
+                &record,
                 &by_id,
                 &pcurves,
                 &opaque_pcurves,
                 &implicit_pcurves,
                 &surfaces,
             )
-            .map(|loop_| (record.object_id, loop_))
+            .map(|loop_| (object_id, loop_))
         })
         .collect();
     let face_records: BTreeMap<u32, B5FaceRecord> = records
@@ -3870,6 +3871,15 @@ pub(crate) fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
         .collect()
 }
 
+/// Read every structurally complete loop record independently of target
+/// resolution.
+pub(crate) fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
+    records(bytes)
+        .into_iter()
+        .filter_map(|record| parse_loop_record(&record).map(|loop_| (record.object_id, loop_)))
+        .collect()
+}
+
 /// Read each face's leading surface reference independently of its loop grammar.
 pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     records(bytes)
@@ -3889,29 +3899,35 @@ pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
 }
 
 fn parse_loop(
-    record: &B5Record,
+    record: &B5Loop,
     by_id: &HashMap<u32, &B5Record>,
     parsed_pcurves: &BTreeMap<u32, B5Pcurve>,
     opaque_pcurves: &BTreeMap<u32, B5OpaquePcurve>,
     implicit_pcurves: &BTreeMap<u32, u32>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Loop> {
-    let (references, metadata) = loop_references_and_metadata(record)?;
-    let count = references.len();
-    let surface = *references.last()?;
+    let surface = record.surface;
     if !surfaces.contains_key(&surface) {
         return None;
     }
-    let mut pcurves = Vec::with_capacity((count - 1) / 2);
-    let mut edges = Vec::with_capacity((count - 1) / 2);
-    for pair in references[..count - 1].chunks_exact(2) {
-        if (!parsed_pcurves.contains_key(&pair[0])
-            && !opaque_pcurves.contains_key(&pair[0])
-            && implicit_pcurves.get(&pair[0]) != Some(&surface))
-            || by_id.get(&pair[1])?.class != 0x5e
+    for (&pcurve, &edge) in record.pcurves.iter().zip(&record.edges) {
+        if (!parsed_pcurves.contains_key(&pcurve)
+            && !opaque_pcurves.contains_key(&pcurve)
+            && implicit_pcurves.get(&pcurve) != Some(&surface))
+            || by_id.get(&edge)?.class != 0x5e
         {
             return None;
         }
+    }
+    Some(record.clone())
+}
+
+fn parse_loop_record(record: &B5Record) -> Option<B5Loop> {
+    let (references, metadata) = loop_references_and_metadata(record)?;
+    let surface = *references.last()?;
+    let mut pcurves = Vec::with_capacity((references.len() - 1) / 2);
+    let mut edges = Vec::with_capacity((references.len() - 1) / 2);
+    for pair in references[..references.len() - 1].chunks_exact(2) {
         pcurves.push(pair[0]);
         edges.push(pair[1]);
     }

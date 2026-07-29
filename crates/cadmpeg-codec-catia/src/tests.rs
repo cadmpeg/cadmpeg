@@ -13964,6 +13964,15 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     append_b5_record(&mut stream, 0x27, 100, &b5_plane_payload([0.0; 3]));
     append_b5_record(
         &mut stream,
+        0x62,
+        103,
+        &[
+            0x83, 0x89, 0x8a, 0xe4, 0x81, 0x05, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00,
+            0x01,
+        ],
+    );
+    append_b5_record(
+        &mut stream,
         0x5f,
         101,
         &[0x82, 0x18, 100, 0, 0x18, 102, 0, 0x03],
@@ -13972,6 +13981,10 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     assert!(crate::families::b5::graph::parse(&stream).is_none());
     assert_eq!(
         crate::families::b5::graph::typed_face_records(&stream).len(),
+        1
+    );
+    assert_eq!(
+        crate::families::b5::graph::typed_loop_records(&stream).len(),
         1
     );
 
@@ -13987,6 +14000,14 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     );
     assert_eq!(
         result.report.coverage["typed_unresolved_object_stream_face_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["typed_object_stream_loop_framing_controls_05_05_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["typed_unresolved_object_stream_loop_count"],
         1
     );
 }

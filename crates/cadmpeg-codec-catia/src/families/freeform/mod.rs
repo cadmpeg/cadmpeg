@@ -55,6 +55,23 @@ fn typed_face_counts(
     ]
 }
 
+fn loop_metadata_counts<'a>(
+    records: impl Iterator<Item = &'a crate::families::b5::graph::B5Loop>,
+) -> [usize; 5] {
+    records.fold([0usize; 5], |mut counts, loop_| {
+        let index = match loop_.metadata.framing_controls {
+            [0x03, 0x03] => 0,
+            [0x03, 0x05] => 1,
+            [0x05, 0x03] => 2,
+            [0x05, 0x05] => 3,
+            _ => unreachable!("the loop parser admits only controls 03 and 05"),
+        };
+        counts[index] += 1;
+        counts[4] += usize::from(loop_.metadata.extension.is_some());
+        counts
+    })
+}
+
 pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<FamilyOutput> {
     let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
@@ -104,19 +121,19 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
                 counts
             })
     });
-    let loop_metadata_counts = b5_graph.as_ref().map(|graph| {
-        graph.loops.values().fold([0usize; 5], |mut counts, loop_| {
-            let index = match loop_.metadata.framing_controls {
-                [0x03, 0x03] => 0,
-                [0x03, 0x05] => 1,
-                [0x05, 0x03] => 2,
-                [0x05, 0x05] => 3,
-                _ => unreachable!("the loop parser admits only controls 03 and 05"),
-            };
-            counts[index] += 1;
-            counts[4] += usize::from(loop_.metadata.extension.is_some());
-            counts
-        })
+    let resolved_loop_metadata_counts = b5_graph
+        .as_ref()
+        .map(|graph| loop_metadata_counts(graph.loops.values()));
+    let typed_loop_records = crate::families::b5::graph::typed_loop_records(&scan.data);
+    let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
+        let resolved_count = b5_graph.as_ref().map_or(0, |graph| graph.loops.len());
+        (
+            loop_metadata_counts(typed_loop_records.values()),
+            typed_loop_records
+                .len()
+                .checked_sub(resolved_count)
+                .expect("resolved loops are a subset of typed loop records"),
+        )
     });
     let class_21_suffix_scalar_count = b5_graph.as_ref().map(|graph| {
         graph
@@ -263,7 +280,7 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         );
     }
     if let Some([controls_03_03, controls_03_05, controls_05_03, controls_05_05, extended]) =
-        loop_metadata_counts
+        resolved_loop_metadata_counts
     {
         for (controls, count) in [
             ("03_03", controls_03_03),
@@ -279,6 +296,25 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         coverage.insert(
             "resolved_object_stream_extended_loop_metadata_count".to_string(),
             extended,
+        );
+    }
+    if let Some((counts, unresolved)) = typed_loop_metadata_counts {
+        for (controls, count) in ["03_03", "03_05", "05_03", "05_05"]
+            .into_iter()
+            .zip(counts[..4].iter().copied())
+        {
+            coverage.insert(
+                format!("typed_object_stream_loop_framing_controls_{controls}_count"),
+                count,
+            );
+        }
+        coverage.insert(
+            "typed_object_stream_extended_loop_metadata_count".to_string(),
+            counts[4],
+        );
+        coverage.insert(
+            "typed_unresolved_object_stream_loop_count".to_string(),
+            unresolved,
         );
     }
     if let Some(count) = class_21_suffix_scalar_count {
