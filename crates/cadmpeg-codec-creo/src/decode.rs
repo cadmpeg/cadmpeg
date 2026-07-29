@@ -2291,6 +2291,7 @@ fn saved_section_line_geometry(
     let line = saved_section
         .entities
         .iter()
+        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
         .find_map(|entity| match entity {
             crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id => {
                 Some(line)
@@ -2324,6 +2325,7 @@ fn saved_section_arc_record<'a>(
         .as_ref()?
         .entities
         .iter()
+        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
         .find_map(|entity| match entity {
             crate::feature::FeatureSavedEntity::Arc(arc) if arc.entity_id == internal_id => {
                 Some(arc)
@@ -2738,6 +2740,7 @@ fn saved_section_missing_line_geometry(
     let geometries = saved
         .entities
         .iter()
+        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
         .filter_map(saved_section_entity_geometry)
         .filter(|(internal_id, _, _)| order.rows.iter().any(|row| row.internal_id == *internal_id))
         .collect::<Vec<_>>();
@@ -10783,6 +10786,7 @@ fn section_saved_entity(
         .as_ref()?
         .entities
         .iter()
+        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
         .filter(|entity| match entity {
             crate::feature::FeatureSavedEntity::Line(line) => line.entity_id == internal_id,
             crate::feature::FeatureSavedEntity::Arc(arc) => arc.entity_id == internal_id,
@@ -11601,6 +11605,7 @@ fn unique_saved_section_internal_ids(
         .saved_section
         .iter()
         .flat_map(|saved| &saved.entities)
+        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
         .filter_map(|entity| saved_section_entity_identity(entity).0)
         .fold(BTreeMap::new(), |mut counts, internal_id| {
             *counts.entry(internal_id).or_insert(0usize) += 1;
@@ -11609,6 +11614,30 @@ fn unique_saved_section_internal_ids(
         .into_iter()
         .filter_map(|(internal_id, count)| (count == 1).then_some(internal_id))
         .collect()
+}
+
+fn saved_section_entity_is_elided_prototype(
+    definition: &crate::feature::FeatureDefinition,
+    entity: &crate::feature::FeatureSavedEntity,
+) -> bool {
+    let Some(internal_id) = saved_section_entity_identity(entity).0 else {
+        return false;
+    };
+    definition
+        .segments
+        .as_ref()
+        .is_some_and(|segments| segments.has_elided_prototype)
+        && definition
+            .order_table
+            .as_ref()
+            .is_some_and(|order| order.has_prototype)
+        && definition.saved_section.as_ref().is_some_and(|saved| {
+            crate::feature::saved_entity_offset(entity) == saved.offset
+                && saved.entities.iter().any(|candidate| {
+                    crate::feature::saved_entity_offset(candidate) > saved.offset
+                        && saved_section_entity_identity(candidate).0 == Some(internal_id)
+                })
+        })
 }
 
 fn materialized_saved_section_external_ids(
@@ -11620,6 +11649,7 @@ fn materialized_saved_section_external_ids(
         .saved_section
         .iter()
         .flat_map(|saved| &saved.entities)
+        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
         .filter_map(|entity| {
             match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => {

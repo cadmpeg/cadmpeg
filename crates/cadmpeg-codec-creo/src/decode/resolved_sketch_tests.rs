@@ -5717,6 +5717,63 @@ fn saved_arc_joins_through_order_table() {
         None
     );
 
+    let segment_table = crate::feature::FeatureSegmentTable {
+        declared_count: 2,
+        has_elided_prototype: true,
+        entity_ref: None,
+        rows: vec![segment.clone()],
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: 38,
+    };
+    let mut elided_prototype = definition.clone();
+    elided_prototype.segments = Some(segment_table.clone());
+    let order = elided_prototype.order_table.as_mut().expect("order table");
+    order.has_prototype = true;
+    order.declared_count = 2;
+    let mut prototype = elided_prototype
+        .saved_section
+        .as_ref()
+        .expect("saved section")
+        .entities[0]
+        .clone();
+    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut prototype {
+        arc.center = [None; 3];
+        arc.radius = None;
+        arc.endpoints = [[None; 3]; 2];
+        arc.offset = 18;
+    }
+    elided_prototype
+        .saved_section
+        .as_mut()
+        .expect("saved section")
+        .entities
+        .insert(0, prototype);
+    assert!(saved_section_arc_geometry(&elided_prototype, &segment).is_some());
+
+    let mut unique_at_table_origin = definition.clone();
+    unique_at_table_origin.segments = Some(segment_table);
+    let order = unique_at_table_origin
+        .order_table
+        .as_mut()
+        .expect("order table");
+    order.has_prototype = true;
+    order.declared_count = 2;
+    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut unique_at_table_origin
+        .saved_section
+        .as_mut()
+        .expect("saved section")
+        .entities[0]
+    {
+        arc.offset = 18;
+    }
+    assert!(saved_section_arc_geometry(&unique_at_table_origin, &segment).is_some());
+
     let mut trimmed = definition;
     trimmed.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,

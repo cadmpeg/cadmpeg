@@ -5766,7 +5766,7 @@ fn saved_spline_parameter(
     scalar::decode_in_lane(payload, offset, cache)
 }
 
-fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
+pub(crate) fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
     match entity {
         FeatureSavedEntity::Line(entity) => entity.offset,
         FeatureSavedEntity::Arc(entity) => entity.offset,

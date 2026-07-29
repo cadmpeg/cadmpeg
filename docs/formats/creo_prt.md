@@ -3172,6 +3172,12 @@ by a named-record opener and is not dictionary index `e0`.
 
 A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. A join requires a complete order table and a row whose internal and external identifiers each occur exactly once. The internal identifier must occur on exactly one saved entity before this join applies. Saved rows sharing an internal identifier remain independent construction entities identified by their row offsets. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
 
+When both `segtab` and `order_table` declare an elided prototype, the saved
+record at the saved-result table origin is that prototype if a later saved row
+has the same internal identifier. The prototype does not participate in the
+entity join. A table-origin row without a later same-identifier instance
+remains an ordinary saved entity.
+
 When a unique decoded `segtab` row and a unique `order_table` join bind a
 complete saved line, arc, circle, or spline to an opaque segment family, the
 saved entity supplies the standalone neutral geometry for that external sketch
