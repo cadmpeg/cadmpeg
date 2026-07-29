@@ -271,7 +271,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(173);
+    namespace.version = namespace.version.max(174);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -1992,34 +1992,35 @@ fn attach_feature_operations(
                 );
             }
         }
-        let extrude_projection = (label.value == "EXTRUDE")
-            .then(|| {
-                let body = body_references.get(label.id.as_str())?;
-                let output_kinds = outputs
-                    .iter()
-                    .filter_map(|output| {
-                        ir.model
-                            .bodies
-                            .iter()
-                            .find(|body| body.id == *output)
-                            .map(|body| body.kind)
-                    })
-                    .collect::<Vec<_>>();
-                let op = extrude_boolean_op(
-                    last_body_writer.contains_key(&canonical_body(*body)),
-                    &output_kinds,
-                );
-                extrude_feature_definition(
-                    extrude_construction_profiles_by_operation
-                        .get(label.id.as_str())
-                        .map(|profile| profile.id.as_str()),
-                    extrude_32_constructions_by_operation
-                        .get(label.id.as_str())
-                        .map(|construction| construction.id.as_str()),
-                    op,
-                )
-            })
-            .flatten();
+        let extrude_projection = (label.value == "EXTRUDE").then(|| {
+            let output_kinds = outputs
+                .iter()
+                .map(|output| {
+                    ir.model
+                        .bodies
+                        .iter()
+                        .find(|body| body.id == *output)
+                        .map(|body| body.kind)
+                })
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_default();
+            let op = extrude_boolean_op(
+                body_references
+                    .get(label.id.as_str())
+                    .is_none_or(|body| last_body_writer.contains_key(&canonical_body(*body))),
+                &output_kinds,
+            );
+            extrude_feature_definition(
+                extrude_construction_profiles_by_operation
+                    .get(label.id.as_str())
+                    .map(|profile| profile.id.as_str()),
+                extrude_32_constructions_by_operation
+                    .get(label.id.as_str())
+                    .map(|construction| construction.id.as_str()),
+                op,
+                &output_kinds,
+            )
+        });
         let delete_projection = deletes_body
             .then(|| {
                 delete_body_feature_definition(
@@ -2551,16 +2552,35 @@ fn extrude_feature_definition(
     construction_profile: Option<&str>,
     structured_construction: Option<&str>,
     op: BooleanOp,
-) -> Option<FeatureDefinition> {
+    output_kinds: &[cadmpeg_ir::topology::BodyKind],
+) -> FeatureDefinition {
     let constructions = [construction_profile, structured_construction]
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    let [construction] = constructions.as_slice() else {
-        return None;
+    let profile = match constructions.as_slice() {
+        [construction] => ProfileRef::Native((*construction).to_string()),
+        _ => ProfileRef::Unresolved("EXTRUDE".to_string()),
     };
-    Some(FeatureDefinition::Extrude {
-        profile: ProfileRef::Native((*construction).to_string()),
+    let solid = match output_kinds {
+        [cadmpeg_ir::topology::BodyKind::Solid, rest @ ..]
+            if rest
+                .iter()
+                .all(|kind| *kind == cadmpeg_ir::topology::BodyKind::Solid) =>
+        {
+            Some(true)
+        }
+        [cadmpeg_ir::topology::BodyKind::Sheet, rest @ ..]
+            if rest
+                .iter()
+                .all(|kind| *kind == cadmpeg_ir::topology::BodyKind::Sheet) =>
+        {
+            Some(false)
+        }
+        _ => None,
+    };
+    FeatureDefinition::Extrude {
+        profile,
         direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: ExtrudeExtent::OneSided {
@@ -2572,12 +2592,12 @@ fn extrude_feature_definition(
         },
         op,
         direction_source: None,
-        solid: None,
+        solid,
         face_maker: None,
         inner_wire_taper: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
-    })
+    }
 }
 
 fn extrude_boolean_op(
@@ -3533,25 +3553,7 @@ fn non_boolean_feature_definition_with_parameters(
             tools: BodySelection::Unresolved,
             keep: BodyTrimSide::Unresolved,
         },
-        "EXTRUDE" => FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(kind.to_string()),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            start: cadmpeg_ir::features::ExtrudeStart::default(),
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: Termination::Unresolved,
-                    draft: None,
-                    offset: None,
-                },
-            },
-            op: BooleanOp::Unresolved,
-            direction_source: None,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        "EXTRUDE" => extrude_feature_definition(None, None, BooleanOp::Unresolved, &[]),
         "OFFSET" => FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
@@ -5208,8 +5210,13 @@ mod tests {
         };
 
         assert_eq!(
-            super::extrude_feature_definition(Some("nx:profile#1"), None, BooleanOp::NewBody,),
-            Some(FeatureDefinition::Extrude {
+            super::extrude_feature_definition(
+                Some("nx:profile#1"),
+                None,
+                BooleanOp::NewBody,
+                &[cadmpeg_ir::topology::BodyKind::Solid],
+            ),
+            FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("nx:profile#1".to_string()),
                 direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
                 extent: ExtrudeExtent::OneSided {
@@ -5222,20 +5229,42 @@ mod tests {
                 op: BooleanOp::NewBody,
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                 direction_source: None,
-                solid: None,
+                solid: Some(true),
                 face_maker: None,
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
-            })
+            }
         );
-        assert!(super::extrude_feature_definition(None, None, BooleanOp::Unresolved).is_none());
-        assert!(super::extrude_feature_definition(
-            Some("nx:profile#1"),
-            Some("nx:profile#2"),
-            BooleanOp::Unresolved,
-        )
-        .is_none());
+        assert!(matches!(
+            super::extrude_feature_definition(
+                None,
+                None,
+                BooleanOp::Unresolved,
+                &[cadmpeg_ir::topology::BodyKind::Sheet],
+            ),
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Unresolved(_),
+                solid: Some(false),
+                ..
+            }
+        ));
+        assert!(matches!(
+            super::extrude_feature_definition(
+                Some("nx:profile#1"),
+                Some("nx:profile#2"),
+                BooleanOp::Unresolved,
+                &[
+                    cadmpeg_ir::topology::BodyKind::Solid,
+                    cadmpeg_ir::topology::BodyKind::Sheet,
+                ],
+            ),
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Unresolved(_),
+                solid: None,
+                ..
+            }
+        ));
     }
 
     #[test]
