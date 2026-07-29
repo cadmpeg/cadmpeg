@@ -20,11 +20,13 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 198;
+pub const CATIA_NATIVE_VERSION: u32 = 199;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
 const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
+#[cfg(test)]
+const CATIA_ESCAPED_SUFFIX_WORD_VERSION: u32 = 199;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1138,6 +1140,30 @@ pub struct CatiaEntitySuffixValue {
     pub trailer: CatiaEntitySuffixTrailer,
 }
 
+/// State byte following one escaped word in an entity-record suffix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaEntitySuffixEscapedWordState {
+    /// Stored state byte `00`.
+    State00,
+    /// Stored state byte `01`.
+    State01,
+    /// Stored state byte `03`.
+    State03,
+    /// Stored state byte `04`.
+    State04,
+    /// Stored state byte `09`.
+    State09,
+}
+
+/// One complete escaped-word entity-record suffix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaEntitySuffixEscapedWord {
+    /// Fixed-width little-endian word following the `80` escape.
+    pub word: u32,
+    /// Exact trailing state.
+    pub state: CatiaEntitySuffixEscapedWordState,
+}
+
 /// One suffix selector resolved through its graph's source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntitySuffixSchemaSelection {
@@ -1350,6 +1376,9 @@ pub struct CatiaEntityRecord {
     /// Complete typed value production occupying the record suffix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suffix_value: Option<CatiaEntitySuffixValue>,
+    /// Complete escaped-word production occupying the record suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suffix_escaped_word: Option<CatiaEntitySuffixEscapedWord>,
     /// Fixed-width suffix selector resolved through the containing graph's catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
@@ -2429,6 +2458,70 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         payload,
         trailer,
     })
+}
+
+fn entity_suffix_escaped_word(suffix: &[u8]) -> Option<CatiaEntitySuffixEscapedWord> {
+    let [0x80, word @ .., state] = suffix else {
+        return None;
+    };
+    let state = match state {
+        0x00 => CatiaEntitySuffixEscapedWordState::State00,
+        0x01 => CatiaEntitySuffixEscapedWordState::State01,
+        0x03 => CatiaEntitySuffixEscapedWordState::State03,
+        0x04 => CatiaEntitySuffixEscapedWordState::State04,
+        0x09 => CatiaEntitySuffixEscapedWordState::State09,
+        _ => return None,
+    };
+    Some(CatiaEntitySuffixEscapedWord {
+        word: u32::from_le_bytes(word.try_into().ok()?),
+        state,
+    })
+}
+
+#[cfg(test)]
+mod entity_suffix_escaped_word_tests {
+    use super::{
+        entity_suffix_escaped_word, CatiaEntitySuffixEscapedWord, CatiaEntitySuffixEscapedWordState,
+    };
+
+    #[test]
+    fn decodes_each_complete_state() {
+        for (code, state) in [
+            (0x00, CatiaEntitySuffixEscapedWordState::State00),
+            (0x01, CatiaEntitySuffixEscapedWordState::State01),
+            (0x03, CatiaEntitySuffixEscapedWordState::State03),
+            (0x04, CatiaEntitySuffixEscapedWordState::State04),
+            (0x09, CatiaEntitySuffixEscapedWordState::State09),
+        ] {
+            assert_eq!(
+                entity_suffix_escaped_word(&[0x80, 0x78, 0x56, 0x34, 0x12, code]),
+                Some(CatiaEntitySuffixEscapedWord {
+                    word: 0x1234_5678,
+                    state,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_other_framing() {
+        assert_eq!(
+            entity_suffix_escaped_word(&[0x80, 0x78, 0x56, 0x34, 0x12]),
+            None
+        );
+        assert_eq!(
+            entity_suffix_escaped_word(&[0x81, 0x78, 0x56, 0x34, 0x12, 0x00]),
+            None
+        );
+        assert_eq!(
+            entity_suffix_escaped_word(&[0x80, 0x78, 0x56, 0x34, 0x12, 0x02]),
+            None
+        );
+        assert_eq!(
+            entity_suffix_escaped_word(&[0x80, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00]),
+            None
+        );
+    }
 }
 
 fn formula_relation(
@@ -6496,6 +6589,7 @@ impl CatiaNative {
                     &entity.value_schema_selections,
                 );
                 entity.suffix_value = entity_suffix_value(&entity.record_suffix);
+                entity.suffix_escaped_word = entity_suffix_escaped_word(&entity.record_suffix);
                 entity.suffix_schema_selection =
                     entity_suffix_schema_selection(entity.suffix_value.as_ref(), catalog);
                 entity.parameter_value = parameter_value(
@@ -6761,7 +6855,12 @@ impl CatiaNative {
                     .or_else(|| roles.owner_literal.map(CatiaObjectOwner::UnassignedLiteral));
             }
         }
-        let entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
+        let mut entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
+        if namespace.version < CATIA_ESCAPED_SUFFIX_WORD_VERSION {
+            for entity in &mut entity_records {
+                entity.suffix_escaped_word = entity_suffix_escaped_word(&entity.record_suffix);
+            }
+        }
         let graph_ids = graphs
             .iter()
             .map(|graph| graph.id.as_str())
@@ -6858,6 +6957,10 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_value != entity_suffix_value(&entity.record_suffix)
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        entity.suffix_escaped_word
+                            != entity_suffix_escaped_word(&entity.record_suffix)
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_schema_selection
@@ -7809,6 +7912,7 @@ fn native_object_graph(
                 reference_signature: entity.reference_signature,
                 record_suffix: entity.record_suffix,
                 suffix_value: None,
+                suffix_escaped_word: None,
                 suffix_schema_selection: None,
             })
         })
