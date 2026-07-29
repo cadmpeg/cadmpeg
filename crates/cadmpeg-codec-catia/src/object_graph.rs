@@ -574,7 +574,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                     None,
                     false,
                 ),
-                0x16 => (Some(3), Some(1), Some(2), true),
+                0x16 | 0x56 => (Some(3), Some(1), Some(2), true),
                 0x52 => (Some(1), Some(2), Some(3), false),
                 _ => (None, None, None, false),
             }
@@ -624,6 +624,14 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
 }
 
 fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
+    if matches!(
+        (head.first(), head.last()),
+        (Some(HeadToken::Lead(0x56)), Some(HeadToken::Reference(3)))
+    ) {
+        let mut base_head = head[..head.len() - 1].to_vec();
+        base_head[0] = HeadToken::Lead(0x16);
+        return extended_compact_role_count(&base_head);
+    }
     if matches!(
         head,
         [
@@ -734,7 +742,7 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
             HeadToken::Lead(0x16),
             HeadToken::Reference(_),
             HeadToken::Reference(0),
-            HeadToken::Reference(owner),
+            owner_token @ (HeadToken::Reference(_) | HeadToken::Literal(_)),
             HeadToken::Literal(22 | 23),
             HeadToken::Literal(0),
             HeadToken::Literal(0),
@@ -742,7 +750,7 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
             HeadToken::Reference(_),
             HeadToken::Literal(0),
             HeadToken::Literal(0),
-        ] if *owner != 0
+        ] if !matches!(owner_token, HeadToken::Reference(0))
     ) || matches!(
         head,
         [

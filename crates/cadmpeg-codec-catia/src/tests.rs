@@ -7068,6 +7068,20 @@ fn outer_object_graph_reads_two_block_extended_class_storage_owner_roles() {
 }
 
 #[test]
+fn outer_object_graph_retains_roles_before_a_literal_short_extended_owner() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x16, 0x94, 0x80, 66, 23, 0, 0, 0x80, 0x97, 0, 0],
+        &[0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("literal-owner extended head");
+    let record = &graph.records[0];
+
+    assert_eq!(record.class_ref, Some(20));
+    assert_eq!(record.storage_ref, Some(0));
+    assert_eq!(record.owner_ref, None);
+}
+
+#[test]
 fn outer_object_graph_rejects_partial_two_block_extended_roles() {
     for head in [
         &[0x16, 0x94, 0x80, 0x95, 23, 0, 0, 0x80, 0x96, 25, 0][..],
@@ -7182,11 +7196,34 @@ fn outer_object_graph_reads_terminal_lane_class_storage_owner_roles() {
 }
 
 #[test]
+fn outer_object_graph_reads_extended_terminal_lane_roles() {
+    let bytes = object_graph_from_records(&[
+        object_graph_record(
+            &[0x56, 0x94, 0x80, 0x96, 22, 0, 0, 0x80, 0x97, 0, 0, 0x83],
+            &[0xfe],
+        ),
+        object_graph_record(
+            &[0x56, 0x94, 0x80, 96, 23, 0, 0, 0x80, 97, 25, 0, 0, 0x83],
+            &[0xfe],
+        ),
+    ]);
+    let graph = crate::object_graph::parse(&bytes).expect("extended terminal-lane heads");
+
+    for record in &graph.records {
+        assert_eq!(record.class_ref, Some(20));
+        assert_eq!(record.storage_ref, Some(0));
+    }
+    assert_eq!(graph.records[0].owner_ref, Some(22));
+    assert_eq!(graph.records[1].owner_ref, None);
+}
+
+#[test]
 fn outer_object_graph_rejects_incomplete_terminal_lane_roles() {
     for head in [
         &[0x56, 0x94, 0x95, 0x96][..],
         &[0x56, 0x94, 0x95, 0x96, 0x84][..],
         &[0x56, 0x94, 0x95, 0x80, 0x83][..],
+        &[0x56, 0x94, 0x80, 0x96, 22, 0, 0, 0x80, 0x97, 0, 0, 0x84][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
         let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
