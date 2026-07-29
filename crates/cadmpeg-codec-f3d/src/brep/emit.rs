@@ -3226,6 +3226,10 @@ pub(crate) fn emit_vertices(
                                 vertex: VertexId(id(i)),
                                 record_index: r.index as u32,
                                 leading_tolerances: [*first, *second],
+                                trailing_integer: match r.chunk(9) {
+                                    Some(Token::Long(value)) => *value,
+                                    _ => 0,
+                                },
                             });
                         }
                     }
@@ -3329,14 +3333,19 @@ pub(crate) fn emit_edges(
                 Sense::Reversed => reversed_curve_id(c),
                 Sense::Forward => CurveId(id(c)),
             });
-            let tolerant_tail = match (r.head.as_str(), r.chunk(11), r.chunk(12), r.chunk(13)) {
-                (
-                    "tedge",
-                    Some(Token::Double(tolerance)),
-                    Some(Token::Long(first)),
-                    Some(Token::Long(second @ 0)),
-                ) if tolerance.is_finite() && *tolerance >= 0.0 => {
-                    Some((*tolerance, [*first, *second]))
+            // The trailing tolerance slots are version-gated: older streams
+            // carry a single LONG after the model-space tolerance, newer
+            // streams carry a second LONG valued 0 or 1. All forms are
+            // retained verbatim.
+            let tolerant_tail = match (r.head.as_str(), r.chunk(11), r.chunk(12)) {
+                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(first)))
+                    if tolerance.is_finite() && *tolerance >= 0.0 =>
+                {
+                    let mut trailing = vec![*first];
+                    if let Some(Token::Long(second @ (0 | 1))) = r.chunk(13) {
+                        trailing.push(*second);
+                    }
+                    Some((*tolerance, trailing))
                 }
                 _ => None,
             };
@@ -3346,7 +3355,9 @@ pub(crate) fn emit_edges(
                 start: VertexId(id(start)),
                 end: VertexId(id(end)),
                 param_range,
-                tolerance: tolerant_tail.map(|(tolerance, _)| tolerance * LEN_TO_MM),
+                tolerance: tolerant_tail
+                    .as_ref()
+                    .map(|(tolerance, _)| tolerance * LEN_TO_MM),
             });
             if let Some((_, trailing_integers)) = tolerant_tail {
                 out.tolerant_edge_tails.push(TolerantEdgeTail {

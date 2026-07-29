@@ -1598,8 +1598,8 @@ pub enum VariableBlendChamferKind {
 pub struct VariableBlendChamfer {
     /// Variable-chamfer form.
     pub kind: VariableBlendChamferKind,
-    /// Native chamfer-type enum.
-    pub chamfer_type: i64,
+    /// Boolean flag preceding the chamfer blend-value payload.
+    pub flag: bool,
     /// Chamfer blend-value payload.
     pub value: VariableBlendValue,
 }

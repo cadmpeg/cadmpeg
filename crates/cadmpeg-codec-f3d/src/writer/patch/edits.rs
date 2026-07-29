@@ -504,7 +504,7 @@ pub(crate) fn validate_tolerant_edge_edits(
         let tolerance = target_edges[after.edge.as_str()]
             .tolerance
             .ok_or_else(|| CodecError::Malformed(format!("tolerant edge {id} has no tolerance")))?;
-        if !tolerance.is_finite() || tolerance < 0.0 || after.trailing_integers[1] != 0 {
+        if !tolerance.is_finite() || tolerance < 0.0 {
             return Err(CodecError::Malformed(format!(
                 "F3D tolerant edge {id} has invalid fields"
             )));

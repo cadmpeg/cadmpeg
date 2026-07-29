@@ -770,8 +770,8 @@ pub(crate) fn decode_var_blend_spl_sur(
     };
     // A two-radii blend always stores one chamfer-selector enum after its
     // second radius value: 0 selects no chamfer, 3 selects the rounded
-    // chamfer with its type and third value. Other selector values are
-    // rejected rather than guessed at.
+    // chamfer, which stores one boolean flag followed by its third blend
+    // value. Other selector values are rejected rather than guessed at.
     let mut chamfer_selector = None;
     let chamfer = if matches!(
         radius_kind,
@@ -784,7 +784,7 @@ pub(crate) fn decode_var_blend_spl_sur(
             0 => None,
             3 => Some(Box::new(VariableBlendChamfer {
                 kind: VariableBlendChamferKind::Rounded,
-                chamfer_type: take_tagged_int(span, &mut position, 0x15, int_width)?,
+                flag: take_bool(span, &mut position)?,
                 value: decode_variable_blend_value(span, &mut position, int_width, true, 0)?,
             })),
             _ => return None,

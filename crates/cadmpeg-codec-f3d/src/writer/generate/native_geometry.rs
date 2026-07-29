@@ -3722,7 +3722,7 @@ fn encode_native_variable_blend(
                         cadmpeg_ir::geometry::VariableBlendChamferKind::Rounded => 3,
                     },
                 );
-                native_enum(bytes, chamfer.chamfer_type);
+                bytes.push(native_bool(chamfer.flag));
                 native_variable_blend_value(bytes, &chamfer.value, 0)?;
             }
             (None, None) => {}

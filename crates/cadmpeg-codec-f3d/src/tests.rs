@@ -4465,8 +4465,7 @@ fn synthetic_variable_blend_smbh_with_selector(
             surface.push(0x15);
             surface.extend_from_slice(&selector.to_le_bytes());
             if selector == 3 {
-                surface.push(0x15);
-                surface.extend_from_slice(&2i64.to_le_bytes());
+                surface.push(0x0a);
                 append_generated_variable_blend_value(&mut surface, [0.0, 1.0], [5.5, 6.5]);
             }
         }
@@ -5138,12 +5137,13 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [1.25, -2.5],
+            trailing_integer: 0,
         }];
         native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
             id: "f3d:asm:tolerant-edge-tail#generated".into(),
             edge: tolerant_edge,
             record_index: 0,
-            trailing_integers: [22800, 0],
+            trailing_integers: vec![22800, 0],
         }];
         native.tolerant_coedge_parameters = vec![crate::records::TolerantCoedgeParameters {
             id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
@@ -5342,6 +5342,60 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         f3d_native(&retained.ir).tolerant_vertex_tails[0].leading_tolerances,
         [3.5, -4.5]
     );
+}
+
+#[test]
+fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
+    // The tedge trailing tolerance slot is version-gated: streams carry one
+    // trailing LONG (older) or two (newer, the second valued 0 or 1). The
+    // tvertex trailing LONG likewise takes 0 or 1. Each form must survive a
+    // write/decode cycle byte-for-byte.
+    for (edge_trailing, vertex_trailing) in
+        [(vec![22800, 0], 0), (vec![22800, 1], 1), (vec![22800], 0)]
+    {
+        let source = f3d_with_smbh(&synthetic_geometry_smbh());
+        let decoded = F3dCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("generated planar triangle decode");
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.model.vertices[0].tolerance = Some(0.025);
+        source_less.model.edges[0].tolerance = Some(0.035);
+        let tolerant_vertex = source_less.model.vertices[0].id.clone();
+        let tolerant_edge = source_less.model.edges[0].id.clone();
+        {
+            let mut native = f3d_native_mut(&mut source_less);
+            native.tolerant_vertex_tails = vec![crate::records::TolerantVertexTail {
+                id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+                vertex: tolerant_vertex,
+                record_index: 0,
+                leading_tolerances: [-1.0, -1.0],
+                trailing_integer: vertex_trailing,
+            }];
+            native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
+                id: "f3d:asm:tolerant-edge-tail#generated".into(),
+                edge: tolerant_edge,
+                record_index: 0,
+                trailing_integers: edge_trailing.clone(),
+            }];
+        }
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("tolerant tail encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("tolerant tail round trip");
+        assert_eq!(
+            f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_integers,
+            edge_trailing
+        );
+        assert_eq!(
+            f3d_native(&round_trip.ir).tolerant_vertex_tails[0].trailing_integer,
+            vertex_trailing
+        );
+    }
 }
 
 #[test]
@@ -7747,6 +7801,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             vertex,
             record_index: 0,
             leading_tolerances: [1.0, 2.0],
+            trailing_integer: 0,
         }];
     }
     let error = F3dCodec
@@ -16318,7 +16373,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
         chamfer.kind,
         cadmpeg_ir::geometry::VariableBlendChamferKind::Rounded
     );
-    assert_eq!(chamfer.chamfer_type, 2);
+    assert!(chamfer.flag);
     assert!(matches!(
         &chamfer.value.payload,
         VariableBlendValuePayload::TwoEnds {

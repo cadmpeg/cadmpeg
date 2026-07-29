@@ -168,6 +168,9 @@ pub struct TolerantVertexTail {
     /// The first two f64 tolerance slots, retained verbatim in native
     /// centimetres; `-1` denotes an unevaluated tolerance.
     pub leading_tolerances: [f64; 2],
+    /// Trailing LONG slot following the evaluated tolerance; 0 or 1,
+    /// release-dependent, retained verbatim.
+    pub trailing_integer: i64,
 }
 
 /// Native integer tail retained from one tolerant ASM edge record.
@@ -179,8 +182,9 @@ pub struct TolerantEdgeTail {
     pub edge: EdgeId,
     /// Source SAB record index.
     pub record_index: u32,
-    /// Two trailing LONG slots following the model-space tolerance.
-    pub trailing_integers: [i64; 2],
+    /// Trailing LONG slots following the model-space tolerance. Older streams
+    /// carry a single slot; newer streams carry two.
+    pub trailing_integers: Vec<i64>,
 }
 
 /// Parameter interval stored by one tolerant ASM coedge.

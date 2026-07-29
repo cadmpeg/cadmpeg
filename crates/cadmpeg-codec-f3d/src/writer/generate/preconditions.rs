@@ -995,7 +995,8 @@ pub(crate) fn validate_source_less_design_links(
         }
     }
     for tail in &native.tolerant_edge_tails {
-        if tail.trailing_integers[1] != 0
+        if tail.trailing_integers.is_empty()
+            || tail.trailing_integers.len() > 2
             || target
                 .model
                 .edges
