@@ -1230,6 +1230,7 @@ pub fn bind_sketch_feature_geometry(
 /// unresolved (see `docs/formats/f3d-open-items.md`), so the names are neutral.
 const ROLE_0X4: u64 = 0x0000_0004_0000_0000;
 const ROLE_0X5: u64 = 0x0000_0005_0000_0000;
+const ROLE_0X9: u64 = 0x0000_0009_0000_0000;
 const ROLE_0X10: u64 = 0x0000_0010_0000_0000;
 const ROLE_0X12: u64 = 0x0000_0012_0000_0000;
 
@@ -2723,7 +2724,7 @@ pub(crate) fn project_boundary_fill(
     })
 }
 
-fn project_split(
+pub(crate) fn project_split(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -2734,17 +2735,22 @@ fn project_split(
         return None;
     }
     let stream = native_stream(&scope.id)?;
-    let groups = construction_groups
+    let mut groups = construction_groups
         .iter()
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
         })
         .collect::<Vec<_>>();
-    let [targets] = groups.as_slice() else {
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let [tool_group, targets] = groups.as_slice() else {
         return None;
     };
-    if targets.scope_reference_ordinal != 2
+    if tool_group.scope_reference_ordinal != 0
+        || tool_group.record_index != scope.reference_members[0]
+        || tool_group.role != ROLE_0X9
+        || tool_group.members.as_slice() != &scope.reference_members[1..2]
+        || targets.scope_reference_ordinal != 2
         || targets.record_index != scope.reference_members[2]
         || targets.role != ROLE_0X4
         || targets.members.as_slice() != &scope.reference_members[3..4]
@@ -2759,6 +2765,8 @@ fn project_split(
                 && operand.scope_reference_ordinal == 1
                 && operand.record_index == scope.reference_members[1]
                 && operand.recipe_kind == ConstructionRecipeKind::Face
+                && operand.recipe_program.as_slice() == [0, -1]
+                && operand.recipe_nodes.is_empty()
         })
         .collect::<Vec<_>>();
     let [tool] = matching_tools.as_slice() else {
@@ -2770,6 +2778,7 @@ fn project_split(
         FaceSelection::Resolved { native, .. }
         | FaceSelection::Historical { native, .. }
         | FaceSelection::HistoricalPartial { native, .. } => native.clone_from(&tool.id),
+        FaceSelection::Native(native) => native.clone_from(&tool.id),
         _ => {}
     }
     Some(FeatureDefinition::SplitBody {

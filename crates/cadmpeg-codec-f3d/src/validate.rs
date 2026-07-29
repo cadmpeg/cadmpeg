@@ -1184,7 +1184,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Split) => {
-                        group.role == 0x0000_0004_0000_0000
+                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0009_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
@@ -1265,6 +1265,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     if scope.is_some_and(|scope| {
                         scope.kind == "SurfaceStitch"
                             || (scope.kind == "SplitFace" && group.role == 0x0000_0021_0000_0000)
+                            || (scope.kind == "Split" && group.role == 0x0000_0009_0000_0000)
                     }) {
                         88
                     } else {

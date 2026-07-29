@@ -58,7 +58,8 @@ use crate::design::edge_resolve::{
 };
 use crate::design::face_resolve::resolved_face_group;
 use crate::design::feature_project::{
-    project_combine, project_extrude, project_parameter_design, untyped_parameter_unit_count,
+    project_combine, project_extrude, project_parameter_design, project_split,
+    untyped_parameter_unit_count,
 };
 use crate::design::geometry::{
     closed_sketch_profiles, point_on_sketch_entity, region_containing_points,
@@ -86,7 +87,7 @@ use crate::records::{
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
     DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart,
+    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
     DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
@@ -5262,7 +5263,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
 }
 
 #[test]
-fn extrude_operand_group_has_an_exact_counted_frame() {
+fn construction_operand_groups_have_exact_counted_frames() {
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&class_tag);
@@ -5471,6 +5472,109 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
             tool: cadmpeg_ir::features::PathRef::Native(tool),
         } if targets.ends_with("#400") && tool.ends_with("#100")
     ));
+
+    let mut split_body_scope = scope.clone();
+    split_body_scope.kind = "Split".into();
+    split_body_scope.frame_length = 325;
+    split_body_scope.reference_members = vec![100, 200, 400, 500];
+    split_body_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118];
+    let mut split_tool_group = group.clone();
+    split_tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    split_tool_group.record_index = 100;
+    split_tool_group.scope_reference_ordinal = 0;
+    split_tool_group.members = vec![200];
+    split_tool_group.member_offsets = vec![1096];
+    split_tool_group.role = 0x0000_0009_0000_0000;
+    let mut split_target_group = group.clone();
+    split_target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
+    split_target_group.record_index = 400;
+    split_target_group.scope_reference_ordinal = 2;
+    split_target_group.members = vec![500];
+    split_target_group.member_offsets = vec![1118];
+    split_target_group.role = 0x0000_0004_0000_0000;
+    let split_tool = DesignFaceOperand {
+        id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
+        scope_record_index: split_body_scope.record_index,
+        scope_reference_ordinal: 1,
+        group_record_index: Some(100),
+        group_member_ordinal: Some(0),
+        record_index: 200,
+        byte_offset: 1200,
+        class_tag: "297".into(),
+        paired_byte_offset: 1400,
+        paired_class_tag: "259".into(),
+        recipe_record_index: 203,
+        recipe_record_byte_offset: 1300,
+        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#1300".into(),
+        recipe_prefix_offset: 1311,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: Vec::new(),
+        recipe_kind: ConstructionRecipeKind::Face,
+        recipe_program_offset: 1350,
+        recipe_program: vec![0, -1],
+        recipe_node_offsets: Vec::new(),
+        recipe_nodes: Vec::new(),
+        candidate_faces: Vec::new(),
+        unreferenced_candidate_faces: Vec::new(),
+        alternate_selector_candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        changed_candidate_faces: Vec::new(),
+        historical_support_contexts: Vec::new(),
+        resolved_face_slots: Vec::new(),
+        next_record_index: 204,
+        next_byte_offset: 1411,
+    };
+    let split_groups = [split_target_group.clone(), split_tool_group.clone()];
+    assert!(matches!(
+        project_split(
+            &split_body_scope,
+            &split_groups,
+            std::slice::from_ref(&split_tool)
+        ),
+        Some(FeatureDefinition::SplitBody {
+            targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
+            tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
+        }) if targets.ends_with("#400") && tool.ends_with("#200")
+    ));
+
+    let mut invalid_groups = Vec::new();
+    invalid_groups.push(vec![split_target_group.clone()]);
+    for mutate in 0..4 {
+        let mut tool = split_tool_group.clone();
+        match mutate {
+            0 => tool.scope_reference_ordinal = 1,
+            1 => tool.record_index = 101,
+            2 => tool.role = 0x0000_0008_0000_0000,
+            3 => tool.members = vec![201],
+            _ => unreachable!(),
+        }
+        invalid_groups.push(vec![tool, split_target_group.clone()]);
+    }
+    for mutate in 0..4 {
+        let mut target = split_target_group.clone();
+        match mutate {
+            0 => target.scope_reference_ordinal = 3,
+            1 => target.record_index = 401,
+            2 => target.role = 0x0000_0005_0000_0000,
+            3 => target.members = vec![501],
+            _ => unreachable!(),
+        }
+        invalid_groups.push(vec![split_tool_group.clone(), target]);
+    }
+    assert!(invalid_groups.iter().all(|groups| project_split(
+        &split_body_scope,
+        groups,
+        std::slice::from_ref(&split_tool)
+    )
+    .is_none()));
+    let mut nonterminal_tool = split_tool;
+    nonterminal_tool.recipe_program = vec![0, -1, 2];
+    assert!(project_split(
+        &split_body_scope,
+        &split_groups,
+        std::slice::from_ref(&nonterminal_tool)
+    )
+    .is_none());
 
     let mut delete_scope = scope.clone();
     delete_scope.kind = "DeleteFace".into();
