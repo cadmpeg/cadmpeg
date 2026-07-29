@@ -660,6 +660,14 @@ record also ends the prototype; its named fields belong to that peer entity.
 
 `radius`, `radius1`, `radius2`, and `half_angle` are scalar-typed fields. A body that does not complete a scalar token remains opaque and is not reinterpreted as a compact integer.
 
+In a geometry section containing exactly one `torus` prototype with a positive
+finite `radius2`, a type-`26` positional row can replay that minor radius as
+its sole terminal scalar frame. The scalar must end at the row-body boundary,
+must equal the prototype `radius2` exactly, and the row must not contain the
+tagged radius-override form. This replay defines only the instance minor
+radius. It does not define the major radius, center, axis, or parameter-space
+reference direction.
+
 Positional cylinder rows store cap-plane point data rather than a `local_sys` replay. Their per-instance radius does not inherit the prototype default; derive it from bound `fc 05` cap-circle geometry or from a byte-backed analytic construction.
 
 A `tab_cyl` prototype can carry `i_pnts`, `end_tangts`, and `params` as

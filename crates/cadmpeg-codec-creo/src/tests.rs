@@ -6995,6 +6995,36 @@ fn decode_does_not_promote_untyped_terminal_torus_scalars() {
 }
 
 #[test]
+fn decode_replays_a_unique_section_prototype_minor_radius_at_type26_row_end() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0, 0x18, 0x0c]);
+    payload.extend_from_slice(&[0x29, 0xc9, 0x99]);
+    payload.push(0xe3);
+    payload.extend_from_slice(b"srf_prim_ptr(torus)\0\xe0\x02local_sys\0\xf9\x04\x03");
+    for value in [1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, -2.0] {
+        push_generated_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(b"\xe0\x01radius1\0\xe4\xe0\x01radius2\0\x29\xc9\x99");
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_eq!(
+        native.fields["replayed_torus_minor_radius"],
+        0.199_999_999_999_999_98
+    );
+    assert_eq!(
+        result.report.coverage["decoded_type26_replayed_minor_radius_count"],
+        1
+    );
+}
+
+#[test]
 fn decode_places_first_plane_instance_from_named_prototype() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

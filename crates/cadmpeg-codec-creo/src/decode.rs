@@ -16173,6 +16173,32 @@ fn unique_surface_parameter_record<'a>(
     records.next().is_none().then_some(record)
 }
 
+fn unique_section_torus_minor_radius(
+    scan: &ContainerScan,
+    row: &crate::surface::SurfaceRow,
+) -> Option<f64> {
+    let section = scan.framing.sections.iter().find(|section| {
+        row.offset >= section.offset && row.offset < section.offset.saturating_add(section.length)
+    })?;
+    let mut prototypes = scan.surfaces.prototype_records.iter().filter(|prototype| {
+        prototype.family == crate::surface::SurfacePrototypeFamily::Torus
+            && prototype.offset >= section.offset
+            && prototype.offset < section.offset.saturating_add(section.length)
+    });
+    let prototype = prototypes.next()?;
+    prototypes.next().is_none().then_some(())?;
+    prototype_scalar(prototype, "radius2").filter(|radius| radius.is_finite() && *radius > 0.0)
+}
+
+fn replayed_torus_minor_radius(
+    scan: &ContainerScan,
+    row: &crate::surface::SurfaceRow,
+    record: &crate::surface::SurfaceParameterRecord,
+) -> Option<f64> {
+    let prototype_minor_radius = unique_section_torus_minor_radius(scan, row)?;
+    record.type26_replayed_minor_radius(row.type_byte, prototype_minor_radius)
+}
+
 fn prototype_envelope_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
@@ -16356,7 +16382,8 @@ fn round_observed_radii(scan: &ContainerScan, feature_id: u32) -> Vec<f64> {
                 }
                 crate::surface::SurfaceKind::TorusOrSphere => parameters
                     .torus_radius_overrides(row.type_byte)
-                    .map(|overrides| overrides.radius2),
+                    .map(|overrides| overrides.radius2)
+                    .or_else(|| replayed_torus_minor_radius(scan, row, parameters)),
                 _ => None,
             }
         })
@@ -31188,6 +31215,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
 #[derive(Default)]
 struct TorusParameterCoverage {
     radius_overrides: usize,
+    replayed_minor_radii: usize,
     outline_extents: usize,
     five_coordinate_envelopes: usize,
     split_coordinate_envelopes: usize,
@@ -31202,6 +31230,10 @@ fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
         radius_overrides: rows
             .clone()
             .filter(|(record, row)| record.torus_radius_overrides(row.type_byte).is_some())
+            .count(),
+        replayed_minor_radii: rows
+            .clone()
+            .filter(|(record, row)| replayed_torus_minor_radius(scan, row, record).is_some())
             .count(),
         outline_extents: rows
             .clone()
@@ -31295,6 +31327,10 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     coverage.insert(
         "decoded_torus_radius_override_count".to_string(),
         torus_coverage.radius_overrides,
+    );
+    coverage.insert(
+        "decoded_type26_replayed_minor_radius_count".to_string(),
+        torus_coverage.replayed_minor_radii,
     );
     coverage.insert(
         "decoded_torus_outline_extent_count".to_string(),
@@ -32253,6 +32289,7 @@ fn build_report(
 
     let torus_coverage = torus_parameter_coverage(scan);
     if torus_coverage.radius_overrides != 0
+        || torus_coverage.replayed_minor_radii != 0
         || torus_coverage.outline_extents != 0
         || torus_coverage.five_coordinate_envelopes != 0
         || torus_coverage.split_coordinate_envelopes != 0
@@ -32262,11 +32299,13 @@ fn build_report(
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Retained {} tagged type-26 radius override(s), {} terminal outline extent(s), \
-                 {} five-coordinate envelope(s), and {} split-coordinate envelope(s). These \
-                 row-local fields remain byte-exact native data. Placement-complete paired sphere \
-                 envelopes additionally transfer as analytic carriers.",
+                "Retained {} tagged type-26 radius override(s), {} prototype-minor-radius \
+                 replay(s), {} terminal outline extent(s), {} five-coordinate envelope(s), and \
+                 {} split-coordinate envelope(s). These row-local fields remain byte-exact native \
+                 data. Placement-complete paired sphere envelopes additionally transfer as \
+                 analytic carriers.",
                 torus_coverage.radius_overrides,
+                torus_coverage.replayed_minor_radii,
                 torus_coverage.outline_extents,
                 torus_coverage.five_coordinate_envelopes,
                 torus_coverage.split_coordinate_envelopes,

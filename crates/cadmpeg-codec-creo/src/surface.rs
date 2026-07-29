@@ -535,6 +535,29 @@ impl SurfaceParameterRecord {
         torus_radius_override_layout(&self.body).map(|layout| layout.overrides)
     }
 
+    /// Decode a type-26 row's terminal replay of its section prototype's
+    /// minor radius.
+    #[must_use]
+    pub fn type26_replayed_minor_radius(
+        &self,
+        type_byte: u8,
+        prototype_minor_radius: f64,
+    ) -> Option<f64> {
+        (type_byte == 0x26
+            && self.torus_radius_overrides(type_byte).is_none()
+            && prototype_minor_radius.is_finite()
+            && prototype_minor_radius > 0.0)
+            .then_some(())?;
+        let frame = self.terminal_scalar_frame.as_ref()?;
+        let [slot] = frame.slots.as_slice() else {
+            return None;
+        };
+        let value = slot.value?;
+        (slot.offset.checked_add(slot.length) == Some(self.body.len())
+            && value.to_bits() == prototype_minor_radius.to_bits())
+        .then_some(value)
+    }
+
     /// Decode the terminal outline frame of a positional torus-or-sphere body.
     #[must_use]
     pub fn torus_outline_frame(&self, type_byte: u8) -> Option<TorusOutlineFrame> {
@@ -7036,6 +7059,36 @@ mod tests {
         payload[6] = 0x17;
         assert!(parameter_records(&payload)[0]
             .type26_five_coordinate_envelope(0x26)
+            .is_none());
+    }
+
+    #[test]
+    fn decodes_only_an_exact_singleton_terminal_type26_minor_radius_replay() {
+        let record = |body: &[u8]| {
+            let mut payload = vec![7, 0x26, 4, 0x01, 0, 0];
+            payload.extend_from_slice(body);
+            payload.push(0xe3);
+            parameter_records(&payload).remove(0)
+        };
+        let replay = record(&[0x18, 0x0c, 0x29, 0xc9, 0x99]);
+        assert_eq!(
+            replay.type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98),
+            Some(0.199_999_999_999_999_98)
+        );
+        assert!(replay.type26_replayed_minor_radius(0x26, 0.2).is_none());
+        assert!(replay
+            .type26_replayed_minor_radius(0x25, 0.199_999_999_999_999_98)
+            .is_none());
+
+        let two_slot_terminal = record(&[0x18, 0x29, 0xc9, 0x99]);
+        assert!(two_slot_terminal
+            .type26_replayed_minor_radius(0x26, 0.199_999_999_999_98)
+            .is_none());
+        let tagged_override = record(&[
+            0x18, 0x0d, 0x29, 0xc9, 0x99, 0x00, 0x0e, 0x01, 0x29, 0xdf, 0xff,
+        ]);
+        assert!(tagged_override
+            .type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98)
             .is_none());
     }
 

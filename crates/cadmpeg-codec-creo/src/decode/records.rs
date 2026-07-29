@@ -1192,6 +1192,7 @@ pub(super) struct CreoSurfaceParameterRecord {
     pub(super) type26_five_coordinate_envelope: Option<CreoType26FiveCoordinateEnvelope>,
     pub(super) type26_split_coordinate_envelope: Option<CreoType26SplitCoordinateEnvelope>,
     pub(super) torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
+    pub(super) replayed_torus_minor_radius: Option<f64>,
     pub(super) cone_half_angle_override: Option<CreoConeHalfAngleOverride>,
     pub(super) extrusion_direction: Option<[f64; 3]>,
     pub(super) row_offset: usize,
@@ -1652,6 +1653,7 @@ pub(super) fn surface_parameter_records(
                         offset: overrides.offset,
                     },
                 ),
+                replayed_torus_minor_radius: replayed_torus_minor_radius(scan, row, record),
                 cone_half_angle_override: record.cone_half_angle_override(row.type_byte).map(
                     |half_angle| CreoConeHalfAngleOverride {
                         radians: half_angle.radians,
