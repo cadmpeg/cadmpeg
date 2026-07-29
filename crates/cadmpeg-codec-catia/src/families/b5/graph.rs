@@ -2930,11 +2930,14 @@ fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     let [diameter_u, diameter_v, conjugate_angle, start, end, orientation, period] =
         line_values::<7>(&record.payload, position + 2)?;
     let diameter = diameter_u.hypot(diameter_v);
+    let relative_period = period / (std::f64::consts::PI * diameter);
     if diameter <= 0.0
         || start >= end
+        || period <= 0.0
         || !matches!(orientation, -1.0 | 1.0)
         || (conjugate_angle - std::f64::consts::FRAC_PI_2).abs() > 1e-12
-        || (period - std::f64::consts::PI * diameter).abs() > 1e-12 * period.abs().max(1.0)
+        || !relative_period.is_finite()
+        || (relative_period - 1.0).abs() > 1e-12
     {
         return None;
     }
@@ -4963,6 +4966,20 @@ mod tests {
         let end = evaluate_pcurve(&pcurve, std::f64::consts::PI).expect("end point");
         assert!((end[0] - 2.0).abs() < 1e-12);
         assert!((end[1] - 4.0).abs() < 1e-12);
+
+        let diameter = 1e-200_f64;
+        let period = std::f64::consts::PI * diameter;
+        let mut tiny = record.clone();
+        tiny.payload[22..30].copy_from_slice(&diameter.to_le_bytes());
+        tiny.payload[54..62].copy_from_slice(&(period * 0.5).to_le_bytes());
+        tiny.payload[70..78].copy_from_slice(&period.to_le_bytes());
+        assert!(parse_class_1a_pcurve(&tiny).is_some());
+
+        let wrong_period = 1e-13_f64;
+        tiny.payload[54..62].copy_from_slice(&(wrong_period * 0.5).to_le_bytes());
+        tiny.payload[70..78].copy_from_slice(&wrong_period.to_le_bytes());
+        assert!(parse_class_1a_pcurve(&tiny).is_none());
+
         let mut wrong_family = record;
         wrong_family.family = 0xa8;
         assert!(parse_class_1a_pcurve(&wrong_family).is_none());
