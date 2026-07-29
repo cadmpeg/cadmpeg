@@ -992,6 +992,46 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
     resolved_edge_candidate_intersection_with_extra_proofs(selector_contexts, shared_edge_sets, [])
 }
 
+pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+) -> Option<i64> {
+    let mut incidence = selector_contexts
+        .iter()
+        .flat_map(|selector| selector.incidence_matching_edge_slots.iter().copied())
+        .collect::<Vec<_>>();
+    incidence.sort_unstable();
+    incidence.dedup();
+    let mut reference_edge_sets = reference_edge_sets
+        .into_iter()
+        .map(|edges| {
+            let mut edges = edges.to_vec();
+            edges.sort_unstable();
+            edges.dedup();
+            edges
+        })
+        .collect::<Vec<_>>();
+    reference_edge_sets.sort();
+    reference_edge_sets.dedup();
+    let mut candidates = incidence
+        .into_iter()
+        .filter(|edge| {
+            reference_edge_sets
+                .iter()
+                .filter(|edges| edges.contains(edge))
+                .take(2)
+                .count()
+                == 2
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
+    }
+}
+
 pub(crate) fn resolved_edge_candidate_intersection_with_deleted_proofs<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,

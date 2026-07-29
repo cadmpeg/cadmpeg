@@ -15094,3 +15094,40 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     let ambiguous = vec![horizontal("a", "b"), horizontal("a", "c")];
     assert!(repeated_linear_dimension(&ambiguous, parameter).is_none());
 }
+
+#[test]
+fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
+    use crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces;
+
+    let selector = |edges| crate::records::DesignEdgeRecipeSelectorContext {
+        selector: 0,
+        clause_entries: Vec::new(),
+        clause_triplet_edge_slots: Vec::new(),
+        incidence_matching_edge_slots: edges,
+        unique_incidence_edge_slot: None,
+        boundary_count_matching_edge_slots: Vec::new(),
+    };
+    let selectors = [selector(vec![11, 12]), selector(vec![13])];
+    assert_eq!(
+        unique_incidence_edge_shared_by_reference_faces(
+            &selectors,
+            [&[10, 11][..], &[11, 12][..], &[13, 14][..]],
+        ),
+        Some(11)
+    );
+    assert_eq!(
+        unique_incidence_edge_shared_by_reference_faces(&selectors, [&[11, 13][..], &[11, 13][..]],),
+        None
+    );
+    assert_eq!(
+        unique_incidence_edge_shared_by_reference_faces(&[selector(vec![11])], [&[10, 11][..]],),
+        None
+    );
+    assert_eq!(
+        unique_incidence_edge_shared_by_reference_faces(
+            &[selector(vec![11])],
+            [&[10, 11][..], &[10, 11][..]],
+        ),
+        None
+    );
+}

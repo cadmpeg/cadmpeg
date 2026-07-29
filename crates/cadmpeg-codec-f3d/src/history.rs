@@ -2639,6 +2639,35 @@ pub(crate) fn bind_edge_operand_history_candidates(
             })
             .collect();
         if crate::design::design_feature_family(&scope.kind)
+            == Some(crate::design::DesignFeatureFamily::Sweep)
+        {
+            let reference_faces = terminal_edge_recipe_reference_faces(
+                &operand.recipe_references,
+                operand.local_topology_references.as_deref(),
+            );
+            let reference_edge_sets = reference_faces
+                .iter()
+                .map(|faces| face_boundary_edges(&faces_in_topology(faces, topology), topology))
+                .collect::<Vec<_>>();
+            let candidate_edges = reference_edge_sets
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            let contexts = candidate_edges
+                .into_iter()
+                .map(|edge| historical_edge_context(edge, topology))
+                .collect::<Vec<_>>();
+            operand.recipe_selectors =
+                recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
+            operand.resolved_edge_slot =
+                crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces(
+                    &operand.recipe_selectors,
+                    reference_edge_sets.iter().map(Vec::as_slice),
+                );
+            continue;
+        }
+        if crate::design::design_feature_family(&scope.kind)
             == Some(crate::design::DesignFeatureFamily::Revolve)
         {
             let reference_faces = terminal_edge_recipe_reference_faces(
