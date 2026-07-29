@@ -404,25 +404,28 @@ fn circular_pattern_candidate<'a>(
     if object.fields.is_empty() || object.definition_values.len() != object.fields.len() {
         return None;
     }
-    let entity_ids = object
+    let fields = object
         .fields
         .iter()
         .map(|field| {
             let record = records.get(field.as_str())?;
             (record.design_object.as_deref() == Some(object.id.as_str())).then_some(())?;
-            record.entity_record.as_deref()
+            Some((record, record.entity_record.as_deref()?))
         })
         .collect::<Option<Vec<_>>>()?;
-    entity_ids
+    fields
         .iter()
         .zip(&object.definition_values)
-        .all(|(entity, definition)| *entity == definition)
+        .all(|((_, entity), definition)| *entity == definition)
         .then_some(())?;
-    let definitions = entity_ids
+    let definitions = fields
         .into_iter()
-        .map(|entity_id| {
+        .map(|(record, entity_id)| {
             let entity = *entities.get(entity_id)?;
             let definition = &entity.definition_value.as_ref()?.definition;
+            (record.class_entry.as_deref() == Some(definition.entry.as_str())
+                && record.class_name.as_deref() == Some(definition.value.as_str()))
+            .then_some(())?;
             Some((definition.entry.as_str(), definition.value.as_str()))
         })
         .collect::<Option<Vec<_>>>()?;

@@ -7131,12 +7131,14 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
         &[0xfe],
         &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
     ));
-    native.entity_records[0]
+    let definition_value = native.entity_records[0]
         .definition_value
         .as_mut()
-        .expect("definition value")
-        .definition
-        .value = "CircPattern".to_string();
+        .expect("definition value");
+    definition_value.definition.value = "CircPattern".to_string();
+    native.object_graphs[0].records[0].class_entry =
+        Some(definition_value.definition.entry.clone());
+    native.object_graphs[0].records[0].class_name = Some("CircPattern".to_string());
 
     let mut second_entity = native.entity_records[0].clone();
     second_entity.id.push_str("-second");
@@ -7185,6 +7187,14 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
         .value = "RectPattern".to_string();
     let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
     crate::design_feature::transfer_design_features(&mut rejected, &conflicting);
+    assert!(rejected.model.features.is_empty());
+
+    let mut foreign_fields = native.clone();
+    for field in &mut foreign_fields.object_graphs[0].records {
+        field.class_name = Some("EndAngle".to_string());
+    }
+    let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
+    crate::design_feature::transfer_design_features(&mut rejected, &foreign_fields);
     assert!(rejected.model.features.is_empty());
 
     let mut incomplete = native;
