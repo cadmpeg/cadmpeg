@@ -117,6 +117,10 @@ current scores require those matrices and representative fixtures.
   remain unbound atomically.
 - Every consolidated line profile transfers its placed signed-distance
   analytic line carrier and stored parameter interval.
+- A standard circle edge without a face-side branch witness uses its exact
+  two-support object-stream pcurves when both lifted endpoint and midpoint
+  samples agree, match the physical endpoints, lie on the circle, and preserve
+  one oriented support-carrier axis.
 - A standard binary32 cylinder, cone, sphere, or torus face carrier is refined
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;

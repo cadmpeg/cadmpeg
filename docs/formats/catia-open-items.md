@@ -35,7 +35,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - `op1` and persistent-tag resolution outside the exact class-`19` analytic-circle identity binding. The mapping from absolute persistent CGM tags to other serialized records remains unresolved for the consolidated `a5` family.
 - The mapping from a standard `0x60` row's local allocation tag to its native edge record remains unresolved when no edge node carries the same curve identity.
 - Standard-path topology membership across multiple separate FBB face groups.
-- The standard-path arc branch is unspecified for arcs with no witnessed adjacent face.
+- The standard-path arc branch is unspecified when neither an adjacent face witness nor an exact two-support object-stream pcurve witness is present.
 - The `a5 03 20` `op1` or persistent-tag reference to serialized-record mapping is unspecified.
 - The semantic coordinate roles of the binary64 box and three binary32 bounds in the fixed `b2/b3/b4 03 62` owner tail, the five-byte header, and the owner packet's binding to a face record are unspecified.
 - The semantic role of `pre_range_scalar` immediately before the active angular range in `b2 03 29` and `b5 03 29` cone records is unspecified.

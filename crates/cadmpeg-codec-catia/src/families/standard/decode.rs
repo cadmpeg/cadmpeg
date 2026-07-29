@@ -4130,6 +4130,16 @@ pub(crate) fn build_standard_edge_curve(
                 .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
                 .filter_map(|surface| circle_axis_from_carrier(*center, *radius, &surface.geometry))
                 .collect();
+            axes.extend(native_support.into_iter().flat_map(|native| {
+                native.carriers.iter().filter_map(|carrier| {
+                    let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
+                        carrier
+                    else {
+                        return None;
+                    };
+                    circle_axis_from_carrier(*center, *radius, surface)
+                })
+            }));
             if axes.is_empty() {
                 axes.extend(circle_axis_from_endpoints(*center, *radius, start, end));
             }
@@ -4159,7 +4169,20 @@ pub(crate) fn build_standard_edge_curve(
                         ref_direction,
                         start,
                         end,
-                    )?;
+                    )
+                    .or_else(|| {
+                        native_support.and_then(|native| {
+                            native_support_circle_param_range(
+                                native,
+                                *center,
+                                *radius,
+                                axis,
+                                ref_direction,
+                                start,
+                                end,
+                            )
+                        })
+                    })?;
                     Some((
                         axis,
                         ref_direction,
@@ -4544,6 +4567,75 @@ pub(crate) fn standard_circle_param_range(
     Some(range)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn native_support_circle_param_range(
+    support: &StandardEdgeSupport,
+    center: Point3,
+    radius: f64,
+    axis: Vector3,
+    ref_direction: Vector3,
+    start: Point3,
+    end: Point3,
+) -> Option<[f64; 2]> {
+    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
+    const GEOMETRY_TOLERANCE: f64 = 2e-3;
+
+    let parameters = [
+        support.parameter_range[0],
+        0.5 * (support.parameter_range[0] + support.parameter_range[1]),
+        support.parameter_range[1],
+    ];
+    let lifted = support
+        .carriers
+        .iter()
+        .zip(&support.pcurves)
+        .map(|(carrier, pcurve)| {
+            let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
+            else {
+                return None;
+            };
+            let carrier_axis = circle_axis_from_carrier(center, radius, surface)?;
+            (carrier_axis.dot(axis) >= 0.9999).then_some(())?;
+            Some(parameters.map(|parameter| {
+                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
+                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+            }))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second] = <[[Option<Point3>; 3]; 2]>::try_from(lifted).ok()?;
+    let first = first.into_iter().collect::<Option<Vec<_>>>()?;
+    let second = second.into_iter().collect::<Option<Vec<_>>>()?;
+    if first
+        .iter()
+        .zip(&second)
+        .any(|(left, right)| left.distance_squared(*right).sqrt() > SUPPORT_AGREEMENT_TOLERANCE)
+    {
+        return None;
+    }
+    let endpoint_error = |left: Point3, right: Point3| left.distance_squared(right).sqrt();
+    let source_forward = endpoint_error(first[0], start) <= GEOMETRY_TOLERANCE
+        && endpoint_error(first[2], end) <= GEOMETRY_TOLERANCE;
+    let source_reversed = endpoint_error(first[0], end) <= GEOMETRY_TOLERANCE
+        && endpoint_error(first[2], start) <= GEOMETRY_TOLERANCE;
+    if source_forward == source_reversed {
+        return None;
+    }
+    let witness = first[1];
+    let transverse = axis.cross(ref_direction);
+    let angle = |point: Point3| {
+        let radial = point.vector_from(center);
+        let axial = radial.dot(axis);
+        let radial_length = radial.norm();
+        (axial.abs() <= GEOMETRY_TOLERANCE && (radial_length - radius).abs() <= GEOMETRY_TOLERANCE)
+            .then(|| radial.dot(transverse).atan2(radial.dot(ref_direction)))
+    };
+    let start_angle = angle(start)?;
+    let end_angle = unwrap_angle(angle(end)?, start_angle);
+    let witness_angle = angle(witness)?;
+    let selected_end = witness_arc_end(start_angle, end_angle, witness_angle)?;
+    Some([start_angle, selected_end])
+}
+
 pub(crate) fn attach_standard_circles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -4810,11 +4902,11 @@ mod route_tests {
         circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
         combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
         include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
-        plane_intersection_line, point_on_known_surface, point_on_standard_face, point_on_surface,
-        resolve_standard_endpoint_pairs, retry_rejected_mesh_solution,
-        standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_native_support_endpoint_pair, standard_pcurve_geometry,
-        standard_plane_normal_from_adjacent_circle_carriers,
+        native_support_circle_param_range, plane_intersection_line, point_on_known_surface,
+        point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
+        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
+        standard_circle_param_range, standard_native_support_endpoint_pair,
+        standard_pcurve_geometry, standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
         unique_native_identity_points, witness_arc_end, StandardEdgeSupport,
@@ -5496,6 +5588,97 @@ mod route_tests {
         )
         .expect("witnessed circle range");
         assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        };
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let native = StandardEdgeSupport {
+            surface_object_ids: [20, 21],
+            carriers: [
+                crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(cylinder.clone()),
+                crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(cylinder),
+            ],
+            pcurves: [pcurve.clone(), pcurve],
+            parameter_range: [0.0, 1.5 * std::f64::consts::PI],
+        };
+        let start = Point3::new(1.0, 0.0, 0.0);
+        let end = Point3::new(0.0, -1.0, 0.0);
+        assert_eq!(
+            native_support_circle_param_range(
+                &native,
+                Point3::new(0.0, 0.0, 0.0),
+                1.0,
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                start,
+                end,
+            ),
+            Some([0.0, 1.5 * std::f64::consts::PI])
+        );
+        let mut disagreeing = native.clone();
+        disagreeing.pcurves[1] = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 1.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        assert!(native_support_circle_param_range(
+            &disagreeing,
+            Point3::new(0.0, 0.0, 0.0),
+            1.0,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            start,
+            end,
+        )
+        .is_none());
+        assert!(native_support_circle_param_range(
+            &native,
+            Point3::new(0.0, 0.0, 0.0),
+            1.0,
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            start,
+            end,
+        )
+        .is_none());
+
+        let mut ir = CadIr::empty(Units::default());
+        for (index, position) in [start, end].into_iter().enumerate() {
+            ir.model.points.push(Point {
+                id: PointId(format!("p{index}")),
+                position,
+                source_object: None,
+            });
+        }
+        let support = StandardCurveSupport {
+            pos: 12,
+            tag: 7,
+            faces: [0, 0],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+        };
+        let (_, range) = build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            Some(&native),
+        );
+        assert_eq!(range, Some([0.0, 1.5 * std::f64::consts::PI]));
     }
 
     #[test]
