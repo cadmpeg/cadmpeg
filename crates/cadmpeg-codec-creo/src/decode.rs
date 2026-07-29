@@ -14655,6 +14655,67 @@ fn evaluated_sweep_body_kind(ir: &CadIr, family: &str, feature_id: u32) -> Optio
         .map(|body| body.kind)
 }
 
+fn new_sheet_output_surface_id(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+) -> Option<u32> {
+    let owned = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let unique_table = |class_id| {
+        let mut matches = owned
+            .iter()
+            .copied()
+            .filter(|table| table.table_class_id == class_id);
+        let table = matches.next()?;
+        matches.next().is_none().then_some(table)
+    };
+    let [owner] = unique_table(67)?.entries.as_slice() else {
+        return None;
+    };
+    let [output] = unique_table(100)?.entries.as_slice() else {
+        return None;
+    };
+    let generated = unique_table(29)?;
+    (owner.class_id == 200
+        && owner.source_entity_id == Some(feature_id)
+        && output.entity_id == owner.entity_id
+        && generated.surface_ids.contains(&output.class_id)
+        && generated
+            .entries
+            .iter()
+            .any(|entry| entry.entity_id == output.class_id && entry.class_id == 200))
+    .then_some(())?;
+    let mut surfaces = surface_rows
+        .iter()
+        .filter(|row| row.id == output.class_id && row.feature_id == feature_id);
+    let surface = surfaces.next()?;
+    surfaces.next().is_none().then_some(surface.id)
+}
+
+fn sweep_output_kind(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    family: &str,
+    feature_id: u32,
+) -> Option<BodyKind> {
+    evaluated_sweep_body_kind(ir, family, feature_id).or_else(|| {
+        (feature_schema_class(scan, feature_id) == Some(942)).then_some(())?;
+        new_sheet_output_surface_id(
+            feature_id,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        )
+        .map(|_| BodyKind::Sheet)
+    })
+}
+
+fn sweep_solid(output_kind: Option<BodyKind>) -> Option<bool> {
+    output_kind.map(|kind| kind == BodyKind::Solid)
+}
+
 fn feature_field_text(value: &crate::feature::FeatureFieldValue) -> Option<String> {
     match value {
         crate::feature::FeatureFieldValue::Empty => Some("empty".to_string()),
@@ -16590,7 +16651,7 @@ fn schema_feature_definition(
                     section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
                 },
             );
-            let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
+            let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
             return circular_sweep_feature_definition(
                 profile,
                 &sweep,
@@ -16600,7 +16661,7 @@ fn schema_feature_definition(
                     output_kind.is_some(),
                     preceding_features_establish_body(ir),
                 ),
-                (output_kind == Some(BodyKind::Solid)).then_some(true),
+                sweep_solid(output_kind),
             );
         }
     }
@@ -16626,14 +16687,14 @@ fn schema_feature_definition(
             .zip(transform)
             .and_then(|(definition, transform)| resolved_revolution_axis(definition, transform))
             .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent.as_ref()));
-        let output_kind = evaluated_sweep_body_kind(ir, "revolution", feature_id);
+        let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
         return IrFeatureDefinition::Revolve {
             construction: RevolutionConstruction {
                 profile,
                 axis,
                 extent,
                 axis_reference: None,
-                solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
+                solid: sweep_solid(output_kind),
                 face_maker_class: None,
                 fuse_order: None,
                 allow_multi_profile_faces: None,
@@ -16664,7 +16725,7 @@ fn schema_feature_definition(
         let profile = definition.map(|definition| {
             section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
-        let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
+        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
         let op = section_sweep_boolean_operation(
             feature_recipe_effect(scan, feature_id),
             kind,
@@ -16722,7 +16783,7 @@ fn schema_feature_definition(
             extent,
             op,
             direction_source: None,
-            solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
+            solid: sweep_solid(output_kind),
             face_maker: None,
             inner_wire_taper: None,
             length_along_profile_normal: None,
@@ -17150,7 +17211,11 @@ fn named_or_referenced_feature_definition(
     })
 }
 
-fn extrude_feature_definition(profile: ProfileRef, op: BooleanOp) -> IrFeatureDefinition {
+fn extrude_feature_definition(
+    profile: ProfileRef,
+    op: BooleanOp,
+    solid: Option<bool>,
+) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
         profile,
         direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
@@ -17158,7 +17223,7 @@ fn extrude_feature_definition(profile: ProfileRef, op: BooleanOp) -> IrFeatureDe
         extent: unresolved_extrude_extent(),
         op,
         direction_source: None,
-        solid: None,
+        solid,
         face_maker: None,
         inner_wire_taper: None,
         length_along_profile_normal: None,
@@ -17174,7 +17239,13 @@ fn extrude_feature_definition_with_profile(
 ) -> IrFeatureDefinition {
     let profile = unique_feature_profile_ref(scan, ir, feature_id)
         .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
-    extrude_feature_definition(profile, op)
+    let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+    let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
+        BooleanOp::NewBody
+    } else {
+        op
+    };
+    extrude_feature_definition(profile, op, sweep_solid(output_kind))
 }
 
 fn revolve_feature_definition_with_profile(
