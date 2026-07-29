@@ -241,15 +241,24 @@ fn a5_surface_parser_reads_rational_weight_program() {
 
 #[test]
 fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
-    let curves = crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream());
-    assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].degree, 5);
-    assert_eq!(curves[0].knots, vec![0.0, 1.0]);
-    assert_eq!(curves[0].sites[1].radius, 2.0);
+    for header_token in [5, 9, 13, 29] {
+        let mut bytes = a5_freeform_curve_stream();
+        bytes[7] = header_token;
+        let curves = crate::families::a5a8::records::a5_freeform_curves(&bytes);
+        assert_eq!(curves.len(), 1);
+        assert_eq!(curves[0].header_token, u32::from(header_token));
+        assert_eq!(curves[0].degree, 5);
+        assert_eq!(curves[0].knots, vec![0.0, 1.0]);
+        assert_eq!(curves[0].sites[1].radius, 2.0);
+    }
 
     let mut wrong_degree = a5_freeform_curve_stream();
     wrong_degree[9] = 17;
     assert!(crate::families::a5a8::records::a5_freeform_curves(&wrong_degree).is_empty());
+
+    let mut invalid_header_token = a5_freeform_curve_stream();
+    invalid_header_token[7] = 17;
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_header_token).is_empty());
 }
 
 #[test]
