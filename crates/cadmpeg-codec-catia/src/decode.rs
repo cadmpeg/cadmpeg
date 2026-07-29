@@ -628,6 +628,10 @@ fn finish_decode(
             native.zero_entity_physical_edge_candidates.len(),
         ),
         (
+            "decoded_zero_entity_vertex_candidate_count".to_string(),
+            native.zero_entity_vertex_candidates.len(),
+        ),
+        (
             "decoded_zero_entity_record_count".to_string(),
             native.zero_entity_records.len(),
         ),
@@ -1085,13 +1089,15 @@ fn finish_decode(
                  edge-stride record(s) \
                  bind {edge_support_binding_count} adjacent support record(s), and \
                  {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
-                 adjacent vertex owner; {} radial physical-edge candidate(s) are established; {} \
+                 adjacent vertex owner; {} radial physical-edge candidate(s) and {} complete \
+                 endpoint-clique vertex candidate(s) are established; {} \
                  oriented-use pair(s) remain separate because the \
                  loop-to-use and use-to-incidence bindings are unresolved.",
                 native.zero_entity_support_runs.len(),
                 native.zero_entity_edge_strides.len(),
                 native.zero_entity_vertex_incidences.len(),
                 native.zero_entity_physical_edge_candidates.len(),
+                native.zero_entity_vertex_candidates.len(),
                 native.zero_entity_oriented_use_pairs.len(),
             ),
             provenance: None,

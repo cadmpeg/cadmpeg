@@ -24,6 +24,14 @@ pub(crate) struct ZeroEntityPhysicalEdgeCandidate {
     pub(crate) model_endpoints: [Point3; 2],
 }
 
+/// One geometric vertex candidate established by a complete endpoint clique.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ZeroEntityVertexCandidate {
+    pub(crate) incident_edge_endpoints: Vec<(usize, u8)>,
+    pub(crate) representative_point: Point3,
+    pub(crate) maximum_deviation: f64,
+}
+
 pub(crate) fn zero_entity_physical_edge_candidates(
     runs: &[ZeroEntitySupportRun],
 ) -> Vec<ZeroEntityPhysicalEdgeCandidate> {
@@ -117,6 +125,92 @@ pub(crate) fn physical_edge_candidates(
         }
     }
     candidates.sort_by_key(|candidate| candidate.support_record_ordinals);
+    candidates
+}
+
+pub(crate) fn vertex_candidates(
+    edges: &[ZeroEntityPhysicalEdgeCandidate],
+) -> Vec<ZeroEntityVertexCandidate> {
+    let endpoints = edges
+        .iter()
+        .enumerate()
+        .flat_map(|(edge, candidate)| {
+            candidate
+                .model_endpoints
+                .into_iter()
+                .enumerate()
+                .map(move |(endpoint, point)| (edge, endpoint as u8, point))
+        })
+        .collect::<Vec<_>>();
+    let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
+    for (index, (_, _, point)) in endpoints.iter().enumerate() {
+        cells.entry(endpoint_cell(*point)).or_default().push(index);
+    }
+    let mut neighbors = vec![Vec::new(); endpoints.len()];
+    for (index, (_, _, point)) in endpoints.iter().enumerate() {
+        let cell = endpoint_cell(*point);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    let neighbor_cell = [
+                        cell[0].saturating_add(dx),
+                        cell[1].saturating_add(dy),
+                        cell[2].saturating_add(dz),
+                    ];
+                    for other in cells.get(&neighbor_cell).into_iter().flatten() {
+                        if *other > index
+                            && point.distance(endpoints[*other].2) <= ENDPOINT_TOLERANCE
+                        {
+                            neighbors[index].push(*other);
+                            neighbors[*other].push(index);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut visited = vec![false; endpoints.len()];
+    let mut candidates = Vec::new();
+    for start in 0..endpoints.len() {
+        if visited[start] {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut stack = vec![start];
+        visited[start] = true;
+        while let Some(index) = stack.pop() {
+            component.push(index);
+            for neighbor in &neighbors[index] {
+                if !visited[*neighbor] {
+                    visited[*neighbor] = true;
+                    stack.push(*neighbor);
+                }
+            }
+        }
+        component.sort_unstable();
+        let representative_point = endpoints[component[0]].2;
+        let mut maximum_deviation = 0.0_f64;
+        let mut complete = true;
+        for (position, left) in component.iter().enumerate() {
+            for right in &component[position + 1..] {
+                let deviation = endpoints[*left].2.distance(endpoints[*right].2);
+                maximum_deviation = maximum_deviation.max(deviation);
+                complete &= deviation <= ENDPOINT_TOLERANCE;
+            }
+        }
+        if !complete {
+            continue;
+        }
+        candidates.push(ZeroEntityVertexCandidate {
+            incident_edge_endpoints: component
+                .into_iter()
+                .map(|index| (endpoints[index].0, endpoints[index].1))
+                .collect(),
+            representative_point,
+            maximum_deviation,
+        });
+    }
     candidates
 }
 
@@ -272,5 +366,49 @@ mod tests {
             physical_edge_candidates(&occurrences)[0].support_record_ordinals,
             [1, 2]
         );
+    }
+
+    #[test]
+    fn vertex_candidates_require_complete_endpoint_cliques() {
+        let edge = |support_record_ordinals, model_endpoints| ZeroEntityPhysicalEdgeCandidate {
+            face_record_ordinals: support_record_ordinals,
+            support_record_ordinals,
+            model_endpoints,
+        };
+        let edges = [
+            edge(
+                [1, 2],
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+            ),
+            edge(
+                [3, 4],
+                [Point3::new(0.001, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+            ),
+        ];
+
+        let candidates = vertex_candidates(&edges);
+        assert_eq!(candidates.len(), 3);
+        assert_eq!(candidates[0].incident_edge_endpoints, [(0, 0), (1, 0)]);
+        assert_eq!(candidates[0].maximum_deviation, 0.001);
+
+        let ambiguous = [
+            edge(
+                [1, 2],
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+            ),
+            edge(
+                [3, 4],
+                [Point3::new(0.001_5, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+            ),
+            edge(
+                [5, 6],
+                [Point3::new(0.003, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
+            ),
+        ];
+        let candidates = vertex_candidates(&ambiguous);
+        assert_eq!(candidates.len(), 3);
+        assert!(candidates
+            .iter()
+            .all(|candidate| candidate.incident_edge_endpoints.len() == 1));
     }
 }

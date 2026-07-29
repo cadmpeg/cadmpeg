@@ -82,6 +82,11 @@ current scores require those matrices and representative fixtures.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
+- Zero-entity face-local support occurrences with complete lifted endpoint
+  tapes form radial physical-edge candidates. Their endpoint coordinates form
+  geometric vertex candidates only when each coincidence component is a
+  complete pairwise clique within tolerance; ambiguous tolerance chains remain
+  unresolved.
 - Complete consolidated cone-face chart records retain their reference-and-
   control program, angular scale, and cone half-angle before the program's
   higher-level roles resolve. Consolidated parameter-space points retain all
