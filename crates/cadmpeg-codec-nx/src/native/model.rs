@@ -139,6 +139,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_pattern_construction_fixed_lanes: Vec<FeaturePatternConstructionFixedLane>,
     pub(crate) feature_pattern_transform_lanes: Vec<FeaturePatternTransformLane>,
     pub(crate) feature_multi_instance_output_lanes: Vec<FeatureMultiInstanceOutputLane>,
+    pub(crate) feature_identical_instance_output_lanes: Vec<FeatureIdenticalInstanceOutputLane>,
     pub(crate) feature_point_construction_headers: Vec<FeaturePointConstructionHeader>,
     pub(crate) feature_point_construction_scalar_lanes: Vec<FeaturePointConstructionScalarLane>,
     pub(crate) feature_draft_construction_references: Vec<FeatureDraftConstructionReference>,
@@ -468,6 +469,8 @@ impl NativeModel {
         );
         let feature_pattern_transform_lanes = feature_pattern_transform_lanes(container);
         let feature_multi_instance_output_lanes = feature_multi_instance_output_lanes(container);
+        let feature_identical_instance_output_lanes =
+            feature_identical_instance_output_lanes(container);
         let feature_point_construction_headers = feature_point_construction_headers(container);
         let feature_point_construction_scalar_lanes =
             feature_point_construction_scalar_lanes(container, &feature_point_construction_headers);
@@ -826,6 +829,7 @@ impl NativeModel {
                 feature_pattern_construction_fixed_lanes,
                 feature_pattern_transform_lanes,
                 feature_multi_instance_output_lanes,
+                feature_identical_instance_output_lanes,
                 feature_point_construction_headers,
                 feature_point_construction_scalar_lanes,
                 feature_draft_construction_references,

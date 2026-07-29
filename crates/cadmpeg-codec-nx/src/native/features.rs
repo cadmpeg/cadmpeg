@@ -1364,6 +1364,31 @@ pub struct FeatureMultiInstanceOutputLane {
     pub trailing_object_index_source_offsets: Vec<u64>,
 }
 
+/// Exact counted selector lane carried by an identical-instance output payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureIdenticalInstanceOutputLane {
+    /// Globally unique output-lane identity.
+    pub id: String,
+    /// Owning `IDENTICAL INSTANCE OUTPUT` operation label.
+    pub operation_label: String,
+    /// Schema index preceding the count field.
+    pub leading_schema_index: u8,
+    /// Schema index framing the serialized count.
+    pub count_schema_index: u8,
+    /// Three consecutive schema indices framing every selector row.
+    pub row_schema_indices: [u8; 3],
+    /// Count including the implicit owner row.
+    pub declared_count: u8,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
+    /// Absolute source offset of the leading schema index.
+    pub source_offset: u64,
+    /// Absolute source offsets of the selector tokens.
+    pub selector_source_offsets: Vec<u64>,
+}
+
 /// Exact leading construction header carried by a bounded point-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePointConstructionHeader {
@@ -5525,6 +5550,55 @@ pub fn feature_multi_instance_output_lanes(
                     .trailing_references
                     .into_iter()
                     .map(|reference| entry_offset + reference.offset as u64)
+                    .collect(),
+            });
+        }
+    }
+    lanes
+}
+
+/// Decode exact counted selector lanes from bounded identical-instance output
+/// payloads.
+pub fn feature_identical_instance_output_lanes(
+    container: &Container,
+) -> Vec<FeatureIdenticalInstanceOutputLane> {
+    let sections = container.om_sections();
+    let mut lanes = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(lane) = crate::om::identical_instance_output_payload_lane(record) else {
+                continue;
+            };
+            lanes.push(FeatureIdenticalInstanceOutputLane {
+                id: format!(
+                    "nx:feature-history:identical-instance-output-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                leading_schema_index: lane.leading_schema_index,
+                count_schema_index: lane.count_schema_index,
+                row_schema_indices: lane.row_schema_indices,
+                declared_count: lane.declared_count,
+                selectors: lane.selectors,
+                raw_selectors: lane.raw_selectors,
+                source_offset: entry_offset + lane.offset as u64,
+                selector_source_offsets: lane
+                    .selector_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
                     .collect(),
             });
         }

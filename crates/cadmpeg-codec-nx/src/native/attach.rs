@@ -268,7 +268,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(159);
+    namespace.version = namespace.version.max(160);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -312,6 +312,8 @@ fn attach_feature_operations(
         features.feature_pattern_construction_fixed_lanes.as_slice();
     let pattern_transform_lanes = features.feature_pattern_transform_lanes.as_slice();
     let multi_instance_output_lanes = features.feature_multi_instance_output_lanes.as_slice();
+    let identical_instance_output_lanes =
+        features.feature_identical_instance_output_lanes.as_slice();
     let point_construction_headers = features.feature_point_construction_headers.as_slice();
     let point_construction_scalar_lanes =
         features.feature_point_construction_scalar_lanes.as_slice();
@@ -535,6 +537,10 @@ fn attach_feature_operations(
         records_by_operation(pattern_transform_lanes, |lane| &lane.operation_label);
     let multi_instance_output_lanes_by_operation =
         records_by_operation(multi_instance_output_lanes, |lane| &lane.operation_label);
+    let identical_instance_output_lanes_by_operation =
+        records_by_operation(identical_instance_output_lanes, |lane| {
+            &lane.operation_label
+        });
     let point_construction_headers_by_operation = point_construction_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
@@ -1399,6 +1405,16 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert("multi_instance_output_lane".to_string(), lane.id.clone());
+        }
+        for lane in identical_instance_output_lanes_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                "identical_instance_output_lane".to_string(),
+                lane.id.clone(),
+            );
         }
         if let Some(header) = point_construction_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("point_construction_header".to_string(), header.id.clone());
@@ -3279,12 +3295,15 @@ fn non_boolean_feature_definition_with_parameters(
             thickness: None,
             side: None,
         },
-        "Pattern Feature" | "Pattern Geometry" | "Geometry Instance" | "Multi Instance Output" => {
-            FeatureDefinition::Pattern {
-                seeds: Vec::new(),
-                pattern: PatternKind::Unresolved { form: None },
-            }
-        }
+        "Pattern Feature"
+        | "Pattern Geometry"
+        | "Geometry Instance"
+        | "Multi Instance Output"
+        | "IDENTICAL INSTANCE OUTPUT"
+        | "Instance Feature" => FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved { form: None },
+        },
         "ASSOCIATIVE_INTERSECTION" | "Intersection Curve" => FeatureDefinition::SectionShape {
             first: BodySelection::Unresolved,
             second: BodySelection::Unresolved,
@@ -5219,7 +5238,13 @@ mod tests {
                 side: None,
             }
         ));
-        for kind in ["Pattern Feature", "Pattern Geometry", "Geometry Instance"] {
+        for kind in [
+            "Pattern Feature",
+            "Pattern Geometry",
+            "Geometry Instance",
+            "IDENTICAL INSTANCE OUTPUT",
+            "Instance Feature",
+        ] {
             assert!(matches!(
                 super::non_boolean_feature_definition(kind, &[], None, None, None),
                 FeatureDefinition::Pattern {

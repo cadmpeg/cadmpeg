@@ -906,6 +906,27 @@ pub struct MultiInstanceOutputPayloadLane {
     pub trailing_references: Vec<PayloadObjectReference>,
 }
 
+/// Exact counted selector lane in an identical-instance output payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdenticalInstanceOutputPayloadLane {
+    /// Absolute offset of the leading schema index.
+    pub offset: usize,
+    /// Schema index preceding the count field.
+    pub leading_schema_index: u8,
+    /// Schema index framing the serialized count.
+    pub count_schema_index: u8,
+    /// Three consecutive schema indices framing every selector row.
+    pub row_schema_indices: [u8; 3],
+    /// Count including the implicit owner row.
+    pub declared_count: u8,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
+    /// Absolute offsets of the compact-index selector tokens.
+    pub selector_offsets: Vec<usize>,
+}
+
 /// Exact construction header in a point-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PointFeaturePayloadHeader {
@@ -2320,6 +2341,73 @@ pub fn multi_instance_output_payload_lane(
         })
     };
     let matches = (0..=record.payload.len().saturating_sub(ENVELOPE.len()))
+        .filter_map(decode)
+        .collect::<Vec<_>>();
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
+}
+
+/// Decode the unique exactly counted selector lane in an
+/// `IDENTICAL INSTANCE OUTPUT` payload.
+pub fn identical_instance_output_payload_lane(
+    record: OperationRecord<'_>,
+) -> Option<IdenticalInstanceOutputPayloadLane> {
+    const ROW_MIDDLE: [u8; 2] = [0x01, 0x02];
+    const SENTINEL: [u8; 7] = [0xe0, 0x7f, 0xff, 0xff, 0xff, 0x00, 0x00];
+
+    if record.label.value != "IDENTICAL INSTANCE OUTPUT" {
+        return None;
+    }
+    let decode = |start: usize| {
+        let leading_schema_index = *record.payload.get(start)?;
+        let count_schema_index = *record.payload.get(start + 1)?;
+        (record.payload.get(start + 2) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 3)?;
+        (declared_count >= 2).then_some(())?;
+        let first_schema_index = count_schema_index.checked_add(1)?;
+        let second_schema_index = count_schema_index.checked_add(2)?;
+        let third_schema_index = count_schema_index.checked_add(3)?;
+        let mut at = start + 4;
+        let mut selectors = Vec::with_capacity(usize::from(declared_count - 1));
+        let mut raw_selectors = Vec::with_capacity(usize::from(declared_count - 1));
+        let mut selector_offsets = Vec::with_capacity(usize::from(declared_count - 1));
+        for ordinal in 2..=declared_count {
+            (record.payload.get(at) == Some(&first_schema_index)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&second_schema_index)).then_some(())?;
+            (record.payload.get(at + 2..at + 4) == Some(&ROW_MIDDLE)).then_some(())?;
+            (record.payload.get(at + 4) == Some(&third_schema_index)).then_some(())?;
+            at += 5;
+            let selector_offset = at;
+            let (selector, width) = compact_index(record.payload.get(at..)?)?;
+            let CompactIndex::Value(selector) = selector else {
+                return None;
+            };
+            selectors.push(selector);
+            raw_selectors.push(record.payload[at..at + width].to_vec());
+            selector_offsets.push(record.payload_offset + selector_offset);
+            at += width;
+            (record.payload.get(at) == Some(&0x00)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            at += 2;
+        }
+        let terminal_count = declared_count.checked_add(1)?;
+        (record.payload.get(at) == Some(&0x00)).then_some(())?;
+        (record.payload.get(at + 1) == Some(&terminal_count)).then_some(())?;
+        (record.payload.get(at + 2..at + 2 + SENTINEL.len()) == Some(&SENTINEL)).then_some(())?;
+        Some(IdenticalInstanceOutputPayloadLane {
+            offset: record.payload_offset + start,
+            leading_schema_index,
+            count_schema_index,
+            row_schema_indices: [first_schema_index, second_schema_index, third_schema_index],
+            declared_count,
+            selectors,
+            raw_selectors,
+            selector_offsets,
+        })
+    };
+    let matches = (0..record.payload.len().saturating_sub(3))
         .filter_map(decode)
         .collect::<Vec<_>>();
     let [lane] = matches.as_slice() else {

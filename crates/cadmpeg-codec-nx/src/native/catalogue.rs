@@ -2055,6 +2055,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_identical_instance_output_lanes",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_identical_instance_output_lanes, r, ns),
+        len: |m| m.features.feature_identical_instance_output_lanes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_point_construction_headers",
         tag: None,
         exactness: Exactness::ByteExact,

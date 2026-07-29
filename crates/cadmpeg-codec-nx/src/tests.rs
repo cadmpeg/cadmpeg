@@ -2743,6 +2743,71 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
 }
 
 #[test]
+fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
+    let payload = b"\xaa\x34\x13\x01\x04\x14\x15\x01\x02\x16\x80\x20\x00\x02\
+          \x14\x15\x01\x02\x16\x0f\x00\x03\
+          \x14\x15\x01\x02\x16\x81\x23\x00\x04\
+          \x00\x05\xe0\x7f\xff\xff\xff\x00\x00\xbb";
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "IDENTICAL INSTANCE OUTPUT",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let lane = crate::om::identical_instance_output_payload_lane(record)
+        .expect("complete identical-instance lane");
+    assert_eq!(lane.offset, 201);
+    assert_eq!(lane.leading_schema_index, 0x34);
+    assert_eq!(lane.count_schema_index, 0x13);
+    assert_eq!(lane.row_schema_indices, [0x14, 0x15, 0x16]);
+    assert_eq!(lane.declared_count, 4);
+    assert_eq!(lane.selectors, [0x20, 0x0f, 0x123]);
+    assert_eq!(
+        lane.raw_selectors,
+        [vec![0x80, 0x20], vec![0x0f], vec![0x81, 0x23]]
+    );
+    assert_eq!(lane.selector_offsets, [210, 219, 227]);
+
+    let mut wrong_ordinal = payload.to_vec();
+    wrong_ordinal[21] = 4;
+    assert!(
+        crate::om::identical_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &wrong_ordinal,
+            payload: &wrong_ordinal,
+            ..record
+        })
+        .is_none()
+    );
+    let mut wrong_terminal_count = payload.to_vec();
+    wrong_terminal_count[32] = 4;
+    assert!(
+        crate::om::identical_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &wrong_terminal_count,
+            payload: &wrong_terminal_count,
+            ..record
+        })
+        .is_none()
+    );
+    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(
+        crate::om::identical_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_geometry_instance_reference_requires_one_complete_field() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
@@ -11427,6 +11492,7 @@ mod golden {
         "feature_input_blocks",
         "feature_input_column_row_uses",
         "feature_input_column_targets",
+        "feature_identical_instance_output_lanes",
         "feature_multi_instance_output_lanes",
         "feature_operation_body_11_continuations",
         "feature_operation_body_members",
@@ -12226,7 +12292,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (199), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (200), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -12235,7 +12301,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 199, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 200, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",
