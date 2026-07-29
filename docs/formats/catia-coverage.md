@@ -175,6 +175,9 @@ current scores require those matrices and representative fixtures.
   candidates only. Conflicting candidates for one edge are discarded locally;
   they do not discard other pcurve records or override the edge's serialized
   vertex identities and parameter incidences.
+  Exact circular-helix constructions retain degree-1 sampled caches whose first
+  and last knots are bit-identical to the analytic angular interval, so their
+  edge ranges remain inside the canonical cache domain.
   Loop-to-oriented-use, oriented-use-to-incidence, physical endpoint identity,
   and body/shell binding remain unresolved.
 

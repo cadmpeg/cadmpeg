@@ -86,7 +86,11 @@ pub(crate) fn circular_helix_cache(
     let step = sweep / segment_count as f64;
     let samples = (0..=segment_count)
         .map(|index| {
-            let parameter = angle_range[0] + index as f64 * step;
+            let parameter = if index == segment_count {
+                angle_range[1]
+            } else {
+                angle_range[0] + index as f64 * step
+            };
             Some((parameter, circular_helix_point(construction, parameter)?))
         })
         .collect::<Option<Vec<_>>>()?;
@@ -330,4 +334,30 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
         .iter()
         .try_fold(0u32, |sum, value| sum.checked_add(*value))?
         .checked_sub(degree + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    use super::circular_helix_cache;
+
+    #[test]
+    fn circular_helix_cache_preserves_exact_interval_endpoints() {
+        let range = [0.125, 1.570_797_917_999_999_6];
+        let definition = ProceduralCurveDefinition::Helix {
+            angle_range: range,
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(1.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 1.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            apex_factor: 0.0,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        };
+
+        let cache = circular_helix_cache(&definition, 1.0e-4).expect("valid helix");
+        assert_eq!(cache.curve.knots[1], range[0]);
+        assert_eq!(cache.curve.knots[cache.curve.knots.len() - 2], range[1]);
+    }
 }
