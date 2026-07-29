@@ -42,6 +42,9 @@ current scores require those matrices and representative fixtures.
   exact field classes, definition-bound values, and inter-object reference
   occurrences. A literal occupying an assigned owner slot remains distinct
   from both a reference owner and a head without an owner role.
+- Complete non-value entity suffixes retain escaped words and states,
+  standalone `81 49` tokens, fixed `FE F6` payloads, and paged-atom state
+  values as disjoint typed productions.
 - Complete two-definition value chains retain the repeated schema selector,
   second role definition, catalog-resolved selected value, and structural
   ownership. Each design object retains its chain-value entity identities in
