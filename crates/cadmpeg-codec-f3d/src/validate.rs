@@ -2548,7 +2548,6 @@ fn validate_body_recipe_operands<'a>(
     for operand in &native.design_body_recipe_operands {
         let native_stream = design_stream(&operand.id);
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
-        let group = operand_groups_by_index.get(&(native_stream, operand.group_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index));
         let nested_record_index = u32::try_from(operand.nested_record_index).ok();
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
@@ -2559,16 +2558,37 @@ fn validate_body_recipe_operands<'a>(
             .byte_offset
             .saturating_add(26)
             .saturating_add(reference_bytes);
+        let valid_owner = scope.is_some_and(|scope| match operand.owner {
+            records::DesignBodyRecipeOperandOwner::Group {
+                group_record_index,
+                group_member_ordinal,
+            } => operand_groups_by_index
+                .get(&(native_stream, group_record_index))
+                .is_some_and(|group| {
+                    group.scope_record_index == operand.scope_record_index
+                        && usize::try_from(group_member_ordinal)
+                            .ok()
+                            .and_then(|ordinal| group.members.get(ordinal))
+                            == Some(&operand.record_index)
+                }),
+            records::DesignBodyRecipeOperandOwner::ScopeReference {
+                scope_reference_ordinal,
+            } => {
+                !scope_reference_ordinal.is_multiple_of(2)
+                    && usize::try_from(scope_reference_ordinal)
+                        .ok()
+                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        == Some(&operand.record_index)
+                    && scope.combine_operation.as_ref().is_some_and(|operation| {
+                        operation
+                            .body_selection_record_indexes
+                            .contains(&operand.record_index)
+                    })
+            }
+        });
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && scope.is_some()
-            && group.is_some_and(|group| {
-                group.scope_record_index == operand.scope_record_index
-                    && usize::try_from(operand.group_member_ordinal)
-                        .ok()
-                        .and_then(|ordinal| group.members.get(ordinal))
-                        == Some(&operand.record_index)
-            })
+            && valid_owner
             && header.is_some_and(|header| {
                 header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
             })
@@ -2604,11 +2624,7 @@ fn validate_body_recipe_operands<'a>(
             && operand.next_record_index == operand.record_index.saturating_add(4)
             && operand.next_byte_offset > operand.nested_record_index_offset
             && expected_operands.get(operand.id.as_str()) == Some(&operand)
-            && member_slots.insert((
-                native_stream,
-                operand.group_record_index,
-                operand.group_member_ordinal,
-            ))
+            && member_slots.insert((native_stream, operand.owner))
             && operand_records.insert((native_stream, operand.record_index));
         if !valid {
             findings.push(Finding {
@@ -2698,8 +2714,7 @@ fn validate_operand_group_identity_chains<'a>(
                         native.design_body_recipe_operands.iter().any(|operand| {
                             design_stream(&operand.id) == native_stream
                                 && operand.scope_record_index == group.scope_record_index
-                                && operand.group_record_index == group.record_index
-                                && operand.group_member_ordinal == ordinal
+                                && operand.owner.group() == Some((group.record_index, ordinal))
                                 && operand.record_index == *record_index
                                 && body_recipe_operand_records
                                     .contains(&(native_stream, operand.record_index))

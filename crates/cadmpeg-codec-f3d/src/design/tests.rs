@@ -4744,7 +4744,24 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     }
     fn operation_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
         indexed_header(bytes, b"283", record_index);
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.push(1);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&24u32.to_le_bytes());
         bytes.extend_from_slice(b"DcFeatureOperationIdFlag");
+        bytes.extend_from_slice(&23u32.to_le_bytes());
+        bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&7u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&selection_record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        indexed_header(bytes, b"259", record_index);
+    }
+    fn target_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
+        indexed_header(bytes, b"283", record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.push(1);
         bytes.extend_from_slice(&selection_record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
@@ -4786,8 +4803,12 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     tail[31..35].copy_from_slice(&16u32.to_le_bytes());
     bytes.extend_from_slice(&tail);
     indexed_header(&mut bytes, b"259", scope_record_index);
-    for pair in references.chunks_exact(2) {
-        operation_record(&mut bytes, pair[0], pair[1]);
+    for (ordinal, pair) in references.chunks_exact(2).enumerate() {
+        if ordinal == 2 {
+            target_record(&mut bytes, pair[0], pair[1]);
+        } else {
+            operation_record(&mut bytes, pair[0], pair[1]);
+        }
         selection_record(&mut bytes, pair[1], u8::try_from(pair[1]).unwrap());
     }
 
@@ -4806,7 +4827,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             operation_offset: 20,
             keep_tools: true,
             keep_tools_offset: 25,
-            body_selection_record_indexes: vec![92, 94, 96],
+            body_selection_record_indexes: vec![96, 92, 94],
         }
     );
     scope.combine_operation = Some(operation);
@@ -4814,11 +4835,11 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         project_combine(&scope, "Design1/BulkStream.dat"),
         Some(cadmpeg_ir::features::FeatureDefinition::Combine {
             target: cadmpeg_ir::features::BodySelection::Native(
-                "Design1/BulkStream.dat:design-record#92".into(),
+                "Design1/BulkStream.dat:design-record#96".into(),
             ),
             tools: cadmpeg_ir::features::BodySelection::NativeSet(vec![
+                "Design1/BulkStream.dat:design-record#92".into(),
                 "Design1/BulkStream.dat:design-record#94".into(),
-                "Design1/BulkStream.dat:design-record#96".into(),
             ]),
             op: cadmpeg_ir::features::BooleanOp::Join,
             keep_tools: true,
@@ -6103,6 +6124,13 @@ fn body_recipe_operand_decodes_counted_reference_table() {
     assert_eq!(operand.references[0].form, 3);
     assert_eq!(operand.references[1].design_reference, 2266);
     assert_eq!(operand.references[1].form, 32);
+    assert_eq!(
+        operand.owner,
+        crate::records::DesignBodyRecipeOperandOwner::Group {
+            group_record_index: 90,
+            group_member_ordinal: 0,
+        }
+    );
     assert_eq!(operand.nested_record_index, 103);
     assert_eq!(operand.recipe_id, recipe.id);
     assert_eq!(operand.next_byte_offset, next_at as u64);

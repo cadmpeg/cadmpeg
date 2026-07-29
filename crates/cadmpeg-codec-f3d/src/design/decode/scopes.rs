@@ -2191,7 +2191,8 @@ pub(crate) fn exact_combine_operation(
         1 => true,
         _ => return None,
     };
-    let mut body_selection_record_indexes = Vec::with_capacity(scope.reference_members.len() / 2);
+    let mut target = None;
+    let mut tools = Vec::with_capacity(scope.reference_members.len() / 2);
     for pair in scope.reference_members.chunks_exact(2) {
         let [operation_record_index, selection_record_index] = pair else {
             return None;
@@ -2200,15 +2201,16 @@ pub(crate) fn exact_combine_operation(
         let [(operation_at, operation_end)] = operation_frames.as_slice() else {
             return None;
         };
-        let mut selection_reference = [0; 11];
-        selection_reference[0] = 1;
-        selection_reference[1..5].copy_from_slice(&selection_record_index.to_le_bytes());
-        if !bytes
-            .get(*operation_at..*operation_end)?
-            .windows(selection_reference.len())
-            .any(|window| window == selection_reference)
-        {
-            return None;
+        match combine_operation_identity_role(
+            bytes.get(*operation_at..*operation_end)?,
+            *selection_record_index,
+        )? {
+            CombineOperandRole::Target => {
+                if target.replace(*selection_record_index).is_some() {
+                    return None;
+                }
+            }
+            CombineOperandRole::Tool => tools.push(*selection_record_index),
         }
         let selection_frames = indexed_record_pairs(bytes, *selection_record_index);
         let [(selection_at, selection_end)] = selection_frames.as_slice() else {
@@ -2217,8 +2219,14 @@ pub(crate) fn exact_combine_operation(
         if !contains_consecutive_guid_pair(bytes.get(*selection_at..*selection_end)?) {
             return None;
         }
-        body_selection_record_indexes.push(*selection_record_index);
     }
+    let target = target?;
+    if tools.is_empty() {
+        return None;
+    }
+    let mut body_selection_record_indexes = Vec::with_capacity(tools.len() + 1);
+    body_selection_record_indexes.push(target);
+    body_selection_record_indexes.extend(tools);
     Some(DesignCombineOperation {
         operation,
         operation_offset: u64::try_from(start + 20).ok()?,
@@ -2226,6 +2234,44 @@ pub(crate) fn exact_combine_operation(
         keep_tools_offset: u64::try_from(start + 25).ok()?,
         body_selection_record_indexes,
     })
+}
+
+#[derive(Clone, Copy)]
+enum CombineOperandRole {
+    Target,
+    Tool,
+}
+
+fn combine_operation_identity_role(
+    frame: &[u8],
+    selection_record_index: u32,
+) -> Option<CombineOperandRole> {
+    let selection_reference = selection_record_index.to_le_bytes();
+    if frame.get(11..21)? == [0; 10]
+        && u32_at(frame, 21)? == 1
+        && frame.get(25) == Some(&1)
+        && frame.get(26..30)? == selection_reference
+        && frame.get(30..36)? == [0; 6]
+    {
+        return Some(CombineOperandRole::Target);
+    }
+    if frame.get(11..20)? != [0; 9] || frame.get(20) != Some(&1) || u32_at(frame, 21)? != 1 {
+        return None;
+    }
+    let (property, after_property) = lp_ascii_filtered(frame, 25, 0..=2000, u8::is_ascii_graphic)?;
+    let (property_type, after_property_type) =
+        lp_ascii_filtered(frame, after_property, 0..=2000, u8::is_ascii_graphic)?;
+    let count_at = after_property_type.checked_add(8)?;
+    if property != "DcFeatureOperationIdFlag"
+        || property_type != "IntrinsicMetaTypeuint64"
+        || u32_at(frame, count_at)? != 1
+        || frame.get(count_at + 4) != Some(&1)
+        || frame.get(count_at + 5..count_at + 9)? != selection_reference
+        || frame.get(count_at + 9..count_at + 15)? != [0; 6]
+    {
+        return None;
+    }
+    Some(CombineOperandRole::Tool)
 }
 
 pub(crate) fn exact_draft_operation(

@@ -806,8 +806,7 @@ fn bind_body_recipe_body_selection(
             return;
         };
         let mut matching_operands = operands.iter().filter(|operand| {
-            operand.group_record_index == group.record_index
-                && operand.group_member_ordinal == ordinal
+            operand.owner.group() == Some((group.record_index, ordinal))
                 && operand.record_index == record_index
                 && crate::ids::native_stream(&operand.id) == stream
         });
@@ -3064,8 +3063,7 @@ fn bind_body_recipe_face_selection(
             return;
         };
         let mut matching_operands = operands.iter().filter(|operand| {
-            operand.group_record_index == group.record_index
-                && operand.group_member_ordinal == ordinal
+            operand.owner.group() == Some((group.record_index, ordinal))
                 && operand.record_index == *record_index
                 && crate::ids::native_stream(&operand.id) == stream
         });

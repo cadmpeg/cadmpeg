@@ -25,7 +25,7 @@ use crate::records::{
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
-pub const F3D_NATIVE_VERSION: u32 = 8;
+pub const F3D_NATIVE_VERSION: u32 = 9;
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_entities",

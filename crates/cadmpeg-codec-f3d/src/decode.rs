@@ -2620,6 +2620,7 @@ fn extend_related_design_records(
     native.design_body_recipe_operands =
         crate::design::decode::operands::decode_body_recipe_operands(
             scan,
+            &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
             &native.design_record_headers,
             &native.construction_recipes,

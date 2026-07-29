@@ -12,17 +12,18 @@ use crate::design::decode::sketch::{
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand, DesignBodyRecipeReference,
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignObjectKind,
-    DesignParameter, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    DesignSketchProfileOperand, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
-    SketchPoint, SketchRelationOperand,
+    ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand,
+    DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignConstructionOperandGroup,
+    DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
+    DesignConstructionPersistentIdentity, DesignEdgeIdentityOperand, DesignEdgeOperand,
+    DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeFaceRole,
+    DesignExtrudeOperandRole, DesignExtrudePrologue, DesignExtrudeSelectionGroup,
+    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup,
+    DesignFilletRadiusLaw, DesignObjectKind, DesignParameter, DesignParameterOwner,
+    DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
+    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
+    LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
+    SketchRelationOperand,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, u32_at, u64_at as read_u64};
@@ -1449,6 +1450,7 @@ pub(crate) fn parse_entity_selection_operand(
 /// Decode whole-body construction operands that contain one persistent body recipe.
 pub fn decode_body_recipe_operands(
     scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
@@ -1483,23 +1485,7 @@ pub fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(start) = usize::try_from(header.byte_offset).ok() else {
-                continue;
-            };
-            let matching_recipes = recipes
-                .iter()
-                .filter(|recipe| {
-                    native_stream(&recipe.id) == Some(stream)
-                        && recipe.kind == ConstructionRecipeKind::Body
-                        && recipe.byte_offset > header.byte_offset
-                })
-                .filter_map(|recipe| {
-                    let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
-                    body_recipe_operand_end(bytes, start, header.record_index, recipe_at)?;
-                    Some(recipe)
-                })
-                .collect::<Vec<_>>();
-            let [recipe] = matching_recipes.as_slice() else {
+            let Some(recipe) = unique_body_recipe(bytes, header, recipes, stream) else {
                 continue;
             };
             if let Some(mut operand) =
@@ -1511,8 +1497,87 @@ pub fn decode_body_recipe_operands(
             }
         }
     }
+    for scope in scopes
+        .iter()
+        .filter(|scope| scope.combine_operation.is_some())
+    {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(operation) = &scope.combine_operation else {
+            continue;
+        };
+        for record_index in &operation.body_selection_record_indexes {
+            let mut ordinals = scope
+                .reference_members
+                .iter()
+                .enumerate()
+                .filter(|(_, member)| *member == record_index)
+                .filter_map(|(ordinal, _)| u32::try_from(ordinal).ok());
+            let Some(scope_reference_ordinal) = ordinals.next() else {
+                continue;
+            };
+            if ordinals.next().is_some() || scope_reference_ordinal.is_multiple_of(2) {
+                continue;
+            }
+            let Some(Some(header)) = headers_by_identity.get(&(stream, *record_index)) else {
+                continue;
+            };
+            let Some(recipe) = unique_body_recipe(bytes, header, recipes, stream) else {
+                continue;
+            };
+            let owner = DesignBodyRecipeOperandOwner::ScopeReference {
+                scope_reference_ordinal,
+            };
+            if let Some(mut operand) =
+                parse_body_recipe_operand_frame(bytes, scope.record_index, owner, header, recipe)
+            {
+                operand.id =
+                    ids::native_design_body_recipe_operand_id(&entry.name, header.byte_offset);
+                out.push(operand);
+            }
+        }
+    }
     out.sort_by_key(|operand| operand.id.clone());
+    let mut owner_counts = HashMap::new();
+    for operand in &out {
+        *owner_counts.entry(operand.id.clone()).or_insert(0_u32) += 1;
+    }
+    out.retain(|operand| owner_counts.get(&operand.id) == Some(&1));
     Ok(out)
+}
+
+fn unique_body_recipe<'a>(
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+    recipes: &'a [ConstructionRecipe],
+    stream: &str,
+) -> Option<&'a ConstructionRecipe> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    let mut matching = recipes
+        .iter()
+        .filter(|recipe| {
+            native_stream(&recipe.id) == Some(stream)
+                && recipe.kind == ConstructionRecipeKind::Body
+                && recipe.byte_offset > header.byte_offset
+        })
+        .filter(|recipe| {
+            usize::try_from(recipe.byte_offset)
+                .ok()
+                .is_some_and(|recipe_at| {
+                    body_recipe_operand_end(bytes, start, header.record_index, recipe_at).is_some()
+                })
+        });
+    let recipe = matching.next()?;
+    matching.next().is_none().then_some(recipe)
 }
 
 fn body_recipe_operand_end(
@@ -1558,22 +1623,28 @@ pub(crate) fn parse_body_recipe_operand(
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
 ) -> Option<DesignBodyRecipeOperand> {
-    let start = usize::try_from(header.byte_offset).ok()?;
-    let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
-    let next_at = body_recipe_operand_end(bytes, start, header.record_index, recipe_at)?;
-    parse_body_recipe_operand_frame(bytes, group, group_member_ordinal, header, recipe, next_at)
+    parse_body_recipe_operand_frame(
+        bytes,
+        group.scope_record_index,
+        DesignBodyRecipeOperandOwner::Group {
+            group_record_index: group.record_index,
+            group_member_ordinal,
+        },
+        header,
+        recipe,
+    )
 }
 
 fn parse_body_recipe_operand_frame(
     bytes: &[u8],
-    group: &DesignConstructionOperandGroup,
-    group_member_ordinal: u32,
+    scope_record_index: u32,
+    owner: DesignBodyRecipeOperandOwner,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
-    next_at: usize,
 ) -> Option<DesignBodyRecipeOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
+    let next_at = body_recipe_operand_end(bytes, start, header.record_index, recipe_at)?;
     let reference_count = usize::try_from(u32_at(bytes, start + 21)?).ok()?;
     if start >= recipe_at
         || recipe_at >= next_at
@@ -1616,9 +1687,8 @@ fn parse_body_recipe_operand_frame(
     }
     Some(DesignBodyRecipeOperand {
         id: String::new(),
-        scope_record_index: group.scope_record_index,
-        group_record_index: group.record_index,
-        group_member_ordinal,
+        scope_record_index,
+        owner,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),

@@ -2124,10 +2124,9 @@ pub struct DesignBodyRecipeOperand {
     pub id: String,
     /// Owning feature scope record.
     pub scope_record_index: u32,
-    /// Owning construction-operand group record.
-    pub group_record_index: u32,
-    /// Zero-based position in the group's ordered member run.
-    pub group_member_ordinal: u32,
+    /// Exact feature-scope ownership form.
+    #[serde(flatten)]
+    pub owner: DesignBodyRecipeOperandOwner,
     /// Primary indexed-record identity.
     pub record_index: u32,
     /// Primary indexed-header byte offset.
@@ -2160,6 +2159,37 @@ pub struct DesignBodyRecipeOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this operand.
     pub next_byte_offset: u64,
+}
+
+/// Exact owner of a whole-body construction operand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum DesignBodyRecipeOperandOwner {
+    /// Operand named by a counted construction-operand group.
+    Group {
+        /// Owning construction-operand group record.
+        group_record_index: u32,
+        /// Zero-based position in the group's ordered member run.
+        group_member_ordinal: u32,
+    },
+    /// Standalone operand named directly by the feature scope reference table.
+    ScopeReference {
+        /// Zero-based position in the scope's ordered reference table.
+        scope_reference_ordinal: u32,
+    },
+}
+
+impl DesignBodyRecipeOperandOwner {
+    /// Return the construction-group record and member position, when grouped.
+    pub const fn group(self) -> Option<(u32, u32)> {
+        match self {
+            Self::Group {
+                group_record_index,
+                group_member_ordinal,
+            } => Some((group_record_index, group_member_ordinal)),
+            Self::ScopeReference { .. } => None,
+        }
+    }
 }
 
 /// One counted persistent reference inside a whole-body recipe operand.
