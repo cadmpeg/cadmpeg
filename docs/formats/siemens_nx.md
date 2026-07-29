@@ -928,6 +928,14 @@ evaluation requires both support points to agree. Inverse evaluation projects
 onto the exact model-space line and accepts the parameter only after the
 two-support forward check.
 
+For a cylindrical or conical support, the two endpoint inverses establish a
+generator pcurve only when fixing the first endpoint's azimuth and varying the
+axial parameter reproduces both EDGE endpoints within tolerance. The resulting
+chart is linear in the common parameter. Its inverse recovers the analytic
+surface parameters, solves the axial affine map, and applies the complete
+two-support forward check. Other cylindrical and conical endpoint relations do
+not become generator charts.
+
 | Ref | Role                                                                                       |
 | --- | ------------------------------------------------------------------------------------------ |
 | 0/1 | primary support surface + type-59 second-support bridge (order set by the `0x00cc` marker) |

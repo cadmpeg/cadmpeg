@@ -5758,7 +5758,12 @@ fn exact_boundary_pcurve(
     range: [f64; 2],
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
-    (range[0].is_finite() && range[1].is_finite() && range[0] < range[1]).then_some(())?;
+    (range[0].is_finite()
+        && range[1].is_finite()
+        && range[0] < range[1]
+        && tolerance.is_finite()
+        && tolerance >= 0.0)
+        .then_some(())?;
     let carrier = ir
         .model
         .surfaces
@@ -5769,8 +5774,12 @@ fn exact_boundary_pcurve(
             endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
         let [first, second] = [first?, second?];
         for (endpoint, parameter) in endpoints.into_iter().zip([first, second]) {
+            if !parameter.u.is_finite() || !parameter.v.is_finite() {
+                return None;
+            }
             let mapped = decoded_surface_point(ir, surface, parameter.u, parameter.v)?;
-            if point_distance(mapped, endpoint) > tolerance {
+            let error = point_distance(mapped, endpoint);
+            if !error.is_finite() || error > tolerance {
                 return None;
             }
         }
@@ -5779,7 +5788,10 @@ fn exact_boundary_pcurve(
             (second.u - first.u) / parameter_span,
             (second.v - first.v) / parameter_span,
         );
-        (direction.u != 0.0 || direction.v != 0.0).then_some(())?;
+        (direction.u.is_finite()
+            && direction.v.is_finite()
+            && (direction.u != 0.0 || direction.v != 0.0))
+            .then_some(())?;
         return Some(PcurveGeometry::Line {
             origin: Point2::new(
                 first.u - direction.u * range[0],
@@ -5787,6 +5799,36 @@ fn exact_boundary_pcurve(
             ),
             direction,
         });
+    }
+    if matches!(
+        &carrier.geometry,
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
+    ) {
+        let [first, second] =
+            endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
+        let [first, second] = [first?, second?];
+        if [first.u, first.v, second.u, second.v]
+            .into_iter()
+            .any(|value| !value.is_finite())
+        {
+            return None;
+        }
+        let parameter_span = range[1] - range[0];
+        let varying_scale = (second.v - first.v) / parameter_span;
+        (varying_scale.is_finite() && varying_scale != 0.0).then_some(())?;
+        let candidate = PcurveGeometry::Line {
+            origin: Point2::new(first.u, first.v - varying_scale * range[0]),
+            direction: Point2::new(0.0, varying_scale),
+        };
+        for (endpoint, parameter) in endpoints.into_iter().zip(range) {
+            let uv = pcurve_uv(&candidate, parameter)?;
+            let mapped = decoded_surface_point(ir, surface, uv.u, uv.v)?;
+            let error = point_distance(mapped, endpoint);
+            if !error.is_finite() || error > tolerance {
+                return None;
+            }
+        }
+        return Some(candidate);
     }
     let SurfaceGeometry::Nurbs(nurbs) = &carrier.geometry else {
         return None;
@@ -5797,9 +5839,13 @@ fn exact_boundary_pcurve(
         nurbs_parameters(nurbs, endpoints[1], None)?,
     ];
     for index in 0..2 {
+        if !parameters[index].u.is_finite() || !parameters[index].v.is_finite() {
+            return None;
+        }
         let point =
             cadmpeg_ir::eval::nurbs_surface_point(nurbs, parameters[index].u, parameters[index].v)?;
-        if point_distance(point, endpoints[index]) > tolerance {
+        let error = point_distance(point, endpoints[index]);
+        if !error.is_finite() || error > tolerance {
             return None;
         }
     }

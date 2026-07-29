@@ -947,6 +947,12 @@ pub fn model_curve_parameter_near_point(
                 (denominator.is_finite() && denominator > 0.0)
                     .then(|| offset.dot(tangent) / denominator)
             }
+            SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
+                if direction.u == 0.0 && direction.v != 0.0 =>
+            {
+                analytic_surface_parameters(&surface.geometry, point)
+                    .map(|uv| (uv.v - origin.v) / direction.v)
+            }
             SurfaceGeometry::Nurbs(surface) => {
                 let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
                     if direction.u == 0.0 && direction.v != 0.0 {
