@@ -2133,19 +2133,23 @@ where `<variant>` is `c8` or `d8`. Before an explicit second-position `f8`,
 `f7 <canonical-reference>` identifies the replayed schema position and does
 not belong to either identifier array. An omitted second-position extent also
 omits that reference. The unanchored positional form ends the pair immediately
-before `e1 e1 <row-id> e3 <suffix> <selector> <row-id> 00 e1 00 e3`.
+before `e1 e1 <row-id> e3 <suffix> <selector> <row-id> 00 e1 00 <tail>`.
 `<suffix>` is either `e3` or `f7 <canonical-reference> e3`. The repeated compact
-`row-id` values must agree. The pair begins immediately after a compound close,
-and its two stateful extents must consume the bytes up to that suffix exactly.
+`row-id` values must agree. `<tail>` is either the `e3` compound close or an
+`e1` null row-tail marker. The pair begins immediately after a compound
+close, and its two stateful extents must consume the bytes up to that suffix
+exactly.
 An unanchored row can instead terminate two explicit affected arrays after
 generated-surface and generated-edge arrays. In that form the final two
 `f8 <count> <ids...>` arrays before the repeated-row suffix are
 `geoms_affected` and `edgs_affected`. The arrays are adjacent, separated by
-`f7 <reference>`, or separated by
+`f7 <reference>`, separated by `f0 f7 <reference>`, or separated by
 `f1 f7 <reference> 01 e3 [f7 <reference>]`. The second array is followed
 immediately by the repeated-row suffix, by `f1 f7 <reference>` and that
 suffix, or by `f5 96 92 00` and that suffix. Earlier arrays in the row remain
-generated-output tables. More than one exact pair leaves the row opaque.
+generated-output tables. The exact trailing explicit-array form takes
+precedence over inherited-extent probing for the same suffix. More than one
+exact pair leaves the row opaque.
 
 Repeated named affected-ID arrays for one feature and namespace are distinct
 stored states. They define a neutral edge selection, parent set, generated

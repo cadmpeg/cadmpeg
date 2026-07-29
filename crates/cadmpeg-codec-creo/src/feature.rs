@@ -6262,6 +6262,9 @@ fn replay_array_separator(bytes: &[u8]) -> bool {
     if replay_entity_reference_end(bytes, 0) == Some(bytes.len()) {
         return true;
     }
+    if bytes.first() == Some(&0xf0) {
+        return replay_entity_reference_end(bytes, 1) == Some(bytes.len());
+    }
     if bytes.first() != Some(&0xf1) {
         return false;
     }
@@ -6353,12 +6356,17 @@ fn unique_unanchored_replay_pair(
         if after_selector == selector_start
             || after_repeated_id == after_selector
             || repeated_row_id != row_id
-            || row.body.get(after_repeated_id..after_repeated_id + 4)
-                != Some(&[0x00, 0xe1, 0x00, psb::token::COMPOUND_CLOSE])
+            || !matches!(
+                row.body.get(after_repeated_id..after_repeated_id + 4),
+                Some([0x00, 0xe1, 0x00, 0xe1 | psb::token::COMPOUND_CLOSE])
+            )
         {
             continue;
         }
-        let candidate_count = candidates.len();
+        if let Some(pair) = explicit_replay_pair_before_suffix(row, suffix) {
+            candidates.push(pair);
+            continue;
+        }
         for start in 1..suffix {
             if row.body[start - 1] != psb::token::COMPOUND_CLOSE {
                 continue;
@@ -6368,11 +6376,6 @@ fn unique_unanchored_replay_pair(
             };
             if pair.consumed == suffix - start {
                 candidates.push((pair, start));
-            }
-        }
-        if candidates.len() == candidate_count {
-            if let Some(pair) = explicit_replay_pair_before_suffix(row, suffix) {
-                candidates.push(pair);
             }
         }
     }
@@ -8346,6 +8349,23 @@ mod tests {
         assert_eq!(decoded[0].edge_ids, vec![10, 11]);
         assert_eq!(decoded[0].geometry_extent, ReplayExtentSource::Explicit);
         assert_eq!(decoded[0].edge_extent, ReplayExtentSource::Explicit);
+    }
+
+    #[test]
+    fn positional_round_replay_accepts_null_row_tail() {
+        let mut row = unanchored_replay_row(
+            1,
+            40,
+            Some(74),
+            &[0xf8, 2, 10, 11, 0xf0, 0xf7, 75, 0xf8, 2, 20, 21],
+        );
+        *row.body.last_mut().expect("suffix tail") = 0xe1;
+
+        let decoded = replay_affected_ids(&[row]);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].geometry_ids, vec![10, 11]);
+        assert_eq!(decoded[0].edge_ids, vec![20, 21]);
     }
 
     #[test]
