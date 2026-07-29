@@ -1080,6 +1080,14 @@ mod tests {
             bounded_occurrence_range([8.0, 2.0], [0.0, 10.0]),
             Some([8.0, 2.0])
         );
+
+        let tiny = 1e-200_f64;
+        assert_eq!(
+            bounded_occurrence_range([0.0, tiny], [0.0, tiny]),
+            Some([0.0, tiny])
+        );
+        assert!(bounded_occurrence_range([0.0, 2.0 * tiny], [0.0, tiny]).is_none());
+        assert!(bounded_occurrence_range([0.0, tiny], [tiny, 0.0]).is_none());
     }
 
     #[test]
