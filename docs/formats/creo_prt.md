@@ -2147,6 +2147,9 @@ output set, or round support set only when their ordered identifier arrays are
 identical. Conflicting arrays remain native operation parameters.
 An agreed `edgs_affected` identifier selects the B-rep edge with the same
 `crv_array` curve identifier when that edge is present in the transferred body.
+When that global edge is absent, the unique `crv_array` topology row with the
+same identifier selects the feature-local edge in the regenerated result of
+the row's `feat_id` feature.
 The bodies containing those selected edges are the feature's modified outputs.
 Positional replay geometry and edge arrays use the same agreement rule,
 including empty arrays; an empty and a nonempty state conflict.

@@ -19,10 +19,11 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
     ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, GeneratedFaceRef,
-    HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
-    PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    RevolveExtent, SurfaceBoundary, SurfaceContinuity, Termination, ThickenSide, VertexSelection,
+    FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, GeneratedEdgeRef,
+    GeneratedFaceRef, HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef,
+    PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RevolveExtent, SurfaceBoundary, SurfaceContinuity, Termination,
+    ThickenSide, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -15833,9 +15834,43 @@ fn feature_edge_selection(
             .all(|edge| ir.model.edges.iter().any(|candidate| candidate.id == *edge))
     {
         Some(EdgeSelection::Resolved { edges, native })
+    } else if let Some(edges) = generated_curve_edge_refs(
+        ids,
+        &scan.curves.topology_rows,
+        &ir.model
+            .features
+            .iter()
+            .map(|feature| feature.id.clone())
+            .collect(),
+    ) {
+        Some(EdgeSelection::Generated { edges, native })
     } else {
         Some(EdgeSelection::Native(native))
     }
+}
+
+fn generated_curve_edge_refs(
+    curve_ids: &[u32],
+    rows: &[crate::curve::CurveTopologyRow],
+    available_features: &BTreeSet<IrFeatureId>,
+) -> Option<Vec<GeneratedEdgeRef>> {
+    let unique_rows = crate::topology::uniquely_identified_rows(rows)
+        .into_iter()
+        .map(|row| (row.id, row))
+        .collect::<BTreeMap<_, _>>();
+    curve_ids
+        .iter()
+        .map(|curve_id| {
+            let row = unique_rows.get(curve_id)?;
+            let feature = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
+            available_features
+                .contains(&feature)
+                .then_some(GeneratedEdgeRef {
+                    feature,
+                    local_id: format!("curve#{curve_id}"),
+                })
+        })
+        .collect()
 }
 
 fn parallel_support_radius(planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>) -> Option<f64> {

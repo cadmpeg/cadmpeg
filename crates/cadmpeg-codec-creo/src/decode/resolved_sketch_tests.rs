@@ -345,6 +345,46 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
 }
 
 #[test]
+fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
+    let row = |id, feature_id, offset| crate::curve::CurveTopologyRow {
+        id,
+        type_byte: 8,
+        feature_id,
+        directions: [1, 0xf6],
+        faces: [10, 11],
+        next_edges: [id, id],
+        offset,
+    };
+    let rows = [row(45, 12, 100), row(46, 18, 200)];
+    let producers = BTreeSet::from([
+        IrFeatureId("creo:model:feature#12".to_string()),
+        IrFeatureId("creo:model:feature#18".to_string()),
+    ]);
+
+    assert_eq!(
+        generated_curve_edge_refs(&[45, 46], &rows, &producers),
+        Some(vec![
+            GeneratedEdgeRef {
+                feature: IrFeatureId("creo:model:feature#12".to_string()),
+                local_id: "curve#45".to_string(),
+            },
+            GeneratedEdgeRef {
+                feature: IrFeatureId("creo:model:feature#18".to_string()),
+                local_id: "curve#46".to_string(),
+            },
+        ])
+    );
+    assert_eq!(
+        generated_curve_edge_refs(&[45], &[row(45, 12, 100), row(45, 12, 300)], &producers),
+        None
+    );
+    assert_eq!(
+        generated_curve_edge_refs(&[45], &rows, &BTreeSet::new()),
+        None
+    );
+}
+
+#[test]
 fn closed_fallback_profile_selects_revolution_segments() {
     let segment = |external_id| crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,
