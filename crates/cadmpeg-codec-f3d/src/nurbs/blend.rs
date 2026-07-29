@@ -396,11 +396,8 @@ fn decode_variable_blend_value(
     };
     let payload = match name.as_str() {
         "fixed_width" => VariableBlendValuePayload::FixedWidth {
-            scalars: [
-                take_f64(bytes, position)?,
-                take_f64(bytes, position)?,
-                take_f64(bytes, position)?,
-            ],
+            parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
+            width: take_f64(bytes, position)?,
         },
         "two_ends" => VariableBlendValuePayload::TwoEnds {
             parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
@@ -598,17 +595,19 @@ mod variable_blend_value_tests {
         text(&mut bytes, "fixed_width");
         integer(&mut bytes, 0x15, 0);
         bytes.push(0x0a);
-        for value in [0.0, 2.5, 1.5] {
+        // Distinct parameter-range bounds and a distinct chamfer width.
+        for value in [0.5, 3.5, 0.1905] {
             double(&mut bytes, value);
         }
         let mut position = 0;
         let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
             .expect("generated fixed-width value");
         assert_eq!(position, bytes.len());
-        let VariableBlendValuePayload::FixedWidth { scalars } = decoded.payload else {
+        let VariableBlendValuePayload::FixedWidth { parameters, width } = decoded.payload else {
             panic!("expected fixed-width payload")
         };
-        assert_eq!(scalars, [0.0, 2.5, 1.5]);
+        assert_eq!(parameters, [0.5, 3.5]);
+        assert_eq!(width, 0.1905);
     }
 
     #[test]
@@ -667,6 +666,57 @@ mod variable_blend_value_tests {
         assert!(enum_tagged);
         assert_eq!(points.len(), 1);
         assert!(tail.is_none());
+    }
+
+    #[test]
+    fn decodes_interp_point_with_unset_derivatives() {
+        // Sentinel value marking an unset first/second derivative.
+        const UNSET: f64 = 9.9999999999999995e+36;
+        let mut bytes = Vec::new();
+        text(&mut bytes, "interp");
+        integer(&mut bytes, 0x15, 0);
+        bytes.push(0x0a);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        // Minimal degree-1 BS2 function block.
+        bytes.push(0x0d);
+        bytes.push(4);
+        bytes.extend_from_slice(b"nubs");
+        integer(&mut bytes, 0x04, 1);
+        integer(&mut bytes, 0x15, 0);
+        integer(&mut bytes, 0x04, 2);
+        double(&mut bytes, 0.0);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 1.0);
+        integer(&mut bytes, 0x04, 1);
+        for value in [0.0, 0.0, 1.0, 1.0] {
+            double(&mut bytes, value);
+        }
+        // One interpolation control whose two derivatives are unset.
+        integer(&mut bytes, 0x15, 1);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 0.5);
+        double(&mut bytes, 1.5);
+        double(&mut bytes, UNSET);
+        double(&mut bytes, UNSET);
+        bytes.push(0x13);
+        for value in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x14);
+        for value in [0.0f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        integer(&mut bytes, 0x15, 0);
+        let mut position = 0;
+        let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
+            .expect("generated interp value with unset derivatives");
+        assert_eq!(position, bytes.len());
+        let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
+            panic!("expected interpolated payload")
+        };
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].tangents, [UNSET, UNSET]);
     }
 }
 

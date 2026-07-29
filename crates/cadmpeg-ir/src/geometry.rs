@@ -1482,7 +1482,8 @@ pub struct VariableBlendInterpolationPoint {
     pub parameter: f64,
     /// Radius in document length units.
     pub radius: f64,
-    /// Two ordered tangent scalars.
+    /// First and second derivative scalars; the sentinel
+    /// `9.9999999999999995e+36` marks an unset derivative.
     pub tangents: [f64; 2],
     /// Model-space control location.
     pub location: Point3,
@@ -1509,19 +1510,20 @@ pub struct VariableBlendValue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VariableBlendValuePayload {
-    /// Two endpoint parameters and radii.
+    /// Law-domain parameter range and two endpoint radii.
     TwoEnds {
-        /// Endpoint parameters.
+        /// Law-domain parameter range (lower, upper).
         parameters: [f64; 2],
         /// Endpoint radii in document length units.
         radii: [f64; 2],
     },
-    /// `fixed_width` branch. The three serialized scalars are retained in
-    /// source order; no application-level role is assigned without an
-    /// independently varying witness.
+    /// Fixed-width branch: the parameter-range bounds and the chamfer width
+    /// scalar, stored unscaled.
     FixedWidth {
-        /// Ordered native scalar triple.
-        scalars: [f64; 3],
+        /// Parameter-range lower and upper bounds.
+        parameters: [f64; 2],
+        /// Chamfer width.
+        width: f64,
     },
     /// Edge-offset branch.
     EdgeOffset {
@@ -1568,9 +1570,11 @@ pub enum VariableBlendValuePayload {
         /// tokens (revision-gated streams) rather than `0x04` integers.
         #[serde(default)]
         enum_tagged: bool,
-        /// Ordered interpolation controls.
+        /// Counted radius-point array: each control carries a parameter,
+        /// radius, two derivative scalars, a position, and a vector.
         points: Vec<VariableBlendInterpolationPoint>,
-        /// Optional two-scalar tail selected by a nonzero flag.
+        /// Optional two-scalar tail selected by a nonzero trailing flag;
+        /// `None` when the trailing flag is zero.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tail: Option<[f64; 2]>,
     },
@@ -1663,17 +1667,22 @@ pub struct VariableBlendConstruction {
     /// Optional single-radius selector tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub single_radius_tail: Option<VariableBlendSingleRadiusTail>,
-    /// Native optional U interval endpoints.
+    /// Support-side parameter interval `(T0, T1)`; both bounds present in
+    /// every instance.
     pub u_range: [Option<f64>; 2],
-    /// Native optional V interval endpoints.
+    /// Second interval: a lower bound with an unbounded-above marker,
+    /// encoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`
+    /// upper-bound marker is an interval bound, not a standalone Boolean.
     pub v_range: [Option<f64>; 2],
-    /// Native integer before the solved shape.
+    /// Approximation-current flag preceding the surface cache; `1` when the
+    /// cache approximation is current.
     pub shape_prefix: i64,
-    /// Native scalar before the solved shape.
+    /// Requested fit tolerance for the surface cache.
     pub shape_parameter: f64,
-    /// Native length before the solved shape, in document units.
+    /// Achieved fit tolerance for the surface cache, at or below
+    /// `shape_parameter`, in document units.
     pub shape_length: f64,
-    /// Native integer immediately before the cache selector.
+    /// Non-negative integer immediately before the cache selector.
     pub shape_tail: i64,
     /// Native selector preceding the solved surface cache.
     pub cache_selector: i64,

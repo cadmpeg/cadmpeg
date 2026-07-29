@@ -3099,10 +3099,10 @@ fn native_variable_blend_value(
                 native_f64(bytes, *radius / LEN_TO_MM);
             }
         }
-        VariableBlendValuePayload::FixedWidth { scalars } => {
-            for scalar in scalars {
-                native_f64(bytes, *scalar);
-            }
+        VariableBlendValuePayload::FixedWidth { parameters, width } => {
+            native_f64(bytes, parameters[0]);
+            native_f64(bytes, parameters[1]);
+            native_f64(bytes, *width);
         }
         VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
             let expected = if value.discriminator == 0 {

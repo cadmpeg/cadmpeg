@@ -242,11 +242,18 @@ pub struct EmbeddedVariableBlend {
     pub(crate) chamfer: Option<Box<cadmpeg_ir::geometry::VariableBlendChamfer>>,
     pub(crate) single_radius_selector: Option<i64>,
     pub(crate) single_radius_tail: Option<cadmpeg_ir::geometry::VariableBlendSingleRadiusTail>,
+    /// Support-side parameter interval `(T0, T1)`.
     pub(crate) u_range: [Option<f64>; 2],
+    /// Second interval `(T lo, F)`: a lower bound with an unbounded-above
+    /// marker decoding to `[Some(lo), None]`.
     pub(crate) v_range: [Option<f64>; 2],
+    /// Approximation-current flag (`1` when the cache is current).
     pub(crate) shape_prefix: i64,
+    /// Requested fit tolerance.
     pub(crate) shape_parameter: f64,
+    /// Achieved fit tolerance, at or below `shape_parameter`.
     pub(crate) shape_length: f64,
+    /// Non-negative integer immediately before the cache selector.
     pub(crate) shape_tail: i64,
     pub(crate) cache_selector: i64,
     pub(crate) discontinuities: [Vec<f64>; 6],

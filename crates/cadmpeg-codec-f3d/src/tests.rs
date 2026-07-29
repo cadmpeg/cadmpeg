@@ -4644,17 +4644,23 @@ fn append_generated_variable_blend_value(
 }
 
 fn synthetic_variable_blend_smbh(name: &str) -> Vec<u8> {
-    synthetic_variable_blend_smbh_with_selector(name, false, None)
+    synthetic_variable_blend_smbh_with_selector(name, false, None, [None, None])
 }
 
 fn synthetic_variable_blend_smbh_with_branch(name: &str, rounded_chamfer: bool) -> Vec<u8> {
-    synthetic_variable_blend_smbh_with_selector(name, rounded_chamfer, rounded_chamfer.then_some(3))
+    synthetic_variable_blend_smbh_with_selector(
+        name,
+        rounded_chamfer,
+        rounded_chamfer.then_some(3),
+        [None, None],
+    )
 }
 
 fn synthetic_variable_blend_smbh_with_selector(
     name: &str,
     two_radii: bool,
     chamfer_selector: Option<i64>,
+    v_range: [Option<f64>; 2],
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -4700,8 +4706,17 @@ fn synthetic_variable_blend_smbh_with_selector(
         surface.push(0x0a);
         t_dbl(&mut surface, value);
     }
-    surface.push(0x0b);
-    surface.push(0x0b);
+    // Second interval `(T lo, F)`: a lower bound with an unbounded-above
+    // marker, or both bounds absent when `v_range` is `[None, None]`.
+    for bound in v_range {
+        match bound {
+            Some(value) => {
+                surface.push(0x0a);
+                t_dbl(&mut surface, value);
+            }
+            None => surface.push(0x0b),
+        }
+    }
     t_long(&mut surface, 11);
     t_dbl(&mut surface, 0.125);
     t_dbl(&mut surface, 0.6);
@@ -16317,6 +16332,34 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
 }
 
 #[test]
+fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    // The tail's second interval carries a lower bound with an
+    // unbounded-above marker: `(T lo, F)` decodes to `[Some(lo), None]`.
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh_with_selector(
+                "srf_srf_v_bl_spl_sur",
+                false,
+                None,
+                [Some(-0.5), None],
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("half-bounded second-interval decode");
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected variable blend")
+    };
+    assert_eq!(construction.u_range, [Some(-1.0), Some(2.0)]);
+    assert_eq!(construction.v_range, [Some(-0.5), None]);
+    assert_eq!(construction.shape_prefix, 11);
+    assert_eq!(construction.shape_length, 6.0);
+}
+
+#[test]
 fn generated_variable_blends_decode_complete_single_radius_graphs() {
     use cadmpeg_ir::geometry::{
         ProceduralSurfaceDefinition, VariableBlendSurfaceSubtype, VariableBlendValuePayload,
@@ -16637,6 +16680,7 @@ fn generated_two_radii_variable_blend_consumes_zero_chamfer_selector() {
                 "srf_srf_v_bl_spl_sur",
                 true,
                 Some(0),
+                [None, None],
             ))),
             &DecodeOptions::default(),
         )
@@ -16836,6 +16880,7 @@ fn generated_single_radius_variable_blend_consumes_zero_selector() {
                 "srf_srf_v_bl_spl_sur",
                 false,
                 Some(0),
+                [None, None],
             ))),
             &DecodeOptions::default(),
         )
