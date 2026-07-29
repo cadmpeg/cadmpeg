@@ -181,7 +181,9 @@ current scores require those matrices and representative fixtures.
   their exact plane, cylinder, circular-cone, torus, or NURBS owner carrier into
   model space.
   A complete `5fxx` face roster binds positionally to those support tapes and
-  retains each face's counted allocations and ordered loop terminals.
+  retains each face's counted allocations, ordered loop terminals, and exact
+  `03` or `05` terminal control. Decode coverage counts the two controls
+  independently.
   Complete `62xx` loop rosters bind to those terminals and retain alternating
   logical-member and typed-reference lanes, loop class, and absolute member
   senses. Each loop member binds to the unique face-local support occurrence

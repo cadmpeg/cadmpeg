@@ -758,6 +758,24 @@ fn finish_decode(
                 .count(),
         ),
         (
+            "decoded_zero_entity_face_terminal_control_03_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .filter(|face| face.terminal_control == 0x03)
+                .count(),
+        ),
+        (
+            "decoded_zero_entity_face_terminal_control_05_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .filter_map(|run| run.face.as_ref())
+                .filter(|face| face.terminal_control == 0x05)
+                .count(),
+        ),
+        (
             "decoded_zero_entity_loop_terminal_count".to_string(),
             native
                 .zero_entity_support_runs

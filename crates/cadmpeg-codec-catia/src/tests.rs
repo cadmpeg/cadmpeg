@@ -5456,6 +5456,14 @@ fn decode_reports_zero_entity_surface_support_runs() {
         1
     );
     assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_face_terminal_control_03_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_face_terminal_control_05_count"],
+        1
+    );
+    assert_eq!(
         decoded.report.coverage["decoded_zero_entity_loop_terminal_count"],
         1
     );
