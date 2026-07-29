@@ -2567,9 +2567,12 @@ pub struct CacheFirstCurveForm {
 pub struct SurfaceCurveTail {
     /// Native integer following the discontinuity arrays.
     pub extension: i64,
-    /// Native boolean terminating the subtype payload.
+    /// Support-slot selector. `true` places the support surface and its bs2
+    /// pcurve in serialized slot 1 with slot 2 null; `false` mirrors them onto
+    /// slot 2 with slot 1 null.
     pub flag: bool,
-    /// Second terminating boolean stored by `par_int_cur`.
+    /// Second terminating boolean stored by `par_int_cur`, following the
+    /// support-slot selector; semantics unresolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_flag: Option<bool>,
     /// Positive serializer-revision integer opening the cache-first layout.

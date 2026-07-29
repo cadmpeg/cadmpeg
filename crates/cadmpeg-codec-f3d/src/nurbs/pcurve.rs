@@ -1463,6 +1463,69 @@ mod width_tests {
     }
 
     #[test]
+    fn cache_first_par_curve_selects_mirrored_support_slot() {
+        use cadmpeg_ir::geometry::SurfaceCurveFamily;
+
+        // `flag1 = F` mirrors the support onto the second serialized slot:
+        // surface slot 1 and pcurve slot 1 are null, while slot 2 carries the
+        // parametric support surface and its bs2 pcurve. `par_int_cur`
+        // terminates on two booleans, so `flag2` is read after `flag1`.
+        for int_width in [4usize, 8] {
+            let mut support = vec![0x0f];
+            push_ident(&mut support, "par_support");
+            support.extend_from_slice(&surface_block(int_width));
+            support.push(0x10);
+
+            let mut record = vec![0x0f];
+            push_ident(&mut record, "par_int_cur");
+            push_int(&mut record, 0x04, 22_507, int_width);
+            push_int(&mut record, 0x15, 0, int_width);
+            record.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut record, 1.0e-6);
+            // Surface slot 1: null; slot 2: reference into the support table.
+            push_ident(&mut record, "null_surface");
+            push_ident(&mut record, "spline");
+            record.push(0x0b);
+            record.push(0x0f);
+            push_ident(&mut record, "ref");
+            push_int(&mut record, 0x04, 0, int_width);
+            record.push(0x10);
+            record.extend_from_slice(&[0x0b; 4]);
+            // Pcurve slot 1: null; slot 2: populated bs2 pcurve.
+            push_ident(&mut record, "nullbs");
+            record.extend_from_slice(&pcurve_block(int_width));
+            record.extend_from_slice(&[0x0b, 0x0b]);
+            for _ in 0..3 {
+                push_int(&mut record, 0x04, 0, int_width);
+            }
+            push_int(&mut record, 0x04, 7, int_width);
+            record.push(0x0b);
+            record.push(0x0b);
+            record.push(0x10);
+
+            let mut active = support;
+            active.extend_from_slice(&record);
+            let tables = SubtypeTables::from_stream(&active);
+            let decoded = decode_procedural_curve_resolving_refs(&record, &active, &tables)
+                .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
+            let (family, context, tail) =
+                decoded.embedded_surface_curve.expect("typed par context");
+            assert_eq!(family, SurfaceCurveFamily::Parametric);
+            assert!(context.surfaces[0].is_none());
+            assert!(matches!(
+                context.surfaces[1],
+                Some(SurfaceGeometry::Nurbs(_))
+            ));
+            assert!(context.pcurves[0].is_none());
+            assert!(context.pcurves[1].is_some());
+            let tail = tail.expect("cache-first tail");
+            assert_eq!(tail.extension, 7);
+            assert!(!tail.flag);
+            assert_eq!(tail.second_flag, Some(false));
+        }
+    }
+
+    #[test]
     fn projection_layout_walks_both_tail_forms_at_both_widths() {
         for int_width in [4usize, 8] {
             for early_close in [false, true] {
