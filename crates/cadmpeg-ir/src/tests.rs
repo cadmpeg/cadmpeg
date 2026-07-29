@@ -1653,13 +1653,13 @@ fn mismatched_partner_edge_is_flagged() {
 }
 
 #[test]
-fn signed_sphere_radius_is_valid() {
+fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
     let mut ir = unit_cube();
     ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
         center: Point3::new(0.0, 0.0, 0.0),
         axis: Vector3::new(0.0, 0.0, 1.0),
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: -1.0,
+        radius: -1e-200,
     };
     let report = validate(&ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
