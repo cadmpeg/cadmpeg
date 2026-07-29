@@ -1228,11 +1228,10 @@ fn parse_edge_refs(record: &B5Record) -> Option<[u32; 5]> {
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
-    matches!(
-        record.payload.get(position),
-        Some(0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a)
-    )
-    .then_some(references)
+    let &[tail] = record.payload.get(position..)? else {
+        return None;
+    };
+    matches!(tail, 0x01 | 0x02 | 0x21 | 0x22 | 0x25 | 0x26 | 0x29 | 0x2a).then_some(references)
 }
 
 fn parse_edge_vertex_refs(record: &B5Record) -> Option<[u32; 2]> {
@@ -5605,10 +5604,17 @@ mod tests {
         let mut standard = record;
         *standard.payload.last_mut().expect("tail") = 0x01;
         assert_eq!(parse_edge_vertex_refs(&standard), Some([15, 21]));
-        for tail in [0x22, 0x25, 0x29, 0x2a] {
+        for tail in [0x02, 0x22, 0x25, 0x26, 0x29, 0x2a] {
             *standard.payload.last_mut().expect("tail") = tail;
             assert_eq!(parse_edge_vertex_refs(&standard), Some([15, 21]));
         }
+        standard.payload.pop();
+        assert!(parse_edge_vertex_refs(&standard).is_none());
+        standard.payload.extend_from_slice(&[0x21, 0x00]);
+        assert!(parse_edge_vertex_refs(&standard).is_none());
+        standard.payload.truncate(6);
+        standard.payload.push(0x03);
+        assert!(parse_edge_vertex_refs(&standard).is_none());
         *standard.payload.last_mut().expect("tail") = 0x01;
 
         let mut bytes = vec![0xb5, 0x03, 0x5e, 7];

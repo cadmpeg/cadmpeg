@@ -183,6 +183,8 @@ current scores require those matrices and representative fixtures.
   Counted object-stream loops require an exact edge-count lane and complete
   control tail: the loop control, three signed controls per edge, and the
   optional finite binary64/binary32 numeric extension.
+  Object-stream edges require exactly five references and one admitted terminal
+  control, with no residual bytes.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.
