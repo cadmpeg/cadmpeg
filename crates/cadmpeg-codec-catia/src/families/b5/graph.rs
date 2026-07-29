@@ -498,40 +498,6 @@ pub struct B5Loop {
     pub edges: Vec<u32>,
     /// `object_id` of the loop's surface (the trailing reference token).
     pub surface: u32,
-    /// Complete topology metadata following the reference and edge-count lanes.
-    pub metadata: B5LoopMetadata,
-}
-
-/// Complete metadata tail of one counted object-stream loop.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B5LoopMetadata {
-    /// Leading loop control, `0x03` or `0x05`.
-    pub control: u8,
-    /// Three source-ordered signed controls per edge, each `-1` or `1`.
-    pub edge_controls: Vec<i16>,
-    /// Optional extended numeric tail.
-    pub extension: Option<B5LoopMetadataExtension>,
-}
-
-#[cfg(test)]
-impl B5LoopMetadata {
-    /// Construct neutral metadata for topology-only unit fixtures.
-    pub(crate) fn placeholder() -> Self {
-        Self {
-            control: 0x05,
-            edge_controls: Vec::new(),
-            extension: None,
-        }
-    }
-}
-
-/// Extended numeric tail of one object-stream loop.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B5LoopMetadataExtension {
-    /// Exact IEEE-754 binary64 bits in source order.
-    pub scalar_bits: [u64; 4],
-    /// Exact IEEE-754 binary32 bits in source order.
-    pub float_bits: [u32; 6],
 }
 
 /// Resolve the dominant object-stream topology graph through inline object ids.
@@ -1366,7 +1332,7 @@ fn implicit_pcurve_bindings(
     let mut bindings = BTreeMap::new();
     let mut ambiguous = HashSet::new();
     for record in records.iter().filter(|record| record.class == 0x62) {
-        let Some((references, _)) = loop_references(record) else {
+        let Some(references) = loop_references(record) else {
             continue;
         };
         let Some((&surface, occurrences)) = references.split_last() else {
@@ -3573,7 +3539,7 @@ fn parse_loop(
     implicit_pcurves: &BTreeMap<u32, u32>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Loop> {
-    let (references, metadata) = loop_references(record)?;
+    let references = loop_references(record)?;
     let count = references.len();
     let surface = *references.last()?;
     if !surfaces.contains_key(&surface) {
@@ -3597,11 +3563,10 @@ fn parse_loop(
         pcurves,
         edges,
         surface,
-        metadata,
     })
 }
 
-fn loop_references(record: &B5Record) -> Option<(Vec<u32>, B5LoopMetadata)> {
+fn loop_references(record: &B5Record) -> Option<Vec<u32>> {
     (record.class == 0x62).then_some(())?;
     let mut position = 0;
     let count = counted_cardinality(&record.payload, &mut position)?;
@@ -3615,11 +3580,11 @@ fn loop_references(record: &B5Record) -> Option<(Vec<u32>, B5LoopMetadata)> {
     if counted_cardinality(&record.payload, &mut position)? != edge_count {
         return None;
     }
-    let metadata = loop_metadata(record.payload.get(position..)?, edge_count)?;
-    Some((references, metadata))
+    loop_metadata(record.payload.get(position..)?, edge_count)?;
+    Some(references)
 }
 
-fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<B5LoopMetadata> {
+fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<()> {
     let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
     let controls_end = 3usize.checked_add(controls_len)?;
     if !matches!(bytes.first(), Some(0x03 | 0x05))
@@ -3628,31 +3593,28 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<B5LoopMetadata> {
     {
         return None;
     }
-    let edge_controls = bytes[3..controls_end]
+    let valid_edge_controls = bytes[3..controls_end]
         .chunks_exact(2)
         .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
-        .collect::<Vec<_>>();
-    if edge_controls
-        .iter()
-        .any(|control| !matches!(control, -1 | 1))
-    {
+        .all(|control| matches!(control, -1 | 1));
+    if !valid_edge_controls {
         return None;
     }
-    let extension = match bytes.get(controls_end..)? {
-        [0x01] => None,
+    match bytes.get(controls_end..)? {
+        [0x01] => {}
         extended
             if extended.len() == 62
                 && extended[0] == 0x0d
                 && extended.get(33..38) == Some(&[0x05, 0x05, 0x05, 0x05, 0x01]) =>
         {
-            let scalar_bits = std::array::from_fn(|index| {
+            let scalar_bits: [u64; 4] = std::array::from_fn(|index| {
                 u64::from_le_bytes(
                     extended[1 + index * 8..9 + index * 8]
                         .try_into()
                         .expect("checked extended loop scalar extent"),
                 )
             });
-            let float_bits = std::array::from_fn(|index| {
+            let float_bits: [u32; 6] = std::array::from_fn(|index| {
                 u32::from_le_bytes(
                     extended[38 + index * 4..42 + index * 4]
                         .try_into()
@@ -3668,18 +3630,10 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<B5LoopMetadata> {
             {
                 return None;
             }
-            Some(B5LoopMetadataExtension {
-                scalar_bits,
-                float_bits,
-            })
         }
         _ => return None,
-    };
-    Some(B5LoopMetadata {
-        control: bytes[0],
-        edge_controls,
-        extension,
-    })
+    }
+    Some(())
 }
 
 fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
@@ -3733,32 +3687,15 @@ mod tests {
     }
 
     #[test]
-    fn loop_metadata_retains_exact_base_and_extended_forms() {
+    fn loop_metadata_accepts_exact_base_and_extended_forms() {
         let base = [
             0x05, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0xff,
             0xff, 0x01,
         ];
-        assert_eq!(
-            loop_metadata(&base, 2),
-            Some(B5LoopMetadata {
-                control: 0x05,
-                edge_controls: vec![1, -1, 1, -1, 1, -1],
-                extension: None,
-            })
-        );
+        assert_eq!(loop_metadata(&base, 2), Some(()));
 
         let extended = extended_loop_metadata();
-        assert_eq!(
-            loop_metadata(&extended, 1),
-            Some(B5LoopMetadata {
-                control: 0x03,
-                edge_controls: vec![1, -1, 1],
-                extension: Some(B5LoopMetadataExtension {
-                    scalar_bits: [1.0_f64, -2.0, 3.5, 4.25].map(f64::to_bits),
-                    float_bits: [1.0_f32, -2.0, 3.5, 4.25, 5.5, -6.75].map(f32::to_bits),
-                }),
-            })
-        );
+        assert_eq!(loop_metadata(&extended, 1), Some(()));
     }
 
     #[test]
@@ -3773,9 +3710,8 @@ mod tests {
                 0x01,
             ],
         };
-        let (references, metadata) = loop_references(&record).expect("exact loop payload");
+        let references = loop_references(&record).expect("exact loop payload");
         assert_eq!(references, [9, 10, 11]);
-        assert_eq!(metadata.edge_controls, [1, -1, 1]);
 
         let mut mismatched = record.clone();
         mismatched.payload[4] = 0x82;
@@ -4164,7 +4100,6 @@ mod tests {
             pcurves: vec![2],
             edges: vec![3],
             surface: 4,
-            metadata: B5LoopMetadata::placeholder(),
         };
 
         assert_eq!(
@@ -4184,7 +4119,6 @@ mod tests {
             pcurves: vec![2],
             edges: vec![3],
             surface: 4,
-            metadata: B5LoopMetadata::placeholder(),
         };
         assert_eq!(
             bind_edge_vertices(&BTreeMap::from([(1, loop_)]), &BTreeMap::new(), &[]),
@@ -4202,7 +4136,6 @@ mod tests {
                     pcurves: vec![10],
                     edges: vec![20],
                     surface: 30,
-                    metadata: B5LoopMetadata::placeholder(),
                 },
             ),
             (
@@ -4212,7 +4145,6 @@ mod tests {
                     pcurves: vec![11],
                     edges: vec![20],
                     surface: 31,
-                    metadata: B5LoopMetadata::placeholder(),
                 },
             ),
             (
@@ -4222,7 +4154,6 @@ mod tests {
                     pcurves: vec![12],
                     edges: vec![21],
                     surface: 32,
-                    metadata: B5LoopMetadata::placeholder(),
                 },
             ),
         ]);
