@@ -404,9 +404,6 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         end,
         header_token,
     } = frame;
-    if data.get(pos) == Some(&0xa5) && header_token != 5 {
-        return None;
-    }
     let mut at = payload;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
