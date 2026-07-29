@@ -2940,7 +2940,7 @@ fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     let [diameter_u, diameter_v, conjugate_angle, start, end, orientation, period] =
         line_values::<7>(&record.payload, position + 2)?;
     let diameter = diameter_u.hypot(diameter_v);
-    if diameter <= f64::EPSILON
+    if diameter <= 0.0
         || start >= end
         || !matches!(orientation, -1.0 | 1.0)
         || (conjugate_angle - std::f64::consts::FRAC_PI_2).abs() > 1e-12
@@ -4944,6 +4944,38 @@ mod tests {
         let mut wrong_family = record;
         wrong_family.family = 0xa8;
         assert!(parse_class_1a_pcurve(&wrong_family).is_none());
+    }
+
+    #[test]
+    fn class_1a_pcurve_accepts_a_finite_nonzero_diameter() {
+        for diameter in [1e-200_f64, 1e200] {
+            let period = std::f64::consts::PI * diameter;
+            let mut payload = vec![0x81, 0x82];
+            for value in [0.0_f64, 0.0] {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            payload.extend_from_slice(&[0x05, 0x05]);
+            for value in [
+                diameter,
+                0.0,
+                std::f64::consts::FRAC_PI_2,
+                0.0,
+                period * 0.25,
+                1.0,
+                period,
+            ] {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            let record = B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x1a,
+                object_id: 7,
+                payload,
+            };
+            let pcurve = parse_class_1a_pcurve(&record).expect("class-1a pcurve");
+            assert_eq!(pcurve.control_points[0], [diameter * 0.5, 0.0]);
+        }
     }
 
     #[test]
