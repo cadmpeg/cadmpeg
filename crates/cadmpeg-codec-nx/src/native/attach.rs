@@ -373,6 +373,7 @@ fn attach_feature_operations(
     let parameter_bindings = features.feature_parameter_bindings.as_slice();
     let parameter_uses = features.feature_parameter_uses.as_slice();
     let operation_records = features.feature_operation_records.as_slice();
+    let operation_terminal_frames = features.feature_operation_terminal_frames.as_slice();
     let payload_strings = features.feature_payload_strings.as_slice();
     let simple_hole_templates = features.feature_simple_hole_templates.as_slice();
     let simple_hole_repeated_scalar_lanes = features
@@ -966,6 +967,11 @@ fn attach_feature_operations(
             }
         }
         let mut source_properties = BTreeMap::new();
+        source_properties.extend(operation_source_properties(
+            &label.id,
+            operation_records,
+            operation_terminal_frames,
+        ));
         for (use_ordinal, block_use) in datum_csys_uses_by_input_operation
             .get(label.id.as_str())
             .into_iter()
@@ -1877,6 +1883,35 @@ fn records_by_operation<'a, T>(
             .push(record);
     }
     grouped
+}
+
+fn operation_source_properties(
+    operation_label: &str,
+    records: &[crate::native::features::FeatureOperationRecord],
+    terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame],
+) -> BTreeMap<String, String> {
+    let mut matching_records = records
+        .iter()
+        .filter(|record| record.operation_label == operation_label);
+    let Some(record) = matching_records.next() else {
+        return BTreeMap::new();
+    };
+    if matching_records.next().is_some() {
+        return BTreeMap::new();
+    }
+
+    let mut properties = BTreeMap::from([("operation_record".to_string(), record.id.clone())]);
+    let mut matching_frames = terminal_frames
+        .iter()
+        .filter(|frame| frame.operation_record == record.id);
+    let Some(frame) = matching_frames.next() else {
+        return properties;
+    };
+    if matching_frames.next().is_some() {
+        return properties;
+    }
+    properties.insert("operation_terminal_frame".to_string(), frame.id.clone());
+    properties
 }
 
 // ===== Feature-semantics and attachment helpers (moved from decode.rs) =====
@@ -4313,6 +4348,65 @@ mod tests {
     use crate::NxCodec;
 
     use super::*;
+
+    #[test]
+    fn operation_source_properties_require_unique_owned_structures() {
+        let record = crate::native::features::FeatureOperationRecord {
+            id: "record".into(),
+            operation_label: "operation".into(),
+            ordinal: 3,
+            byte_len: 20,
+            sha256: "record-hash".into(),
+            payload_byte_len: 10,
+            payload_sha256: "payload-hash".into(),
+            payload_source_offset: 110,
+            source_offset: 100,
+        };
+        let frame = crate::native::features::FeatureOperationTerminalFrame {
+            id: "frame".into(),
+            operation_record: record.id.clone(),
+            local_ordinal: 41,
+            raw_local_ordinal: vec![0x29],
+            object_index: Some(65),
+            raw_object_index: vec![0x41],
+            source_offset: 117,
+            object_index_source_offset: 119,
+        };
+        assert_eq!(
+            super::operation_source_properties(
+                &record.operation_label,
+                std::slice::from_ref(&record),
+                std::slice::from_ref(&frame),
+            ),
+            BTreeMap::from([
+                ("operation_record".into(), "record".into()),
+                ("operation_terminal_frame".into(), "frame".into()),
+            ])
+        );
+        assert!(super::operation_source_properties("missing", &[], &[]).is_empty());
+        assert_eq!(
+            super::operation_source_properties(
+                &record.operation_label,
+                std::slice::from_ref(&record),
+                &[],
+            ),
+            BTreeMap::from([("operation_record".into(), "record".into())])
+        );
+        assert!(super::operation_source_properties(
+            &record.operation_label,
+            &[record.clone(), record.clone()],
+            std::slice::from_ref(&frame),
+        )
+        .is_empty());
+        assert_eq!(
+            super::operation_source_properties(
+                &record.operation_label,
+                std::slice::from_ref(&record),
+                &[frame.clone(), frame],
+            ),
+            BTreeMap::from([("operation_record".into(), "record".into())])
+        );
+    }
 
     #[test]
     fn nx_native_feature_parameters_require_unique_resolved_names() {
