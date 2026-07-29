@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
+    let cone = |origin, axis| ConeEquation {
+        origin,
+        axis,
+        ref_direction: [0.0, 0.0, 1.0],
+        radius: 0.0,
+        ratio: 1.0,
+        half_angle: std::f64::consts::FRAC_PI_4,
+    };
+    let cones = [
+        cone([10.5, 0.0, 0.0], [-1.0, 0.0, 0.0]),
+        cone([-10.5, 0.0, 0.0], [1.0, 0.0, 0.0]),
+    ];
+    let supports = [
+        PlaneEquation {
+            origin: [10.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        },
+        PlaneEquation {
+            origin: [-10.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        },
+        PlaneEquation {
+            origin: [0.0, 2.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+    ];
+
+    assert_eq!(equal_distance_chamfer_setback(&cones, &supports), Some(0.5));
+
+    let mut non_equal = cones;
+    non_equal[1].origin[0] = -10.25;
+    assert_eq!(equal_distance_chamfer_setback(&non_equal, &supports), None);
+}
+
+#[test]
 fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
     let mut dependencies = BTreeMap::new();
     add_surface_prototype_feature_dependencies(&mut dependencies, 40, &[0, 40, 286, 286, 1111]);

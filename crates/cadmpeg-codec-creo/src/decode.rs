@@ -16429,6 +16429,99 @@ fn unique_positive_length(values: &[f64]) -> Option<f64> {
         .then_some(value)
 }
 
+fn equal_distance_chamfer_setback(
+    cones: &[ConeEquation],
+    support_planes: &[PlaneEquation],
+) -> Option<f64> {
+    (!cones.is_empty() && !support_planes.is_empty()).then_some(())?;
+    let setbacks = cones
+        .iter()
+        .map(|cone| {
+            let axis = normalized(cone.axis)?;
+            (circular_cone(*cone)
+                && cone.radius.abs() <= 1e-12
+                && (cone.half_angle - std::f64::consts::FRAC_PI_4).abs() <= 1e-10)
+                .then_some(())?;
+            support_planes
+                .iter()
+                .filter_map(|plane| {
+                    let normal = normalized(plane.normal)?;
+                    let denominator = dot(axis, normal);
+                    (denominator.abs() >= 1.0 - 1e-10).then_some(())?;
+                    let displacement = [
+                        plane.origin[0] - cone.origin[0],
+                        plane.origin[1] - cone.origin[1],
+                        plane.origin[2] - cone.origin[2],
+                    ];
+                    let setback = dot(displacement, normal) / denominator;
+                    (setback.is_finite() && setback > 1e-12).then_some(setback)
+                })
+                .min_by(f64::total_cmp)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    unique_positive_length(&setbacks)
+}
+
+fn chamfer_constant_distance(scan: &ContainerScan, feature_id: u32) -> Option<f64> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!rows.is_empty()
+        && rows
+            .iter()
+            .all(|row| row.kind == crate::surface::SurfaceKind::Cone))
+    .then_some(())?;
+    let prototype_frames = unique_surface_prototype_associations(scan)
+        .into_iter()
+        .filter(|(_, row, _)| row.feature_id == feature_id)
+        .filter_map(|(prototype, row, _)| {
+            Some((row.offset, crate::surface::prototype_cone_frame(prototype)?))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let cones =
+        rows.iter()
+            .map(|row| {
+                let frame = prototype_frames.get(&row.offset).copied().or_else(|| {
+                    unique_surface_parameter_record(scan, row)?.positional_cone_frame
+                })?;
+                Some(ConeEquation {
+                    origin: frame.apex,
+                    axis: frame.axis,
+                    ref_direction: frame.ref_direction,
+                    radius: 0.0,
+                    ratio: 1.0,
+                    half_angle: frame.half_angle,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+    let named_ids = agreed_feature_affected_ids(
+        &scan.features.affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Geometry,
+    );
+    let named_present = has_feature_affected_ids(
+        &scan.features.affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Geometry,
+    );
+    let replay_ids =
+        agreed_feature_replay_geometry_ids(&scan.features.replay_affected_ids, feature_id);
+    let affected_ids = match (named_ids, replay_ids) {
+        (Some(ids), _) => ids,
+        (None, Some(ids)) if !named_present => ids,
+        _ => return None,
+    };
+    let planes = placed_planes(scan);
+    let support_planes = affected_ids
+        .iter()
+        .filter_map(|id| planes.get(id).copied())
+        .collect::<Vec<_>>();
+    equal_distance_chamfer_setback(&cones, &support_planes)
+}
+
 fn filled_surface_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -16918,7 +17011,12 @@ fn schema_feature_definition(
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: feature_edge_selection(scan, ir, feature_id)
                     .unwrap_or(EdgeSelection::Unresolved),
-                spec: ChamferSpec::Unresolved { form: None },
+                spec: chamfer_constant_distance(scan, feature_id).map_or_else(
+                    || ChamferSpec::Unresolved { form: None },
+                    |distance| ChamferSpec::Distance {
+                        distance: Length(distance),
+                    },
+                ),
             }],
             flip_direction: false,
         };
