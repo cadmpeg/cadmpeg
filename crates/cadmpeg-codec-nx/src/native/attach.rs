@@ -269,7 +269,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(162);
+    namespace.version = namespace.version.max(163);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }

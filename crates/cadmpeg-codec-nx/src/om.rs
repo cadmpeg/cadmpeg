@@ -5067,24 +5067,31 @@ pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
     Some(values[..boundary].to_vec())
 }
 
-/// Decode the aligned little-endian value array preceding one product record.
-pub fn offset_store_index_values(bytes: &[u8]) -> Option<(usize, Vec<u32>)> {
+fn offset_store_product_anchored_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
     let matches = (0..bytes.len())
         .filter(|offset| is_product_record(&bytes[*offset..]))
         .collect::<Vec<_>>();
     let [product_offset] = matches.as_slice() else {
         return None;
     };
-    let prefix_len = (0..=3).find(|prefix_len| {
-        *product_offset > *prefix_len
-            && (*product_offset - *prefix_len).is_multiple_of(4)
-            && bytes[..*prefix_len].iter().all(|byte| *byte == 0)
-    })?;
-    let values = bytes[prefix_len..*product_offset]
+    let leading_width = *product_offset % 4;
+    (*product_offset > leading_width).then_some(())?;
+    let leading_value = (leading_width != 0).then(|| {
+        bytes[..leading_width]
+            .iter()
+            .enumerate()
+            .fold(0u32, |value, (shift, byte)| {
+                value | (u32::from(*byte) << (shift * 8))
+            })
+    });
+    let values = bytes[leading_width..*product_offset]
         .chunks_exact(4)
         .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk")))
         .collect();
-    Some((prefix_len, values))
+    Some(OffsetStoreControlForm::ProductAnchored {
+        leading_value: leading_value.map(|value| (leading_width, value)),
+        values,
+    })
 }
 
 /// One complete admitted offset-only store control-block form.
@@ -5095,10 +5102,11 @@ pub enum OffsetStoreControlForm {
         /// Ordered values decoded from the complete control block.
         values: Vec<u32>,
     },
-    /// Aligned `u32 LE` array ending at one self-framed product record.
-    ProductTerminated {
-        /// Number of leading zero bytes before the aligned array.
-        prefix_byte_len: usize,
+    /// Compact leading value and aligned `u32 LE` array preceding one
+    /// self-framed product record.
+    ProductAnchored {
+        /// Width and value of the compact leading little-endian integer.
+        leading_value: Option<(usize, u32)>,
         /// Ordered values preceding the product record.
         values: Vec<u32>,
     },
@@ -5110,15 +5118,10 @@ pub enum OffsetStoreControlForm {
 pub fn offset_store_control_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
     match (
         offset_store_control_values(bytes),
-        offset_store_index_values(bytes),
+        offset_store_product_anchored_form(bytes),
     ) {
         (Some(values), None) => Some(OffsetStoreControlForm::ZeroPrefixed { values }),
-        (None, Some((prefix_byte_len, values))) => {
-            Some(OffsetStoreControlForm::ProductTerminated {
-                prefix_byte_len,
-                values,
-            })
-        }
+        (None, Some(form)) => Some(form),
         _ => None,
     }
 }

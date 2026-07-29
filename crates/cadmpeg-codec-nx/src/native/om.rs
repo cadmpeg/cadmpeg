@@ -332,7 +332,7 @@ pub struct DataBlock {
 #[serde(rename_all = "snake_case")]
 pub enum DataBlockControlFormKind {
     ZeroPrefixed,
-    ProductTerminated,
+    ProductAnchored,
 }
 
 /// Atomic classification of one complete offset-store control block.
@@ -346,9 +346,12 @@ pub struct DataBlockControlForm {
     pub kind: DataBlockControlFormKind,
     /// Number of values in the admitted control array.
     pub value_count: u32,
-    /// Leading alignment zeros before a product-terminated value array.
+    /// Byte width of the compact leading value before a product-anchored array.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefix_byte_len: Option<u8>,
+    pub leading_value_width: Option<u8>,
+    /// Compact leading little-endian value before a product-anchored array.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leading_value: Option<u32>,
     /// Exact serialized control-block length.
     pub byte_len: u64,
     /// Absolute file offset of the control block.
@@ -370,7 +373,7 @@ pub struct DataBlockControlValue {
     pub source_offset: u64,
 }
 
-/// Ordered little-endian value preceding a control-block product record.
+/// Ordered little-endian value preceding a control-block product anchor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockControlIndexValue {
     /// Globally unique value identity.
@@ -379,8 +382,6 @@ pub struct DataBlockControlIndexValue {
     pub data_block: String,
     /// Zero-based value order in the aligned prefix array.
     pub ordinal: u32,
-    /// Number of leading zero bytes before the aligned array.
-    pub prefix_byte_len: u8,
     /// Unsigned little-endian value.
     pub value: u32,
     /// Same-section offset-store block addressed by an in-range value.
@@ -1847,26 +1848,37 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
             let control = section.control?;
-            let (kind, prefix_byte_len, value_count) =
+            let (kind, leading_value_width, leading_value, value_count) =
                 match crate::om::offset_store_control_form(control.bytes)? {
-                    crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => {
-                        (DataBlockControlFormKind::ZeroPrefixed, None, values.len())
-                    }
-                    crate::om::OffsetStoreControlForm::ProductTerminated {
-                        prefix_byte_len,
-                        values,
-                    } => (
-                        DataBlockControlFormKind::ProductTerminated,
-                        Some(u8::try_from(prefix_byte_len).ok()?),
+                    crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => (
+                        DataBlockControlFormKind::ZeroPrefixed,
+                        None,
+                        None,
                         values.len(),
                     ),
+                    crate::om::OffsetStoreControlForm::ProductAnchored {
+                        leading_value,
+                        values,
+                    } => {
+                        let (leading_value_width, leading_value) = match leading_value {
+                            Some((width, value)) => (Some(u8::try_from(width).ok()?), Some(value)),
+                            None => (None, None),
+                        };
+                        (
+                            DataBlockControlFormKind::ProductAnchored,
+                            leading_value_width,
+                            leading_value,
+                            values.len(),
+                        )
+                    }
                 };
             Some(DataBlockControlForm {
                 id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
                 data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
                 kind,
                 value_count: u32::try_from(value_count).ok()?,
-                prefix_byte_len,
+                leading_value_width,
+                leading_value,
                 byte_len: control.bytes.len() as u64,
                 source_offset: entry.file_span.map_or(0, |(offset, _)| offset)
                     + control.offset as u64,
@@ -1981,7 +1993,7 @@ pub fn data_block_control_class_references(
         .collect()
 }
 
-/// Decode aligned index arrays ending at a unique control-block product record.
+/// Decode aligned index arrays preceding a unique control-block product anchor.
 pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockControlIndexValue> {
     container
         .indexed_om_sections()
@@ -1991,13 +2003,14 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
             let Some(control) = section.control else {
                 return Vec::new();
             };
-            let Some(crate::om::OffsetStoreControlForm::ProductTerminated {
-                prefix_byte_len,
+            let Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+                leading_value,
                 values,
             }) = crate::om::offset_store_control_form(control.bytes)
             else {
                 return Vec::new();
             };
+            let leading_value_width = leading_value.map_or(0, |(width, _)| width);
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             let block_count = section.records.len() + 1;
@@ -2010,7 +2023,6 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
                     ),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
-                    prefix_byte_len: prefix_byte_len as u8,
                     value,
                     target_data_block: control_index_data_block(
                         section_ordinal,
@@ -2019,7 +2031,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
                     ),
                     source_offset: entry_offset
                         + control.offset as u64
-                        + prefix_byte_len as u64
+                        + leading_value_width as u64
                         + ordinal as u64 * 4,
                 })
                 .collect()
@@ -3761,19 +3773,33 @@ mod tests {
     }
 
     #[test]
-    fn om_offset_store_index_values_end_at_unique_aligned_product_record() {
+    fn om_offset_store_values_precede_unique_product_anchor() {
         let mut bytes = vec![0, 0];
         bytes.extend_from_slice(&7u32.to_le_bytes());
         bytes.extend_from_slice(&0x1020u32.to_le_bytes());
         bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
         assert_eq!(
-            crate::om::offset_store_index_values(&bytes),
-            Some((2, vec![7, 0x1020]))
+            crate::om::offset_store_control_form(&bytes),
+            Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+                leading_value: Some((2, 0)),
+                values: vec![7, 0x1020],
+            })
+        );
+
+        let mut nonzero_leading = vec![0x34, 0x12, 0x00];
+        nonzero_leading.extend_from_slice(&7u32.to_le_bytes());
+        nonzero_leading.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
+        assert_eq!(
+            crate::om::offset_store_control_form(&nonzero_leading),
+            Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+                leading_value: Some((3, 0x1234)),
+                values: vec![7],
+            })
         );
 
         let mut duplicate = bytes;
         duplicate.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-        assert!(crate::om::offset_store_index_values(&duplicate).is_none());
+        assert!(crate::om::offset_store_control_form(&duplicate).is_none());
         assert_eq!(
             super::control_index_data_block(2, 700, 496).as_deref(),
             Some("nx:om-data-blocks-2:block#496")
@@ -3799,7 +3825,8 @@ mod tests {
         assert_eq!(forms[0].data_block, blocks[0].id);
         assert_eq!(forms[0].kind, super::DataBlockControlFormKind::ZeroPrefixed);
         assert_eq!(forms[0].value_count, 2);
-        assert_eq!(forms[0].prefix_byte_len, None);
+        assert_eq!(forms[0].leading_value_width, None);
+        assert_eq!(forms[0].leading_value, None);
         assert_eq!(forms[0].byte_len, blocks[0].byte_len);
         let control_values = super::data_block_control_values(&container);
         assert_eq!(control_values.len(), 2);
@@ -3826,7 +3853,7 @@ mod tests {
     }
 
     #[test]
-    fn native_catalog_classifies_product_terminated_control_atomically() {
+    fn native_catalog_classifies_product_anchored_control_atomically() {
         let file = prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             offset_only_indexed_om_section_with_index_values(),
@@ -3837,10 +3864,11 @@ mod tests {
         assert_eq!(forms.len(), 1);
         assert_eq!(
             forms[0].kind,
-            super::DataBlockControlFormKind::ProductTerminated
+            super::DataBlockControlFormKind::ProductAnchored
         );
         assert_eq!(forms[0].value_count, 2);
-        assert_eq!(forms[0].prefix_byte_len, Some(2));
+        assert_eq!(forms[0].leading_value_width, Some(2));
+        assert_eq!(forms[0].leading_value, Some(0));
         assert!(super::data_block_control_values(&container).is_empty());
         assert_eq!(super::data_block_control_index_values(&container).len(), 2);
     }
@@ -3932,7 +3960,7 @@ mod tests {
                 .namespace("nx")
                 .expect("required invariant")
                 .version,
-            162
+            163
         );
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, Some(0x102));

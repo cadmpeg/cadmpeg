@@ -4042,8 +4042,8 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
     assert_eq!(
         crate::om::offset_store_control_form(&product),
-        Some(crate::om::OffsetStoreControlForm::ProductTerminated {
-            prefix_byte_len: 2,
+        Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+            leading_value: Some((2, 0)),
             values: vec![7, 0x1020],
         })
     );
