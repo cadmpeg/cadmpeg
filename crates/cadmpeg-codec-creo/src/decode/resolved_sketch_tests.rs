@@ -1857,7 +1857,7 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
 }
 
 #[test]
-fn thicken_plane_offsets_require_parallel_agreeing_nonzero_distances() {
+fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
     let plane = |origin, normal| PlaneEquation { origin, normal };
     let mut planes = BTreeMap::from([
         (11, plane([0.0, 2.0, 0.0], [0.0, -1.0, 0.0])),
@@ -1866,18 +1866,45 @@ fn thicken_plane_offsets_require_parallel_agreeing_nonzero_distances() {
         (202, plane([-1.0, 0.0, 0.0], [1.0, 0.0, 0.0])),
     ]);
     let transitions = [(11, 201), (12, 202), (13, 203)];
+    let row = |id, reversed| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: if id >= 200 { 17 } else { 3 },
+        reversed,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let mut rows = vec![
+        row(11, true),
+        row(12, false),
+        row(201, false),
+        row(202, true),
+    ];
 
     assert_eq!(
-        thicken_plane_offset_magnitude(&transitions, &planes),
-        Some(5.0)
+        thicken_plane_offset(&transitions, &planes, &rows),
+        Some((5.0, ThickenSide::Reverse))
+    );
+
+    planes.get_mut(&201).expect("plane").origin[1] = 7.0;
+    planes.get_mut(&202).expect("plane").origin[0] = 9.0;
+    assert_eq!(
+        thicken_plane_offset(&transitions, &planes, &rows),
+        Some((5.0, ThickenSide::Forward))
     );
 
     planes.get_mut(&202).expect("plane").origin[0] = -2.0;
-    assert_eq!(thicken_plane_offset_magnitude(&transitions, &planes), None);
+    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
 
     planes.get_mut(&202).expect("plane").origin[0] = -1.0;
     planes.get_mut(&202).expect("plane").normal = [0.0, 1.0, 0.0];
-    assert_eq!(thicken_plane_offset_magnitude(&transitions, &planes), None);
+    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
+
+    planes.get_mut(&202).expect("plane").normal = [1.0, 0.0, 0.0];
+    rows[3].reversed = false;
+    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
 }
 
 #[test]

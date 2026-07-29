@@ -22,7 +22,7 @@ use cadmpeg_ir::features::{
     FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm,
     HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef,
     RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent, SurfaceBoundary,
-    Termination, VertexSelection,
+    Termination, ThickenSide, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -16495,24 +16495,54 @@ fn surface_transition_dependencies(
         })
 }
 
-fn thicken_plane_offset_magnitude(
+fn thicken_plane_offset(
     transitions: &[(u32, u32)],
     planes: &BTreeMap<u32, PlaneEquation>,
-) -> Option<f64> {
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<(f64, ThickenSide)> {
     let mut offsets = Vec::new();
     for &(source_id, output_id) in transitions {
         let (Some(source), Some(output)) = (planes.get(&source_id), planes.get(&output_id)) else {
             continue;
         };
-        let source_normal = normalized(source.normal)?;
+        let source_row = crate::surface::unique_surface_row(rows, source_id)?;
+        let output_row = crate::surface::unique_surface_row(rows, output_id)?;
+        (source_row.reversed != output_row.reversed).then_some(())?;
+        let source_normal = normalized(source.normal)?.map(|component| {
+            if source_row.reversed {
+                -component
+            } else {
+                component
+            }
+        });
         let output_normal = normalized(output.normal)?;
         if dot(source_normal, output_normal).abs() < 1.0 - 1e-9 {
             return None;
         }
         let displacement = std::array::from_fn(|index| output.origin[index] - source.origin[index]);
-        offsets.push(dot(displacement, source_normal).abs());
+        offsets.push(dot(displacement, source_normal));
     }
-    unique_positive_length(&offsets)
+    let magnitude = unique_positive_length(
+        &offsets
+            .iter()
+            .map(|offset| offset.abs())
+            .collect::<Vec<_>>(),
+    )?;
+    let tolerance = 1e-9 * magnitude.max(1.0);
+    let side = if offsets
+        .iter()
+        .all(|offset| (*offset - magnitude).abs() <= tolerance)
+    {
+        ThickenSide::Forward
+    } else if offsets
+        .iter()
+        .all(|offset| (*offset + magnitude).abs() <= tolerance)
+    {
+        ThickenSide::Reverse
+    } else {
+        return None;
+    };
+    Some((magnitude, side))
 }
 
 fn thicken_feature_definition(
@@ -16553,14 +16583,13 @@ fn thicken_feature_definition(
                 FaceSelection::Native(native)
             }
         });
-    let thickness = transitions
-        .as_deref()
-        .and_then(|transitions| thicken_plane_offset_magnitude(transitions, &placed_planes(scan)))
-        .map(Length);
+    let offset = transitions.as_deref().and_then(|transitions| {
+        thicken_plane_offset(transitions, &placed_planes(scan), &scan.surfaces.rows)
+    });
     IrFeatureDefinition::Thicken {
         faces,
-        thickness,
-        side: None,
+        thickness: offset.map(|(magnitude, _)| Length(magnitude)),
+        side: offset.map(|(_, side)| side),
     }
 }
 
