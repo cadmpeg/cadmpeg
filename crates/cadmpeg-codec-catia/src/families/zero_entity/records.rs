@@ -6,7 +6,10 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::eval::nurbs_surface_point;
-use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::le::u32_at as u32_le;
 use cadmpeg_ir::math::{Point2, Point3};
 
@@ -37,6 +40,10 @@ pub struct ZeroEntitySupportOccurrence {
     pub uv_endpoints: Option<[[f64; 2]; 2]>,
     /// Complete parameter-space curve carried by the support record.
     pub pcurve: Option<PcurveGeometry>,
+    /// Exact model-space carrier derived from the pcurve and owning surface.
+    pub model_curve: Option<CurveGeometry>,
+    /// Exact procedural model-space carrier derived from the pcurve and owning surface.
+    pub model_curve_construction: Option<ProceduralCurveDefinition>,
     /// UV endpoints lifted through the owning surface carrier.
     pub model_endpoints: Option<[Point3; 2]>,
 }
@@ -431,6 +438,13 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
             let record = records[next];
             if let Some(support) = zero_entity_support_occurrence(data, record) {
                 let mut support = support;
+                support.model_curve = support
+                    .pcurve
+                    .as_ref()
+                    .and_then(|pcurve| zero_entity_model_curve(&carrier_geometry, pcurve));
+                support.model_curve_construction = support.pcurve.as_ref().and_then(|pcurve| {
+                    zero_entity_model_curve_construction(&carrier_geometry, pcurve)
+                });
                 support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {
                     let [first, second] =
                         endpoints.map(|uv| zero_entity_surface_point(&carrier_geometry, uv));
@@ -754,6 +768,8 @@ fn zero_entity_support_occurrence(
         face_local_slot,
         uv_endpoints,
         pcurve,
+        model_curve: None,
+        model_curve_construction: None,
         model_endpoints: None,
     })
 }
@@ -842,6 +858,275 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
         control_points,
         weights,
         periodic: false,
+    })
+}
+
+fn zero_entity_model_curve(
+    surface: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+) -> Option<CurveGeometry> {
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic: false,
+    } = pcurve
+    else {
+        return None;
+    };
+    let constant_coordinate = |dimension: usize| {
+        let value = if dimension == 0 {
+            control_points.first()?.u
+        } else {
+            control_points.first()?.v
+        };
+        control_points
+            .iter()
+            .all(|point| {
+                if dimension == 0 {
+                    point.u == value
+                } else {
+                    point.v == value
+                }
+            })
+            .then_some(value)
+    };
+    match surface {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let v_axis = normal.cross(*u_axis);
+            Some(CurveGeometry::Nurbs(NurbsCurve {
+                degree: *degree,
+                knots: knots.clone(),
+                control_points: control_points
+                    .iter()
+                    .map(|point| {
+                        Point3::new(
+                            origin.x + point.u * u_axis.x + point.v * v_axis.x,
+                            origin.y + point.u * u_axis.y + point.v * v_axis.y,
+                            origin.z + point.u * u_axis.z + point.v * v_axis.z,
+                        )
+                    })
+                    .collect(),
+                weights: weights.clone(),
+                periodic: false,
+            }))
+        }
+        SurfaceGeometry::Cylinder { axis, .. } if constant_coordinate(0).is_some() => {
+            let point = zero_entity_surface_point(surface, [constant_coordinate(0)?, 0.0])?;
+            Some(CurveGeometry::Line {
+                origin: point,
+                direction: *axis,
+            })
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } if constant_coordinate(1).is_some() => {
+            let height = constant_coordinate(1)?;
+            Some(CurveGeometry::Circle {
+                center: Point3::new(
+                    origin.x + height * axis.x,
+                    origin.y + height * axis.y,
+                    origin.z + height * axis.z,
+                ),
+                axis: *axis,
+                ref_direction: *ref_direction,
+                radius: *radius,
+            })
+        }
+        SurfaceGeometry::Cone {
+            axis,
+            ref_direction,
+            ratio: 1.0,
+            half_angle,
+            ..
+        } if constant_coordinate(0).is_some() => {
+            let angle = constant_coordinate(0)?;
+            let transverse = axis.cross(*ref_direction);
+            let radial = cadmpeg_ir::math::Vector3::new(
+                angle.cos() * ref_direction.x + angle.sin() * transverse.x,
+                angle.cos() * ref_direction.y + angle.sin() * transverse.y,
+                angle.cos() * ref_direction.z + angle.sin() * transverse.z,
+            );
+            Some(CurveGeometry::Line {
+                origin: zero_entity_surface_point(surface, [angle, 0.0])?,
+                direction: cadmpeg_ir::math::Vector3::new(
+                    half_angle.cos() * axis.x + half_angle.sin() * radial.x,
+                    half_angle.cos() * axis.y + half_angle.sin() * radial.y,
+                    half_angle.cos() * axis.z + half_angle.sin() * radial.z,
+                ),
+            })
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio: 1.0,
+            half_angle,
+        } if constant_coordinate(1).is_some() => {
+            let slant = constant_coordinate(1)?;
+            let circle_radius = radius + slant * half_angle.sin();
+            (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
+            Some(CurveGeometry::Circle {
+                center: Point3::new(
+                    origin.x + slant * half_angle.cos() * axis.x,
+                    origin.y + slant * half_angle.cos() * axis.y,
+                    origin.z + slant * half_angle.cos() * axis.z,
+                ),
+                axis: *axis,
+                ref_direction: if circle_radius > 0.0 {
+                    *ref_direction
+                } else {
+                    cadmpeg_ir::math::Vector3::new(
+                        -ref_direction.x,
+                        -ref_direction.y,
+                        -ref_direction.z,
+                    )
+                },
+                radius: circle_radius.abs(),
+            })
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if constant_coordinate(0).is_some() => {
+            let angle = constant_coordinate(0)? / major_radius;
+            let transverse = axis.cross(*ref_direction);
+            let radial = cadmpeg_ir::math::Vector3::new(
+                angle.cos() * ref_direction.x + angle.sin() * transverse.x,
+                angle.cos() * ref_direction.y + angle.sin() * transverse.y,
+                angle.cos() * ref_direction.z + angle.sin() * transverse.z,
+            );
+            Some(CurveGeometry::Circle {
+                center: Point3::new(
+                    center.x + major_radius * radial.x,
+                    center.y + major_radius * radial.y,
+                    center.z + major_radius * radial.z,
+                ),
+                axis: radial.cross(*axis),
+                ref_direction: radial,
+                radius: *minor_radius,
+            })
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if constant_coordinate(1).is_some() => {
+            let angle = constant_coordinate(1)? / minor_radius;
+            let circle_radius = major_radius + minor_radius * angle.cos();
+            (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
+            Some(CurveGeometry::Circle {
+                center: Point3::new(
+                    center.x + minor_radius * angle.sin() * axis.x,
+                    center.y + minor_radius * angle.sin() * axis.y,
+                    center.z + minor_radius * angle.sin() * axis.z,
+                ),
+                axis: *axis,
+                ref_direction: if circle_radius > 0.0 {
+                    *ref_direction
+                } else {
+                    cadmpeg_ir::math::Vector3::new(
+                        -ref_direction.x,
+                        -ref_direction.y,
+                        -ref_direction.z,
+                    )
+                },
+                radius: circle_radius.abs(),
+            })
+        }
+        SurfaceGeometry::Nurbs(surface) if constant_coordinate(0).is_some() => {
+            crate::nurbs::nurbs_surface_isocurve(surface, constant_coordinate(0)?, true)
+                .map(CurveGeometry::Nurbs)
+        }
+        SurfaceGeometry::Nurbs(surface) if constant_coordinate(1).is_some() => {
+            crate::nurbs::nurbs_surface_isocurve(surface, constant_coordinate(1)?, false)
+                .map(CurveGeometry::Nurbs)
+        }
+        _ => None,
+    }
+}
+
+fn zero_entity_model_curve_construction(
+    surface: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+) -> Option<ProceduralCurveDefinition> {
+    let (
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio: 1.0,
+            half_angle,
+        },
+        PcurveGeometry::Nurbs {
+            degree: 1,
+            control_points,
+            weights: None,
+            periodic: false,
+            ..
+        },
+    ) = (surface, pcurve)
+    else {
+        return None;
+    };
+    let [first, second] = control_points.as_slice() else {
+        return None;
+    };
+    if first.u == second.u || first.v == second.v {
+        return None;
+    }
+    let [start, end] = if first.u < second.u {
+        [first, second]
+    } else {
+        [second, first]
+    };
+    let slope = (end.v - start.v) / (end.u - start.u);
+    let start_radius = radius + start.v * half_angle.sin();
+    if !slope.is_finite() || !start_radius.is_finite() || start_radius == 0.0 {
+        return None;
+    }
+    let transverse = axis.cross(*ref_direction);
+    let major = cadmpeg_ir::math::Vector3::new(
+        start_radius * ref_direction.x,
+        start_radius * ref_direction.y,
+        start_radius * ref_direction.z,
+    );
+    let minor = cadmpeg_ir::math::Vector3::new(
+        start_radius * transverse.x,
+        start_radius * transverse.y,
+        start_radius * transverse.z,
+    );
+    Some(ProceduralCurveDefinition::Helix {
+        angle_range: [start.u, end.u],
+        center: Point3::new(
+            origin.x + start.v * half_angle.cos() * axis.x,
+            origin.y + start.v * half_angle.cos() * axis.y,
+            origin.z + start.v * half_angle.cos() * axis.z,
+        ),
+        major,
+        minor,
+        pitch: cadmpeg_ir::math::Vector3::new(
+            std::f64::consts::TAU * slope * half_angle.cos() * axis.x,
+            std::f64::consts::TAU * slope * half_angle.cos() * axis.y,
+            std::f64::consts::TAU * slope * half_angle.cos() * axis.z,
+        ),
+        apex_factor: std::f64::consts::TAU * slope * half_angle.sin() / start_radius,
+        axis: *axis,
     })
 }
 
@@ -1319,6 +1604,17 @@ mod tests {
                 periodic: false,
             })
         );
+        assert!(matches!(
+            support.model_curve,
+            Some(CurveGeometry::Nurbs(NurbsCurve {
+                degree: 1,
+                ref control_points,
+                weights: None,
+                periodic: false,
+                ..
+            })) if control_points
+                == &[Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
+        ));
         assert_eq!(
             support.model_endpoints,
             Some([Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)])
@@ -1361,6 +1657,84 @@ mod tests {
             panic!("one support record")
         };
         assert!(zero_entity_support_occurrence(&bytes, *record).is_none());
+    }
+
+    #[test]
+    fn affine_cone_pcurve_lifts_to_an_exact_conical_helix() {
+        use cadmpeg_ir::math::Vector3;
+
+        let half_angle = 0.25;
+        let surface = SurfaceGeometry::Cone {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 1.0,
+            half_angle,
+        };
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 1.0), Point2::new(0.5, 2.0)],
+            weights: None,
+            periodic: false,
+        };
+        let Some(ProceduralCurveDefinition::Helix {
+            angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+        }) = zero_entity_model_curve_construction(&surface, &pcurve)
+        else {
+            panic!("conical helix")
+        };
+        let slope = 2.0;
+        let start_radius = 2.0 + half_angle.sin();
+        assert_eq!(angle_range, [0.0, 0.5]);
+        assert_eq!(center, Point3::new(1.0, 2.0, 3.0 + half_angle.cos()));
+        assert_eq!(major, Vector3::new(start_radius, 0.0, 0.0));
+        assert_eq!(minor, Vector3::new(0.0, start_radius, 0.0));
+        assert_eq!(
+            pitch,
+            Vector3::new(0.0, 0.0, std::f64::consts::TAU * slope * half_angle.cos())
+        );
+        assert_eq!(
+            apex_factor,
+            std::f64::consts::TAU * slope * half_angle.sin() / start_radius
+        );
+        assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+
+        let revolution_fraction = angle_range[1] / std::f64::consts::TAU;
+        let end_radius = start_radius * (1.0 + apex_factor * revolution_fraction);
+        assert!((end_radius - (2.0 + 2.0 * half_angle.sin())).abs() < 1e-12);
+        assert!(
+            (center.z + pitch.z * revolution_fraction - (3.0 + 2.0 * half_angle.cos())).abs()
+                < 1e-12
+        );
+        for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let angle = angle_range[0] + fraction * (angle_range[1] - angle_range[0]);
+            let revolution_fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
+            let radial_scale = 1.0 + apex_factor * revolution_fraction;
+            let construction_point = Point3::new(
+                center.x
+                    + radial_scale * (major.x * angle.cos() + minor.x * angle.sin())
+                    + pitch.x * revolution_fraction,
+                center.y
+                    + radial_scale * (major.y * angle.cos() + minor.y * angle.sin())
+                    + pitch.y * revolution_fraction,
+                center.z
+                    + radial_scale * (major.z * angle.cos() + minor.z * angle.sin())
+                    + pitch.z * revolution_fraction,
+            );
+            let surface_point = zero_entity_surface_point(&surface, [angle, 1.0 + fraction])
+                .expect("finite cone point");
+            assert!((construction_point.x - surface_point.x).abs() < 1e-12);
+            assert!((construction_point.y - surface_point.y).abs() < 1e-12);
+            assert!((construction_point.z - surface_point.z).abs() < 1e-12);
+        }
     }
 
     #[test]

@@ -1078,6 +1078,18 @@ fn finish_decode(
             .flat_map(|run| &run.supports)
             .filter(|support| support.pcurve.is_some())
             .count();
+        let support_model_curve_count = native
+            .zero_entity_support_runs
+            .iter()
+            .flat_map(|run| &run.supports)
+            .filter(|support| support.model_curve.is_some())
+            .count();
+        let support_model_construction_count = native
+            .zero_entity_support_runs
+            .iter()
+            .flat_map(|run| &run.supports)
+            .filter(|support| support.model_curve_construction.is_some())
+            .count();
         let model_endpoint_count = native
             .zero_entity_support_runs
             .iter()
@@ -1151,7 +1163,9 @@ fn finish_decode(
             message: format!(
                 "{} zero-entity surface-support run(s) retain {support_count} face-local \
                  occurrence(s), including {support_pcurve_count} complete parameter-space \
-                 curve(s), {endpoint_count} with exact UV endpoint pairs, and \
+                 curve(s), {support_model_curve_count} with exact model-space carriers, \
+                 {support_model_construction_count} with exact procedural model-space carriers, \
+                 {endpoint_count} with exact UV endpoint pairs, and \
                  {model_endpoint_count} lifted model-space endpoint pairs; \
                  {face_count} run(s) bind the complete face roster with {loop_terminal_count} \
                  ordered loop terminal(s), {loop_record_count} loop record(s), and \

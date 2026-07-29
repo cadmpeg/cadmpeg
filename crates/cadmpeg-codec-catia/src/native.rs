@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 182;
+pub const CATIA_NATIVE_VERSION: u32 = 184;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2693,6 +2693,12 @@ pub struct CatiaZeroEntitySupportOccurrence {
     /// Complete parameter-space curve carried by the support record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<cadmpeg_ir::geometry::PcurveGeometry>,
+    /// Exact model-space carrier derived from the pcurve and owning surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_curve: Option<cadmpeg_ir::geometry::CurveGeometry>,
+    /// Exact procedural model-space carrier derived from the pcurve and owning surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_curve_construction: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
     /// UV endpoints lifted through the owning surface carrier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
@@ -3804,6 +3810,8 @@ fn zero_entity_support_runs(
                     face_local_slot: support.face_local_slot,
                     uv_endpoints: support.uv_endpoints,
                     pcurve: support.pcurve,
+                    model_curve: support.model_curve,
+                    model_curve_construction: support.model_curve_construction,
                     model_endpoints: support.model_endpoints,
                 })
                 .collect(),
@@ -5027,6 +5035,8 @@ fn validate_zero_entity_support_runs(
                         .as_ref()
                         .is_none_or(|previous| previous.byte_offset < face.byte_offset))
         });
+        let carrier_tag =
+            zero_entity_record(records, run.carrier_record_ordinal).map(|record| record.tag);
         let supports_valid = !run.supports.is_empty()
             && run
                 .supports
@@ -5047,6 +5057,14 @@ fn validate_zero_entity_support_runs(
                                 [point.x, point.y, point.z].into_iter().all(f64::is_finite)
                             })
                     });
+                    let model_curve_valid =
+                        validate_zero_entity_model_curve(carrier_tag, support.model_curve.as_ref());
+                    let model_curve_construction_valid =
+                        validate_zero_entity_model_curve_construction(
+                            carrier_tag,
+                            support.model_curve.as_ref(),
+                            support.model_curve_construction.as_ref(),
+                        );
                     let pcurve_valid = match (&support.tag, &support.pcurve) {
                         (
                             [0x21, tag @ (0x71 | 0x91 | 0x99 | 0xd6)],
@@ -5113,6 +5131,8 @@ fn validate_zero_entity_support_runs(
                             || run.supports[support_index - 1].byte_offset < support.byte_offset)
                         && endpoints_valid
                         && pcurve_valid
+                        && model_curve_valid
+                        && model_curve_construction_valid
                         && model_endpoints_valid
                 });
         if run.id != format!("catia:zero-entity:support-run#{index}")
@@ -5134,6 +5154,127 @@ fn validate_zero_entity_support_runs(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn validate_zero_entity_model_curve_construction(
+    carrier_tag: Option<[u8; 2]>,
+    model_curve: Option<&cadmpeg_ir::geometry::CurveGeometry>,
+    construction: Option<&cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+) -> bool {
+    let finite_vector = |vector: &cadmpeg_ir::math::Vector3| {
+        [vector.x, vector.y, vector.z]
+            .into_iter()
+            .all(f64::is_finite)
+            && vector.x.hypot(vector.y).hypot(vector.z) > 0.0
+    };
+    let norm = |vector: &cadmpeg_ir::math::Vector3| vector.x.hypot(vector.y).hypot(vector.z);
+    let normalized_dot = |left: &cadmpeg_ir::math::Vector3, right: &cadmpeg_ir::math::Vector3| {
+        (left.x * right.x + left.y * right.y + left.z * right.z) / (norm(left) * norm(right))
+    };
+    match (carrier_tag, model_curve, construction) {
+        (
+            Some([0x29, 0xb8]),
+            None,
+            Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+                angle_range,
+                center,
+                major,
+                minor,
+                pitch,
+                apex_factor,
+                axis,
+            }),
+        ) => {
+            angle_range.iter().copied().all(f64::is_finite)
+                && angle_range[0] < angle_range[1]
+                && [center.x, center.y, center.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                && finite_vector(major)
+                && finite_vector(minor)
+                && [pitch.x, pitch.y, pitch.z].into_iter().all(f64::is_finite)
+                && apex_factor.is_finite()
+                && finite_vector(axis)
+                && (norm(axis) - 1.0).abs() <= 1e-9
+                && (norm(major) - norm(minor)).abs() <= 1e-9 * norm(major).max(norm(minor))
+                && normalized_dot(major, minor).abs() <= 1e-9
+                && normalized_dot(major, axis).abs() <= 1e-9
+                && normalized_dot(minor, axis).abs() <= 1e-9
+                && (pitch.x == 0.0 && pitch.y == 0.0 && pitch.z == 0.0
+                    || normalized_dot(pitch, axis).abs() >= 1.0 - 1e-9)
+                && {
+                    let handed_minor = cadmpeg_ir::math::Vector3::new(
+                        axis.y * major.z - axis.z * major.y,
+                        axis.z * major.x - axis.x * major.z,
+                        axis.x * major.y - axis.y * major.x,
+                    );
+                    normalized_dot(&handed_minor, minor) >= 1.0 - 1e-9
+                }
+        }
+        (_, Some(_), None)
+        | (Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8] | [0x34, 0xc8 | 0x5e]), None, None) => {
+            true
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+fn validate_zero_entity_model_curve(
+    carrier_tag: Option<[u8; 2]>,
+    curve: Option<&cadmpeg_ir::geometry::CurveGeometry>,
+) -> bool {
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    let finite_point = |point: &cadmpeg_ir::math::Point3| {
+        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+    };
+    let finite_vector = |vector: &cadmpeg_ir::math::Vector3| {
+        [vector.x, vector.y, vector.z]
+            .into_iter()
+            .all(f64::is_finite)
+            && vector.x.hypot(vector.y).hypot(vector.z) > 0.0
+    };
+    match (carrier_tag, curve) {
+        (Some([0x27, 0x6a] | [0x34, 0xc8 | 0x5e]), Some(CurveGeometry::Nurbs(curve))) => {
+            let Ok(degree) = usize::try_from(curve.degree) else {
+                return false;
+            };
+            curve.control_points.len() > degree
+                && curve.knots.len() == curve.control_points.len() + degree + 1
+                && curve.knots.iter().all(|knot| knot.is_finite())
+                && curve.knots.windows(2).all(|pair| pair[0] <= pair[1])
+                && curve.control_points.iter().all(finite_point)
+                && curve.weights.as_ref().is_none_or(|weights| {
+                    weights.len() == curve.control_points.len()
+                        && weights
+                            .iter()
+                            .all(|weight| weight.is_finite() && *weight > 0.0)
+                })
+                && !curve.periodic
+        }
+        (Some([0x28, 0x8a] | [0x29, 0xb8]), Some(CurveGeometry::Line { origin, direction })) => {
+            finite_point(origin) && finite_vector(direction)
+        }
+        (
+            Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8]),
+            Some(CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            }),
+        ) => {
+            finite_point(center)
+                && finite_vector(axis)
+                && finite_vector(ref_direction)
+                && radius.is_finite()
+                && *radius > 0.0
+        }
+        (Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8] | [0x34, 0xc8 | 0x5e]), None) => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]

@@ -159,7 +159,11 @@ current scores require those matrices and representative fixtures.
   tapes. Every occurrence keeps its framed local slot, record family, and
   complete clamped `2171`, `2191`, `2199`, or `21d6` parameter-space NURBS
   curve, including rational `2199` weights, together with its inline UV
-  endpoint pair. The independent `5e1a`
+  endpoint pair. Plane pcurves lift affinely to exact model-space NURBS
+  carriers. Constant-coordinate pcurves on cylinder, cone, torus, and NURBS
+  surfaces retain their exact analytic or contracted NURBS carriers.
+  Non-isoparametric affine cone pcurves retain exact conical-helix
+  constructions. The independent `5e1a`
   edge-stride, `2569`/`0638` positional-use, and counted `05xx`
   vertex-incidence registries retain one-based global record ordinals and exact
   references against a complete framed-record identity inventory. Each

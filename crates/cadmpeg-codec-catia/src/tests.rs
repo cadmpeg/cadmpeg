@@ -4827,6 +4827,19 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             ..
         }) if control_points.len() == 2
     ));
+    assert!(matches!(
+        support.model_curve,
+        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve {
+                degree: 1,
+                ref control_points,
+                weights: None,
+                periodic: false,
+                ..
+            }
+        )) if control_points.len() == 2
+    ));
+    assert!(support.model_curve_construction.is_none());
     assert_eq!(
         support.model_endpoints,
         Some([
@@ -4910,6 +4923,38 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_pcurve_namespace)
         .expect("store invalid CATIA zero-entity support pcurve");
     assert!(crate::native::CatiaNative::load(&invalid_pcurve_namespace).is_err());
+
+    let mut invalid_model_curve = native.clone();
+    let Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(model_curve)) =
+        invalid_model_curve.zero_entity_support_runs[0].supports[0]
+            .model_curve
+            .as_mut()
+    else {
+        panic!("NURBS support model curve")
+    };
+    model_curve.periodic = true;
+    let mut invalid_model_curve_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_model_curve
+        .store(&mut invalid_model_curve_namespace)
+        .expect("store invalid CATIA zero-entity support model curve");
+    assert!(crate::native::CatiaNative::load(&invalid_model_curve_namespace).is_err());
+
+    let mut invalid_model_construction = native.clone();
+    invalid_model_construction.zero_entity_support_runs[0].supports[0].model_curve_construction =
+        Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+            angle_range: [0.0, 1.0],
+            center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            major: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            minor: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            apex_factor: 1.0,
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        });
+    let mut invalid_model_construction_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_model_construction
+        .store(&mut invalid_model_construction_namespace)
+        .expect("store invalid CATIA zero-entity support model construction");
+    assert!(crate::native::CatiaNative::load(&invalid_model_construction_namespace).is_err());
 
     let mut invalid_oriented_endpoints = native.clone();
     invalid_oriented_endpoints.zero_entity_support_runs[0]
