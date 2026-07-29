@@ -5347,6 +5347,21 @@ fn decode_retains_native_carrierless_edge() {
 fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let edge_id = ir.model.edges[0].id.clone();
+    let expected_endpoints = [&ir.model.edges[0].start, &ir.model.edges[0].end].map(|vertex_id| {
+        let point_id = &ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == vertex_id)
+            .expect("edge vertex")
+            .point;
+        ir.model
+            .points
+            .iter()
+            .find(|point| &point.id == point_id)
+            .expect("vertex point")
+            .position
+    });
     ir.model.edges[0].curve = None;
     ir.model.edges[0].param_range = None;
     ir.model.edges[0].tolerance = Some(0.01);
@@ -5373,6 +5388,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .expect("fin record");
     put_ref(&mut stream, fin + 18, 1);
     let graph = crate::topology::Graph::parse(&stream);
+    let mut off_support_ir = ir.clone();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = annotations.stream("nx:test");
 
@@ -5391,7 +5407,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .iter()
         .find(|edge| edge.id == edge_id)
         .expect("tolerant edge");
-    assert_eq!(edge.param_range, Some([0.0, 1.0]));
+    assert_eq!(edge.param_range, None);
     let curve = ir
         .model
         .curves
@@ -5405,13 +5421,47 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .iter()
         .find(|procedural| procedural.curve == curve.id)
         .expect("intersection construction");
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &procedural.definition
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        supports,
+        endpoints,
+        tolerance,
+    } = &procedural.definition
     else {
-        panic!("intersection definition");
+        panic!("tolerant intersection definition");
     };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    assert_ne!(context.sides[0].surface, context.sides[1].surface);
+    assert_ne!(supports[0], supports[1]);
+    assert_eq!(*endpoints, expected_endpoints);
+    assert_eq!(*tolerance, 0.01);
+
+    let start = off_support_ir.model.edges[0].start.clone();
+    let point_id = off_support_ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == start)
+        .expect("edge vertex")
+        .point
+        .clone();
+    let point = off_support_ir
+        .model
+        .points
+        .iter_mut()
+        .find(|point| point.id == point_id)
+        .expect("vertex point");
+    point.position.x += 0.5;
+    point.position.y += 0.5;
+    point.position.z += 0.5;
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let stream = annotations.stream("nx:test");
+    crate::decode::attach_tolerant_edge_intersections(
+        &mut off_support_ir,
+        &graph,
+        &edges,
+        "nx:test",
+        stream,
+        &mut annotations,
+    );
+    assert_eq!(off_support_ir.model.edges[0].curve, None);
 }
 
 #[test]

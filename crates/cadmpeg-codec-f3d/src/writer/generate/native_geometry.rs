@@ -5105,6 +5105,7 @@ pub(crate) fn native_procedural_curve(
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. }

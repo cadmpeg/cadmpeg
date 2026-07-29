@@ -798,9 +798,12 @@ owning `FIN.curve`, this is a tolerant intersection edge: its carrier is the
 intersection relation between the two distinct surfaces reached through its
 radial FIN pair, bounded by the EDGE vertices, within the serialized edge
 tolerance. Transfer represents the relation as a procedural intersection
-carrier with the two face surfaces; it does not synthesize a line between the
-vertices. A null EDGE and FIN curve without exactly two distinct adjacent
-support surfaces remains carrierless.
+carrier with the two face surfaces, the ordered EDGE vertex positions, and the
+serialized tolerance. The relation has no solved-curve parameter interval and
+the EDGE therefore has no parameter range. Transfer does not synthesize a line
+between the vertices. A null EDGE and FIN curve without exactly two distinct
+adjacent support surfaces, two resolved endpoint positions, or endpoint
+incidence on both surfaces within the EDGE tolerance remains carrierless.
 A null `EDGE.curve` may instead have a non-null owning `FIN.curve`. The FIN
 reference is the carrier path. When it resolves through
 `TRIMMED_CURVE → SP_CURVE` whose original 3D curve is null, the SP_CURVE's

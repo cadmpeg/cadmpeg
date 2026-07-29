@@ -1311,6 +1311,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
+                for surface in supports {
+                    if !ids.surfaces.contains(&surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    }
+                }
+            }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
                 for side in context.sides.iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {

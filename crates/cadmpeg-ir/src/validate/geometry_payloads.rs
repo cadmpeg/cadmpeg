@@ -2208,6 +2208,28 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
+        if let ProceduralCurveDefinition::TolerantIntersection {
+            supports,
+            endpoints,
+            tolerance,
+        } = &procedural.definition
+        {
+            let point_is_finite = |point: &crate::math::Point3| {
+                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+            };
+            if supports[0] == supports[1]
+                || !endpoints.iter().all(point_is_finite)
+                || !tolerance.is_finite()
+                || *tolerance < 0.0
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "tolerant intersection supports or endpoint bounds are invalid",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::Offset {
             distance,
             direction,

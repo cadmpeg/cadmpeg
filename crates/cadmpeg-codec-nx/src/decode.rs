@@ -6067,7 +6067,10 @@ pub(crate) fn attach_tolerant_edge_intersections(
         else {
             continue;
         };
-        if edge.curve.is_some() || edge.tolerance.is_none() {
+        let Some(tolerance) = edge.tolerance else {
+            continue;
+        };
+        if edge.curve.is_some() {
             continue;
         }
         let support = |fin_xmt| {
@@ -6100,10 +6103,38 @@ pub(crate) fn attach_tolerant_edge_intersections(
         if first_support == second_support {
             continue;
         }
-        candidates.push((xmt, edge_id.clone(), [first_support, second_support]));
+        let endpoint = |vertex_id: &VertexId| {
+            let point_id = &ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| &vertex.id == vertex_id)?
+                .point;
+            ir.model
+                .points
+                .iter()
+                .find(|point| &point.id == point_id)
+                .map(|point| point.position)
+        };
+        let (Some(start), Some(end)) = (endpoint(&edge.start), endpoint(&edge.end)) else {
+            continue;
+        };
+        let endpoints = [start, end];
+        let supports = [first_support, second_support];
+        let endpoints_bound_supports = supports.iter().all(|surface| {
+            endpoints.iter().all(|point| {
+                surface_parameters_for_fit(ir, surface, *point, None, tolerance)
+                    .and_then(|uv| decoded_surface_point(ir, surface, uv.u, uv.v))
+                    .is_some_and(|support_point| point_distance(*point, support_point) <= tolerance)
+            })
+        });
+        if !endpoints_bound_supports {
+            continue;
+        }
+        candidates.push((xmt, edge_id.clone(), supports, endpoints, tolerance));
     }
 
-    for (xmt, edge_id, supports) in candidates {
+    for (xmt, edge_id, supports, endpoints, tolerance) in candidates {
         let curve_id = CurveId(format!("{prefix}:tolerant-curve#{xmt}"));
         let procedural_id = ProceduralCurveId(format!("{prefix}:tolerant-intersection#{xmt}"));
         let Some(edge) = ir
@@ -6115,9 +6146,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
             continue;
         };
         edge.curve = Some(curve_id.clone());
-        edge.param_range = Some([0.0, 1.0]);
         annotations.derived(&edge_id, "curve");
-        annotations.derived(&edge_id, "param_range");
         if let Some(node) = graph.get(16, xmt) {
             annotations
                 .note(&curve_id, source_stream, node.pos as u64)
@@ -6138,17 +6167,10 @@ pub(crate) fn attach_tolerant_edge_intersections(
         ir.model.procedural_curves.push(ProceduralCurve {
             id: procedural_id,
             curve: curve_id,
-            definition: ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: supports.map(|surface| IntcurveSupportSide {
-                        surface: Some(surface),
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    }),
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
-                discontinuity_flag: false,
+            definition: ProceduralCurveDefinition::TolerantIntersection {
+                supports,
+                endpoints,
+                tolerance,
             },
             cache_fit_tolerance: None,
         });

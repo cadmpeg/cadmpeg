@@ -2682,6 +2682,15 @@ pub enum ProceduralCurveDefinition {
         /// Native boolean following the discontinuity arrays.
         discontinuity_flag: bool,
     },
+    /// Tolerance-bounded intersection relation selected by topology endpoints.
+    TolerantIntersection {
+        /// Two distinct adjacent face surfaces.
+        supports: [SurfaceId; 2],
+        /// Ordered model-space endpoint witnesses.
+        endpoints: [Point3; 2],
+        /// Maximum model-space deviation admitted by the source edge.
+        tolerance: f64,
+    },
     /// Intersection constrained by a third ordered support surface.
     ThreeSurfaceIntersection {
         /// Shared first two surfaces, UV curves, interval, and discontinuities.
