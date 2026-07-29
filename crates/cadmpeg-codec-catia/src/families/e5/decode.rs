@@ -411,11 +411,32 @@ pub(crate) fn fit_e5_plane_axes(
     origin: [f64; 3],
     pairs: &[([f64; 2], Point3)],
 ) -> Option<(Vector3, Vector3, f64)> {
-    let suu = pairs.iter().map(|(uv, _)| uv[0] * uv[0]).sum::<f64>();
-    let suv = pairs.iter().map(|(uv, _)| uv[0] * uv[1]).sum::<f64>();
-    let svv = pairs.iter().map(|(uv, _)| uv[1] * uv[1]).sum::<f64>();
+    let uv_scale = pairs
+        .iter()
+        .flat_map(|(uv, _)| uv.iter())
+        .map(|value| value.abs())
+        .fold(0.0_f64, f64::max);
+    if !uv_scale.is_finite() || uv_scale == 0.0 {
+        return None;
+    }
+    let normalized_uv = |uv: [f64; 2]| [uv[0] / uv_scale, uv[1] / uv_scale];
+    let suu = pairs
+        .iter()
+        .map(|(uv, _)| normalized_uv(*uv)[0].powi(2))
+        .sum::<f64>();
+    let suv = pairs
+        .iter()
+        .map(|(uv, _)| {
+            let uv = normalized_uv(*uv);
+            uv[0] * uv[1]
+        })
+        .sum::<f64>();
+    let svv = pairs
+        .iter()
+        .map(|(uv, _)| normalized_uv(*uv)[1].powi(2))
+        .sum::<f64>();
     let determinant = suu * svv - suv * suv;
-    if determinant.abs() <= 1e-18 {
+    if !determinant.is_finite() || determinant == 0.0 {
         return None;
     }
     let mut u = [0.0; 3];
@@ -423,14 +444,21 @@ pub(crate) fn fit_e5_plane_axes(
     for axis in 0..3 {
         let bu = pairs
             .iter()
-            .map(|(uv, point)| uv[0] * ([point.x, point.y, point.z][axis] - origin[axis]))
+            .map(|(uv, point)| {
+                normalized_uv(*uv)[0] * ([point.x, point.y, point.z][axis] - origin[axis])
+            })
             .sum::<f64>();
         let bv = pairs
             .iter()
-            .map(|(uv, point)| uv[1] * ([point.x, point.y, point.z][axis] - origin[axis]))
+            .map(|(uv, point)| {
+                normalized_uv(*uv)[1] * ([point.x, point.y, point.z][axis] - origin[axis])
+            })
             .sum::<f64>();
-        u[axis] = (bu * svv - bv * suv) / determinant;
-        v[axis] = (suu * bv - suv * bu) / determinant;
+        u[axis] = (bu * svv - bv * suv) / determinant / uv_scale;
+        v[axis] = (suu * bv - suv * bu) / determinant / uv_scale;
+    }
+    if u.into_iter().chain(v).any(|value| !value.is_finite()) {
+        return None;
     }
     let mut residual = 0.0f64;
     for (uv, point) in pairs {
@@ -458,7 +486,10 @@ pub(crate) fn fit_rank_one_e5_plane_axes(
     pairs: &[([f64; 2], Point3)],
     normal: Vector3,
 ) -> Option<(Vector3, Vector3, f64)> {
-    let (uv, point) = pairs.iter().find(|(uv, _)| uv[0].hypot(uv[1]) > 1e-9)?;
+    let (uv, point) = pairs.iter().find(|(uv, _)| {
+        let norm = uv[0].hypot(uv[1]);
+        norm.is_finite() && norm != 0.0
+    })?;
     let uv_norm = uv[0].hypot(uv[1]);
     let q = [uv[0] / uv_norm, uv[1] / uv_norm];
     let displacement = Vector3::new(
@@ -466,7 +497,8 @@ pub(crate) fn fit_rank_one_e5_plane_axes(
         point.y - origin[1],
         point.z - origin[2],
     );
-    if (displacement.norm() - uv_norm).abs() > 2e-3 {
+    let displacement_norm = displacement.x.hypot(displacement.y).hypot(displacement.z);
+    if (displacement_norm - uv_norm).abs() > 2e-3 {
         return None;
     }
     let mapped_q = unit_vector(displacement)?;
@@ -2050,8 +2082,8 @@ mod route_tests {
     use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
-        e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes,
-        parameter_ranges_reversed,
+        e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_e5_plane_axes,
+        fit_rank_one_e5_plane_axes, parameter_ranges_reversed,
     };
 
     use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Topology};
@@ -2528,16 +2560,38 @@ mod route_tests {
     }
 
     #[test]
+    fn plane_axis_fit_is_uv_scale_independent() {
+        for scale in [2.0, 1e-200] {
+            let pairs = [
+                ([scale, 0.0], Point3::new(scale, 0.0, 0.0)),
+                ([0.0, scale], Point3::new(0.0, scale, 0.0)),
+                ([scale, scale], Point3::new(scale, scale, 0.0)),
+            ];
+            let (u_axis, v_axis, residual) =
+                fit_e5_plane_axes([0.0; 3], &pairs).expect("full-rank frame");
+            assert!(residual <= scale * 1e-12);
+            assert!((u_axis.x - 1.0).abs() < 1e-12);
+            assert!(u_axis.y.abs() < 1e-12);
+            assert!(u_axis.z.abs() < 1e-12);
+            assert!(v_axis.x.abs() < 1e-12);
+            assert!((v_axis.y - 1.0).abs() < 1e-12);
+            assert!(v_axis.z.abs() < 1e-12);
+        }
+    }
+
+    #[test]
     fn rank_one_plane_endpoints_complete_with_known_normal() {
-        let pairs = [
-            ([0.0, -2.0], Point3::new(-2.0, 0.0, 0.0)),
-            ([0.0, 2.0], Point3::new(2.0, 0.0, 0.0)),
-        ];
-        let (u_axis, v_axis, residual) =
-            fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
-                .expect("rank-one frame");
-        assert!(residual < 1e-12);
-        assert!((v_axis.x - 1.0).abs() < 1e-12);
-        assert!((u_axis.z - 1.0).abs() < 1e-12);
+        for scale in [2.0, 1e-200] {
+            let pairs = [
+                ([0.0, -scale], Point3::new(-scale, 0.0, 0.0)),
+                ([0.0, scale], Point3::new(scale, 0.0, 0.0)),
+            ];
+            let (u_axis, v_axis, residual) =
+                fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
+                    .expect("rank-one frame");
+            assert!(residual <= scale * 1e-12);
+            assert!((v_axis.x - 1.0).abs() < 1e-12);
+            assert!((u_axis.z - 1.0).abs() < 1e-12);
+        }
     }
 }
