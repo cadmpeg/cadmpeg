@@ -205,8 +205,7 @@ fn exact_assembly_operand_frames(
     {
         return None;
     }
-    let mut frames = Vec::with_capacity(2);
-    for (reference_at, transform_at) in [(start + 28, start + 40), (start + 168, start + 180)] {
+    let frame = |reference_at: usize, transform_at: usize| {
         let reference_record_index = marked_record_reference(bytes, reference_at)?;
         let values = f64s_at(bytes, transform_at, 16)?;
         let mut transform = [[0.0; 4]; 4];
@@ -216,18 +215,16 @@ fn exact_assembly_operand_frames(
         if !valid_sketch_transform(&transform) {
             return None;
         }
-        frames.push(DesignAssemblyOperandFrame {
+        Some(DesignAssemblyOperandFrame {
             reference_record_index,
             reference_offset: (reference_at + 1) as u64,
             transform,
             transform_offset: transform_at as u64,
-        });
-    }
-    let [first, second] = frames.as_slice() else {
-        return None;
+        })
     };
-    (first.reference_record_index != second.reference_record_index)
-        .then_some([first.clone(), second.clone()])
+    let first = frame(start + 28, start + 40)?;
+    let second = frame(start + 168, start + 180)?;
+    (first.reference_record_index != second.reference_record_index).then_some([first, second])
 }
 
 pub(crate) fn exact_rectangular_pattern_construction(

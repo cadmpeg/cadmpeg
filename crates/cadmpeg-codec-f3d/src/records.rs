@@ -1107,19 +1107,19 @@ pub struct DesignAssemblyAlignment {
     pub owner_record_indices: [u32; 4],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
     pub value_offsets: [u64; 4],
-    /// Exact connector frames embedded by the assembly scope.
+    /// Exact operand frames embedded by the assembly scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operand_frames: Option<[DesignAssemblyOperandFrame; 2]>,
 }
 
-/// One connector frame embedded by an assembly-operation scope.
+/// One operand frame embedded by an assembly-operation scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignAssemblyOperandFrame {
-    /// Construction record referenced by the connector.
+    /// Construction record referenced by the operand.
     pub reference_record_index: u32,
     /// Byte offset of `reference_record_index`.
     pub reference_offset: u64,
-    /// Row-major connector-local-to-model transform.
+    /// Row-major operand-local-to-model transform.
     pub transform: [[f64; 4]; 4],
     /// Byte offset of the first transform scalar.
     pub transform_offset: u64,

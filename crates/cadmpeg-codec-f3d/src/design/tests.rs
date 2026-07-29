@@ -2991,7 +2991,7 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
         radial_dimension_definition(
             &entity,
             "Diameter Dimension-2",
-            1.0_f64,
+            1.0,
             diameter_parameter.clone(),
         ),
         Some(SketchConstraintDefinition::Diameter { entity: ref actual, parameter: ref p })
@@ -14771,7 +14771,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     scope.paired_class_tag = "259".into();
     let frames = exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)
         .and_then(|alignment| alignment.operand_frames)
-        .expect("exact assembly connector frames");
+        .expect("exact assembly operand frames");
     assert_eq!(
         frames.map(|frame| (
             frame.reference_record_index,
