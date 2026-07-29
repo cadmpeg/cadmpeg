@@ -16030,6 +16030,115 @@ fn filled_surface_feature_definition(
     }
 }
 
+fn thicken_source_surface_ids(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+) -> Option<Vec<u32>> {
+    let owned = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let outputs = owned
+        .iter()
+        .flat_map(|table| {
+            table
+                .entries
+                .iter()
+                .filter(|entry| entry.class_id == 210)
+                .map(move |entry| (*table, entry))
+        })
+        .collect::<Vec<_>>();
+    if outputs.is_empty() {
+        return None;
+    }
+    let predecessors = owned
+        .iter()
+        .flat_map(|table| table.entries.iter())
+        .filter(|entry| entry.class_id == 214 && entry.related_entity_id.is_some())
+        .count();
+    if predecessors != outputs.len() {
+        return None;
+    }
+
+    let mut output_ids = BTreeSet::new();
+    let mut intermediate_ids = BTreeSet::new();
+    let mut source_ids = BTreeSet::new();
+    let mut sources = Vec::with_capacity(outputs.len());
+    for (output_table, output) in outputs {
+        let intermediate_id = output.related_entity_id?;
+        if output.related_entity_state != Some(0)
+            || !output_table.surface_ids.contains(&output.entity_id)
+            || crate::surface::unique_surface_row(surface_rows, output.entity_id)
+                .is_none_or(|row| row.feature_id != feature_id)
+            || !output_ids.insert(output.entity_id)
+            || !intermediate_ids.insert(intermediate_id)
+        {
+            return None;
+        }
+        let mut matches = output_table.entries.iter().filter(|predecessor| {
+            predecessor.entity_id == intermediate_id
+                && predecessor.related_entity_state == Some(0)
+                && output_table
+                    .non_surface_entity_ids
+                    .contains(&predecessor.entity_id)
+                && crate::surface::unique_surface_row(surface_rows, predecessor.entity_id).is_none()
+        });
+        let predecessor = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        let source_id = predecessor.related_entity_id?;
+        if crate::surface::unique_surface_row(surface_rows, source_id)
+            .is_none_or(|row| row.feature_id == feature_id)
+            || !source_ids.insert(source_id)
+        {
+            return None;
+        }
+        sources.push(source_id);
+    }
+    output_ids.is_disjoint(&source_ids).then_some(sources)
+}
+
+fn thicken_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> IrFeatureDefinition {
+    let faces = thicken_source_surface_ids(
+        feature_id,
+        &scan.features.entity_tables,
+        &scan.surfaces.rows,
+    )
+    .map_or(FaceSelection::Unresolved, |source_ids| {
+        let native = format!(
+            "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
+            source_ids
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let faces = source_ids
+            .iter()
+            .map(|surface_id| FaceId(format!("creo:visibgeom:face#{surface_id}")))
+            .collect::<Vec<_>>();
+        if faces
+            .iter()
+            .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
+        {
+            FaceSelection::Resolved { faces, native }
+        } else {
+            FaceSelection::Native(native)
+        }
+    });
+    IrFeatureDefinition::Thicken {
+        faces,
+        thickness: None,
+        side: None,
+    }
+}
+
 fn schema_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -16039,6 +16148,9 @@ fn schema_feature_definition(
 ) -> IrFeatureDefinition {
     if numbered_feature_name_has_family(kind, "Fill") {
         return filled_surface_feature_definition(scan, ir, feature_id);
+    }
+    if numbered_feature_name_has_family(kind, "Thicken") {
+        return thicken_feature_definition(scan, ir, feature_id);
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return definition;
@@ -16702,6 +16814,9 @@ fn named_feature_definition(
 ) -> Option<IrFeatureDefinition> {
     if numbered_feature_name_has_family(kind, "Fill") {
         return Some(filled_surface_feature_definition(scan, ir, feature_id));
+    }
+    if numbered_feature_name_has_family(kind, "Thicken") {
+        return Some(thicken_feature_definition(scan, ir, feature_id));
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);
