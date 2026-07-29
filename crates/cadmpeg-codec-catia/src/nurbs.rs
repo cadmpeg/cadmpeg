@@ -263,7 +263,7 @@ pub(crate) fn nurbs_surface_isocurve(
             numerator[2] += factor * point.z;
             denominator += factor;
         }
-        if !denominator.is_finite() || denominator.abs() <= f64::EPSILON {
+        if !denominator.is_finite() || denominator == 0.0 {
             return None;
         }
         control_points.push(Point3::new(
@@ -307,12 +307,12 @@ fn nurbs_basis_values(
         for index in 0..count + degree - level {
             let left_denominator = knots[index + level] - knots[index];
             let right_denominator = knots[index + level + 1] - knots[index + 1];
-            let left = if left_denominator.abs() <= f64::EPSILON {
+            let left = if left_denominator == 0.0 {
                 0.0
             } else {
                 (parameter - knots[index]) / left_denominator * basis[index]
             };
-            let right = if right_denominator.abs() <= f64::EPSILON {
+            let right = if right_denominator == 0.0 {
                 0.0
             } else {
                 (knots[index + level + 1] - parameter) / right_denominator * basis[index + 1]
@@ -344,10 +344,39 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{NurbsSurface, ProceduralCurveDefinition};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    use super::circular_helix_cache;
+    use super::{circular_helix_cache, nurbs_surface_isocurve};
+
+    #[test]
+    fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
+        let tiny = 1e-200;
+        let surface = NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, tiny, tiny],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(2.0, 1.0, 0.0),
+            ],
+            weights: Some(vec![tiny; 4]),
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let curve = nurbs_surface_isocurve(&surface, tiny * 0.5, true)
+            .expect("tiny rational surface isocurve");
+        assert_eq!(
+            curve.control_points,
+            [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
+        );
+        assert_eq!(curve.weights, Some(vec![tiny, tiny]));
+    }
 
     #[test]
     fn circular_helix_cache_preserves_exact_interval_endpoints() {
