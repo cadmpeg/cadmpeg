@@ -7116,6 +7116,36 @@ fn outer_object_graph_retains_class_first_roles_before_an_unassigned_slot() {
 }
 
 #[test]
+fn outer_object_graph_reads_null_lane_class_storage_owner_roles() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x1a, 0x94, 0x80, 0xff, 0xff, 0xff, 0xff, 0xd2, 0x2b],
+        &[0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("null-lane compact head");
+    let record = &graph.records[0];
+
+    assert_eq!(record.class_ref, Some(20));
+    assert_eq!(record.storage_ref, Some(0));
+    assert_eq!(record.owner_ref, Some(300));
+}
+
+#[test]
+fn outer_object_graph_rejects_incomplete_null_lane_roles() {
+    for head in [
+        &[0x1a, 0x94, 0x80, 0xff, 0xff, 0xff, 0xff][..],
+        &[0x1a, 0x94, 0x80, 0, 0, 0, 0, 0xd2, 0x2b][..],
+        &[0x1a, 0x94, 0x80, 0xff, 0xff, 0xff, 0xff, 0x80][..],
+    ] {
+        let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
+        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+
+        assert_eq!(graph.records[0].owner_ref, None);
+        assert_eq!(graph.records[0].class_ref, None);
+        assert_eq!(graph.records[0].storage_ref, None);
+    }
+}
+
+#[test]
 fn outer_object_graph_reads_extended_owner_class_storage_roles() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x52, 0x92, 0x80, 0x95, 22, 0, 0, 0x83], &[0xfe]),
