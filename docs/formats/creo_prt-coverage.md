@@ -85,9 +85,11 @@ fixtures, claims above L1 remain unproven.
   loss note.
 - Section-coordinate solving requires a complete variable table. Missing
   declared variable rows are counted and raise a decode loss note. Complete
-  endpoints from uniquely joined saved lines and arcs seed the corresponding
-  segment-point equations; disagreement with stored or constraint-derived
-  coordinates withholds the inconsistent derivation.
+  endpoints from uniquely joined saved lines and arcs, and the center of a
+  joined saved arc or circle, seed the corresponding segment-point equations.
+  A joined saved circle also seeds its radius-reference component.
+  Disagreement with stored or constraint-derived coordinates or radii withholds
+  the inconsistent derivation.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   It also counts decoded and missing declared relation, incidence, and

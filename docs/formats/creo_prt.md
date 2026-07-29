@@ -2868,8 +2868,13 @@ For a joined line, saved `end1` and `end2` are the section coordinates of the
 first and second `segtab.pointid` fields. For a joined arc, saved `end1` and
 `end2` likewise supply the first and second `segtab.pointid` coordinates;
 `arcorient = 0` renders the second point as the angular start and the first
-point as the angular end. Complete saved endpoints participate in the section
-coordinate equations and must agree with stored and constraint-derived values.
+point as the angular end. The saved arc center supplies the coordinate of its
+`segtab.cntrid`. Complete saved endpoints and centers participate in the
+section coordinate equations and must agree with stored and constraint-derived
+values. A joined saved circle supplies its center to the type-10
+`segtab.cntrid` coordinate and its radius to that row's radius-reference
+variable. Equal-radius solver incidences propagate that saved radius only when
+all values in the connected radius component agree.
 When both `var_arr` and the joined saved entity define complete line or arc
 geometry, their ordered endpoints and carrier equations must agree. Conflicting
 complete forms leave the section entity unresolved.

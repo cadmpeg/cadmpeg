@@ -2424,28 +2424,51 @@ fn saved_section_arc_geometry(
 fn saved_section_segment_point_coordinates(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
-) -> Option<[(u32, [f64; 2]); 2]> {
+) -> Option<Vec<(u32, [f64; 2])>> {
     match segment.kind {
         crate::feature::FeatureSegmentKind::Line => {
             let geometry = saved_section_line_geometry(definition, segment)?;
             let [start, end] = saved_geometry_endpoints(&geometry)?;
-            Some([(segment.point_ids[0], start), (segment.point_ids[1], end)])
+            Some(vec![
+                (segment.point_ids[0], start),
+                (segment.point_ids[1], end),
+            ])
         }
         crate::feature::FeatureSegmentKind::Arc => {
-            saved_section_arc_geometry(definition, segment)?;
+            let SketchGeometry::Arc { center, .. } =
+                saved_section_arc_geometry(definition, segment)?
+            else {
+                unreachable!();
+            };
             let arc = saved_section_arc_record(definition, segment)?;
             let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
                 arc.endpoints
             else {
                 return None;
             };
-            Some([
+            Some(vec![
                 (segment.point_ids[0], [first_u, first_v]),
                 (segment.point_ids[1], [second_u, second_v]),
+                (segment.center_id?, [center.u, center.v]),
             ])
         }
         crate::feature::FeatureSegmentKind::Point => None,
     }
+}
+
+fn saved_section_circle_values(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureCircleSegment,
+) -> Option<([f64; 2], f64)> {
+    let segments = definition.segments.as_ref()?;
+    (segments.is_complete() && segments.external_id_count(segment.external_id) == 1)
+        .then_some(())?;
+    let entity = section_saved_entity(definition, segment.external_id)?;
+    let (_, geometry, _) = saved_section_entity_geometry(entity)?;
+    let SketchGeometry::Circle { center, radius } = geometry else {
+        return None;
+    };
+    Some(([center.u, center.v], radius.0))
 }
 
 fn saved_section_entity_geometry(
@@ -2962,7 +2985,7 @@ pub(crate) fn resolved_section_coordinates(
     for segment in definition.segments.iter().flat_map(|table| &table.rows) {
         *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
     }
-    let saved_segment_points = definition
+    let mut saved_segment_points = definition
         .segments
         .iter()
         .filter(|table| table.is_complete())
@@ -2981,6 +3004,18 @@ pub(crate) fn resolved_section_coordinates(
         .filter_map(|segment| saved_section_segment_point_coordinates(definition, segment))
         .flatten()
         .collect::<Vec<_>>();
+    saved_segment_points.extend(
+        definition
+            .segments
+            .iter()
+            .filter(|table| table.is_complete())
+            .flat_map(|table| &table.circle_rows)
+            .filter_map(|segment| {
+                (!ambiguous_point_ids.contains(&segment.center_id)).then_some(())?;
+                let (center, _) = saved_section_circle_values(definition, segment)?;
+                Some((segment.center_id, center))
+            }),
+    );
     let segments = definition
         .segments
         .iter()
@@ -3864,6 +3899,19 @@ pub(crate) fn resolved_section_radii(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, f64> {
     let mut candidates = BTreeMap::<u32, Vec<f64>>::new();
+    for segment in definition
+        .segments
+        .iter()
+        .filter(|table| table.is_complete())
+        .flat_map(|table| &table.circle_rows)
+    {
+        if let Some((_, radius)) = saved_section_circle_values(definition, segment) {
+            candidates
+                .entry(segment.radius_ref)
+                .or_default()
+                .push(radius);
+        }
+    }
     for row in definition
         .variables
         .iter()

@@ -4741,6 +4741,111 @@ fn complete_saved_circle_defines_full_section_geometry() {
     );
     let (_, geometry, _) = saved_section_entity_geometry(&entity).expect("complete saved circle");
     assert!(is_full_circle_geometry(&geometry));
+
+    let circle = crate::feature::FeatureCircleSegment {
+        center_id: 11,
+        radius_ref: 12,
+        external_id: 13,
+        offset: 20,
+    };
+    let definition = crate::feature::FeatureDefinition {
+        id: 5,
+        owner_feature_id: Some(6),
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            points: vec![crate::feature::FeatureSectionPoint {
+                point_id: 11,
+                u: None,
+                v: None,
+            }],
+            offset: 30,
+        }),
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: Vec::new(),
+            circle_rows: vec![circle.clone()],
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 31,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: Some(crate::feature::FeatureOrderTable {
+            declared_count: 1,
+            has_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureOrderRow {
+                external_id: 13,
+                internal_id: 7,
+                bitmask: 0,
+                offset: 32,
+            }],
+            offset: 32,
+        }),
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: Some(crate::feature::FeatureSavedSection {
+            entities: vec![entity],
+            offset: 18,
+        }),
+        offset: 0,
+    };
+    assert_eq!(
+        saved_section_circle_values(&definition, &circle),
+        Some(([2.0, -3.0], 4.5))
+    );
+    assert_eq!(
+        resolved_section_points(&definition),
+        BTreeMap::from([(11, [2.0, -3.0])])
+    );
+    assert_eq!(
+        resolved_section_radii(&definition),
+        BTreeMap::from([(12, 4.5)])
+    );
+    let mut conflicting_radius = definition.clone();
+    let variables = conflicting_radius.variables.as_mut().expect("variables");
+    variables.declared_count = 1;
+    variables.rows.push(crate::feature::FeatureVariableRow {
+        variable_type: 3,
+        key: 12,
+        value: Some(5.0),
+        guess: None,
+        known: None,
+        homogeneity: None,
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 33,
+    });
+    assert!(resolved_section_radii(&conflicting_radius).is_empty());
+    let mut conflicting = definition;
+    conflicting.variables.as_mut().expect("variables").points[0].u = Some(3.0);
+    assert_eq!(
+        resolved_section_coordinates(&conflicting),
+        BTreeMap::from([(11, [Some(3.0), Some(-3.0)])])
+    );
+    conflicting
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .push(crate::feature::FeatureSectionPoint {
+            point_id: 11,
+            u: Some(4.0),
+            v: None,
+        });
+    assert!(resolved_section_coordinates(&conflicting).is_empty());
 }
 
 #[test]
@@ -4870,7 +4975,39 @@ fn saved_arc_joins_through_order_table() {
     );
     assert_eq!(
         saved_section_segment_point_coordinates(&definition, &segment),
-        Some([(7, [0.0, -2.0]), (9, [-2.0, 0.0])])
+        Some(vec![(7, [0.0, -2.0]), (9, [-2.0, 0.0]), (8, [0.0, 0.0]),])
+    );
+    let mut coordinate_definition = definition.clone();
+    coordinate_definition.variables = Some(crate::feature::FeatureVariableTable {
+        declared_count: 0,
+        entity_ref: None,
+        rows: Vec::new(),
+        points: [7, 8, 9]
+            .map(|point_id| crate::feature::FeatureSectionPoint {
+                point_id,
+                u: None,
+                v: None,
+            })
+            .to_vec(),
+        offset: 30,
+    });
+    coordinate_definition.segments = Some(crate::feature::FeatureSegmentTable {
+        declared_count: 1,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![segment.clone()],
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: 38,
+    });
+    assert_eq!(
+        resolved_section_points(&coordinate_definition),
+        BTreeMap::from([(7, [0.0, -2.0]), (8, [0.0, 0.0]), (9, [-2.0, 0.0]),])
     );
     assert!(resolved_section_segment_geometry(
         &definition,
