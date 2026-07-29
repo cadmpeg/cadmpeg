@@ -21,7 +21,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The semantic roles of nonempty `PRTSketch` and `Sketch` atom, list, and reference payloads are unresolved.
 - The incidence from complete `Range`/`CstAttr_Dimension` and `Range`/`ComplexCst` values to individual constraints is unresolved. Incoming `ListAggregator` references mix these identities with unrelated graph members and repeat identities outside the counted list, so they do not establish a constraint owner or operand relation.
 - Constructed and support-face sketch placement frames, construction state, profile membership, sketch-geometry classes, dimensional constraints, and non-dimensional constraints are unresolved.
-- The feature-instance grammar that binds empty mainstream operation fields, definition-bound values, and structurally owned operand objects into one ordered operation is unresolved. Operation-named field classes and structural ownership alone do not establish feature identity, operands, outputs, or replay order.
+- The feature-instance grammar that binds empty mainstream operation fields, non-unanimous definition-bound values, and structurally owned operand objects into one ordered operation is unresolved. Operation-named field classes and structural ownership alone do not establish feature identity, operands, outputs, or replay order. Unanimous complete `CircPattern` definition binding establishes only circular-pattern identity and form.
 
 ## Standard nested `V5_CFV2`
 

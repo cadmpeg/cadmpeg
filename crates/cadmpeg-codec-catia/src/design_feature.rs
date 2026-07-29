@@ -5,12 +5,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, PrincipalPlane, SketchSpace,
+    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, PatternForm, PatternKind,
+    PrincipalPlane, SketchSpace,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
-use crate::native::{CatiaDesignObject, CatiaNative, CatiaObjectRecord};
+use crate::native::{CatiaDesignObject, CatiaEntityRecord, CatiaNative, CatiaObjectRecord};
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -42,10 +43,15 @@ pub(crate) fn transfer_design_features(
         .flat_map(|graph| &graph.records)
         .map(|record| (record.id.as_str(), record))
         .collect::<HashMap<_, _>>();
+    let entities = native
+        .entity_records
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<HashMap<_, _>>();
     let candidates = native
         .design_objects
         .iter()
-        .filter_map(|object| design_feature_candidate(object, &records))
+        .filter_map(|object| design_feature_candidate(object, &records, &entities))
         .collect::<Vec<_>>();
     let sketch_feature_ids = candidates
         .iter()
@@ -166,6 +172,28 @@ pub(crate) fn transfer_design_features(
                             .map(|declaration| declaration.id.clone()),
                     );
                 }
+            }
+            DesignFeatureDefinition::CircularPattern { definition_name } => {
+                ir.model.features.push(Feature {
+                    id: feature_id.clone(),
+                    ordinal: ir.model.features.len() as u64,
+                    name: None,
+                    suppressed: None,
+                    parent: None,
+                    dependencies: Vec::new(),
+                    source_properties: BTreeMap::new(),
+                    source_tag: Some(definition_name.to_string()),
+                    source_text: None,
+                    source_content: Vec::new(),
+                    outputs: Vec::new(),
+                    definition: FeatureDefinition::Pattern {
+                        seeds: Vec::new(),
+                        pattern: PatternKind::Unresolved {
+                            form: Some(PatternForm::Circular),
+                        },
+                    },
+                    native_ref: Some(object.id.clone()),
+                });
             }
         }
         transfer
@@ -353,13 +381,62 @@ enum DesignFeatureDefinition<'a> {
         declarations: Vec<&'a CatiaObjectRecord>,
         declaration_class: &'a str,
     },
+    CircularPattern {
+        definition_name: &'a str,
+    },
 }
 
 fn design_feature_candidate<'a>(
     object: &'a CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
+    entities: &HashMap<&str, &'a CatiaEntityRecord>,
 ) -> Option<DesignFeatureCandidate<'a>> {
-    principal_plane_candidate(object, records).or_else(|| sketch_candidate(object, records))
+    principal_plane_candidate(object, records)
+        .or_else(|| sketch_candidate(object, records))
+        .or_else(|| circular_pattern_candidate(object, records, entities))
+}
+
+fn circular_pattern_candidate<'a>(
+    object: &'a CatiaDesignObject,
+    records: &HashMap<&str, &'a CatiaObjectRecord>,
+    entities: &HashMap<&str, &'a CatiaEntityRecord>,
+) -> Option<DesignFeatureCandidate<'a>> {
+    if object.fields.is_empty() || object.definition_values.len() != object.fields.len() {
+        return None;
+    }
+    let entity_ids = object
+        .fields
+        .iter()
+        .map(|field| {
+            let record = records.get(field.as_str())?;
+            (record.design_object.as_deref() == Some(object.id.as_str())).then_some(())?;
+            record.entity_record.as_deref()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    entity_ids
+        .iter()
+        .zip(&object.definition_values)
+        .all(|(entity, definition)| *entity == definition)
+        .then_some(())?;
+    let definitions = entity_ids
+        .into_iter()
+        .map(|entity_id| {
+            let entity = *entities.get(entity_id)?;
+            let definition = &entity.definition_value.as_ref()?.definition;
+            Some((definition.entry.as_str(), definition.value.as_str()))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let &(entry, name) = definitions.first()?;
+    (name == "CircPattern"
+        && definitions
+            .iter()
+            .all(|candidate| *candidate == (entry, name)))
+    .then_some(DesignFeatureCandidate {
+        object,
+        definition: DesignFeatureDefinition::CircularPattern {
+            definition_name: name,
+        },
+    })
 }
 
 fn principal_plane_candidate<'a>(
