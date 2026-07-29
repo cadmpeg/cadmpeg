@@ -1824,6 +1824,102 @@ mod tests {
     }
 
     #[test]
+    fn analytic_isocurves_accept_finite_nonzero_scales() {
+        let scale = 1e-200;
+        let pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 0.0], [0.5 * scale, 0.0]],
+            weights: None,
+            parameter_range: None,
+            lifted_endpoints: None,
+        };
+        let cylinder = B5Surface::Cylinder {
+            origin: [0.0; 3],
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: scale,
+            u_range: [0.0, std::f64::consts::TAU * scale],
+            v_range: [-scale, scale],
+            angular_scale: scale,
+            chart_origin: 0.0,
+        };
+        let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
+        let edge_start = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            scale,
+            scale,
+            pcurve.control_points[0],
+        );
+        let edge_end = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            scale,
+            scale,
+            pcurve.control_points[1],
+        );
+        assert!(oriented_circle_plan(
+            &pcurve,
+            &cylinder,
+            &geometry,
+            [0.0, 1.0],
+            edge_start,
+            edge_end,
+        )
+        .is_some());
+
+        let cone = B5Surface::Cone {
+            apex: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            half_angle: std::f64::consts::FRAC_PI_6,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
+            slant_range: [0.0, scale],
+            angular_scale: 1.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
+        };
+        let cone_pcurve = B5Pcurve {
+            control_points: vec![[0.0, scale], [0.5, scale]],
+            ..pcurve.clone()
+        };
+        assert!(matches!(
+            lifted_curve_geometry(&cone_pcurve, &cone),
+            Some(CurveGeometry::Circle { radius, .. }) if radius == scale * 0.5
+        ));
+
+        let torus = B5Surface::Torus {
+            center: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            major_radius: scale,
+            minor_radius: scale,
+            major_angular_range: [0.0, std::f64::consts::TAU],
+            major_angular_domain: [0.0, std::f64::consts::TAU],
+            minor_angular_range: [0.0, std::f64::consts::TAU],
+            minor_angular_domain: [0.0, std::f64::consts::TAU],
+            major_scale: 1.0,
+            minor_scale: 1.0,
+        };
+        let torus_pcurve = B5Pcurve {
+            control_points: vec![[0.0, 0.0], [0.5, 0.0]],
+            ..pcurve
+        };
+        assert!(matches!(
+            lifted_curve_geometry(&torus_pcurve, &torus),
+            Some(CurveGeometry::Circle { radius, .. }) if radius == 2.0 * scale
+        ));
+    }
+
+    #[test]
     fn affine_plane_lift_preserves_pcurve_weights() {
         let pcurve = B5Pcurve {
             object_id: 1,

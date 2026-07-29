@@ -133,7 +133,7 @@ pub(super) fn oriented_circle_plan(
     edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
     let (dimension, scale) = isoparametric_angle_coordinate(pcurve, surface)?;
-    if !scale.is_finite() || scale.abs() <= f64::EPSILON {
+    if !scale.is_finite() || scale == 0.0 {
         return None;
     }
     if let Some(weights) = &pcurve.weights {
@@ -172,7 +172,7 @@ pub(super) fn oriented_circle_plan(
     else {
         return None;
     };
-    if !radius.is_finite() || radius.abs() <= f64::EPSILON {
+    if !radius.is_finite() || *radius == 0.0 {
         return None;
     }
     let mut axis = *axis;
@@ -479,7 +479,7 @@ pub(super) fn lifted_curve_geometry(
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             let angle = v / minor_scale;
             let signed_radius = major_radius + minor_radius * angle.cos();
-            (signed_radius.abs() > f64::EPSILON).then_some(())?;
+            (signed_radius.is_finite() && signed_radius != 0.0).then_some(())?;
             Some(CurveGeometry::Circle {
                 center: point3(add(*center, scale(*axis, minor_radius * angle.sin()))),
                 axis: vector(*axis),
@@ -495,12 +495,13 @@ pub(super) fn lifted_curve_geometry(
             ..
         } => {
             let slant = constant_coordinate(&pcurve.control_points, 1)?;
-            (slant.abs() > f64::EPSILON).then_some(())?;
+            let radius = slant * half_angle.sin();
+            (radius.is_finite() && radius != 0.0).then_some(())?;
             Some(CurveGeometry::Circle {
                 center: point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
                 axis: vector(*axis),
                 ref_direction: vector(*direction_x),
-                radius: slant * half_angle.sin(),
+                radius,
             })
         }
         B5Surface::Cylinder {
@@ -537,7 +538,7 @@ pub(super) fn constant_coordinate(points: &[[f64; 2]], dimension: usize) -> Opti
     let value = points.first()?[dimension];
     points
         .iter()
-        .all(|point| (point[dimension] - value).abs() <= 1e-12 * (1.0 + value.abs()))
+        .all(|point| point[dimension] == value)
         .then_some(value)
 }
 
