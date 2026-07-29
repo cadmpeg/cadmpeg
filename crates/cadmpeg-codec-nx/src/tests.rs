@@ -2231,7 +2231,7 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 }
 
 #[test]
-fn om_operation_terminal_frame_requires_one_canonical_suffix() {
+fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
         offset: 100,
@@ -2239,27 +2239,42 @@ fn om_operation_terminal_frame_requires_one_canonical_suffix() {
         object_indices: [None; 4],
         object_index_offsets: [0; 4],
     };
-    let bytes = [0x01, 0x02, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00];
+    let bytes = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00,
+    ];
     let record = crate::om::OperationRecord {
         offset: 100,
         bytes: &bytes,
         payload_offset: 104,
-        payload: &bytes[2..],
+        payload: &bytes,
         label,
     };
     assert_eq!(
         crate::om::operation_terminal_frame(record),
         Some(crate::om::OperationTerminalFrame {
+            immediate_state_prefix: Some(crate::om::OperationTerminalStatePrefix {
+                indices: [0, 351, 171],
+                raw_indices: [vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
+                marker: [1, 3, 2],
+                state: [1, 2, 1, 1, 1, 0, 0, 0],
+                offset: 104,
+                index_offsets: [104, 105, 107],
+                state_offset: 112,
+            }),
             local_ordinal: 0x0123,
             raw_local_ordinal: vec![0x81, 0x23],
             object_index: None,
             raw_object_index: vec![0xff],
-            offset: 104,
-            object_index_offset: 108,
+            offset: 120,
+            object_index_offset: 124,
         })
     );
 
-    let direct = [0x29, 0x29, 0x41, 0x00];
+    let direct = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x29, 0x29, 0x41, 0x00,
+    ];
     assert_eq!(
         crate::om::operation_terminal_frame(crate::om::OperationRecord {
             offset: 0,
@@ -2269,16 +2284,28 @@ fn om_operation_terminal_frame_requires_one_canonical_suffix() {
             label,
         }),
         Some(crate::om::OperationTerminalFrame {
+            immediate_state_prefix: Some(crate::om::OperationTerminalStatePrefix {
+                indices: [0, 351, 171],
+                raw_indices: [vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
+                marker: [1, 3, 2],
+                state: [1, 2, 1, 1, 1, 0, 0, 0],
+                offset: 200,
+                index_offsets: [200, 201, 203],
+                state_offset: 208,
+            }),
             local_ordinal: 41,
             raw_local_ordinal: vec![0x29],
             object_index: Some(65),
             raw_object_index: vec![0x41],
-            offset: 200,
-            object_index_offset: 202,
+            offset: 216,
+            object_index_offset: 218,
         })
     );
 
-    let noncanonical = [0x80, 0x01, 0x80, 0x01, 0xff, 0x00];
+    let noncanonical = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x80, 0x01, 0x80, 0x01, 0xff, 0x00,
+    ];
     assert!(
         crate::om::operation_terminal_frame(crate::om::OperationRecord {
             offset: 0,
@@ -2289,7 +2316,10 @@ fn om_operation_terminal_frame_requires_one_canonical_suffix() {
         })
         .is_none()
     );
-    let mismatched = [0x23, 0x24, 0xff, 0x00];
+    let mismatched = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x23, 0x24, 0xff, 0x00,
+    ];
     assert!(
         crate::om::operation_terminal_frame(crate::om::OperationRecord {
             offset: 0,
@@ -2300,6 +2330,41 @@ fn om_operation_terminal_frame_requires_one_canonical_suffix() {
         })
         .is_none()
     );
+
+    let delete = [
+        0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x06, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x29,
+        0x29, 0x41, 0x00,
+    ];
+    let delete_frame = crate::om::operation_terminal_frame(crate::om::OperationRecord {
+        offset: 0,
+        bytes: &delete,
+        payload_offset: 300,
+        payload: &delete,
+        label: crate::om::OperationLabel {
+            value: "DELETE",
+            ..label
+        },
+    })
+    .expect("DELETE common-frame variant");
+    let delete_prefix = delete_frame
+        .immediate_state_prefix
+        .expect("DELETE state prefix");
+    assert_eq!(delete_prefix.indices, [1, 0, 0]);
+    assert_eq!(delete_prefix.marker, [1, 1, 1]);
+    assert_eq!(delete_prefix.state, [6, 1, 1, 0, 1, 0, 0, 0]);
+
+    let suffix_only = [0x02, 0x02, 0xff, 0x00];
+    let suffix = crate::om::operation_terminal_frame(crate::om::OperationRecord {
+        offset: 0,
+        bytes: &suffix_only,
+        payload_offset: 400,
+        payload: &suffix_only,
+        label,
+    })
+    .expect("canonical suffix without immediate state prefix");
+    assert!(suffix.immediate_state_prefix.is_none());
+    assert_eq!(suffix.local_ordinal, 2);
+    assert_eq!(suffix.offset, 400);
 }
 
 #[test]

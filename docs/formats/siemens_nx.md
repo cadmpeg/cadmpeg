@@ -1217,12 +1217,20 @@ A complete block construction requires nineteen contiguous reference ordinals, o
 
 A body-reference field is `01 02 10, object_index, ff`. `object_index` uses the feature object-index form: `00..7f` is direct, `80..8f` contributes the high index byte and is followed by one low byte, `90` is followed by a big-endian `u16`, and `ff` is null. Every complete non-null field in a bounded operation record is retained in byte order. Exactly one field identifies an unambiguous primary-body writer; records containing zero or multiple fields do not establish that writer role.
 
-A bounded operation payload's terminal common frame ends
+A bounded operation payload's terminal common-frame suffix is
 `local_ordinal, local_ordinal, object_index, 00`. Both local-ordinal tokens are
 non-null, byte-identical, and canonical. The object index is canonical and may
-be null. The terminal frame is admitted only when this suffix has one unique
-framing. It retains the duplicated ordinal, nullable object reference, exact
-tokens, and token offsets.
+be null. The suffix is admitted only when it has one unique framing.
+
+The suffix may be immediately preceded by one exactly framed state prefix. The
+general prefix is `direct_index, extended_compact_index[2], 01 03 02, state[8]`;
+`direct_index` is one byte in `00..7f` and each extended compact index is
+`80..fe, low:u8`. A `DELETE` payload may instead use
+`direct_index[3], 01 01 01, state[8]`. All prefix indices are non-null. The
+prefix retains its layout marker, ordered indices, eight uninterpreted state
+bytes, exact tokens, and token offsets. Absence of the immediate prefix does not
+invalidate the terminal suffix because an outer terminal suffix may follow a
+nested common frame.
 
 An object-ID-bounded record in a section declaring `UGS::EXP_expression` declares a parameter name as `04, declared_len:u8, name[declared_len-2], 00`. `name` is `p`, one or more decimal digits, and an optional underscore-prefixed qualifier composed of ASCII letters, digits, and underscores. A declaration record contains exactly one such name frame. The parameter index is the decimal integer after `p`. The record may contain one additional frame with the same framing whose text is a context-free constant numeric expression; this is the declaration-local literal. Multiple numeric-expression frames make the declaration literal ambiguous without invalidating the parameter declaration. An exact unique name match binds the declaration to the value record carrying `(Number [mm|degrees]) name: expression; `.
 

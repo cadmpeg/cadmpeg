@@ -269,7 +269,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(169);
+    namespace.version = namespace.version.max(170);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -4477,6 +4477,17 @@ mod tests {
         let frame = crate::native::features::FeatureOperationTerminalFrame {
             id: "frame".into(),
             operation_record: record.id.clone(),
+            immediate_state_prefix: Some(
+                crate::native::features::FeatureOperationTerminalStatePrefix {
+                    indices: [0, 351, 171],
+                    raw_indices: [vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
+                    marker: [1, 3, 2],
+                    state: [1, 2, 1, 1, 1, 0, 0, 0],
+                    source_offset: 101,
+                    index_source_offsets: [101, 102, 104],
+                    state_source_offset: 109,
+                },
+            ),
             local_ordinal: 41,
             raw_local_ordinal: vec![0x29],
             object_index: Some(65),

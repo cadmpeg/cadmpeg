@@ -791,9 +791,30 @@ pub struct OperationRecord<'a> {
     pub label: OperationLabel<'a>,
 }
 
+/// Exactly framed state prefix immediately preceding a terminal common-frame suffix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationTerminalStatePrefix {
+    /// Three compact indices preceding the fixed state marker.
+    pub indices: [u32; 3],
+    /// Exact compact-index tokens in prefix order.
+    pub raw_indices: [Vec<u8>; 3],
+    /// Fixed marker selecting the prefix-index layout.
+    pub marker: [u8; 3],
+    /// Exact eight-byte state lane following the fixed state marker.
+    pub state: [u8; 8],
+    /// Absolute offset of the first compact prefix-index token.
+    pub offset: usize,
+    /// Absolute offsets of the compact prefix-index tokens.
+    pub index_offsets: [usize; 3],
+    /// Absolute offset of the first state byte.
+    pub state_offset: usize,
+}
+
 /// Canonical terminal common-frame suffix in one bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationTerminalFrame {
+    /// Exactly framed state prefix when it occurs immediately before this suffix.
+    pub immediate_state_prefix: Option<OperationTerminalStatePrefix>,
     /// Duplicated frame-local ordinal.
     pub local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
@@ -4533,7 +4554,7 @@ fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {
     )
 }
 
-/// Decode the unique canonical terminal common-frame suffix of one operation.
+/// Decode the unique terminal common-frame suffix and its exact immediate state prefix.
 pub fn operation_terminal_frame(record: OperationRecord<'_>) -> Option<OperationTerminalFrame> {
     let terminator = record.payload.len().checked_sub(1)?;
     (record.payload.get(terminator) == Some(&0)).then_some(())?;
@@ -4563,7 +4584,60 @@ pub fn operation_terminal_frame(record: OperationRecord<'_>) -> Option<Operation
         if object_end != terminator || !canonical_feature_object_index(object_index, object_raw) {
             continue;
         }
+        let immediate_state_prefix = (|| {
+            let marker_offset = start.checked_sub(11)?;
+            let marker: [u8; 3] = record
+                .payload
+                .get(marker_offset..marker_offset + 3)?
+                .try_into()
+                .ok()?;
+            let prefix_width = match (record.label.value, marker) {
+                (_, [0x01, 0x03, 0x02]) => 5,
+                ("DELETE", [0x01, 0x01, 0x01]) => 3,
+                _ => return None,
+            };
+            let state = record
+                .payload
+                .get(marker_offset + 3..start)?
+                .try_into()
+                .ok()?;
+            let prefix_start = marker_offset.checked_sub(prefix_width)?;
+            let mut at = prefix_start;
+            let mut indices = Vec::with_capacity(3);
+            let mut raw = Vec::with_capacity(3);
+            let mut offsets = Vec::with_capacity(3);
+            for _ in 0..3 {
+                let (index, width) = compact_index(record.payload.get(at..)?)?;
+                let CompactIndex::Value(index) = index else {
+                    return None;
+                };
+                indices.push(index);
+                raw.push(record.payload[at..at + width].to_vec());
+                offsets.push(record.payload_offset + at);
+                at += width;
+            }
+            (at == marker_offset).then_some(())?;
+            let expected_widths = if prefix_width == 5 {
+                [1, 2, 2]
+            } else {
+                [1, 1, 1]
+            };
+            raw.iter().map(Vec::len).eq(expected_widths).then_some(())?;
+            let indices: [u32; 3] = indices.try_into().ok()?;
+            let raw_indices: [Vec<u8>; 3] = raw.try_into().ok()?;
+            let index_offsets: [usize; 3] = offsets.try_into().ok()?;
+            Some(OperationTerminalStatePrefix {
+                indices,
+                raw_indices,
+                marker,
+                state,
+                offset: index_offsets[0],
+                index_offsets,
+                state_offset: record.payload_offset + marker_offset + 3,
+            })
+        })();
         matches.push(OperationTerminalFrame {
+            immediate_state_prefix,
             local_ordinal,
             raw_local_ordinal: first_raw.to_vec(),
             object_index,
