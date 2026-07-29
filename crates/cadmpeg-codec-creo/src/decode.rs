@@ -19,10 +19,10 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
     ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm,
-    HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef,
-    RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent, SurfaceBoundary,
-    SurfaceContinuity, Termination, ThickenSide, VertexSelection,
+    FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, GeneratedFaceRef,
+    HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
+    PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction,
+    RevolveExtent, SurfaceBoundary, SurfaceContinuity, Termination, ThickenSide, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -16550,6 +16550,26 @@ fn thicken_plane_offset(
     Some((magnitude, side))
 }
 
+fn generated_surface_face_refs(
+    source_ids: &[u32],
+    rows: &[crate::surface::SurfaceRow],
+    available_features: &BTreeSet<IrFeatureId>,
+) -> Option<Vec<GeneratedFaceRef>> {
+    source_ids
+        .iter()
+        .map(|surface_id| {
+            let row = crate::surface::unique_surface_row(rows, *surface_id)?;
+            let feature = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
+            available_features
+                .contains(&feature)
+                .then_some(GeneratedFaceRef {
+                    feature,
+                    local_id: format!("surface#{surface_id}"),
+                })
+        })
+        .collect()
+}
+
 fn thicken_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -16567,6 +16587,12 @@ fn thicken_feature_definition(
                 .iter()
                 .map(|(source_id, _)| *source_id)
                 .collect::<Vec<_>>();
+            let available_features = ir
+                .model
+                .features
+                .iter()
+                .map(|feature| feature.id.clone())
+                .collect::<BTreeSet<_>>();
             let native = format!(
                 "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
                 source_ids
@@ -16584,6 +16610,10 @@ fn thicken_feature_definition(
                 .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
             {
                 FaceSelection::Resolved { faces, native }
+            } else if let Some(faces) =
+                generated_surface_face_refs(&source_ids, &scan.surfaces.rows, &available_features)
+            {
+                FaceSelection::Generated { faces, native }
             } else {
                 FaceSelection::Native(native)
             }

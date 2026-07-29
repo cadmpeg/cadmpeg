@@ -304,6 +304,47 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
 }
 
 #[test]
+fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
+    let row = |id, feature_id| crate::surface::SurfaceRow {
+        id,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let rows = [row(98, 97), row(145, 144)];
+    let producers = BTreeSet::from([
+        IrFeatureId("creo:model:feature#97".to_string()),
+        IrFeatureId("creo:model:feature#144".to_string()),
+    ]);
+
+    assert_eq!(
+        generated_surface_face_refs(&[98, 145], &rows, &producers),
+        Some(vec![
+            GeneratedFaceRef {
+                feature: IrFeatureId("creo:model:feature#97".to_string()),
+                local_id: "surface#98".to_string(),
+            },
+            GeneratedFaceRef {
+                feature: IrFeatureId("creo:model:feature#144".to_string()),
+                local_id: "surface#145".to_string(),
+            },
+        ])
+    );
+    assert_eq!(
+        generated_surface_face_refs(&[98], &[row(98, 97), row(98, 97)], &producers),
+        None
+    );
+    assert_eq!(
+        generated_surface_face_refs(&[98], &rows, &BTreeSet::new()),
+        None
+    );
+}
+
+#[test]
 fn closed_fallback_profile_selects_revolution_segments() {
     let segment = |external_id| crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,

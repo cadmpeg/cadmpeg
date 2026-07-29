@@ -2624,6 +2624,9 @@ planar transition has the same signed separation along that oriented normal,
 positive separation selects the forward side and negative separation selects
 the reverse side. A result row has the opposite reversal state from its source.
 Mixed signed separations do not define a one-sided thicken operation.
+Each preceding surface identifier in a complete thicken transition names a
+face in the regenerated result of the feature identified by that surface
+row's `feat_id`. The ordered source roster is the thicken face selection.
 
 In a mixed generated-entity table whose leading run has entry class `254`,
 that run is the ordered visible-surface sequence. Entry-class `214` rows after
