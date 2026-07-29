@@ -669,11 +669,23 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
 }
 
 #[test]
-fn nx_empty_resolved_selections_remain_incomplete() {
+fn nx_selection_completeness_requires_nonempty_unique_identities() {
     use cadmpeg_ir::features::{BodySelection, EdgeSelection, FaceSelection, PathRef, ProfileRef};
 
     assert!(crate::decode::body_selection_is_incomplete(
         &BodySelection::Bodies(Vec::new())
+    ));
+    assert!(!crate::decode::body_selection_is_incomplete(
+        &BodySelection::Local {
+            bodies: vec!["nx:om-body-object#12".into()],
+            native: "nx:om-object-index#12".into(),
+        }
+    ));
+    assert!(crate::decode::body_selection_is_incomplete(
+        &BodySelection::Local {
+            bodies: vec!["nx:om-body-object#12".into(), "nx:om-body-object#12".into()],
+            native: "nx:om-object-indices#12,13".into(),
+        }
     ));
     assert!(crate::decode::face_selection_is_incomplete(
         &FaceSelection::Resolved {
@@ -984,6 +996,16 @@ fn nx_body_operation_completeness_requires_disjoint_roles() {
     assert!(!crate::decode::body_selections_overlap(
         &target,
         &BodySelection::Unresolved,
+    ));
+    assert!(crate::decode::body_selections_overlap(
+        &BodySelection::Local {
+            bodies: vec!["nx:om-body-object#10".into()],
+            native: "nx:om-object-index#10".into(),
+        },
+        &BodySelection::Local {
+            bodies: vec!["nx:om-body-object#10".into()],
+            native: "nx:om-object-index#20".into(),
+        },
     ));
 }
 

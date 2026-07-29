@@ -7585,14 +7585,33 @@ pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
 }
 
 pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
-    explicit_body_ids(selection).is_none_or(selection_ids_are_incomplete)
+    match selection {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            selection_ids_are_incomplete(bodies)
+        }
+        BodySelection::Local { bodies, native } => {
+            native.trim().is_empty()
+                || selection_ids_are_incomplete(bodies)
+                || bodies.iter().any(|body| body.trim().is_empty())
+        }
+        BodySelection::Unresolved
+        | BodySelection::Historical { .. }
+        | BodySelection::Generated { .. }
+        | BodySelection::Native(_) => true,
+    }
 }
 
 pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
-    explicit_body_ids(first).is_some_and(|first| {
-        explicit_body_ids(second)
-            .is_some_and(|second| first.iter().any(|body| second.contains(body)))
-    })
+    match (first, second) {
+        (
+            BodySelection::Local { bodies: first, .. },
+            BodySelection::Local { bodies: second, .. },
+        ) => first.iter().any(|body| second.contains(body)),
+        _ => explicit_body_ids(first).is_some_and(|first| {
+            explicit_body_ids(second)
+                .is_some_and(|second| first.iter().any(|body| second.contains(body)))
+        }),
+    }
 }
 
 fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
