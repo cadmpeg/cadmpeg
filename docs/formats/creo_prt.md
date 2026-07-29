@@ -603,6 +603,14 @@ axis vector. Its magnitude is the bounded axial length, its normalized value
 is the axis direction, and the first extent endpoint supplies the other two
 origin coordinates.
 
+The single-diameter type-24 form has one terminal frame of exactly eight
+slots. Its first slot is auxiliary, its second slot is the positive diameter,
+and its final six slots are two XYZ extent endpoints. Exactly one absolute
+coordinate span equals the diameter. That coordinate is radial and follows
+the same midpoint and reference-direction rules as the repeated-diameter
+form. Removing it from the extent-endpoint displacement produces the nonzero
+cylinder axis vector and bounded axial length.
+
 In the terminal square-radial type-24 form, the final scalar frame has six
 through nine slots and reaches the body end, one terminal control byte `00`,
 `10`, or `18`, or one complete terminal entity reference. Its final six slots

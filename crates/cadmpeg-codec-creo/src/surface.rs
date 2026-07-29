@@ -766,7 +766,79 @@ impl SurfaceParameterRecord {
         (type_byte == 0x24).then_some(())?;
         self.repeated_diameter_type24_round_frame(cache)
             .or_else(|| self.type24_held_coordinate_round_frame())
+            .or_else(|| self.type24_single_diameter_round_frame())
             .or_else(|| self.type24_square_radial_round_frame())
+    }
+
+    fn terminal_scalar_frame_has_owned_end(
+        &self,
+        terminal: &SurfaceParameterScalarFrame,
+    ) -> Option<()> {
+        let terminal_end = terminal
+            .slots
+            .iter()
+            .try_fold(terminal.offset, |cursor, slot| {
+                (slot.offset == cursor).then(|| cursor + slot.length)
+            })?;
+        if terminal_end == self.body.len() {
+            return Some(());
+        }
+        let suffix = self.body.get(terminal_end..)?;
+        if matches!(suffix, [0x00 | 0x10 | 0x18]) {
+            return Some(());
+        }
+        (suffix.first() == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (_, reference_end) = psb::reference_id(&self.body, terminal_end + 1).ok()?;
+        (reference_end == self.body.len()).then_some(())
+    }
+
+    fn type24_single_diameter_round_frame(&self) -> Option<PositionalCylinderFrame> {
+        (self.boundary == SurfaceBodyBoundary::CompoundClose).then_some(())?;
+        let terminal = self.scalar_frames.last()?;
+        (terminal.slots.len() == 8).then_some(())?;
+        self.terminal_scalar_frame_has_owned_end(terminal)?;
+        let diameter = terminal.slots[1].value?;
+        let corners = &terminal.slots[2..];
+        let values = corners
+            .iter()
+            .map(|slot| slot.value)
+            .collect::<Option<Vec<_>>>()?;
+        values.iter().all(|value| value.is_finite()).then_some(())?;
+        let first: [f64; 3] = values[..3].try_into().ok()?;
+        let second: [f64; 3] = values[3..].try_into().ok()?;
+        let spans = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
+        let scale = values
+            .iter()
+            .chain([&diameter])
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        (diameter.is_finite() && diameter > 1e-12 * scale).then_some(())?;
+        let radial_axes = (0..3)
+            .filter(|axis| (spans[*axis].abs() - diameter).abs() <= 1e-9 * scale)
+            .collect::<Vec<_>>();
+        let [radial_axis] = radial_axes.as_slice() else {
+            return None;
+        };
+        let mut axis_delta = spans;
+        axis_delta[*radial_axis] = 0.0;
+        let length = axis_delta
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt();
+        (length > 1e-12 * scale).then_some(())?;
+        let mut origin = first;
+        origin[*radial_axis] = f64::midpoint(first[*radial_axis], second[*radial_axis]);
+        let axis = axis_delta.map(|value| value / length);
+        let mut ref_direction = [0.0; 3];
+        ref_direction[*radial_axis] = spans[*radial_axis].signum();
+        Some(PositionalCylinderFrame {
+            origin,
+            axis,
+            ref_direction,
+            radius: 0.5 * diameter,
+            length: Some(length),
+        })
     }
 
     fn type24_square_radial_round_frame(&self) -> Option<PositionalCylinderFrame> {
@@ -792,20 +864,7 @@ impl SurfaceParameterRecord {
         } else {
             false
         };
-        let terminal_end = terminal
-            .slots
-            .iter()
-            .try_fold(terminal.offset, |cursor, slot| {
-                (slot.offset == cursor).then(|| cursor + slot.length)
-            })?;
-        if terminal_end != self.body.len() {
-            let suffix = self.body.get(terminal_end..)?;
-            if !matches!(suffix, [0x00 | 0x10 | 0x18]) {
-                (suffix.first() == Some(&psb::token::ENTITY_REF)).then_some(())?;
-                let (_, reference_end) = psb::reference_id(&self.body, terminal_end + 1).ok()?;
-                (reference_end == self.body.len()).then_some(())?;
-            }
-        }
+        self.terminal_scalar_frame_has_owned_end(terminal)?;
         let corners = &terminal.slots[terminal.slots.len() - 6..];
         let values = corners
             .iter()
@@ -7492,6 +7551,26 @@ mod tests {
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert_eq!(frame.radius, 0.5);
         assert_eq!(frame.length, Some(40.0));
+
+        let single_diameter_body = [
+            0x18, 0x2f, 0x00, 0x00, 0x48, 0x68, 0x10, 0x48, 0x14, 0x00, 0x2f, 0x3b, 0x80, 0x48,
+            0x64, 0xf0, 0x48, 0x08, 0x00, 0x2f, 0x44, 0x00, 0xf7, 0x16,
+        ];
+        let mut single_diameter_payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        single_diameter_payload.extend_from_slice(&single_diameter_body);
+        single_diameter_payload.push(0xe3);
+        let single_diameter = parameter_records(&single_diameter_payload).remove(0);
+        let frame = single_diameter
+            .positional_cylinder_frame
+            .expect("complete single-diameter carrier");
+        assert_eq!(frame.origin, [-192.5, -4.0, 27.5]);
+        assert_eq!(
+            frame.axis,
+            [2.0 / 5.0_f64.sqrt(), 0.0, 1.0 / 5.0_f64.sqrt()]
+        );
+        assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
+        assert_eq!(frame.radius, 1.0);
+        assert!((frame.length.expect("bounded carrier") - 31.25_f64.sqrt() * 5.0).abs() < 1e-12);
 
         let unbounded_body = [
             0x18, 0x2d, 0x5f, 0x25, 0xa4, 0x69, 0xd7, 0x34, 0x2d, 0x00, 0x12, 0x00, 0x2d, 0x67,
