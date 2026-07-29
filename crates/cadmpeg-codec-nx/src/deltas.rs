@@ -631,6 +631,14 @@ pub fn walk(stream: &[u8]) -> Census {
             census.inline_schema_declarations.push(declaration);
             continue;
         }
+        if let Some(map) =
+            reference_type_map(stream, offset, ReferenceTypeMapLimit::TargetTerminated)
+        {
+            census.bytes_decoded += map.end - map.offset;
+            offset = map.end;
+            census.reference_type_maps.push(map);
+            continue;
+        }
         if let Some(record) = consume_shared_record(stream, offset, &census.records) {
             census.bytes_decoded += record.end - offset;
             let name =
@@ -977,7 +985,7 @@ fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReference
 fn reference_type_maps(stream: &[u8], census: &Census) -> Vec<ReferenceTypeMap> {
     uncovered_spans(stream.len(), census, true)
         .filter_map(|(offset, end)| {
-            reference_type_map(stream, offset, end).or_else(|| {
+            reference_type_map(stream, offset, ReferenceTypeMapLimit::Bounded(end)).or_else(|| {
                 let following_kind = census
                     .records
                     .iter()
@@ -990,7 +998,8 @@ fn reference_type_maps(stream: &[u8], census: &Census) -> Vec<ReferenceTypeMap> 
                     )
                     .find_map(|(event_offset, kind)| (event_offset == end).then_some(kind))?;
                 let shared_end = end.checked_add(2)?;
-                let map = reference_type_map(stream, offset, shared_end)?;
+                let map =
+                    reference_type_map(stream, offset, ReferenceTypeMapLimit::Bounded(shared_end))?;
                 (map.target_kind.is_none()
                     && map
                         .entries
@@ -1002,11 +1011,21 @@ fn reference_type_maps(stream: &[u8], census: &Census) -> Vec<ReferenceTypeMap> 
         .collect()
 }
 
+#[derive(Clone, Copy)]
+enum ReferenceTypeMapLimit {
+    TargetTerminated,
+    Bounded(usize),
+}
+
 fn reference_type_map(
     stream: &[u8],
     offset: usize,
-    expected_end: usize,
+    limit: ReferenceTypeMapLimit,
 ) -> Option<ReferenceTypeMap> {
+    let expected_end = match limit {
+        ReferenceTypeMapLimit::TargetTerminated => None,
+        ReferenceTypeMapLimit::Bounded(end) => Some(end),
+    };
     let mut at = if let Some((1, consumed)) = read_xmt(stream, offset) {
         let separator = offset.checked_add(consumed)?;
         (be::u16_at(stream, separator) == Some(1)).then_some(())?;
@@ -1020,7 +1039,7 @@ fn reference_type_map(
     };
     let mut entries = Vec::new();
     loop {
-        if at == expected_end {
+        if expected_end == Some(at) {
             return (!entries.is_empty()).then_some(ReferenceTypeMap {
                 entries,
                 target_kind: None,
@@ -1028,14 +1047,14 @@ fn reference_type_map(
                 end: at,
             });
         }
-        (at < expected_end).then_some(())?;
+        expected_end.is_none_or(|end| at < end).then_some(())?;
         let (reference, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
-        (at <= expected_end).then_some(())?;
+        expected_end.is_none_or(|end| at <= end).then_some(())?;
         if reference == 1 {
             (be::u16_at(stream, at) == Some(0)).then_some(())?;
             at = at.checked_add(2)?;
-            if at == expected_end {
+            if expected_end == Some(at) {
                 return (!entries.is_empty()).then_some(ReferenceTypeMap {
                     entries,
                     target_kind: None,
@@ -1046,17 +1065,19 @@ fn reference_type_map(
             let target_kind = be::u16_at(stream, at)?;
             (target_kind > 0).then_some(())?;
             at = at.checked_add(2)?;
-            return (at <= expected_end && !entries.is_empty()).then_some(ReferenceTypeMap {
-                entries,
-                target_kind: Some(target_kind),
-                offset,
-                end: at,
-            });
+            return (expected_end.is_none_or(|end| at <= end) && !entries.is_empty()).then_some(
+                ReferenceTypeMap {
+                    entries,
+                    target_kind: Some(target_kind),
+                    offset,
+                    end: at,
+                },
+            );
         }
         let kind = be::u16_at(stream, at)?;
         is_reference_type_kind(kind).then_some(())?;
         at = at.checked_add(2)?;
-        (at <= expected_end).then_some(())?;
+        expected_end.is_none_or(|end| at <= end).then_some(())?;
         entries.push((reference, kind));
     }
 }
@@ -4057,6 +4078,27 @@ mod reference_type_map_tests {
         assert_eq!(census.reference_type_maps.len(), 1);
         assert_eq!(census.reference_type_maps[0].target_kind, Some(323));
         assert_eq!(census.bytes_decoded, bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_precedes_counted_record_at_shared_kind() {
+        let map = vec![0, 1, 0, 1, 0, 3, 0, 82, 0, 1, 0, 0, 2, 100];
+        let mut bytes = map.clone();
+        bytes.extend(std::iter::repeat_n(0, 65_536 * 4));
+
+        let census = walk(&bytes);
+
+        assert_eq!(
+            census.reference_type_maps,
+            [ReferenceTypeMap {
+                entries: vec![(3, 82)],
+                target_kind: Some(612),
+                offset: 0,
+                end: map.len(),
+            }]
+        );
+        assert!(census.records.is_empty());
+        assert_eq!(census.bytes_decoded, map.len());
     }
 
     #[test]
