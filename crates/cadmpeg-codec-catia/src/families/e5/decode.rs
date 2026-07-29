@@ -1414,7 +1414,7 @@ pub(crate) fn parameter_ranges_reversed(
 ) -> Option<bool> {
     let bound_span = parameters[1] - parameters[0];
     let native_span = native_range[1] - native_range[0];
-    (bound_span.abs() > f64::EPSILON && native_span.abs() > f64::EPSILON)
+    (bound_span.is_finite() && bound_span != 0.0 && native_span.is_finite() && native_span != 0.0)
         .then_some(bound_span.is_sign_negative() != native_span.is_sign_negative())
 }
 
@@ -1616,9 +1616,9 @@ pub(crate) fn e5_boundary_curve(
     let span = range[1] - range[0];
     let span_direction = Point2::new(span * direction.u, span * direction.v);
 
-    let circle = if direction.v.abs() <= 1e-12 && direction.u.abs() > 1e-12 {
+    let circle = if direction.v == 0.0 && direction.u != 0.0 {
         e5_constant_v_circle(surface, start_uv.v)
-    } else if direction.u.abs() <= 1e-12 && direction.v.abs() > 1e-12 {
+    } else if direction.u == 0.0 && direction.v != 0.0 {
         e5_constant_u_circle(surface, start_uv.u)
     } else {
         None
@@ -1661,7 +1661,7 @@ pub(crate) fn e5_boundary_curve(
     }
 
     if !(matches!(surface, SurfaceGeometry::Plane { .. })
-        || (direction.u.abs() <= 1e-12
+        || (direction.u == 0.0
             && matches!(
                 surface,
                 SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
@@ -1670,8 +1670,8 @@ pub(crate) fn e5_boundary_curve(
         return None;
     }
     let delta = endpoints[1].vector_from(endpoints[0]);
-    let length = delta.norm();
-    (length > f64::EPSILON).then_some((
+    let length = delta.x.hypot(delta.y).hypot(delta.z);
+    (length.is_finite() && length > 0.0).then_some((
         CurveGeometry::Line {
             origin: endpoints[0],
             direction: delta.scale(1.0 / length),
@@ -2074,7 +2074,15 @@ mod route_tests {
             parameter_ranges_reversed([13.0, 0.0], [0.0, 122.0]),
             Some(true)
         );
+        assert_eq!(
+            parameter_ranges_reversed([0.0, 1e-200], [0.0, 1e-200]),
+            Some(false)
+        );
         assert_eq!(parameter_ranges_reversed([1.0, 1.0], [0.0, 1.0]), None);
+        assert_eq!(
+            parameter_ranges_reversed([0.0, f64::INFINITY], [0.0, 1.0]),
+            None
+        );
     }
 
     #[test]
@@ -2216,6 +2224,67 @@ mod route_tests {
             } if center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
         ));
         assert!((range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn e5_boundary_classification_is_scale_independent() {
+        let surface = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let direction = 1e-200;
+        let parameter_end = 1e200;
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 3.0),
+            direction: Point2::new(direction, 0.0),
+        };
+        let native = crate::families::e5::graph::E5Pcurve::Line {
+            surface: 0,
+            origin: [0.0, 3.0],
+            direction: [direction, 0.0],
+            range: [0.0, parameter_end],
+        };
+        let (curve, _) = e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, parameter_end],
+            [
+                Point3::new(2.0, 0.0, 3.0),
+                Point3::new(2.0 * 1.0f64.cos(), 2.0 * 1.0f64.sin(), 3.0),
+            ],
+        )
+        .expect("cylinder boundary circle");
+        assert!(matches!(curve, CurveGeometry::Circle { radius: 2.0, .. }));
+
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let plane_pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(direction, 0.0),
+        };
+        let plane_native = crate::families::e5::graph::E5Pcurve::Line {
+            surface: 0,
+            origin: [0.0, 0.0],
+            direction: [direction, 0.0],
+            range: [0.0, 1.0],
+        };
+        let tiny_endpoint = Point3::new(direction, 0.0, 0.0);
+        let (curve, range) = e5_boundary_curve(
+            &plane,
+            &plane_native,
+            &plane_pcurve,
+            [0.0, 1.0],
+            [Point3::new(0.0, 0.0, 0.0), tiny_endpoint],
+        )
+        .expect("finite nonzero plane line");
+        assert!(matches!(curve, CurveGeometry::Line { .. }));
+        assert_eq!(range, [0.0, direction]);
     }
 
     #[test]

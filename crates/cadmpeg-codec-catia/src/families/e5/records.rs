@@ -262,11 +262,13 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                 };
                 let u_scale = f64_le(data, pos + 158)?;
                 let v_scale = f64_le(data, pos + 166)?;
+                let parameter_scale = [1.0 / u_scale, half_angle.cos() / v_scale];
                 (u_scale.is_finite()
-                    && u_scale.abs() > 1e-12
+                    && u_scale != 0.0
                     && v_scale.is_finite()
-                    && v_scale.abs() > 1e-12)
-                    .then_some((geometry, [1.0 / u_scale, half_angle.cos() / v_scale]))
+                    && v_scale != 0.0
+                    && parameter_scale.into_iter().all(f64::is_finite))
+                .then_some((geometry, parameter_scale))
             }),
             0xcc => e5_torus(data, pos).map(|geometry| {
                 let SurfaceGeometry::Torus {
