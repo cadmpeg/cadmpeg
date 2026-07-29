@@ -193,6 +193,8 @@ current scores require those matrices and representative fixtures.
   exact `00` or `04` terminal control, with no residual bytes.
   Object-stream class-`21` pcurves require the exact single-segment clamped
   Bézier grammar, complete finite suffix, and positive scalar domain.
+  Object-stream class-`1a` pcurves require the exact circular diameter-period
+  grammar and transfer as rational quadratic arcs over their stored intervals.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.

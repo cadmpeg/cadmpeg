@@ -705,7 +705,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             let pcurve = match record.class {
                 0x18 => parse_line_pcurve(record),
                 0x19 => parse_circle_pcurve(record),
-                0x1a => parse_circular_conic_pcurve(record),
+                0x1a => parse_class_1a_pcurve(record),
                 0x21 => parse_pcurve(record),
                 _ => None,
             }?;
@@ -2921,7 +2921,7 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     )
 }
 
-fn parse_circular_conic_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     if record.class != 0x1a || record.payload.first() != Some(&0x81) {
         return None;
     }
@@ -3040,7 +3040,7 @@ fn rational_arc_pcurve(
 }
 
 fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
-    if parse_circular_conic_pcurve(record).is_some() {
+    if parse_class_1a_pcurve(record).is_some() {
         return None;
     }
     if !matches!(record.class, 0x1a | 0x1d) || record.payload.first() != Some(&0x81) {
@@ -4815,7 +4815,7 @@ mod tests {
     }
 
     #[test]
-    fn circular_conic_pcurve_uses_diameter_period_parameterization() {
+    fn class_1a_pcurve_uses_diameter_period_parameterization() {
         let mut payload = vec![0x81, 0x18, 0x34, 0x12];
         for value in [3.0_f64, 4.0] {
             payload.extend_from_slice(&value.to_le_bytes());
@@ -4839,7 +4839,7 @@ mod tests {
             object_id: 0x1235,
             payload,
         };
-        let pcurve = parse_circular_conic_pcurve(&record).expect("circular conic pcurve");
+        let pcurve = parse_class_1a_pcurve(&record).expect("class-1a pcurve");
         assert_eq!(pcurve.surface, 0x1234);
         assert_eq!(
             pcurve.distinct_knots,
@@ -4854,7 +4854,7 @@ mod tests {
     }
 
     #[test]
-    fn noncircular_class_1a_pcurve_remains_opaque() {
+    fn noncanonical_class_1a_payload_remains_opaque() {
         let mut payload = vec![0x81, 0x82];
         for value in [0.0_f64, 0.0] {
             payload.extend_from_slice(&value.to_le_bytes());
@@ -4870,7 +4870,7 @@ mod tests {
             object_id: 7,
             payload,
         };
-        assert!(parse_circular_conic_pcurve(&record).is_none());
+        assert!(parse_class_1a_pcurve(&record).is_none());
         assert!(parse_opaque_pcurve(&record).is_some());
     }
 
