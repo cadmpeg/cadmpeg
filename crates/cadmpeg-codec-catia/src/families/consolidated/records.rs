@@ -890,14 +890,23 @@ fn nurbs_carrier_offset(
         let residual_length = residual.x.hypot(residual.y).hypot(residual.z);
         let normal = partials.du.cross(partials.dv).unit()?;
         let distance = residual.x * normal.x + residual.y * normal.y + residual.z * normal.z;
-        let perpendicular_squared = (residual_length.powi(2) - distance.powi(2)).max(0.0);
-        if perpendicular_squared > 1e-12 {
+        let transverse = Vector3::new(
+            residual.x - normal.x * distance,
+            residual.y - normal.y * distance,
+            residual.z - normal.z * distance,
+        );
+        let transverse_length = transverse.x.hypot(transverse.y).hypot(transverse.z);
+        if transverse_length > 1e-6 * residual_length {
             return None;
         }
         offsets.push(distance);
     }
     let first = offsets[0];
-    if !first.is_finite() || offsets.iter().any(|value| (value - first).abs() > 1e-6) {
+    if !first.is_finite()
+        || offsets
+            .iter()
+            .any(|value| (value - first).abs() > 1e-6 * value.abs().max(first.abs()))
+    {
         return None;
     }
     Some(first)
@@ -1018,5 +1027,21 @@ mod tests {
         )
         .expect("constant normal offset");
         assert_eq!(offset, tiny);
+
+        assert_eq!(
+            nurbs_carrier_offset(
+                &surface,
+                &[[0.25, 0.25], [0.75, 0.75]],
+                &[
+                    Point3::new(0.25, 0.25, tiny),
+                    Point3::new(0.75, 0.75, 2.0 * tiny),
+                ],
+            ),
+            None
+        );
+        assert_eq!(
+            nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],),
+            None
+        );
     }
 }
