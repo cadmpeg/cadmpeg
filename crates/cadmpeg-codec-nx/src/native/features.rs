@@ -1994,12 +1994,12 @@ pub struct FeatureExtrudePayloadHeader {
     pub source_offset: u64,
 }
 
-/// Exact terminal discriminator lane from a bounded extrusion payload.
+/// Exact terminal discriminator lane from a bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureExtrudePayloadFooter {
-    /// Globally unique footer identity.
+pub struct FeatureOperationTerminalDiscriminator {
+    /// Globally unique lane identity.
     pub id: String,
-    /// Owning `EXTRUDE` operation label.
+    /// Owning operation label.
     pub operation_label: String,
     /// Two compact type indices following the footer prelude.
     pub type_indices: [u32; 2],
@@ -2007,8 +2007,6 @@ pub struct FeatureExtrudePayloadFooter {
     pub raw_type_indices: [Vec<u8>; 2],
     /// Absolute file offsets of the two type-index tokens.
     pub type_index_source_offsets: [u64; 2],
-    /// Two values in the counted footer lane.
-    pub mode_indices: [u32; 2],
     /// Four serialized one-byte flags.
     pub flags: [u8; 4],
     /// Compact values preceding the payload terminator.
@@ -6938,10 +6936,12 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
     headers
 }
 
-/// Decode exact terminal discriminator lanes from bounded extrusion payloads.
-pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtrudePayloadFooter> {
+/// Decode exact terminal discriminator lanes from bounded operation payloads.
+pub fn feature_operation_terminal_discriminators(
+    container: &Container,
+) -> Vec<FeatureOperationTerminalDiscriminator> {
     let sections = container.om_sections();
-    let mut footers = Vec::new();
+    let mut lanes = Vec::new();
     for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
@@ -6956,35 +6956,34 @@ pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtr
         let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
-            let Some(footer) = crate::om::extrude_payload_footer(record) else {
+            let Some(lane) = crate::om::operation_terminal_discriminator(record) else {
                 continue;
             };
-            footers.push(FeatureExtrudePayloadFooter {
+            lanes.push(FeatureOperationTerminalDiscriminator {
                 id: format!(
-                    "nx:feature-history:extrude-payload-footer#{section_key}-{operation_ordinal:010}"
+                    "nx:feature-history:operation-terminal-discriminator#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                type_indices: footer.type_indices,
-                raw_type_indices: footer.raw_type_indices,
-                type_index_source_offsets: footer
+                type_indices: lane.type_indices,
+                raw_type_indices: lane.raw_type_indices,
+                type_index_source_offsets: lane
                     .type_index_offsets
                     .map(|offset| entry_offset + offset as u64),
-                mode_indices: footer.mode_indices,
-                flags: footer.flags,
-                trailing_indices: footer.trailing_indices,
-                raw_trailing_indices: footer.raw_trailing_indices,
-                trailing_index_source_offsets: footer
+                flags: lane.flags,
+                trailing_indices: lane.trailing_indices,
+                raw_trailing_indices: lane.raw_trailing_indices,
+                trailing_index_source_offsets: lane
                     .trailing_index_offsets
                     .into_iter()
                     .map(|offset| entry_offset + offset as u64)
                     .collect(),
-                source_offset: entry_offset + footer.offset as u64,
+                source_offset: entry_offset + lane.offset as u64,
             });
         }
     }
-    footers
+    lanes
 }
 
 /// Decode typed scalar clauses anchored to operation body-reference fields.

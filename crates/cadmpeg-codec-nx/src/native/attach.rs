@@ -275,7 +275,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(180);
+    namespace.version = namespace.version.max(181);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -582,7 +582,9 @@ fn attach_feature_operations(
     let block_payload_point_groups = features.feature_block_payload_point_groups.as_slice();
     let extrude_32_constructions = features.feature_extrude_32_constructions.as_slice();
     let extrude_payload_headers = features.feature_extrude_payload_headers.as_slice();
-    let extrude_payload_footers = features.feature_extrude_payload_footers.as_slice();
+    let operation_terminal_discriminators = features
+        .feature_operation_terminal_discriminators
+        .as_slice();
     let extrude_payload_32_branches = features.feature_extrude_payload_32_branches.as_slice();
     let operation_body_scalar_triples = features.feature_operation_body_scalar_triples.as_slice();
     let operation_body_members = features.feature_operation_body_members.as_slice();
@@ -962,9 +964,9 @@ fn attach_feature_operations(
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
         .collect::<BTreeMap<_, _>>();
-    let extrude_payload_footers_by_operation = extrude_payload_footers
+    let operation_terminal_discriminators_by_operation = operation_terminal_discriminators
         .iter()
-        .map(|footer| (footer.operation_label.as_str(), footer))
+        .map(|lane| (lane.operation_label.as_str(), lane))
         .collect::<BTreeMap<_, _>>();
     let extrude_payload_32_branches_by_operation =
         records_by_operation(extrude_payload_32_branches, |branch| {
@@ -1393,8 +1395,11 @@ fn attach_feature_operations(
         if let Some(header) = extrude_payload_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("extrude_payload_header".to_string(), header.id.clone());
         }
-        if let Some(footer) = extrude_payload_footers_by_operation.get(label.id.as_str()) {
-            source_properties.insert("extrude_payload_footer".to_string(), footer.id.clone());
+        if let Some(lane) = operation_terminal_discriminators_by_operation.get(label.id.as_str()) {
+            source_properties.insert(
+                "operation_terminal_discriminator".to_string(),
+                lane.id.clone(),
+            );
         }
         for (ordinal, branch) in extrude_payload_32_branches_by_operation
             .get(label.id.as_str())

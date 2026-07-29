@@ -45,7 +45,7 @@ This document records unresolved NX `.prt` byte semantics.
   configuration output-and-dependency graph is unspecified.
 - The target object family and slot roles of the five nullable references at the start of a `DELETE` payload are unspecified.
 - Body membership, parameter state, and per-body state for inactive arrangements are unspecified.
-- The semantic roles of the extrusion terminal discriminator lane's type indices, fixed counted values, flags, and trailing indices are unspecified.
+- The semantic roles of operation terminal discriminator lanes' type indices, flags, and trailing indices are unspecified.
 - The source-curve, target-surface, direction, and combination roles of the ordered `CPROJ` and `CPROJ_CMB` construction references are unspecified.
 - The selection roles of the `FSET` selector and its two ordered object-reference groups are unspecified.
 - The seed, transform, and pattern-control roles of the ordered `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` construction references are unspecified. The scalar and compact-selector roles in counted pattern rows are unspecified. The selector groups and trailing references in `Multi Instance Output` lanes have no assigned construction roles. Equal canonical line labels in distinct pattern and profile blocks do not establish block identity or a seed relation.

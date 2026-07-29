@@ -102,6 +102,8 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_labels: Vec<FeatureOperationLabel>,
     pub(crate) feature_operation_records: Vec<FeatureOperationRecord>,
     pub(crate) feature_operation_common_frames: Vec<FeatureOperationCommonFrame>,
+    pub(crate) feature_operation_terminal_discriminators:
+        Vec<FeatureOperationTerminalDiscriminator>,
     pub(crate) feature_operation_terminal_frames: Vec<FeatureOperationTerminalFrame>,
     pub(crate) feature_payload_strings: Vec<FeaturePayloadString>,
     pub(crate) feature_simple_hole_templates: Vec<FeatureSimpleHoleTemplate>,
@@ -164,7 +166,6 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_surface_construction_branches: Vec<FeatureSurfaceConstructionBranch>,
     pub(crate) feature_extrude_profile_references: Vec<FeatureExtrudeProfileReference>,
     pub(crate) feature_extrude_payload_headers: Vec<FeatureExtrudePayloadHeader>,
-    pub(crate) feature_extrude_payload_footers: Vec<FeatureExtrudePayloadFooter>,
     pub(crate) feature_operation_body_scalar_triples: Vec<FeatureOperationBodyScalarTriple>,
     pub(crate) feature_operation_body_members: Vec<FeatureOperationBodyMember>,
     pub(crate) feature_operation_body_operands: Vec<FeatureOperationBodyOperand>,
@@ -315,6 +316,8 @@ impl NativeModel {
         let feature_operation_labels = feature_operation_labels(container);
         let feature_operation_records = feature_operation_records(container);
         let feature_operation_common_frames = feature_operation_common_frames(container);
+        let feature_operation_terminal_discriminators =
+            feature_operation_terminal_discriminators(container);
         let feature_operation_terminal_frames =
             feature_operation_terminal_frames(container, &feature_operation_common_frames);
         let feature_payload_strings = feature_payload_strings(container);
@@ -532,7 +535,6 @@ impl NativeModel {
             feature_surface_construction_branches(container);
         let feature_extrude_profile_references = feature_extrude_profile_references(container);
         let feature_extrude_payload_headers = feature_extrude_payload_headers(container);
-        let feature_extrude_payload_footers = feature_extrude_payload_footers(container);
         let feature_operation_body_scalar_triples =
             feature_operation_body_scalar_triples(container);
         let feature_operation_body_members = feature_operation_body_members(container);
@@ -808,6 +810,7 @@ impl NativeModel {
                 feature_operation_labels,
                 feature_operation_records,
                 feature_operation_common_frames,
+                feature_operation_terminal_discriminators,
                 feature_operation_terminal_frames,
                 feature_payload_strings,
                 feature_simple_hole_templates,
@@ -866,7 +869,6 @@ impl NativeModel {
                 feature_surface_construction_branches,
                 feature_extrude_profile_references,
                 feature_extrude_payload_headers,
-                feature_extrude_payload_footers,
                 feature_operation_body_scalar_triples,
                 feature_operation_body_members,
                 feature_operation_body_operands,

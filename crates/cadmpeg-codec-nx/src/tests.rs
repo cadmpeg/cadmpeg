@@ -3843,7 +3843,7 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
 }
 
 #[test]
-fn om_extrude_footer_requires_one_complete_terminal_lane() {
+fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
         offset: 119,
@@ -3859,23 +3859,31 @@ fn om_extrude_footer_requires_one_complete_terminal_lane() {
         payload,
         label,
     };
-    let footer = crate::om::extrude_payload_footer(record).unwrap();
-    assert_eq!(footer.offset, 200);
-    assert_eq!(footer.type_indices, [351, 171]);
+    let lane = crate::om::operation_terminal_discriminator(record).unwrap();
+    assert_eq!(lane.offset, 200);
+    assert_eq!(lane.type_indices, [351, 171]);
+    assert_eq!(lane.raw_type_indices, [vec![0x81, 0x5f], vec![0x80, 0xab]]);
+    assert_eq!(lane.type_index_offsets, [203, 205]);
+    assert_eq!(lane.flags, [1, 2, 1, 1]);
+    assert_eq!(lane.trailing_indices, [5, 255]);
+    assert_eq!(lane.raw_trailing_indices, [vec![0x05], vec![0x80, 0xff]]);
+    assert_eq!(lane.trailing_index_offsets, [220, 221]);
+
+    let subtract = crate::om::OperationRecord {
+        label: crate::om::OperationLabel {
+            value: "SUBTRACT",
+            ..label
+        },
+        ..record
+    };
     assert_eq!(
-        footer.raw_type_indices,
-        [vec![0x81, 0x5f], vec![0x80, 0xab]]
+        crate::om::operation_terminal_discriminator(subtract),
+        Some(lane.clone())
     );
-    assert_eq!(footer.type_index_offsets, [203, 205]);
-    assert_eq!(footer.mode_indices, [2, 1]);
-    assert_eq!(footer.flags, [1, 2, 1, 1]);
-    assert_eq!(footer.trailing_indices, [5, 255]);
-    assert_eq!(footer.raw_trailing_indices, [vec![0x05], vec![0x80, 0xff]]);
-    assert_eq!(footer.trailing_index_offsets, [220, 221]);
 
     let truncated = &payload[..payload.len() - 1];
     assert!(
-        crate::om::extrude_payload_footer(crate::om::OperationRecord {
+        crate::om::operation_terminal_discriminator(crate::om::OperationRecord {
             payload: truncated,
             bytes: truncated,
             ..record
@@ -3886,7 +3894,7 @@ fn om_extrude_footer_requires_one_complete_terminal_lane() {
     let mut ambiguous = payload[..payload.len() - 1].to_vec();
     ambiguous.extend_from_slice(payload);
     assert!(
-        crate::om::extrude_payload_footer(crate::om::OperationRecord {
+        crate::om::operation_terminal_discriminator(crate::om::OperationRecord {
             payload: &ambiguous,
             bytes: &ambiguous,
             ..record
@@ -12022,7 +12030,6 @@ mod golden {
         "feature_extrude_32_constructions",
         "feature_extrude_construction_profiles",
         "feature_extrude_payload_32_branches",
-        "feature_extrude_payload_footers",
         "feature_extrude_payload_headers",
         "feature_extrude_profile_references",
         "feature_fset_construction_payloads",
@@ -12041,6 +12048,7 @@ mod golden {
         "feature_operation_labels",
         "feature_operation_records",
         "feature_operation_common_frames",
+        "feature_operation_terminal_discriminators",
         "feature_operation_terminal_frames",
         "feature_parameter_bindings",
         "feature_parameter_uses",

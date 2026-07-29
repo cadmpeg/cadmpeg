@@ -1588,6 +1588,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_operation_terminal_discriminators",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_terminal_discriminators, r, ns),
+        len: |m| m.features.feature_operation_terminal_discriminators.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_operation_terminal_frames",
         tag: Some("FEATURE_OPERATION_TERMINAL_FRAME"),
         exactness: Exactness::ByteExact,
@@ -2279,15 +2288,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: None,
         emit: |m, r, ns| emit_arena(&m.features.feature_extrude_payload_headers, r, ns),
         len: |m| m.features.feature_extrude_payload_headers.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
-        arena: "feature_extrude_payload_footers",
-        tag: None,
-        exactness: Exactness::ByteExact,
-        note: None,
-        emit: |m, r, ns| emit_arena(&m.features.feature_extrude_payload_footers, r, ns),
-        len: |m| m.features.feature_extrude_payload_footers.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

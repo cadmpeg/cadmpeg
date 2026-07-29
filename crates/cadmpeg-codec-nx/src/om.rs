@@ -1340,9 +1340,9 @@ pub struct ExtrudePayloadHeader {
     pub raw_scalars: [[u8; 8]; 2],
 }
 
-/// Exact terminal discriminator lane in a bounded extrusion payload.
+/// Exact terminal discriminator lane at the end of a bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtrudePayloadFooter {
+pub struct OperationTerminalDiscriminator {
     /// Payload-relative offset of the fixed footer prelude.
     pub offset: usize,
     /// Two compact type indices following `01 01 02`.
@@ -1351,8 +1351,6 @@ pub struct ExtrudePayloadFooter {
     pub raw_type_indices: [Vec<u8>; 2],
     /// Absolute offsets of the two type-index tokens.
     pub type_index_offsets: [usize; 2],
-    /// Two values in the exact `01 03` counted lane.
-    pub mode_indices: [u32; 2],
     /// Four serialized one-byte flags.
     pub flags: [u8; 4],
     /// Compact values between `29 29` and the terminal zero.
@@ -3203,9 +3201,11 @@ pub fn extrude_payload_header(record: OperationRecord<'_>) -> Option<ExtrudePayl
     })
 }
 
-/// Decode the unique terminal discriminator lane in an `EXTRUDE` payload.
-pub fn extrude_payload_footer(record: OperationRecord<'_>) -> Option<ExtrudePayloadFooter> {
-    if record.label.value != "EXTRUDE" || record.payload.last() != Some(&0) {
+/// Decode the unique terminal discriminator lane in a bounded operation payload.
+pub fn operation_terminal_discriminator(
+    record: OperationRecord<'_>,
+) -> Option<OperationTerminalDiscriminator> {
+    if record.payload.last() != Some(&0) {
         return None;
     }
     let mut matches = Vec::new();
@@ -3271,12 +3271,11 @@ pub fn extrude_payload_footer(record: OperationRecord<'_>) -> Option<ExtrudePayl
         if !valid || at != trailing_end {
             continue;
         }
-        matches.push(ExtrudePayloadFooter {
+        matches.push(OperationTerminalDiscriminator {
             offset: record.payload_offset + start,
             type_indices,
             raw_type_indices,
             type_index_offsets,
-            mode_indices: [2, 1],
             flags,
             trailing_indices,
             raw_trailing_indices,
