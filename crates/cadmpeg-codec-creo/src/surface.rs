@@ -2703,24 +2703,21 @@ fn named_record_boundary(
 
 /// Decode bounded parameter bodies for positional `srf_array` rows.
 pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
-    parameter_records_for_rows(payload, rows(payload))
+    parameter_records_for_rows(payload, &rows(payload))
 }
 
 /// Decode bounded positional parameter bodies from a DEPDB cross-section
 /// surface namespace.
 #[must_use]
 pub fn cross_section_parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
-    parameter_records_for_rows(payload, cross_section_rows(payload))
+    parameter_records_for_rows(payload, &cross_section_rows(payload))
 }
 
-fn parameter_records_for_rows(
-    payload: &[u8],
-    rows: Vec<SurfaceRow>,
-) -> Vec<SurfaceParameterRecord> {
+fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceParameterRecord> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
     for row in rows {
-        let Some(body_start) = positional_body_start(payload, &row) else {
+        let Some(body_start) = positional_body_start(payload, row) else {
             continue;
         };
         if headers
@@ -2729,7 +2726,7 @@ fn parameter_records_for_rows(
         {
             continue;
         }
-        headers.push((row, body_start));
+        headers.push((row.clone(), body_start));
     }
     let mut records = Vec::new();
     for (index, (row, body_start)) in headers.iter().enumerate() {
@@ -5078,18 +5075,6 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
             .sum::<f64>()
             .sqrt()
     });
-    let nonzero = supports
-        .into_iter()
-        .zip(magnitudes)
-        .filter(|(_, magnitude)| *magnitude > 1e-6)
-        .collect::<Vec<_>>();
-    let [(first, first_magnitude), (second, second_magnitude)] = nonzero.as_slice() else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
-    };
     if magnitudes
         .into_iter()
         .filter(|magnitude| *magnitude <= 1e-6)
@@ -5101,28 +5086,38 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
             normal: None,
         };
     }
-    let scale = first_magnitude.max(*second_magnitude);
-    let support_dot = first
-        .iter()
-        .zip(second)
-        .map(|(first, second)| first * second)
-        .sum::<f64>();
-    if (first_magnitude - second_magnitude).abs() > 1e-9 * scale.max(1.0)
-        || support_dot.abs() > 1e-9 * first_magnitude * second_magnitude
-    {
+    let pairs = [(0, 1), (0, 2), (1, 2)]
+        .into_iter()
+        .filter(|(first, second)| {
+            let first_magnitude = magnitudes[*first];
+            let second_magnitude = magnitudes[*second];
+            let scale = first_magnitude.max(second_magnitude);
+            let support_dot = supports[*first]
+                .iter()
+                .zip(supports[*second])
+                .map(|(first, second)| first * second)
+                .sum::<f64>();
+            first_magnitude > 1e-6
+                && second_magnitude > 1e-6
+                && (first_magnitude - second_magnitude).abs() <= 1e-9 * scale.max(1.0)
+                && support_dot.abs() <= 1e-9 * first_magnitude * second_magnitude
+        })
+        .collect::<Vec<_>>();
+    let [(first_index, second_index)] = pairs.as_slice() else {
         return PlaneFrame {
             origin,
             u_axis: None,
             normal: None,
         };
-    }
-    let u_axis = (*first_magnitude > 1e-6).then(|| {
-        [
-            first[0] / first_magnitude,
-            first[1] / first_magnitude,
-            first[2] / first_magnitude,
-        ]
-    });
+    };
+    let first = supports[*first_index];
+    let second = supports[*second_index];
+    let first_magnitude = magnitudes[*first_index];
+    let u_axis = Some([
+        first[0] / first_magnitude,
+        first[1] / first_magnitude,
+        first[2] / first_magnitude,
+    ]);
     let cross = [
         first[1].mul_add(second[2], -(first[2] * second[1])),
         first[2].mul_add(second[0], -(first[0] * second[2])),
@@ -5170,22 +5165,31 @@ pub fn cross_section_plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem
 
 fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<PlaneLocalSystem> {
     let cache = scalar::ScalarCache::from_section(payload);
+    let parameters = parameter_records_for_rows(payload, rows);
     let headers = rows
         .iter()
         .enumerate()
         .filter(|(_, row)| row.kind == SurfaceKind::Plane)
-        .filter_map(|(index, row)| {
-            positional_body_start(payload, row).map(|body_start| {
-                let row_end = rows
-                    .get(index + 1)
-                    .map_or(payload.len(), |next| next.offset);
-                (row, body_start, row_end)
-            })
+        .map(|(index, row)| {
+            let row_end = rows
+                .get(index + 1)
+                .map_or(payload.len(), |next| next.offset);
+            (row, row_end)
         })
         .collect::<Vec<_>>();
     let mut systems = Vec::new();
-    for (row, envelope_start, row_end) in headers {
-        let Some(envelope_close) = first_compound_close(payload, envelope_start, row_end) else {
+    for (row, row_end) in headers {
+        let Some(envelope_start) = positional_body_start(payload, row) else {
+            continue;
+        };
+        let parameter = unique_surface_parameter(&parameters, row.id)
+            .filter(|parameter| parameter.offset == row.offset);
+        let envelope_close = first_compound_close(payload, envelope_start, row_end).or_else(|| {
+            parameter
+                .filter(|parameter| parameter.boundary == SurfaceBodyBoundary::CompoundClose)
+                .map(|parameter| parameter.body_offset + parameter.body.len())
+        });
+        let Some(envelope_close) = envelope_close else {
             continue;
         };
         let chunk_start = envelope_close + 1;
@@ -5615,6 +5619,40 @@ mod tests {
         ));
         assert_eq!(plane_envelopes_for_rows(&payload, &rows).len(), 1);
         assert!(plane_local_systems_for_rows(&payload, &rows).is_empty());
+    }
+
+    #[test]
+    fn plane_local_system_follows_a_parameter_scalar_containing_a_named_record_header() {
+        let payload = [
+            7, 0x22, 4, 0x01, 0, 0, // plane row
+            0x5b, 0xc1, 0xab, 0x04, 0x64, 0x8d, 0x4f, 0x32, 0xe0, 0x1a, 0x1d, 0xa7, 0x0d, 0x5c,
+            0x0c, 0x2d, 0x1b, 0xb6, 0xbb, 0xc4, 0x23, 0x5c, 0xc5, 0xa3, 0x0c, 0xb3, 0xbb, 0x89,
+            0xf1, 0x2c, 0xc8, 0x5c, 0x28, 0xf5, 0xc2, 0x8f, 0xd4, 0x2f, 0x31, 0x80, 0xdc, 0xaa,
+            0xa1, 0x13, 0xdd, 0x13, 0xf1, 0xb6, 0x45, 0xd0, 0x67, 0x81, 0xe7, 0x8a, 0x2d, 0x37,
+            0x77, 0xb3, 0xe6, 0xb6, 0xcc, 0xe5, 0x95, 0xaa, 0xa1, 0x13, 0xdd, 0x13, 0xef,
+            0xe3, // parameter body
+            0x18, 0x28, 0xbf, 0x32, 0xd4, 0x4c, 0x4f, 0x62, 0xd3, 0xc2, 0xc2, 0xf0, 0x25, 0xa2,
+            0x3e, 0x8b, 0x18, 0x7a, 0xc2, 0xf0, 0x25, 0xa2, 0x3e, 0x8b, 0x28, 0xbf, 0x32, 0xd4,
+            0x4c, 0x4f, 0x62, 0xd3, 0x0f, 0x18, 0xe4, 0xc8, 0x5c, 0x28, 0xf5, 0xc2, 0x8f, 0xd3,
+            0x2f, 0x31, 0x80, 0xdd, 0xc2, 0xd6, 0x74, 0x69, 0xa5, 0x9b, 0xe3, // local system
+            8, 0x24, 4, 0x01, 0, 0, // next surface row
+            0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe3,
+        ];
+        let rows = rows(&payload);
+
+        let systems = plane_local_systems_for_rows(&payload, &rows);
+        assert_eq!(systems.len(), 1);
+        assert_eq!(systems[0].surface_id, 7);
+        assert_eq!(
+            systems[0].origin,
+            Some([-1.335_000_000_000_026_4, 17.5, -3.595_135_602_449_500_5])
+        );
+        assert_eq!(
+            systems[0].u_axis,
+            Some([0.0, 0.121_869_343_405_147_49, -0.992_546_151_641_322_1])
+        );
+        assert_eq!(systems[0].normal, Some([1.0, 0.0, 0.0]));
+        assert_eq!(systems[0].body.len(), 52);
     }
 
     #[test]
@@ -8475,7 +8513,7 @@ mod tests {
     }
 
     #[test]
-    fn positional_plane_frame_requires_exactly_one_zero_support_triple() {
+    fn positional_plane_frame_requires_one_unique_orthogonal_support_pair() {
         let options = |slots: [f64; 12]| slots.map(Some);
         assert_eq!(
             plane_frame(&options([

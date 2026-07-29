@@ -245,6 +245,10 @@ A nonzero `next_geom_ptr` may reference a rowless face use, so materialization o
 its target is not a row-acceptance condition.
 Plane envelope and post-envelope local-system bodies use the same grammar for
 each defined boundary byte; `boundary_type` does not select their scalar layout.
+The family-aware positional parameter body owns complete scalar tokens. Its
+compound close bounds the plane envelope when a header-shaped byte inside a
+complete parameter scalar interrupts the structural envelope walk. The
+following compound-close-bounded body is the local system.
 A `geom_type = 22`, `boundary_type = 01`, `next_geom_ptr = 0` row is an
 unbounded feature plane. When it is the unique plane row carrying its
 `feat_id`, its placed carrier is the datum-plane definition for that feature.
@@ -1064,12 +1068,18 @@ This image has the same expansion in every twelve-slot local-system field.
 When the support-frame guard holds, derive the normal as:
 
 ```text
-first, second = the two nonzero triples in stored order
+first, second = the unique equal-scale orthogonal pair in stored order
 normal = normalize(cross(first, second))
 ```
 
-Exactly one of the three support triples is the zero triple. The guard requires
-orthogonal, equal-scale nonzero support directions. `outline f9 02 03` stores two XYZ corners. In these positional scalar lanes, `73` and `bb` each begin a seven-byte scalar token. Repeated identical tokens denote equal stored values; tokens with different prefixes denote distinct values. Token equality remains defined when the scalar magnitude is not decoded.
+The remaining support triple can be zero or nonzero. A second equal-scale
+orthogonal pair makes the frame ambiguous. A residual magnitude between
+`1e-9` and `1e-6` is not a zero triple and leaves the frame unresolved.
+`outline f9 02 03` stores two XYZ corners. In these positional scalar lanes,
+`73` and `bb` each begin a seven-byte scalar token. Repeated identical tokens
+denote equal stored values; tokens with different prefixes denote distinct
+values. Token equality remains defined when the scalar magnitude is not
+decoded.
 
 When the outline independently holds exactly one model coordinate, a complete
 support frame may instead store one nonzero triple parallel to that held axis,
