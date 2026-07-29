@@ -4814,7 +4814,7 @@ fn named_spline_scalar_slot(
     if name == "params" && head == 0x2d {
         return named_ieee8(body, offset, 0x40).map(|(value, next)| (Some(value), next));
     }
-    if matches!(head, 0x2d | 0x46 | 0x71) {
+    if matches!(head, 0x2d | 0x46) {
         return scalar::decode_in_lane(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
@@ -4838,6 +4838,10 @@ fn named_spline_scalar_slot(
     }
     if matches!(name, "i_pnts" | "i_points") && matches!(head, 0x5b..=0xa3) {
         return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
+    }
+    if head == 0x71 {
+        return scalar::decode_in_lane(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
     }
     if matches!(name, "i_pnts" | "i_points") && matches!(head, 0xb3 | 0xb9) {
         return scalar::decode_in_lane(body, offset, cache)
@@ -8780,6 +8784,26 @@ mod tests {
                 if values == &[
                     Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 0])),
                     Some(1.0),
+                    Some(1.0),
+                ]
+        ));
+    }
+
+    #[test]
+    fn interpolation_point_dict_token_does_not_consume_following_world_coordinate() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x02i_pnts\0\xf9\x01\x03\
+            \x71\x01\x02\x03\x04\x05\x06\
+            \x46\x40\x01\x02\x03\x04\x05\x06\xe4";
+
+        let records = named_prototype_records(payload);
+
+        assert!(matches!(
+            records[0].field("i_pnts").map(|field| &field.value),
+            Some(SurfaceNamedValue::ScalarArray { values, .. })
+                if values == &[
+                    Some(f64::from_be_bytes([0x3f, 0xe6, 1, 2, 3, 4, 5, 6])),
+                    Some(f64::from_be_bytes([0x40, 0x40, 1, 2, 3, 4, 5, 6])),
                     Some(1.0),
                 ]
         ));
