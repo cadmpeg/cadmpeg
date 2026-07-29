@@ -43,7 +43,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The semantic roles of the two binary64 lanes before `angular_offset` and the four lanes after `angular_scale` in `b2 03 29` cone records are unspecified.
 - The semantic roles of the four `b2/b3/b4 03 18` parameter-point prefix selectors are unresolved.
 - The internal roles of the reference-and-control program in `b2 03 3b` cone-face chart records are unresolved.
-- The semantic roles of the eight binary64 lanes between the radii and parameter scales in `b2 03 2b` torus records are unspecified.
 - The semantic roles of class-`0x60` group types `2` and `12..=21` are unspecified. Type `3` opens a cylinder chain.
 - The semantic roles of the structurally typed counted `b2/b3/b4 03 61` references and tails, and of the long-form `61` prefix, monotone members, five persistent references, and scalar, are unspecified.
 - The higher-level object role of each `b2/b3/b4 03 5f` → `62` allocation-linked owner remains unspecified.

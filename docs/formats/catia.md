@@ -373,7 +373,7 @@ The 152-byte payload is `<center:3f64le> <stored_x:3f64le> <stored_y:3f64le> <st
 
 ### 5.14 Torus record `b2 03 2b`
 
-The 200-byte payload is `<center:3f64le> <direction_x:3f64le> <direction_y:3f64le> <axis:3f64le> <major_radius:f64le> <minor_radius:f64le> <64B> <major_scale:f64le> <minor_scale:f64le> <zero:f64le>`. The three directions form a right-handed orthonormal frame. Both radii and both scales are positive. Native parameters use the independent gauges `major_angle=U/major_scale` and `minor_angle=V/minor_scale`. The point is `center+(major_radius+minor_radius·cos(minor_angle))·(cos(major_angle)·direction_x+sin(major_angle)·direction_y)+minor_radius·sin(minor_angle)·axis`.
+The 200-byte payload is `<center:3f64le> <direction_x:3f64le> <direction_y:3f64le> <axis:3f64le> <major_radius:f64le> <minor_radius:f64le> <major_range:2f64le> <major_domain:2f64le> <minor_range:2f64le> <minor_domain:2f64le> <major_scale:f64le> <minor_scale:f64le> <zero:f64le>`. The three directions form a right-handed orthonormal frame. Both radii and both scales are positive. Each angular range is strictly increasing, spans at most `2π`, and lies inside its corresponding full-turn domain. Each domain spans `2π` and has the same midpoint as its active range, within `1e-12`. Native parameters use the independent gauges `major_angle=U/major_scale` and `minor_angle=V/minor_scale`. The point is `center+(major_radius+minor_radius·cos(minor_angle))·(cos(major_angle)·direction_x+sin(major_angle)·direction_y)+minor_radius·sin(minor_angle)·axis`.
 
 ### 5.15 Surface-of-revolution record `b2 03 2d`
 

@@ -111,6 +111,9 @@ current scores require those matrices and representative fixtures.
   A layout-`0x62` cylinder retains the exact redundant origin of its partial
   circumferential interval and rejects a tail that disagrees with the interval
   midpoint and radius.
+  A consolidated torus retains independent active major- and minor-angle
+  intervals and their centered full-turn chart domains; malformed range/domain
+  relations reject the complete record.
 - The freeform fallback transfers complete consolidated cylinder, cone, sphere,
   and torus records as placed analytic surface carriers independently of
   unresolved topology ownership.

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 177;
+pub const CATIA_NATIVE_VERSION: u32 = 178;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -384,6 +384,14 @@ pub struct CatiaConsolidatedTorus {
     pub major_radius: f64,
     /// Minor radius.
     pub minor_radius: f64,
+    /// Active major-angle interval.
+    pub major_angular_range: [f64; 2],
+    /// Full-turn major-angle chart domain.
+    pub major_angular_domain: [f64; 2],
+    /// Active minor-angle interval.
+    pub minor_angular_range: [f64; 2],
+    /// Full-turn minor-angle chart domain.
+    pub minor_angular_domain: [f64; 2],
     /// Scale from major angle to stored U parameter.
     pub major_scale: f64,
     /// Scale from minor angle to stored V parameter.
@@ -3699,6 +3707,10 @@ fn consolidated_tori(bytes: &[u8]) -> Vec<CatiaConsolidatedTorus> {
             axis: torus.axis,
             major_radius: torus.major_radius,
             minor_radius: torus.minor_radius,
+            major_angular_range: torus.major_angular_range,
+            major_angular_domain: torus.major_angular_domain,
+            minor_angular_range: torus.minor_angular_range,
+            minor_angular_domain: torus.minor_angular_domain,
             major_scale: torus.major_scale,
             minor_scale: torus.minor_scale,
         })
@@ -4767,6 +4779,10 @@ fn validate_consolidated_tori(
                 .chain(&torus.direction_x)
                 .chain(&torus.direction_y)
                 .chain(&torus.axis)
+                .chain(&torus.major_angular_range)
+                .chain(&torus.major_angular_domain)
+                .chain(&torus.minor_angular_range)
+                .chain(&torus.minor_angular_domain)
                 .chain(&[
                     torus.major_radius,
                     torus.minor_radius,
@@ -4786,6 +4802,14 @@ fn validate_consolidated_tori(
                 .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
             || torus.major_radius <= 0.0
             || torus.minor_radius <= 0.0
+            || !crate::families::b2::records::torus_angular_range_is_valid(
+                torus.major_angular_range,
+                torus.major_angular_domain,
+            )
+            || !crate::families::b2::records::torus_angular_range_is_valid(
+                torus.minor_angular_range,
+                torus.minor_angular_domain,
+            )
             || torus.major_scale <= 0.0
             || torus.minor_scale <= 0.0
             || index > 0 && tori[index - 1].byte_offset >= torus.byte_offset

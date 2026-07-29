@@ -1028,6 +1028,14 @@ pub struct B2Torus {
     pub major_radius: f64,
     /// Minor radius.
     pub minor_radius: f64,
+    /// Active major-angle interval.
+    pub major_angular_range: [f64; 2],
+    /// Full-turn major-angle chart domain.
+    pub major_angular_domain: [f64; 2],
+    /// Active minor-angle interval.
+    pub minor_angular_range: [f64; 2],
+    /// Full-turn minor-angle chart domain.
+    pub minor_angular_domain: [f64; 2],
     /// Scale from major angle to stored U parameter.
     pub major_scale: f64,
     /// Scale from minor angle to stored V parameter.
@@ -1404,6 +1412,10 @@ pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
             let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
             let major_radius = values[12];
             let minor_radius = values[13];
+            let major_angular_range = [values[14], values[15]];
+            let major_angular_domain = [values[16], values[17]];
+            let minor_angular_range = [values[18], values[19]];
+            let minor_angular_domain = [values[20], values[21]];
             let major_scale = values[22];
             let minor_scale = values[23];
             let dot = |first: [f64; 3], second: [f64; 3]| {
@@ -1431,6 +1443,8 @@ pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
                     <= 1e-12
                 && major_radius > 0.0
                 && minor_radius > 0.0
+                && torus_angular_range_is_valid(major_angular_range, major_angular_domain)
+                && torus_angular_range_is_valid(minor_angular_range, minor_angular_domain)
                 && major_scale > 0.0
                 && minor_scale > 0.0
                 && values[24] == 0.0)
@@ -1442,11 +1456,29 @@ pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
                     axis,
                     major_radius,
                     minor_radius,
+                    major_angular_range,
+                    major_angular_domain,
+                    minor_angular_range,
+                    minor_angular_domain,
                     major_scale,
                     minor_scale,
                 })
         })
         .collect()
+}
+
+pub(crate) fn torus_angular_range_is_valid(range: [f64; 2], domain: [f64; 2]) -> bool {
+    const TOLERANCE: f64 = 1e-12;
+    let range_midpoint = (range[0] + range[1]) * 0.5;
+    let domain_midpoint = (domain[0] + domain[1]) * 0.5;
+    range.iter().chain(&domain).all(|value| value.is_finite())
+        && range[0] < range[1]
+        && domain[0] < domain[1]
+        && range[0] >= domain[0] - TOLERANCE
+        && range[1] <= domain[1] + TOLERANCE
+        && range[1] - range[0] <= std::f64::consts::TAU + TOLERANCE
+        && ((domain[1] - domain[0]) - std::f64::consts::TAU).abs() <= TOLERANCE
+        && (range_midpoint - domain_midpoint).abs() <= TOLERANCE
 }
 
 /// Decode `b2 03 2a` radius-scaled sphere charts.

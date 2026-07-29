@@ -1299,6 +1299,18 @@ pub(crate) fn b2_torus_stream() -> Vec<u8> {
     values[9..12].copy_from_slice(&[0.0, 0.0, 1.0]);
     values[12] = 7.0;
     values[13] = 2.0;
+    values[14..18].copy_from_slice(&[
+        std::f64::consts::FRAC_PI_2,
+        3.0 * std::f64::consts::FRAC_PI_2,
+        0.0,
+        std::f64::consts::TAU,
+    ]);
+    values[18..22].copy_from_slice(&[
+        0.0,
+        std::f64::consts::PI,
+        -std::f64::consts::FRAC_PI_2,
+        3.0 * std::f64::consts::FRAC_PI_2,
+    ]);
     values[22] = 14.0;
     values[23] = 4.0;
     for value in values {
@@ -5229,6 +5241,22 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
     assert_eq!(torus.axis, [0.0, 0.0, 1.0]);
     assert_eq!(torus.major_radius, 7.0);
     assert_eq!(torus.minor_radius, 2.0);
+    assert_eq!(
+        torus.major_angular_range,
+        [
+            std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2
+        ]
+    );
+    assert_eq!(torus.major_angular_domain, [0.0, std::f64::consts::TAU]);
+    assert_eq!(torus.minor_angular_range, [0.0, std::f64::consts::PI]);
+    assert_eq!(
+        torus.minor_angular_domain,
+        [
+            -std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2
+        ]
+    );
     assert_eq!(torus.major_scale, 14.0);
     assert_eq!(torus.minor_scale, 4.0);
 
@@ -5240,7 +5268,7 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
     );
 
     let mut invalid = native;
-    invalid.consolidated_tori[0].direction_y = [0.0, -1.0, 0.0];
+    invalid.consolidated_tori[0].major_angular_domain[0] += 0.25;
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)

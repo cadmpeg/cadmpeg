@@ -419,6 +419,22 @@ fn b2_torus_parser_reads_exact_frame_radii_and_parameter_scales() {
     assert_eq!(torus.axis, [0.0, 0.0, 1.0]);
     assert_eq!(torus.major_radius, 7.0);
     assert_eq!(torus.minor_radius, 2.0);
+    assert_eq!(
+        torus.major_angular_range,
+        [
+            std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2
+        ]
+    );
+    assert_eq!(torus.major_angular_domain, [0.0, std::f64::consts::TAU]);
+    assert_eq!(torus.minor_angular_range, [0.0, std::f64::consts::PI]);
+    assert_eq!(
+        torus.minor_angular_domain,
+        [
+            -std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2
+        ]
+    );
     assert_eq!(torus.major_scale, 14.0);
     assert_eq!(torus.minor_scale, 4.0);
 }
@@ -435,6 +451,10 @@ fn b2_torus_parser_rejects_invalid_frames_and_nonpositive_scales() {
 
     let mut stream = b2_torus_stream();
     stream[5 + 15 * 8..5 + 16 * 8].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+
+    let mut stream = b2_torus_stream();
+    stream[5 + 16 * 8..5 + 17 * 8].copy_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
     assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
 }
 
