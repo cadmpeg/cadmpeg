@@ -318,8 +318,9 @@ pub(crate) fn compact_boundary_domain_viable(
             edges
         }
     };
-    let Some(selected_pairs) = edges
-        .into_iter()
+    let selected_pairs = edges
+        .iter()
+        .copied()
         .map(|edge| {
             selected
                 .filter(|(selected_edge, _)| *selected_edge == edge)
@@ -327,8 +328,39 @@ pub(crate) fn compact_boundary_domain_viable(
                 .or(assignment[edge])
                 .map(|pair| (edge, pair))
         })
-        .collect::<Option<Vec<_>>>()
-    else {
+        .collect::<Vec<_>>();
+    let complete = selected_pairs.iter().all(Option::is_some);
+    if matches!(domain, MeshFaceBoundaryDomain::UnorderedFullCycle(_)) && !complete {
+        let mut point_nodes = HashMap::new();
+        let mut degrees = Vec::<u8>::new();
+        let mut components = UnionFind::new(0);
+        for (_, pair) in selected_pairs.iter().flatten().copied() {
+            let nodes = pair.map(|point| {
+                *point_nodes.entry(point).or_insert_with(|| {
+                    degrees.push(0);
+                    components.push()
+                })
+            });
+            if nodes[0] == nodes[1] {
+                degrees[nodes[0]] += 2;
+            } else {
+                degrees[nodes[0]] += 1;
+                degrees[nodes[1]] += 1;
+                components.union(nodes[0], nodes[1]);
+            }
+        }
+        if degrees.iter().any(|degree| *degree > 2) {
+            return false;
+        }
+        let mut open_components = HashSet::new();
+        for (node, degree) in degrees.into_iter().enumerate() {
+            if degree < 2 {
+                open_components.insert(components.find(node));
+            }
+        }
+        return (0..components.len()).all(|node| open_components.contains(&components.find(node)));
+    }
+    let Some(selected_pairs) = selected_pairs.into_iter().collect::<Option<Vec<_>>>() else {
         return true;
     };
     let mut edge_points = vec![[0; 2]; assignment.len()];

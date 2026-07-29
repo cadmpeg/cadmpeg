@@ -17,7 +17,7 @@ use crate::families::standard::topology::{
     complete_duplicate_face_slots, reconstruct_incidence, Boundary, CoedgeUse, EdgeBoundaryLayout,
     EdgeRow, FaceTopology, StandardTopology, TrimRecord,
 };
-use crate::solve::incidence::reconstruct_incidence_candidates;
+use crate::solve::incidence::{compact_boundary_domain_viable, reconstruct_incidence_candidates};
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::mesh_quotient::{
     canonical_edge_class_assignment, canonicalize_mesh_vertex_labels,
@@ -1322,6 +1322,33 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
     assert_eq!(quotient.union.find(1), quotient.union.find(2));
     assert_eq!(quotient.union.find(3), quotient.union.find(4));
     assert_eq!(quotient.union.find(5), quotient.union.find(0));
+}
+
+#[test]
+fn compact_unordered_boundary_rejects_partial_subtours() {
+    let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4]);
+
+    assert!(!compact_boundary_domain_viable(
+        &domain,
+        &[Some([0, 1]), Some([1, 2]), Some([2, 0]), None, None],
+        None,
+    ));
+    assert!(compact_boundary_domain_viable(
+        &domain,
+        &[Some([0, 1]), Some([1, 2]), Some([2, 3]), None, None],
+        None,
+    ));
+    assert!(compact_boundary_domain_viable(
+        &domain,
+        &[
+            Some([0, 1]),
+            Some([1, 2]),
+            Some([2, 3]),
+            Some([3, 4]),
+            Some([4, 0]),
+        ],
+        None,
+    ));
 }
 
 #[test]
