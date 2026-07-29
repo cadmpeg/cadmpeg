@@ -182,7 +182,9 @@ current scores require those matrices and representative fixtures.
   either form owns its first referenced carrier and remaining referenced loops.
   Counted object-stream loops require an exact edge-count lane and complete
   control tail: the loop control, three signed controls per edge, and the
-  optional finite binary64/binary32 numeric extension.
+  optional finite binary64/binary32 numeric extension. The first control in
+  each edge triple supplies the source-native edge-occurrence sense; transfer
+  requires those oriented occurrences to close cyclically.
   Object-stream edges require exactly five references and one admitted terminal
   control, with no residual bytes.
   Object-stream class-`21` pcurves require the exact single-segment clamped

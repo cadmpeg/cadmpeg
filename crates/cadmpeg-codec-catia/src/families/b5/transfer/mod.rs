@@ -20,7 +20,7 @@ use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::graph::{
-    loop_chain_senses, B5ExtrusionSurface, B5Graph, B5OffsetSurface, B5SupportedSurface, B5Surface,
+    loop_chain_closes, B5ExtrusionSurface, B5Graph, B5OffsetSurface, B5SupportedSurface, B5Surface,
 };
 
 mod edges;
@@ -155,7 +155,7 @@ pub(crate) fn transfer(
                         || graph.implicit_pcurves.get(pcurve) == Some(&loop_.surface))
                         && graph.edge_vertices.contains_key(edge)
                 })
-                && loop_chain_senses(loop_, &graph.edge_vertices).is_some()
+                && loop_chain_closes(loop_, &graph.edge_vertices)
         });
         graph.faces.retain(|face| {
             graph.surfaces.contains_key(&face.surface)
@@ -322,8 +322,10 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         {
             return None;
         }
-        let senses = loop_chain_senses(loop_, &graph.edge_vertices)?;
-        loop_senses.insert(loop_.object_id, senses);
+        if !loop_chain_closes(loop_, &graph.edge_vertices) {
+            return None;
+        }
+        loop_senses.insert(loop_.object_id, loop_.edge_senses.clone());
         for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
             let Some(pcurve) = graph.pcurves.get(&pcurve_id) else {
                 if let Some(opaque) = graph
@@ -927,7 +929,7 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::super::graph::{
-        loop_chain_senses, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop,
+        loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop,
         B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile,
         B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
     };
@@ -1072,25 +1074,6 @@ mod tests {
     }
 
     #[test]
-    fn closed_one_edge_loop_uses_native_edge_direction() {
-        let loop_ = B5Loop {
-            object_id: 1,
-            pcurves: vec![2],
-            edges: vec![3],
-            surface: 4,
-        };
-
-        assert_eq!(
-            loop_chain_senses(&loop_, &BTreeMap::from([(3, [0, 0])])),
-            Some(vec![false])
-        );
-        assert_eq!(
-            loop_chain_senses(&loop_, &BTreeMap::from([(3, [0, 1])])),
-            None
-        );
-    }
-
-    #[test]
     fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
         let mut graph = B5Graph {
             complete: false,
@@ -1153,6 +1136,7 @@ mod tests {
                     object_id: 2,
                     pcurves: vec![20, 20, 20],
                     edges: vec![30, 31, 32],
+                    edge_senses: vec![false; 3],
                     surface: 10,
                 },
             )]),
@@ -1473,6 +1457,7 @@ mod tests {
                     object_id: 2,
                     pcurves: vec![4],
                     edges: vec![3],
+                    edge_senses: vec![false],
                     surface: 10,
                 },
             )]),
@@ -1522,6 +1507,7 @@ mod tests {
                 object_id: 6,
                 pcurves: vec![8],
                 edges: vec![7],
+                edge_senses: vec![false],
                 surface: 10,
             },
         );
@@ -1568,6 +1554,7 @@ mod tests {
         let loop_ = |object_id: u32, edges: Vec<u32>| B5Loop {
             object_id,
             pcurves: vec![0; edges.len()],
+            edge_senses: vec![false; edges.len()],
             edges,
             surface: 10,
         };
@@ -1629,6 +1616,7 @@ mod tests {
                     object_id: 1,
                     pcurves: vec![2],
                     edges: vec![3],
+                    edge_senses: vec![false],
                     surface: 4,
                 },
             )]),
@@ -2278,6 +2266,7 @@ mod tests {
                     object_id: 3,
                     pcurves: vec![4, 4, 4],
                     edges: vec![5, 6, 7],
+                    edge_senses: vec![false; 3],
                     surface: 2,
                 },
             )]),
@@ -2329,8 +2318,8 @@ mod tests {
         let payload = UnknownId("catia:test-payload".to_string());
 
         assert!(ownership_plan(&graph).is_some());
-        let senses =
-            loop_chain_senses(&graph.loops[&3], &graph.edge_vertices).expect("closed edge chain");
+        assert!(loop_chain_closes(&graph.loops[&3], &graph.edge_vertices));
+        let senses = graph.loops[&3].edge_senses.clone();
         assert!(orient_loop_members(&graph, BTreeMap::from([(3, senses)])).is_some());
         let plan = build_plan(&graph, &payload).expect("complete owned graph");
 
