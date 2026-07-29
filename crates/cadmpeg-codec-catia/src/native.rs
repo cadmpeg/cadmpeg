@@ -4415,8 +4415,8 @@ fn validate_consolidated_circles(
     circles: &[CatiaConsolidatedCircle],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, circle) in circles.iter().enumerate() {
-        let span = circle.range[1] - circle.range[0];
-        let full_circle = (span - std::f64::consts::TAU * circle.radius).abs() < 1e-9;
+        let full_circle =
+            crate::families::b2::records::circle_range_is_full_turn(circle.radius, circle.range);
         let compact_len = usize::from(circle.layout).checked_sub(5 * size_of::<f64>() + 9);
         let record_id_fits_layout = matches!(
             (compact_len, circle.record_id),

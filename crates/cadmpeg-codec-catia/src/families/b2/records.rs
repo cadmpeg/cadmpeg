@@ -1830,12 +1830,17 @@ pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
                 center_pair: [c1, c2],
                 radius,
                 range: [lo, hi],
-                full_circle: ((hi - lo) - 2.0 * std::f64::consts::PI * radius).abs() < 1e-9,
+                full_circle: circle_range_is_full_turn(radius, [lo, hi]),
                 chart_shift,
             });
         }
     }
     out
+}
+
+pub(crate) fn circle_range_is_full_turn(radius: f64, range: [f64; 2]) -> bool {
+    let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
+    relative_span.is_finite() && (relative_span - 1.0).abs() < 1e-9
 }
 
 /// Decode structurally repeated `b2 03 23` edge-range packets.

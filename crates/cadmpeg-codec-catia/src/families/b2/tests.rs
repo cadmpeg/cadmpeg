@@ -594,6 +594,15 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
         crate::families::b2::records::b2_circles(&large)[0].radius,
         radius
     );
+
+    let tiny = 1e-200_f64;
+    let mut tiny_full = b2_circle_stream();
+    tiny_full[24..32].copy_from_slice(&tiny.to_le_bytes());
+    tiny_full[40..48].copy_from_slice(&(std::f64::consts::TAU * tiny).to_le_bytes());
+    assert!(crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle);
+
+    tiny_full[40..48].copy_from_slice(&1e-10_f64.to_le_bytes());
+    assert!(!crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle);
 }
 
 #[test]
