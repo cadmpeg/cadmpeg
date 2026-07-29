@@ -288,8 +288,8 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
 }
 
 pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm > f64::EPSILON).then(|| vector.scale(1.0 / norm))
+    let norm = vector.x.hypot(vector.y).hypot(vector.z);
+    (norm.is_finite() && norm != 0.0).then(|| vector.scale(1.0 / norm))
 }
 
 /// Counts of each typed analytic surface kind decoded.
@@ -780,6 +780,18 @@ mod route_tests {
         assert_eq!(knots.last(), Some(&range[1]));
         assert_eq!(control_points.len(), 3);
         assert_eq!(weights, Some(vec![1.0, 1.0, 1.0]));
+    }
+
+    #[test]
+    fn unit_vector_preserves_tiny_finite_direction() {
+        assert_eq!(
+            crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(1e-200, 0.0, 0.0)),
+            Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+        );
+        assert_eq!(
+            crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
+            None
+        );
     }
 
     #[test]

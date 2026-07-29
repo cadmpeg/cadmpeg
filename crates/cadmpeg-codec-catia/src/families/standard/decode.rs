@@ -3451,7 +3451,8 @@ pub(crate) fn intersection_line_direction(
             SurfaceGeometry::Plane { normal: right, .. },
         ) => {
             let direction = (*left).cross(*right);
-            (direction.dot(direction) > f64::EPSILON).then_some(direction)
+            let norm = direction.x.hypot(direction.y).hypot(direction.z);
+            (norm.is_finite() && norm != 0.0).then_some(direction)
         }
         (SurfaceGeometry::Plane { normal, .. }, SurfaceGeometry::Cylinder { axis, .. })
         | (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Plane { normal, .. }) => {
@@ -6035,6 +6036,24 @@ mod route_tests {
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         };
         assert!(intersection_line_direction(&plane, &plane).is_none());
+    }
+
+    #[test]
+    fn plane_intersection_preserves_tiny_nonzero_direction() {
+        let left = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+            u_axis: Vector3::new(0.0, 1.0, 0.0),
+        };
+        let right = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 1e-200, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+        };
+        assert_eq!(
+            intersection_line_direction(&left, &right),
+            Some(Vector3::new(0.0, 0.0, 1e-200))
+        );
     }
 
     #[test]
