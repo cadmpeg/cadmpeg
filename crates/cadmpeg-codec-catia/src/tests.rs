@@ -8136,6 +8136,8 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .as_ref()
         .expect("parallel reference table");
     assert_eq!(table.columns, native.design_objects[0].fields);
+    assert_eq!(table.column_classes.len(), table.columns.len());
+    assert!(table.column_classes.iter().all(Option::is_some));
     assert_eq!(table.rows.len(), 2);
     assert_eq!(
         table
@@ -8186,6 +8188,30 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     previous_namespace.version = 200;
     let migrated = crate::native::CatiaNative::load(&previous_namespace)
         .expect("migrate previous parallel reference table");
+    assert_eq!(
+        migrated.design_objects[0].parallel_reference_table,
+        Some(expected.clone())
+    );
+
+    let mut version_202_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_202_namespace)
+        .expect("store current classified parallel reference columns");
+    let mut version_202_objects: Vec<crate::native::CatiaDesignObject> = version_202_namespace
+        .arena_as("design_objects")
+        .expect("load version 202 design objects");
+    version_202_objects[0]
+        .parallel_reference_table
+        .as_mut()
+        .expect("parallel reference table")
+        .column_classes
+        .clear();
+    version_202_namespace
+        .set_arena("design_objects", &version_202_objects)
+        .expect("store version 202 design objects");
+    version_202_namespace.version = 202;
+    let migrated = crate::native::CatiaNative::load(&version_202_namespace)
+        .expect("migrate version 202 source field classes");
     assert_eq!(
         migrated.design_objects[0].parallel_reference_table,
         Some(expected.clone())

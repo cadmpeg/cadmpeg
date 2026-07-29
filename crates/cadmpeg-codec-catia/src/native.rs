@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 202;
+pub const CATIA_NATIVE_VERSION: u32 = 203;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -28,7 +28,7 @@ const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
 #[cfg(test)]
 const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
 #[cfg(test)]
-const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 202;
+const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 203;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1617,6 +1617,9 @@ pub struct CatiaDesignReferenceRow {
 pub struct CatiaDesignParallelReferenceTable {
     /// Source field records forming the table's columns.
     pub columns: Vec<String>,
+    /// Exact source field classes aligned with `columns`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub column_classes: Vec<Option<CatiaDesignClass>>,
     /// Row-aligned reference cells.
     pub rows: Vec<CatiaDesignReferenceRow>,
 }
@@ -1842,13 +1845,13 @@ fn design_parallel_reference_table(
                     ListItem::Atom { .. } => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
-            Some((record.id.clone(), references))
+            Some((record.id.clone(), design_class(record), references))
         })
         .collect::<Option<Vec<_>>>()?;
-    let row_count = columns.first()?.1.len();
+    let row_count = columns.first()?.2.len();
     if columns
         .iter()
-        .any(|(_, references)| references.len() != row_count)
+        .any(|(_, _, references)| references.len() != row_count)
     {
         return None;
     }
@@ -1856,7 +1859,7 @@ fn design_parallel_reference_table(
         .map(|row| CatiaDesignReferenceRow {
             cells: columns
                 .iter()
-                .map(|(_, references)| {
+                .map(|(_, _, references)| {
                     let target_entity_id = references[row];
                     let target = record_indices
                         .get(&target_entity_id)
@@ -1872,7 +1875,8 @@ fn design_parallel_reference_table(
         })
         .collect();
     Some(CatiaDesignParallelReferenceTable {
-        columns: columns.into_iter().map(|(field, _)| field).collect(),
+        column_classes: columns.iter().map(|(_, class, _)| class.clone()).collect(),
+        columns: columns.into_iter().map(|(field, _, _)| field).collect(),
         rows,
     })
 }
