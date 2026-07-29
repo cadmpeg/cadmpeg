@@ -127,6 +127,11 @@ current scores require those matrices and representative fixtures.
   remain unbound atomically.
 - Every consolidated line profile transfers its placed signed-distance
   analytic line carrier and stored parameter interval.
+- Consolidated edge-run coverage partitions runs with zero, one, or two
+  resolved support bindings and independently counts shared sampled loci and
+  endpoint loci. A run with one resolved support transfers as a parametric
+  surface curve; it does not imply that the unresolved partner surface has
+  resolved.
 - A standard circle edge without a face-side branch witness uses its exact
   two-support object-stream pcurves when both lifted endpoint and midpoint
   samples agree, match the physical endpoints, lie on the circle, and preserve

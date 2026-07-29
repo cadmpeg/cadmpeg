@@ -291,6 +291,41 @@ fn finish_decode(
         .iter()
         .filter(|record| record.numeric_tuple.is_some())
         .count();
+    let consolidated_edge_run_count = native.consolidated_edge_runs.len();
+    let consolidated_edge_run_support_binding_count = native
+        .consolidated_edge_runs
+        .iter()
+        .flat_map(|run| &run.support_bindings)
+        .filter(|binding| binding.is_some())
+        .count();
+    let (
+        unresolved_consolidated_edge_run_count,
+        partially_resolved_consolidated_edge_run_count,
+        fully_resolved_consolidated_edge_run_count,
+    ) = native.consolidated_edge_runs.iter().fold(
+        (0_usize, 0_usize, 0_usize),
+        |(unresolved, partial, full), run| match run
+            .support_bindings
+            .iter()
+            .filter(|binding| binding.is_some())
+            .count()
+        {
+            0 => (unresolved + 1, partial, full),
+            1 => (unresolved, partial + 1, full),
+            2 => (unresolved, partial, full + 1),
+            _ => unreachable!("a consolidated edge run has exactly two support sides"),
+        },
+    );
+    let consolidated_edge_run_shared_locus_count = native
+        .consolidated_edge_runs
+        .iter()
+        .filter(|run| run.shared_loci.is_some())
+        .count();
+    let consolidated_edge_run_endpoint_locus_count = native
+        .consolidated_edge_runs
+        .iter()
+        .filter(|run| run.endpoint_loci.is_some())
+        .count();
     let layout_entity_value_packet_count = native
         .entity_records
         .iter()
@@ -811,6 +846,34 @@ fn finish_decode(
         (
             "decoded_consolidated_pcurve_count".to_string(),
             native.consolidated_pcurves.len(),
+        ),
+        (
+            "decoded_consolidated_edge_run_count".to_string(),
+            consolidated_edge_run_count,
+        ),
+        (
+            "decoded_consolidated_edge_run_support_binding_count".to_string(),
+            consolidated_edge_run_support_binding_count,
+        ),
+        (
+            "unresolved_consolidated_edge_run_count".to_string(),
+            unresolved_consolidated_edge_run_count,
+        ),
+        (
+            "partially_resolved_consolidated_edge_run_count".to_string(),
+            partially_resolved_consolidated_edge_run_count,
+        ),
+        (
+            "fully_resolved_consolidated_edge_run_count".to_string(),
+            fully_resolved_consolidated_edge_run_count,
+        ),
+        (
+            "decoded_consolidated_edge_run_shared_locus_count".to_string(),
+            consolidated_edge_run_shared_locus_count,
+        ),
+        (
+            "decoded_consolidated_edge_run_endpoint_locus_count".to_string(),
+            consolidated_edge_run_endpoint_locus_count,
         ),
         (
             "decoded_consolidated_reference_list_count".to_string(),

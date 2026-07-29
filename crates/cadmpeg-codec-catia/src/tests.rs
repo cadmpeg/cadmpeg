@@ -5833,6 +5833,42 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         ["catia:consolidated:edge-node#0"]
     );
 
+    let mut file = standard_catpart();
+    file.splice(16..16, bytes.clone());
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode consolidated edge-run coverage");
+    assert_eq!(
+        decoded.report.coverage["decoded_consolidated_edge_run_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_consolidated_edge_run_support_binding_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_consolidated_edge_run_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["partially_resolved_consolidated_edge_run_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["fully_resolved_consolidated_edge_run_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_consolidated_edge_run_shared_locus_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_consolidated_edge_run_endpoint_locus_count"],
+        0
+    );
+
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA edge run");
     assert_eq!(
