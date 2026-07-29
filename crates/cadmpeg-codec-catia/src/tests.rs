@@ -3978,7 +3978,7 @@ pub(crate) fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload:
 pub(crate) fn b5_linear_pcurve_payload(surface: u16, start: [f64; 2], end: [f64; 2]) -> Vec<u8> {
     let mut payload = vec![0x81, 0x18];
     payload.extend_from_slice(&surface.to_le_bytes());
-    payload.extend_from_slice(&[0x01, 5, 0, 0, 9, 0x08, 1]);
+    payload.extend_from_slice(&[0x01, 5, 1, 1, 9, 1]);
     payload.extend_from_slice(&le_f64(0.0));
     payload.extend_from_slice(&le_f64(1.0));
     payload.extend_from_slice(&[9, 9]);

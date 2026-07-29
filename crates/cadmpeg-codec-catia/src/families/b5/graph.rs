@@ -2812,18 +2812,17 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     }
     position += 1;
     let degree = wire::compact_uint(&record.payload, &mut position)?;
-    position = position.checked_add(2)?;
-    record.payload.get(..position)?;
-    let knot_count = usize::try_from(wire::compact_uint(&record.payload, &mut position)?).ok()?;
-    if !(2..=4096).contains(&knot_count) {
+    if !matches!(degree, 1 | 2 | 5)
+        || record.payload.get(position..position + 2) != Some(&[0x01, 0x01])
+    {
         return None;
     }
-    position += if record.payload.get(position) == Some(&0x08) {
-        2
-    } else {
-        1
-    };
-    record.payload.get(..position)?;
+    position += 2;
+    let knot_count = usize::try_from(wire::compact_uint(&record.payload, &mut position)?).ok()?;
+    if knot_count != 2 || record.payload.get(position) != Some(&0x01) {
+        return None;
+    }
+    position += 1;
     let mut distinct_knots = Vec::with_capacity(knot_count);
     for _ in 0..knot_count {
         let value = f64::from_le_bytes(
@@ -2846,13 +2845,11 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     for _ in 0..knot_count {
         multiplicities.push(wire::compact_uint(&record.payload, &mut position)?);
     }
-    let pole_count = multiplicities
-        .iter()
-        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(degree + 1)?;
-    if !(2..=8192).contains(&pole_count) {
+    let endpoint_multiplicity = degree + 1;
+    if multiplicities != [endpoint_multiplicity; 2] {
         return None;
     }
+    let pole_count = endpoint_multiplicity;
     let mut control_points = Vec::with_capacity(usize::try_from(pole_count).ok()?);
     for _ in 0..pole_count {
         let u = f64::from_le_bytes(
@@ -3764,7 +3761,7 @@ mod tests {
     }
 
     #[test]
-    fn pcurve_requires_its_complete_finite_positive_tail() {
+    fn pcurve_requires_one_complete_clamped_bezier_frame() {
         let payload = crate::tests::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
         let record = |payload| B5Record {
             offset: 0,
@@ -3774,6 +3771,12 @@ mod tests {
             payload,
         };
         assert!(parse_pcurve(&record(payload.clone())).is_some());
+
+        for (offset, value) in [(6, 0), (7, 0), (8, 0x0d), (9, 0x08), (26, 0x0d)] {
+            let mut malformed = payload.clone();
+            malformed[offset] = value;
+            assert!(parse_pcurve(&record(malformed)).is_none());
+        }
 
         let mut truncated = payload.clone();
         truncated.pop();
