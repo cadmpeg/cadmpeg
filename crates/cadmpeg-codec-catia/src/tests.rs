@@ -2271,6 +2271,39 @@ fn standard_catpart_with_definition_chain_value(suffix: &[u8]) -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_two_definition_chain_values() -> Vec<u8> {
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0];
+    let suffix = |value: u8| [0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x80 + value];
+    let mut stream = Vec::new();
+    for (entity_id, value) in [(1_u32, 1_u8), (2_u32, 2_u8)] {
+        let mut entity =
+            entity_table_record_with_definition_and_value(entity_id, &definition, &[0xfe]);
+        entity[6] = 2;
+        entity.extend_from_slice(&suffix(value));
+        let entity_len = u32::try_from(entity.len()).expect("bounded entity record");
+        entity[2..6].copy_from_slice(&entity_len.to_le_bytes());
+        stream.extend(entity);
+    }
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&[
+        object_graph_record(&[0x16, 0x84, 0x81, 0x81], &[0xfe]),
+        object_graph_record(&[0x16, 0x84, 0x82, 0x81], &[0xfe]),
+    ]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "FeatureFEDGE",
+        "Real",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_formula_relation(
     parameter_entity_id: u8,
     duplicate_binding: bool,
@@ -11584,6 +11617,23 @@ fn native_namespace_binds_two_definition_value_chains() {
             },
         })
     );
+    assert_eq!(
+        native.design_objects[0].definition_chain_values,
+        [native.entity_records[0].id.clone()]
+    );
+
+    let mut malformed_ownership = native.clone();
+    malformed_ownership.design_objects[0]
+        .definition_chain_values
+        .clear();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_ownership
+        .store(&mut namespace)
+        .expect("store malformed definition-chain ownership");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 
     native.entity_records[0]
         .definition_chain_value
@@ -11680,6 +11730,32 @@ fn native_namespace_binds_two_definition_value_chains() {
             name: Some("Real".to_string()),
         })
     );
+}
+
+#[test]
+fn design_objects_retain_definition_chain_values_in_field_order() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_two_definition_chain_values());
+    assert_eq!(native.design_objects.len(), 1);
+    assert_eq!(
+        native.design_objects[0].definition_chain_values,
+        native
+            .entity_records
+            .iter()
+            .map(|entity| entity.id.clone())
+            .collect::<Vec<_>>()
+    );
+
+    let mut reversed = native;
+    reversed.design_objects[0].definition_chain_values.reverse();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    reversed
+        .store(&mut namespace)
+        .expect("store misordered definition-chain ownership");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 195;
+pub const CATIA_NATIVE_VERSION: u32 = 196;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1543,6 +1543,9 @@ pub struct CatiaDesignObject {
     /// Entity records carrying definition-bound values, in field order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub definition_values: Vec<String>,
+    /// Entity records carrying two-definition values, in field order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub definition_chain_values: Vec<String>,
     /// Exact inter-object reference occurrences in field and payload order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<CatiaDesignObjectRelation>,
@@ -1555,6 +1558,11 @@ fn design_objects(
     let definition_value_entities = entity_records
         .iter()
         .filter(|entity| entity.definition_value.is_some())
+        .map(|entity| entity.id.as_str())
+        .collect::<HashSet<_>>();
+    let definition_chain_value_entities = entity_records
+        .iter()
+        .filter(|entity| entity.definition_chain_value.is_some())
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
     graphs
@@ -1580,6 +1588,7 @@ fn design_objects(
                 }
             }
             let definition_value_entities = &definition_value_entities;
+            let definition_chain_value_entities = &definition_chain_value_entities;
             fields
                 .into_iter()
                 .enumerate()
@@ -1621,6 +1630,14 @@ fn design_objects(
                             .iter()
                             .filter_map(|record| record.entity_record.as_ref())
                             .filter(|entity| definition_value_entities.contains(entity.as_str()))
+                            .cloned()
+                            .collect(),
+                        definition_chain_values: records
+                            .iter()
+                            .filter_map(|record| record.entity_record.as_ref())
+                            .filter(|entity| {
+                                definition_chain_value_entities.contains(entity.as_str())
+                            })
                             .cloned()
                             .collect(),
                         relations: records

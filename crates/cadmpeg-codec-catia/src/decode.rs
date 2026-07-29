@@ -535,13 +535,11 @@ fn finish_decode(
         .checked_sub(structurally_owned_constraint_range_count)
         .expect("owned CATIA constraint ranges are a subset of decoded ranges");
     let structurally_owned_definition_chain_value_count = native
-        .entity_records
+        .design_objects
         .iter()
-        .filter(|record| {
-            record.definition_chain_value.is_some()
-                && structurally_owned_records.contains(&record.object_record)
-        })
-        .count();
+        .filter(|object| object.owner_record.is_some())
+        .map(|object| object.definition_chain_values.len())
+        .sum::<usize>();
     let unowned_definition_chain_value_count = definition_chain_value_count
         .checked_sub(structurally_owned_definition_chain_value_count)
         .expect("owned CATIA definition-chain values are a subset of decoded values");
