@@ -271,7 +271,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(176);
+    namespace.version = namespace.version.max(177);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -4372,10 +4372,11 @@ pub(crate) fn attach_expression_parameters(
             },
             native_ref: None,
         });
-        let mut parameter_ids = BTreeMap::<String, Vec<ParameterId>>::new();
+        let mut parameter_ids =
+            BTreeMap::<(&str, crate::native::om::ExpressionUnit), Vec<ParameterId>>::new();
         for expression in &expressions {
             parameter_ids
-                .entry(expression.name.clone())
+                .entry((expression.name.as_str(), expression.unit))
                 .or_default()
                 .push(
                     expression_parameter_id(&expression.id)
@@ -4397,7 +4398,7 @@ pub(crate) fn attach_expression_parameters(
                 crate::native::om::expression_parameter_names(&expression.expression)
                     .into_iter()
                     .filter_map(|name| {
-                        let candidates = parameter_ids.get(name)?;
+                        let candidates = parameter_ids.get(&(name, expression.unit))?;
                         (candidates.len() == 1).then(|| candidates[0].clone())
                     })
                     .filter(|dependency| seen_dependencies.insert(dependency.clone()))
@@ -4417,6 +4418,15 @@ pub(crate) fn attach_expression_parameters(
                 }
             });
             let mut properties = BTreeMap::new();
+            properties.insert(
+                "unit".to_string(),
+                match expression.unit {
+                    crate::native::om::ExpressionUnit::Millimeter => "millimeter",
+                    crate::native::om::ExpressionUnit::Degree => "degree",
+                }
+                .to_string(),
+            );
+            annotations.derived(&id.0, "properties");
             if let Some(declaration) = expression
                 .declaration
                 .as_deref()
@@ -4467,10 +4477,11 @@ pub(crate) fn attach_expression_parameters(
 fn order_expression_dependencies(
     expressions: &mut Vec<&crate::native::om::Expression>,
 ) -> BTreeSet<String> {
-    let mut indices_by_name = BTreeMap::<&str, Vec<usize>>::new();
+    let mut indices_by_name =
+        BTreeMap::<(&str, crate::native::om::ExpressionUnit), Vec<usize>>::new();
     for (index, expression) in expressions.iter().enumerate() {
         indices_by_name
-            .entry(expression.name.as_str())
+            .entry((expression.name.as_str(), expression.unit))
             .or_default()
             .push(index);
     }
@@ -4480,7 +4491,7 @@ fn order_expression_dependencies(
             crate::native::om::expression_parameter_names(&expression.expression)
                 .into_iter()
                 .filter_map(|name| {
-                    let [index] = indices_by_name.get(name)?.as_slice() else {
+                    let [index] = indices_by_name.get(&(name, expression.unit))?.as_slice() else {
                         return None;
                     };
                     Some(*index)

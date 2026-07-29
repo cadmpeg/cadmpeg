@@ -80,7 +80,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
 }
 
 /// Unit declared by an NX numeric expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExpressionUnit {
     /// Canonical model length in millimeters.
@@ -2979,27 +2979,29 @@ fn expression_scope(expression: &Expression) -> &str {
 }
 
 pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
-    let mut name_counts = BTreeMap::<(String, String), usize>::new();
+    let mut name_counts = BTreeMap::<(String, String, ExpressionUnit), usize>::new();
     for expression in expressions.iter() {
         *name_counts
             .entry((
                 expression_scope(expression).to_string(),
                 expression.name.clone(),
+                expression.unit,
             ))
             .or_default() += 1;
     }
-    let mut values = BTreeMap::<(String, String), (ExpressionUnit, f64)>::new();
+    let mut values = BTreeMap::<(String, String, ExpressionUnit), f64>::new();
     for expression in expressions.iter_mut() {
         let key = (
             expression_scope(expression).to_string(),
             expression.name.clone(),
+            expression.unit,
         );
         if name_counts.get(&key) != Some(&1) {
             expression.value = None;
             continue;
         }
         if let Some(value) = expression.value {
-            values.insert(key, (expression.unit, value));
+            values.insert(key, value);
         }
     }
 
@@ -3012,6 +3014,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             let expression_key = (
                 expression_scope(expression).to_string(),
                 expression.name.clone(),
+                expression.unit,
             );
             if name_counts.get(&expression_key) != Some(&1) {
                 continue;
@@ -3025,12 +3028,16 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                     let start = at;
                     at = end;
                     let name = &expression.expression[start..at];
-                    let key = (expression_scope(expression).to_string(), name.to_string());
-                    let Some((unit, value)) = values.get(&key).copied() else {
+                    let key = (
+                        expression_scope(expression).to_string(),
+                        name.to_string(),
+                        expression.unit,
+                    );
+                    let Some(value) = values.get(&key).copied() else {
                         complete = false;
                         break;
                     };
-                    if name_counts.get(&key) != Some(&1) || expression.unit != unit {
+                    if name_counts.get(&key) != Some(&1) {
                         complete = false;
                         break;
                     }
@@ -3045,7 +3052,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             if complete {
                 if let Some(value) = crate::om::evaluate_constant_expression(&substituted) {
                     expression.value = Some(value);
-                    values.insert(expression_key.clone(), (expression.unit, value));
+                    values.insert(expression_key.clone(), value);
                     changed = true;
                 }
             }
@@ -3245,6 +3252,65 @@ mod tests {
     }
 
     #[test]
+    fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
+        let expression =
+            |id: &str, name: &str, unit: super::ExpressionUnit, formula: &str, value| {
+                super::Expression {
+                    id: id.into(),
+                    object_id: None,
+                    record: None,
+                    declaration: None,
+                    name: name.into(),
+                    parameter_index: None,
+                    qualifier: None,
+                    unit,
+                    expression: formula.into(),
+                    value,
+                    source_entry: "part".into(),
+                    source_table: "table".into(),
+                    source_offset: 0,
+                }
+            };
+        let mut expressions = vec![
+            expression(
+                "length-p1",
+                "p1",
+                super::ExpressionUnit::Millimeter,
+                "5",
+                Some(5.0),
+            ),
+            expression(
+                "angle-p1",
+                "p1",
+                super::ExpressionUnit::Degree,
+                "45",
+                Some(45.0),
+            ),
+            expression(
+                "length-p2",
+                "p2",
+                super::ExpressionUnit::Millimeter,
+                "p1 * 2",
+                None,
+            ),
+            expression(
+                "angle-p2",
+                "p2",
+                super::ExpressionUnit::Degree,
+                "p1 / 3",
+                None,
+            ),
+        ];
+
+        super::evaluate_expression_graphs(&mut expressions);
+
+        assert_eq!(expressions[0].value, Some(5.0));
+        assert_eq!(expressions[1].value, Some(45.0));
+        assert_eq!(expressions[2].value, Some(10.0));
+        assert_eq!(expressions[3].value, Some(15.0));
+    }
+
+    #[test]
     fn nx_formula_dependencies_resolve_to_section_parameters() {
         let expression = |key: u32,
                           name: &str,
@@ -3321,6 +3387,91 @@ mod tests {
         );
 
         assert!(ir.model.parameters[2].dependencies.is_empty());
+    }
+
+    #[test]
+    fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
+        let expression = |key: u32, name: &str, unit: super::ExpressionUnit, text: &str, value| {
+            super::Expression {
+                id: format!("nx:test:expression#{key}"),
+                object_id: Some(key),
+                record: None,
+                declaration: None,
+                name: name.into(),
+                parameter_index: Some(key),
+                qualifier: None,
+                unit,
+                expression: text.into(),
+                value,
+                source_entry: "/Root/UG_PART/UG_PART".into(),
+                source_table: "table".into(),
+                source_offset: u64::from(key),
+            }
+        };
+        let expressions = [
+            expression(10, "p1", super::ExpressionUnit::Millimeter, "5", Some(5.0)),
+            expression(11, "p1", super::ExpressionUnit::Degree, "45", Some(45.0)),
+            expression(
+                20,
+                "p2",
+                super::ExpressionUnit::Millimeter,
+                "p1 * 2",
+                Some(10.0),
+            ),
+            expression(
+                21,
+                "p2",
+                super::ExpressionUnit::Degree,
+                "p1 / 3",
+                Some(15.0),
+            ),
+        ];
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &expressions,
+            &[],
+            &[],
+            &mut annotations,
+        );
+
+        assert_eq!(
+            ir.model.parameters[2].dependencies,
+            [ir.model.parameters[0].id.clone()]
+        );
+        assert_eq!(
+            ir.model.parameters[3].dependencies,
+            [ir.model.parameters[1].id.clone()]
+        );
+        assert_eq!(
+            ir.model.parameters[0]
+                .properties
+                .get("unit")
+                .map(String::as_str),
+            Some("millimeter")
+        );
+        assert_eq!(
+            ir.model.parameters[1]
+                .properties
+                .get("unit")
+                .map(String::as_str),
+            Some("degree")
+        );
+        assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+
+        ir.model.parameters[0]
+            .properties
+            .insert("unit".into(), "native".into());
+        assert_eq!(
+            crate::decode::incomplete_expression_parameters(&ir),
+            [
+                ir.model.parameters[0].id.clone(),
+                ir.model.parameters[2].id.clone(),
+            ]
+            .into()
+        );
     }
 
     #[test]
@@ -3960,7 +4111,7 @@ mod tests {
                 .namespace("nx")
                 .expect("required invariant")
                 .version,
-            176
+            177
         );
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, Some(0x102));

@@ -7425,24 +7425,35 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
             .iter()
             .filter(|parameter| parameter.owner == owner)
             .collect::<Vec<_>>();
-        let mut ids_by_name = BTreeMap::<&str, Vec<&ParameterId>>::new();
+        let mut ids_by_name = BTreeMap::<(&str, Option<&str>), Vec<&ParameterId>>::new();
         for parameter in &parameters {
             ids_by_name
-                .entry(parameter.name.as_str())
+                .entry((
+                    parameter.name.as_str(),
+                    parameter.properties.get("unit").map(String::as_str),
+                ))
                 .or_default()
                 .push(&parameter.id);
         }
         let expected = parameters
             .iter()
             .map(|parameter| {
-                let [_] = ids_by_name.get(parameter.name.as_str())?.as_slice() else {
+                let unit = match parameter.properties.get("unit").map(String::as_str) {
+                    None => None,
+                    Some(unit @ ("millimeter" | "degree")) => Some(unit),
+                    Some(_) => return None,
+                };
+                let [_] = ids_by_name
+                    .get(&(parameter.name.as_str(), unit))?
+                    .as_slice()
+                else {
                     return None;
                 };
                 let mut seen = BTreeSet::new();
                 let dependencies = crate::native::expression_parameter_names(&parameter.expression)
                     .into_iter()
                     .map(|name| {
-                        let [dependency] = ids_by_name.get(name)?.as_slice() else {
+                        let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
                             return None;
                         };
                         Some((*dependency).clone())
