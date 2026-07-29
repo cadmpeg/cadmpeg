@@ -1301,6 +1301,37 @@ pub struct FeaturePatternTransformLane {
     pub selector_source_offsets: Vec<u64>,
 }
 
+/// Exact counted instance-output lane carried by a bounded operation payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureMultiInstanceOutputLane {
+    /// Globally unique output-lane identity.
+    pub id: String,
+    /// Owning `Multi Instance Output` operation label.
+    pub operation_label: String,
+    /// Count including the implicit seed row.
+    pub declared_count: u8,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
+    /// Ordered serialized instance ordinals.
+    pub ordinals: Vec<u8>,
+    /// Ordered serialized row indices.
+    pub row_indices: Vec<u8>,
+    /// Count including the implicit seed instance.
+    pub instance_count: u8,
+    /// Ordered non-null trailing object indices.
+    pub trailing_object_indices: Vec<u32>,
+    /// Exact trailing object-index tokens in row order.
+    pub raw_trailing_object_indices: Vec<Vec<u8>>,
+    /// Absolute source offset of the opening `25 01, count` field.
+    pub source_offset: u64,
+    /// Absolute source offsets of the selector tokens.
+    pub selector_source_offsets: Vec<u64>,
+    /// Absolute source offsets of the trailing object-index tokens.
+    pub trailing_object_index_source_offsets: Vec<u64>,
+}
+
 /// Exact leading construction header carried by a bounded point-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePointConstructionHeader {
@@ -5304,6 +5335,69 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                     .selector_offsets
                     .into_iter()
                     .map(|offset| entry_offset + offset as u64)
+                    .collect(),
+            });
+        }
+    }
+    lanes
+}
+
+/// Decode exact counted output lanes from bounded multi-instance payloads.
+pub fn feature_multi_instance_output_lanes(
+    container: &Container,
+) -> Vec<FeatureMultiInstanceOutputLane> {
+    let sections = container.om_sections();
+    let mut lanes = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(lane) = crate::om::multi_instance_output_payload_lane(record) else {
+                continue;
+            };
+            lanes.push(FeatureMultiInstanceOutputLane {
+                id: format!(
+                    "nx:feature-history:multi-instance-output-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                declared_count: lane.declared_count,
+                selectors: lane.selectors,
+                raw_selectors: lane.raw_selectors,
+                ordinals: lane.ordinals,
+                row_indices: lane.row_indices,
+                instance_count: lane.instance_count,
+                trailing_object_indices: lane
+                    .trailing_references
+                    .iter()
+                    .map(|reference| reference.object_index)
+                    .collect(),
+                raw_trailing_object_indices: lane
+                    .trailing_references
+                    .iter()
+                    .map(|reference| reference.raw_object_index.clone())
+                    .collect(),
+                source_offset: entry_offset + lane.offset as u64,
+                selector_source_offsets: lane
+                    .selector_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
+                trailing_object_index_source_offsets: lane
+                    .trailing_references
+                    .into_iter()
+                    .map(|reference| entry_offset + reference.offset as u64)
                     .collect(),
             });
         }

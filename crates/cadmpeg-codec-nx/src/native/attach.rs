@@ -268,7 +268,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(155);
+    namespace.version = namespace.version.max(156);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -310,6 +310,7 @@ fn attach_feature_operations(
     let pattern_construction_fixed_lanes =
         features.feature_pattern_construction_fixed_lanes.as_slice();
     let pattern_transform_lanes = features.feature_pattern_transform_lanes.as_slice();
+    let multi_instance_output_lanes = features.feature_multi_instance_output_lanes.as_slice();
     let point_construction_headers = features.feature_point_construction_headers.as_slice();
     let point_construction_scalar_lanes =
         features.feature_point_construction_scalar_lanes.as_slice();
@@ -525,6 +526,8 @@ fn attach_feature_operations(
         });
     let pattern_transform_lanes_by_operation =
         records_by_operation(pattern_transform_lanes, |lane| &lane.operation_label);
+    let multi_instance_output_lanes_by_operation =
+        records_by_operation(multi_instance_output_lanes, |lane| &lane.operation_label);
     let point_construction_headers_by_operation = point_construction_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
@@ -1366,6 +1369,13 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert("pattern_transform_lane".to_string(), lane.id.clone());
+        }
+        for lane in multi_instance_output_lanes_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert("multi_instance_output_lane".to_string(), lane.id.clone());
         }
         if let Some(header) = point_construction_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("point_construction_header".to_string(), header.id.clone());

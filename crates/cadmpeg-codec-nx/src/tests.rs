@@ -2593,6 +2593,84 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
 }
 
 #[test]
+fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
+    let mut payload = b"\xaa\x3a\x00\x00\x01\x00\x00\x00\x00\x25\x01\x07".to_vec();
+    let mut row_index = 2;
+    for selector in [2, 3, 4] {
+        for ordinal in 2..=3 {
+            payload.extend_from_slice(b"\x26\x27\x01\x02\x65\x01\x02");
+            payload.extend_from_slice(&[selector, 0x28, ordinal, row_index]);
+            row_index += 1;
+        }
+    }
+    payload.extend_from_slice(b"\x00\x3b\x90\x3d\xea\x90\x3d\xeb\x01\x03\xbb");
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "Multi Instance Output",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label,
+    };
+    let lane = crate::om::multi_instance_output_payload_lane(record).expect("complete output lane");
+    assert_eq!(lane.offset, 209);
+    assert_eq!(lane.declared_count, 7);
+    assert_eq!(lane.selectors, [2, 2, 3, 3, 4, 4]);
+    assert_eq!(lane.ordinals, [2, 3, 2, 3, 2, 3]);
+    assert_eq!(lane.row_indices, [2, 3, 4, 5, 6, 7]);
+    assert_eq!(lane.instance_count, 3);
+    assert_eq!(lane.selector_offsets, [219, 230, 241, 252, 263, 274]);
+    assert_eq!(
+        lane.trailing_references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [15850, 15851]
+    );
+    assert_eq!(lane.trailing_references[0].offset, 280);
+    assert_eq!(
+        lane.trailing_references[0].raw_object_index,
+        [0x90, 0x3d, 0xea]
+    );
+
+    let mut incomplete_group = payload.clone();
+    incomplete_group[76] = 2;
+    assert!(
+        crate::om::multi_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &incomplete_group,
+            payload: &incomplete_group,
+            ..record
+        })
+        .is_none()
+    );
+    let mut wrong_row_index = payload.clone();
+    wrong_row_index[77] = 6;
+    assert!(
+        crate::om::multi_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &wrong_row_index,
+            payload: &wrong_row_index,
+            ..record
+        })
+        .is_none()
+    );
+    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(
+        crate::om::multi_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_geometry_instance_reference_requires_one_complete_field() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
@@ -11276,6 +11354,7 @@ mod golden {
         "feature_input_blocks",
         "feature_input_column_row_uses",
         "feature_input_column_targets",
+        "feature_multi_instance_output_lanes",
         "feature_operation_body_11_continuations",
         "feature_operation_body_members",
         "feature_operation_body_operands",
@@ -12073,7 +12152,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (196), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (197), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -12082,7 +12161,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 196, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 197, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

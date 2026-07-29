@@ -481,7 +481,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-        assert_eq!(namespace.version, 155);
+        assert_eq!(namespace.version, 156);
         let rows = namespace
             .arena_as::<super::SegmentIndexRow>("segment_index_rows")
             .expect("required invariant");

@@ -866,6 +866,29 @@ pub struct PatternPayloadTransformLane {
     pub selector_offsets: Vec<usize>,
 }
 
+/// Exact counted instance-output lane in a multi-instance operation payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiInstanceOutputPayloadLane {
+    /// Absolute offset of the opening `25 01, count` field.
+    pub offset: usize,
+    /// Count including the implicit seed row.
+    pub declared_count: u8,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
+    /// Absolute offsets of the compact-index selector tokens.
+    pub selector_offsets: Vec<usize>,
+    /// Ordered serialized instance ordinals.
+    pub ordinals: Vec<u8>,
+    /// Ordered serialized row indices.
+    pub row_indices: Vec<u8>,
+    /// Count including the implicit seed instance.
+    pub instance_count: u8,
+    /// Ordered non-null trailing object references.
+    pub trailing_references: Vec<PayloadObjectReference>,
+}
+
 /// Exact construction header in a point-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PointFeaturePayloadHeader {
@@ -2182,6 +2205,104 @@ pub fn pattern_payload_transform_lane(
         })
     };
     let matches = (0..record.payload.len().saturating_sub(1))
+        .filter_map(decode)
+        .collect::<Vec<_>>();
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
+}
+
+/// Decode the unique exactly counted instance-output lane in a bounded payload.
+pub fn multi_instance_output_payload_lane(
+    record: OperationRecord<'_>,
+) -> Option<MultiInstanceOutputPayloadLane> {
+    const ENVELOPE: [u8; 10] = [0x3a, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x25, 0x01];
+    const ROW_PREFIX: [u8; 7] = [0x26, 0x27, 0x01, 0x02, 0x65, 0x01, 0x02];
+    const ROW_ORDINAL_MARKER: u8 = 0x28;
+    const REFERENCE_PREFIX: [u8; 2] = [0x00, 0x3b];
+
+    if record.label.value != "Multi Instance Output" {
+        return None;
+    }
+    let decode = |start: usize| {
+        (record.payload.get(start..start + ENVELOPE.len()) == Some(&ENVELOPE)).then_some(())?;
+        let declared_count = *record.payload.get(start + ENVELOPE.len())?;
+        (declared_count >= 2).then_some(())?;
+        let row_count = usize::from(declared_count - 1);
+        let mut at = start + ENVELOPE.len() + 1;
+        let mut selectors = Vec::with_capacity(row_count);
+        let mut raw_selectors = Vec::with_capacity(row_count);
+        let mut selector_offsets = Vec::with_capacity(row_count);
+        let mut ordinals = Vec::with_capacity(row_count);
+        let mut row_indices = Vec::with_capacity(row_count);
+        for expected_row_index in 2..=declared_count {
+            (record.payload.get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
+            at += ROW_PREFIX.len();
+            let selector_offset = at;
+            let (selector, width) = compact_index(record.payload.get(at..)?)?;
+            let CompactIndex::Value(selector) = selector else {
+                return None;
+            };
+            selectors.push(selector);
+            raw_selectors.push(record.payload[at..at + width].to_vec());
+            selector_offsets.push(record.payload_offset + selector_offset);
+            at += width;
+            (record.payload.get(at) == Some(&ROW_ORDINAL_MARKER)).then_some(())?;
+            let ordinal = *record.payload.get(at + 1)?;
+            (ordinal >= 2).then_some(())?;
+            ordinals.push(ordinal);
+            (record.payload.get(at + 2) == Some(&expected_row_index)).then_some(())?;
+            row_indices.push(expected_row_index);
+            at += 3;
+        }
+        let instance_count = *ordinals.iter().max()?;
+        let expected_ordinals = (2..=instance_count).collect::<Vec<_>>();
+        let mut distinct_selectors = Vec::new();
+        for selector in &selectors {
+            if !distinct_selectors.contains(selector) {
+                distinct_selectors.push(*selector);
+            }
+        }
+        for selector in distinct_selectors {
+            let actual = selectors
+                .iter()
+                .zip(&ordinals)
+                .filter_map(|(candidate, ordinal)| (*candidate == selector).then_some(*ordinal))
+                .collect::<Vec<_>>();
+            (actual == expected_ordinals).then_some(())?;
+        }
+        (record.payload.get(at..at + REFERENCE_PREFIX.len()) == Some(&REFERENCE_PREFIX))
+            .then_some(())?;
+        at += REFERENCE_PREFIX.len();
+        let mut trailing_references =
+            Vec::with_capacity(usize::from(instance_count.saturating_sub(1)));
+        for _ in 1..instance_count {
+            let reference_offset = at;
+            let (Some(object_index), end) = feature_object_index(record.payload, at)? else {
+                return None;
+            };
+            trailing_references.push(PayloadObjectReference {
+                offset: record.payload_offset + reference_offset,
+                object_index,
+                raw_object_index: record.payload[reference_offset..end].to_vec(),
+            });
+            at = end;
+        }
+        (record.payload.get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
+        Some(MultiInstanceOutputPayloadLane {
+            offset: record.payload_offset + start + 8,
+            declared_count,
+            selectors,
+            raw_selectors,
+            selector_offsets,
+            ordinals,
+            row_indices,
+            instance_count,
+            trailing_references,
+        })
+    };
+    let matches = (0..=record.payload.len().saturating_sub(ENVELOPE.len()))
         .filter_map(decode)
         .collect::<Vec<_>>();
     let [lane] = matches.as_slice() else {
