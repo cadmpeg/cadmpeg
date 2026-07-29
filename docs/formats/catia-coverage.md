@@ -164,7 +164,8 @@ current scores require those matrices and representative fixtures.
   surfaces retain their exact analytic or contracted NURBS carriers.
   Non-isoparametric affine cone pcurves retain exact conical-helix
   constructions. Each exact model carrier retains the two parameters
-  corresponding to the stored UV endpoints. The independent `5e1a`
+  corresponding to the stored UV endpoints and the model-space point at the
+  midpoint of its bounded pcurve parameter interval. The independent `5e1a`
   edge-stride registry retains its fixed
   tagged-one prefix and closed `[T,X,Y,T−1,T−2]` allocation tuples. The `2569`/`0638`
   positional-use and counted `05xx` vertex-incidence registries retain
@@ -187,10 +188,11 @@ current scores require those matrices and representative fixtures.
   retains its complete sense-oriented model endpoint tape when every support
   lifts directly or exactly one missing pair is bounded by lifted neighbors
   and every cyclic join closes within the format tolerance. Matching occurrence
-  endpoint pairs establish face-incidence components only when each occurrence
-  has one endpoint match. Matching groups partition by those components, and
-  every two-occurrence partition retains one radial endpoint-pair candidate.
-  The candidate does not establish curve coincidence or a physical edge. Every
+  endpoint pairs and bounded-curve midpoint witnesses establish face-incidence
+  components only when each occurrence has one match. Matching groups
+  partition by those components, and every two-occurrence partition retains
+  one radial endpoint-pair candidate. The midpoint is an interior witness; the
+  candidate does not establish curve coincidence or a physical edge. Every
   in-range odd-lane typed reference retains its selected global record identity
   atomically for the loop.
   In the object stream, full-pcurve endpoint loci are geometric fallback

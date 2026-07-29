@@ -4842,6 +4842,10 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert!(support.model_curve_construction.is_none());
     assert_eq!(support.model_parameters, Some([0.0, 1.0]));
     assert_eq!(
+        support.model_midpoint,
+        Some(cadmpeg_ir::math::Point3::new(3.0, 8.0, 3.0))
+    );
+    assert_eq!(
         support.model_endpoints,
         Some([
             cadmpeg_ir::math::Point3::new(-1.0, 6.0, 3.0),
@@ -4949,6 +4953,14 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity support model parameters");
     assert!(crate::native::CatiaNative::load(&invalid_model_parameters_namespace).is_err());
 
+    let mut missing_model_midpoint = native.clone();
+    missing_model_midpoint.zero_entity_support_runs[0].supports[0].model_midpoint = None;
+    let mut missing_model_midpoint_namespace = cadmpeg_ir::NativeNamespace::default();
+    missing_model_midpoint
+        .store(&mut missing_model_midpoint_namespace)
+        .expect("store CATIA zero-entity support without its model midpoint");
+    assert!(crate::native::CatiaNative::load(&missing_model_midpoint_namespace).is_err());
+
     let mut invalid_model_construction = native.clone();
     invalid_model_construction.zero_entity_support_runs[0].supports[0].model_curve_construction =
         Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
@@ -5000,6 +5012,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             ],
+            model_midpoint: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         });
     let mut invalid_endpoint_pair_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_endpoint_pair

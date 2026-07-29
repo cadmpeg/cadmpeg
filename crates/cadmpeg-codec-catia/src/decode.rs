@@ -701,6 +701,15 @@ fn finish_decode(
                 .count(),
         ),
         (
+            "decoded_zero_entity_model_midpoint_count".to_string(),
+            native
+                .zero_entity_support_runs
+                .iter()
+                .flat_map(|run| &run.supports)
+                .filter(|support| support.model_midpoint.is_some())
+                .count(),
+        ),
+        (
             "decoded_zero_entity_vertex_incidence_count".to_string(),
             native.zero_entity_vertex_incidences.len(),
         ),
@@ -1087,6 +1096,12 @@ fn finish_decode(
             .flat_map(|run| &run.supports)
             .filter(|support| support.model_endpoints.is_some())
             .count();
+        let model_midpoint_count = native
+            .zero_entity_support_runs
+            .iter()
+            .flat_map(|run| &run.supports)
+            .filter(|support| support.model_midpoint.is_some())
+            .count();
         let face_count = native
             .zero_entity_support_runs
             .iter()
@@ -1151,7 +1166,8 @@ fn finish_decode(
                  curve(s), {support_model_curve_count} with exact model-space carriers, \
                  {support_model_construction_count} with exact procedural model-space carriers, \
                  {endpoint_count} with exact UV endpoint pairs, and \
-                 {model_endpoint_count} lifted model-space endpoint pairs; \
+                 {model_endpoint_count} lifted model-space endpoint pairs with \
+                 {model_midpoint_count} bounded-curve midpoint witnesses; \
                  {face_count} run(s) bind the complete face roster with {loop_terminal_count} \
                  ordered loop terminal(s), {loop_record_count} loop record(s), and \
                  {oriented_loop_member_count} stored member sense(s), including \
@@ -1163,8 +1179,9 @@ fn finish_decode(
                  adjacent vertex owner; {} ownership root(s) bind {ownership_face_count} face \
                  allocation(s) through a shell and body; {} radial occurrence endpoint-pair \
                  candidate(s) and {} \
-                 complete endpoint-locus candidate(s) are established from matching model-space \
-                 endpoint pairs; curve coincidence, loop-to-use, use-to-incidence, physical \
+                 complete endpoint-locus candidate(s) are established from matching bounded \
+                 model-space endpoint and midpoint witnesses; curve coincidence, loop-to-use, \
+                 use-to-incidence, physical \
                  endpoint identity remain unresolved; {} oriented-use \
                  pair(s) remain separate.",
                 native.zero_entity_support_runs.len(),

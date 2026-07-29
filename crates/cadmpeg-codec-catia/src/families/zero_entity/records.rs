@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::eval::nurbs_surface_point;
+use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
     SurfaceGeometry,
@@ -46,6 +46,8 @@ pub struct ZeroEntitySupportOccurrence {
     pub model_curve_construction: Option<ProceduralCurveDefinition>,
     /// Model-carrier parameters at the two stored UV endpoints.
     pub model_parameters: Option<[f64; 2]>,
+    /// Surface point at the midpoint of the bounded pcurve parameter interval.
+    pub model_midpoint: Option<Point3>,
     /// UV endpoints lifted through the owning surface carrier.
     pub model_endpoints: Option<[Point3; 2]>,
 }
@@ -454,6 +456,24 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
                         .uv_endpoints
                         .map(|endpoints| endpoints.map(|uv| uv[0]));
                 }
+                support.model_midpoint = support.pcurve.as_ref().and_then(|pcurve| {
+                    let PcurveGeometry::Nurbs {
+                        degree,
+                        knots,
+                        control_points,
+                        ..
+                    } = pcurve
+                    else {
+                        return None;
+                    };
+                    let start = *knots.get(usize::try_from(*degree).ok()?)?;
+                    let end = *knots.get(control_points.len())?;
+                    if !start.is_finite() || !end.is_finite() || start >= end {
+                        return None;
+                    }
+                    let uv = pcurve_uv(pcurve, start + (end - start) * 0.5)?;
+                    zero_entity_surface_point(&carrier_geometry, [uv.u, uv.v])
+                });
                 support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {
                     let [first, second] =
                         endpoints.map(|uv| zero_entity_surface_point(&carrier_geometry, uv));
@@ -780,6 +800,7 @@ fn zero_entity_support_occurrence(
         model_curve: None,
         model_curve_construction: None,
         model_parameters: None,
+        model_midpoint: None,
         model_endpoints: None,
     })
 }
@@ -1663,6 +1684,7 @@ mod tests {
                 == &[Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
         ));
         assert_eq!(support.model_parameters, Some([0.0, 1.0]));
+        assert_eq!(support.model_midpoint, Some(Point3::new(3.0, 8.0, 3.0)));
         assert_eq!(
             support.model_endpoints,
             Some([Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)])

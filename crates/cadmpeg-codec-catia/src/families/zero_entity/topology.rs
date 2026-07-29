@@ -6,7 +6,7 @@ use cadmpeg_ir::math::Point3;
 
 use super::records::ZeroEntitySupportRun;
 
-const ENDPOINT_TOLERANCE: f64 = 2e-3;
+const MODEL_POINT_TOLERANCE: f64 = 2e-3;
 
 /// One sense-oriented support occurrence owned by a face.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -14,9 +14,10 @@ pub(crate) struct ZeroEntityOrientedOccurrence {
     pub(crate) face_record_ordinal: u32,
     pub(crate) support_record_ordinal: u32,
     pub(crate) model_endpoints: [Point3; 2],
+    pub(crate) model_midpoint: Point3,
 }
 
-/// Two radial occurrences with matching unordered model-space endpoints.
+/// Two radial occurrences with matching bounded model-space witnesses.
 ///
 /// This relation does not establish curve coincidence.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -24,6 +25,7 @@ pub(crate) struct ZeroEntityEndpointPairCandidate {
     pub(crate) face_record_ordinals: [u32; 2],
     pub(crate) support_record_ordinals: [u32; 2],
     pub(crate) model_endpoints: [Point3; 2],
+    pub(crate) model_midpoint: Point3,
 }
 
 /// One geometric endpoint-locus candidate established by a complete endpoint clique.
@@ -37,26 +39,35 @@ pub(crate) struct ZeroEntityEndpointLocusCandidate {
 pub(crate) fn zero_entity_endpoint_pair_candidates(
     runs: &[ZeroEntitySupportRun],
 ) -> Vec<ZeroEntityEndpointPairCandidate> {
-    let occurrences = runs
-        .iter()
-        .filter_map(|run| run.face.as_ref())
-        .flat_map(|face| {
-            face.loops.iter().flat_map(|loop_record| {
-                loop_record
-                    .support_record_ordinals
-                    .iter()
-                    .copied()
-                    .zip(loop_record.oriented_model_endpoints.iter().copied())
-                    .map(
-                        |(support_record_ordinal, model_endpoints)| ZeroEntityOrientedOccurrence {
-                            face_record_ordinal: face.record_ordinal,
-                            support_record_ordinal,
-                            model_endpoints,
-                        },
-                    )
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut occurrences = Vec::new();
+    for run in runs {
+        let Some(face) = run.face.as_ref() else {
+            continue;
+        };
+        let midpoints = run
+            .supports
+            .iter()
+            .filter_map(|support| Some((support.record_ordinal, support.model_midpoint?)))
+            .collect::<HashMap<_, _>>();
+        for loop_record in &face.loops {
+            for (support_record_ordinal, model_endpoints) in loop_record
+                .support_record_ordinals
+                .iter()
+                .copied()
+                .zip(loop_record.oriented_model_endpoints.iter().copied())
+            {
+                let Some(model_midpoint) = midpoints.get(&support_record_ordinal).copied() else {
+                    continue;
+                };
+                occurrences.push(ZeroEntityOrientedOccurrence {
+                    face_record_ordinal: face.record_ordinal,
+                    support_record_ordinal,
+                    model_endpoints,
+                    model_midpoint,
+                });
+            }
+        }
+    }
     endpoint_pair_candidates(&occurrences)
 }
 
@@ -123,6 +134,7 @@ pub(crate) fn endpoint_pair_candidates(
                     second.support_record_ordinal,
                 ],
                 model_endpoints: first.model_endpoints,
+                model_midpoint: first.model_midpoint,
             });
         }
     }
@@ -161,7 +173,7 @@ pub(crate) fn endpoint_locus_candidates(
                     ];
                     for other in cells.get(&neighbor_cell).into_iter().flatten() {
                         if *other > index
-                            && point.distance(endpoints[*other].2) <= ENDPOINT_TOLERANCE
+                            && point.distance(endpoints[*other].2) <= MODEL_POINT_TOLERANCE
                         {
                             neighbors[index].push(*other);
                             neighbors[*other].push(index);
@@ -198,7 +210,7 @@ pub(crate) fn endpoint_locus_candidates(
             for right in &component[position + 1..] {
                 let deviation = endpoints[*left].2.distance(endpoints[*right].2);
                 maximum_deviation = maximum_deviation.max(deviation);
-                complete &= deviation <= ENDPOINT_TOLERANCE;
+                complete &= deviation <= MODEL_POINT_TOLERANCE;
             }
         }
         if !complete {
@@ -250,7 +262,11 @@ fn endpoint_match_graph(occurrences: &[ZeroEntityOrientedOccurrence]) -> Vec<Vec
             if unordered_endpoint_pairs_match(
                 occurrence.model_endpoints,
                 occurrences[other].model_endpoints,
-            ) {
+            ) && occurrence
+                .model_midpoint
+                .distance(occurrences[other].model_midpoint)
+                <= MODEL_POINT_TOLERANCE
+            {
                 matches[index].push(other);
                 matches[other].push(index);
             }
@@ -264,16 +280,16 @@ fn endpoint_match_graph(occurrences: &[ZeroEntityOrientedOccurrence]) -> Vec<Vec
 
 fn endpoint_cell(point: Point3) -> [i64; 3] {
     [
-        (point.x / ENDPOINT_TOLERANCE).floor() as i64,
-        (point.y / ENDPOINT_TOLERANCE).floor() as i64,
-        (point.z / ENDPOINT_TOLERANCE).floor() as i64,
+        (point.x / MODEL_POINT_TOLERANCE).floor() as i64,
+        (point.y / MODEL_POINT_TOLERANCE).floor() as i64,
+        (point.z / MODEL_POINT_TOLERANCE).floor() as i64,
     ]
 }
 
 fn unordered_endpoint_pairs_match(left: [Point3; 2], right: [Point3; 2]) -> bool {
     let direct = left[0].distance(right[0]).max(left[1].distance(right[1]));
     let reversed = left[0].distance(right[1]).max(left[1].distance(right[0]));
-    direct.min(reversed) <= ENDPOINT_TOLERANCE
+    direct.min(reversed) <= MODEL_POINT_TOLERANCE
 }
 
 struct DisjointSet {
@@ -311,11 +327,13 @@ mod tests {
         face_record_ordinal: u32,
         support_record_ordinal: u32,
         model_endpoints: [Point3; 2],
+        model_midpoint: Point3,
     ) -> ZeroEntityOrientedOccurrence {
         ZeroEntityOrientedOccurrence {
             face_record_ordinal,
             support_record_ordinal,
             model_endpoints,
+            model_midpoint,
         }
     }
 
@@ -325,14 +343,14 @@ mod tests {
         let first_link = [Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)];
         let second_link = [Point3::new(0.0, 2.0, 0.0), Point3::new(1.0, 2.0, 0.0)];
         let occurrences = [
-            occurrence(10, 1, shared_endpoints),
-            occurrence(11, 2, shared_endpoints),
-            occurrence(12, 3, shared_endpoints),
-            occurrence(13, 4, shared_endpoints),
-            occurrence(10, 5, first_link),
-            occurrence(11, 6, first_link),
-            occurrence(12, 7, second_link),
-            occurrence(13, 8, second_link),
+            occurrence(10, 1, shared_endpoints, Point3::new(0.5, 0.0, 0.0)),
+            occurrence(11, 2, shared_endpoints, Point3::new(0.5, 0.0, 0.0)),
+            occurrence(12, 3, shared_endpoints, Point3::new(0.5, 0.0, 0.0)),
+            occurrence(13, 4, shared_endpoints, Point3::new(0.5, 0.0, 0.0)),
+            occurrence(10, 5, first_link, Point3::new(0.5, 1.0, 0.0)),
+            occurrence(11, 6, first_link, Point3::new(0.5, 1.0, 0.0)),
+            occurrence(12, 7, second_link, Point3::new(0.5, 2.0, 0.0)),
+            occurrence(13, 8, second_link, Point3::new(0.5, 2.0, 0.0)),
         ];
 
         let candidates = endpoint_pair_candidates(&occurrences);
@@ -353,6 +371,7 @@ mod tests {
                 10,
                 1,
                 [Point3::new(-0.000_1, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                Point3::new(0.5, 0.0, 0.0),
             ),
             occurrence(
                 11,
@@ -361,6 +380,7 @@ mod tests {
                     Point3::new(1.001_9, 0.0, 0.0),
                     Point3::new(0.001_8, 0.0, 0.0),
                 ],
+                Point3::new(0.501, 0.0, 0.0),
             ),
         ];
 
@@ -371,11 +391,31 @@ mod tests {
     }
 
     #[test]
+    fn coincident_endpoint_pairs_partition_by_model_midpoint() {
+        let endpoints = [Point3::new(-1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        let occurrences = [
+            occurrence(10, 1, endpoints, Point3::new(0.0, 1.0, 0.0)),
+            occurrence(11, 2, endpoints, Point3::new(0.0, -1.0, 0.0)),
+            occurrence(12, 3, endpoints, Point3::new(0.0, 1.0, 0.0)),
+            occurrence(13, 4, endpoints, Point3::new(0.0, -1.0, 0.0)),
+        ];
+
+        assert_eq!(
+            endpoint_pair_candidates(&occurrences)
+                .iter()
+                .map(|candidate| candidate.support_record_ordinals)
+                .collect::<Vec<_>>(),
+            [[1, 3], [2, 4]]
+        );
+    }
+
+    #[test]
     fn endpoint_locus_candidates_require_complete_endpoint_cliques() {
         let pair = |support_record_ordinals, model_endpoints| ZeroEntityEndpointPairCandidate {
             face_record_ordinals: support_record_ordinals,
             support_record_ordinals,
             model_endpoints,
+            model_midpoint: Point3::new(0.0, 0.0, 0.0),
         };
         let pairs = [
             pair(

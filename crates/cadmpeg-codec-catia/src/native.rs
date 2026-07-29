@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 186;
+pub const CATIA_NATIVE_VERSION: u32 = 187;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2702,6 +2702,9 @@ pub struct CatiaZeroEntitySupportOccurrence {
     /// Model-carrier parameters at the two stored UV endpoints.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_parameters: Option<[f64; 2]>,
+    /// Surface point at the midpoint of the bounded pcurve parameter interval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_midpoint: Option<cadmpeg_ir::math::Point3>,
     /// UV endpoints lifted through the owning surface carrier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
@@ -2817,7 +2820,7 @@ pub struct CatiaZeroEntityOrientedUsePair {
     pub uses: [CatiaZeroEntityOrientedUse; 2],
 }
 
-/// Two zero-entity radial support occurrences with matching unordered endpoints.
+/// Two zero-entity radial support occurrences with matching bounded model-space witnesses.
 ///
 /// This relation does not establish curve coincidence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -2830,6 +2833,8 @@ pub struct CatiaZeroEntityEndpointPairCandidate {
     pub support_records: [String; 2],
     /// Model-space endpoints oriented by the first support occurrence.
     pub model_endpoints: [cadmpeg_ir::math::Point3; 2],
+    /// Model-space midpoint witness supplied by the first support occurrence.
+    pub model_midpoint: cadmpeg_ir::math::Point3,
 }
 
 /// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
@@ -3813,6 +3818,7 @@ fn zero_entity_support_runs(
                     model_curve: support.model_curve,
                     model_curve_construction: support.model_curve_construction,
                     model_parameters: support.model_parameters,
+                    model_midpoint: support.model_midpoint,
                     model_endpoints: support.model_endpoints,
                 })
                 .collect(),
@@ -3835,6 +3841,7 @@ fn zero_entity_endpoint_pair_candidates(
                 .support_record_ordinals
                 .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
             model_endpoints: candidate.model_endpoints,
+            model_midpoint: candidate.model_midpoint,
         })
         .collect()
 }
@@ -5043,6 +5050,9 @@ fn validate_zero_entity_support_runs(
                                 [point.x, point.y, point.z].into_iter().all(f64::is_finite)
                             })
                     });
+                    let model_midpoint_valid = support.model_midpoint.is_none_or(|point| {
+                        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+                    });
                     let model_curve_valid =
                         validate_zero_entity_model_curve(carrier_tag, support.model_curve.as_ref());
                     let model_curve_construction_valid =
@@ -5053,6 +5063,7 @@ fn validate_zero_entity_support_runs(
                         );
                     let has_model_carrier =
                         support.model_curve.is_some() || support.model_curve_construction.is_some();
+                    let has_pcurve = support.pcurve.is_some();
                     let model_parameters_valid =
                         support.model_parameters.is_some_and(|parameters| {
                             parameters.into_iter().all(f64::is_finite)
@@ -5127,6 +5138,8 @@ fn validate_zero_entity_support_runs(
                         && model_curve_valid
                         && model_curve_construction_valid
                         && model_parameters_valid
+                        && support.model_midpoint.is_some() == has_pcurve
+                        && model_midpoint_valid
                         && model_endpoints_valid
                 });
         if run.id != format!("catia:zero-entity:support-run#{index}")
@@ -5290,26 +5303,37 @@ fn validate_zero_entity_endpoint_pair_candidates(
 fn derived_zero_entity_endpoint_pairs(
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate> {
-    let occurrences = runs
-        .iter()
-        .filter_map(|run| run.face.as_ref())
-        .flat_map(|face| {
-            face.loops.iter().flat_map(|loop_record| {
-                loop_record
-                    .support_record_ordinals
-                    .iter()
-                    .copied()
-                    .zip(loop_record.oriented_model_endpoints.iter().copied())
-                    .map(|(support_record_ordinal, model_endpoints)| {
-                        crate::families::zero_entity::topology::ZeroEntityOrientedOccurrence {
-                            face_record_ordinal: face.record_ordinal,
-                            support_record_ordinal,
-                            model_endpoints,
-                        }
-                    })
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut occurrences = Vec::new();
+    for run in runs {
+        let Some(face) = run.face.as_ref() else {
+            continue;
+        };
+        let midpoints = run
+            .supports
+            .iter()
+            .filter_map(|support| Some((support.record_ordinal, support.model_midpoint?)))
+            .collect::<std::collections::HashMap<_, _>>();
+        for loop_record in &face.loops {
+            for (support_record_ordinal, model_endpoints) in loop_record
+                .support_record_ordinals
+                .iter()
+                .copied()
+                .zip(loop_record.oriented_model_endpoints.iter().copied())
+            {
+                let Some(model_midpoint) = midpoints.get(&support_record_ordinal).copied() else {
+                    continue;
+                };
+                occurrences.push(
+                    crate::families::zero_entity::topology::ZeroEntityOrientedOccurrence {
+                        face_record_ordinal: face.record_ordinal,
+                        support_record_ordinal,
+                        model_endpoints,
+                        model_midpoint,
+                    },
+                );
+            }
+        }
+    }
     crate::families::zero_entity::topology::endpoint_pair_candidates(&occurrences)
 }
 
