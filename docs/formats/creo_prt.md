@@ -998,6 +998,9 @@ coordinate lane. `u_params` and the seven-byte `v_params` forms use the
 positive DICT lattice. `v_params` also uses the eight-byte `28` positive
 sub-unit form.
 
+In a `fillet_srf` prototype, `i_pnts`, `i_points`, and `tangts` use the signed
+coordinate DICT lattice defined for the second directrix-coordinate lane.
+
 A complete `splsrf` interpolation surface contains `i_points`,
 `end_u_tangts`, `end_v_tangts`, `end_uv_deriv`, `u_params`, and `v_params`.
 If `u_params` has `U` values and `v_params` has `V` values, `i_points` contains

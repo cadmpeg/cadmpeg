@@ -1957,7 +1957,12 @@ fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> b
             && matches!(name, "i_pnts" | "i_points" | "c_pnts"))
 }
 
-fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
+fn named_surface_value(
+    family: &SurfacePrototypeFamily,
+    name: &str,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> SurfaceNamedValue {
     if body.is_empty() {
         return SurfaceNamedValue::Empty;
     }
@@ -2022,8 +2027,13 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 else {
                     return SurfaceNamedValue::Opaque(body.to_vec());
                 };
-                let slots =
-                    named_spline_scalar_slots(name, &body[values_start..], slot_count, cache);
+                let slots = named_spline_scalar_slots(
+                    family,
+                    name,
+                    &body[values_start..],
+                    slot_count,
+                    cache,
+                );
                 return SurfaceNamedValue::CountedScalarArray {
                     count,
                     values: slots.iter().map(|slot| slot.0).collect(),
@@ -2100,7 +2110,7 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 | "tangts"
                 | "end_tangts"
         )
-        .then(|| named_spline_scalar_slots(name, &body[values_start..], slot_count, cache));
+        .then(|| named_spline_scalar_slots(family, name, &body[values_start..], slot_count, cache));
         let values = if let Some(slots) = &spline_slots {
             slots.iter().map(|slot| slot.0).collect()
         } else if name == "local_sys" {
@@ -2234,7 +2244,7 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
                 value_end = value_offset + compound_close.offset;
             }
             let body = payload[value_offset..value_end].to_vec();
-            let value = named_surface_value(&name, &body, &cache);
+            let value = named_surface_value(&family, &name, &body, &cache);
             parameters.push(SurfaceNamedParameter {
                 name: name.into_owned(),
                 value,
@@ -4565,6 +4575,7 @@ fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usiz
 }
 
 fn named_spline_scalar_slots(
+    family: &SurfacePrototypeFamily,
     name: &str,
     body: &[u8],
     count: usize,
@@ -4582,7 +4593,7 @@ fn named_spline_scalar_slots(
         }
         let start = cursor.pos();
         let Some(value) =
-            cursor.take_with(|data, pos| named_spline_scalar_slot(name, data, pos, cache))
+            cursor.take_with(|data, pos| named_spline_scalar_slot(family, name, data, pos, cache))
         else {
             break;
         };
@@ -4654,7 +4665,13 @@ fn counted_parameter_scalar_slots(
                 continue;
             }
 
-            if let Some((value, next)) = named_spline_scalar_slot("params", body, cursor, cache) {
+            if let Some((value, next)) = named_spline_scalar_slot(
+                &SurfacePrototypeFamily::Spline,
+                "params",
+                body,
+                cursor,
+                cache,
+            ) {
                 add_counted_parameter_state(
                     &mut states[next],
                     slots_used + 1,
@@ -4707,6 +4724,7 @@ fn add_counted_parameter_state(
 }
 
 fn named_spline_scalar_slot(
+    family: &SurfacePrototypeFamily,
     name: &str,
     body: &[u8],
     offset: usize,
@@ -4735,6 +4753,13 @@ fn named_spline_scalar_slot(
             .map(|(value, next)| (Some(value), next));
     }
     if matches!(name, "end_v_tangts" | "end_tangts") {
+        return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
+    }
+    if matches!(family, SurfacePrototypeFamily::Fillet)
+        && matches!(name, "i_pnts" | "i_points" | "tangts")
+        && matches!(head, 0xa4..=0xdf)
+    {
         return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
@@ -5785,7 +5810,13 @@ mod tests {
     #[test]
     fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
         let body = [0xaa, 0xe4, 1, 2, 3, 4, 5, 0xe4];
-        let slots = named_spline_scalar_slots("tangts", &body, 2, &scalar::ScalarCache::default());
+        let slots = named_spline_scalar_slots(
+            &SurfacePrototypeFamily::Spline,
+            "tangts",
+            &body,
+            2,
+            &scalar::ScalarCache::default(),
+        );
 
         assert_eq!(
             slots,
@@ -5800,7 +5831,13 @@ mod tests {
     fn interpolation_point_aliases_expand_continuation_and_terminal_zero() {
         let body = [0xe4, 0x0f, 0xe4, 0xf9, 0x00, 0x2f, 0x14, 0x00, 0x18];
         for name in ["i_pnts", "i_points"] {
-            let slots = named_spline_scalar_slots(name, &body, 6, &scalar::ScalarCache::default());
+            let slots = named_spline_scalar_slots(
+                &SurfacePrototypeFamily::Spline,
+                name,
+                &body,
+                6,
+                &scalar::ScalarCache::default(),
+            );
             assert_eq!(
                 slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
                 [
@@ -5823,7 +5860,13 @@ mod tests {
             0xce, 1, 2, 3, 4, 5, 6, 0x2d, 1, 2, 3, 4, 5, 6, 7, 0x46, 1, 2, 3, 4, 5, 6, 7,
         ];
         for name in ["end_v_tangts", "end_tangts"] {
-            let slots = named_spline_scalar_slots(name, &body, 3, &scalar::ScalarCache::default());
+            let slots = named_spline_scalar_slots(
+                &SurfacePrototypeFamily::Spline,
+                name,
+                &body,
+                3,
+                &scalar::ScalarCache::default(),
+            );
 
             assert_eq!(
                 slots[0].0,
@@ -8421,7 +8464,12 @@ mod tests {
         ];
 
         assert_eq!(
-            named_surface_value("local_sys", &body, &scalar::ScalarCache::default()),
+            named_surface_value(
+                &SurfacePrototypeFamily::Plane,
+                "local_sys",
+                &body,
+                &scalar::ScalarCache::default(),
+            ),
             SurfaceNamedValue::ScalarArray {
                 dimensions: 4,
                 count: 3,
@@ -8572,9 +8620,12 @@ mod tests {
     #[test]
     fn named_local_system_decodes_positive_compact_half_coordinate() {
         let body = [0xf9, 0x04, 0x03, 0x0e];
-        let SurfaceNamedValue::ScalarArray { values, .. } =
-            named_surface_value("local_sys", &body, &scalar::ScalarCache::default())
-        else {
+        let SurfaceNamedValue::ScalarArray { values, .. } = named_surface_value(
+            &SurfacePrototypeFamily::Plane,
+            "local_sys",
+            &body,
+            &scalar::ScalarCache::default(),
+        ) else {
             panic!("scalar local system");
         };
 
@@ -8590,7 +8641,12 @@ mod tests {
             count,
             values,
             ..
-        } = named_surface_value("i_points", &body, &scalar::ScalarCache::default())
+        } = named_surface_value(
+            &SurfacePrototypeFamily::Spline,
+            "i_points",
+            &body,
+            &scalar::ScalarCache::default(),
+        )
         else {
             panic!("dimensioned scalar array");
         };
@@ -8599,6 +8655,32 @@ mod tests {
         assert_eq!(count, 3);
         assert_eq!(values.len(), 408);
         assert!(values.iter().all(|value| *value == Some(0.0)));
+    }
+
+    #[test]
+    fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
+        let negative = [0xc2, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
+        let mut payload = b"srf_prim_ptr(fillet_srf)\0\xe0\x02i_pnts\0\xf9\x01\x03".to_vec();
+        payload.extend_from_slice(&negative);
+        payload.extend_from_slice(&[0xe4, 0x0f]);
+
+        let records = named_prototype_records(&payload);
+
+        assert_eq!(
+            records[0].field("i_pnts").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarArray {
+                dimensions: 1,
+                count: 3,
+                values: vec![
+                    Some(f64::from_be_bytes([
+                        0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+                    ])),
+                    Some(1.0),
+                    Some(0.0),
+                ],
+                tokens: vec![negative.to_vec(), vec![0xe4], vec![0x0f]],
+            })
+        );
     }
 
     #[test]
@@ -8736,7 +8818,12 @@ mod tests {
             ("offset_type", &[0xf8, 0x01, 0x00]),
         ] {
             assert_eq!(
-                named_surface_value(name, body, &scalar::ScalarCache::default()),
+                named_surface_value(
+                    &SurfacePrototypeFamily::Spline,
+                    name,
+                    body,
+                    &scalar::ScalarCache::default(),
+                ),
                 SurfaceNamedValue::Opaque(body.to_vec())
             );
         }
@@ -8767,7 +8854,12 @@ mod tests {
             let mut body = vec![0xf8, 0x01, 0x07];
             body.extend_from_slice(trailer);
             assert_eq!(
-                named_surface_value("parent_feats", &body, &scalar::ScalarCache::default()),
+                named_surface_value(
+                    &SurfacePrototypeFamily::Spline,
+                    "parent_feats",
+                    &body,
+                    &scalar::ScalarCache::default(),
+                ),
                 SurfaceNamedValue::Opaque(body)
             );
         }
