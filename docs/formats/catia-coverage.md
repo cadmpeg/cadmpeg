@@ -187,6 +187,8 @@ current scores require those matrices and representative fixtures.
   requires those oriented occurrences to close cyclically.
   Object-stream edges require exactly five references and one admitted terminal
   control, with no residual bytes.
+  Object-stream vertex-incidence links require one roster reference and an
+  exact `00` or `04` terminal control, with no residual bytes.
   Object-stream class-`21` pcurves require the exact single-segment clamped
   Bézier grammar, complete finite suffix, and positive scalar domain.
   Exact circular-helix constructions retain degree-1 sampled caches whose first

@@ -1284,8 +1284,10 @@ fn vertex_incidence_ref(record: &B5Record) -> Option<u32> {
     (record.class == 0x5d && record.payload.first() == Some(&0x81)).then_some(())?;
     let mut position = 1;
     let incidence = wire::object_ref(&record.payload, &mut position, true)?;
-    (record.payload.get(position) == Some(&0x00) && position + 1 == record.payload.len())
-        .then_some(incidence)
+    let &[terminal_control] = record.payload.get(position..)? else {
+        return None;
+    };
+    matches!(terminal_control, 0x00 | 0x04).then_some(incidence)
 }
 
 fn counted_references(record: &B5Record, class: u8) -> Option<Vec<u32>> {
@@ -5683,6 +5685,28 @@ mod tests {
             edge_vertex_references(&bytes),
             BTreeMap::from([(17, [15, 21])])
         );
+    }
+
+    #[test]
+    fn vertex_incidence_link_accepts_both_exact_terminal_controls() {
+        let record = |terminal_control| B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x5d,
+            object_id: 17,
+            payload: vec![0x81, 0x92, terminal_control],
+        };
+        assert_eq!(vertex_incidence_ref(&record(0x00)), Some(18));
+        assert_eq!(vertex_incidence_ref(&record(0x04)), Some(18));
+        assert_eq!(vertex_incidence_ref(&record(0x01)), None);
+
+        let mut missing = record(0x00);
+        missing.payload.pop();
+        assert_eq!(vertex_incidence_ref(&missing), None);
+
+        let mut residual = record(0x04);
+        residual.payload.push(0);
+        assert_eq!(vertex_incidence_ref(&residual), None);
     }
 
     #[test]
