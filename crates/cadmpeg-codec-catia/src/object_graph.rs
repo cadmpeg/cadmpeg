@@ -542,6 +542,17 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                 HeadToken::Literal(0),
             ]
         );
+        let terminal_null_lane_roles = matches!(
+            head.as_slice(),
+            [
+                HeadToken::Lead(0x5a),
+                HeadToken::Reference(_),
+                HeadToken::Reference(0),
+                HeadToken::NullHandle,
+                HeadToken::Reference(owner),
+                HeadToken::Reference(3),
+            ] if *owner != 0
+        );
         let terminal_lane_roles = matches!(
             head.as_slice(),
             [
@@ -561,7 +572,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         let fixed_roles = fixed_role_count != 0 && head.len() == fixed_role_count + 1;
         let (owner_index, class_index, storage_index, class_first) = if separator_roles {
             (Some(2), Some(3), Some(4), false)
-        } else if null_lane_roles {
+        } else if null_lane_roles || terminal_null_lane_roles {
             (Some(4), Some(1), Some(2), true)
         } else if terminal_lane_roles {
             (Some(3), Some(1), Some(2), true)
