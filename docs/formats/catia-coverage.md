@@ -198,8 +198,10 @@ current scores require those matrices and representative fixtures.
   candidates only. Conflicting candidates for one edge are discarded locally;
   they do not discard other pcurve records or override the edge's serialized
   vertex identities and parameter incidences.
-  Counted object-stream faces require an exact `03` or `05` terminal control;
-  either form owns its first referenced carrier and remaining referenced loops.
+  Counted object-stream faces require and retain an exact `03` or `05` terminal
+  control; either form owns its first referenced carrier and remaining
+  referenced loops. Decode coverage counts the two controls independently from
+  uncounted framing among reference-resolved faces.
   Counted object-stream loops require an exact edge-count lane and complete
   control tail: the loop control, three signed controls per edge, and the
   optional finite binary64/binary32 numeric extension. The first and third

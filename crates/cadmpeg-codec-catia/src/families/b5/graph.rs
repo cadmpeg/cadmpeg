@@ -541,6 +541,9 @@ pub struct B5Face {
     /// `object_id`s of the face's `b5 03 62` loop nodes, in reference
     /// order.
     pub loops: Vec<u32>,
+    /// Exact terminal control of the counted face production. Uncounted face
+    /// framing has no terminal control.
+    pub terminal_control: Option<u8>,
 }
 
 /// A resolved `b5 03 62` loop node: payload `<0x80 + n_refs>
@@ -3694,7 +3697,8 @@ fn parse_face(
     loops: &BTreeMap<u32, B5Loop>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Face> {
-    let references = face_references(record)?;
+    let face_references = face_references(record)?;
+    let references = &face_references.references;
     let surface = *references.first()?;
     if !surfaces.contains_key(&surface) {
         return None;
@@ -3711,10 +3715,17 @@ fn parse_face(
         object_id: record.object_id,
         surface,
         loops: loop_ids,
+        terminal_control: face_references.terminal_control,
     })
 }
 
-fn face_references(record: &B5Record) -> Option<Vec<u32>> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct B5FaceReferences {
+    references: Vec<u32>,
+    terminal_control: Option<u8>,
+}
+
+fn face_references(record: &B5Record) -> Option<B5FaceReferences> {
     if record.class != 0x5f {
         return None;
     }
@@ -3730,9 +3741,15 @@ fn face_references(record: &B5Record) -> Option<Vec<u32>> {
         let &[terminal_control] = record.payload.get(position..)? else {
             return None;
         };
-        matches!(terminal_control, 0x03 | 0x05).then_some(references)
+        matches!(terminal_control, 0x03 | 0x05).then_some(B5FaceReferences {
+            references,
+            terminal_control: Some(terminal_control),
+        })
     } else {
-        uncounted_references(&record.payload)
+        uncounted_references(&record.payload).map(|references| B5FaceReferences {
+            references,
+            terminal_control: None,
+        })
     }
 }
 
@@ -4386,7 +4403,13 @@ mod tests {
                 object_id: 3,
                 payload: vec![0x82, 0x81, 0x82, terminal_control],
             };
-            assert_eq!(face_references(&record), Some(vec![1, 2]));
+            assert_eq!(
+                face_references(&record),
+                Some(B5FaceReferences {
+                    references: vec![1, 2],
+                    terminal_control: Some(terminal_control),
+                })
+            );
 
             let mut overlong = record;
             overlong.payload.push(terminal_control);

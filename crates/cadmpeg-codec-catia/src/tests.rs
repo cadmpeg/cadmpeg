@@ -13654,6 +13654,18 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     }));
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert_eq!(
+        result.report.coverage["resolved_object_stream_face_terminal_control_03_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["resolved_object_stream_face_terminal_control_05_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["resolved_object_stream_uncounted_face_count"],
+        0
+    );
     assert!(result
         .ir
         .model

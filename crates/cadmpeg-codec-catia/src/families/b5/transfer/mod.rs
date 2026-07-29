@@ -1232,6 +1232,7 @@ mod tests {
                 object_id: 1,
                 surface: 10,
                 loops: vec![2],
+                terminal_control: None,
             }],
             loops: BTreeMap::from([(
                 2,
@@ -1562,6 +1563,7 @@ mod tests {
                 object_id: 1,
                 surface: 10,
                 loops: vec![2],
+                terminal_control: None,
             }],
             loops: BTreeMap::from([(
                 2,
@@ -1605,6 +1607,7 @@ mod tests {
             object_id: 5,
             surface: 10,
             loops: vec![2],
+            terminal_control: None,
         });
         assert!(ownership_plan(&graph).is_none());
         graph.faces.pop();
@@ -1613,6 +1616,7 @@ mod tests {
             object_id: 5,
             surface: 10,
             loops: vec![6],
+            terminal_control: None,
         });
         graph.loops.insert(
             6,
@@ -2542,6 +2546,7 @@ mod tests {
                 object_id: 1,
                 surface: 2,
                 loops: vec![3],
+                terminal_control: None,
             }],
             loops: BTreeMap::from([(
                 3,

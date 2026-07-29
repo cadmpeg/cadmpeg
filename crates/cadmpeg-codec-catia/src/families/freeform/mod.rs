@@ -33,6 +33,17 @@ struct FreeformSurfaceCarrier {
 
 pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<FamilyOutput> {
     let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
+    let face_terminal_controls = b5_graph.as_ref().map(|graph| {
+        graph.faces.iter().fold([0usize; 3], |mut counts, face| {
+            match face.terminal_control {
+                Some(0x03) => counts[0] += 1,
+                Some(0x05) => counts[1] += 1,
+                None => counts[2] += 1,
+                Some(_) => unreachable!("the face parser admits only controls 03 and 05"),
+            }
+            counts
+        })
+    });
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
@@ -116,13 +127,28 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     insert_unresolved_carrier_loss(&ir, &mut losses);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
+    let mut coverage = std::collections::BTreeMap::new();
+    if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
+        coverage.insert(
+            "resolved_object_stream_face_terminal_control_03_count".to_string(),
+            control_03,
+        );
+        coverage.insert(
+            "resolved_object_stream_face_terminal_control_05_count".to_string(),
+            control_05,
+        );
+        coverage.insert(
+            "resolved_object_stream_uncounted_face_count".to_string(),
+            uncounted,
+        );
+    }
     Some(FamilyOutput {
         ir,
         report: DecodeReport {
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
-            coverage: std::collections::BTreeMap::new(),
+            coverage,
             losses,
             notes: container::summarize(scan).notes,
         },
