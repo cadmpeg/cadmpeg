@@ -1228,10 +1228,17 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
 fn structural_feature_ids(
     data: &[u8],
     sections: &[Section],
-    rows: &[SurfaceRow],
+    surface_rows: &[SurfaceRow],
+    curve_rows: &[CurveTopologyRow],
 ) -> std::collections::BTreeSet<u32> {
     let mut ids = std::collections::BTreeSet::new();
-    ids.extend(rows.iter().map(|row| row.feature_id).filter(|id| *id != 0));
+    ids.extend(
+        surface_rows
+            .iter()
+            .map(|row| row.feature_id)
+            .chain(curve_rows.iter().map(|row| row.feature_id))
+            .filter(|id| *id != 0),
+    );
     for section in sections
         .iter()
         .filter(|section| section.role == role::GEOMETRY)
@@ -1884,7 +1891,8 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_operation_states = feature_operation_states(&data, &sections);
     let feature_operations = feature_operations(&data, &sections);
     let feature_reference_names = feature_reference_names(&data, &sections);
-    let structural_feature_ids = structural_feature_ids(&data, &sections, &surface_rows);
+    let structural_feature_ids =
+        structural_feature_ids(&data, &sections, &surface_rows, &curve_topology_rows);
     let mut candidate_feature_ids = structural_feature_ids.clone();
     candidate_feature_ids.extend(
         feature_operations
@@ -2219,6 +2227,34 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 #[cfg(test)]
 mod feature_row_definition_tests {
     use super::*;
+
+    #[test]
+    fn surface_and_curve_generators_are_structural_feature_identities() {
+        let surface = SurfaceRow {
+            id: 12,
+            type_byte: 0x22,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 40,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        };
+        let curve = CurveTopologyRow {
+            id: 45,
+            type_byte: 8,
+            feature_id: 41,
+            directions: [1, 0xf6],
+            faces: [12, 13],
+            next_edges: [45, 45],
+            offset: 0,
+        };
+
+        assert_eq!(
+            structural_feature_ids(&[], &[], &[surface], &[curve]),
+            std::collections::BTreeSet::from([40, 41])
+        );
+    }
 
     #[test]
     fn zero_width_toc_has_no_rows() {

@@ -15787,6 +15787,78 @@ fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GeometryGeneratorFeature {
+    feature_id: u32,
+    offset: usize,
+    surface_ids: Vec<u32>,
+    curve_ids: Vec<u32>,
+}
+
+fn geometry_generator_features(scan: &ContainerScan) -> Vec<GeometryGeneratorFeature> {
+    let operation_feature_ids = scan
+        .features
+        .operations
+        .iter()
+        .map(|operation| operation.feature_id)
+        .collect::<BTreeSet<_>>();
+    let row_feature_ids = scan
+        .features
+        .rows
+        .iter()
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    let datum_feature_ids = scan
+        .planes
+        .datums
+        .iter()
+        .map(|datum| datum.feature_id)
+        .collect::<BTreeSet<_>>();
+    let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
+    for row in &scan.surfaces.rows {
+        if row.feature_id == 0 {
+            continue;
+        }
+        let generator =
+            generators
+                .entry(row.feature_id)
+                .or_insert_with(|| GeometryGeneratorFeature {
+                    feature_id: row.feature_id,
+                    offset: row.offset,
+                    surface_ids: Vec::new(),
+                    curve_ids: Vec::new(),
+                });
+        generator.offset = generator.offset.min(row.offset);
+        generator.surface_ids.push(row.id);
+    }
+    for row in &scan.curves.topology_rows {
+        if row.feature_id == 0 {
+            continue;
+        }
+        let generator =
+            generators
+                .entry(row.feature_id)
+                .or_insert_with(|| GeometryGeneratorFeature {
+                    feature_id: row.feature_id,
+                    offset: row.offset,
+                    surface_ids: Vec::new(),
+                    curve_ids: Vec::new(),
+                });
+        generator.offset = generator.offset.min(row.offset);
+        generator.curve_ids.push(row.id);
+    }
+    let mut generators = generators
+        .into_values()
+        .filter(|generator| {
+            !operation_feature_ids.contains(&generator.feature_id)
+                && !row_feature_ids.contains(&generator.feature_id)
+                && !datum_feature_ids.contains(&generator.feature_id)
+        })
+        .collect::<Vec<_>>();
+    generators.sort_by_key(|generator| generator.offset);
+    generators
+}
+
 fn feature_edge_selection(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -29006,6 +29078,69 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             native_ref: None,
         });
     }
+    let row_feature_ids = scan
+        .features
+        .rows
+        .iter()
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    for generator in geometry_generator_features(scan) {
+        let feature_id = generator.feature_id;
+        let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
+        if ir.model.features.iter().any(|feature| feature.id == id) {
+            continue;
+        }
+        let mut parameters = BTreeMap::new();
+        if !generator.surface_ids.is_empty() {
+            parameters.insert(
+                "generated_surface_ids".to_string(),
+                generator
+                    .surface_ids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
+        if !generator.curve_ids.is_empty() {
+            parameters.insert(
+                "generated_curve_ids".to_string(),
+                generator
+                    .curve_ids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
+        annotate(
+            &mut annotations,
+            &id,
+            "VisibGeom",
+            generator.offset as u64,
+            "geometry_generator_feature",
+            Exactness::ByteExact,
+        );
+        ir.model.features.push(Feature {
+            id,
+            ordinal: ir.model.features.len() as u64,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: feature_output_bodies(scan, &ir, feature_id),
+            definition: IrFeatureDefinition::Native {
+                kind: "Geometry Generator".to_string(),
+                parameters,
+                properties: BTreeMap::new(),
+            },
+            native_ref: None,
+        });
+    }
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.features.operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
@@ -29160,12 +29295,6 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             native_ref,
         });
     }
-    let row_feature_ids = scan
-        .features
-        .rows
-        .iter()
-        .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
     for feature_id in row_feature_ids {
         let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
         if ir.model.features.iter().any(|feature| feature.id == id) {
@@ -30186,6 +30315,17 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .iter()
         .filter(|feature| matches!(feature.definition, IrFeatureDefinition::Native { .. }))
         .count();
+    let geometry_generator_feature_count = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                &feature.definition,
+                IrFeatureDefinition::Native { kind, .. } if kind == "Geometry Generator"
+            )
+        })
+        .count();
     let mut unresolved_datum_plane_feature_count = 0;
     let mut unresolved_datum_coordinate_system_feature_count = 0;
     let mut unresolved_boundary_surface_feature_count = 0;
@@ -30627,6 +30767,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     coverage.insert(
         "transferred_native_feature_count".to_string(),
         native_feature_count,
+    );
+    coverage.insert(
+        "transferred_geometry_generator_feature_count".to_string(),
+        geometry_generator_feature_count,
     );
     coverage.insert(
         "transferred_explicitly_unresolved_feature_count".to_string(),

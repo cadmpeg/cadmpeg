@@ -385,6 +385,42 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
 }
 
 #[test]
+fn geometry_generator_features_join_surface_and_curve_evidence() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 61,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 50,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 200,
+    });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 59,
+            type_byte: 8,
+            feature_id: 50,
+            directions: [1, 0xf6],
+            faces: [61, 62],
+            next_edges: [59, 59],
+            offset: 100,
+        });
+
+    assert_eq!(
+        geometry_generator_features(&scan),
+        [GeometryGeneratorFeature {
+            feature_id: 50,
+            offset: 100,
+            surface_ids: vec![61],
+            curve_ids: vec![59],
+        }]
+    );
+}
+
+#[test]
 fn closed_fallback_profile_selects_revolution_segments() {
     let segment = |external_id| crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,

@@ -1180,6 +1180,12 @@ contain the same point.
 | DEPDB one-sided suffix | `[0, X1, F1, 0]`; `127` terminates `X1`                        |
 | Row terminators        | `e1 e3` or `e1 f5 05 f6 e3`                                    |
 
+The positional row's `feat_id` is the identifier of the modeling feature that
+generated the curve. Surface-row and curve-row generator identifiers belong to
+the same feature namespace. A nonzero generator identifier establishes that
+feature identity even when no operation-state or feature-definition row is
+stored for it.
+
 When the byte following either row terminator begins a valid positional prefix,
 that boundary prefix is authoritative; prefix-like byte sequences inside its
 bounded parameter body do not introduce competing row starts. A segment that
