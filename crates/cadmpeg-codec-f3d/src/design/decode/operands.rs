@@ -1845,8 +1845,7 @@ pub(crate) fn parse_sketch_profile(
     }
     if tail_length == 93 {
         let tail = after_entity_suffix;
-        if header.class_tag != "477"
-            || bytes.get(tail..tail + 8) != Some(&[1, 0, 0, 0, 0, 0, 0, 0])
+        if bytes.get(tail..tail + 8) != Some(&[1, 0, 0, 0, 0, 0, 0, 0])
             || u32_at(bytes, tail + 8) != Some(1)
             || marked_record_reference(bytes, tail + 57) != header.record_index.checked_add(2)
             || bytes.get(tail + 68..tail + 70) != Some(&[0; 2])

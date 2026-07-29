@@ -1467,8 +1467,15 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let profile_group = profile_groups.next();
             let profile_matches_operand = profile_groups.next().is_none()
                 && scope.extrude_profile.as_ref().is_none_or(|profile| {
-                    profile_group
-                        .is_some_and(|group| group.members.first() == Some(&profile.record_index))
+                    profile_group.map_or_else(
+                        || {
+                            usize::try_from(profile.scope_reference_ordinal)
+                                .ok()
+                                .and_then(|ordinal| scope.reference_members.get(ordinal))
+                                == Some(&profile.record_index)
+                        },
+                        |group| group.members.first() == Some(&profile.record_index),
+                    )
                 });
             if !profile_matches_operand {
                 findings.push(Finding {

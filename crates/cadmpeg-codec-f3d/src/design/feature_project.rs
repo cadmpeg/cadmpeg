@@ -1217,6 +1217,41 @@ pub fn bind_sketch_feature_geometry(
             },
         };
     }
+    for feature in features.iter_mut() {
+        let FeatureDefinition::Extrude { profile, .. } = &mut feature.definition else {
+            continue;
+        };
+        let ProfileRef::Sketch(sketch) = profile else {
+            continue;
+        };
+        let planar_id = sketch.clone();
+        if sketches.iter().any(|candidate| candidate.id == planar_id) {
+            continue;
+        }
+        let matching = placements
+            .iter()
+            .filter(|placement| neutral_sketch_id(placement) == planar_id)
+            .filter_map(|placement| {
+                let spatial_id = neutral_spatial_sketch_id(placement);
+                spatial_sketches
+                    .iter()
+                    .find(|candidate| candidate.id == spatial_id)
+            })
+            .collect::<Vec<_>>();
+        let [spatial] = matching.as_slice() else {
+            continue;
+        };
+        if spatial.profiles.is_empty() {
+            continue;
+        }
+        let Ok(profile_count) = u32::try_from(spatial.profiles.len()) else {
+            continue;
+        };
+        *profile = ProfileRef::SpatialSketchProfiles {
+            sketch: spatial.id.clone(),
+            profiles: (0..profile_count).collect(),
+        };
+    }
     let sketch_features = features
         .iter()
         .filter_map(|feature| match &feature.definition {
@@ -1227,16 +1262,30 @@ pub fn bind_sketch_feature_geometry(
             _ => None,
         })
         .collect::<HashMap<_, _>>();
+    let spatial_sketch_features = features
+        .iter()
+        .filter_map(|feature| match &feature.definition {
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch),
+            } => Some((sketch.clone(), feature.id.clone())),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
     for feature in features.iter_mut() {
-        if let FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(sketch),
-            ..
-        } = &feature.definition
-        {
-            if let Some(dependency) = sketch_features.get(sketch) {
-                if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                    feature.dependencies.push(dependency.clone());
-                }
+        let dependency = match &feature.definition {
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Sketch(sketch),
+                ..
+            } => sketch_features.get(sketch),
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::SpatialSketchProfiles { sketch, .. },
+                ..
+            } => spatial_sketch_features.get(sketch),
+            _ => None,
+        };
+        if let Some(dependency) = dependency {
+            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                feature.dependencies.push(dependency.clone());
             }
         }
     }

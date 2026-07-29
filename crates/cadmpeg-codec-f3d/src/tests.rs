@@ -9281,7 +9281,7 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
 }
 
 #[test]
-fn validation_requires_one_exact_extrude_profile_group() {
+fn validation_accepts_grouped_and_direct_extrude_profiles() {
     use crate::records::{
         DesignConstructionOperandGroup, DesignExtrudeExtent, DesignExtrudeOperandRole,
         DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart, DesignParameterScope,
@@ -9429,6 +9429,15 @@ fn validation_requires_one_exact_extrude_profile_group() {
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
         .clear();
+    assert!(!crate::validate::validate_native(&ir)
+        .iter()
+        .any(profile_message));
+
+    f3d_native_mut(&mut ir).design_parameter_scopes[0]
+        .extrude_profile
+        .as_mut()
+        .expect("test Extrude profile")
+        .scope_reference_ordinal = 1;
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(profile_message));

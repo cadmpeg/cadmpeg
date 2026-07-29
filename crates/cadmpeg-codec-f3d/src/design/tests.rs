@@ -5174,7 +5174,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     assert_eq!(profile.paired_byte_offset, paired_at as u64);
 
     bytes.truncate(paired_at - 94);
-    bytes[4..7].copy_from_slice(b"477");
+    bytes[4..7].copy_from_slice(b"319");
     let mut compact_tail = vec![0; 93];
     compact_tail[0] = 1;
     compact_tail[8..12].copy_from_slice(&1u32.to_le_bytes());
@@ -5194,7 +5194,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     bytes.extend_from_slice(b"258");
     bytes.extend_from_slice(&100u32.to_le_bytes());
     let compact_header = DesignRecordHeader {
-        class_tag: "477".into(),
+        class_tag: "319".into(),
         ..header
     };
     let compact = parse_sketch_profile(
@@ -11795,8 +11795,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     sketch_scope.extrude_profile = None;
     let scopes = [sketch_scope, scope.clone()];
     let (mut features, _) = project_parameter_design(
-        &[owned_along],
-        &[owner],
+        std::slice::from_ref(&owned_along),
+        std::slice::from_ref(&owner),
         &scopes,
         &[],
         &[],
@@ -11832,6 +11832,55 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .find(|feature| matches!(feature.definition, FeatureDefinition::Extrude { .. }))
         .expect("neutral Extrude feature");
     assert_eq!(extrude_feature.dependencies, [sketch_feature.id.clone()]);
+
+    let (mut spatial_features, _) = project_parameter_design(
+        std::slice::from_ref(&owned_along),
+        std::slice::from_ref(&owner),
+        &scopes,
+        &[],
+        &[],
+        &[],
+        &[],
+        std::slice::from_ref(&placement),
+    );
+    let spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
+        id: neutral_spatial_sketch_id(&placement),
+        name: None,
+        configuration: None,
+        profiles: vec![cadmpeg_ir::sketches::SpatialSketchProfile {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            boundary: Vec::new(),
+        }],
+        native_ref: Some(placement.id.clone()),
+    };
+    crate::design::feature_project::bind_sketch_feature_geometry(
+        &mut spatial_features,
+        &scopes,
+        std::slice::from_ref(&placement),
+        &[],
+        std::slice::from_ref(&spatial_sketch),
+    );
+    let spatial_feature = spatial_features
+        .iter()
+        .find(|feature| matches!(feature.definition, FeatureDefinition::SpatialSketch { .. }))
+        .expect("neutral spatial Sketch feature");
+    let spatial_extrude = spatial_features
+        .iter()
+        .find(|feature| matches!(feature.definition, FeatureDefinition::Extrude { .. }))
+        .expect("spatial-profile Extrude feature");
+    assert!(matches!(
+        spatial_extrude.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::SpatialSketchProfiles {
+                ref sketch,
+                ref profiles
+            },
+            ..
+        } if sketch == &spatial_sketch.id && profiles == &[0]
+    ));
+    assert_eq!(spatial_extrude.dependencies, [spatial_feature.id.clone()]);
 
     let body_group = DesignConstructionOperandGroup {
         id: "f3d:Design/BulkStream.dat:operand-group#101".into(),
