@@ -2991,7 +2991,7 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
         radial_dimension_definition(
             &entity,
             "Diameter Dimension-2",
-            1.0,
+            1.0_f64,
             diameter_parameter.clone(),
         ),
         Some(SketchConstraintDefinition::Diameter { entity: ref actual, parameter: ref p })
@@ -14717,14 +14717,94 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     scope.kind = "Assemble".into();
     scope.reference_members = vec![50, 51, 52, 53];
-    let alignment =
-        exact_assembly_alignment(&scope, &rectangular_owners).expect("exact assembly scalar lanes");
+    let alignment = exact_assembly_alignment(&bytes, &scope, &rectangular_owners)
+        .expect("exact assembly scalar lanes");
     assert_eq!(alignment.angle, 3.0);
     assert_eq!(alignment.offset, [1.0, 10.0, 0.0]);
     assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
+    assert_eq!(alignment.operand_frames, None);
+
+    let mut assembly_bytes = vec![0_u8; 648];
+    assembly_bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    assembly_bytes[4..7].copy_from_slice(b"273");
+    assembly_bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
+    assembly_bytes[20] = 1;
+    assembly_bytes[25] = 1;
+    for (reference_at, transform_at, reference, translation) in [
+        (28, 40, 70_u32, [1.0_f64, 2.0, 3.0]),
+        (168, 180, 80_u32, [4.0, 5.0, 6.0]),
+    ] {
+        assembly_bytes[reference_at] = 1;
+        assembly_bytes[reference_at + 1..reference_at + 5]
+            .copy_from_slice(&reference.to_le_bytes());
+        for (ordinal, value) in [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assembly_bytes[transform_at + ordinal * 8..transform_at + ordinal * 8 + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    assembly_bytes[637..641].copy_from_slice(&3_u32.to_le_bytes());
+    assembly_bytes[641..644].copy_from_slice(b"259");
+    assembly_bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
+    scope.frame_length = 637;
+    scope.paired_byte_offset = 637;
+    scope.paired_class_tag = "259".into();
+    let frames = exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)
+        .and_then(|alignment| alignment.operand_frames)
+        .expect("exact assembly connector frames");
+    assert_eq!(
+        frames.map(|frame| (
+            frame.reference_record_index,
+            frame.reference_offset,
+            frame.transform_offset,
+            [
+                frame.transform[0][3],
+                frame.transform[1][3],
+                frame.transform[2][3]
+            ]
+        )),
+        [
+            (70, 29, 40, [1.0, 2.0, 3.0]),
+            (80, 169, 180, [4.0, 5.0, 6.0]),
+        ]
+    );
+    assembly_bytes[25] = 0;
+    assert!(
+        exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)
+            .and_then(|alignment| alignment.operand_frames)
+            .is_some()
+    );
+    assembly_bytes[25] = 2;
+    assert!(
+        exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)
+            .is_some_and(|alignment| alignment.operand_frames.is_none())
+    );
+
     scope.reference_members.push(99);
-    assert_eq!(exact_assembly_alignment(&scope, &rectangular_owners), None);
+    assert_eq!(
+        exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners),
+        None
+    );
 }
 
 #[test]
