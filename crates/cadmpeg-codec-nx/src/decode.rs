@@ -389,8 +389,6 @@ fn certified_offset_cache_fit(
         && support.weights == candidate.weights
         && support.u_periodic == candidate.u_periodic
         && support.v_periodic == candidate.v_periodic
-        && !support.u_periodic
-        && !support.v_periodic
         && support
             .weights
             .as_ref()
@@ -9215,6 +9213,25 @@ mod tests {
                 4.0,
                 0.0
             ),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
+        let mut support = quadratic_paraboloid_surface();
+        let mut candidate = support.clone();
+        let SurfaceGeometry::Nurbs(support_surface) = &mut support else {
+            unreachable!();
+        };
+        let SurfaceGeometry::Nurbs(candidate_surface) = &mut candidate else {
+            unreachable!();
+        };
+        support_surface.u_periodic = true;
+        candidate_surface.u_periodic = true;
+
+        assert_eq!(
+            super::certified_offset_cache_fit(&support, &candidate, 0.0, 0.0),
             Some(0.0)
         );
     }
