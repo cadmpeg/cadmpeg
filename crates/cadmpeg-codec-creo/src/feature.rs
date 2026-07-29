@@ -1753,7 +1753,18 @@ pub fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
         hits.sort_by_key(|hit| hit.0);
         for (index, &(header, label_at, label, type_byte)) in hits.iter().enumerate() {
             let value = label_at + label.len() + 1;
-            let end = hits.get(index + 1).map_or(row.body.len(), |hit| hit.0);
+            let end = hits.get(index + 1).map_or_else(
+                || {
+                    let post_choice = b"assoc_type\0";
+                    row.body[value..]
+                        .windows(post_choice.len() + 2)
+                        .position(|window| {
+                            window[0] == psb::token::NAMED_RECORD && window[2..] == post_choice[..]
+                        })
+                        .map_or(row.body.len(), |relative| value + relative)
+                },
+                |hit| hit.0,
+            );
             result.push(FeatureChoice {
                 feature_id: row.feature_id,
                 label: String::from_utf8_lossy(label).into_owned(),
@@ -7579,6 +7590,31 @@ mod tests {
         assert_eq!(fields.len(), 1);
         assert_eq!(fields[0].offset, 101);
         assert_eq!(fields[0].name, "");
+    }
+
+    #[test]
+    fn final_procedural_choice_ends_before_post_choice_fields() {
+        let body = b"\xe0\x01blend_choice\0\x00\
+                     \xe0\x01misc_choice\0\xf8\x05\x00\
+                     \xe0\x07assoc_type\0\xf1"
+            .to_vec();
+        let rows = [FeatureRow {
+            feature_id: 7,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(917),
+            stream_offset: 10,
+            body,
+            body_offset: 100,
+            offset: 98,
+        }];
+
+        let choices = choices(&rows);
+        assert_eq!(choices.len(), 2);
+        assert_eq!(choices[0].label, "blend_choice");
+        assert_eq!(choices[0].payload, [0]);
+        assert_eq!(choices[1].label, "misc_choice");
+        assert_eq!(choices[1].payload, [0xf8, 0x05, 0]);
+        assert!(choice_fields(&choices).is_empty());
     }
 
     #[test]

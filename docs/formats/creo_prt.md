@@ -2154,6 +2154,12 @@ performs the same dispatch. Class 979 with the exact model-reference name
 `PRT_CSYS_DEF` is the default part coordinate-system feature. Its frame remains
 unresolved until a model-space coordinate-system payload is joined.
 
+The labelled feature-row schema stores the ten procedural choice fields in
+order from `blend_choice` through `misc_choice`. Each field ends at the next
+choice header. `misc_choice` ends at the following `assoc_type` named-record
+header; `assoc_type` and later row fields are not part of the misc-choice
+payload.
+
 A class-926 row containing one section definition is the history node for that
 planar sketch. The contained definition identifier selects the neutral sketch
 and the row identifier remains the history feature identifier. The section's
