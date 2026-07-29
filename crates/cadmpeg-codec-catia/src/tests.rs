@@ -9882,14 +9882,14 @@ fn native_namespace_types_dimension_constraint_ranges() {
         decoded.report.coverage["decoded_unset_constraint_range_count"],
         0
     );
-    assert_eq!(
-        decoded.report.coverage["decoded_structurally_owned_constraint_range_count"],
-        1
-    );
-    assert_eq!(
-        decoded.report.coverage["unresolved_constraint_range_owner_count"],
-        0
-    );
+    assert!(!decoded
+        .report
+        .coverage
+        .contains_key("decoded_structurally_owned_constraint_range_count"));
+    assert!(!decoded
+        .report
+        .coverage
+        .contains_key("unresolved_constraint_range_owner_count"));
 
     let mut malformed = native;
     malformed.entity_records[0]
