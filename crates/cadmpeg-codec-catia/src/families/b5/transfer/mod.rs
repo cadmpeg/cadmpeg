@@ -1178,6 +1178,8 @@ mod tests {
                     origin: [0.0, 0.0, 0.0],
                     direction_u: [1.0, 0.0, 0.0],
                     direction_v: [0.0, 1.0, 0.0],
+                    u_range: [-1.0, 1.0],
+                    v_range: [-1.0, 1.0],
                 },
             )]),
             surface_aliases: BTreeMap::new(),
@@ -1699,16 +1701,31 @@ mod tests {
     }
 
     #[test]
-    fn cylinder_pcurve_arc_length_normalizes_to_neutral_angle() {
+    fn cylinder_pcurve_uses_independent_angular_scale_without_origin_rotation() {
         let surface = B5Surface::Cylinder {
             origin: [0.0, 0.0, 0.0],
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
-            radius: 2.0,
+            radius: 6.0,
+            u_range: [1.0, 1.0 + 6.0 * std::f64::consts::PI],
+            v_range: [-1.0, 1.0],
+            angular_scale: 3.0,
+            chart_origin: 1.0,
         };
-        let point = neutral_pcurve_point([std::f64::consts::PI, 3.0], &surface);
-        assert_eq!(point.u, std::f64::consts::FRAC_PI_2);
+        let point = neutral_pcurve_point([3.0 * std::f64::consts::PI, 3.0], &surface);
+        assert_eq!(point.u, std::f64::consts::PI);
         assert_eq!(point.v, 3.0);
+        let lifted = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            6.0,
+            3.0,
+            [3.0 * std::f64::consts::PI, 3.0],
+        );
+        assert!((lifted[0] + 6.0).abs() < 1e-12);
+        assert!(lifted[1].abs() < 1e-12);
+        assert_eq!(lifted[2], 3.0);
     }
 
     #[test]
@@ -1755,6 +1772,8 @@ mod tests {
             origin: [1.0, 2.0, 3.0],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
             panic!("plane lift must be NURBS");
@@ -1767,6 +1786,10 @@ mod tests {
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 2.0,
+            u_range: [0.0, 4.0 * std::f64::consts::PI],
+            v_range: [-1.0, 1.0],
+            angular_scale: 2.0,
+            chart_origin: 0.0,
         };
         assert!(matches!(
             lifted_curve_geometry(&pcurve, &cylinder),
@@ -1799,6 +1822,8 @@ mod tests {
             origin: [0.0, 0.0, 2.0],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
             panic!("expected lifted rational curve");
@@ -1940,6 +1965,10 @@ mod tests {
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 2.0,
+            u_range: [0.0, 4.0 * std::f64::consts::PI],
+            v_range: [-1.0, 1.0],
+            angular_scale: 2.0,
+            chart_origin: 0.0,
         };
         let pcurve = B5Pcurve {
             object_id: 1,
@@ -1958,12 +1987,14 @@ mod tests {
             [1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
             2.0,
+            2.0,
             pcurve.control_points[0],
         );
         let edge_end = cylinder_point(
             [0.0; 3],
             [1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
+            2.0,
             2.0,
             pcurve.control_points[1],
         );
@@ -2006,8 +2037,14 @@ mod tests {
         };
         let turnback_geometry =
             lifted_curve_geometry(&turnback, &cylinder).expect("turnback latitude locus");
-        let turnback_end =
-            cylinder_point([0.0; 3], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, [2.0, 3.0]);
+        let turnback_end = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            2.0,
+            2.0,
+            [2.0, 3.0],
+        );
         assert!(oriented_circle_plan(
             &turnback,
             &cylinder,
@@ -2418,6 +2455,10 @@ mod tests {
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 2.0,
+            u_range: [0.0, 4.0 * std::f64::consts::PI],
+            v_range: [-1.0, 1.0],
+            angular_scale: 2.0,
+            chart_origin: 0.0,
         };
         let end = [2.0 * 2.0_f64.cos(), 2.0 * 2.0_f64.sin(), 7.0];
         let Some(plan) = cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], [2.0, 0.0, 3.0], end)

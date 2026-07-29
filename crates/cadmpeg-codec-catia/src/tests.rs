@@ -4040,22 +4040,34 @@ pub(crate) fn b5_transverse_isoparametric_line_pcurve_payload(
     payload
 }
 
-pub(crate) fn b5_closed_triangle_stream() -> Vec<u8> {
-    let mut bytes = Vec::new();
-    let mut plane = vec![0; 73];
+pub(crate) fn b5_plane_payload(origin: [f64; 3]) -> Vec<u8> {
+    let mut plane = vec![0; 121];
+    plane[0] = 0x80;
     for (offset, value) in [
-        (1usize, 0.0f64),
-        (9, 0.0),
-        (17, 0.0),
+        (1usize, origin[0]),
+        (9, origin[1]),
+        (17, origin[2]),
         (25, 1.0),
         (33, 0.0),
         (41, 0.0),
         (49, 0.0),
         (57, 1.0),
         (65, 0.0),
+        (73, 1.0),
+        (81, 1.0),
+        (89, -10_000_000.0),
+        (97, 10_000_000.0),
+        (105, -10_000_000.0),
+        (113, 10_000_000.0),
     ] {
         plane[offset..offset + 8].copy_from_slice(&le_f64(value));
     }
+    plane
+}
+
+pub(crate) fn b5_closed_triangle_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let plane = b5_plane_payload([0.0; 3]);
     append_b5_record(&mut bytes, 0x27, 100, &plane);
     for (id, start, end) in [
         (200u32, [0.0, 0.0], [1.0, 0.0]),

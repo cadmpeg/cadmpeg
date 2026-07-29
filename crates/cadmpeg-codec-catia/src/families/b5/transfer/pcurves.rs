@@ -218,10 +218,10 @@ pub(super) fn isoparametric_angle_coordinate(
     surface: &B5Surface,
 ) -> Option<(usize, f64)> {
     match surface {
-        B5Surface::Cylinder { radius, .. }
+        B5Surface::Cylinder { angular_scale, .. }
             if constant_coordinate(&pcurve.control_points, 1).is_some() =>
         {
-            Some((0, *radius))
+            Some((0, *angular_scale))
         }
         B5Surface::Cone { angular_scale, .. }
             if constant_coordinate(&pcurve.control_points, 1).is_some() =>
@@ -343,7 +343,9 @@ pub(super) fn isocurve_endpoint_parameters(
 
 pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
     match surface {
-        B5Surface::Cylinder { radius, .. } => Point2::new(point[0] / radius, point[1]),
+        B5Surface::Cylinder { angular_scale, .. } => {
+            Point2::new(point[0] / angular_scale, point[1])
+        }
         B5Surface::Cone {
             half_angle,
             slant_range,
@@ -376,6 +378,7 @@ pub(super) fn lifted_curve_geometry(
             origin,
             direction_u,
             direction_v,
+            ..
         } => Some(CurveGeometry::Nurbs(NurbsCurve {
             degree: pcurve.degree,
             knots,
@@ -397,9 +400,18 @@ pub(super) fn lifted_curve_geometry(
             reference_x,
             axis,
             radius,
+            angular_scale,
+            ..
         } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
             let first = pcurve.control_points.first()?;
-            let line_origin = cylinder_point(*origin, *reference_x, *axis, *radius, *first);
+            let line_origin = cylinder_point(
+                *origin,
+                *reference_x,
+                *axis,
+                *radius,
+                *angular_scale,
+                *first,
+            );
             Some(CurveGeometry::Line {
                 origin: point3(line_origin),
                 direction: vector(*axis),
@@ -493,6 +505,7 @@ pub(super) fn lifted_curve_geometry(
             reference_x,
             axis,
             radius,
+            ..
         } => {
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             Some(CurveGeometry::Circle {
@@ -530,10 +543,11 @@ pub(super) fn cylinder_point(
     reference_x: [f64; 3],
     axis: [f64; 3],
     radius: f64,
+    angular_scale: f64,
     uv: [f64; 2],
 ) -> [f64; 3] {
     let reference_y = cross(axis, reference_x);
-    let angle = uv[0] / radius;
+    let angle = uv[0] / angular_scale;
     add(
         origin,
         add(
@@ -563,6 +577,8 @@ pub(super) fn cylinder_helix(
         reference_x,
         axis,
         radius,
+        angular_scale,
+        ..
     } = surface
     else {
         return None;
@@ -575,7 +591,8 @@ pub(super) fn cylinder_helix(
         return None;
     };
     let mut endpoints = [first, second];
-    let lifted = endpoints.map(|uv| cylinder_point(*origin, *reference_x, *axis, *radius, uv));
+    let lifted = endpoints
+        .map(|uv| cylinder_point(*origin, *reference_x, *axis, *radius, *angular_scale, uv));
     let forward_error = distance(lifted[0], edge_start).max(distance(lifted[1], edge_end));
     let reverse_error = distance(lifted[1], edge_start).max(distance(lifted[0], edge_end));
     if (forward_error - reverse_error).abs() <= 1e-12
@@ -586,7 +603,7 @@ pub(super) fn cylinder_helix(
     if reverse_error < forward_error {
         endpoints.swap(0, 1);
     }
-    let angles = [endpoints[0][0] / radius, endpoints[1][0] / radius];
+    let angles = endpoints.map(|point| point[0] / angular_scale);
     let delta_angle = angles[1] - angles[0];
     let delta_height = endpoints[1][1] - endpoints[0][1];
     if delta_angle.abs() <= 1e-12 || delta_height.abs() <= 1e-12 {

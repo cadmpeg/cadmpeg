@@ -111,6 +111,11 @@ current scores require those matrices and representative fixtures.
   A layout-`0x62` cylinder retains the exact redundant origin of its partial
   circumferential interval and rejects a tail that disagrees with the interval
   midpoint and radius.
+  Object-stream planes retain both active chart intervals and require their
+  complete unit frame and fixed chart scalars. Object-stream cylinders retain
+  independent geometric radius and angular gauge, active circumferential and
+  axial intervals, and the full-turn chart origin; pcurve lifting uses the
+  stored gauge rather than assuming radius-scaled U.
   A consolidated torus retains independent active major- and minor-angle
   intervals and their centered full-turn chart domains; malformed range/domain
   relations reject the complete record.

@@ -27,12 +27,14 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             origin,
             direction_u,
             direction_v,
+            ..
         } => orthonormal_plane(*origin, *direction_u, *direction_v),
         B5Surface::Cylinder {
             origin,
             reference_x,
             axis,
             radius,
+            ..
         } => Some(SurfaceGeometry::Cylinder {
             origin: point(*origin),
             axis: vector(*axis),

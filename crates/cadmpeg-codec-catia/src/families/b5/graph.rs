@@ -142,12 +142,14 @@ pub enum B5Surface {
     Plane {
         /// A point on the plane.
         origin: [f64; 3],
-        /// First in-plane basis direction, as stored (not necessarily
-        /// unit).
+        /// First in-plane unit direction.
         direction_u: [f64; 3],
-        /// Second in-plane basis direction, as stored (not necessarily
-        /// unit).
+        /// Second in-plane unit direction.
         direction_v: [f64; 3],
+        /// Active native U interval.
+        u_range: [f64; 2],
+        /// Active native V interval.
+        v_range: [f64; 2],
     },
     /// `b5 03 28`: a cylinder with a positive radius.
     Cylinder {
@@ -160,6 +162,14 @@ pub enum B5Surface {
         axis: [f64; 3],
         /// Positive cylinder radius.
         radius: f64,
+        /// Active native circumferential interval.
+        u_range: [f64; 2],
+        /// Active native axial interval.
+        v_range: [f64; 2],
+        /// Divisor mapping native U to azimuth.
+        angular_scale: f64,
+        /// Origin of the full-turn native U chart.
+        chart_origin: f64,
     },
     /// `b5 03 29`: a circular cone in its native arc-length/slant chart.
     Cone {
@@ -1798,23 +1808,84 @@ fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
     (left[0] - right[0]).powi(2) + (left[1] - right[1]).powi(2) + (left[2] - right[2]).powi(2)
 }
 
+fn directions_are_unit_and_orthogonal(first: [f64; 3], second: [f64; 3]) -> bool {
+    let squared_length = |direction: [f64; 3]| {
+        direction
+            .iter()
+            .map(|component| component * component)
+            .sum::<f64>()
+    };
+    let dot = first
+        .iter()
+        .zip(second)
+        .map(|(left, right)| left * right)
+        .sum::<f64>();
+    (squared_length(first) - 1.0).abs() <= 1e-12
+        && (squared_length(second) - 1.0).abs() <= 1e-12
+        && dot.abs() <= 1e-12
+}
+
 fn parse_surface(record: &B5Record) -> Option<B5Surface> {
     match record.class {
-        0x27 => Some(B5Surface::Plane {
-            origin: point(&record.payload, 1)?,
-            direction_u: point(&record.payload, 25)?,
-            direction_v: point(&record.payload, 49)?,
-        }),
+        0x27 => {
+            (record.payload.len() == 121 && record.payload.first() == Some(&0x80)).then_some(())?;
+            let direction_u = point(&record.payload, 25)?;
+            let direction_v = point(&record.payload, 49)?;
+            let u_range = [scalar(&record.payload, 89)?, scalar(&record.payload, 97)?];
+            let v_range = [scalar(&record.payload, 105)?, scalar(&record.payload, 113)?];
+            (directions_are_unit_and_orthogonal(direction_u, direction_v)
+                && scalar(&record.payload, 73)? == 1.0
+                && scalar(&record.payload, 81)? == 1.0
+                && u_range[0] < u_range[1]
+                && v_range[0] < v_range[1])
+                .then_some(B5Surface::Plane {
+                    origin: point(&record.payload, 1)?,
+                    direction_u,
+                    direction_v,
+                    u_range,
+                    v_range,
+                })
+        }
         0x28 => {
-            let direction_u = unit(point(&record.payload, 25)?)?;
-            let axis = unit(cross(direction_u, point(&record.payload, 49)?))?;
+            (record.payload.len() == 137 && record.payload.first() == Some(&0x80)).then_some(())?;
+            let stored_u = point(&record.payload, 25)?;
+            let stored_v = point(&record.payload, 49)?;
             let radius = scalar(&record.payload, 73)?;
-            (radius > 0.0).then_some(B5Surface::Cylinder {
-                origin: point(&record.payload, 1)?,
-                reference_x: direction_u,
-                axis,
-                radius,
-            })
+            let u_range = [scalar(&record.payload, 81)?, scalar(&record.payload, 89)?];
+            let v_range = [scalar(&record.payload, 97)?, scalar(&record.payload, 105)?];
+            let angular_factor = scalar(&record.payload, 113)?;
+            let chart_origin = scalar(&record.payload, 129)?;
+            let angular_scale = radius / angular_factor;
+            let chart_domain = [
+                chart_origin,
+                chart_origin + std::f64::consts::TAU * angular_scale,
+            ];
+            let chart_tolerance = 1e-12
+                * u_range
+                    .into_iter()
+                    .chain(chart_domain)
+                    .chain([angular_scale])
+                    .map(f64::abs)
+                    .fold(1.0, f64::max);
+            (radius > 0.0
+                && directions_are_unit_and_orthogonal(stored_u, stored_v)
+                && angular_factor > 0.0
+                && angular_scale.is_finite()
+                && scalar(&record.payload, 121)? == 1.0
+                && u_range[0] < u_range[1]
+                && u_range[0] >= chart_domain[0] - chart_tolerance
+                && u_range[1] <= chart_domain[1] + chart_tolerance
+                && v_range[0] < v_range[1])
+                .then_some(B5Surface::Cylinder {
+                    origin: point(&record.payload, 1)?,
+                    reference_x: unit(stored_u)?,
+                    axis: unit(cross(stored_u, stored_v))?,
+                    radius,
+                    u_range,
+                    v_range,
+                    angular_scale,
+                    chart_origin,
+                })
         }
         0x29 => {
             let apex = point(&record.payload, 1)?;
@@ -2126,11 +2197,13 @@ fn analytic_offset_magnitude_agrees(
                 origin: carrier_origin,
                 direction_u: carrier_u,
                 direction_v: carrier_v,
+                ..
             },
             B5Surface::Plane {
                 origin: source_origin,
                 direction_u: source_u,
                 direction_v: source_v,
+                ..
             },
         ) => {
             let (Some(carrier_normal), Some(source_normal)) = (
@@ -2484,6 +2557,7 @@ fn lift_pcurve_endpoints(
             origin,
             direction_u,
             direction_v,
+            ..
         } => Some(
             endpoints
                 .map(|[u, v]| add(*origin, add(scale(*direction_u, u), scale(*direction_v, v)))),
@@ -2493,10 +2567,12 @@ fn lift_pcurve_endpoints(
             reference_x,
             axis,
             radius,
+            angular_scale,
+            ..
         } => {
             let reference_y = cross(*axis, *reference_x);
             Some(endpoints.map(|[u, v]| {
-                let angle = u / radius;
+                let angle = u / angular_scale;
                 add(
                     *origin,
                     add(
@@ -3500,12 +3576,18 @@ mod tests {
             origin: [0.0; 3],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         let cylinder = B5Surface::Cylinder {
             origin: [0.0; 3],
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 1.0,
+            u_range: [0.0, std::f64::consts::TAU],
+            v_range: [-1.0, 1.0],
+            angular_scale: 1.0,
+            chart_origin: 0.0,
         };
         let mut surfaces = BTreeMap::from([(1, unknown)]);
         let mut conflicts = HashSet::new();
@@ -3557,6 +3639,8 @@ mod tests {
             origin: [0.0; 3],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         let mut surfaces = BTreeMap::from([(30, plane.clone())]);
         let mut conflicts = HashSet::new();
@@ -3613,6 +3697,8 @@ mod tests {
             origin: [0.0; 3],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         surfaces.insert(2, plane.clone());
         assert!(resolve_surface_aliases(
@@ -3960,6 +4046,107 @@ mod tests {
         let mut malformed = record;
         malformed.payload[169..177].copy_from_slice(&0.0f64.to_le_bytes());
         assert_eq!(parse_surface(&malformed), None);
+    }
+
+    #[test]
+    fn plane_surface_requires_complete_unit_chart_frame() {
+        let mut payload = vec![0; 121];
+        payload[0] = 0x80;
+        for (offset, value) in [
+            (1usize, 1.0f64),
+            (9, 2.0),
+            (17, 3.0),
+            (25, 1.0),
+            (57, 1.0),
+            (73, 1.0),
+            (81, 1.0),
+            (89, -4.0),
+            (97, 8.0),
+            (105, -2.0),
+            (113, 6.0),
+        ] {
+            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x27,
+            object_id: 7,
+            payload,
+        };
+        assert_eq!(
+            parse_surface(&record),
+            Some(B5Surface::Plane {
+                origin: [1.0, 2.0, 3.0],
+                direction_u: [1.0, 0.0, 0.0],
+                direction_v: [0.0, 1.0, 0.0],
+                u_range: [-4.0, 8.0],
+                v_range: [-2.0, 6.0],
+            })
+        );
+
+        let mut nonunit = record.clone();
+        nonunit.payload[25..33].copy_from_slice(&2.0f64.to_le_bytes());
+        assert_eq!(parse_surface(&nonunit), None);
+        let mut reversed_range = record;
+        reversed_range.payload[97..105].copy_from_slice(&(-5.0f64).to_le_bytes());
+        assert_eq!(parse_surface(&reversed_range), None);
+    }
+
+    #[test]
+    fn cylinder_surface_retains_independent_angular_gauge_and_domain() {
+        let radius = 6.0;
+        let angular_factor = 2.0;
+        let angular_scale = radius / angular_factor;
+        let chart_origin = 1.0;
+        let mut payload = vec![0; 137];
+        payload[0] = 0x80;
+        for (offset, value) in [
+            (1usize, 1.0f64),
+            (9, 2.0),
+            (17, 3.0),
+            (25, 1.0),
+            (57, 1.0),
+            (73, radius),
+            (81, 2.0),
+            (89, 10.0),
+            (97, -4.0),
+            (105, 5.0),
+            (113, angular_factor),
+            (121, 1.0),
+            (129, chart_origin),
+        ] {
+            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x28,
+            object_id: 7,
+            payload,
+        };
+        assert_eq!(
+            parse_surface(&record),
+            Some(B5Surface::Cylinder {
+                origin: [1.0, 2.0, 3.0],
+                reference_x: [1.0, 0.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                radius,
+                u_range: [2.0, 10.0],
+                v_range: [-4.0, 5.0],
+                angular_scale,
+                chart_origin,
+            })
+        );
+
+        let mut outside_domain = record.clone();
+        outside_domain.payload[89..97].copy_from_slice(
+            &(chart_origin + std::f64::consts::TAU * angular_scale + 1.0).to_le_bytes(),
+        );
+        assert_eq!(parse_surface(&outside_domain), None);
+        let mut wrong_fixed_scalar = record;
+        wrong_fixed_scalar.payload[121..129].copy_from_slice(&2.0f64.to_le_bytes());
+        assert_eq!(parse_surface(&wrong_fixed_scalar), None);
     }
 
     #[test]
@@ -4352,11 +4539,15 @@ mod tests {
             origin: [0.0; 3],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         let source = B5Surface::Plane {
             origin: [0.0, 0.0, 0.5],
             direction_u: [0.0, 1.0, 0.0],
             direction_v: [-1.0, 0.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         let surfaces = BTreeMap::from([(2, carrier), (3, source)]);
         let mut payload = vec![0x82, 0x82, 0x83];
@@ -4479,6 +4670,10 @@ mod tests {
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius,
+            u_range: [0.0, std::f64::consts::TAU * radius],
+            v_range: [-1.0, 1.0],
+            angular_scale: radius,
+            chart_origin: 0.0,
         };
         assert!(analytic_offset_magnitude_agrees(
             &cylinder([0.0, 0.0, 4.0], 3.0),
@@ -4701,6 +4896,8 @@ mod tests {
             origin: [0.0; 3],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         assert!(supported_surface_parameters_match_carrier(
             &scalar_pair.parameters,

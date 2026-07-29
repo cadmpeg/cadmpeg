@@ -6,7 +6,7 @@
 use crate::tests::{
     a8_surface_stream, append_b5_record, b5_analytic_line_pcurve_payload,
     b5_closed_triangle_stream, b5_isoparametric_line_pcurve_payload, b5_linear_pcurve_payload,
-    b5_transverse_isoparametric_line_pcurve_payload, le_f32, le_f64,
+    b5_plane_payload, b5_transverse_isoparametric_line_pcurve_payload, le_f32, le_f64,
 };
 
 #[test]
@@ -82,20 +82,7 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
 fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let mut bytes = a8_surface_stream();
     bytes[7..11].copy_from_slice(&0x1234u32.to_le_bytes());
-    let mut plane = vec![0; 73];
-    for (offset, value) in [
-        (1usize, 10.0f64),
-        (9, 0.0),
-        (17, 0.0),
-        (25, 1.0),
-        (33, 0.0),
-        (41, 0.0),
-        (49, 0.0),
-        (57, 1.0),
-        (65, 0.0),
-    ] {
-        plane[offset..offset + 8].copy_from_slice(&le_f64(value));
-    }
+    let plane = b5_plane_payload([10.0, 0.0, 0.0]);
     append_b5_record(&mut bytes, 0x27, 100, &plane);
     for (id, offset) in [(200u32, 0.0f64), (201, 1.0), (202, 2.0)] {
         let payload = b5_linear_pcurve_payload(100, [offset, 0.0], [offset + 1.0, 0.0]);
