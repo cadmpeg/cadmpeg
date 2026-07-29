@@ -2310,8 +2310,8 @@ fn decode_types_class_946_as_unresolved_surface_merge() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::KnitSurface {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-            merge_entities: None,
-            create_solid: None,
+            merge_entities: Some(true),
+            create_solid: Some(false),
             gap_tolerance: None,
         }
     ));
@@ -2324,13 +2324,18 @@ fn decode_types_class_946_as_unresolved_surface_merge() {
         result.report.coverage["transferred_incomplete_knit_surface_feature_count"],
         1
     );
-    for key in [
-        "transferred_unresolved_knit_surface_faces_feature_count",
-        "transferred_unresolved_knit_surface_merge_feature_count",
-        "transferred_unresolved_knit_surface_solid_feature_count",
-    ] {
-        assert_eq!(result.report.coverage[key], 1, "{key}");
-    }
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_knit_surface_faces_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_knit_surface_merge_feature_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["transferred_unresolved_knit_surface_solid_feature_count"],
+        0
+    );
     assert_eq!(
         result.report.coverage["transferred_incomplete_surface_operation_feature_count"],
         1

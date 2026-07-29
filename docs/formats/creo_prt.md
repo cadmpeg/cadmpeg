@@ -1963,6 +1963,8 @@ surface-of-revolution reductions require `ratio = 1`.
 Root feature-definition class `946` identifies the same surface-merge family
 when the current-state record omits its display name. The class value does not
 encode face selection or merge operands.
+The operation merges coincident boundary entities of its input quilts and
+retains the result in the quilt namespace. It does not create a solid body.
 For a surface-merge feature, each entry in a class-`100` generated-entity table
 names the base input entity. The input is established only when exactly one
 preceding feature-generated class-`200` entry has the same entity identifier.

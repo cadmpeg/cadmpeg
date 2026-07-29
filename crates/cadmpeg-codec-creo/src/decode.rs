@@ -16400,8 +16400,8 @@ fn knit_surface_feature_definition(scan: &ContainerScan, feature_id: u32) -> IrF
     );
     IrFeatureDefinition::KnitSurface {
         faces,
-        merge_entities: None,
-        create_solid: None,
+        merge_entities: Some(true),
+        create_solid: Some(false),
         gap_tolerance: None,
     }
 }
@@ -17449,18 +17449,14 @@ fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition>
         });
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Some(unresolved_surface_merge_feature_definition());
+        return Some(IrFeatureDefinition::KnitSurface {
+            faces: FaceSelection::Unresolved,
+            merge_entities: Some(true),
+            create_solid: Some(false),
+            gap_tolerance: None,
+        });
     }
     None
-}
-
-fn unresolved_surface_merge_feature_definition() -> IrFeatureDefinition {
-    IrFeatureDefinition::KnitSurface {
-        faces: FaceSelection::Unresolved,
-        merge_entities: None,
-        create_solid: None,
-        gap_tolerance: None,
-    }
 }
 
 fn retain_native_feature_parameters(

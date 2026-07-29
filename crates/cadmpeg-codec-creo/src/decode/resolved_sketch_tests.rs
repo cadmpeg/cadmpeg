@@ -1792,8 +1792,8 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
         reference_named_feature_definition("Merge 2"),
         Some(IrFeatureDefinition::KnitSurface {
             faces: FaceSelection::Unresolved,
-            merge_entities: None,
-            create_solid: None,
+            merge_entities: Some(true),
+            create_solid: Some(false),
             gap_tolerance: None,
         })
     ));
