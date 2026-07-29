@@ -664,8 +664,15 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 #[must_use]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let points = object_stream_vertices(data);
-    let standalone = b2_cylinders(data);
     let embedded = b2_embedded_cylinders(data);
+    let embedded_offsets = embedded
+        .iter()
+        .map(|value| value.pos)
+        .collect::<std::collections::HashSet<_>>();
+    let standalone = b2_cylinders(data)
+        .into_iter()
+        .filter(|cylinder| !embedded_offsets.contains(&cylinder.pos))
+        .collect::<Vec<_>>();
     let circles = b2_circles(data);
     let cones = b2_cones(data);
     let surfaces = a5_surfaces(data);

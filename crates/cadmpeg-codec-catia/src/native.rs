@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 192;
+pub const CATIA_NATIVE_VERSION: u32 = 193;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -31,6 +31,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_cone_faces",
     "consolidated_cones",
     "consolidated_cylinders",
+    "consolidated_embedded_cylinders",
     "consolidated_edge_nodes",
     "consolidated_edge_runs",
     "consolidated_groups",
@@ -258,6 +259,33 @@ pub struct CatiaConsolidatedCylinder {
     pub v_range: [f64; 2],
     /// Layout-specific frame data.
     pub payload: CatiaConsolidatedCylinderPayload,
+}
+
+/// One layout-`0x5a` cylinder embedded in a type-3 consolidated group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedEmbeddedCylinder {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the embedded frame, including its varying pre-byte.
+    pub byte_offset: u64,
+    /// Owning type-3 consolidated group.
+    pub group: String,
+    /// Compact embedded object identity.
+    pub object_id: u32,
+    /// Cylinder-axis origin.
+    pub origin: [f64; 3],
+    /// Cylinder radius.
+    pub radius: f64,
+    /// Full-turn arc-length circumferential interval.
+    pub u_range: [f64; 2],
+    /// Axial interval.
+    pub v_range: [f64; 2],
+    /// Token selecting the serialized frame-vector role.
+    pub frame_token: u8,
+    /// Cylinder-axis unit direction.
+    pub axis: [f64; 3],
+    /// Unit direction from which the circumferential parameter is measured.
+    pub reference_direction: [f64; 3],
 }
 
 /// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
@@ -2937,6 +2965,9 @@ pub struct CatiaNative {
     /// Exact consolidated cylinder charts.
     #[serde(default)]
     pub consolidated_cylinders: Vec<CatiaConsolidatedCylinder>,
+    /// Exact cylinder charts embedded in type-3 consolidated groups.
+    #[serde(default)]
+    pub consolidated_embedded_cylinders: Vec<CatiaConsolidatedEmbeddedCylinder>,
     /// Structurally complete consolidated edge nodes.
     #[serde(default)]
     pub consolidated_edge_nodes: Vec<CatiaConsolidatedEdgeNode>,
@@ -3034,6 +3065,7 @@ impl Default for CatiaNative {
             consolidated_cone_faces: Vec::new(),
             consolidated_cones: Vec::new(),
             consolidated_cylinders: Vec::new(),
+            consolidated_embedded_cylinders: Vec::new(),
             consolidated_edge_nodes: Vec::new(),
             consolidated_edge_runs: Vec::new(),
             consolidated_groups: Vec::new(),
@@ -3541,8 +3573,13 @@ fn consolidated_cones(bytes: &[u8]) -> Vec<CatiaConsolidatedCone> {
 }
 
 fn consolidated_cylinders(bytes: &[u8]) -> Vec<CatiaConsolidatedCylinder> {
+    let embedded_offsets = crate::families::b2::records::b2_embedded_cylinders(bytes)
+        .into_iter()
+        .map(|embedded| embedded.pos)
+        .collect::<HashSet<_>>();
     crate::families::b2::records::b2_cylinders(bytes)
         .into_iter()
+        .filter(|cylinder| !embedded_offsets.contains(&cylinder.pos))
         .enumerate()
         .map(|(index, cylinder)| {
             let payload = if cylinder.layout == 0x62 {
@@ -3587,6 +3624,46 @@ fn consolidated_cylinders(bytes: &[u8]) -> Vec<CatiaConsolidatedCylinder> {
                 u_range: cylinder.u_range,
                 v_range: cylinder.v_range,
                 payload,
+            }
+        })
+        .collect()
+}
+
+fn consolidated_embedded_cylinders(
+    bytes: &[u8],
+    groups: &[CatiaConsolidatedGroup],
+) -> Vec<CatiaConsolidatedEmbeddedCylinder> {
+    let group_ids = groups
+        .iter()
+        .map(|group| (group.byte_offset, group.id.as_str()))
+        .collect::<HashMap<_, _>>();
+    crate::families::b2::records::b2_embedded_cylinders(bytes)
+        .into_iter()
+        .enumerate()
+        .map(|(index, embedded)| {
+            let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                axis,
+                ref_direction,
+                ..
+            } = embedded.cylinder.geometry
+            else {
+                unreachable!("embedded B2 cylinder parser produced a non-cylinder carrier")
+            };
+            CatiaConsolidatedEmbeddedCylinder {
+                id: format!("catia:consolidated:embedded-cylinder#{index}"),
+                byte_offset: embedded.pos as u64,
+                group: group_ids
+                    .get(&(embedded.wrapper_pos as u64))
+                    .expect("embedded cylinder owner came from the same group parse")
+                    .to_string(),
+                object_id: embedded.object_id,
+                origin: embedded.cylinder.origin,
+                radius: embedded.cylinder.radius,
+                u_range: embedded.cylinder.u_range,
+                v_range: embedded.cylinder.v_range,
+                frame_token: embedded.cylinder.frame_token,
+                axis: [axis.x, axis.y, axis.z],
+                reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
             }
         })
         .collect()
@@ -4596,6 +4673,59 @@ fn validate_consolidated_cylinders(
 }
 
 #[cfg(test)]
+fn validate_consolidated_embedded_cylinders(
+    cylinders: &[CatiaConsolidatedEmbeddedCylinder],
+    groups: &[CatiaConsolidatedGroup],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let groups = groups
+        .iter()
+        .map(|group| (group.id.as_str(), group))
+        .collect::<HashMap<_, _>>();
+    for (index, cylinder) in cylinders.iter().enumerate() {
+        let squared_length =
+            |direction: [f64; 3]| direction.iter().map(|value| value * value).sum::<f64>();
+        let dot = |first: [f64; 3], second: [f64; 3]| {
+            first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
+        };
+        let group_valid = groups
+            .get(cylinder.group.as_str())
+            .is_some_and(|group| group.group_type == 3 && group.byte_offset < cylinder.byte_offset);
+        if cylinder.id != format!("catia:consolidated:embedded-cylinder#{index}")
+            || !group_valid
+            || !cylinder
+                .origin
+                .iter()
+                .chain(&cylinder.u_range)
+                .chain(&cylinder.v_range)
+                .chain(&cylinder.axis)
+                .chain(&cylinder.reference_direction)
+                .chain(&[cylinder.radius])
+                .all(|value| value.is_finite())
+            || cylinder.radius <= 0.0
+            || cylinder.u_range[0] >= cylinder.u_range[1]
+            || cylinder.v_range[0] >= cylinder.v_range[1]
+            || !matches!(cylinder.frame_token, 0x19 | 0x1c)
+            || cylinder.axis[2] != 0.0
+            || cylinder.reference_direction != [-cylinder.axis[1], cylinder.axis[0], 0.0]
+            || (squared_length(cylinder.axis) - 1.0).abs() > 1e-9
+            || (squared_length(cylinder.reference_direction) - 1.0).abs() > 1e-9
+            || dot(cylinder.axis, cylinder.reference_direction).abs() > 1e-9
+            || !crate::families::b2::records::circle_range_is_full_turn(
+                cylinder.radius,
+                cylinder.u_range,
+            )
+            || index > 0 && cylinders[index - 1].byte_offset >= cylinder.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated embedded cylinder `{}` is structurally invalid",
+                cylinder.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 fn validate_consolidated_parameter_points(
     points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -5592,10 +5722,19 @@ fn validate_consolidated_owner_packets(
 }
 
 #[cfg(test)]
+struct ConsolidatedSupportArenas<'a> {
+    circles: &'a [CatiaConsolidatedCircle],
+    cones: &'a [CatiaConsolidatedCone],
+    cylinders: &'a [CatiaConsolidatedCylinder],
+    embedded_cylinders: &'a [CatiaConsolidatedEmbeddedCylinder],
+    groups: &'a [CatiaConsolidatedGroup],
+}
+
+#[cfg(test)]
 fn validate_consolidated_edge_runs(
     runs: &[CatiaConsolidatedEdgeRun],
     pcurves: &[CatiaConsolidatedPcurve],
-    circles: &[CatiaConsolidatedCircle],
+    supports: ConsolidatedSupportArenas<'_>,
     nodes: &[CatiaConsolidatedEdgeNode],
     vertex_identities: &[CatiaConsolidatedVertexIdentity],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -5607,10 +5746,40 @@ fn validate_consolidated_edge_runs(
         .iter()
         .map(|node| (node.id.as_str(), node))
         .collect::<HashMap<_, _>>();
-    let circles = circles
+    let circles = supports
+        .circles
         .iter()
         .map(|circle| (circle.id.as_str(), circle))
         .collect::<HashMap<_, _>>();
+    let circle_offsets = circles
+        .values()
+        .map(|circle| circle.byte_offset)
+        .collect::<HashSet<_>>();
+    let cone_offsets = supports
+        .cones
+        .iter()
+        .map(|cone| cone.byte_offset)
+        .collect::<HashSet<_>>();
+    let cylinder_offsets = supports
+        .cylinders
+        .iter()
+        .map(|cylinder| cylinder.byte_offset)
+        .collect::<HashSet<_>>();
+    let group_offsets = supports
+        .groups
+        .iter()
+        .map(|group| (group.id.as_str(), group.byte_offset))
+        .collect::<HashMap<_, _>>();
+    let embedded_cylinder_offsets = supports
+        .embedded_cylinders
+        .iter()
+        .filter_map(|cylinder| {
+            Some((
+                cylinder.byte_offset,
+                *group_offsets.get(cylinder.group.as_str())?,
+            ))
+        })
+        .collect::<HashSet<_>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
         let token_limit = 1u32.checked_shl(u32::from(node.width) * 8);
@@ -5733,13 +5902,26 @@ fn validate_consolidated_edge_runs(
                             .map(|(first, last)| [first, last])
             },
         );
-        let bindings_valid = run.support_bindings.iter().flatten().all(|binding| {
-            !matches!(
-                binding,
-                CatiaConsolidatedSupportBinding::NurbsCarrier { offset, .. }
-                    if !offset.is_finite()
-            )
-        });
+        let bindings_valid = run
+            .support_bindings
+            .iter()
+            .flatten()
+            .all(|binding| match binding {
+                CatiaConsolidatedSupportBinding::Cylinder { byte_offset } => {
+                    cylinder_offsets.contains(byte_offset)
+                }
+                CatiaConsolidatedSupportBinding::EmbeddedCylinder {
+                    byte_offset,
+                    wrapper_byte_offset,
+                } => embedded_cylinder_offsets.contains(&(*byte_offset, *wrapper_byte_offset)),
+                CatiaConsolidatedSupportBinding::Circle { byte_offset } => {
+                    circle_offsets.contains(byte_offset)
+                }
+                CatiaConsolidatedSupportBinding::Cone { byte_offset } => {
+                    cone_offsets.contains(byte_offset)
+                }
+                CatiaConsolidatedSupportBinding::NurbsCarrier { offset, .. } => offset.is_finite(),
+            });
         if run.id != expected_id
             || pcurve_offsets[0] != Some(run.byte_offset)
             || pcurve_offsets[1].is_none()
@@ -6327,6 +6509,8 @@ impl CatiaNative {
         let consolidated_cones = consolidated_cones(bytes);
         let consolidated_cylinders = consolidated_cylinders(bytes);
         let consolidated_groups = consolidated_groups(bytes);
+        let consolidated_embedded_cylinders =
+            consolidated_embedded_cylinders(bytes, &consolidated_groups);
         let consolidated_line_profiles = consolidated_line_profiles(bytes);
         let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
@@ -6372,6 +6556,7 @@ impl CatiaNative {
             consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,
+            consolidated_embedded_cylinders,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
@@ -6809,6 +6994,13 @@ impl CatiaNative {
             namespace.arena_as("consolidated_groups")?;
         consolidated_groups.sort_by_key(|group| group.byte_offset);
         validate_consolidated_groups(&consolidated_groups)?;
+        let mut consolidated_embedded_cylinders: Vec<CatiaConsolidatedEmbeddedCylinder> =
+            namespace.arena_as("consolidated_embedded_cylinders")?;
+        consolidated_embedded_cylinders.sort_by_key(|cylinder| cylinder.byte_offset);
+        validate_consolidated_embedded_cylinders(
+            &consolidated_embedded_cylinders,
+            &consolidated_groups,
+        )?;
         let mut consolidated_line_profiles: Vec<CatiaConsolidatedLineProfile> =
             namespace.arena_as("consolidated_line_profiles")?;
         consolidated_line_profiles.sort_by_key(|line| line.byte_offset);
@@ -6896,7 +7088,13 @@ impl CatiaNative {
         validate_consolidated_edge_runs(
             &consolidated_edge_runs,
             &consolidated_pcurves,
-            &consolidated_circles,
+            ConsolidatedSupportArenas {
+                circles: &consolidated_circles,
+                cones: &consolidated_cones,
+                cylinders: &consolidated_cylinders,
+                embedded_cylinders: &consolidated_embedded_cylinders,
+                groups: &consolidated_groups,
+            },
             &consolidated_edge_nodes,
             &consolidated_vertex_identities,
         )?;
@@ -6916,6 +7114,7 @@ impl CatiaNative {
             consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,
+            consolidated_embedded_cylinders,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
@@ -7005,6 +7204,10 @@ impl CatiaNative {
         namespace.set_arena("consolidated_cone_faces", &self.consolidated_cone_faces)?;
         namespace.set_arena("consolidated_cones", &self.consolidated_cones)?;
         namespace.set_arena("consolidated_cylinders", &self.consolidated_cylinders)?;
+        namespace.set_arena(
+            "consolidated_embedded_cylinders",
+            &self.consolidated_embedded_cylinders,
+        )?;
         namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
         namespace.set_arena("consolidated_groups", &self.consolidated_groups)?;
@@ -7090,6 +7293,7 @@ impl CatiaNative {
             consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,
+            consolidated_embedded_cylinders,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,
@@ -7142,6 +7346,10 @@ impl CatiaNative {
         namespace.set_arena("consolidated_cone_faces", &consolidated_cone_faces)?;
         namespace.set_arena("consolidated_cones", &consolidated_cones)?;
         namespace.set_arena("consolidated_cylinders", &consolidated_cylinders)?;
+        namespace.set_arena(
+            "consolidated_embedded_cylinders",
+            &consolidated_embedded_cylinders,
+        )?;
         namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
         namespace.set_arena("consolidated_groups", &consolidated_groups)?;

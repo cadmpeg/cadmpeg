@@ -5926,6 +5926,82 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
         crate::native::CatiaNative::load(&namespace).expect("load resolved CATIA edge run"),
         native
     );
+
+    namespace
+        .set_arena(
+            "consolidated_cylinders",
+            &Vec::<crate::native::CatiaConsolidatedCylinder>::new(),
+        )
+        .expect("remove retained cylinders");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
+    let native = crate::native::CatiaNative::decode(&b2_embedded_cylinder_stream());
+    assert!(native.consolidated_cylinders.is_empty());
+    let [group] = native.consolidated_groups.as_slice() else {
+        panic!("one consolidated group");
+    };
+    let [cylinder] = native.consolidated_embedded_cylinders.as_slice() else {
+        panic!("one embedded consolidated cylinder");
+    };
+    assert_eq!(group.group_type, 3);
+    assert_eq!(cylinder.group, group.id);
+    assert_eq!(cylinder.object_id, 0x5678);
+    assert_eq!(cylinder.u_range, [0.0, 4.0 * std::f64::consts::PI]);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store embedded CATIA cylinder");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load embedded CATIA cylinder"),
+        native
+    );
+
+    namespace
+        .set_arena(
+            "consolidated_groups",
+            &Vec::<crate::native::CatiaConsolidatedGroup>::new(),
+        )
+        .expect("remove owning consolidated group");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
+fn native_namespace_binds_edges_to_retained_embedded_cylinders() {
+    use crate::native::CatiaConsolidatedSupportBinding;
+
+    let mut bytes = b2_embedded_cylinder_stream();
+    for point in [
+        [1.0f32, 4.0, 3.0],
+        [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&a5_native_edge_run_stream(6, 139, 142));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated edge run");
+    };
+    assert!(run.support_bindings.iter().all(|binding| matches!(
+        binding,
+        Some(CatiaConsolidatedSupportBinding::EmbeddedCylinder { .. })
+    )));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store embedded-cylinder edge binding");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load embedded-cylinder edge binding"),
+        native
+    );
 }
 
 #[test]
