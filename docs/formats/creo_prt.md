@@ -1959,6 +1959,9 @@ surface-of-revolution reductions require `ratio = 1`.
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
 `Surface`. Reference-backed `Thicken <decimal-ordinal>` and
 `Fill <decimal-ordinal>` names identify thicken and filled-surface operations.
+A class-`942` `Surface` operation with an `Extrude <decimal-ordinal>` reference
+identifies a sheet extrusion. The operation creates an independent quilt
+rather than performing a solid boolean.
 The fill operation creates a planar quilt from one closed sketch boundary. It
 has no adjacent support faces, imposes positional continuity at the boundary,
 and does not merge the result into an existing quilt.

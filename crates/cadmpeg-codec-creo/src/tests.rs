@@ -2207,6 +2207,8 @@ fn decode_uses_stored_family_when_row_schema_is_not_registered() {
 
 #[test]
 fn decode_uses_reference_name_family_when_operation_name_is_generic() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = vec![
         4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0xae, 0xe1,
     ];
@@ -2214,6 +2216,7 @@ fn decode_uses_reference_name_family_when_operation_name_is_generic() {
     let data = build_prt(
         "c",
         &[
+            ("VisibGeom", geometry),
             ("AllFeatur", allfeatur),
             ("MdlRefInfo", reference_name),
             ("MdlStatus", b"Surface id 4\0".to_vec()),
@@ -2232,10 +2235,19 @@ fn decode_uses_reference_name_family_when_operation_name_is_generic() {
         .expect("surface feature");
 
     assert_eq!(feature.name.as_deref(), Some("Surface id 4"));
-    assert!(matches!(
+    assert!(
+        matches!(
+            feature.definition,
+            cadmpeg_ir::features::FeatureDefinition::Extrude {
+                op: cadmpeg_ir::features::BooleanOp::NewBody,
+                solid: Some(false),
+                ..
+            }
+        ),
+        "{:#?}\n{:#?}",
         feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude { .. }
-    ));
+        feature.source_properties
+    );
 }
 
 #[test]

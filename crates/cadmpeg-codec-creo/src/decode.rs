@@ -14803,6 +14803,11 @@ fn sweep_output_kind(
             &scan.surfaces.rows,
         )
         .map(|_| BodyKind::Sheet)
+        .or_else(|| {
+            current_feature_operation(&scan.features.operations, feature_id)
+                .filter(|operation| operation.kind == "Surface")
+                .map(|_| BodyKind::Sheet)
+        })
     })
 }
 
