@@ -269,7 +269,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(165);
+    namespace.version = namespace.version.max(166);
     for row in CATALOGUE {
         (row.emit)(model, row, namespace)?;
     }
@@ -1035,7 +1035,7 @@ fn attach_feature_operations(
             );
         }
         let deletes_body = label.value == "DELETE";
-        let outputs = if deletes_body {
+        let mut outputs = if deletes_body {
             Vec::new()
         } else {
             body_references
@@ -1703,9 +1703,15 @@ fn attach_feature_operations(
         let block_dimension_values = block_dimensions_by_operation
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
-        let block_placement = (label.value == "BLOCK")
+        let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
+        if outputs.is_empty() {
+            if let Some((body, _)) = &block_projection {
+                outputs.push(body.clone());
+            }
+        }
+        let block_placement = block_projection.map(|(_, placement)| placement);
         let sew_projection = (label.value == "SEW")
             .then(|| {
                 sew_body_feature_definition(
@@ -2895,7 +2901,11 @@ fn simple_hole_native_properties(
     properties
 }
 
-fn block_placement(ir: &CadIr, dimensions: [f64; 3], outputs: &[BodyId]) -> Option<Transform> {
+fn block_placement(
+    ir: &CadIr,
+    dimensions: [f64; 3],
+    outputs: &[BodyId],
+) -> Option<(BodyId, Transform)> {
     struct PlaneBand {
         normal: Vector3,
         offsets: Vec<f64>,
@@ -3059,14 +3069,17 @@ fn block_placement(ir: &CadIr, dimensions: [f64; 3], outputs: &[BodyId]) -> Opti
             .sum(),
     );
     let [x_axis, y_axis, z_axis] = ordered.map(|band| band.normal);
-    Some(Transform {
-        rows: [
-            [x_axis.x, y_axis.x, z_axis.x, origin.x],
-            [x_axis.y, y_axis.y, z_axis.y, origin.y],
-            [x_axis.z, y_axis.z, z_axis.z, origin.z],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    })
+    Some((
+        body.clone(),
+        Transform {
+            rows: [
+                [x_axis.x, y_axis.x, z_axis.x, origin.x],
+                [x_axis.y, y_axis.y, z_axis.y, origin.y],
+                [x_axis.z, y_axis.z, z_axis.z, origin.z],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -5332,21 +5345,28 @@ mod tests {
             }
         }
         let output = ir.model.bodies[0].id.clone();
+        let placement = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
+            super::block_placement(ir, dimensions, outputs).map(|(_, transform)| transform)
+        };
 
         assert_eq!(
-            super::block_placement(&ir, dimensions, std::slice::from_ref(&output)),
+            placement(&ir, dimensions, std::slice::from_ref(&output)),
             Some(cadmpeg_ir::transform::Transform::identity())
         );
         assert_eq!(
             super::block_placement(&ir, dimensions, &[]),
+            Some((output.clone(), cadmpeg_ir::transform::Transform::identity()))
+        );
+        assert_eq!(
+            placement(&ir, dimensions, &[]),
             Some(cadmpeg_ir::transform::Transform::identity())
         );
         assert_eq!(
-            super::block_placement(&ir, dimensions, &[output.clone(), output.clone()],),
+            placement(&ir, dimensions, &[output.clone(), output.clone()],),
             None
         );
         assert_eq!(
-            super::block_placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
+            placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
             None
         );
 
@@ -5364,7 +5384,7 @@ mod tests {
             .expect("positive y plane");
         high_y.y = 10.0;
         assert_eq!(
-            super::block_placement(&repeated, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
+            placement(&repeated, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
             None
         );
 
@@ -5396,7 +5416,7 @@ mod tests {
             .push(intermediate_face.id.clone());
         stepped.model.faces.push(intermediate_face);
         assert_eq!(
-            super::block_placement(&stepped, dimensions, std::slice::from_ref(&output)),
+            placement(&stepped, dimensions, std::slice::from_ref(&output)),
             None
         );
 
@@ -5408,7 +5428,7 @@ mod tests {
             radius: 1.0,
         };
         assert_eq!(
-            super::block_placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
+            placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
             None
         );
 
@@ -5419,10 +5439,7 @@ mod tests {
             .faces
             .iter()
             .any(|face| face.surface == removed.id));
-        assert_eq!(
-            super::block_placement(&missing_surface, dimensions, &[]),
-            None
-        );
+        assert_eq!(placement(&missing_surface, dimensions, &[]), None);
 
         let mut curved_feature = ir.clone();
         let mut curved_surface = curved_feature.model.surfaces[0].clone();
@@ -5443,14 +5460,14 @@ mod tests {
             .push(curved_face.id.clone());
         curved_feature.model.faces.push(curved_face);
         assert_eq!(
-            super::block_placement(&curved_feature, dimensions, &[]),
+            placement(&curved_feature, dimensions, &[]),
             Some(cadmpeg_ir::transform::Transform::identity())
         );
 
         let mut sheet = ir.clone();
         sheet.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
         assert_eq!(
-            super::block_placement(&sheet, dimensions, std::slice::from_ref(&output)),
+            placement(&sheet, dimensions, std::slice::from_ref(&output)),
             None
         );
 
@@ -5463,7 +5480,7 @@ mod tests {
             .push(second_region.id.clone());
         disconnected.model.regions.push(second_region);
         assert_eq!(
-            super::block_placement(&disconnected, dimensions, std::slice::from_ref(&output)),
+            placement(&disconnected, dimensions, std::slice::from_ref(&output),),
             None
         );
     }
