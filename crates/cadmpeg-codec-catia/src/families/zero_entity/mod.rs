@@ -2,3 +2,4 @@
 
 pub mod decode;
 pub mod records;
+pub(crate) mod topology;

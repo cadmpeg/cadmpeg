@@ -120,11 +120,15 @@ current scores require those matrices and representative fixtures.
   face-local binding is atomic and retained as support-record ordinals. A loop
   retains its complete sense-oriented model endpoint tape when every support
   lifts directly or exactly one missing pair is bounded by lifted neighbors
-  and every cyclic join closes within the format tolerance. Every
+  and every cyclic join closes within the format tolerance. Coincident
+  occurrence pairs establish face-incidence components only when each
+  occurrence has one geometric match. Coincident groups partition by those
+  components, and every two-occurrence partition retains one physical-edge
+  candidate. Every
   in-range odd-lane typed reference retains its selected global record identity
   atomically for the loop.
-  Loop-to-oriented-use, oriented-use-to-incidence, and physical endpoint
-  binding remain unresolved.
+  Loop-to-oriented-use, oriented-use-to-incidence, physical endpoint identity,
+  and body/shell binding remain unresolved.
 
 ## Evidence required to raise a score
 

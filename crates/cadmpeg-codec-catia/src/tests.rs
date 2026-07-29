@@ -4713,6 +4713,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     let support_slot = 0x6a + 12 + 13;
     stream[support_slot..support_slot + 4].copy_from_slice(&1u32.to_le_bytes());
     let native = crate::native::CatiaNative::decode(&stream);
+    assert!(native.zero_entity_physical_edge_candidates.is_empty());
     let [run] = native.zero_entity_support_runs.as_slice() else {
         panic!("one zero-entity support run")
     };
@@ -4828,6 +4829,30 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .store(&mut invalid_oriented_endpoint_namespace)
         .expect("store invalid CATIA zero-entity oriented endpoints");
     assert!(crate::native::CatiaNative::load(&invalid_oriented_endpoint_namespace).is_err());
+
+    let mut invalid_physical_edge = native.clone();
+    invalid_physical_edge
+        .zero_entity_physical_edge_candidates
+        .push(crate::native::CatiaZeroEntityPhysicalEdgeCandidate {
+            id: "catia:zero-entity:physical-edge-candidate#0".to_string(),
+            face_records: [
+                "catia:zero-entity:record#3".to_string(),
+                "catia:zero-entity:record#3".to_string(),
+            ],
+            support_records: [
+                "catia:zero-entity:record#2".to_string(),
+                "catia:zero-entity:record#2".to_string(),
+            ],
+            model_endpoints: [
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            ],
+        });
+    let mut invalid_physical_edge_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_physical_edge
+        .store(&mut invalid_physical_edge_namespace)
+        .expect("store invalid CATIA zero-entity physical edge");
+    assert!(crate::native::CatiaNative::load(&invalid_physical_edge_namespace).is_err());
 
     let mut invalid_model_endpoint = native.clone();
     invalid_model_endpoint.zero_entity_support_runs[0].supports[0]
