@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 194;
+pub const CATIA_NATIVE_VERSION: u32 = 195;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1233,8 +1233,6 @@ pub struct CatiaDefinitionChainValue {
     pub role: CatiaEntitySchemaValue,
     /// Stored selected value.
     pub value: CatiaEntitySuffixSchemaValue,
-    /// Exact suffix trailer following the selected value.
-    pub trailer: CatiaEntitySuffixTrailer,
 }
 
 /// One complete formula relation stored by an entity and its object payload.
@@ -2232,7 +2230,6 @@ fn definition_chain_value(
         selector: selector_value,
         role,
         value: suffix_schema_selection.value.clone(),
-        trailer: suffix_value.trailer,
     })
 }
 

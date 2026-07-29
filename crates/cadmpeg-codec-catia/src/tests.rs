@@ -11520,7 +11520,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
 fn native_namespace_binds_two_definition_value_chains() {
     use crate::native::{
         CatiaDefinitionChainValue, CatiaEntityEvaluation, CatiaEntitySchemaValue,
-        CatiaEntitySuffixSchemaValue, CatiaEntitySuffixTrailer,
+        CatiaEntitySuffixSchemaValue,
     };
 
     let bits = 12.5_f64.to_bits();
@@ -11558,11 +11558,11 @@ fn native_namespace_binds_two_definition_value_chains() {
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_structurally_owned_definition_chain_count"],
+        decoded.report.coverage["decoded_structurally_owned_definition_chain_evaluation_count"],
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_definition_chain_owner_count"],
+        decoded.report.coverage["unresolved_definition_chain_evaluation_owner_count"],
         0
     );
     let mut native =
@@ -11582,7 +11582,6 @@ fn native_namespace_binds_two_definition_value_chains() {
             value: CatiaEntitySuffixSchemaValue::Evaluation {
                 evaluation: CatiaEntityEvaluation::Scalar { bits },
             },
-            trailer: CatiaEntitySuffixTrailer::Token8149,
         })
     );
 
@@ -11636,12 +11635,24 @@ fn native_namespace_binds_two_definition_value_chains() {
         atom_native.entity_records[0]
             .definition_chain_value
             .as_ref()
-            .map(|value| (&value.value, &value.trailer)),
-        Some((
-            &CatiaEntitySuffixSchemaValue::Atom { value: 7 },
-            &CatiaEntitySuffixTrailer::Empty,
-        ))
+            .map(|value| &value.value),
+        Some(&CatiaEntitySuffixSchemaValue::Atom { value: 7 })
     );
+
+    for (payload, coverage) in [
+        (0xe8, "decoded_definition_chain_control_count"),
+        (0x37, "decoded_definition_chain_separator_count"),
+    ] {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_definition_chain_value(&[
+                    0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, payload,
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect("decode definition-chain state");
+        assert_eq!(decoded.report.coverage[coverage], 1);
+    }
 
     let nested = CatiaCodec
         .decode(
