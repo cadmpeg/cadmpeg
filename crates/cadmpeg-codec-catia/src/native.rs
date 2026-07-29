@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 201;
+pub const CATIA_NATIVE_VERSION: u32 = 202;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -28,7 +28,7 @@ const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
 #[cfg(test)]
 const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
 #[cfg(test)]
-const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 201;
+const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 202;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1597,6 +1597,9 @@ pub struct CatiaDesignReferenceCell {
     /// Exact field record selected by the stored identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
+    /// Exact class of the selected field record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_class: Option<CatiaDesignClass>,
     /// Design object containing the selected field record, when it has an owner group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_object: Option<String>,
@@ -1861,6 +1864,7 @@ fn design_parallel_reference_table(
                     CatiaDesignReferenceCell {
                         entity_id: target_entity_id,
                         field: target.map(|record| record.id.clone()),
+                        field_class: target.and_then(design_class),
                         design_object: target.and_then(|record| record.design_object.clone()),
                     }
                 })

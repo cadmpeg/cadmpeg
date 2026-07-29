@@ -131,6 +131,14 @@ fn finish_decode(
         .flat_map(|table| &table.rows)
         .map(|row| row.cells.len())
         .sum();
+    let design_parallel_reference_classified_cell_count = native
+        .design_objects
+        .iter()
+        .filter_map(|object| object.parallel_reference_table.as_ref())
+        .flat_map(|table| &table.rows)
+        .flat_map(|row| &row.cells)
+        .filter(|cell| cell.field_class.is_some())
+        .count();
     let design_unowned_field_relation_count = native
         .design_objects
         .iter()
@@ -949,6 +957,10 @@ fn finish_decode(
         (
             "decoded_design_parallel_reference_cell_count".to_string(),
             design_parallel_reference_cell_count,
+        ),
+        (
+            "decoded_design_parallel_reference_classified_cell_count".to_string(),
+            design_parallel_reference_classified_cell_count,
         ),
         (
             "decoded_design_unowned_field_relation_count".to_string(),

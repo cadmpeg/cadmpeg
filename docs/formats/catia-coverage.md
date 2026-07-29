@@ -44,7 +44,8 @@ current scores require those matrices and representative fixtures.
   from both a reference owner and a head without an owner role.
 - Equal-cardinality all-reference lists spanning every field of a design object
   retain their source-ordered columns and ordinal-aligned rows as one parallel
-  reference table. Resolved and unresolved target identities remain distinct.
+  reference table. Resolved cells retain the exact target field class; resolved
+  and unresolved target identities remain distinct.
 - Complete non-value entity suffixes retain escaped words and states,
   standalone `81 49` tokens, fixed `FE F6` payloads, and paged-atom state
   values as disjoint typed productions.
