@@ -5417,7 +5417,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
-            trailing_integer: 0,
+            trailing_field: Some(0),
         }];
         native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
             id: "f3d:asm:tolerant-edge-tail#generated".into(),
@@ -5637,9 +5637,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
     // The tedge tail carries the serializer revision stamp, then a
     // version-gated trailing LONG present only in newer streams and valued 0
-    // or 1. The tvertex trailing LONG likewise takes 0 or 1. Each form must
+    // or 1. The tvertex trailing LONG is likewise version-gated, taking 0
+    // or 1 when present. Each form must
     // survive a write/decode cycle byte-for-byte.
-    for (edge_trailing, vertex_trailing) in [(Some(0), 0), (Some(1), 1), (None, 0)] {
+    for (edge_trailing, vertex_trailing) in [(Some(0), Some(0)), (Some(1), Some(1)), (None, None)] {
         let source = f3d_with_smbh(&synthetic_geometry_smbh());
         let decoded = F3dCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -5658,7 +5659,7 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
                 vertex: tolerant_vertex,
                 record_index: 0,
                 leading_tolerances: [-1.0, -1.0],
-                trailing_integer: vertex_trailing,
+                trailing_field: vertex_trailing,
             }];
             native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
                 id: "f3d:asm:tolerant-edge-tail#generated".into(),
@@ -5684,7 +5685,7 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
             edge_trailing
         );
         assert_eq!(
-            f3d_native(&round_trip.ir).tolerant_vertex_tails[0].trailing_integer,
+            f3d_native(&round_trip.ir).tolerant_vertex_tails[0].trailing_field,
             vertex_trailing
         );
     }
@@ -8093,7 +8094,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             vertex,
             record_index: 0,
             leading_tolerances: [1.0, 2.0],
-            trailing_integer: 0,
+            trailing_field: Some(0),
         }];
     }
     let error = F3dCodec

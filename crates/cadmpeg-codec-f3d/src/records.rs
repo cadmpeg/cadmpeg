@@ -169,9 +169,11 @@ pub struct TolerantVertexTail {
     /// The first two independent tolerance evaluations, retained verbatim in
     /// native centimetres; `-1` denotes an unset evaluation.
     pub leading_tolerances: [f64; 2],
-    /// Trailing LONG slot following the evaluated tolerance; 0 or 1,
-    /// release-dependent, retained verbatim.
-    pub trailing_integer: i64,
+    /// Version-gated trailing LONG following the evaluated tolerance,
+    /// retained verbatim; absent in older streams, `0` or `1` when present.
+    /// Its semantic is unresolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_field: Option<i64>,
 }
 
 /// Native tail retained from one tolerant ASM edge record: the entity

@@ -2413,8 +2413,9 @@ fn native_tolerant_vertex_tail(
     }
     // The record stores three f64 tolerance slots: the two leading slots
     // verbatim (default: the -1 unevaluated sentinel) and the evaluated
-    // tolerance last, followed by a trailing integer (0 or 1, retained
-    // verbatim, defaulting to 0 when generated fresh). A negative tolerance is the
+    // tolerance last, followed by a version-gated trailing integer (0 or 1,
+    // retained verbatim and elided when absent in the source; fresh
+    // generation writes 0). A negative tolerance is the
     // unevaluated sentinel, stored verbatim; a non-negative tolerance
     // converts from millimetres to centimetres.
     let stored = f3d_native(target)?.and_then(|native| {
@@ -2426,7 +2427,7 @@ fn native_tolerant_vertex_tail(
     let leading = stored
         .as_ref()
         .map_or([-1.0; 2], |tail| tail.leading_tolerances);
-    let trailing = stored.as_ref().map_or(0, |tail| tail.trailing_integer);
+    let trailing = stored.as_ref().map_or(Some(0), |tail| tail.trailing_field);
     for value in leading {
         native_f64(records, value);
     }
@@ -2438,7 +2439,9 @@ fn native_tolerant_vertex_tail(
             tolerance / LEN_TO_MM
         },
     );
-    native_i64(records, trailing);
+    if let Some(trailing) = trailing {
+        native_i64(records, trailing);
+    }
     Ok(())
 }
 

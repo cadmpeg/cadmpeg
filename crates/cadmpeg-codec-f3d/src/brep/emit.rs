@@ -3278,9 +3278,9 @@ pub(crate) fn emit_vertices(
                                 vertex: VertexId(id(i)),
                                 record_index: r.index as u32,
                                 leading_tolerances: [*first, *second],
-                                trailing_integer: match r.chunk(9) {
-                                    Some(Token::Long(value)) => *value,
-                                    _ => 0,
+                                trailing_field: match r.chunk(9) {
+                                    Some(Token::Long(value)) => Some(*value),
+                                    _ => None,
                                 },
                             });
                         }
