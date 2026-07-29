@@ -2527,6 +2527,15 @@ pub struct IntcurveSupportContext {
     pub discontinuities: [Vec<f64>; 3],
 }
 
+/// Complete neutral parameterization of one topology-bounded intersection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TolerantIntersectionParameterization {
+    /// Coincident support charts in support order.
+    pub pcurves: [PcurveGeometry; 2],
+    /// Common finite solved-curve interval.
+    pub parameter_range: [f64; 2],
+}
+
 /// Cache-first shared-context fields absent from the context-first layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
 pub struct CacheFirstCurveForm {
@@ -2690,6 +2699,9 @@ pub enum ProceduralCurveDefinition {
         endpoints: [Point3; 2],
         /// Maximum model-space deviation admitted by the source edge.
         tolerance: f64,
+        /// Atomic neutral parameterization established by validated support charts.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameterization: Option<TolerantIntersectionParameterization>,
     },
     /// Intersection constrained by a third ordered support surface.
     ThreeSurfaceIntersection {

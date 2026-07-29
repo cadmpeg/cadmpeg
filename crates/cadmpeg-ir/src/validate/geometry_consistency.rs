@@ -4,7 +4,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::eval::{curve_point, pcurve_uv, surface_point};
+use crate::eval::{curve_point, model_curve_point_by_id, pcurve_uv, surface_point};
 use crate::geometry::PcurveGeometry;
 use crate::math::Point3;
 use crate::topology::Sense;
@@ -45,6 +45,40 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         .map(|surface| (surface.id.0.as_str(), &surface.geometry))
         .collect::<HashMap<_, _>>();
     for procedural in &ir.model.procedural_curves {
+        if let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
+            endpoints,
+            tolerance,
+            parameterization: Some(parameterization),
+            ..
+        } = &procedural.definition
+        {
+            let evaluated = parameterization
+                .parameter_range
+                .map(|parameter| model_curve_point_by_id(ir, &procedural.curve, parameter));
+            let [Some(start), Some(end)] = evaluated else {
+                findings.push(Finding {
+                    check: Check::GeometricConsistency,
+                    severity: Severity::Error,
+                    message: "charted tolerant intersection does not evaluate at both endpoints"
+                        .into(),
+                    entity: Some(procedural.id.0.clone()),
+                });
+                continue;
+            };
+            let mismatch = distance(start, endpoints[0]).max(distance(end, endpoints[1]));
+            if !mismatch.is_finite() || mismatch > *tolerance {
+                findings.push(Finding {
+                    check: Check::GeometricConsistency,
+                    severity: Severity::Error,
+                    message: format!(
+                        "charted tolerant intersection misses its endpoint witnesses by \
+                         {mismatch:.6}"
+                    ),
+                    entity: Some(procedural.id.0.clone()),
+                });
+            }
+            continue;
+        }
         let (context, third) = match &procedural.definition {
             crate::geometry::ProceduralCurveDefinition::Law { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Intersection { context, .. }

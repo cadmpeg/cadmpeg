@@ -30,7 +30,7 @@ use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
     IntcurveSupportSide, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceCurveFamily, SurfaceGeometry,
+    SurfaceCurveFamily, SurfaceGeometry, TolerantIntersectionParameterization,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -5274,7 +5274,7 @@ fn emit_topology(
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
     complete_intersection_supports_from_edge_incidence(ir);
     complete_intersection_pcurves_from_coedge_incidence(ir);
-    complete_isoparametric_intersection_pcurves(ir);
+    complete_isoparametric_intersection_pcurves(ir, annotations);
     complete_intersection_pcurves_from_opposite_charts(ir);
 
     let owned_edges: BTreeSet<_> = ir
@@ -5544,7 +5544,10 @@ pub(crate) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
     }
 }
 
-pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
+pub(crate) fn complete_isoparametric_intersection_pcurves(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
     let vertex_points = ir
         .model
         .vertices
@@ -5563,22 +5566,6 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
         .procedural_curves
         .iter()
         .filter_map(|procedural| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
-            else {
-                return None;
-            };
-            if !context
-                .sides
-                .iter()
-                .all(|side| pcurve_requires_completion(side.pcurve.as_ref()))
-            {
-                return None;
-            }
-            let [Some(first_surface), Some(second_surface)] =
-                context.sides.each_ref().map(|side| side.surface.as_ref())
-            else {
-                return None;
-            };
             let edges = ir
                 .model
                 .edges
@@ -5588,28 +5575,54 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
             let [edge] = edges.as_slice() else {
                 return None;
             };
-            let tolerance = edge
-                .tolerance
-                .filter(|value| value.is_finite() && *value >= 0.0)?;
-            let endpoints = [
-                *vertex_points.get(&edge.start)?,
-                *vertex_points.get(&edge.end)?,
-            ];
-            let candidates = [first_surface, second_surface].map(|surface| {
-                isoparametric_boundary_pcurve(
-                    ir,
-                    surface,
+            let (supports, endpoints, range, tolerance, tolerant) = match &procedural.definition {
+                ProceduralCurveDefinition::Intersection { context, .. } => {
+                    if !context
+                        .sides
+                        .iter()
+                        .all(|side| pcurve_requires_completion(side.pcurve.as_ref()))
+                    {
+                        return None;
+                    }
+                    (
+                        [
+                            context.sides[0].surface.as_ref()?,
+                            context.sides[1].surface.as_ref()?,
+                        ],
+                        [
+                            *vertex_points.get(&edge.start)?,
+                            *vertex_points.get(&edge.end)?,
+                        ],
+                        context.parameter_range,
+                        edge.tolerance
+                            .filter(|value| value.is_finite() && *value >= 0.0)?,
+                        false,
+                    )
+                }
+                ProceduralCurveDefinition::TolerantIntersection {
+                    supports,
                     endpoints,
-                    context.parameter_range,
                     tolerance,
-                )
+                    parameterization: None,
+                } => (
+                    supports.each_ref(),
+                    *endpoints,
+                    [0.0, 1.0],
+                    *tolerance,
+                    true,
+                ),
+                _ => return None,
+            };
+            let [first_surface, second_surface] = supports;
+            let candidates = [first_surface, second_surface].map(|surface| {
+                isoparametric_boundary_pcurve(ir, surface, endpoints, range, tolerance)
             });
             let pcurves = match candidates {
                 [Some(first), Some(second)] => coincident_pcurve_pair(
                     ir,
                     [first_surface, second_surface],
                     [&first, &second],
-                    context.parameter_range,
+                    range,
                     tolerance,
                 )
                 .then_some([first, second])?,
@@ -5621,7 +5634,7 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
                         first_surface,
                         &first,
                         second_surface,
-                        context.parameter_range,
+                        range,
                         tolerance,
                     )?,
                 ],
@@ -5632,7 +5645,7 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
                         second_surface,
                         &second,
                         first_surface,
-                        context.parameter_range,
+                        range,
                         tolerance,
                     )?,
                     second,
@@ -5644,10 +5657,14 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
                 pcurves,
                 tolerance,
                 curve_is_cache_backed(ir, &procedural.curve),
+                procedural.curve.clone(),
+                range,
+                tolerant,
             ))
         })
         .collect::<Vec<_>>();
-    for (procedural_id, pcurves, tolerance, cache_backed) in replacements {
+    let mut bounded_tolerant_curves = Vec::new();
+    for (procedural_id, pcurves, tolerance, cache_backed, curve, range, tolerant) in replacements {
         let Some(procedural) = ir
             .model
             .procedural_curves
@@ -5656,21 +5673,43 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
         else {
             continue;
         };
-        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
-        else {
-            continue;
-        };
-        if context
-            .sides
-            .iter()
-            .all(|side| pcurve_requires_completion(side.pcurve.as_ref()))
+        match &mut procedural.definition {
+            ProceduralCurveDefinition::Intersection { context, .. }
+                if context
+                    .sides
+                    .iter()
+                    .all(|side| pcurve_requires_completion(side.pcurve.as_ref())) =>
+            {
+                for (side, pcurve) in context.sides.iter_mut().zip(pcurves) {
+                    side.pcurve = Some(pcurve);
+                }
+            }
+            ProceduralCurveDefinition::TolerantIntersection {
+                parameterization, ..
+            } if parameterization.is_none() => {
+                *parameterization = Some(TolerantIntersectionParameterization {
+                    pcurves,
+                    parameter_range: range,
+                });
+            }
+            _ => continue,
+        }
+        if cache_backed {
+            procedural.cache_fit_tolerance = Some(tolerance);
+        }
+        if tolerant {
+            bounded_tolerant_curves.push((curve, range));
+        }
+    }
+    for (curve, range) in bounded_tolerant_curves {
+        if let Some(edge) = ir
+            .model
+            .edges
+            .iter_mut()
+            .find(|edge| edge.curve.as_ref() == Some(&curve))
         {
-            for (side, pcurve) in context.sides.iter_mut().zip(pcurves) {
-                side.pcurve = Some(pcurve);
-            }
-            if cache_backed {
-                procedural.cache_fit_tolerance = Some(tolerance);
-            }
+            edge.param_range = Some(range);
+            annotations.derived(&edge.id, "param_range");
         }
     }
 }
@@ -6171,6 +6210,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
                 supports,
                 endpoints,
                 tolerance,
+                parameterization: None,
             },
             cache_fit_tolerance: None,
         });

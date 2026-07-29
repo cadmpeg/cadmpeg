@@ -799,11 +799,19 @@ intersection relation between the two distinct surfaces reached through its
 radial FIN pair, bounded by the EDGE vertices, within the serialized edge
 tolerance. Transfer represents the relation as a procedural intersection
 carrier with the two face surfaces, the ordered EDGE vertex positions, and the
-serialized tolerance. The relation has no solved-curve parameter interval and
-the EDGE therefore has no parameter range. Transfer does not synthesize a line
-between the vertices. A null EDGE and FIN curve without exactly two distinct
-adjacent support surfaces, two resolved endpoint positions, or endpoint
-incidence on both surfaces within the EDGE tolerance remains carrierless.
+serialized tolerance. The relation initially has no solved-curve parameter
+interval and the EDGE therefore has no parameter range. When the endpoints
+identify a constant-parameter boundary on a NURBS support and the corresponding
+chart on the other support is coincident throughout the edge tolerance,
+transfer assigns both charts the neutral interval `[0,1]` and assigns that
+interval to the EDGE. The parameterization is atomic: both charts and their
+common interval are present or all three are absent. Evaluation maps the common
+parameter through both charts and succeeds only while the resulting support
+points agree within the EDGE tolerance. Transfer does not synthesize a
+model-space line between the vertices. A null EDGE and FIN curve without
+exactly two distinct adjacent support surfaces, two resolved endpoint
+positions, or endpoint incidence on both surfaces within the EDGE tolerance
+remains carrierless.
 A null `EDGE.curve` may instead have a non-null owning `FIN.curve`. The FIN
 reference is the carrier path. When it resolves through
 `TRIMMED_CURVE → SP_CURVE` whose original 3D curve is null, the SP_CURVE's

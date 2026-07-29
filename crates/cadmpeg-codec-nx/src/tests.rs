@@ -5425,6 +5425,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         supports,
         endpoints,
         tolerance,
+        parameterization,
     } = &procedural.definition
     else {
         panic!("tolerant intersection definition");
@@ -5432,6 +5433,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     assert_ne!(supports[0], supports[1]);
     assert_eq!(*endpoints, expected_endpoints);
     assert_eq!(*tolerance, 0.01);
+    assert_eq!(*parameterization, None);
 
     let start = off_support_ir.model.edges[0].start.clone();
     let point_id = off_support_ir
@@ -5851,9 +5853,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
 
 #[test]
 fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
-    use cadmpeg_ir::geometry::{
-        Curve, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, ProceduralCurve, Surface,
-    };
+    use cadmpeg_ir::geometry::{Curve, NurbsSurface, ProceduralCurve, Surface};
     use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -5905,24 +5905,11 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     ir.model.procedural_curves.push(ProceduralCurve {
         id: construction,
         curve: curve.clone(),
-        definition: ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(nurbs),
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                    IntcurveSupportSide {
-                        surface: Some(plane),
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-            },
-            discontinuity_flag: false,
+        definition: ProceduralCurveDefinition::TolerantIntersection {
+            supports: [nurbs, plane],
+            endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            tolerance: 1.0e-8,
+            parameterization: None,
         },
         cache_fit_tolerance: None,
     });
@@ -5963,31 +5950,44 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         curve: Some(curve),
         start: vertex_ids[0].clone(),
         end: vertex_ids[1].clone(),
-        param_range: Some([0.0, 1.0]),
+        param_range: None,
         tolerance: Some(1.0e-8),
     });
 
-    crate::decode::complete_isoparametric_intersection_pcurves(&mut ir);
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::complete_isoparametric_intersection_pcurves(&mut ir, &mut annotations);
 
-    let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::TolerantIntersection {
+        supports,
+        parameterization: Some(parameterization),
+        ..
+    } = &ir.model.procedural_curves[0].definition
     else {
         unreachable!()
     };
     assert_eq!(ir.model.procedural_curves[0].cache_fit_tolerance, None);
-    assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
+    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
+    assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let points = context.sides.each_ref().map(|side| {
-            let uv = cadmpeg_ir::eval::pcurve_uv(side.pcurve.as_ref().unwrap(), parameter).unwrap();
+        let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(
+            &ir,
+            &ir.model.procedural_curves[0].curve,
+            parameter,
+        )
+        .expect("charted tolerant intersection evaluates");
+        let points: [Point3; 2] = std::array::from_fn(|side| {
+            let uv =
+                cadmpeg_ir::eval::pcurve_uv(&parameterization.pcurves[side], parameter).unwrap();
             let surface = ir
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| Some(&surface.id) == side.surface.as_ref())
+                .find(|surface| surface.id == supports[side])
                 .unwrap();
             cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v).unwrap()
         });
         assert!((points[0].x - 10.0 * parameter).abs() < 1.0e-8);
+        assert_eq!(evaluated, points[0]);
         assert!(
             (points[0].x - points[1].x)
                 .hypot(points[0].y - points[1].y)
@@ -5995,6 +5995,23 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 < 1.0e-8
         );
     }
+    let ProceduralCurveDefinition::TolerantIntersection {
+        parameterization: Some(parameterization),
+        ..
+    } = &mut ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    parameterization.pcurves[1] = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 1.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+    assert!(cadmpeg_ir::eval::model_curve_point_by_id(
+        &ir,
+        &ir.model.procedural_curves[0].curve,
+        0.5,
+    )
+    .is_none());
 }
 
 #[test]

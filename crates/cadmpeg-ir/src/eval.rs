@@ -9,6 +9,8 @@
 //! backed carriers that require other model entities. Carriers without a typed
 //! parameterization ([`CurveGeometry::Unknown`], [`CurveGeometry::Composite`],
 //! [`SurfaceGeometry::Unknown`], parabolas, and hyperbolas) evaluate to `None`.
+//! [`model_curve_point_by_id`] resolves construction-backed curves whose
+//! parameterization is established by model entities.
 
 use crate::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition,
@@ -571,6 +573,53 @@ fn periodic_parameter(
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
 pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
     curve_point_inner(geometry, t, 0)
+}
+
+/// Evaluate a curve carrier selected by arena id, including supported
+/// procedural constructions.
+pub fn model_curve_point_by_id(
+    ir: &CadIr,
+    curve_id: &crate::ids::CurveId,
+    parameter: f64,
+) -> Option<Point3> {
+    let curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| candidate.id == *curve_id)?;
+    let CurveGeometry::Procedural { construction } = &curve.geometry else {
+        return curve_point(&curve.geometry, parameter);
+    };
+    let procedural = ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|candidate| candidate.id == *construction && candidate.curve == *curve_id)?;
+    let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        supports,
+        tolerance,
+        parameterization: Some(parameterization),
+        ..
+    } = &procedural.definition
+    else {
+        return None;
+    };
+    let parameter_range = parameterization.parameter_range;
+    if !parameter.is_finite() || parameter < parameter_range[0] || parameter > parameter_range[1] {
+        return None;
+    }
+    let points = std::array::from_fn(|side| {
+        let uv = pcurve_uv(&parameterization.pcurves[side], parameter)?;
+        model_surface_point_by_id(ir, &supports[side], uv.u, uv.v)
+    });
+    let [Some(first), Some(second)] = points else {
+        return None;
+    };
+    let separation = ((first.x - second.x).powi(2)
+        + (first.y - second.y).powi(2)
+        + (first.z - second.z).powi(2))
+    .sqrt();
+    (separation.is_finite() && separation <= *tolerance).then_some(first)
 }
 
 fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Point3> {
