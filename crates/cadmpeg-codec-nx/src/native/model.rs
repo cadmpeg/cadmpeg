@@ -47,6 +47,8 @@ pub(crate) struct DisplayJtRecords {
 #[allow(clippy::struct_field_names)]
 pub(crate) struct ParasolidRecords {
     pub(crate) parasolid_deltas_transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
+    pub(crate) parasolid_deltas_terminal_null_references:
+        Vec<ParasolidDeltasTerminalNullReferences>,
     pub(crate) parasolid_deltas_records: Vec<ParasolidDeltasRecord>,
     pub(crate) parasolid_deltas_tombstones: Vec<ParasolidDeltasTombstone>,
     pub(crate) parasolid_deltas_body_revisions: Vec<ParasolidDeltasBodyRevision>,
@@ -726,6 +728,7 @@ impl NativeModel {
             },
             parasolid: ParasolidRecords {
                 parasolid_deltas_transmit_headers: deltas_events.transmit_headers,
+                parasolid_deltas_terminal_null_references: deltas_events.terminal_null_references,
                 parasolid_deltas_records: deltas_events.records,
                 parasolid_deltas_tombstones: deltas_events.tombstones,
                 parasolid_deltas_body_revisions: deltas_events.body_revisions,

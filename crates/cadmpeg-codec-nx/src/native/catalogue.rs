@@ -475,6 +475,11 @@ impl StreamNoted for ParasolidDeltasTransmitHeader {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
+impl StreamNoted for ParasolidDeltasTerminalNullReferences {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
 impl StreamNoted for ParasolidDeltasRecord {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
@@ -1028,6 +1033,23 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         }),
         emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_transmit_headers, r, ns),
         len: |m| m.parasolid.parasolid_deltas_transmit_headers.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_deltas_terminal_null_references",
+        tag: Some("DELTAS_TERMINAL_NULL_REFERENCES"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_deltas_terminal_null_references, r, a);
+        }),
+        emit: |m, r, ns| {
+            emit_arena(
+                &m.parasolid.parasolid_deltas_terminal_null_references,
+                r,
+                ns,
+            )
+        },
+        len: |m| m.parasolid.parasolid_deltas_terminal_null_references.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

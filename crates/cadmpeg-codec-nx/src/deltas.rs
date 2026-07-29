@@ -68,6 +68,15 @@ pub struct TransmitHeader {
     pub end: usize,
 }
 
+/// Four null references closing a deltas stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalNullReferences {
+    /// First byte of the first null reference.
+    pub offset: usize,
+    /// Stream boundary following the fourth null reference.
+    pub end: usize,
+}
+
 /// Count-selected binary64 lane immediately following one deltas `term_use`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TermUseNumericTail {
@@ -316,6 +325,8 @@ pub struct InlineBodyState {
 pub struct Census {
     /// Complete stream transmit header.
     pub transmit_header: Option<TransmitHeader>,
+    /// Complete four-null-reference stream trailer.
+    pub terminal_null_references: Option<TerminalNullReferences>,
     /// Complete records in source order.
     pub records: Vec<Record>,
     /// Compact tombstones in source order.
@@ -610,9 +621,14 @@ const COMPOSITE_CURVE: &[Token] = &[
 pub fn walk(stream: &[u8]) -> Census {
     let transmit_header = transmit_header(stream);
     let header_byte_len = transmit_header.as_ref().map_or(0, |header| header.end);
+    let terminal_null_references = terminal_null_references(stream);
+    let trailer_byte_len = terminal_null_references
+        .as_ref()
+        .map_or(0, |trailer| trailer.end - trailer.offset);
     let mut census = Census {
         transmit_header,
-        bytes_decoded: header_byte_len,
+        terminal_null_references,
+        bytes_decoded: header_byte_len + trailer_byte_len,
         ..Census::default()
     };
     let mut offset = census
@@ -774,6 +790,14 @@ pub fn walk(stream: &[u8]) -> Census {
     let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
     census.bytes_decoded += body_revision_state_bytes;
     census
+}
+
+fn terminal_null_references(stream: &[u8]) -> Option<TerminalNullReferences> {
+    const TRAILER: &[u8] = &[0, 1, 0, 1, 0, 1, 0, 1];
+    stream.ends_with(TRAILER).then_some(TerminalNullReferences {
+        offset: stream.len().checked_sub(TRAILER.len())?,
+        end: stream.len(),
+    })
 }
 
 fn populate_gap_events(stream: &[u8], census: &mut Census) {
@@ -1951,6 +1975,12 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
         .transmit_header
         .iter()
         .map(|header| (0, header.end))
+        .chain(
+            census
+                .terminal_null_references
+                .iter()
+                .map(|trailer| (trailer.offset, trailer.end)),
+        )
         .chain(
             census
                 .records
@@ -4310,6 +4340,34 @@ mod reference_type_map_tests {
         ] {
             assert!(walk(malformed).reference_type_maps.is_empty());
         }
+    }
+}
+
+#[cfg(test)]
+mod terminal_null_reference_tests {
+    use super::*;
+
+    #[test]
+    fn retains_only_four_null_references_at_the_stream_boundary() {
+        let trailer = [0, 1, 0, 1, 0, 1, 0, 1];
+        let census = walk(&trailer);
+
+        assert_eq!(
+            census.terminal_null_references,
+            Some(TerminalNullReferences {
+                offset: 0,
+                end: trailer.len(),
+            })
+        );
+        assert_eq!(census.bytes_decoded, trailer.len());
+
+        let mut nonterminal = trailer.to_vec();
+        nonterminal.extend_from_slice(&[0, 29]);
+        assert!(walk(&nonterminal).terminal_null_references.is_none());
+
+        let mut nonnull = trailer;
+        nonnull[7] = 2;
+        assert!(walk(&nonnull).terminal_null_references.is_none());
     }
 }
 

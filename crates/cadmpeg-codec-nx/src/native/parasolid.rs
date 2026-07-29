@@ -96,6 +96,23 @@ pub struct ParasolidDeltasTransmitHeader {
     pub inflated_offset: u64,
 }
 
+/// Four null references at the boundary of a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTerminalNullReferences {
+    /// Globally unique trailer identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Ordered null XMT references.
+    pub references: [u32; 4],
+    /// Exact trailer byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact trailer bytes.
+    pub sha256: String,
+    /// First trailer byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Count-selected numeric lane following one deltas `term_use` endpoint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParasolidDeltasTermUseNumericTail {
@@ -386,6 +403,7 @@ pub struct ParasolidDeltasResidualSpan {
 
 pub(crate) struct ParasolidDeltasEvents {
     pub(crate) transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
+    pub(crate) terminal_null_references: Vec<ParasolidDeltasTerminalNullReferences>,
     pub(crate) records: Vec<ParasolidDeltasRecord>,
     pub(crate) tombstones: Vec<ParasolidDeltasTombstone>,
     pub(crate) body_revisions: Vec<ParasolidDeltasBodyRevision>,
@@ -405,6 +423,7 @@ pub(crate) struct ParasolidDeltasEvents {
 pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
     let mut events = ParasolidDeltasEvents {
         transmit_headers: Vec::new(),
+        terminal_null_references: Vec::new(),
         records: Vec::new(),
         tombstones: Vec::new(),
         body_revisions: Vec::new(),
@@ -458,6 +477,22 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                 sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                 inflated_offset: 0,
             });
+        }
+        if let Some(trailer) = census.terminal_null_references {
+            let bytes = &stream.inflated[trailer.offset..trailer.end];
+            events
+                .terminal_null_references
+                .push(ParasolidDeltasTerminalNullReferences {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-terminal-null-references#{}",
+                        trailer.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    references: [1; 4],
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: trailer.offset as u64,
+                });
         }
         for record in census.records {
             let family = crate::deltas::family_name(record.kind)
@@ -782,6 +817,9 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
     }
     events
         .transmit_headers
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .terminal_null_references
         .sort_by(|left, right| left.id.cmp(&right.id));
     events.records.sort_by(|left, right| left.id.cmp(&right.id));
     events
@@ -2303,6 +2341,35 @@ mod tests {
         assert_eq!(events.residual_spans.len(), 1);
         assert_eq!(events.residual_spans[0].inflated_offset, header_end as u64);
         assert_eq!(events.residual_spans[0].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_retain_terminal_null_references() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        let trailer_offset = bytes.len();
+        bytes.extend_from_slice(&[0, 1, 0, 1, 0, 1, 0, 1]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.terminal_null_references.len(), 1);
+        let trailer = &events.terminal_null_references[0];
+        assert_eq!(trailer.references, [1; 4]);
+        assert_eq!(trailer.byte_len, 8);
+        assert_eq!(trailer.inflated_offset, trailer_offset as u64);
+        assert_eq!(
+            trailer.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[trailer_offset..])
+        );
+        assert_eq!(events.residual_spans.len(), 1);
+        assert_eq!(events.residual_spans[0].inflated_offset, 0);
+        assert_eq!(events.residual_spans[0].byte_len, trailer_offset as u64);
     }
 
     #[test]
