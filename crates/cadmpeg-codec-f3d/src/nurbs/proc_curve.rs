@@ -421,6 +421,7 @@ fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedL
     let mut position = marker + name_len + 3;
     // The stamped serializer form opens with `04 <stamp> 15 <enum>` before the
     // solved cache; the legacy form opens directly with the cache marker.
+    let stamp_start = position;
     let stamp = (bytes.get(position) == Some(&0x04))
         .then(|| {
             let stamp = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
@@ -428,6 +429,12 @@ fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedL
             Some((stamp, post_enum))
         })
         .flatten();
+    if stamp.is_none() {
+        // Restore any bytes consumed by a partially-matched stamp prefix so the
+        // legacy path (and, on its failure, verbatim retention) sees the record
+        // from the cache marker rather than mid-prefix.
+        position = stamp_start;
+    }
     let solved = decode_curve_block(bytes, position, int_width)?;
     position = solved.end;
     take_f64(bytes, &mut position)?;

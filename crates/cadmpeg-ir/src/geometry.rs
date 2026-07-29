@@ -2590,9 +2590,12 @@ pub struct CacheFirstCurveForm {
 pub struct SurfaceCurveTail {
     /// Native integer following the discontinuity arrays.
     pub extension: i64,
-    /// Support-slot selector. `true` places the support surface and its bs2
-    /// pcurve in serialized slot 1 with slot 2 null; `false` mirrors them onto
-    /// slot 2 with slot 1 null.
+    /// Terminating boolean shared by all cache-first surface-curve families.
+    /// For `par_int_cur` it is the support-slot selector: `true` places the
+    /// support surface and its BS2 pcurve in serialized slot 1 with slot 2
+    /// null; `false` places them in slot 2 with slot 1 null. For the other
+    /// families (`blend_int_cur`, `surf_int_cur`, `skin_int_cur`) the field is
+    /// a terminating flag with no settled slot-selector semantics.
     pub flag: bool,
     /// Second terminating boolean stored by `par_int_cur`, following the
     /// support-slot selector; semantics unresolved.
