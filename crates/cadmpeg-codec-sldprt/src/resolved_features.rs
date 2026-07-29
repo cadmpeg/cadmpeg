@@ -968,7 +968,10 @@ fn extended_compact_linked_profile_point_coordinates(
             .and_then(|bytes| bytes.try_into().ok())
             .map(u32::from_le_bytes)
     };
-    let single_identity = payload.get(offset + 100..offset + 142) == Some(&[0; 42])
+    let single_identity = payload.get(offset + 100..offset + 132) == Some(&[0; 32])
+        && payload.get(offset + 132..offset + 134) == Some(&[0; 2])
+        && matches!(payload.get(offset + 134..offset + 136), Some([0 | 1, 0]))
+        && payload.get(offset + 136..offset + 142) == Some(&[0; 6])
         && identity(142).is_some_and(|identity| identity != u32::MAX)
         && (sketch_marker_prefix_at(payload, offset.saturating_add(146))
             || payload.get(offset + 146..offset + 150) == Some(&[0; 4])
@@ -1009,7 +1012,6 @@ fn extended_compact_linked_profile_point_coordinates(
             if first_tag != 0
                 && first_tag == second_tag
                 && first_id != second_id
-                && (terminal_sentinel || first_id != 0 && second_id != 0)
     );
     if !valid_cells
         || payload.get(offset + 94..offset + 100) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
@@ -8005,6 +8007,12 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+        payload[134..136].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(
+            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            Some([0.8, 0.0125])
+        );
+        payload[134..136].fill(0);
         let mut continuation = vec![0; 150 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
         continuation[..146].copy_from_slice(&payload[..146]);
         continuation[136..140].copy_from_slice(&6u32.to_le_bytes());
@@ -8046,7 +8054,7 @@ mod marker_tests {
         payload[80..82].fill(0);
         assert_eq!(
             extended_compact_linked_profile_point_coordinates(&payload, 0),
-            None
+            Some([0.8, 0.0125])
         );
         payload[142..146].fill(0xff);
         assert_eq!(
