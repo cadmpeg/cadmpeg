@@ -556,12 +556,16 @@ struct CurveDescriptor {
 
 fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u32, CurveDescriptor> {
     let records = (0..bytes.len().saturating_sub(26)).filter_map(|pos| {
-        curve_descriptor_at(bytes, pos).map(|(xmt, descriptor, _)| (xmt, descriptor))
+        curve_descriptor_at(bytes, pos, true).map(|(xmt, descriptor, _)| (xmt, descriptor))
     });
     unique_records(records)
 }
 
-fn curve_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, CurveDescriptor, usize)> {
+fn curve_descriptor_at(
+    bytes: &[u8],
+    pos: usize,
+    allow_compact_fallback: bool,
+) -> Option<(u32, CurveDescriptor, usize)> {
     (bytes.get(pos..pos + 2) == Some(&[0, 136])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
@@ -582,30 +586,36 @@ fn curve_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, CurveDescriptor
         bytes.get(pos + 17 + shift..pos + 21 + shift),
         Some([0, 0, 0, 1] | [0, 0, 1, 4])
     ) {
-        let mut at = pos + 21 + shift;
-        let mut references = [0; 3];
-        for reference in &mut references {
-            let (value, consumed) = read_xmt(bytes, at)?;
-            (value > 1).then_some(())?;
-            *reference = value;
-            at = at.checked_add(consumed)?;
-            (bytes.get(at) == Some(&0)).then_some(())?;
-            at = at.checked_add(1)?;
+        let status_references = (|| {
+            let mut at = pos + 21 + shift;
+            let mut references = [0; 3];
+            for reference in &mut references {
+                let (value, consumed) = read_xmt(bytes, at)?;
+                (value > 1).then_some(())?;
+                *reference = value;
+                at = at.checked_add(consumed)?;
+                (bytes.get(at) == Some(&0)).then_some(())?;
+                at = at.checked_add(1)?;
+            }
+            Some((references, at))
+        })();
+        if let Some((references, at)) = status_references {
+            return Some((
+                xmt,
+                CurveDescriptor {
+                    degree,
+                    poles,
+                    dimension,
+                    distinct,
+                    form,
+                    mult: references[1],
+                    knots: references[2],
+                    references: references.to_vec(),
+                },
+                at,
+            ));
         }
-        return Some((
-            xmt,
-            CurveDescriptor {
-                degree,
-                poles,
-                dimension,
-                distinct,
-                form,
-                mult: references[1],
-                knots: references[2],
-                references: references.to_vec(),
-            },
-            at,
-        ));
+        allow_compact_fallback.then_some(())?;
     }
     let (mult, mult_len) = read_xmt(bytes, pos + 23 + shift)?;
     let (knots, knots_len) = read_xmt(bytes, pos + 23 + shift + mult_len)?;
@@ -659,7 +669,7 @@ pub(crate) fn auxiliary_record_at(bytes: &[u8], pos: usize) -> Option<AuxiliaryR
             .or_else(|| curve_data_header_at(bytes, pos))
             .map(|(xmt, end)| (xmt, Vec::new(), end))?,
         136 => {
-            let (xmt, descriptor, end) = curve_descriptor_at(bytes, pos)?;
+            let (xmt, descriptor, end) = curve_descriptor_at(bytes, pos, false)?;
             (xmt, descriptor.references, end)
         }
         _ => return None,

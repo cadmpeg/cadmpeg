@@ -10076,6 +10076,18 @@ fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
 }
 
 #[test]
+fn nurbs_compact_curve_descriptor_survives_a_status_prefix_collision() {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    stream[descriptor + 17..descriptor + 21].copy_from_slice(&[0, 0, 0, 1]);
+
+    assert_eq!(crate::nurbs::curves(&stream).len(), 1);
+}
+
+#[test]
 fn nurbs_decodes_dimension_four_rational_curve() {
     let mut stream = bspline_partition_stream();
     let descriptor = stream
