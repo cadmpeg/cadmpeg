@@ -2245,6 +2245,32 @@ fn standard_catpart_with_definition_value(
     file
 }
 
+fn standard_catpart_with_definition_chain_value(suffix: &[u8]) -> Vec<u8> {
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0];
+    let records = [object_graph_record(&[0x16, 0x84, 0x81, 0x81], &[0xfe])];
+    let mut entity = entity_table_record_with_definition_and_value(1, &definition, &[0xfe]);
+    entity[6] = 2;
+    entity.extend_from_slice(suffix);
+    let entity_len = u32::try_from(entity.len()).expect("bounded entity record");
+    entity[2..6].copy_from_slice(&entity_len.to_le_bytes());
+    let mut stream = entity;
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "FeatureFEDGE",
+        "Real",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_formula_relation(
     parameter_entity_id: u8,
     duplicate_binding: bool,
@@ -11488,6 +11514,161 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn native_namespace_binds_two_definition_value_chains() {
+    use crate::native::{
+        CatiaDefinitionChainValue, CatiaEntityEvaluation, CatiaEntitySchemaValue,
+        CatiaEntitySuffixSchemaValue, CatiaEntitySuffixTrailer,
+    };
+
+    let bits = 12.5_f64.to_bits();
+    let mut suffix = vec![0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6];
+    suffix.extend_from_slice(&bits.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0x49]);
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_value(&suffix)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode definition-chain evaluation");
+    assert_eq!(
+        decoded.report.coverage["decoded_definition_chain_value_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_definition_chain_evaluation_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_structurally_owned_definition_chain_value_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_definition_chain_value_owner_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_evaluated_definition_chain_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_unset_definition_chain_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_structurally_owned_definition_chain_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_definition_chain_owner_count"],
+        0
+    );
+    let mut native =
+        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
+            .expect("load definition-chain evaluation");
+    assert_eq!(
+        native.entity_records[0].definition_chain_value,
+        Some(CatiaDefinitionChainValue {
+            selector: CatiaEntitySchemaValue {
+                entry: native.catalogs[0].entries[4].id.clone(),
+                value: "FeatureFEDGE".to_string(),
+            },
+            role: CatiaEntitySchemaValue {
+                entry: native.catalogs[0].entries[5].id.clone(),
+                value: "Real".to_string(),
+            },
+            value: CatiaEntitySuffixSchemaValue::Evaluation {
+                evaluation: CatiaEntityEvaluation::Scalar { bits },
+            },
+            trailer: CatiaEntitySuffixTrailer::Token8149,
+        })
+    );
+
+    native.entity_records[0]
+        .definition_chain_value
+        .as_mut()
+        .expect("definition-chain evaluation")
+        .role
+        .value = "changed".to_string();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store malformed definition-chain evaluation");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let wrong_selector =
+        crate::native::CatiaNative::decode(&standard_catpart_with_definition_chain_value(&[
+            0x84, 0x88, 0x82, 0x32, 5, 0, 0, 0, 0xe7,
+        ]));
+    assert!(wrong_selector.entity_records[0]
+        .definition_chain_value
+        .is_none());
+
+    let atom = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_value(&[
+                0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x87,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode definition-chain atom");
+    assert_eq!(
+        atom.report.coverage["decoded_definition_chain_value_count"],
+        1
+    );
+    assert_eq!(
+        atom.report.coverage["decoded_definition_chain_atom_count"],
+        1
+    );
+    assert_eq!(
+        atom.report.coverage["decoded_definition_chain_evaluation_count"],
+        0
+    );
+    let atom_native =
+        crate::native::CatiaNative::load(atom.ir.native.namespace("catia").expect("namespace"))
+            .expect("load definition-chain atom");
+    assert_eq!(
+        atom_native.entity_records[0]
+            .definition_chain_value
+            .as_ref()
+            .map(|value| (&value.value, &value.trailer)),
+        Some((
+            &CatiaEntitySuffixSchemaValue::Atom { value: 7 },
+            &CatiaEntitySuffixTrailer::Empty,
+        ))
+    );
+
+    let nested = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_value(&[
+                0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode nested definition-chain selector");
+    assert_eq!(
+        nested.report.coverage["decoded_definition_chain_schema_selector_count"],
+        1
+    );
+    let nested_native =
+        crate::native::CatiaNative::load(nested.ir.native.namespace("catia").expect("namespace"))
+            .expect("load nested definition-chain selector");
+    assert_eq!(
+        nested_native.entity_records[0]
+            .definition_chain_value
+            .as_ref()
+            .map(|value| &value.value),
+        Some(&CatiaEntitySuffixSchemaValue::SchemaSelector {
+            ordinal: 5,
+            entry: Some(nested_native.catalogs[0].entries[5].id.clone()),
+            name: Some("Real".to_string()),
+        })
+    );
 }
 
 #[test]

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 193;
+pub const CATIA_NATIVE_VERSION: u32 = 194;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1224,6 +1224,19 @@ pub struct CatiaDefinitionValue {
     pub schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
 }
 
+/// One value selected through a complete two-definition role chain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDefinitionChainValue {
+    /// Definition repeated by the suffix's fixed-width schema selector.
+    pub selector: CatiaEntitySchemaValue,
+    /// Second definition carrying the value's role within the selected schema.
+    pub role: CatiaEntitySchemaValue,
+    /// Stored selected value.
+    pub value: CatiaEntitySuffixSchemaValue,
+    /// Exact suffix trailer following the selected value.
+    pub trailer: CatiaEntitySuffixTrailer,
+}
+
 /// One complete formula relation stored by an entity and its object payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaFormulaRelation {
@@ -1313,6 +1326,9 @@ pub struct CatiaEntityRecord {
     /// Complete suffix value bound to the entity's sole definition selector.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub definition_value: Option<CatiaDefinitionValue>,
+    /// Complete value bound by a two-definition role chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition_chain_value: Option<CatiaDefinitionChainValue>,
     /// Complete formula-to-expression and formula-to-parameter relation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula_relation: Option<CatiaFormulaRelation>,
@@ -2173,6 +2189,50 @@ fn definition_value(
         },
         payload: suffix_value.payload.clone(),
         schema_selection: suffix_schema_selection.cloned(),
+    })
+}
+
+fn definition_chain_value(
+    lead: u8,
+    definitions: &[CatiaDefinitionSchemaSelection],
+    value_fields: &[value_block::ValueField],
+    suffix_value: Option<&CatiaEntitySuffixValue>,
+    suffix_schema_selection: Option<&CatiaEntitySuffixSchemaSelection>,
+) -> Option<CatiaDefinitionChainValue> {
+    if lead != 2
+        || !matches!(
+            value_fields,
+            [value_block::ValueField::Terminator { offset: 0 }]
+        )
+    {
+        return None;
+    }
+    let [selector, role] = definitions else {
+        return None;
+    };
+    let selector_value = CatiaEntitySchemaValue {
+        entry: selector.entry.clone()?,
+        value: selector.name.clone()?,
+    };
+    let role = CatiaEntitySchemaValue {
+        entry: role.entry.clone()?,
+        value: role.name.clone()?,
+    };
+    let suffix_schema_selection = suffix_schema_selection?;
+    if suffix_schema_selection.entry != selector_value.entry
+        || suffix_schema_selection.name != selector_value.value
+    {
+        return None;
+    }
+    let suffix_value = suffix_value?;
+    let CatiaEntitySuffixPayload::SchemaSelected { .. } = &suffix_value.payload else {
+        return None;
+    };
+    Some(CatiaDefinitionChainValue {
+        selector: selector_value,
+        role,
+        value: suffix_schema_selection.value.clone(),
+        trailer: suffix_value.trailer,
     })
 }
 
@@ -6414,6 +6474,13 @@ impl CatiaNative {
                     entity.suffix_value.as_ref(),
                     entity.suffix_schema_selection.as_ref(),
                 );
+                entity.definition_chain_value = definition_chain_value(
+                    entity.lead,
+                    &entity.definition_schema_selections,
+                    &entity.value_fields,
+                    entity.suffix_value.as_ref(),
+                    entity.suffix_schema_selection.as_ref(),
+                );
             }
         }
         let (relation_expressions, entities_by_object, parameter_bindings) =
@@ -6765,6 +6832,16 @@ impl CatiaNative {
                     || graph_entities.iter().any(|entity| {
                         entity.definition_value
                             != definition_value(
+                                entity.lead,
+                                &entity.definition_schema_selections,
+                                &entity.value_fields,
+                                entity.suffix_value.as_ref(),
+                                entity.suffix_schema_selection.as_ref(),
+                            )
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        entity.definition_chain_value
+                            != definition_chain_value(
                                 entity.lead,
                                 &entity.definition_schema_selections,
                                 &entity.value_fields,
@@ -7643,6 +7720,7 @@ fn native_object_graph(
                 parameter_value: None,
                 constraint_range: None,
                 definition_value: None,
+                definition_chain_value: None,
                 formula_relation: None,
                 value_packets,
                 numeric_tuple: entity.numeric_tuple,
