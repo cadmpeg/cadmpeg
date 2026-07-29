@@ -689,6 +689,10 @@ fn zero_entity_faces_from_records(
                 .iter()
                 .map(|allocation| first.checked_sub(*allocation))
                 .collect::<Option<Vec<_>>>()?;
+            let terminal_control = *data.get(record.end - 1)?;
+            if !matches!(terminal_control, 0x03 | 0x05) {
+                return None;
+            }
             Some(ZeroEntityFace {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
@@ -696,7 +700,7 @@ fn zero_entity_faces_from_records(
                 allocations,
                 loop_terminals,
                 loops: Vec::new(),
-                terminal_control: *data.get(record.end - 1)?,
+                terminal_control,
             })
         })
         .collect()
@@ -2287,6 +2291,26 @@ mod tests {
         assert_eq!(face.allocations, [10, 3]);
         assert_eq!(face.loop_terminals, [7]);
         assert_eq!(face.terminal_control, 0x05);
+    }
+
+    #[test]
+    fn face_roster_admits_only_the_two_terminal_controls() {
+        for control in [0x03, 0x05] {
+            let mut stream = zero_entity_face_support_stream();
+            *stream.last_mut().expect("face terminal") = control;
+            assert_eq!(
+                zero_entity_support_runs(&stream)[0]
+                    .face
+                    .as_ref()
+                    .expect("admitted face")
+                    .terminal_control,
+                control
+            );
+        }
+
+        let mut stream = zero_entity_face_support_stream();
+        *stream.last_mut().expect("face terminal") = 0x04;
+        assert!(zero_entity_support_runs(&stream)[0].face.is_none());
     }
 
     #[test]
