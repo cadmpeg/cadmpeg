@@ -192,11 +192,12 @@ current scores require those matrices and representative fixtures.
   retains its complete sense-oriented model endpoint tape when every support
   lifts directly or exactly one missing pair is bounded by lifted neighbors
   and every cyclic join closes within the format tolerance. Matching occurrence
-  endpoint pairs and bounded-curve midpoint witnesses establish face-incidence
-  components only when each occurrence has one match. Matching groups
-  partition by those components, and every two-occurrence partition retains
-  one radial endpoint-pair candidate. The midpoint is an interior witness; the
-  candidate does not establish curve coincidence or a physical edge. Every
+  endpoint pairs establish face-incidence components when each occurrence has
+  one reciprocal endpoint match. Ambiguous endpoint groups require one
+  reciprocal bounded-curve midpoint match. Matching groups partition by those
+  components, and every two-occurrence partition retains one radial
+  endpoint-pair candidate. The midpoint disambiguates repeated endpoint pairs;
+  the candidate does not establish curve coincidence or a physical edge. Every
   in-range odd-lane typed reference retains its selected global record identity
   atomically for the loop.
   In the object stream, full-pcurve endpoint loci are geometric fallback

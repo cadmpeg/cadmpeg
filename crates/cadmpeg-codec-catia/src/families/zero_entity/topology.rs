@@ -74,7 +74,8 @@ pub(crate) fn zero_entity_endpoint_pair_candidates(
 pub(crate) fn endpoint_pair_candidates(
     occurrences: &[ZeroEntityOrientedOccurrence],
 ) -> Vec<ZeroEntityEndpointPairCandidate> {
-    let matches = endpoint_match_graph(occurrences);
+    let endpoint_matches = endpoint_match_graph(occurrences);
+    let radial_matches = selected_radial_matches(occurrences, &endpoint_matches);
     let face_indices = occurrences
         .iter()
         .map(|occurrence| occurrence.face_record_ordinal)
@@ -84,11 +85,11 @@ pub(crate) fn endpoint_pair_candidates(
         .map(|(index, ordinal)| (ordinal, index))
         .collect::<HashMap<_, _>>();
     let mut face_components = DisjointSet::new(face_indices.len());
-    for (index, neighbors) in matches.iter().enumerate() {
+    for (index, neighbors) in radial_matches.iter().enumerate() {
         let [neighbor] = neighbors.as_slice() else {
             continue;
         };
-        if matches[*neighbor].as_slice() != [index] {
+        if radial_matches[*neighbor].as_slice() != [index] {
             continue;
         }
         face_components.union(
@@ -108,7 +109,7 @@ pub(crate) fn endpoint_pair_candidates(
         let mut group = Vec::new();
         while let Some(index) = stack.pop() {
             group.push(index);
-            for neighbor in &matches[index] {
+            for neighbor in &endpoint_matches[index] {
                 if !visited[*neighbor] {
                     visited[*neighbor] = true;
                     stack.push(*neighbor);
@@ -122,7 +123,7 @@ pub(crate) fn endpoint_pair_candidates(
             by_face_component.entry(component).or_default().push(index);
         }
         for mut pair in by_face_component.into_values() {
-            if pair.len() != 2 || !matches[pair[0]].contains(&pair[1]) {
+            if pair.len() != 2 || !endpoint_matches[pair[0]].contains(&pair[1]) {
                 continue;
             }
             pair.sort_by_key(|index| occurrences[*index].support_record_ordinal);
@@ -262,11 +263,7 @@ fn endpoint_match_graph(occurrences: &[ZeroEntityOrientedOccurrence]) -> Vec<Vec
             if unordered_endpoint_pairs_match(
                 occurrence.model_endpoints,
                 occurrences[other].model_endpoints,
-            ) && occurrence
-                .model_midpoint
-                .distance(occurrences[other].model_midpoint)
-                <= MODEL_POINT_TOLERANCE
-            {
+            ) {
                 matches[index].push(other);
                 matches[other].push(index);
             }
@@ -276,6 +273,33 @@ fn endpoint_match_graph(occurrences: &[ZeroEntityOrientedOccurrence]) -> Vec<Vec
         neighbors.sort_unstable();
     }
     matches
+}
+
+fn selected_radial_matches(
+    occurrences: &[ZeroEntityOrientedOccurrence],
+    endpoint_matches: &[Vec<usize>],
+) -> Vec<Vec<usize>> {
+    endpoint_matches
+        .iter()
+        .enumerate()
+        .map(|(index, matches)| {
+            if let [other] = matches.as_slice() {
+                if endpoint_matches[*other].as_slice() == [index] {
+                    return vec![*other];
+                }
+            }
+            matches
+                .iter()
+                .copied()
+                .filter(|other| {
+                    occurrences[index]
+                        .model_midpoint
+                        .distance(occurrences[*other].model_midpoint)
+                        <= MODEL_POINT_TOLERANCE
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn endpoint_cell(point: Point3) -> [i64; 3] {
@@ -382,6 +406,20 @@ mod tests {
                 ],
                 Point3::new(0.501, 0.0, 0.0),
             ),
+        ];
+
+        assert_eq!(
+            endpoint_pair_candidates(&occurrences)[0].support_record_ordinals,
+            [1, 2]
+        );
+    }
+
+    #[test]
+    fn unique_endpoint_pair_does_not_require_equal_parameter_midpoints() {
+        let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        let occurrences = [
+            occurrence(10, 1, endpoints, Point3::new(0.4, 0.1, 0.0)),
+            occurrence(11, 2, endpoints, Point3::new(0.6, 0.1, 0.0)),
         ];
 
         assert_eq!(
