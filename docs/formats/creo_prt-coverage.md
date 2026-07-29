@@ -30,6 +30,8 @@ fixtures, claims above L1 remain unproven.
 
 - Saved planar sections transfer placed sketch points, lines, arcs, splines,
   dimensions, and typed or identity-preserving native constraints.
+- Section-reference lines transfer as construction-line geometry when both
+  stored endpoint references resolve to distinct section coordinates.
 - Active solver incidences drive coordinate, orientation, equality, radius,
   and supported dimensional equations; disabled incidences remain retained but
   do not affect solved geometry.

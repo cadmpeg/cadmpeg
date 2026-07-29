@@ -7784,6 +7784,40 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         ),
         None
     );
+    let reference_line = crate::feature::FeatureReferenceLineSegment {
+        directions: [Some(0), Some(1), Some(0)],
+        point_ids: [Some(7), Some(8)],
+        vertical_horizontal: Some(1),
+        external_id: 101,
+        offset: 603,
+    };
+    assert_eq!(
+        section_reference_line_geometry(
+            &BTreeMap::from([(7, [-4.0, 2.0]), (8, [6.0, 2.0])]),
+            &reference_line,
+        ),
+        Some(SketchGeometry::Line {
+            start: Point2::new(-4.0, 2.0),
+            end: Point2::new(6.0, 2.0),
+        })
+    );
+    assert_eq!(
+        section_reference_line_geometry(
+            &BTreeMap::from([(7, [-4.0, 2.0]), (8, [-4.0, 2.0])]),
+            &reference_line,
+        ),
+        None
+    );
+    assert_eq!(
+        section_reference_line_geometry(
+            &BTreeMap::from([(7, [-4.0, 2.0])]),
+            &crate::feature::FeatureReferenceLineSegment {
+                point_ids: [Some(7), None],
+                ..reference_line
+            },
+        ),
+        None
+    );
     let mut opaque_line = definition.clone();
     opaque_line
         .segments

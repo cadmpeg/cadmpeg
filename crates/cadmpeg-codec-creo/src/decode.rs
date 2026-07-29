@@ -2169,6 +2169,27 @@ fn section_centered_line_geometry(
     })
 }
 
+fn section_reference_line_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureReferenceLineSegment,
+) -> Option<SketchGeometry> {
+    let [Some(start_id), Some(end_id)] = segment.point_ids else {
+        return None;
+    };
+    let start = points.get(&start_id)?;
+    let end = points.get(&end_id)?;
+    let scale = start
+        .iter()
+        .chain(end)
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    ((end[0] - start[0]).hypot(end[1] - start[1]) > 1e-12 * scale).then_some(())?;
+    Some(SketchGeometry::Line {
+        start: Point2::new(start[0], start[1]),
+        end: Point2::new(end[0], end[1]),
+    })
+}
+
 fn section_segment_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -12003,6 +12024,17 @@ fn transfer_sketches(
                 ))
             })
             .collect::<BTreeMap<_, _>>();
+        let reference_line_geometries = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.reference_line_rows)
+            .filter_map(|segment| {
+                Some((
+                    segment.offset,
+                    section_reference_line_geometry(&points, segment)?,
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
         let mut emitted = segments
             .iter()
             .filter(|segment| {
@@ -12062,6 +12094,12 @@ fn transfer_sketches(
                     || (unique_segment_ids.contains(&segment.external_id)
                         && materialized_saved_section_external_ids.contains(&segment.external_id))
             })
+            .count();
+        coverage.resolved_geometry += definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.reference_line_rows)
+            .filter(|segment| reference_line_geometries.contains_key(&segment.offset))
             .count();
         coverage.resolved_geometry += definition
             .segments
@@ -12393,29 +12431,42 @@ fn transfer_sketches(
                 format!("reference_line:offset:{}", segment.offset)
             };
             let id = sketch_entity_id(&sketch_id, &suffix);
+            let geometry = reference_line_geometries
+                .get(&segment.offset)
+                .cloned()
+                .unwrap_or_else(|| SketchGeometry::Native {
+                    native_kind: "reference_line".to_string(),
+                });
+            let solved_geometry = matches!(geometry, SketchGeometry::Line { .. });
             annotate(
                 annotations,
                 &id.0,
                 "FeatDefs",
                 segment.offset as u64,
-                "section_reference_line",
-                Exactness::ByteExact,
+                if solved_geometry {
+                    "solved_section_reference_line"
+                } else {
+                    "unresolved_section_reference_line"
+                },
+                if solved_geometry {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
+                },
             );
             entities.push(SketchEntity {
                 id,
                 sketch: sketch_id.clone(),
                 construction: true,
                 native_ref: Some(sketch_native_ref(&sketch_id)),
-                geometry_ref: None,
+                geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
                 endpoint_refs: segment
                     .point_ids
                     .into_iter()
                     .flatten()
                     .map(|point| sketch_point_ref(&sketch_id, point))
                     .collect(),
-                geometry: SketchGeometry::Native {
-                    native_kind: "reference_line".to_string(),
-                },
+                geometry,
             });
         }
         for segment in definition

@@ -2784,8 +2784,10 @@ state. A type-12 row with a null endpoint remains opaque. Type `25` is a
 section-reference line. Its two point fields are
 nullable endpoint references; its center, radius, and secondary-radius fields
 are null, and its arc-orientation field is zero. Its direction triple and
-vertical/horizontal field retain the stored reference-line state. Other
-complete fixed-field segment families remain opaque segment rows. The
+vertical/horizontal field retain the stored reference-line state. When both
+point references resolve to distinct section coordinates, they are the ordered
+endpoints of the reference-line carrier. Other complete fixed-field segment
+families remain opaque segment rows. The
 entity-reference header and segment rows use the same framing and field order
 as the labelled `segtab_ptr` table.
 
