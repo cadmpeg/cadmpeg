@@ -59,9 +59,10 @@ current scores require those matrices and representative fixtures.
   owner sets remain unparented. Child features and parameters share one
   object-field-ordered source-content sequence; other parameters remain
   document-scoped.
-  A design object whose complete field population unanimously selects the same
-  `CircPattern` definition transfers one circular-pattern feature identity.
-  Seeds, axis, count, angle, field roles, and outputs remain unresolved.
+  A design object whose complete empty declaration population has field-class
+  identity equal to one unanimous `CircPattern` definition transfers one
+  circular-pattern feature identity and consumes those declarations. Seeds,
+  axis, count, angle, field roles, and outputs remain unresolved.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not
   transfer as values of either type.
