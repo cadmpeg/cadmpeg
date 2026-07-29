@@ -516,6 +516,31 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                 HeadToken::NullHandle,
                 HeadToken::Reference(owner),
             ] if *owner != 0
+        ) || matches!(
+            head.as_slice(),
+            [
+                HeadToken::Lead(0x1a),
+                HeadToken::Reference(_),
+                HeadToken::Reference(0),
+                HeadToken::NullHandle,
+                HeadToken::Reference(0),
+                HeadToken::Reference(_),
+                HeadToken::Literal(0),
+                HeadToken::Literal(0),
+            ]
+        ) || matches!(
+            head.as_slice(),
+            [
+                HeadToken::Lead(0x1a),
+                HeadToken::Reference(_),
+                HeadToken::Reference(0),
+                HeadToken::NullHandle,
+                HeadToken::Reference(0),
+                HeadToken::Reference(_) | HeadToken::Literal(_),
+                HeadToken::Literal(20 | 21 | 22 | 23 | 26 | 27 | 28),
+                HeadToken::Literal(0),
+                HeadToken::Literal(0),
+            ]
         );
         let fixed_role_count = match lead {
             0x02 => 1,
