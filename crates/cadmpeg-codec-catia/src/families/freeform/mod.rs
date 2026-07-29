@@ -31,6 +31,30 @@ struct FreeformSurfaceCarrier {
     source_tag: String,
 }
 
+fn typed_face_counts(
+    records: &std::collections::BTreeMap<u32, crate::families::b5::graph::B5FaceRecord>,
+    resolved_count: usize,
+) -> [usize; 4] {
+    let controls = records.values().fold([0usize; 3], |mut counts, face| {
+        match face.terminal_control {
+            Some(0x03) => counts[0] += 1,
+            Some(0x05) => counts[1] += 1,
+            None => counts[2] += 1,
+            Some(_) => unreachable!("the face parser admits only controls 03 and 05"),
+        }
+        counts
+    });
+    [
+        controls[0],
+        controls[1],
+        controls[2],
+        records
+            .len()
+            .checked_sub(resolved_count)
+            .expect("resolved faces are a subset of typed face records"),
+    ]
+}
+
 pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<FamilyOutput> {
     let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
@@ -44,30 +68,12 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
             counts
         })
     });
-    let typed_face_counts = b5_graph.as_ref().map(|graph| {
-        let controls = graph
-            .face_records
-            .values()
-            .fold([0usize; 3], |mut counts, face| {
-                match face.terminal_control {
-                    Some(0x03) => counts[0] += 1,
-                    Some(0x05) => counts[1] += 1,
-                    None => counts[2] += 1,
-                    Some(_) => unreachable!("the face parser admits only controls 03 and 05"),
-                }
-                counts
-            });
-        [
-            controls[0],
-            controls[1],
-            controls[2],
-            graph
-                .face_records
-                .len()
-                .checked_sub(graph.faces.len())
-                .expect("resolved faces are a subset of typed face records"),
-        ]
-    });
+    let typed_face_counts = if let Some(graph) = &b5_graph {
+        Some(typed_face_counts(&graph.face_records, graph.faces.len()))
+    } else {
+        let records = crate::families::b5::graph::typed_face_records(&scan.data);
+        (!records.is_empty()).then(|| typed_face_counts(&records, 0))
+    };
     let edge_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.edges.values().fold([0usize; 8], |mut counts, edge| {
             let index = match edge.terminal_control {

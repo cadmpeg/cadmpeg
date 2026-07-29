@@ -3861,6 +3861,15 @@ fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
     }
 }
 
+/// Read every structurally complete face record independently of target
+/// resolution.
+pub(crate) fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
+    records(bytes)
+        .into_iter()
+        .filter_map(|record| parse_face_record(&record).map(|face| (record.object_id, face)))
+        .collect()
+}
+
 /// Read each face's leading surface reference independently of its loop grammar.
 pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     records(bytes)

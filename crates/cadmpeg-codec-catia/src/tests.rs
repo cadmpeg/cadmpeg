@@ -13959,6 +13959,39 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
 }
 
 #[test]
+fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
+    let mut stream = b2_sphere_stream();
+    append_b5_record(&mut stream, 0x27, 100, &b5_plane_payload([0.0; 3]));
+    append_b5_record(
+        &mut stream,
+        0x5f,
+        101,
+        &[0x82, 0x18, 100, 0, 0x18, 102, 0, 0x03],
+    );
+    append_b5_record(&mut stream, 0x5e, 102, &[]);
+    assert!(crate::families::b5::graph::parse(&stream).is_none());
+    assert_eq!(
+        crate::families::b5::graph::typed_face_records(&stream).len(),
+        1
+    );
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode typed face without resolved topology");
+    assert_eq!(
+        result.report.coverage["typed_object_stream_face_terminal_control_03_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["typed_unresolved_object_stream_face_count"],
+        1
+    );
+}
+
+#[test]
 fn decode_inner_no_directory_transfers_a8_nurbs() {
     assert_eq!(
         crate::container::scan_bytes(inner_no_directory_a8_catpart()).variant,
