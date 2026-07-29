@@ -1216,6 +1216,9 @@ fn typed_parameter_evaluation(
         }
         crate::native::CatiaEntityEvaluation::Scalar { bits } => bits,
     };
+    if matches!(source_type, "Boolean" | "String") {
+        return None;
+    }
     let value = f64::from_bits(*bits);
     let value = match source_type {
         "LENGTH" => ParameterValue::Length(Length(value)),
@@ -1237,6 +1240,8 @@ fn canonical_parameter_type(source_type: &str) -> Option<&'static str> {
         "ANGLE" => Some("ANGLE"),
         "Real" | "R" => Some("Real"),
         "Integer" | "I" => Some("Integer"),
+        "Boolean" => Some("Boolean"),
+        "String" => Some("String"),
         _ => None,
     }
 }

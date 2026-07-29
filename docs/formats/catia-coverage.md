@@ -59,6 +59,9 @@ current scores require those matrices and representative fixtures.
   owner sets remain unparented. Child features and parameters share one
   object-field-ordered source-content sequence; other parameters remain
   document-scoped.
+  Typed `Boolean` and `String` parameters transfer when their complete
+  evaluation production is unset. Binary64 evaluation productions do not
+  transfer as values of either type.
   Legacy named scalar packets also transfer with either a finite or unset
   evaluation when a unique acyclic descriptor chain resolves their literal
   numeric type. A uniquely bound zero-input legacy relation replaces a finite

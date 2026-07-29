@@ -3556,6 +3556,39 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
 }
 
 #[test]
+fn decode_transfers_unset_non_numeric_legacy_parameters() {
+    for parameter_type in ["Boolean", "String"] {
+        let mut bytes = zero_entity_catpart();
+        bytes.push(0xea);
+        bytes.extend(1_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.extend([6, b'V', b'a', b'l', b'u', b'e', 0xfe]);
+        bytes.extend(b"\xfe\x84\x92\x82");
+        bytes.push(u8::try_from(parameter_type.len() + 1).expect("short parameter type"));
+        bytes.extend(parameter_type.as_bytes());
+        bytes.push(0x83);
+        bytes.extend(b"\xfe\x84\x88\x82\xfe\xe7");
+        bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+        let decoded = CatiaCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode unset non-numeric legacy parameter");
+        let [parameter] = decoded.ir.model.parameters.as_slice() else {
+            panic!("one transferred legacy parameter")
+        };
+
+        assert_eq!(parameter.name, "Value");
+        assert_eq!(parameter.value, None);
+        assert!(parameter.expression.is_empty());
+        assert_eq!(parameter.properties["value_type"], parameter_type);
+        assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    }
+}
+
+#[test]
 fn decode_rejects_a_legacy_parameter_with_multiple_type_descriptors() {
     let mut bytes = zero_entity_catpart();
     bytes.push(0xea);
@@ -11787,6 +11820,59 @@ fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
     assert!(input.expression.is_empty());
     assert!(input.dependencies.is_empty());
     assert_eq!(input.properties["value_type"], "LENGTH");
+}
+
+#[test]
+fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output() {
+    for parameter_type in ["Boolean", "String"] {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(
+                    standard_catpart_with_typed_formula_inputs_and_object_payload(
+                        4,
+                        false,
+                        &[("#1_", parameter_type, "Value", "#1_ /2", 1.0)],
+                        "Real",
+                        Some(1.0),
+                        "#1_ /2",
+                        (&[0xfe], Some(0)),
+                    ),
+                ),
+                &DecodeOptions::default(),
+            )
+            .expect("decode unset non-numeric formula input");
+        let [input] = decoded.ir.model.parameters.as_slice() else {
+            panic!("only the independently typed unset input")
+        };
+
+        assert_eq!(input.name, "Value");
+        assert_eq!(input.value, None);
+        assert!(input.expression.is_empty());
+        assert!(input.dependencies.is_empty());
+        assert_eq!(input.properties["value_type"], parameter_type);
+        assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    }
+}
+
+#[test]
+fn decode_does_not_treat_numeric_packets_as_non_numeric_formula_values() {
+    for parameter_type in ["Boolean", "String"] {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                    4,
+                    false,
+                    &[("#1_", parameter_type, "Value", "#1_ /2", 1.0)],
+                    "Real",
+                    Some(1.0),
+                    "#1_ /2",
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode non-numeric formula input with numeric packet");
+
+        assert!(decoded.ir.model.parameters.is_empty());
+    }
 }
 
 #[test]
