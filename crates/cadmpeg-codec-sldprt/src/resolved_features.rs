@@ -9306,10 +9306,48 @@ mod marker_tests {
                 .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
             payload
         };
+        let normalized_payload = extended(valid_compact_96);
         assert_eq!(
-            super::extended_compact_indexed_curve_endpoint_indices(&extended(valid_compact_96), 0,),
+            super::extended_compact_indexed_curve_endpoint_indices(&normalized_payload, 0),
             Some([5, 9])
         );
+        let entity = |id: &str, offset, object_index, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("profile".into()),
+            ordinal: 0,
+            offset,
+            object_index,
+            local_id: None,
+            kind: SketchInputKind::LineOrCircle,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let mut lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: normalized_payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![
+                entity("curve", 0, None, None),
+                entity("start", 1, Some(5), Some([0.0, 0.0])),
+                entity("end", 2, Some(9), Some([1.0, 0.0])),
+            ],
+        };
+        normalize_indexed_curve_entities(&mut lane);
+        assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Point);
+        assert_eq!(lane.sketch_entities[2].kind, SketchInputKind::Point);
         assert_eq!(
             super::extended_compact_indexed_curve_endpoint_indices(&extended(valid_compact_104), 0,),
             None
@@ -16207,6 +16245,9 @@ fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
             let offset = usize::try_from(curve.offset).ok()?;
             let indices = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
                 .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
+                .or_else(|| {
+                    extended_compact_indexed_curve_endpoint_indices(&lane.native_payload, offset)
+                })
                 .or_else(|| compact_legacy_curve_endpoint_indices(&lane.native_payload, offset))
                 .or_else(|| {
                     alternate_current_indexed_curve_endpoint_indices(&lane.native_payload, offset)
