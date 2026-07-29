@@ -764,6 +764,14 @@ fn finish_decode(
             native.zero_entity_edge_strides.len(),
         ),
         (
+            "decoded_zero_entity_edge_stride_allocation_count".to_string(),
+            native
+                .zero_entity_edge_strides
+                .iter()
+                .map(|stride| stride.allocations.len())
+                .sum(),
+        ),
+        (
             "decoded_zero_entity_face_bound_support_run_count".to_string(),
             native
                 .zero_entity_support_runs
@@ -904,6 +912,23 @@ fn finish_decode(
             native.zero_entity_oriented_use_pairs.len(),
         ),
         (
+            "decoded_zero_entity_oriented_use_count".to_string(),
+            native
+                .zero_entity_oriented_use_pairs
+                .iter()
+                .map(|pair| pair.uses.len())
+                .sum(),
+        ),
+        (
+            "decoded_zero_entity_oriented_use_allocation_count".to_string(),
+            native
+                .zero_entity_oriented_use_pairs
+                .iter()
+                .flat_map(|pair| &pair.uses)
+                .map(|use_| use_.allocations.len())
+                .sum(),
+        ),
+        (
             "decoded_zero_entity_endpoint_pair_candidate_count".to_string(),
             native.zero_entity_endpoint_pair_candidates.len(),
         ),
@@ -984,6 +1009,14 @@ fn finish_decode(
         (
             "decoded_zero_entity_vertex_incidence_count".to_string(),
             native.zero_entity_vertex_incidences.len(),
+        ),
+        (
+            "decoded_zero_entity_vertex_incidence_allocation_count".to_string(),
+            native
+                .zero_entity_vertex_incidences
+                .iter()
+                .map(|incidence| incidence.allocations.len())
+                .sum(),
         ),
         (
             "decoded_zero_entity_vertex_owner_binding_count".to_string(),

@@ -5554,12 +5554,28 @@ fn decode_reports_separate_zero_entity_topology_registries() {
         1
     );
     assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_edge_stride_allocation_count"],
+        5
+    );
+    assert_eq!(
         decoded.report.coverage["decoded_zero_entity_oriented_use_pair_count"],
         1
     );
     assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_oriented_use_count"],
+        2
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_oriented_use_allocation_count"],
+        4
+    );
+    assert_eq!(
         decoded.report.coverage["decoded_zero_entity_vertex_incidence_count"],
         1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_zero_entity_vertex_incidence_allocation_count"],
+        3
     );
     assert_eq!(
         decoded.report.coverage["decoded_zero_entity_vertex_owner_binding_count"],
