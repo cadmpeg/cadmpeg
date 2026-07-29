@@ -60,9 +60,10 @@ current scores require those matrices and representative fixtures.
   object-field-ordered source-content sequence; other parameters remain
   document-scoped.
   A design object whose complete empty declaration population has field-class
-  identity equal to one unanimous `CircPattern` definition transfers one
-  circular-pattern feature identity and consumes those declarations. Seeds,
-  axis, count, angle, field roles, and outputs remain unresolved.
+  identity equal to one unanimous `CircPattern` or `RectPattern` definition
+  transfers one circular- or linear-pattern feature identity and consumes those
+  declarations. Seeds, directions, counts, spacing, angles, field roles, and
+  outputs remain unresolved.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not
   transfer as values of either type.

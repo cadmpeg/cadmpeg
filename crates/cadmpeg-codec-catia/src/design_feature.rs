@@ -175,9 +175,10 @@ pub(crate) fn transfer_design_features(
                     );
                 }
             }
-            DesignFeatureDefinition::CircularPattern {
+            DesignFeatureDefinition::Pattern {
                 declarations,
                 definition_name,
+                form,
             } => {
                 ir.model.features.push(Feature {
                     id: feature_id.clone(),
@@ -193,9 +194,7 @@ pub(crate) fn transfer_design_features(
                     outputs: Vec::new(),
                     definition: FeatureDefinition::Pattern {
                         seeds: Vec::new(),
-                        pattern: PatternKind::Unresolved {
-                            form: Some(PatternForm::Circular),
-                        },
+                        pattern: PatternKind::Unresolved { form: Some(form) },
                     },
                     native_ref: Some(object.id.clone()),
                 });
@@ -389,9 +388,10 @@ enum DesignFeatureDefinition<'a> {
         declarations: Vec<&'a CatiaObjectRecord>,
         declaration_class: &'a str,
     },
-    CircularPattern {
+    Pattern {
         declarations: Vec<&'a CatiaObjectRecord>,
         definition_name: &'a str,
+        form: PatternForm,
     },
 }
 
@@ -402,10 +402,10 @@ fn design_feature_candidate<'a>(
 ) -> Option<DesignFeatureCandidate<'a>> {
     principal_plane_candidate(object, records)
         .or_else(|| sketch_candidate(object, records))
-        .or_else(|| circular_pattern_candidate(object, records, entities))
+        .or_else(|| pattern_candidate(object, records, entities))
 }
 
-fn circular_pattern_candidate<'a>(
+fn pattern_candidate<'a>(
     object: &'a CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
     entities: &HashMap<&str, &'a CatiaEntityRecord>,
@@ -439,15 +439,21 @@ fn circular_pattern_candidate<'a>(
         })
         .collect::<Option<Vec<_>>>()?;
     let &(entry, name) = definitions.first()?;
-    (name == "CircPattern"
-        && definitions
-            .iter()
-            .all(|candidate| *candidate == (entry, name)))
-    .then_some(DesignFeatureCandidate {
+    definitions
+        .iter()
+        .all(|candidate| *candidate == (entry, name))
+        .then_some(())?;
+    let form = match name {
+        "CircPattern" => PatternForm::Circular,
+        "RectPattern" => PatternForm::Linear,
+        _ => return None,
+    };
+    Some(DesignFeatureCandidate {
         object,
-        definition: DesignFeatureDefinition::CircularPattern {
+        definition: DesignFeatureDefinition::Pattern {
             declarations: fields.into_iter().map(|(record, _)| record).collect(),
             definition_name: name,
+            form,
         },
     })
 }

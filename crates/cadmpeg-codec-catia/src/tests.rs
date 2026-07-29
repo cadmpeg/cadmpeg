@@ -7231,6 +7231,50 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
 }
 
 #[test]
+fn unanimous_complete_rectangular_pattern_definitions_transfer_feature_identity() {
+    use cadmpeg_ir::features::{FeatureDefinition, PatternForm, PatternKind};
+
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0];
+    let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
+        &definition,
+        &[0xfe],
+        &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
+    ));
+    let definition_value = native.entity_records[0]
+        .definition_value
+        .as_mut()
+        .expect("definition value");
+    definition_value.definition.value = "RectPattern".to_string();
+    native.object_graphs[0].records[0].class_entry =
+        Some(definition_value.definition.entry.clone());
+    native.object_graphs[0].records[0].class_name = Some("RectPattern".to_string());
+    native.object_graphs[0].records[0].owner_entity_id =
+        Some(native.design_objects[0].owner_entity_id);
+    native.object_graphs[0].records[0].storage_ref = None;
+    native.object_graphs[0].records[0].references.clear();
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native);
+    assert_eq!(
+        transfer.pattern_records,
+        native.design_objects[0].fields.iter().cloned().collect()
+    );
+    assert_eq!(
+        ir.model.features[0].definition,
+        FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved {
+                form: Some(PatternForm::Linear),
+            },
+        }
+    );
+    assert_eq!(
+        ir.model.features[0].source_tag.as_deref(),
+        Some("RectPattern")
+    );
+}
+
+#[test]
 fn complete_standalone_principal_plane_declarations_transfer_one_history_node() {
     use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
 
@@ -7928,7 +7972,7 @@ fn catpart_decode_accounts_for_only_the_transferred_sketch_declaration() {
                 .contains("0 exact sketch placement field record(s)")
             && loss
                 .message
-                .contains("0 exact circular-pattern declaration field record(s)")
+                .contains("0 exact pattern declaration field record(s)")
             && loss.message.contains("1 field record(s)")
     }));
 }
