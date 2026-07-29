@@ -4377,10 +4377,10 @@ mod record_decoders {
                 },
             )
             .expect("large analytic carrier");
-            let radius = match surface {
-                SurfaceGeometry::Sphere { radius, .. }
-                | SurfaceGeometry::Cylinder { radius, .. } => radius,
-                _ => panic!("expected sphere or cylinder"),
+            let (SurfaceGeometry::Sphere { radius, .. } | SurfaceGeometry::Cylinder { radius, .. }) =
+                surface
+            else {
+                panic!("expected sphere or cylinder");
             };
             assert_eq!(radius, expected_radius);
         }
