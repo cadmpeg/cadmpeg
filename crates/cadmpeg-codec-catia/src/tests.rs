@@ -7190,6 +7190,22 @@ fn unanimous_complete_circular_pattern_definitions_transfer_feature_identity() {
     crate::design_feature::transfer_design_features(&mut rejected, &foreign_fields);
     assert!(rejected.model.features.is_empty());
 
+    let mut unsupported_definition = native.clone();
+    for entity in &mut unsupported_definition.entity_records {
+        entity
+            .definition_value
+            .as_mut()
+            .expect("complete definition")
+            .definition
+            .value = "AxisSystem".to_string();
+    }
+    for field in &mut unsupported_definition.object_graphs[0].records {
+        field.class_name = Some("AxisSystem".to_string());
+    }
+    let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
+    crate::design_feature::transfer_design_features(&mut rejected, &unsupported_definition);
+    assert!(rejected.model.features.is_empty());
+
     let mut payload_bearing = native.clone();
     payload_bearing.object_graphs[0].records[0].storage_ref = Some(1);
     let mut rejected = CadIr::empty(cadmpeg_ir::units::Units::default());
