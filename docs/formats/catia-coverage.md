@@ -177,6 +177,9 @@ current scores require those matrices and representative fixtures.
   vertex identities and parameter incidences.
   Counted object-stream faces require an exact `03` or `05` terminal control;
   either form owns its first referenced carrier and remaining referenced loops.
+  Counted object-stream loops require an exact edge-count lane and retain their
+  complete control tail: the loop control, three signed controls per edge, and
+  the optional finite binary64/binary32 numeric extension.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.

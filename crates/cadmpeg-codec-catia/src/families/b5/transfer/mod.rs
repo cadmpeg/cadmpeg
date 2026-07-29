@@ -928,7 +928,7 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::super::graph::{
         loop_chain_senses, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop,
-        B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile,
+        B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile,
         B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
     };
     use super::edges::{
@@ -1078,6 +1078,7 @@ mod tests {
             pcurves: vec![2],
             edges: vec![3],
             surface: 4,
+            metadata: B5LoopMetadata::placeholder(),
         };
 
         assert_eq!(
@@ -1154,6 +1155,7 @@ mod tests {
                     pcurves: vec![20, 20, 20],
                     edges: vec![30, 31, 32],
                     surface: 10,
+                    metadata: B5LoopMetadata::placeholder(),
                 },
             )]),
             pcurves: BTreeMap::from([(
@@ -1474,6 +1476,7 @@ mod tests {
                     pcurves: vec![4],
                     edges: vec![3],
                     surface: 10,
+                    metadata: B5LoopMetadata::placeholder(),
                 },
             )]),
             pcurves: BTreeMap::new(),
@@ -1523,6 +1526,7 @@ mod tests {
                 pcurves: vec![8],
                 edges: vec![7],
                 surface: 10,
+                metadata: B5LoopMetadata::placeholder(),
             },
         );
         graph.edge_vertices.insert(7, [0, 1]);
@@ -1570,6 +1574,7 @@ mod tests {
             pcurves: vec![0; edges.len()],
             edges,
             surface: 10,
+            metadata: B5LoopMetadata::placeholder(),
         };
         let mut graph = B5Graph {
             complete: true,
@@ -1630,6 +1635,7 @@ mod tests {
                     pcurves: vec![2],
                     edges: vec![3],
                     surface: 4,
+                    metadata: B5LoopMetadata::placeholder(),
                 },
             )]),
             pcurves: BTreeMap::new(),
@@ -2279,6 +2285,7 @@ mod tests {
                     pcurves: vec![4, 4, 4],
                     edges: vec![5, 6, 7],
                     surface: 2,
+                    metadata: B5LoopMetadata::placeholder(),
                 },
             )]),
             pcurves: BTreeMap::new(),
