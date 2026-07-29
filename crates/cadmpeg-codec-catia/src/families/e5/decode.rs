@@ -1311,7 +1311,7 @@ fn emit_e5_faces_loops_coedges(
             tolerance: None,
         });
 
-        for loop_ in &face.loops {
+        for (loop_position, loop_) in face.loops.iter().enumerate() {
             let loop_id = LoopId(format!("catia:e5:loop#{}", loop_.record_id));
             let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edge_uses.len())
                 .map(|index| CoedgeId(format!("catia:e5:coedge#{}-{index}", loop_.record_id)))
@@ -1337,7 +1337,11 @@ fn emit_e5_faces_loops_coedges(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                boundary_role: if loop_position == 0 {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                } else {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                },
                 coedges: coedge_ids.clone(),
                 vertex_uses: Vec::new(),
             });

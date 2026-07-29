@@ -351,9 +351,12 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
     for face in raw_faces {
         by_id.get(&face.surface)?;
         let mut resolved_loops = Vec::with_capacity(face.loops.len());
-        for loop_id in face.loops {
+        for (loop_position, loop_id) in face.loops.into_iter().enumerate() {
             let raw = loops.get(&loop_id)?;
             if raw.surface != face.surface {
+                return None;
+            }
+            if raw.outer.is_some_and(|outer| outer != (loop_position == 0)) {
                 return None;
             }
             let reversed = solve_loop_chain(&raw.edges, &edges)?;
