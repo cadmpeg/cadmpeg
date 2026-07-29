@@ -523,24 +523,22 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                 &[]
             }
         };
-        let (owner_index, class_index, storage_index) =
-            if lead == 0x16 && !matches!(head.get(1), Some(HeadToken::Separator)) {
-                (2, 0, 1)
-            } else {
-                (0, 1, 2)
-            };
-        let owner_ref = match roles.get(owner_index) {
+        let class_first = lead == 0x16 && !matches!(head.get(1), Some(HeadToken::Separator));
+        let role_reference = |index| match roles.get(index) {
             Some(HeadToken::Reference(value)) => Some(*value),
             _ => None,
         };
-        let class_ref = owner_ref.and_then(|_| match roles.get(class_index) {
-            Some(HeadToken::Reference(value)) => Some(*value),
-            _ => None,
-        });
-        let storage_ref = class_ref.and_then(|_| match roles.get(storage_index) {
-            Some(HeadToken::Reference(value)) => Some(*value),
-            _ => None,
-        });
+        let (owner_ref, class_ref, storage_ref) = if class_first {
+            let class_ref = role_reference(0);
+            let storage_ref = class_ref.and_then(|_| role_reference(1));
+            let owner_ref = storage_ref.and_then(|_| role_reference(2));
+            (owner_ref, class_ref, storage_ref)
+        } else {
+            let owner_ref = role_reference(0);
+            let class_ref = owner_ref.and_then(|_| role_reference(1));
+            let storage_ref = class_ref.and_then(|_| role_reference(2));
+            (owner_ref, class_ref, storage_ref)
+        };
         let repeated_reference_suffix = repeated_reference_suffix(&payload);
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
@@ -594,6 +592,25 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
             HeadToken::Literal(0),
             HeadToken::Literal(0),
         ] if *storage != 0
+    ) {
+        return Some(3);
+    }
+    if matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_) | HeadToken::Separator,
+            HeadToken::Literal(21 | 22 | 23 | 26 | 27 | 28),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            _,
+            HeadToken::Literal(20 | 21 | 24 | 25 | 28),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ]
     ) {
         return Some(3);
     }
