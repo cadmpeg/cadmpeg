@@ -690,13 +690,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             candidate,
         );
     }
-    for candidate in records.iter().filter_map(|record| {
-        if record.family == 0xa8 && record.class == 0x21 {
-            parse_a8_class21_pcurve(record.object_id, &record.payload)
-        } else {
-            None
-        }
-    }) {
+    for candidate in a8_class21_pcurves(bytes) {
         merge_pcurve_candidate(
             &mut object_stream_pcurve_candidates,
             &mut conflicting_object_stream_pcurves,
@@ -1217,6 +1211,19 @@ fn object_stream_pcurve_candidate(
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })
+}
+
+fn a8_class21_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
+    let mut pcurves = Vec::new();
+    for offset in 0..bytes.len().saturating_sub(11) {
+        let Some((end, 0xa8, 0x21, object_id)) = object_frame(bytes, offset) else {
+            continue;
+        };
+        if let Some(pcurve) = parse_a8_class21_pcurve(object_id, &bytes[offset + 11..end]) {
+            pcurves.push(pcurve);
+        }
+    }
+    pcurves
 }
 
 fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
