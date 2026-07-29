@@ -3944,6 +3944,53 @@ fn saved_line_joins_through_order_table() {
         materialized_saved_section_external_ids(&definition),
         BTreeSet::from([42])
     );
+    let mut coordinate_definition = definition.clone();
+    coordinate_definition.variables = Some(crate::feature::FeatureVariableTable {
+        declared_count: 0,
+        entity_ref: None,
+        rows: Vec::new(),
+        points: vec![
+            crate::feature::FeatureSectionPoint {
+                point_id: 7,
+                u: None,
+                v: None,
+            },
+            crate::feature::FeatureSectionPoint {
+                point_id: 9,
+                u: None,
+                v: None,
+            },
+        ],
+        offset: 30,
+    });
+    coordinate_definition.segments = Some(crate::feature::FeatureSegmentTable {
+        declared_count: 1,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![segment.clone()],
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: 38,
+    });
+    assert_eq!(
+        resolved_section_points(&coordinate_definition),
+        BTreeMap::from([(7, [-8.0, -0.85]), (9, [8.0, -0.85])])
+    );
+    coordinate_definition
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points[0]
+        .u = Some(7.0);
+    assert_eq!(
+        resolved_section_coordinates(&coordinate_definition),
+        BTreeMap::from([(7, [Some(7.0), Some(-0.85)]), (9, [Some(8.0), Some(-0.85)]),])
+    );
     let mut incomplete = definition.clone();
     let crate::feature::FeatureSavedEntity::Line(incomplete_line) = &mut incomplete
         .saved_section
@@ -4820,6 +4867,10 @@ fn saved_arc_joins_through_order_table() {
             start_angle: Angle(std::f64::consts::PI),
             end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
         })
+    );
+    assert_eq!(
+        saved_section_segment_point_coordinates(&definition, &segment),
+        Some([(7, [0.0, -2.0]), (9, [-2.0, 0.0])])
     );
     assert!(resolved_section_segment_geometry(
         &definition,

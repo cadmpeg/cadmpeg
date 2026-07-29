@@ -84,7 +84,10 @@ fixtures, claims above L1 remain unproven.
   that did not decode. Each nonzero unresolved or missing count raises a decode
   loss note.
 - Section-coordinate solving requires a complete variable table. Missing
-  declared variable rows are counted and raise a decode loss note.
+  declared variable rows are counted and raise a decode loss note. Complete
+  endpoints from uniquely joined saved lines and arcs seed the corresponding
+  segment-point equations; disagreement with stored or constraint-derived
+  coordinates withholds the inconsistent derivation.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   It also counts decoded and missing declared relation, incidence, and

@@ -2421,6 +2421,33 @@ fn saved_section_arc_geometry(
     })
 }
 
+fn saved_section_segment_point_coordinates(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<[(u32, [f64; 2]); 2]> {
+    match segment.kind {
+        crate::feature::FeatureSegmentKind::Line => {
+            let geometry = saved_section_line_geometry(definition, segment)?;
+            let [start, end] = saved_geometry_endpoints(&geometry)?;
+            Some([(segment.point_ids[0], start), (segment.point_ids[1], end)])
+        }
+        crate::feature::FeatureSegmentKind::Arc => {
+            saved_section_arc_geometry(definition, segment)?;
+            let arc = saved_section_arc_record(definition, segment)?;
+            let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
+                arc.endpoints
+            else {
+                return None;
+            };
+            Some([
+                (segment.point_ids[0], [first_u, first_v]),
+                (segment.point_ids[1], [second_u, second_v]),
+            ])
+        }
+        crate::feature::FeatureSegmentKind::Point => None,
+    }
+}
+
 fn saved_section_entity_geometry(
     entity: &crate::feature::FeatureSavedEntity,
 ) -> Option<(u32, SketchGeometry, usize)> {
@@ -2935,6 +2962,25 @@ pub(crate) fn resolved_section_coordinates(
     for segment in definition.segments.iter().flat_map(|table| &table.rows) {
         *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
     }
+    let saved_segment_points = definition
+        .segments
+        .iter()
+        .filter(|table| table.is_complete())
+        .flat_map(|table| {
+            table
+                .rows
+                .iter()
+                .filter(|segment| table.external_id_count(segment.external_id) == 1)
+        })
+        .filter(|segment| {
+            segment
+                .point_ids
+                .iter()
+                .all(|point_id| !ambiguous_point_ids.contains(point_id))
+        })
+        .filter_map(|segment| saved_section_segment_point_coordinates(definition, segment))
+        .flatten()
+        .collect::<Vec<_>>();
     let segments = definition
         .segments
         .iter()
@@ -3101,6 +3147,13 @@ pub(crate) fn resolved_section_coordinates(
                     point_id, coordinate, value,
                 ));
             }
+        }
+    }
+    for &(point_id, coordinates) in &saved_segment_points {
+        for (coordinate, value) in coordinates.into_iter().enumerate() {
+            equations.push(SectionCoordinateEquation::point_value(
+                point_id, coordinate, value,
+            ));
         }
     }
     for segment in &segments {

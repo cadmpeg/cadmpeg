@@ -2864,6 +2864,12 @@ A saved entity with a unique internal identifier takes the corresponding unique
 has that external identifier. More than one saved entity with the internal
 identifier, or more than one `segtab` row with the external identifier, makes
 the join ambiguous.
+For a joined line, saved `end1` and `end2` are the section coordinates of the
+first and second `segtab.pointid` fields. For a joined arc, saved `end1` and
+`end2` likewise supply the first and second `segtab.pointid` coordinates;
+`arcorient = 0` renders the second point as the angular start and the first
+point as the angular end. Complete saved endpoints participate in the section
+coordinate equations and must agree with stored and constraint-derived values.
 When both `var_arr` and the joined saved entity define complete line or arc
 geometry, their ordered endpoints and carrier equations must agree. Conflicting
 complete forms leave the section entity unresolved.
