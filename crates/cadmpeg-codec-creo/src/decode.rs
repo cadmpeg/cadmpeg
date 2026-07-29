@@ -15164,11 +15164,45 @@ fn native_feature_dependency_ids(
             feature_id,
         ))
         .chain(feature_entity_dependencies(entity_tables, feature_id))
+        .chain(feature_output_surface_dependencies(
+            entity_tables,
+            surface_rows,
+            feature_id,
+        ))
         .chain(surface_transition_dependencies(
             feature_id,
             entity_tables,
             surface_rows,
         ))
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
+}
+
+fn feature_output_surface_dependencies(
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+) -> Vec<u32> {
+    let owned_entities = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 67)
+        .flat_map(|table| &table.entries)
+        .filter(|entry| entry.class_id == 200 && entry.source_entity_id == Some(feature_id))
+        .map(|entry| entry.entity_id)
+        .collect::<BTreeSet<_>>();
+    tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .flat_map(|table| &table.entries)
+        .filter(|entry| owned_entities.contains(&entry.entity_id))
+        .filter_map(|entry| {
+            let row = crate::surface::unique_surface_row(surface_rows, entry.class_id)?;
+            (row.feature_id != feature_id).then_some(row.feature_id)
+        })
         .fold(Vec::new(), |mut dependencies, dependency| {
             if !dependencies.contains(&dependency) {
                 dependencies.push(dependency);

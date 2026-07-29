@@ -213,6 +213,54 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
 }
 
 #[test]
+fn owned_output_entity_depends_on_its_prior_surface_target() {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: true,
+        offset: 0,
+        end_offset: 0,
+    };
+    let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
+        crate::feature::FeatureEntityTable {
+            feature_id: Some(2976),
+            table_class_id,
+            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+            entries,
+            surface_ids: Vec::new(),
+            non_surface_entity_ids: Vec::new(),
+            offset: 0,
+        }
+    };
+    let tables = vec![
+        table(67, vec![entry(2997, 200, Some(2976))]),
+        table(100, vec![entry(2997, 98, None)]),
+    ];
+    let surface = crate::surface::SurfaceRow {
+        id: 98,
+        type_byte: 0x2a,
+        kind: crate::surface::SurfaceKind::Extrusion,
+        feature_id: 97,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+
+    assert_eq!(
+        feature_output_surface_dependencies(&tables, std::slice::from_ref(&surface), 2976),
+        [97]
+    );
+
+    let mut current_surface = surface;
+    current_surface.feature_id = 2976;
+    assert!(feature_output_surface_dependencies(&tables, &[current_surface], 2976).is_empty());
+}
+
+#[test]
 fn surface_merge_quilt_roster_links_every_unique_generator() {
     let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
