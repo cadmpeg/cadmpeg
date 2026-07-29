@@ -39,7 +39,7 @@ This document records F3D semantics that the format specification does not yet d
 - The construction-record join that determines the position of a reference-derived `WorkPoint` without an explicit class-282 coordinate is unresolved.
 - The field semantics of the two patch-setting records at ordered reference positions two and three of the 354-byte `SurfacePatch` scope are unresolved.
 - Recipe fields assigning operands with empty, disjoint, or multiply intersecting candidate sets to the active B-rep edge identity remain unresolved.
-- When an Extrude face-recipe member has multiple active B-rep face candidates, the recipe field selecting one candidate remains unresolved.
+- When an Extrude face-recipe member has multiple active B-rep face candidates that neither converge on one complete predecessor set nor admit one counted-boundary predecessor set, the remaining candidate discriminator is unresolved.
 - In Extrude selections, identities absent from history, the discriminator between multiple profile loops incident at the same ordered persistent Sketch points, the selector for one of several closed spatial-Sketch profiles, the context UUID's role, and the semantic role of the fixed member tail's optional slot remain unresolved.
 - Shifted Extrude extent-discriminator pairs other than `(1, 1)`, `(1, 2)`, `(2, 0)`, and `(3, 2)` remain unresolved.
 - The semantic roles of additional Extrude construction groups with role `0x0000000500000000` remain unresolved.

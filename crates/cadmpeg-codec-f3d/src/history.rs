@@ -1008,13 +1008,6 @@ pub(crate) fn bind_feature_face_selections(
     body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) {
-    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
-        states
-            .entry(state.state_id)
-            .and_modify(|state| *state = None)
-            .or_insert(Some(state));
-    }
     for feature in features {
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
@@ -1031,7 +1024,9 @@ pub(crate) fn bind_feature_face_selections(
         else {
             continue;
         };
-        let Some(Some(state)) = states.get(&state_id) else {
+        let Some((_history, state, previous)) =
+            unique_history_state_pair(histories, state_id, previous_state_id)
+        else {
             continue;
         };
         let Some(transition) = &state.transition else {
@@ -1040,9 +1035,6 @@ pub(crate) fn bind_feature_face_selections(
         if transition.previous_state_id != Some(previous_state_id) {
             continue;
         }
-        let Some(Some(previous)) = states.get(&previous_state_id) else {
-            continue;
-        };
         let Some(_topology) = &previous.topology else {
             continue;
         };
@@ -1231,13 +1223,6 @@ pub(crate) fn project_feature_input_topologies(
 ) -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
     use cadmpeg_ir::features::FeatureInputTopology;
 
-    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
-        states
-            .entry(state.state_id)
-            .and_modify(|state| *state = None)
-            .or_insert(Some(state));
-    }
     features
         .iter()
         .filter_map(|feature| {
@@ -1262,7 +1247,15 @@ pub(crate) fn project_feature_input_topologies(
                     .all(|operand| operand.recipe_state_id == Some(state))
                     .then_some(state)
             })?;
-            let state = (*states.get(&previous_state_id)?)?;
+            let state = scope
+                .history_state_id
+                .and_then(|state_id| {
+                    unique_history_state_pair(histories, state_id, previous_state_id)
+                        .map(|(_, _, previous)| previous)
+                })
+                .or_else(|| {
+                    unique_history_state(histories, previous_state_id).map(|(_, state)| state)
+                })?;
             let topology = state.topology.as_ref()?;
             let prefix = feature_input_prefix(&feature.id, previous_state_id);
             Some(FeatureInputTopology {
@@ -1303,19 +1296,95 @@ fn feature_input_prefix(
     crate::ids::history_input_prefix(feature_key, previous_state_id)
 }
 
+fn unique_history_state(
+    histories: &[AsmHistory],
+    state_id: i64,
+) -> Option<(&AsmHistory, &AsmDeltaState)> {
+    let mut matches = histories.iter().filter_map(|history| {
+        let mut states = history
+            .states
+            .iter()
+            .filter(|state| state.state_id == state_id);
+        let state = states.next()?;
+        states.next().is_none().then_some((history, state))
+    });
+    let state = matches.next()?;
+    matches.next().is_none().then_some(state)
+}
+
+fn unique_history_state_pair(
+    histories: &[AsmHistory],
+    state_id: i64,
+    previous_state_id: i64,
+) -> Option<(&AsmHistory, &AsmDeltaState, &AsmDeltaState)> {
+    let mut matches = histories.iter().filter_map(|history| {
+        let mut states = history
+            .states
+            .iter()
+            .filter(|state| state.state_id == state_id);
+        let state = states.next()?;
+        if states.next().is_some() {
+            return None;
+        }
+        let mut previous_states = history
+            .states
+            .iter()
+            .filter(|state| state.state_id == previous_state_id);
+        let previous = previous_states.next()?;
+        if previous_states.next().is_some()
+            || !history_state_reaches(history, state, previous_state_id)
+        {
+            return None;
+        }
+        Some((history, state, previous))
+    });
+    let pair = matches.next()?;
+    matches.next().is_none().then_some(pair)
+}
+
+fn history_state_reaches(
+    history: &AsmHistory,
+    state: &AsmDeltaState,
+    previous_state_id: i64,
+) -> bool {
+    let states = history_state_index(history);
+    let mut current = state;
+    let mut visited = HashSet::new();
+    while current.state_id != previous_state_id {
+        if !visited.insert(current.state_id) {
+            return false;
+        }
+        let Some(previous) = current
+            .transition
+            .as_ref()
+            .and_then(|transition| transition.previous_state_id)
+            .and_then(|state_id| states.get(&state_id))
+            .and_then(|state| *state)
+        else {
+            return false;
+        };
+        current = previous;
+    }
+    true
+}
+
+fn history_state_index(history: &AsmHistory) -> HashMap<i64, Option<&AsmDeltaState>> {
+    let mut states = HashMap::new();
+    for state in &history.states {
+        states
+            .entry(state.state_id)
+            .and_modify(|state| *state = None)
+            .or_insert(Some(state));
+    }
+    states
+}
+
 pub(crate) fn bind_face_operand_history_candidates(
     operands: &mut [crate::records::DesignFaceOperand],
     scopes: &[crate::records::DesignParameterScope],
     operand_groups: &[crate::records::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
 ) {
-    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
-        states
-            .entry(state.state_id)
-            .and_modify(|state| *state = None)
-            .or_insert(Some(state));
-    }
     for operand in &mut *operands {
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
@@ -1337,11 +1406,12 @@ pub(crate) fn bind_face_operand_history_candidates(
         else {
             continue;
         };
-        let (Some(Some(state)), Some(Some(previous))) =
-            (states.get(&state_id), states.get(&previous_state_id))
+        let Some((history, state, previous)) =
+            unique_history_state_pair(histories, state_id, previous_state_id)
         else {
             continue;
         };
+        let states = history_state_index(history);
         let Some(topology) = &previous.topology else {
             continue;
         };
@@ -1384,8 +1454,14 @@ pub(crate) fn bind_face_operand_history_candidates(
             _ => {
                 let direct =
                     crate::design::face_resolve::resolve_face_operand_history_candidates(operand);
-                direct
-                    .or_else(|| {
+                if let Some(direct) = direct {
+                    vec![direct]
+                } else if let Some(bounded) =
+                    crate::design::face_resolve::resolve_bounded_face_history_candidates(operand)
+                {
+                    bounded
+                } else {
+                    let pattern = {
                         (crate::design::design_feature_family(&scope.kind)
                             == Some(crate::design::DesignFeatureFamily::CircularPattern))
                         .then(|| {
@@ -1397,9 +1473,9 @@ pub(crate) fn bind_face_operand_history_candidates(
                             )
                         })
                         .flatten()
-                    })
-                    .into_iter()
-                    .collect()
+                    };
+                    pattern.into_iter().collect()
+                }
             }
         };
         if crate::design::design_feature_family(&scope.kind)
@@ -4318,6 +4394,53 @@ mod tests {
         );
         assert_eq!(historical_brep_source("f3d:unqualified:state#42"), None);
     }
+
+    #[test]
+    fn state_pairs_are_resolved_within_one_reachable_history() {
+        let state = |history: &str, state_id: i64, previous_state_id: Option<i64>| AsmDeltaState {
+            id: format!("{history}:state#{state_id}"),
+            parent: history.into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(AsmHistoricalTopology::default()),
+            transition: previous_state_id.map(|previous_state_id| {
+                crate::history_records::AsmHistoricalTransition {
+                    previous_state_id: Some(previous_state_id),
+                    records: Default::default(),
+                    topology: Default::default(),
+                }
+            }),
+        };
+        let history = |id: &str, current| AsmHistory {
+            id: id.into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            states: vec![state(id, current, Some(2)), state(id, 2, None)],
+        };
+        let histories = [history("first", 7), history("second", 9)];
+        let (resolved, current, previous) =
+            unique_history_state_pair(&histories, 9, 2).expect("state-local pair");
+        assert_eq!(resolved.id, "second");
+        assert_eq!(current.state_id, 9);
+        assert_eq!(previous.state_id, 2);
+        assert!(unique_history_state(&histories, 2).is_none());
+
+        let duplicate_pair = [history("first", 9), history("second", 9)];
+        assert!(unique_history_state_pair(&duplicate_pair, 9, 2).is_none());
+    }
+
     use crate::history_records::{
         AsmHistoricalCarrierBinding, AsmHistoricalCurveAxis, AsmHistoricalOptionalCarrierBinding,
         AsmHistoricalSurfaceRadius,
