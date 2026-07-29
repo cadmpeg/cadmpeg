@@ -95,6 +95,7 @@ struct OwnershipPlan {
 struct OrientedLoop {
     member_order: Vec<usize>,
     reversed: Vec<bool>,
+    pcurve_reversed: Vec<bool>,
 }
 
 /// Cross-pass id tables and resolved geometry plans shared between the emit
@@ -196,7 +197,7 @@ fn transfer_complete(
     };
     vertices::emit_vertices(ir, annotations, graph, &plan);
     let surface_ids = surfaces::emit_surfaces(ir, annotations, graph, &mut plan);
-    let pcurve_ids = pcurves::emit_pcurves(ir, annotations, graph, &plan);
+    let pcurve_uses = pcurves::emit_pcurves(ir, annotations, graph, &plan);
     let edge_id_map = edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids);
     faces::emit_faces(
         ir,
@@ -204,7 +205,7 @@ fn transfer_complete(
         graph,
         &plan,
         &surface_ids,
-        &pcurve_ids,
+        &pcurve_uses,
         &edge_id_map,
     );
     true
@@ -1122,7 +1123,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_source_pcurve_has_independently_trimmed_occurrence_carriers() {
+    fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         let graph = B5Graph {
             complete: true,
             faces: vec![B5Face {
@@ -1137,6 +1138,7 @@ mod tests {
                     pcurves: vec![20, 20, 20],
                     edges: vec![30, 31, 32],
                     edge_senses: vec![false; 3],
+                    pcurve_senses: vec![false, true, false],
                     surface: 10,
                 },
             )]),
@@ -1255,6 +1257,14 @@ mod tests {
                 "catia:b5:pcurve#20@2",
                 "catia:b5:pcurve#20@1",
             ]
+        );
+        assert_eq!(
+            ir.model
+                .coedges
+                .iter()
+                .map(|coedge| coedge.pcurves[0].parameter_range)
+                .collect::<Vec<_>>(),
+            [None, Some([1.0, 0.5]), None]
         );
     }
 
@@ -1458,6 +1468,7 @@ mod tests {
                     pcurves: vec![4],
                     edges: vec![3],
                     edge_senses: vec![false],
+                    pcurve_senses: vec![false],
                     surface: 10,
                 },
             )]),
@@ -1508,6 +1519,7 @@ mod tests {
                 pcurves: vec![8],
                 edges: vec![7],
                 edge_senses: vec![false],
+                pcurve_senses: vec![false],
                 surface: 10,
             },
         );
@@ -1555,6 +1567,7 @@ mod tests {
             object_id,
             pcurves: vec![0; edges.len()],
             edge_senses: vec![false; edges.len()],
+            pcurve_senses: vec![false; edges.len()],
             edges,
             surface: 10,
         };
@@ -1579,6 +1592,11 @@ mod tests {
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
         };
+        graph
+            .loops
+            .get_mut(&2)
+            .expect("required loop")
+            .pcurve_senses = vec![false, true, false];
         let orientation = orient_loop_members(
             &graph,
             BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
@@ -1588,6 +1606,8 @@ mod tests {
         assert_eq!(orientation[&2].member_order, vec![2, 1, 0]);
         assert_eq!(orientation[&1].reversed, vec![false]);
         assert_eq!(orientation[&2].reversed, vec![true; 3]);
+        assert_eq!(orientation[&1].pcurve_reversed, vec![false]);
+        assert_eq!(orientation[&2].pcurve_reversed, vec![true, false, true]);
 
         graph.loops = BTreeMap::from([
             (1, loop_(1, vec![1, 3])),
@@ -1617,6 +1637,7 @@ mod tests {
                     pcurves: vec![2],
                     edges: vec![3],
                     edge_senses: vec![false],
+                    pcurve_senses: vec![false],
                     surface: 4,
                 },
             )]),
@@ -2267,6 +2288,7 @@ mod tests {
                     pcurves: vec![4, 4, 4],
                     edges: vec![5, 6, 7],
                     edge_senses: vec![false; 3],
+                    pcurve_senses: vec![false; 3],
                     surface: 2,
                 },
             )]),

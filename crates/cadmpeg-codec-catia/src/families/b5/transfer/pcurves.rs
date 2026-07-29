@@ -648,13 +648,14 @@ pub(super) fn cylinder_helix(
 }
 
 /// Emit distinct pcurve occurrences grouped by native parameter range,
-/// returning the map from `(loop_id, member_index)` to emitted [`PcurveId`].
+/// returning each emitted carrier and its forward interval by
+/// `(loop_id, member_index)`.
 pub(super) fn emit_pcurves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-) -> HashMap<(u32, usize), PcurveId> {
+) -> HashMap<(u32, usize), (PcurveId, [f64; 2])> {
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
     for loop_ in graph.loops.values() {
@@ -679,7 +680,7 @@ pub(super) fn emit_pcurves(
                 .push((loop_.object_id, index));
         }
     }
-    let mut pcurve_ids = HashMap::new();
+    let mut pcurve_uses = HashMap::new();
     for (object_id, ranges) in occurrence_groups {
         let (geometry, cylinder_reparameterized, _) = &pcurve_plan[&object_id];
         let range_count = ranges.len();
@@ -709,7 +710,7 @@ pub(super) fn emit_pcurves(
                 annotations.derived(&id, "parameter_range");
             }
             for occurrence in occurrences {
-                pcurve_ids.insert(occurrence, id.clone());
+                pcurve_uses.insert(occurrence, (id.clone(), parameter_range));
             }
             ir.model.pcurves.push(Pcurve {
                 id,
@@ -721,5 +722,5 @@ pub(super) fn emit_pcurves(
             });
         }
     }
-    pcurve_ids
+    pcurve_uses
 }
