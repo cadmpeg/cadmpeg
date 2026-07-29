@@ -1827,7 +1827,14 @@ pub(crate) fn e5_occurrence_intersection_context(
     let [left, right] = sides else {
         return None;
     };
-    if (left.2[0] - right.2[0]).abs() > 1e-9 || (left.2[1] - right.2[1]).abs() > 1e-9 {
+    let parameter_scale = (left.2[1] - left.2[0])
+        .abs()
+        .max((right.2[1] - right.2[0]).abs());
+    if !parameter_scale.is_finite() || parameter_scale == 0.0 {
+        return None;
+    }
+    let tolerance = 1e-9 * parameter_scale;
+    if (left.2[0] - right.2[0]).abs() > tolerance || (left.2[1] - right.2[1]).abs() > tolerance {
         return None;
     }
     Some(IntcurveSupportContext {
@@ -2535,6 +2542,14 @@ mod route_tests {
             context.sides[1].surface.as_ref().expect("right surface").0,
             "right"
         );
+
+        let tiny = 1e-200_f64;
+        let mut tiny_sides = sides;
+        tiny_sides[0].2 = [0.0, tiny];
+        tiny_sides[1].2 = [0.0, tiny];
+        assert!(e5_occurrence_intersection_context(&tiny_sides).is_some());
+        tiny_sides[1].2 = [0.0, 2.0 * tiny];
+        assert!(e5_occurrence_intersection_context(&tiny_sides).is_none());
     }
 
     #[test]
