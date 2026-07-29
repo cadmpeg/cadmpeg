@@ -52,6 +52,27 @@ pub struct FeatureOperationRecord {
     pub source_offset: u64,
 }
 
+/// Canonical terminal common-frame suffix of one feature operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationTerminalFrame {
+    /// Globally unique frame identity.
+    pub id: String,
+    /// Owning bounded operation record.
+    pub operation_record: String,
+    /// Duplicated frame-local ordinal.
+    pub local_ordinal: u32,
+    /// Exact canonical token repeated for the local ordinal.
+    pub raw_local_ordinal: Vec<u8>,
+    /// Nullable object reference following the duplicated ordinal.
+    pub object_index: Option<u32>,
+    /// Exact canonical nullable object-reference token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the first local-ordinal token.
+    pub source_offset: u64,
+    /// Absolute offset of the object-reference token.
+    pub object_index_source_offset: u64,
+}
+
 /// Ordered length-framed string from one bounded feature-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePayloadString {
@@ -2499,6 +2520,48 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
         );
     }
     records
+}
+
+/// Decode canonical terminal common-frame suffixes from bounded operations.
+pub fn feature_operation_terminal_frames(
+    container: &Container,
+) -> Vec<FeatureOperationTerminalFrame> {
+    let sections = container.om_sections();
+    let mut frames = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(frame) = crate::om::operation_terminal_frame(record) else {
+                continue;
+            };
+            frames.push(FeatureOperationTerminalFrame {
+                id: format!(
+                    "nx:feature-history:operation-terminal-frame#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_record: format!(
+                    "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+                ),
+                local_ordinal: frame.local_ordinal,
+                raw_local_ordinal: frame.raw_local_ordinal,
+                object_index: frame.object_index,
+                raw_object_index: frame.raw_object_index,
+                source_offset: entry_offset + frame.offset as u64,
+                object_index_source_offset: entry_offset + frame.object_index_offset as u64,
+            });
+        }
+    }
+    frames
 }
 
 /// Decode ordered self-framed strings from feature-operation payloads.

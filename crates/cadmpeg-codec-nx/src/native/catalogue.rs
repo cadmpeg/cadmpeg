@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative catalogue of the native record families.
 //!
-//! One [`CatalogueRow`] per model field (194 total). Each row names the `nx`
+//! One [`CatalogueRow`] per model field (199 total). Each row names the `nx`
 //! namespace arena the family serializes into, and — for families that also emit
 //! source annotations — the tag, exactness, and a `note` fn. Row order is the
 //! observable annotation-emission order for the note-bearing rows;
@@ -45,8 +45,8 @@ pub(crate) struct CatalogueRow {
     /// Record count for this family, feeding the catalogue-derived emptiness
     /// fold ([`NativeModel::is_empty`]) and inspect counts.
     pub(crate) len: fn(&NativeModel) -> usize,
-    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 148 of
-    /// the 194 families count; the 46 that do not are transcribed verbatim from
+    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 152 of
+    /// the 199 families count; the 47 that do not are transcribed verbatim from
     /// the legacy hand-written all-empty guard, which omitted them. The
     /// exclusions look like oversights (25 of the 26 `display_jt` families are
     /// excluded, for instance) but are frozen observable behavior: flipping any
@@ -330,6 +330,11 @@ impl ContainerNoted for FeatureSketchFixedPoint {
     }
 }
 impl ContainerNoted for FeatureOperationRecord {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FeatureOperationTerminalFrame {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
     }
@@ -1566,6 +1571,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.features.feature_operation_records, r, a)),
         emit: |m, r, ns| emit_arena(&m.features.feature_operation_records, r, ns),
         len: |m| m.features.feature_operation_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_operation_terminal_frames",
+        tag: Some("FEATURE_OPERATION_TERMINAL_FRAME"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_container(&m.features.feature_operation_terminal_frames, r, a)),
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_terminal_frames, r, ns),
+        len: |m| m.features.feature_operation_terminal_frames.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

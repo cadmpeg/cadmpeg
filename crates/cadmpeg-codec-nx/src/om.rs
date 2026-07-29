@@ -791,6 +791,23 @@ pub struct OperationRecord<'a> {
     pub label: OperationLabel<'a>,
 }
 
+/// Canonical terminal common-frame suffix in one bounded operation payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationTerminalFrame {
+    /// Duplicated frame-local ordinal.
+    pub local_ordinal: u32,
+    /// Exact canonical token repeated for the local ordinal.
+    pub raw_local_ordinal: Vec<u8>,
+    /// Nullable object reference following the duplicated ordinal.
+    pub object_index: Option<u32>,
+    /// Exact canonical nullable object-reference token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the first local-ordinal token.
+    pub offset: usize,
+    /// Absolute offset of the object-reference token.
+    pub object_index_offset: usize,
+}
+
 /// One length-framed UTF-8 string in a bounded operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationPayloadString<'a> {
@@ -4172,6 +4189,61 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
         0xff => Some((None, at + 1)),
         _ => None,
     }
+}
+
+fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {
+    matches!(
+        (value, raw),
+        (None, [0xff])
+            | (Some(0..=0x7f), [_])
+            | (Some(0x80..=0x0fff), [0x80..=0x8f, _])
+            | (Some(0x1000..=0xffff), [0x90, _, _])
+    )
+}
+
+/// Decode the unique canonical terminal common-frame suffix of one operation.
+pub fn operation_terminal_frame(record: OperationRecord<'_>) -> Option<OperationTerminalFrame> {
+    let terminator = record.payload.len().checked_sub(1)?;
+    (record.payload.get(terminator) == Some(&0)).then_some(())?;
+    let mut matches = Vec::new();
+    for start in terminator.saturating_sub(9)..terminator {
+        let Some((Some(local_ordinal), first_end)) = feature_object_index(record.payload, start)
+        else {
+            continue;
+        };
+        let first_raw = &record.payload[start..first_end];
+        if !canonical_feature_object_index(Some(local_ordinal), first_raw) {
+            continue;
+        }
+        let Some((Some(repeated), second_end)) = feature_object_index(record.payload, first_end)
+        else {
+            continue;
+        };
+        let second_raw = &record.payload[first_end..second_end];
+        if repeated != local_ordinal || second_raw != first_raw {
+            continue;
+        }
+        let Some((object_index, object_end)) = feature_object_index(record.payload, second_end)
+        else {
+            continue;
+        };
+        let object_raw = &record.payload[second_end..object_end];
+        if object_end != terminator || !canonical_feature_object_index(object_index, object_raw) {
+            continue;
+        }
+        matches.push(OperationTerminalFrame {
+            local_ordinal,
+            raw_local_ordinal: first_raw.to_vec(),
+            object_index,
+            raw_object_index: object_raw.to_vec(),
+            offset: record.payload_offset + start,
+            object_index_offset: record.payload_offset + second_end,
+        });
+    }
+    let [frame] = matches.as_slice() else {
+        return None;
+    };
+    Some(frame.clone())
 }
 
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.

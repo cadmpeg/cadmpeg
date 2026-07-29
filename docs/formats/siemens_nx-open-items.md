@@ -39,10 +39,9 @@ This document records unresolved NX `.prt` byte semantics.
   offset-store block to a segment body-image object-index pair is unspecified.
   Feature-history object-index relations not covered by primary-body writers
   and Boolean tool consumption are also unspecified.
-- Feature-operation payloads contain recursively nested common frames. Each frame
-  ends with a duplicated local ordinal, a canonical nullable object reference,
-  and a NUL terminator. Frame ownership, the roles of the preceding state bytes,
-  and the relation of any field to operation suppression are unspecified.
+- Feature-operation payloads contain recursively nested common frames. Frame
+  ownership, the roles of the state bytes preceding each terminal suffix, and
+  the relation of any field to operation suppression are unspecified.
 - Body membership and per-body state for inactive arrangements are unspecified.
 - The semantic roles of the extrusion terminal discriminator lane's type indices, fixed counted values, flags, and trailing indices are unspecified.
 - The source-curve, target-surface, direction, and combination roles of the ordered `CPROJ` and `CPROJ_CMB` construction references are unspecified.

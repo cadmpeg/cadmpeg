@@ -2209,6 +2209,78 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 }
 
 #[test]
+fn om_operation_terminal_frame_requires_one_canonical_suffix() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 100,
+        value: "FSET",
+        object_indices: [None; 4],
+        object_index_offsets: [0; 4],
+    };
+    let bytes = [0x01, 0x02, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00];
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &bytes,
+        payload_offset: 104,
+        payload: &bytes[2..],
+        label,
+    };
+    assert_eq!(
+        crate::om::operation_terminal_frame(record),
+        Some(crate::om::OperationTerminalFrame {
+            local_ordinal: 0x0123,
+            raw_local_ordinal: vec![0x81, 0x23],
+            object_index: None,
+            raw_object_index: vec![0xff],
+            offset: 104,
+            object_index_offset: 108,
+        })
+    );
+
+    let direct = [0x29, 0x29, 0x41, 0x00];
+    assert_eq!(
+        crate::om::operation_terminal_frame(crate::om::OperationRecord {
+            offset: 0,
+            bytes: &direct,
+            payload_offset: 200,
+            payload: &direct,
+            label,
+        }),
+        Some(crate::om::OperationTerminalFrame {
+            local_ordinal: 41,
+            raw_local_ordinal: vec![0x29],
+            object_index: Some(65),
+            raw_object_index: vec![0x41],
+            offset: 200,
+            object_index_offset: 202,
+        })
+    );
+
+    let noncanonical = [0x80, 0x01, 0x80, 0x01, 0xff, 0x00];
+    assert!(
+        crate::om::operation_terminal_frame(crate::om::OperationRecord {
+            offset: 0,
+            bytes: &noncanonical,
+            payload_offset: 0,
+            payload: &noncanonical,
+            label,
+        })
+        .is_none()
+    );
+    let mismatched = [0x23, 0x24, 0xff, 0x00];
+    assert!(
+        crate::om::operation_terminal_frame(crate::om::OperationRecord {
+            offset: 0,
+            bytes: &mismatched,
+            payload_offset: 0,
+            payload: &mismatched,
+            label,
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_data_block_object_references_require_complete_field_frames() {
     let bytes = [
         0x04, 0x00, 0x2a, 0x02, 0x0b, 0xff, 0x04, 0x00, 0x80, 0xc9, 0x02, 0x0b, 0x04, 0x00, 0x90,
@@ -11363,6 +11435,7 @@ mod golden {
         "feature_operation_body_scalar_triples",
         "feature_operation_labels",
         "feature_operation_records",
+        "feature_operation_terminal_frames",
         "feature_parameter_bindings",
         "feature_parameter_uses",
         "feature_pattern_construction_fixed_lanes",
@@ -12153,7 +12226,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (198), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (199), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -12162,7 +12235,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 198, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 199, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",
