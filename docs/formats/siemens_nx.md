@@ -453,9 +453,10 @@ printable ASCII and contains `(deltas)`. The schema is a complete `SCH_` token.
 Both XMT identities are non-null and `second_xmt == first_xmt + 1`. Each XMT
 uses compact or extended encoding. The header ends after the terminal `0000`.
 
-A deltas stream may end with the exact trailer `ref(1)[4]`. Each null XMT
-reference uses the compact encoding `0001`; the fourth reference ends at the
-inflated-stream boundary.
+A deltas stream may end with the exact trailer `ref(1)[2|4]`. Each null XMT
+reference uses the compact encoding `0001`; the final reference ends at the
+inflated-stream boundary. When both suffix lengths match, the four-reference
+form applies.
 
 Status-framed fixed records use a status byte in `0..=1` after each encoded reference. A unique complete family field grammar delimits the record; the following bytes need not begin with a recognized node type. When direct and escaped interpretations are both complete, exactly one must end before a recognized node type. Fixed records are normalized by removing each reference status byte before graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
 

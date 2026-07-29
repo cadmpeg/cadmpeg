@@ -96,7 +96,7 @@ pub struct ParasolidDeltasTransmitHeader {
     pub inflated_offset: u64,
 }
 
-/// Four null references at the boundary of a Parasolid deltas stream.
+/// Null references at the boundary of a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidDeltasTerminalNullReferences {
     /// Globally unique trailer identity.
@@ -104,7 +104,7 @@ pub struct ParasolidDeltasTerminalNullReferences {
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
     /// Ordered null XMT references.
-    pub references: [u32; 4],
+    pub references: Vec<u32>,
     /// Exact trailer byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact trailer bytes.
@@ -488,7 +488,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                         trailer.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    references: [1; 4],
+                    references: vec![1; trailer.count.into()],
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: trailer.offset as u64,

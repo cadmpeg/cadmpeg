@@ -68,13 +68,15 @@ pub struct TransmitHeader {
     pub end: usize,
 }
 
-/// Four null references closing a deltas stream.
+/// Null references closing a deltas stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalNullReferences {
     /// First byte of the first null reference.
     pub offset: usize,
-    /// Stream boundary following the fourth null reference.
+    /// Stream boundary following the final null reference.
     pub end: usize,
+    /// Number of compact null references.
+    pub count: u8,
 }
 
 /// Count-selected binary64 lane immediately following one deltas `term_use`.
@@ -325,7 +327,7 @@ pub struct InlineBodyState {
 pub struct Census {
     /// Complete stream transmit header.
     pub transmit_header: Option<TransmitHeader>,
-    /// Complete four-null-reference stream trailer.
+    /// Complete null-reference stream trailer.
     pub terminal_null_references: Option<TerminalNullReferences>,
     /// Complete records in source order.
     pub records: Vec<Record>,
@@ -793,10 +795,19 @@ pub fn walk(stream: &[u8]) -> Census {
 }
 
 fn terminal_null_references(stream: &[u8]) -> Option<TerminalNullReferences> {
-    const TRAILER: &[u8] = &[0, 1, 0, 1, 0, 1, 0, 1];
-    stream.ends_with(TRAILER).then_some(TerminalNullReferences {
-        offset: stream.len().checked_sub(TRAILER.len())?,
+    const FOUR_REFERENCES: &[u8] = &[0, 1, 0, 1, 0, 1, 0, 1];
+    const TWO_REFERENCES: &[u8] = &[0, 1, 0, 1];
+    let (byte_len, count) = if stream.ends_with(FOUR_REFERENCES) {
+        (FOUR_REFERENCES.len(), 4)
+    } else if stream.ends_with(TWO_REFERENCES) {
+        (TWO_REFERENCES.len(), 2)
+    } else {
+        return None;
+    };
+    Some(TerminalNullReferences {
+        offset: stream.len().checked_sub(byte_len)?,
         end: stream.len(),
+        count,
     })
 }
 
@@ -4348,24 +4359,35 @@ mod terminal_null_reference_tests {
     use super::*;
 
     #[test]
-    fn retains_only_four_null_references_at_the_stream_boundary() {
-        let trailer = [0, 1, 0, 1, 0, 1, 0, 1];
-        let census = walk(&trailer);
+    fn retains_two_or_four_null_references_at_the_stream_boundary() {
+        let four_references = [0, 1, 0, 1, 0, 1, 0, 1];
+        let census = walk(&four_references);
 
         assert_eq!(
             census.terminal_null_references,
             Some(TerminalNullReferences {
                 offset: 0,
-                end: trailer.len(),
+                end: four_references.len(),
+                count: 4,
             })
         );
-        assert_eq!(census.bytes_decoded, trailer.len());
+        assert_eq!(census.bytes_decoded, four_references.len());
 
-        let mut nonterminal = trailer.to_vec();
+        let two_references = [0, 1, 0, 1];
+        assert_eq!(
+            walk(&two_references).terminal_null_references,
+            Some(TerminalNullReferences {
+                offset: 0,
+                end: two_references.len(),
+                count: 2,
+            })
+        );
+
+        let mut nonterminal = four_references.to_vec();
         nonterminal.extend_from_slice(&[0, 29]);
         assert!(walk(&nonterminal).terminal_null_references.is_none());
 
-        let mut nonnull = trailer;
+        let mut nonnull = four_references;
         nonnull[7] = 2;
         assert!(walk(&nonnull).terminal_null_references.is_none());
     }
