@@ -40,8 +40,10 @@ current scores require those matrices and representative fixtures.
   extent order.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
-  occurrences. A literal occupying an assigned owner slot remains distinct
-  from both a reference owner and a head without an owner role.
+  occurrences. Each graph retains its exact containing FINJPL segment when one
+  completely contains the graph; cross-segment references remain valid. A
+  literal occupying an assigned owner slot remains distinct from both a
+  reference owner and a head without an owner role.
 - Equal-cardinality all-reference lists spanning every field of a design object
   retain their source-ordered columns and ordinal-aligned rows as one parallel
   reference table. Columns retain their aligned source field classes and

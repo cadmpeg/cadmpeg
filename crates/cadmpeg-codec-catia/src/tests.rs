@@ -13601,6 +13601,38 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
 }
 
 #[test]
+fn object_graphs_retain_exact_finjpl_containment() {
+    let preamble_graph =
+        object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);
+    let segment_graph =
+        object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x82, 0x82], &[0xfe])]);
+    let mut bytes = preamble_graph;
+    bytes.extend_from_slice(b"FINJPL  ");
+    bytes.extend_from_slice(&0x0101_0001u32.to_be_bytes());
+    bytes.extend_from_slice(&segment_graph);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert_eq!(native.object_graphs.len(), 2);
+    assert_eq!(native.object_graphs[0].finjpl_segment, None);
+    assert_eq!(
+        native.object_graphs[1].finjpl_segment.as_deref(),
+        Some(native.finjpl_segments[0].id.as_str())
+    );
+
+    let mut invalid = native;
+    invalid.object_graphs[1].finjpl_segment = None;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store malformed graph segment link");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
 fn native_load_derives_complete_source_ordered_preview_views() {
     let mut bytes = Vec::new();
     for _ in 0..12 {

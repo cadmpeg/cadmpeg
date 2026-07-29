@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 207;
+pub const CATIA_NATIVE_VERSION: u32 = 208;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -31,6 +31,8 @@ const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
 const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 207;
 #[cfg(test)]
 const CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION: u32 = 206;
+#[cfg(test)]
+const CATIA_OBJECT_GRAPH_SEGMENT_VERSION: u32 = 208;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1419,6 +1421,9 @@ pub struct CatiaObjectGraph {
     pub byte_offset: u64,
     /// Total framed byte length.
     pub byte_len: u64,
+    /// Physically containing FINJPL segment, when the graph is not in the outer preamble.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finjpl_segment: Option<String>,
     /// Byte offset of the associated schema catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog_byte_offset: Option<u64>,
@@ -6381,6 +6386,23 @@ fn finjpl_family(kind: container::FinjplKind) -> &'static str {
     }
 }
 
+fn containing_finjpl_segment(
+    byte_offset: u64,
+    byte_len: u64,
+    segments: &[CatiaFinjplSegment],
+) -> Option<&str> {
+    let byte_end = byte_offset.checked_add(byte_len)?;
+    let mut containing = segments.iter().filter(|segment| {
+        segment.byte_offset <= byte_offset
+            && segment
+                .byte_offset
+                .checked_add(segment.byte_len)
+                .is_some_and(|segment_end| byte_end <= segment_end)
+    });
+    let segment = containing.next()?;
+    containing.next().is_none().then_some(segment.id.as_str())
+}
+
 fn preview_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaPreviewImage> {
     segments
         .iter()
@@ -6575,6 +6597,14 @@ fn validate_native_links(
                 graph.id
             )));
         }
+        if graph.finjpl_segment.as_deref()
+            != containing_finjpl_segment(graph.byte_offset, graph.byte_len, segments)
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` has an invalid FINJPL segment link",
+                graph.id
+            )));
+        }
         for record in &graph.records {
             if Some(record.byte_offset) != expected_record_offset
                 || record.id != format!("catia:outer:object-record#{:010}", record.byte_offset)
@@ -6703,6 +6733,19 @@ impl CatiaNative {
     /// Decode CATIA-native records directly from the complete file image.
     #[must_use]
     pub fn decode(bytes: &[u8]) -> Self {
+        let finjpl_segments = container::finjpl_segments(bytes, 0, bytes.len())
+            .into_iter()
+            .enumerate()
+            .map(|(index, segment)| CatiaFinjplSegment {
+                id: format!("catia:outer:finjpl#{index}"),
+                byte_offset: segment.range.start as u64,
+                byte_len: (segment.range.end - segment.range.start) as u64,
+                type_word: segment.type_word,
+                family: finjpl_family(segment.kind).to_string(),
+                name: segment.name,
+                data: bytes[segment.range].to_vec(),
+            })
+            .collect::<Vec<_>>();
         let mut parsed_catalogs = catalog::parse(bytes);
         let entity_runs = entity_table::parse_runs(bytes);
         let mut alias_rows = object_graph::surface_aliases(bytes)
@@ -6746,7 +6789,13 @@ impl CatiaNative {
                 let entities = entity_runs
                     .remove(&(graph.pos, graph.records.len()))
                     .unwrap_or_default();
-                let (graph, mut entities) = native_object_graph(graph, entities);
+                let finjpl_segment = containing_finjpl_segment(
+                    graph.pos as u64,
+                    graph.total_len as u64,
+                    &finjpl_segments,
+                )
+                .map(str::to_owned);
+                let (graph, mut entities) = native_object_graph(graph, entities, finjpl_segment);
                 entity_records.append(&mut entities);
                 graph
             })
@@ -6892,19 +6941,6 @@ impl CatiaNative {
                 Some(CatiaValueBlock::from_parts(block, catalog, object_graph))
             })
             .collect();
-        let finjpl_segments = container::finjpl_segments(bytes, 0, bytes.len())
-            .into_iter()
-            .enumerate()
-            .map(|(index, segment)| CatiaFinjplSegment {
-                id: format!("catia:outer:finjpl#{index}"),
-                byte_offset: segment.range.start as u64,
-                byte_len: (segment.range.end - segment.range.start) as u64,
-                type_word: segment.type_word,
-                family: finjpl_family(segment.kind).to_string(),
-                name: segment.name,
-                data: bytes[segment.range].to_vec(),
-            })
-            .collect::<Vec<_>>();
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
         let legacy_entity_runs = legacy_entity_runs(bytes);
@@ -7429,6 +7465,13 @@ impl CatiaNative {
                 Vec::new()
             };
         finjpl_segments.sort_by_key(|segment| segment.byte_offset);
+        if namespace.version < CATIA_OBJECT_GRAPH_SEGMENT_VERSION {
+            for graph in &mut graphs {
+                graph.finjpl_segment =
+                    containing_finjpl_segment(graph.byte_offset, graph.byte_len, &finjpl_segments)
+                        .map(str::to_owned);
+            }
+        }
         let mut external_references: Vec<CatiaExternalReference> =
             if namespace.arenas.contains_key("external_references") {
                 namespace.arena_as("external_references")?
@@ -8035,6 +8078,7 @@ impl From<catalog::Catalog> for CatiaCatalog {
 fn native_object_graph(
     graph: object_graph::ObjectGraph,
     entity_records: Vec<entity_table::EntityRecord>,
+    finjpl_segment: Option<String>,
 ) -> (CatiaObjectGraph, Vec<CatiaEntityRecord>) {
     let id = format!("catia:outer:object-graph#{:010}", graph.pos);
     let mut records = graph
@@ -8154,6 +8198,7 @@ fn native_object_graph(
             id,
             byte_offset: graph.pos as u64,
             byte_len: graph.total_len as u64,
+            finjpl_segment,
             catalog_byte_offset: graph.catalog_pos.map(|pos| pos as u64),
             catalog: None,
             records,
