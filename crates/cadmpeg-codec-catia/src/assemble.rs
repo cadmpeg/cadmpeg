@@ -258,7 +258,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     let start = angle(start);
     let short_end = unwrap_angle(angle(end), start);
     let delta = short_end - start;
-    if delta.abs() <= 1e-9 {
+    if delta == 0.0 {
         return None;
     }
     let long_end = short_end - delta.signum() * std::f64::consts::TAU;
@@ -746,7 +746,8 @@ pub(crate) fn quintic_jet_pcurve(
 #[cfg(test)]
 mod route_tests {
     use crate::assemble::{
-        neutral_model_is_admissible, rational_pcurve_arc, unresolved_carrier_counts,
+        circle_parameter_range_from_surface_branch, neutral_model_is_admissible,
+        rational_pcurve_arc, unresolved_carrier_counts,
     };
 
     use cadmpeg_ir::document::CadIr;
@@ -758,6 +759,7 @@ mod route_tests {
     use cadmpeg_ir::ids::{
         CurveId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId,
     };
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use cadmpeg_ir::topology::Shell;
     use cadmpeg_ir::units::Units;
@@ -780,6 +782,29 @@ mod route_tests {
         assert_eq!(knots.last(), Some(&range[1]));
         assert_eq!(control_points.len(), 3);
         assert_eq!(weights, Some(vec![1.0, 1.0, 1.0]));
+    }
+
+    #[test]
+    fn surface_circle_branch_preserves_tiny_nonzero_sweep() {
+        let sweep = 1e-200;
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let range = circle_parameter_range_from_surface_branch(
+            &surface,
+            Point3::new(0.0, 0.0, 0.0),
+            1.0,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(sweep.cos(), sweep.sin(), 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, sweep),
+        )
+        .expect("tiny circle branch");
+        assert_eq!(range, [0.0, sweep]);
     }
 
     #[test]

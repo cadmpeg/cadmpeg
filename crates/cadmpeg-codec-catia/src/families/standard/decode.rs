@@ -3698,14 +3698,14 @@ pub(crate) fn standard_pcurve_geometry(
 
 pub(crate) fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Option<f64> {
     let delta = short_end - start;
-    if delta.abs() <= 1e-9 {
+    if delta == 0.0 {
         return None;
     }
     let long_end = short_end - delta.signum() * std::f64::consts::TAU;
     let contains = |end: f64| {
         (-2..=2).any(|turn| {
             let witness = witness + f64::from(turn) * std::f64::consts::TAU;
-            witness >= start.min(end) + 1e-6 && witness <= start.max(end) - 1e-6
+            witness > start.min(end) && witness < start.max(end)
         })
     };
     match (contains(short_end), contains(long_end)) {
@@ -4714,7 +4714,7 @@ mod route_tests {
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
-        unique_native_identity_points, StandardEdgeSupport,
+        unique_native_identity_points, witness_arc_end, StandardEdgeSupport,
     };
 
     use crate::families::standard::records::{
@@ -6434,6 +6434,12 @@ mod route_tests {
         )
         .expect("torus circle range");
         assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn arc_witness_selects_tiny_nonzero_sweep() {
+        let sweep = 1e-200;
+        assert_eq!(witness_arc_end(0.0, sweep, sweep * 0.5), Some(sweep));
     }
 
     #[test]
