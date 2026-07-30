@@ -134,8 +134,30 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
     if !operand.alternate_selector_candidate_faces.is_empty() {
         return Some(candidates.to_vec());
     }
+    if !operand.unreferenced_candidate_faces.is_empty()
+        && complete_counted_face_recipe(operand).is_some()
+    {
+        return Some(candidates.to_vec());
+    }
     let [face] = candidates else { return None };
     Some(vec![face.clone()])
+}
+
+fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
+    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace {
+        return None;
+    }
+    let Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value }) =
+        crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
+    else {
+        return None;
+    };
+    (operand.recipe_nodes.len() == header_value
+        && operand
+            .recipe_nodes
+            .iter()
+            .all(|node| node.recipe_structure.is_some()))
+    .then_some(header_value)
 }
 
 pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
@@ -163,19 +185,7 @@ pub(crate) fn resolve_bounded_face_history_candidates(
     if let Some(candidate) = convergent_effective_face_support(operand) {
         return Some(candidate);
     }
-    let crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value } =
-        crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)?
-    else {
-        return None;
-    };
-    if operand.recipe_nodes.len() != header_value
-        || operand
-            .recipe_nodes
-            .iter()
-            .any(|node| node.recipe_structure.is_none())
-    {
-        return None;
-    }
+    let header_value = complete_counted_face_recipe(operand)?;
     bounded_face_candidate_by_boundary_cardinality(
         header_value,
         &operand.historical_support_contexts,

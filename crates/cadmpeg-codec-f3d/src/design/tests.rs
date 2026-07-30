@@ -92,13 +92,14 @@ use crate::records::{
     DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
-    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
-    DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecipeReference, DesignRecordHeader, DesignScaleOperation, DesignSketchPlacement,
-    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceStitchOperation,
-    LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
+    DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFixedChamferParameters,
+    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader, DesignScaleOperation,
+    DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
+    DesignSurfaceStitchOperation, DesignTopologyRecipeSide, LostEdgeReference,
+    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
 };
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::{
@@ -7702,6 +7703,43 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     operand
         .unreferenced_candidate_faces
         .push(FaceId("f3d:brep:entity#50".into()));
+    assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
+    operand.recipe_program = vec![0, -1, 1];
+    operand.recipe_kind = ConstructionRecipeKind::BoundedFace;
+    operand.recipe_nodes.clear();
+    operand.recipe_nodes.push(DesignFaceRecipeNode {
+        byte_offset: 1_200,
+        end_byte_offset: 1_300,
+        program: Vec::new(),
+        recipe_structure: Some(DesignFaceRecipeStructure {
+            root: 0,
+            prelude: [0, 2],
+            sides: [
+                DesignTopologyRecipeSide {
+                    field_count: std::num::NonZeroU32::new(3).unwrap(),
+                    header_value: 0,
+                    scalars: vec![0, 1],
+                    payload_prefix: vec![0],
+                    payload_entry_count: 0,
+                    entries: Vec::new(),
+                },
+                DesignTopologyRecipeSide {
+                    field_count: std::num::NonZeroU32::new(3).unwrap(),
+                    header_value: 1,
+                    scalars: vec![1, 0],
+                    payload_prefix: vec![0],
+                    payload_entry_count: 0,
+                    entries: Vec::new(),
+                },
+            ],
+        }),
+    });
+    assert!(matches!(
+        resolved_face_group(&group, std::slice::from_ref(&operand)),
+        Some(FaceSelection::Resolved { faces, native })
+            if faces == operand.unreferenced_candidate_faces && native == group.id
+    ));
+    operand.recipe_nodes[0].recipe_structure = None;
     assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
     operand.preceding_candidate_faces = vec![FaceId("f3d:brep:entity#50".into())];
     assert_eq!(
