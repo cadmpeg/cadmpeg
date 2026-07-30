@@ -10519,6 +10519,18 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         (continued - parameter - std::f64::consts::TAU).abs() < 1.0e-8,
         "{continued}"
     );
+
+    let center = Point3::new(2.0, 3.0, 4.0);
+    let upper = crate::decode::closest_spine_parameter(&ir, &ellipse, center, Some(1.4)).unwrap();
+    let lower = crate::decode::closest_spine_parameter(&ir, &ellipse, center, Some(4.8)).unwrap();
+    assert!(
+        (upper - std::f64::consts::FRAC_PI_2).abs() < 1.0e-8,
+        "{upper}"
+    );
+    assert!(
+        (lower - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-8,
+        "{lower}"
+    );
 }
 
 #[test]

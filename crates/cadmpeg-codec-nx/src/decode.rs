@@ -4615,25 +4615,9 @@ pub(crate) fn closest_spine_parameter(
                 + (point.y - origin.y) * direction.y
                 + (point.z - origin.z) * direction.z,
         ),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            ..
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            closest_periodic_analytic_curve_parameter(&carrier.geometry, point, seed)
         }
-        | CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction: ref_direction,
-            ..
-        } => closest_periodic_analytic_curve_parameter(
-            &carrier.geometry,
-            *center,
-            *axis,
-            *ref_direction,
-            point,
-            seed,
-        ),
         CurveGeometry::Nurbs(nurbs) => closest_nurbs_curve_parameter(nurbs, point, seed),
         _ => None,
     }
@@ -4641,21 +4625,64 @@ pub(crate) fn closest_spine_parameter(
 
 fn closest_periodic_analytic_curve_parameter(
     geometry: &CurveGeometry,
-    center: Point3,
-    axis: Vector3,
-    reference: Vector3,
     point: Point3,
     seed: Option<f64>,
 ) -> Option<f64> {
+    let (center, axis, reference) = match geometry {
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            ..
+        } => (*center, *axis, *ref_direction),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            ..
+        } => (*center, *axis, *major_direction),
+        _ => return None,
+    };
     let transverse = cross_vector(axis, reference);
     let delta = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
     let phase = dot_vector(delta, transverse).atan2(dot_vector(delta, reference));
     phase.is_finite().then_some(())?;
-    let anchor = seed.map_or(phase, |seed| {
+    let circle_parameter = seed.map_or(phase, |seed| {
         phase + ((seed - phase) / std::f64::consts::TAU).round() * std::f64::consts::TAU
     });
-    let lower = anchor - std::f64::consts::PI;
-    let step = std::f64::consts::TAU / 64.0;
+    if matches!(geometry, CurveGeometry::Circle { .. }) {
+        return Some(circle_parameter);
+    }
+    let anchor = seed.unwrap_or(phase);
+    let CurveGeometry::Ellipse {
+        major_radius,
+        minor_radius,
+        ..
+    } = geometry
+    else {
+        unreachable!("periodic analytic curve is a circle or ellipse");
+    };
+    let x = dot_vector(delta, reference);
+    let y = dot_vector(delta, transverse);
+    let difference = minor_radius * minor_radius - major_radius * major_radius;
+    let coefficients = [
+        -*minor_radius * y,
+        2.0 * (difference + major_radius * x),
+        0.0,
+        2.0 * (major_radius * x - difference),
+        *minor_radius * y,
+    ];
+    let constant_distance = coefficients.iter().all(|coefficient| *coefficient == 0.0);
+    let roots = real_polynomial_roots(&coefficients)?;
+    let parameters = roots
+        .into_iter()
+        .map(|root| 2.0 * root.atan())
+        .chain([0.0, std::f64::consts::PI])
+        .chain(constant_distance.then_some(anchor))
+        .map(|parameter| {
+            parameter
+                + ((anchor - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU
+        });
     let squared_distance = |parameter| {
         let position = curve_point(geometry, parameter)?;
         Some(
@@ -4664,33 +4691,148 @@ fn closest_periodic_analytic_curve_parameter(
                 + (position.z - point.z).powi(2),
         )
     };
-    let samples = (0..=64)
-        .map(|index| lower + f64::from(index) * step)
-        .collect::<Vec<_>>();
-    let distances = samples
+    closest_parameter_candidates(
+        parameters
+            .map(|parameter| Some((parameter, squared_distance(parameter)?)))
+            .collect::<Option<Vec<_>>>()?,
+        Some(anchor),
+    )?
+    .into_iter()
+    .next()
+}
+
+fn real_polynomial_roots(coefficients: &[f64]) -> Option<Vec<f64>> {
+    if coefficients
         .iter()
-        .map(|parameter| squared_distance(*parameter))
-        .collect::<Option<Vec<_>>>()?;
-    let mut best_index = 0;
-    for index in 1..distances.len() {
-        if distances[index] < distances[best_index]
-            || distances[index] == distances[best_index]
-                && (samples[index] - anchor).abs() < (samples[best_index] - anchor).abs()
-        {
-            best_index = index;
-        }
+        .any(|coefficient| !coefficient.is_finite())
+    {
+        return None;
     }
-    let bracket_center = match best_index {
-        0 => samples[0] + std::f64::consts::TAU,
-        64 => samples[64] - std::f64::consts::TAU,
-        _ => samples[best_index],
+    let mut roots = polynomial_roots_in_unit_interval(coefficients)?;
+    let reversed = coefficients.iter().rev().copied().collect::<Vec<_>>();
+    roots.extend(
+        polynomial_roots_in_unit_interval(&reversed)?
+            .into_iter()
+            .filter(|root| *root != 0.0)
+            .map(f64::recip),
+    );
+    roots.sort_by(f64::total_cmp);
+    roots.dedup_by(|first, second| {
+        (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
+    });
+    Some(roots)
+}
+
+fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
+    let mut coefficients = coefficients.to_vec();
+    while coefficients
+        .last()
+        .is_some_and(|coefficient| *coefficient == 0.0)
+    {
+        coefficients.pop();
+    }
+    if coefficients.is_empty() {
+        return Some(Vec::new());
+    }
+    let degree = coefficients.len().checked_sub(1)?;
+    if degree == 0 {
+        return Some(Vec::new());
+    }
+    let scale = coefficients
+        .iter()
+        .fold(0.0_f64, |scale, coefficient| scale.max(coefficient.abs()));
+    if !scale.is_finite() || scale == 0.0 {
+        return Some(Vec::new());
+    }
+    for coefficient in &mut coefficients {
+        *coefficient /= scale;
+    }
+    if degree == 1 {
+        let root = -coefficients[0] / coefficients[1];
+        return root.is_finite().then(|| {
+            if (-1.0..=1.0).contains(&root) {
+                vec![root]
+            } else {
+                Vec::new()
+            }
+        });
+    }
+    let derivative = coefficients
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(degree, coefficient)| *coefficient * degree as f64)
+        .collect::<Vec<_>>();
+    let mut critical = polynomial_roots_in_unit_interval(&derivative)?;
+    critical.sort_by(f64::total_cmp);
+    critical.dedup_by(|first, second| {
+        (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
+    });
+    let value = |parameter| polynomial_value(&coefficients, parameter);
+    let tolerance = |parameter: f64| {
+        256.0
+            * f64::EPSILON
+            * coefficients.iter().rev().fold(0.0, |bound, coefficient| {
+                bound * parameter.abs() + coefficient.abs()
+            })
     };
-    let (parameter, _) = golden_section_minimum(
-        bracket_center - step,
-        bracket_center + step,
-        &squared_distance,
-    )?;
-    Some(parameter + ((anchor - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU)
+    let mut roots = critical
+        .iter()
+        .copied()
+        .filter(|root| value(*root).abs() <= tolerance(*root))
+        .collect::<Vec<_>>();
+    let partitions = std::iter::once(-1.0)
+        .chain(critical)
+        .chain(std::iter::once(1.0))
+        .collect::<Vec<_>>();
+    for pair in partitions.windows(2) {
+        let mut lower = pair[0];
+        let mut upper = pair[1];
+        let mut lower_value = value(lower);
+        let upper_value = value(upper);
+        if lower_value.abs() <= tolerance(lower) {
+            roots.push(lower);
+            continue;
+        }
+        if upper_value.abs() <= tolerance(upper) {
+            roots.push(upper);
+            continue;
+        }
+        if lower_value.is_sign_positive() == upper_value.is_sign_positive() {
+            continue;
+        }
+        for _ in 0..128 {
+            let middle = lower + (upper - lower) * 0.5;
+            if middle == lower || middle == upper {
+                break;
+            }
+            let middle_value = value(middle);
+            if middle_value.abs() <= tolerance(middle) {
+                lower = middle;
+                upper = middle;
+                break;
+            }
+            if middle_value.is_sign_positive() == lower_value.is_sign_positive() {
+                lower = middle;
+                lower_value = middle_value;
+            } else {
+                upper = middle;
+            }
+        }
+        roots.push(lower + (upper - lower) * 0.5);
+    }
+    roots.sort_by(f64::total_cmp);
+    roots.dedup_by(|first, second| {
+        (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
+    });
+    Some(roots)
+}
+
+fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
+    coefficients
+        .iter()
+        .rev()
+        .fold(0.0, |value, coefficient| value * parameter + coefficient)
 }
 
 fn closest_nurbs_curve_parameter(
@@ -4758,38 +4900,6 @@ fn closest_nurbs_curve_parameter(
     )?
     .into_iter()
     .next()
-}
-
-fn golden_section_minimum(
-    mut lower: f64,
-    mut upper: f64,
-    value: &impl Fn(f64) -> Option<f64>,
-) -> Option<(f64, f64)> {
-    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
-    let mut left = upper - ratio * (upper - lower);
-    let mut right = lower + ratio * (upper - lower);
-    let mut left_value = value(left)?;
-    let mut right_value = value(right)?;
-    for _ in 0..64 {
-        if left_value <= right_value {
-            upper = right;
-            right = left;
-            right_value = left_value;
-            left = upper - ratio * (upper - lower);
-            left_value = value(left)?;
-        } else {
-            lower = left;
-            left = right;
-            left_value = right_value;
-            right = lower + ratio * (upper - lower);
-            right_value = value(right)?;
-        }
-    }
-    if left_value <= right_value {
-        Some((left, left_value))
-    } else {
-        Some((right, right_value))
-    }
 }
 
 fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {
@@ -10271,6 +10381,17 @@ mod tests {
         assert!((first - 0.1).abs() < 1.0e-8);
         assert!((second - 0.1001).abs() < 1.0e-8);
         assert!((remote - 0.7).abs() < 1.0e-8);
+    }
+
+    #[test]
+    fn polynomial_root_isolation_retains_repeated_real_roots() {
+        let roots = super::real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0])
+            .expect("finite quartic roots");
+
+        assert_eq!(roots.len(), 3);
+        for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {
+            assert!((actual - expected).abs() < 1.0e-10, "{actual}");
+        }
     }
 
     #[test]
