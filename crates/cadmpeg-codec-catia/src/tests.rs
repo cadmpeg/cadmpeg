@@ -13260,6 +13260,39 @@ fn decode_transfers_an_unset_typed_formula_result() {
 }
 
 #[test]
+fn decode_transfers_a_typed_boolean_predicate_formula() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                5,
+                false,
+                &[
+                    ("#1_", "Real", "X", "#1_ /2", 5.0),
+                    ("#2_", "Real", "Y", "#2_ /2", 3.0),
+                ],
+                "Boolean",
+                None,
+                "(#1_ /2>#2_ /2) and (#1_ /2>=0)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode Boolean predicate formula");
+    let [x, y, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("predicate formula parameters")
+    };
+
+    assert_eq!(output.value, None);
+    assert_eq!(output.properties["value_type"], "Boolean");
+    assert_eq!(output.expression, "(#1_ /2>#2_ /2) and (#1_ /2>=0)");
+    assert_eq!(output.dependencies, [x.id.clone(), y.id.clone()]);
+    assert_eq!(
+        decoded.report.coverage["transferred_formula_design_record_count"],
+        5
+    );
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
     let decoded = CatiaCodec
         .decode(

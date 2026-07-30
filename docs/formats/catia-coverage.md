@@ -113,7 +113,9 @@ current scores require those matrices and representative fixtures.
   expression of an unset parameter when its result type agrees.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, trigonometric calls, absolute values, and
-  square roots. Length literals normalize `micron`, `mm`, `cm`, `m`, `km`,
+  square roots. Typed comparisons, Boolean literals, conjunctions, and
+  disjunctions transfer Boolean predicate formulas. Length literals normalize
+  `micron`, `mm`, `cm`, `m`, `km`,
   `in`, `ft`, `yard`, and `mile` to millimetres; angle literals normalize
   `rad`, `grad`, and `deg` to radians.
   Complete constraint-range productions are counted separately as dimension or
