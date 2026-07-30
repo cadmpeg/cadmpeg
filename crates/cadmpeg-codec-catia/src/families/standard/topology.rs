@@ -9,7 +9,7 @@ use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::missing_edge::{standard_mesh_boundary_assignments, MeshFaceBoundaryAssignment};
 use crate::solve::UnionFind;
 use cadmpeg_ir::topology::BodyKind;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Reconstructed standard-nested (or FBB-only) topology: the counted spine's
 /// face boundaries recovered from the trim-mesh triangle packets, plus the
@@ -488,7 +488,7 @@ pub(crate) fn complete_duplicate_face_slots(
 
     pub(crate) fn search(
         inputs: &SearchInputs<'_>,
-        degrees: &mut [Vec<u8>],
+        degrees: &mut [BTreeMap<usize, u8>],
         assignment: &mut [usize],
         used: &mut [bool],
         solutions: &mut Vec<Vec<usize>>,
@@ -501,7 +501,7 @@ pub(crate) fn complete_duplicate_face_slots(
         if used.iter().all(|value| *value) {
             let closed = degrees
                 .iter()
-                .all(|face| face.iter().all(|degree| matches!(degree, 0 | 2)));
+                .all(|face| face.values().all(|degree| *degree == 2));
             let mesh_valid = closed
                 && inputs.mesh_bytes.is_none_or(|bytes| {
                     let mut completed = inputs.edge_faces.to_vec();
@@ -530,8 +530,7 @@ pub(crate) fn complete_duplicate_face_slots(
         let deficit = degrees.iter().enumerate().find_map(|(face, values)| {
             values
                 .iter()
-                .position(|degree| *degree == 1)
-                .map(|point| (face, point))
+                .find_map(|(&point, &degree)| (degree == 1).then_some((face, point)))
         });
         let unresolved = inputs
             .unresolved
@@ -555,8 +554,9 @@ pub(crate) fn complete_duplicate_face_slots(
             })
             .filter(|(_, edge, face)| {
                 let [start, end] = inputs.edge_points[*edge];
-                degrees[*face][start] + 1 + u8::from(start == end) <= 2
-                    && (start == end || degrees[*face][end] < 2)
+                degrees[*face].get(&start).copied().unwrap_or_default() + 1 + u8::from(start == end)
+                    <= 2
+                    && (start == end || degrees[*face].get(&end).copied().unwrap_or_default() < 2)
             })
             .collect::<Vec<_>>();
         for (index, edge, face) in choices {
@@ -567,9 +567,9 @@ pub(crate) fn complete_duplicate_face_slots(
             *operations += 1;
             let [start, end] = inputs.edge_points[edge];
             let start_add = 1 + u8::from(start == end);
-            degrees[face][start] += start_add;
+            *degrees[face].entry(start).or_default() += start_add;
             if start != end {
-                degrees[face][end] += 1;
+                *degrees[face].entry(end).or_default() += 1;
             }
             assignment[index] = face;
             used[index] = true;
@@ -577,9 +577,19 @@ pub(crate) fn complete_duplicate_face_slots(
                 inputs, degrees, assignment, used, solutions, operations, exhausted,
             );
             used[index] = false;
-            degrees[face][start] -= start_add;
+            let start_degree = degrees[face]
+                .get_mut(&start)
+                .expect("assigned start degree");
+            *start_degree -= start_add;
+            if *start_degree == 0 {
+                degrees[face].remove(&start);
+            }
             if start != end {
-                degrees[face][end] -= 1;
+                let end_degree = degrees[face].get_mut(&end).expect("assigned end degree");
+                *end_degree -= 1;
+                if *end_degree == 0 {
+                    degrees[face].remove(&end);
+                }
             }
             if *exhausted || solutions.len() > 1 {
                 return;
@@ -603,13 +613,7 @@ pub(crate) fn complete_duplicate_face_slots(
     if unresolved.is_empty() {
         return Some(completed);
     }
-    let point_count = edge_points
-        .iter()
-        .flatten()
-        .max()
-        .copied()
-        .map(|point| point + 1)?;
-    let mut degrees = vec![vec![0u8; point_count]; face_count];
+    let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
     for (edge, faces) in edge_faces.iter().enumerate() {
         let mut incident = *faces;
         incident.sort_unstable();
@@ -619,11 +623,16 @@ pub(crate) fn complete_duplicate_face_slots(
             &incident[..]
         } {
             for &point in &edge_points[edge] {
-                degrees[face][point] = degrees[face][point].checked_add(1)?;
+                let degree = degrees[face].entry(point).or_default();
+                *degree = degree.checked_add(1)?;
             }
         }
     }
-    if degrees.iter().flatten().any(|degree| *degree > 2) {
+    if degrees
+        .iter()
+        .flat_map(BTreeMap::values)
+        .any(|degree| *degree > 2)
+    {
         return None;
     }
     unresolved.sort_by_key(|&edge| {
@@ -631,7 +640,8 @@ pub(crate) fn complete_duplicate_face_slots(
         degrees
             .iter()
             .filter(|face| {
-                face[start] + 1 + u8::from(start == end) <= 2 && (start == end || face[end] < 2)
+                face.get(&start).copied().unwrap_or_default() + 1 + u8::from(start == end) <= 2
+                    && (start == end || face.get(&end).copied().unwrap_or_default() < 2)
             })
             .count()
     });

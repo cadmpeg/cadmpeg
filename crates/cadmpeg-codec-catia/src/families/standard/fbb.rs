@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 pub(crate) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+const VERTEX_RECORD_BYTES: usize = 3 + 3 * size_of::<f32>();
 const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
@@ -516,6 +517,9 @@ pub(crate) fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Ve
     }
     position += 2;
     let count = parse_count(bytes, &mut position)?;
+    if count > bytes.len().saturating_sub(position) / VERTEX_RECORD_BYTES {
+        return None;
+    }
     let mut points = Vec::with_capacity(count);
     for _ in 0..count {
         if bytes.get(position..position + 3)? != [0x05, 0x08, 0x01] {

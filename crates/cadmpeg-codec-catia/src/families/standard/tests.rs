@@ -10,7 +10,7 @@ use cadmpeg_ir::topology::BodyKind;
 
 use crate::families::standard::fbb::{
     parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables_width,
-    parse_trim_chain, parse_trim_record, parse_trim_record_layout,
+    parse_trim_chain, parse_trim_record, parse_trim_record_layout, parse_vertex_table,
     prune_edge_candidates_by_port_domains, standard_face_count, EDGE_DELIMITER,
 };
 use crate::families::standard::topology::{
@@ -4512,6 +4512,37 @@ fn duplicate_face_reference_slot_is_completed_by_face_closure() {
     .expect("unique face-closing slot assignment");
 
     assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
+}
+
+#[test]
+fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
+    let rows = (0..3)
+        .map(|handle| EdgeRow {
+            kind: 0,
+            handles: vec![handle],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let faces = complete_duplicate_face_slots(
+        &rows,
+        &[[0, 1], [0, 1], [0, 0]],
+        &[
+            [usize::MAX, usize::MAX - 1],
+            [usize::MAX - 1, 0],
+            [0, usize::MAX],
+        ],
+        2,
+        None,
+        Some(&[]),
+    )
+    .expect("sparse endpoint identities");
+
+    assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
+}
+
+#[test]
+fn vertex_table_rejects_unbacked_extended_count_before_allocation() {
+    assert!(parse_vertex_table(&[0x01, 0x06, 0xff, 0xff, 0xff, 0xff, 0xff], 0).is_none());
 }
 
 #[test]
