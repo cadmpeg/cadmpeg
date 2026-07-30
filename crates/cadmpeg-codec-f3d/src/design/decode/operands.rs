@@ -1469,6 +1469,22 @@ pub fn decode_body_recipe_operands(
             .and_modify(|header| *header = None)
             .or_insert(Some(header));
     }
+    let mut body_recipes_by_stream = HashMap::<_, Vec<&ConstructionRecipe>>::new();
+    for recipe in recipes
+        .iter()
+        .filter(|recipe| recipe.kind == ConstructionRecipeKind::Body)
+    {
+        let Some(stream) = native_stream(&recipe.id) else {
+            continue;
+        };
+        body_recipes_by_stream
+            .entry(stream)
+            .or_default()
+            .push(recipe);
+    }
+    for stream_recipes in body_recipes_by_stream.values_mut() {
+        stream_recipes.sort_by_key(|recipe| recipe.byte_offset);
+    }
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -1489,7 +1505,13 @@ pub fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(recipe) = unique_body_recipe(bytes, header, recipes, stream) else {
+            let Some(recipe) = unique_body_recipe(
+                bytes,
+                header,
+                body_recipes_by_stream
+                    .get(stream)
+                    .map_or(&[], Vec::as_slice),
+            ) else {
                 continue;
             };
             if let Some(mut operand) =
@@ -1535,7 +1557,13 @@ pub fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, *record_index)) else {
                 continue;
             };
-            let Some(recipe) = unique_body_recipe(bytes, header, recipes, stream) else {
+            let Some(recipe) = unique_body_recipe(
+                bytes,
+                header,
+                body_recipes_by_stream
+                    .get(stream)
+                    .map_or(&[], Vec::as_slice),
+            ) else {
                 continue;
             };
             let owner = DesignBodyRecipeOperandOwner::ScopeReference {
@@ -1562,28 +1590,23 @@ pub fn decode_body_recipe_operands(
 fn unique_body_recipe<'a>(
     bytes: &[u8],
     header: &DesignRecordHeader,
-    recipes: &'a [ConstructionRecipe],
-    stream: &str,
+    recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let prologue_end = body_recipe_prologue_end(bytes, start, header.record_index)?;
-    let mut matching = recipes
-        .iter()
-        .filter(|recipe| {
-            native_stream(&recipe.id) == Some(stream)
-                && recipe.kind == ConstructionRecipeKind::Body
-                && recipe.byte_offset > header.byte_offset
-        })
-        .filter(|recipe| {
-            usize::try_from(recipe.byte_offset)
-                .ok()
-                .is_some_and(|recipe_at| {
-                    body_recipe_operand_end(bytes, prologue_end, header.record_index, recipe_at)
-                        .is_some()
-                })
-        });
-    let recipe = matching.next()?;
-    matching.next().is_none().then_some(recipe)
+    let next_at = next_indexed_record_offset_with_index(
+        bytes,
+        prologue_end,
+        header.record_index.checked_add(4)?,
+    )?;
+    let lower = u64::try_from(prologue_end.max(next_at.saturating_sub(1 << 16))).ok()?;
+    let upper = u64::try_from(next_at).ok()?;
+    let matching = &recipes[recipes.partition_point(|recipe| recipe.byte_offset < lower)
+        ..recipes.partition_point(|recipe| recipe.byte_offset < upper)];
+    let [recipe] = matching else {
+        return None;
+    };
+    Some(recipe)
 }
 
 /// Offset past the four consecutively indexed records that open a body-recipe
