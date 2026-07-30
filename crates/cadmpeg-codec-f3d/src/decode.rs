@@ -263,6 +263,7 @@ fn constraint_parameters(
         | Definition::Concentric { .. }
         | Definition::Coradial { .. }
         | Definition::Collinear { .. }
+        | Definition::ProjectedCopy { .. }
         | Definition::Symmetric { .. }
         | Definition::Horizontal { .. }
         | Definition::HorizontalLoci { .. }
@@ -3014,6 +3015,8 @@ mod tests {
             definition: SketchConstraintDefinition::Native {
                 native_kind: "dimension".into(),
                 native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
                 entities: Vec::new(),
                 parameter: None,
                 operands: Vec::new(),

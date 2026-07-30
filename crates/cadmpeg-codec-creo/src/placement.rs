@@ -405,11 +405,11 @@ fn plane_equation(
         .filter(|plane| plane.surface_id == id)
         .collect::<Vec<_>>();
     if let [plane] = model_planes.as_slice() {
-        let normal = plane.normal?;
-        let origin = plane.origin?;
-        return Some((normal, dot(normal, origin)));
+        if let (Some(normal), Some(origin)) = (plane.normal, plane.origin) {
+            return Some((normal, dot(normal, origin)));
+        }
     }
-    if !model_planes.is_empty() {
+    if model_planes.len() > 1 {
         return None;
     }
     let outline_planes = outline_planes
@@ -423,19 +423,22 @@ fn plane_equation(
 }
 
 fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<([f64; 3], f64)> {
-    let frames = definition
-        .parameter_frames
-        .iter()
-        .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
-        .collect::<Vec<_>>();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    let values: [f64; 12] = frame.decoded_values.clone()?.try_into().ok()?;
+    let values = unique_complete_local_system(definition)?;
     let raw_normal: [f64; 3] = values[6..9].try_into().ok()?;
     let normal = normalize(raw_normal)?;
     let origin: [f64; 3] = values[9..12].try_into().ok()?;
     Some((normal, dot(normal, origin)))
+}
+
+pub(crate) fn unique_complete_local_system(definition: &FeatureDefinition) -> Option<[f64; 12]> {
+    let mut frames = definition
+        .parameter_frames
+        .iter()
+        .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
+        .filter_map(|frame| frame.decoded_values.as_deref())
+        .filter_map(|values| <&[f64; 12]>::try_from(values).ok());
+    let values = *frames.next()?;
+    frames.next().is_none().then_some(values)
 }
 
 fn definition_local_frame_transform(
@@ -443,15 +446,7 @@ fn definition_local_frame_transform(
     section: &crate::feature::FeatureSection3d,
 ) -> Option<FeatureSectionTransform> {
     let feature_id = definition.owner_feature_id?;
-    let frames = definition
-        .parameter_frames
-        .iter()
-        .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
-        .collect::<Vec<_>>();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    let values: [f64; 12] = frame.decoded_values.clone()?.try_into().ok()?;
+    let values = unique_complete_local_system(definition)?;
     let mut reference_axis = normalize(values[0..3].try_into().ok()?)?;
     let mut normal = normalize(values[6..9].try_into().ok()?)?;
     (dot(reference_axis, normal).abs() <= 1e-12).then_some(())?;
@@ -1111,7 +1106,7 @@ mod tests {
     }
 
     #[test]
-    fn unique_local_system_supplies_section_plane_equation() {
+    fn unique_complete_local_system_supplies_section_plane_equation() {
         let mut definition = blank_definition();
         definition.parameter_frames = vec![FeatureParameterFrame {
             kind: FeatureParameterFrameKind::LocalSystem,
@@ -1130,10 +1125,48 @@ mod tests {
         definition.parameter_frames.push(FeatureParameterFrame {
             kind: FeatureParameterFrameKind::LocalSystem,
             body: Vec::new(),
-            decoded_values: Some(vec![0.0; 12]),
+            decoded_values: None,
             offset: 2,
         });
+        assert_eq!(
+            definition_local_plane_equation(&definition),
+            Some(([1.0, 0.0, 0.0], 3.0))
+        );
+
+        definition.parameter_frames.push(FeatureParameterFrame {
+            kind: FeatureParameterFrameKind::LocalSystem,
+            body: Vec::new(),
+            decoded_values: Some(vec![0.0; 12]),
+            offset: 3,
+        });
         assert_eq!(definition_local_plane_equation(&definition), None);
+    }
+
+    #[test]
+    fn unresolved_local_system_does_not_hide_a_complete_outline_plane() {
+        let unresolved = PlaneLocalSystem {
+            surface_id: 7,
+            body: Vec::new(),
+            slots: vec![None; 12],
+            origin: None,
+            u_axis: None,
+            normal: None,
+            classification: crate::surface::LocalSystemClassification::Unclassified,
+            row_offset: 10,
+            offset: 11,
+        };
+        let outline = OutlinePlane {
+            surface_id: 7,
+            origin: [0.0, 0.0, 3.0],
+            u_axis: [1.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            offset: 12,
+        };
+
+        assert_eq!(
+            plane_equation(7, &[], &[unresolved], &[outline]),
+            Some(([0.0, 0.0, 1.0], 3.0))
+        );
     }
 
     #[test]
@@ -1308,6 +1341,8 @@ mod tests {
                 entity_id,
                 class_id,
                 source_entity_id: None,
+                related_entity_id: None,
+                related_entity_state: None,
                 prefixed: false,
                 offset: usize::try_from(entity_id).expect("fixture id fits usize"),
                 end_offset: usize::try_from(entity_id + 1).expect("fixture id fits usize"),
@@ -1322,6 +1357,8 @@ mod tests {
                     entity_id: 700,
                     class_id: 7,
                     source_entity_id: None,
+                    related_entity_id: None,
+                    related_entity_state: None,
                     prefixed: false,
                     offset: 60,
                     end_offset: 61,
@@ -1399,6 +1436,7 @@ mod tests {
             }),
             segments: Some(FeatureSegmentTable {
                 declared_count: 1,
+                has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![FeatureSegment {
                     kind: FeatureSegmentKind::Line,
@@ -1410,8 +1448,15 @@ mod tests {
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 43,
+                    body: Vec::new(),
                     offset: 20,
                 }],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
                 opaque_rows: Vec::new(),
                 offset: 20,
             }),
@@ -1743,6 +1788,7 @@ mod tests {
             radius_ref: None,
             radius2_ref: None,
             external_id,
+            body: Vec::new(),
             offset: external_id as usize,
         };
         let definition = FeatureDefinition {
@@ -1771,8 +1817,15 @@ mod tests {
             }),
             segments: Some(FeatureSegmentTable {
                 declared_count: 2,
+                has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![segment(252, 1), segment(255, 2)],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
                 opaque_rows: Vec::new(),
                 offset: 110,
             }),
@@ -1838,6 +1891,8 @@ mod tests {
             entity_id,
             class_id: 200,
             source_entity_id: Some(source_entity_id),
+            related_entity_id: None,
+            related_entity_state: None,
             prefixed: false,
             offset,
             end_offset: offset + 1,
@@ -1910,6 +1965,7 @@ mod tests {
             radius_ref: None,
             radius2_ref: None,
             external_id,
+            body: Vec::new(),
             offset: external_id as usize,
         };
         let definition = FeatureDefinition {
@@ -1948,6 +2004,7 @@ mod tests {
             }),
             segments: Some(FeatureSegmentTable {
                 declared_count: 4,
+                has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![
                     line(4, [1, 2]),
@@ -1955,6 +2012,12 @@ mod tests {
                     line(6, [3, 4]),
                     line(7, [4, 1]),
                 ],
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
                 opaque_rows: Vec::new(),
                 offset: 110,
             }),
@@ -1990,6 +2053,8 @@ mod tests {
             entity_id,
             class_id,
             source_entity_id,
+            related_entity_id: None,
+            related_entity_state: None,
             prefixed: false,
             offset: entity_id as usize,
             end_offset: entity_id as usize + 1,
