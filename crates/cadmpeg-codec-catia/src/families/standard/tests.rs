@@ -633,10 +633,12 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert!(!search.candidate_fits(0, [0, 1]));
@@ -662,10 +664,12 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         degrees: sparse_degrees(&[&[0, 0, 0], &[0, 0, 2]]),
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert!(!search.candidate_fits(0, [0, 1]));
@@ -699,10 +703,12 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         degrees: vec![BTreeMap::new(); EDGE_COUNT],
         solutions: Vec::new(),
         solution_filter: Some(&solution_filter),
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     search.search();
@@ -733,6 +739,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
@@ -742,6 +749,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert_eq!(
@@ -776,6 +784,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
@@ -785,6 +794,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert_eq!(
@@ -823,10 +833,12 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     search.search();
@@ -864,10 +876,12 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         degrees: sparse_degrees(&[&[2]]),
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert_eq!(search.face_configuration_options(), None);
@@ -910,10 +924,12 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
         degrees: vec![BTreeMap::new(), BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert_eq!(
@@ -964,10 +980,12 @@ fn incidence_candidate_defers_global_quotient_validation_until_selection() {
         degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert!(search.candidate_fits(0, [0, 0]));
@@ -1011,10 +1029,12 @@ fn incidence_selection_validates_only_its_affected_faces() {
         degrees: sparse_degrees(&[&[2, 0], &[1, 1]]),
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert!(search.ordered_faces_feasible([0]));
@@ -2235,10 +2255,12 @@ fn incidence_component_products_stream_until_the_consumer_stops() {
 #[test]
 fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() {
     use crate::solve::incidence::{visit_component_incidence_pair_solutions, IncidenceSolve};
+    use std::cell::Cell;
     use std::ops::ControlFlow;
 
     let choices = vec![(0..300).map(|point| [point, point]).collect::<Vec<_>>()];
     let mut visited = 0usize;
+    let validated = Cell::new(0usize);
     let outcome = visit_component_incidence_pair_solutions(
         &choices,
         &[[0, 0]],
@@ -2247,7 +2269,10 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
         None,
         None,
         None,
-        &|_| true,
+        &|_| {
+            validated.set(validated.get() + 1);
+            true
+        },
         &mut |_| {
             visited += 1;
             if visited == 2 {
@@ -2260,6 +2285,7 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
 
     assert_eq!(outcome, IncidenceSolve::Solved(2));
     assert_eq!(visited, 2);
+    assert_eq!(validated.get(), 2);
 }
 
 #[test]
