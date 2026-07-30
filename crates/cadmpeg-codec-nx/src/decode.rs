@@ -7491,9 +7491,25 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches(
         let [edge] = edges.as_slice() else {
             continue;
         };
+        let Some(endpoint_tolerance) = edge
+            .tolerance
+            .filter(|value| value.is_finite() && *value >= 0.0)
+        else {
+            continue;
+        };
         let edge_reversed = match (vertex_points.get(&edge.start), vertex_points.get(&edge.end)) {
-            (Some(start), Some(end)) if start == &endpoints[0] && end == &endpoints[1] => false,
-            (Some(start), Some(end)) if start == &endpoints[1] && end == &endpoints[0] => true,
+            (Some(start), Some(end)) => {
+                let forward = point_distance(*start, endpoints[0]) <= endpoint_tolerance
+                    && point_distance(*end, endpoints[1]) <= endpoint_tolerance;
+                let reversed = point_distance(*start, endpoints[1]) <= endpoint_tolerance
+                    && point_distance(*end, endpoints[0]) <= endpoint_tolerance;
+                match (forward, reversed) {
+                    (true, false) => false,
+                    (false, true) => true,
+                    (true, true) if edge.start == edge.end => false,
+                    _ => continue,
+                }
+            }
             _ => continue,
         };
         let candidates = supports.each_ref().map(|support| {
@@ -11774,7 +11790,7 @@ mod tests {
         for index in 0..2 {
             ir.model.points.push(Point {
                 id: points[index].clone(),
-                position: Point3::new(10.0 * index as f64, 0.0, 0.0),
+                position: Point3::new(0.005 + 9.99 * index as f64, 0.0, 0.0),
                 source_object: None,
             });
             ir.model.vertices.push(Vertex {
