@@ -1671,7 +1671,7 @@ fn component_incidence_faces_viable(
     })
 }
 
-fn partial_face_orientability_viable(
+pub(crate) fn partial_face_orientability_viable(
     assignment: &[Option<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_edges: &[Vec<usize>],
@@ -1731,21 +1731,59 @@ fn partial_face_orientability_viable(
                     stack.extend(edges_at_point[&point].iter().copied());
                 }
             }
-            if points.iter().any(|point| degrees[point] != 2) {
-                continue;
-            }
             component.sort_unstable();
-            let Some([cycle]) = incidence_cycles(&component, &edge_points)
-                .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())
-            else {
-                return false;
+            let trail = if points.iter().all(|point| degrees[point] == 2) {
+                let Some([cycle]) = incidence_cycles(&component, &edge_points)
+                    .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())
+                else {
+                    return false;
+                };
+                cycle
+            } else {
+                let mut endpoints = points
+                    .iter()
+                    .copied()
+                    .filter(|point| degrees[point] == 1)
+                    .collect::<Vec<_>>();
+                endpoints.sort_unstable();
+                let [start, end] = endpoints.as_slice() else {
+                    return false;
+                };
+                if points
+                    .iter()
+                    .any(|point| !endpoints.contains(point) && degrees[point] != 2)
+                {
+                    return false;
+                }
+                let mut remaining = component.iter().copied().collect::<HashSet<_>>();
+                let mut point = *start;
+                let mut trail = Vec::with_capacity(component.len());
+                while let Some(&edge) = edges_at_point[&point]
+                    .iter()
+                    .find(|edge| remaining.contains(edge))
+                {
+                    if !remaining.remove(&edge) {
+                        return false;
+                    }
+                    let pair = edge_points[edge];
+                    let reversed = pair[1] == point;
+                    if !reversed && pair[0] != point {
+                        return false;
+                    }
+                    point = pair[usize::from(!reversed)];
+                    trail.push((edge, reversed));
+                }
+                if point != *end || !remaining.is_empty() {
+                    return false;
+                }
+                trail
             };
             let boundary = boundary_count;
             boundary_count = match boundary_count.checked_add(1) {
                 Some(count) => count,
                 None => return false,
             };
-            for (edge, reversed) in cycle {
+            for (edge, reversed) in trail {
                 edge_uses
                     .entry(edge)
                     .or_default()
@@ -1894,6 +1932,7 @@ where
         degrees: &[BTreeMap<usize, u8>],
         point_count: usize,
         budget: &MeshConstraintBudget,
+        orientation_budget: &MeshConstraintBudget,
         solution_visitor: Option<MeshEndpointSolutionVisitor<'_>>,
     ) -> bool {
         let mut active = vec![false; choices.len()];
@@ -1927,8 +1966,16 @@ where
                 mesh_assignments,
                 point_count,
             );
-            locally_closed
-                && partial_face_orientability_viable(&completed, edge_faces, face_edges, budget)
+            let orientable = locally_closed
+                && (orientation_budget.exhausted.get()
+                    || partial_face_orientability_viable(
+                        &completed,
+                        edge_faces,
+                        face_edges,
+                        orientation_budget,
+                    )
+                    || orientation_budget.exhausted.get());
+            orientable
                 && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed))
         };
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
@@ -1978,6 +2025,8 @@ where
         ambiguous: &mut bool,
         components: &[Vec<usize>],
         component_budgets: &[MeshConstraintBudget],
+        orientation_budget: &MeshConstraintBudget,
+        coordinate_propagation_budget: &MeshConstraintBudget,
     ) -> Result<ControlFlow<()>, ()>
     where
         F: Fn(&[[usize; 2]]) -> bool,
@@ -2036,88 +2085,101 @@ where
         let base_assignment = assignment.to_vec();
         let base_degrees = degrees.to_vec();
         let mut downstream_control = Ok(ControlFlow::Continue(()));
-        let mut visit_solution =
-            |solution: &[MeshEndpointPair]| {
-                if !budget.charge() {
-                    downstream_control = Err(());
-                    return ControlFlow::Break(());
-                }
-                for &(edge, pair) in solution {
-                    assignment[edge] = Some(pair);
-                    for (rank, face) in edge_faces[edge].into_iter().enumerate() {
-                        if rank > 0 && face == edge_faces[edge][0] {
-                            continue;
-                        }
-                        for point in pair {
-                            *degrees[face].entry(point).or_default() += 1;
-                        }
+        let mut visit_solution = |solution: &[MeshEndpointPair]| {
+            if !budget.charge() {
+                downstream_control = Err(());
+                return ControlFlow::Break(());
+            }
+            for &(edge, pair) in solution {
+                assignment[edge] = Some(pair);
+                for (rank, face) in edge_faces[edge].into_iter().enumerate() {
+                    if rank > 0 && face == edge_faces[edge][0] {
+                        continue;
+                    }
+                    for point in pair {
+                        *degrees[face].entry(point).or_default() += 1;
                     }
                 }
-                let candidates = coordinate_domains.map(|_| {
-                    assignment
-                        .iter()
-                        .enumerate()
-                        .map(|(edge, pair)| {
-                            pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
-                        })
-                        .collect::<Vec<_>>()
-                });
-                let refined_domains = coordinate_domains.zip(candidates.as_ref()).and_then(
-                    |(domains, candidates)| domains.refine_candidates(candidates, Some(budget)),
-                );
-                let feasible = coordinate_domains.is_none() || refined_domains.is_some();
-                let control = if feasible {
-                    visit_components(
-                        component_index + 1,
-                        choices,
-                        edge_faces,
-                        face_edges,
-                        mesh_assignments,
-                        mesh_quotient,
-                        refined_domains.as_ref().or(coordinate_domains),
-                        coordinate_root_policy,
-                        partial_solution_valid,
-                        solution_valid,
-                        assignment,
-                        degrees,
-                        point_count,
-                        budget,
-                        visitor,
-                        visited,
-                        ambiguous,
-                        components,
-                        component_budgets,
-                    )
-                } else if budget.exhausted.get() {
-                    Err(())
-                } else {
-                    Ok(ControlFlow::Continue(()))
-                };
-                for &(edge, pair) in solution.iter().rev() {
-                    assignment[edge] = None;
-                    for (rank, face) in edge_faces[edge].into_iter().enumerate() {
-                        if rank > 0 && face == edge_faces[edge][0] {
-                            continue;
-                        }
-                        for point in pair {
-                            let degree = degrees[face]
-                                .get_mut(&point)
-                                .expect("assigned incidence degree");
-                            *degree -= 1;
-                            if *degree == 0 {
-                                degrees[face].remove(&point);
-                            }
-                        }
-                    }
-                }
-                match control {
-                    Ok(ControlFlow::Continue(())) => ControlFlow::Continue(()),
-                    terminal => {
-                        downstream_control = terminal;
-                        ControlFlow::Break(())
-                    }
-                }
+            }
+            let candidates = coordinate_domains.map(|_| {
+                assignment
+                    .iter()
+                    .enumerate()
+                    .map(|(edge, pair)| {
+                        pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let refined_domains =
+                coordinate_domains
+                    .zip(candidates.as_ref())
+                    .and_then(|(domains, candidates)| {
+                        // Refinement only narrows later component searches. A complete
+                        // assignment is checked against the quotient before visitation.
+                        (!coordinate_propagation_budget.exhausted.get())
+                            .then(|| {
+                                domains.refine_candidates(
+                                    candidates,
+                                    Some(coordinate_propagation_budget),
+                                )
+                            })
+                            .flatten()
+                    });
+            let propagation_skipped = coordinate_propagation_budget.exhausted.get();
+            let feasible =
+                coordinate_domains.is_none() || refined_domains.is_some() || propagation_skipped;
+            let control = if feasible {
+                visit_components(
+                    component_index + 1,
+                    choices,
+                    edge_faces,
+                    face_edges,
+                    mesh_assignments,
+                    mesh_quotient,
+                    refined_domains.as_ref().or(coordinate_domains),
+                    coordinate_root_policy,
+                    partial_solution_valid,
+                    solution_valid,
+                    assignment,
+                    degrees,
+                    point_count,
+                    budget,
+                    visitor,
+                    visited,
+                    ambiguous,
+                    components,
+                    component_budgets,
+                    orientation_budget,
+                    coordinate_propagation_budget,
+                )
+            } else {
+                Ok(ControlFlow::Continue(()))
             };
+            for &(edge, pair) in solution.iter().rev() {
+                assignment[edge] = None;
+                for (rank, face) in edge_faces[edge].into_iter().enumerate() {
+                    if rank > 0 && face == edge_faces[edge][0] {
+                        continue;
+                    }
+                    for point in pair {
+                        let degree = degrees[face]
+                            .get_mut(&point)
+                            .expect("assigned incidence degree");
+                        *degree -= 1;
+                        if *degree == 0 {
+                            degrees[face].remove(&point);
+                        }
+                    }
+                }
+            }
+            match control {
+                Ok(ControlFlow::Continue(())) => ControlFlow::Continue(()),
+                terminal => {
+                    downstream_control = terminal;
+                    ControlFlow::Break(())
+                }
+            }
+        };
         let narrowed_choices =
             coordinate_domains.map_or(choices, MeshCoordinateRootDomains::edge_candidates);
         let Some(component_budget) = component_budgets.get(component_index) else {
@@ -2135,6 +2197,7 @@ where
             &base_degrees,
             point_count,
             component_budget,
+            orientation_budget,
             Some(&mut visit_solution),
         );
         match downstream_control {
@@ -2268,6 +2331,7 @@ where
         }
         for component in &components {
             let preflight_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let orientation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
             let mut accept_first = |solution: &[MeshEndpointPair]| {
                 let mut completed = fixed.clone();
@@ -2304,6 +2368,7 @@ where
                 &degrees,
                 point_count,
                 &preflight_budget,
+                &orientation_budget,
                 Some(&mut accept_first),
             );
             if !found {
@@ -2320,6 +2385,11 @@ where
         let component_budgets = (0..components.len())
             .map(|_| MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS))
             .collect::<Vec<_>>();
+        let orientation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        // These deductions can reduce composition work but cannot establish a
+        // solution. Keep their exhaustion independent of the exact search budget.
+        let coordinate_propagation_budget =
+            MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         if visit_components(
             0,
             choices,
@@ -2340,6 +2410,8 @@ where
             &mut ambiguous,
             &components,
             &component_budgets,
+            &orientation_budget,
+            &coordinate_propagation_budget,
         )
         .is_err()
         {

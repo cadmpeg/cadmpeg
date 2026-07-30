@@ -754,7 +754,10 @@ impl MeshQuotient {
             &edge_ids,
             edge_candidates,
             budget,
-        ) || !enforce_edge_arc_consistency(
+        ) {
+            return None;
+        }
+        if !enforce_edge_arc_consistency(
             &mut domains,
             &edges,
             &edge_ids,
@@ -813,7 +816,9 @@ impl MeshQuotient {
         let (domains, coverage_matching) = coordinate_domains.refine_domains(
             coordinate_domains.domains.clone(),
             &coordinate_domains.edge_candidates,
-            &edge_ids,
+            // The full edge set already reached arc consistency above. This pass
+            // starts with Hall support and only revisits edges narrowed by it.
+            &[],
             true,
             budget,
         )?;

@@ -3077,6 +3077,29 @@ fn partial_boundary_orientation_constraints_reject_an_odd_parity_cycle() {
 }
 
 #[test]
+fn partial_face_orientability_rejects_an_odd_open_path_cycle() {
+    let edge_faces = [[0, 1], [1, 2], [2, 0]];
+    let face_edges = vec![vec![0, 2], vec![0, 1], vec![1, 2]];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let complete = [Some([0, 1]), Some([1, 2]), Some([0, 2])];
+
+    assert!(!crate::solve::incidence::partial_face_orientability_viable(
+        &complete,
+        &edge_faces,
+        &face_edges,
+        &budget,
+    ));
+    let partial = [Some([0, 1]), Some([1, 2]), None];
+    assert!(crate::solve::incidence::partial_face_orientability_viable(
+        &partial,
+        &edge_faces,
+        &face_edges,
+        &budget,
+    ));
+    assert!(!budget.exhausted.get());
+}
+
+#[test]
 fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
     let use_ = |edge, reversed| MeshBoundaryEdgeCandidate {
         edge,
