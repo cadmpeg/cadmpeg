@@ -628,6 +628,7 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
@@ -655,7 +656,7 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
 }
 
 #[test]
-fn incidence_component_indexes_frontier_support_by_face_and_point() {
+fn incidence_component_indexes_and_revalidates_frontier_support() {
     const IRRELEVANT_EDGES: usize = 32;
     let mut choices = vec![vec![[0, 1]], vec![[0, 1]]];
     choices.extend((0..IRRELEVANT_EDGES).map(|edge| vec![[edge + 2, edge + 3]]));
@@ -669,10 +670,11 @@ fn incidence_component_indexes_frontier_support_by_face_and_point() {
     let point_support_edges = vec![HashMap::from([(0, vec![0, 1]), (1, vec![0, 1])])];
     let budget = MeshConstraintBudget::new(16);
     let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let search = crate::solve::incidence::IncidenceComponentSearch {
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: Some(explicit_point_supports),
         point_support_edges: Some(point_support_edges),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
@@ -697,6 +699,8 @@ fn incidence_component_indexes_frontier_support_by_face_and_point() {
 
     assert!(search.candidate_fits(0, [0, 1]));
     assert!(!budget.exhausted.get());
+    search.assignment[1] = Some([0, 1]);
+    assert!(!search.candidate_fits(0, [0, 1]));
 }
 
 #[test]
@@ -710,6 +714,7 @@ fn incidence_degree_support_scan_exhausts_its_component_budget() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
@@ -749,6 +754,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
@@ -794,6 +800,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
@@ -836,6 +843,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
@@ -887,6 +895,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
@@ -942,6 +951,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
@@ -991,6 +1001,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
@@ -1038,6 +1049,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
@@ -1095,6 +1107,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
@@ -1153,6 +1166,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
@@ -1232,6 +1246,7 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
@@ -1282,6 +1297,7 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
@@ -1343,6 +1359,7 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
@@ -1398,6 +1415,7 @@ fn incidence_selection_validates_only_its_affected_faces() {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),

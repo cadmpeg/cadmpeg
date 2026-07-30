@@ -19,10 +19,12 @@ use crate::solve::missing_edge::{
     MeshFaceBoundaryDomain,
 };
 use crate::solve::UnionFind;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::ControlFlow;
 
 type MeshEndpointSolutionVisitor<'a> = &'a mut dyn FnMut(&[MeshEndpointPair]) -> ControlFlow<()>;
+type DegreeSupportWitnesses = RefCell<HashMap<(usize, usize), (usize, [usize; 2])>>;
 
 pub(crate) fn prune_incidence_choices(
     choices: &mut [Vec<[usize; 2]>],
@@ -451,6 +453,7 @@ pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) choices: &'a [Vec<[usize; 2]>],
     pub(crate) explicit_point_supports: Option<Vec<HashMap<usize, Vec<[usize; 2]>>>>,
     pub(crate) point_support_edges: Option<Vec<HashMap<usize, Vec<usize>>>>,
+    pub(crate) degree_support_witnesses: DegreeSupportWitnesses,
     pub(crate) edge_faces: &'a [[usize; 2]],
     pub(crate) face_edges: &'a [Vec<usize>],
     pub(crate) mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
@@ -1022,6 +1025,37 @@ impl IncidenceComponentSearch<'_, '_> {
                 + start;
             let constrained_points = &self.constraints[start..end];
             let support_exists = |point| {
+                let witness = {
+                    self.degree_support_witnesses
+                        .borrow()
+                        .get(&(face, point))
+                        .copied()
+                };
+                if let Some((supporting_edge, supporting_pair)) = witness {
+                    let candidate_still_available = self.choices[supporting_edge]
+                        .contains(&supporting_pair)
+                        || self
+                            .coordinate_domains
+                            .filter(|_| self.choices[supporting_edge].is_empty())
+                            .is_some_and(|domains| {
+                                domains.supports_edge_candidate(supporting_edge, supporting_pair)
+                            });
+                    if !self.budget.charge() {
+                        return false;
+                    }
+                    if selected.is_none_or(|(edge, _)| supporting_edge != edge)
+                        && self.active[supporting_edge]
+                        && self.assignment[supporting_edge].is_none()
+                        && candidate_still_available
+                        && supporting_point_fits(supporting_edge, point)
+                        && supporting_pair_fits(supporting_edge, supporting_pair)
+                    {
+                        return true;
+                    }
+                    self.degree_support_witnesses
+                        .borrow_mut()
+                        .remove(&(face, point));
+                }
                 let indexed_edges = self
                     .point_support_edges
                     .as_ref()
@@ -1066,6 +1100,9 @@ impl IncidenceComponentSearch<'_, '_> {
                             return false;
                         }
                         if supporting_pair.contains(&point) && fits(supporting_pair) {
+                            self.degree_support_witnesses
+                                .borrow_mut()
+                                .insert((face, point), (supporting_edge, supporting_pair));
                             return true;
                         }
                     }
@@ -2521,6 +2558,7 @@ where
             choices,
             explicit_point_supports: Some(explicit_point_supports),
             point_support_edges: Some(point_support_edges),
+            degree_support_witnesses: RefCell::new(HashMap::new()),
             edge_faces,
             face_edges,
             mesh_assignments,
