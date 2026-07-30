@@ -883,6 +883,122 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
     curve_point_inner(geometry, t, 0)
 }
 
+/// Evaluate the exact first derivative of a directly stored curve.
+pub fn curve_tangent(geometry: &CurveGeometry, t: f64) -> Option<Vector3> {
+    if !t.is_finite() {
+        return None;
+    }
+    curve_tangent_inner(geometry, t, 0)
+        .filter(|tangent| tangent.x.is_finite() && tangent.y.is_finite() && tangent.z.is_finite())
+}
+
+fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Vector3> {
+    if depth > 256 {
+        return None;
+    }
+    match geometry {
+        CurveGeometry::Line { direction, .. } => Some(*direction),
+        CurveGeometry::Circle {
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => Some(vector_sum(&[
+            (-radius * t.sin(), *ref_direction),
+            (radius * t.cos(), cross(*axis, *ref_direction)),
+        ])),
+        CurveGeometry::Ellipse {
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(vector_sum(&[
+            (-major_radius * t.sin(), *major_direction),
+            (minor_radius * t.cos(), cross(*axis, *major_direction)),
+        ])),
+        CurveGeometry::Parabola {
+            axis,
+            major_direction,
+            focal_distance,
+            ..
+        } => Some(vector_sum(&[
+            (2.0 * focal_distance * t, *major_direction),
+            (2.0 * focal_distance, cross(*axis, *major_direction)),
+        ])),
+        CurveGeometry::Hyperbola {
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(vector_sum(&[
+            (major_radius * t.sinh(), *major_direction),
+            (minor_radius * t.cosh(), cross(*axis, *major_direction)),
+        ])),
+        CurveGeometry::Nurbs(nurbs) => {
+            let parameter = map_nurbs_curve_parameter(nurbs, t)?;
+            nurbs_curve_tangent(
+                nurbs.degree,
+                &nurbs.knots,
+                &nurbs.control_points,
+                nurbs.weights.as_deref(),
+                parameter,
+            )
+        }
+        CurveGeometry::Polyline {
+            points, parameters, ..
+        } => polyline_tangent(points, parameters.as_deref(), t),
+        CurveGeometry::Transformed { basis, transform } => curve_tangent_inner(basis, t, depth + 1)
+            .map(|tangent| affine_vector(*transform, tangent)),
+        CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Unknown { .. } => None,
+    }
+}
+
+fn nurbs_curve_tangent(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point3],
+    weights: Option<&[f64]>,
+    t: f64,
+) -> Option<Vector3> {
+    let degree = usize::try_from(degree).ok()?;
+    let span = bspline_span(knots, degree, control_points.len(), t)?;
+    let basis = bspline_basis(knots, degree, span, t);
+    let derivatives = bspline_basis_derivative(knots, degree, span, t);
+    let mut weighted = Vector3::new(0.0, 0.0, 0.0);
+    let mut weighted_derivative = Vector3::new(0.0, 0.0, 0.0);
+    let mut weight = 0.0;
+    let mut weight_derivative = 0.0;
+    for (local, (basis, derivative)) in basis.iter().zip(&derivatives).enumerate() {
+        let index = span - degree + local;
+        let control = control_points.get(index)?;
+        let control_weight = weights
+            .and_then(|weights| weights.get(index).copied())
+            .unwrap_or(1.0);
+        weighted.x += basis * control_weight * control.x;
+        weighted.y += basis * control_weight * control.y;
+        weighted.z += basis * control_weight * control.z;
+        weighted_derivative.x += derivative * control_weight * control.x;
+        weighted_derivative.y += derivative * control_weight * control.y;
+        weighted_derivative.z += derivative * control_weight * control.z;
+        weight += basis * control_weight;
+        weight_derivative += derivative * control_weight;
+    }
+    if weight == 0.0 {
+        return None;
+    }
+    let tangent = Vector3::new(
+        (weighted_derivative.x * weight - weighted.x * weight_derivative) / (weight * weight),
+        (weighted_derivative.y * weight - weighted.y * weight_derivative) / (weight * weight),
+        (weighted_derivative.z * weight - weighted.z * weight_derivative) / (weight * weight),
+    );
+    (tangent.x.is_finite() && tangent.y.is_finite() && tangent.z.is_finite()).then_some(tangent)
+}
+
 /// Evaluate a curve carrier selected by arena id, including supported
 /// procedural constructions.
 pub fn model_curve_point_by_id(
@@ -1436,6 +1552,46 @@ fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Opti
     ))
 }
 
+fn polyline_tangent(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Vector3> {
+    if points.len() < 2 || !t.is_finite() {
+        return None;
+    }
+    let implicit;
+    let parameters = if let Some(parameters) = parameters {
+        if parameters.len() != points.len() {
+            return None;
+        }
+        parameters
+    } else {
+        implicit = (0..points.len())
+            .map(|index| index as f64)
+            .collect::<Vec<_>>();
+        &implicit
+    };
+    let mut tangent = None;
+    for (segment, window) in parameters.windows(2).enumerate() {
+        if !((t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])) {
+            continue;
+        }
+        let width = window[1] - window[0];
+        if width == 0.0 || !width.is_finite() {
+            return None;
+        }
+        let start = points[segment];
+        let end = points[segment + 1];
+        let candidate = Vector3::new(
+            (end.x - start.x) / width,
+            (end.y - start.y) / width,
+            (end.z - start.z) / width,
+        );
+        if tangent.is_some_and(|tangent| tangent != candidate) {
+            return None;
+        }
+        tangent = Some(candidate);
+    }
+    tangent
+}
+
 fn affine_point(transform: Transform, point: Point3) -> Point3 {
     Point3::new(
         transform.rows[0][0] * point.x
@@ -1749,7 +1905,7 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 #[cfg(test)]
 mod tests {
     use super::{
-        curve_point, model_surface_point_by_id, nurbs_curve_parameter_near_point,
+        curve_point, curve_tangent, model_surface_point_by_id, nurbs_curve_parameter_near_point,
         nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_partials,
         nurbs_surface_point, pcurve_uv, surface_partials,
     };
@@ -1923,6 +2079,57 @@ mod tests {
         assert_eq!(transformed.point, Point3::new(11.0, 20.0, 13.0));
         assert_eq!(transformed.du, Vector3::new(2.0, 0.0, 0.0));
         assert_eq!(transformed.dv, Vector3::new(0.0, 3.0, 0.0));
+    }
+
+    #[test]
+    fn analytic_and_rational_curve_tangents_are_exact() {
+        let parameter = 1.0e16;
+        let circle = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 3.0,
+        };
+        let tangent = curve_tangent(&circle, parameter).expect("analytic tangent");
+        assert_eq!(
+            tangent,
+            Vector3::new(-3.0 * parameter.sin(), 3.0 * parameter.cos(), 0.0)
+        );
+        assert_eq!(curve_tangent(&circle, f64::NAN), None);
+
+        let arc = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+            periodic: false,
+        });
+        for parameter in [0.0, 0.5, 1.0] {
+            let point = curve_point(&arc, parameter).expect("rational arc point");
+            let tangent = curve_tangent(&arc, parameter).expect("rational arc tangent");
+            let radial_dot = point.x * tangent.x + point.y * tangent.y;
+            assert!(radial_dot.abs() < 1e-12);
+            assert!(tangent.norm() > 0.0);
+        }
+
+        let corner = CurveGeometry::Polyline {
+            points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            parameters: Some(vec![0.0, 1.0, 2.0]),
+            chordal_deflection: 0.0,
+        };
+        assert_eq!(
+            curve_tangent(&corner, 0.5),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+        assert_eq!(curve_tangent(&corner, 1.0), None);
     }
 
     #[test]

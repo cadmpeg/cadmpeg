@@ -16,8 +16,9 @@ use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, curve_point, model_surface_point_by_id, nurbs_curve_speed_bound,
-    nurbs_surface_isocurve, nurbs_surface_partials, pcurve_uv, surface_point,
+    analytic_surface_parameters, curve_point, curve_tangent, model_surface_point_by_id,
+    nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_partials, pcurve_uv,
+    surface_point,
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
@@ -4688,21 +4689,12 @@ fn model_curve_point(ir: &CadIr, curve: &CurveId, parameter: f64) -> Option<Poin
 }
 
 fn model_curve_tangent(ir: &CadIr, curve: &CurveId, parameter: f64) -> Option<Vector3> {
-    let step = 1.0e-6 * (1.0 + parameter.abs());
-    let center = model_curve_point(ir, curve, parameter)?;
-    let before = model_curve_point(ir, curve, parameter - step);
-    let after = model_curve_point(ir, curve, parameter + step);
-    let (before, after) = match (before, after) {
-        (Some(before), Some(after)) => (before, after),
-        (Some(before), None) => (before, center),
-        (None, Some(after)) => (center, after),
-        (None, None) => return None,
-    };
-    unit_vector(Vector3::new(
-        after.x - before.x,
-        after.y - before.y,
-        after.z - before.z,
-    ))
+    let carrier = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == curve)?;
+    unit_vector(curve_tangent(&carrier.geometry, parameter)?)
 }
 
 pub(crate) fn closest_spine_parameter(
