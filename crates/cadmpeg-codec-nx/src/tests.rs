@@ -10618,9 +10618,9 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     };
 
     let first =
-        crate::decode::closest_pcurve_parameter(&pcurve, Point2::new(0.5, 4.5), None).unwrap();
+        crate::decode::closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None).unwrap()[0];
     let second =
-        crate::decode::closest_pcurve_parameter(&pcurve, Point2::new(5.0, 4.5), None).unwrap();
+        crate::decode::closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None).unwrap()[0];
 
     assert!((first - 3.5).abs() < 1.0e-12);
     assert!((second - 8.0).abs() < 1.0e-12);
@@ -10633,7 +10633,8 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         periodic: false,
     };
     let rational_parameter =
-        crate::decode::closest_pcurve_parameter(&rational, Point2::new(0.5, 0.0), None).unwrap();
+        crate::decode::closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None).unwrap()
+            [0];
     assert!((rational_parameter - 1.0 / 3.0).abs() < 1.0e-10);
 
     let quadratic = PcurveGeometry::Nurbs {
@@ -10648,7 +10649,8 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         periodic: false,
     };
     let quadratic_parameter =
-        crate::decode::closest_pcurve_parameter(&quadratic, Point2::new(1.0, 0.5), None).unwrap();
+        crate::decode::closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None).unwrap()
+            [0];
     assert!((quadratic_parameter - 0.5).abs() < 1.0e-10);
 
     let folded = PcurveGeometry::Nurbs {
@@ -10663,9 +10665,11 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         periodic: false,
     };
     let first_fold =
-        crate::decode::closest_pcurve_parameter(&folded, Point2::new(0.0, 0.0), Some(0.1)).unwrap();
+        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+            .unwrap()[0];
     let second_fold =
-        crate::decode::closest_pcurve_parameter(&folded, Point2::new(0.0, 0.0), Some(1.9)).unwrap();
+        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+            .unwrap()[0];
     assert_eq!(first_fold, 0.0);
     assert_eq!(second_fold, 2.0);
     assert_eq!(

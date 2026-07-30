@@ -3232,11 +3232,14 @@ fn blend_surface_parameters_inner(
     }
     if let Some(fit_tolerance) = fit_tolerance {
         let boundary_parameters = [0usize, 1usize].map(|boundary| {
-            blend_boundary_parameter(ir, surface, point, boundary, fit_tolerance, depth + 1).filter(
-                |parameter| {
-                    blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
-                        .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
-                },
+            blend_boundary_parameter(
+                ir,
+                surface,
+                point,
+                boundary,
+                seed.map(|seed| seed.u),
+                fit_tolerance,
+                depth + 1,
             )
         });
         if let Some((parameter, boundary)) = match boundary_parameters {
@@ -3754,6 +3757,7 @@ fn blend_boundary_parameter(
     surface: &SurfaceId,
     point: Point3,
     boundary: usize,
+    seed: Option<f64>,
     fit_tolerance: f64,
     depth: usize,
 ) -> Option<f64> {
@@ -3773,7 +3777,12 @@ fn blend_boundary_parameter(
         geometry => analytic_surface_parameters(geometry, point),
     }?;
     let pcurve = spine_contact_pcurve(ir, support, &spine, radius, depth + 1)?;
-    closest_pcurve_parameter(pcurve, uv, None)
+    closest_pcurve_parameters(pcurve, uv, seed)?
+        .into_iter()
+        .find(|parameter| {
+            blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
+                .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+        })
 }
 
 #[derive(Clone, Copy)]
@@ -3813,16 +3822,6 @@ fn blend_boundary_parameter_from_support_pcurve(
             })
         })
         .map(|parameter| Point2::new(parameter, boundary as f64))
-}
-
-pub(crate) fn closest_pcurve_parameter(
-    pcurve: &PcurveGeometry,
-    point: Point2,
-    seed: Option<f64>,
-) -> Option<f64> {
-    closest_pcurve_parameters(pcurve, point, seed)?
-        .into_iter()
-        .next()
 }
 
 pub(crate) fn closest_pcurve_parameters(
