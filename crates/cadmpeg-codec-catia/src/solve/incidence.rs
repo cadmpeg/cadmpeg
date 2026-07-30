@@ -484,6 +484,12 @@ enum IncidenceCandidatePairs {
     Implicit(MeshImplicitEdgeCandidates),
 }
 
+struct AppliedFaceConfiguration {
+    assigned: Vec<(usize, [usize; 2])>,
+    affected_faces: Vec<usize>,
+    coordinate_domains: Option<MeshCoordinateRootDomains>,
+}
+
 impl Iterator for IncidenceCandidatePairs {
     type Item = [usize; 2];
 
@@ -1395,63 +1401,148 @@ impl IncidenceComponentSearch<'_, '_> {
 
     fn search_face_configurations(
         &mut self,
-        options: MeshFaceEndpointConfigurations,
+        mut options: MeshFaceEndpointConfigurations,
         quotient_states: &[MeshQuotientGaugeState],
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
         component_faces: &[usize],
     ) {
+        if options.len() == 1 {
+            let Some(option) = options.pop() else {
+                return;
+            };
+            self.search_forced_face_configurations(
+                option,
+                quotient_states,
+                coordinate_domains,
+                component_faces,
+            );
+            return;
+        }
         for option in options {
-            let mut assigned = Vec::new();
-            let mut affected_faces = HashSet::new();
-            let mut viable = true;
-            let mut next_coordinate_domains = coordinate_domains.cloned();
-            for (edge, pair) in option {
-                if !self.active[edge] || self.assignment[edge].is_some() {
-                    continue;
-                }
-                if !self.candidate_fits(edge, pair) {
-                    if self.budget.exhausted.get() {
-                        self.exhausted = true;
-                    }
-                    viable = false;
-                    break;
-                }
-                if let Some(domains) = next_coordinate_domains.take() {
-                    let Some(refined) = self.refine_coordinate_domains(&domains, edge, pair) else {
-                        viable = false;
-                        break;
-                    };
-                    next_coordinate_domains = Some(refined);
-                }
-                self.adjust(edge, pair, true);
-                self.assignment[edge] = Some(pair);
-                assigned.push((edge, pair));
-                affected_faces.extend(self.edge_faces[edge]);
-            }
-            if viable
-                && !assigned.is_empty()
-                && self
-                    .partial_solution_filter
-                    .is_none_or(|constraint| (constraint.valid)(&self.assignment))
-            {
+            if let Some(applied) = self.apply_face_configuration(option, coordinate_domains) {
                 if let Some(next_states) =
-                    self.advance_ordered_faces(affected_faces, quotient_states.to_vec())
+                    self.advance_ordered_faces(applied.affected_faces, quotient_states.to_vec())
                 {
                     self.search_with_quotient(
                         &next_states,
-                        next_coordinate_domains.as_ref(),
+                        applied.coordinate_domains.as_ref(),
                         component_faces,
                     );
                 }
-            }
-            for (edge, pair) in assigned.into_iter().rev() {
-                self.assignment[edge] = None;
-                self.adjust(edge, pair, false);
+                self.rollback_face_configuration(applied.assigned);
             }
             if self.exhausted || self.stopped {
                 return;
             }
         }
+    }
+
+    fn apply_face_configuration(
+        &mut self,
+        option: Vec<(usize, [usize; 2])>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) -> Option<AppliedFaceConfiguration> {
+        let mut assigned = Vec::new();
+        let mut affected_faces = Vec::new();
+        let mut next_coordinate_domains = coordinate_domains.cloned();
+        for (edge, pair) in option {
+            if !self.active[edge] || self.assignment[edge].is_some() {
+                continue;
+            }
+            if !self.candidate_fits(edge, pair) {
+                if self.budget.exhausted.get() {
+                    self.exhausted = true;
+                }
+                self.rollback_face_configuration(assigned);
+                return None;
+            }
+            if let Some(domains) = next_coordinate_domains.take() {
+                let Some(refined) = self.refine_coordinate_domains(&domains, edge, pair) else {
+                    self.rollback_face_configuration(assigned);
+                    return None;
+                };
+                next_coordinate_domains = Some(refined);
+            }
+            self.adjust(edge, pair, true);
+            self.assignment[edge] = Some(pair);
+            assigned.push((edge, pair));
+            affected_faces.extend(self.edge_faces[edge]);
+        }
+        if assigned.is_empty()
+            || self
+                .partial_solution_filter
+                .is_some_and(|constraint| !(constraint.valid)(&self.assignment))
+        {
+            self.rollback_face_configuration(assigned);
+            return None;
+        }
+        affected_faces.sort_unstable();
+        affected_faces.dedup();
+        Some(AppliedFaceConfiguration {
+            assigned,
+            affected_faces,
+            coordinate_domains: next_coordinate_domains,
+        })
+    }
+
+    fn rollback_face_configuration(&mut self, assigned: Vec<(usize, [usize; 2])>) {
+        for (edge, pair) in assigned.into_iter().rev() {
+            self.assignment[edge] = None;
+            self.adjust(edge, pair, false);
+        }
+    }
+
+    fn search_forced_face_configurations(
+        &mut self,
+        mut option: Vec<(usize, [usize; 2])>,
+        quotient_states: &[MeshQuotientGaugeState],
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        component_faces: &[usize],
+    ) {
+        let mut assigned = Vec::new();
+        let mut states = quotient_states.to_vec();
+        let mut domains = coordinate_domains.cloned();
+        while let Some(applied) = self.apply_face_configuration(option, domains.as_ref()) {
+            let Some(next_states) = self.advance_ordered_faces(applied.affected_faces, states)
+            else {
+                self.rollback_face_configuration(applied.assigned);
+                break;
+            };
+            assigned.extend(applied.assigned);
+            states = next_states;
+            domains = applied.coordinate_domains;
+            let face_options = self.face_configuration_options_for(component_faces);
+            if self.budget.exhausted.get() {
+                self.exhausted = true;
+                break;
+            }
+            match face_options {
+                Some(options) if options.is_empty() => break,
+                Some(mut options) if options.len() == 1 => {
+                    let Some(next) = options.pop() else {
+                        break;
+                    };
+                    option = next;
+                }
+                Some(options) => {
+                    self.search_face_configurations(
+                        options,
+                        &states,
+                        domains.as_ref(),
+                        component_faces,
+                    );
+                    break;
+                }
+                None => {
+                    self.search_edge_state(&states, domains.as_ref(), component_faces);
+                    break;
+                }
+            }
+            if self.exhausted || self.stopped {
+                break;
+            }
+        }
+        self.rollback_face_configuration(assigned);
     }
 
     pub(crate) fn search(&mut self) {
@@ -1520,6 +1611,15 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             return;
         }
+        self.search_edge_state(quotient_states, coordinate_domains, component_faces);
+    }
+
+    fn search_edge_state(
+        &mut self,
+        quotient_states: &[MeshQuotientGaugeState],
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        component_faces: &[usize],
+    ) {
         let Some(mut options) = self.branch(coordinate_domains) else {
             return;
         };

@@ -1020,6 +1020,57 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
 }
 
 #[test]
+fn incidence_forced_face_chain_does_not_consume_branch_budget() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![vec![[0, 0]], vec![[1, 1]]];
+    let edge_faces = [[0, 0], [1, 1]];
+    let face_edges = vec![vec![0], vec![1]];
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1)]],
+        }]),
+    ];
+    let budget = MeshConstraintBudget::new(1);
+    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None, None],
+        degrees: vec![BTreeMap::new(), BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    search.search();
+
+    assert!(!search.exhausted);
+    assert_eq!(search.solutions, vec![vec![(0, [0, 0]), (1, [1, 1])]]);
+}
+
+#[test]
 fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
     let choices = vec![vec![[0, 0]]];
     let edge_faces = [[0, 0]];
