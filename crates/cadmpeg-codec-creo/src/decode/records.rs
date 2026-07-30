@@ -18,6 +18,12 @@ pub(super) struct CreoSketchRecord {
     pub(super) solved_external_ids: Vec<u32>,
     pub(super) variables: Vec<CreoSketchVariable>,
     pub(super) segments: Vec<CreoSketchSegment>,
+    pub(super) circle_segments: Vec<CreoSketchCircleSegment>,
+    pub(super) point_segments: Vec<CreoSketchPointSegment>,
+    pub(super) centered_line_segments: Vec<CreoSketchCenteredLineSegment>,
+    pub(super) reference_line_segments: Vec<CreoSketchReferenceLineSegment>,
+    pub(super) bounded_curve_segments: Vec<CreoSketchBoundedCurveSegment>,
+    pub(super) conic_segments: Vec<CreoSketchConicSegment>,
     pub(super) opaque_segments: Vec<CreoSketchOpaqueSegment>,
     pub(super) trim_entities: Vec<CreoSketchTrimEntity>,
     pub(super) trim_vertices: Vec<CreoSketchTrimVertex>,
@@ -49,6 +55,8 @@ pub(super) struct CreoCurveExpressionRecord {
     pub(super) local_system: Option<CreoCurveExpressionLocalSystem>,
     pub(super) lines: Vec<CreoCurveExpressionLine>,
     pub(super) assignments: Vec<CreoCurveExpressionAssignment>,
+    pub(super) solve_blocks: Vec<CreoCurveExpressionSolveBlock>,
+    pub(super) unresolved_solve_control: bool,
     pub(super) prohibited_constructs: Vec<String>,
 }
 
@@ -106,6 +114,8 @@ pub(super) struct CreoFeatureEntityTableEntryRecord {
     pub(super) entity_id: u32,
     pub(super) class_id: u32,
     pub(super) source_entity_id: Option<u32>,
+    pub(super) related_entity_id: Option<u32>,
+    pub(super) related_entity_state: Option<u8>,
     pub(super) prefixed: bool,
     pub(super) offset: usize,
     pub(super) end_offset: usize,
@@ -120,6 +130,20 @@ pub(super) struct CreoFeatureGeometryTableRecord {
     pub(super) entity_class_id: u32,
     pub(super) entry_ids: Option<Vec<u32>>,
     pub(super) offset: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct CreoFeatureLoopHistoryEntryRecord {
+    pub(super) id: String,
+    pub(super) owner_feature_id: u32,
+    pub(super) ordinal: u32,
+    pub(super) loop_id: u32,
+    pub(super) field_bytes: Vec<Vec<u8>>,
+    pub(super) boundary: &'static str,
+    pub(super) boundary_reference: Option<u32>,
+    pub(super) offset: usize,
+    pub(super) end_offset: usize,
     pub(super) source_section: String,
 }
 
@@ -141,6 +165,20 @@ pub(super) struct CreoFeatureReplayAffectedIdsRecord {
     pub(super) edge_ids: Vec<u32>,
     pub(super) geometry_extent: &'static str,
     pub(super) edge_extent: &'static str,
+    pub(super) offset: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct CreoSurfaceMergeReplayAffectedIdsRecord {
+    pub(super) id: String,
+    pub(super) owner_feature_id: u32,
+    pub(super) geometry_ids: Vec<u32>,
+    pub(super) edge_ids: Vec<u32>,
+    pub(super) quilt_ids: Vec<u32>,
+    pub(super) geometry_extent: &'static str,
+    pub(super) edge_extent: &'static str,
+    pub(super) quilt_extent: &'static str,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -519,6 +557,8 @@ pub(super) fn feature_entity_table_records(
                     entity_id: entry.entity_id,
                     class_id: entry.class_id,
                     source_entity_id: entry.source_entity_id,
+                    related_entity_id: entry.related_entity_id,
+                    related_entity_state: entry.related_entity_state,
                     prefixed: entry.prefixed,
                     offset: entry.offset,
                     end_offset: entry.end_offset,
@@ -557,6 +597,41 @@ pub(super) fn feature_geometry_table_records(
         .collect()
 }
 
+pub(super) fn feature_loop_history_entry_records(
+    scan: &ContainerScan,
+) -> Vec<CreoFeatureLoopHistoryEntryRecord> {
+    scan.features
+        .loop_history_entries
+        .iter()
+        .map(|entry| CreoFeatureLoopHistoryEntryRecord {
+            id: format!("creo:feature:loop_history_entry#{}", entry.offset),
+            owner_feature_id: entry.feature_id,
+            ordinal: entry.ordinal,
+            loop_id: entry.loop_id,
+            field_bytes: entry.field_bytes.clone(),
+            boundary: match entry.boundary {
+                crate::feature::FeatureLoopHistoryBoundary::CompoundClose => "compound_close",
+                crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(_) => {
+                    "reference_continue"
+                }
+                crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(_) => "reference_final",
+                crate::feature::FeatureLoopHistoryBoundary::NamedRecord => "named_record",
+            },
+            boundary_reference: match entry.boundary {
+                crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(reference)
+                | crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(reference) => {
+                    Some(reference)
+                }
+                crate::feature::FeatureLoopHistoryBoundary::CompoundClose
+                | crate::feature::FeatureLoopHistoryBoundary::NamedRecord => None,
+            },
+            offset: entry.offset,
+            end_offset: entry.end_offset,
+            source_section: source_section(scan, entry.offset),
+        })
+        .collect()
+}
+
 pub(super) fn feature_affected_id_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureAffectedIdsRecord> {
@@ -587,6 +662,30 @@ pub(super) fn feature_replay_affected_id_records(
             edge_ids: record.edge_ids.clone(),
             geometry_extent: extent_source(record.geometry_extent),
             edge_extent: extent_source(record.edge_extent),
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+pub(super) fn surface_merge_replay_affected_id_records(
+    scan: &ContainerScan,
+) -> Vec<CreoSurfaceMergeReplayAffectedIdsRecord> {
+    scan.features
+        .surface_merge_replay_affected_ids
+        .iter()
+        .map(|record| CreoSurfaceMergeReplayAffectedIdsRecord {
+            id: format!(
+                "creo:feature:surface_merge_replay_affected_ids#{}",
+                record.offset
+            ),
+            owner_feature_id: record.feature_id,
+            geometry_ids: record.geometry_ids.clone(),
+            edge_ids: record.edge_ids.clone(),
+            quilt_ids: record.quilt_ids.clone(),
+            geometry_extent: extent_source(record.geometry_extent),
+            edge_extent: extent_source(record.edge_extent),
+            quilt_extent: extent_source(record.quilt_extent),
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })
@@ -1095,6 +1194,7 @@ pub(super) struct CreoSurfaceParameterRecord {
     pub(super) type26_five_coordinate_envelope: Option<CreoType26FiveCoordinateEnvelope>,
     pub(super) type26_split_coordinate_envelope: Option<CreoType26SplitCoordinateEnvelope>,
     pub(super) torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
+    pub(super) replayed_torus_minor_radius: Option<f64>,
     pub(super) cone_half_angle_override: Option<CreoConeHalfAngleOverride>,
     pub(super) extrusion_direction: Option<[f64; 3]>,
     pub(super) row_offset: usize,
@@ -1194,6 +1294,7 @@ pub(super) struct CreoCrossSectionCurveRowRecord {
 #[derive(Serialize)]
 pub(super) struct CreoTabulatedCylinderCurveReplayRecord {
     pub(super) id: String,
+    pub(super) body: Vec<u8>,
     pub(super) surface_id: u32,
     pub(super) curve_id: u32,
     pub(super) curve_type: u8,
@@ -1395,6 +1496,7 @@ pub(super) fn tabulated_cylinder_curve_replay_records(
                 "creo:visibgeom:tabulated_cylinder_curve_replay#{}",
                 record.surface_id
             ),
+            body: record.body.clone(),
             surface_id: record.surface_id,
             curve_id: record.curve_id,
             curve_type: record.curve_type,
@@ -1555,6 +1657,7 @@ pub(super) fn surface_parameter_records(
                         offset: overrides.offset,
                     },
                 ),
+                replayed_torus_minor_radius: replayed_torus_minor_radius(scan, row, record),
                 cone_half_angle_override: record.cone_half_angle_override(row.type_byte).map(
                     |half_angle| CreoConeHalfAngleOverride {
                         radians: half_angle.radians,
@@ -1712,8 +1815,7 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
                 .assignments
                 .iter()
                 .map(|assignment| CreoCurveExpressionAssignment {
-                    name: assignment.name.clone(),
-                    declared_unit: assignment.declared_unit.clone(),
+                    target: assignment.target.clone(),
                     expression: assignment.expression.clone(),
                     dependencies: assignment.dependencies.clone(),
                     value: assignment.value.clone(),
@@ -1721,6 +1823,39 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
                     offset: assignment.offset,
                 })
                 .collect(),
+            solve_blocks: record
+                .solve_blocks
+                .iter()
+                .map(|block| CreoCurveExpressionSolveBlock {
+                    equations: block
+                        .equations
+                        .iter()
+                        .map(|equation| CreoCurveExpressionEquation {
+                            left: equation.left.clone(),
+                            right: equation.right.clone(),
+                            dependencies: equation.dependencies.clone(),
+                            offset: equation.offset,
+                        })
+                        .collect(),
+                    assignments: block
+                        .assignments
+                        .iter()
+                        .map(|assignment| CreoCurveExpressionAssignment {
+                            target: assignment.target.clone(),
+                            expression: assignment.expression.clone(),
+                            dependencies: assignment.dependencies.clone(),
+                            value: assignment.value.clone(),
+                            activation: assignment.activation.token(),
+                            offset: assignment.offset,
+                        })
+                        .collect(),
+                    variables: block.variables.clone(),
+                    solutions: block.solutions.clone(),
+                    offset: block.offset,
+                    for_offset: block.for_offset,
+                })
+                .collect(),
+            unresolved_solve_control: record.unresolved_solve_control,
             prohibited_constructs: record.prohibited_constructs.clone(),
         })
         .collect()
@@ -1760,22 +1895,37 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .trim_entities
                 .as_ref()
                 .map_or_else(Vec::new, |table| table.solved_external_ids.clone()),
-            variables: definition
-                .variables
-                .iter()
-                .flat_map(|table| &table.rows)
-                .map(|row| CreoSketchVariable {
-                    variable_type: row.variable_type,
-                    key: row.key,
-                    value: row.value,
-                    guess: row.guess,
-                    known: row.known,
-                    homogeneity: row.homogeneity,
-                    uvar_id: row.uvar_id,
-                    dimension_driven: row.dimension_driven,
-                    offset: row.offset,
-                })
-                .collect(),
+            variables: {
+                let resolved_coordinates = resolved_section_coordinates(definition);
+                definition
+                    .variables
+                    .iter()
+                    .flat_map(|table| &table.rows)
+                    .map(|row| CreoSketchVariable {
+                        variable_type: row.variable_type,
+                        key: row.key,
+                        value: row.value,
+                        value_body: row.value_body.clone(),
+                        guess: row.guess,
+                        guess_body: row.guess_body.clone(),
+                        guess_dimension_driven: row.guess_dimension_driven,
+                        known: row.known,
+                        homogeneity: row.homogeneity,
+                        uvar_id: row.uvar_id,
+                        dimension_driven: row.dimension_driven,
+                        resolved_value: match row.variable_type {
+                            1 => resolved_coordinates
+                                .get(&row.key)
+                                .and_then(|point| point[0]),
+                            2 => resolved_coordinates
+                                .get(&row.key)
+                                .and_then(|point| point[1]),
+                            _ => None,
+                        },
+                        offset: row.offset,
+                    })
+                    .collect()
+            },
             segments: definition
                 .segments
                 .iter()
@@ -1794,6 +1944,78 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertical_horizontal_constraint: segment.vertical_horizontal,
                     radius_dimension_id: segment.radius_ref,
                     secondary_radius_dimension_id: segment.radius2_ref,
+                    body: segment.body.clone(),
+                    offset: segment.offset,
+                })
+                .collect(),
+            circle_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.circle_rows)
+                .map(|segment| CreoSketchCircleSegment {
+                    external_id: segment.external_id,
+                    center_id: segment.center_id,
+                    radius_dimension_id: segment.radius_ref,
+                    offset: segment.offset,
+                })
+                .collect(),
+            point_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.point_rows)
+                .map(|segment| CreoSketchPointSegment {
+                    external_id: segment.external_id,
+                    point_id: segment.point_id,
+                    offset: segment.offset,
+                })
+                .collect(),
+            centered_line_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.centered_line_rows)
+                .map(|segment| CreoSketchCenteredLineSegment {
+                    external_id: segment.external_id,
+                    center_id: segment.center_id,
+                    offset: segment.offset,
+                })
+                .collect(),
+            reference_line_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.reference_line_rows)
+                .map(|segment| CreoSketchReferenceLineSegment {
+                    external_id: segment.external_id,
+                    point_ids: segment.point_ids,
+                    directions: segment.directions,
+                    vertical_horizontal_constraint: segment.vertical_horizontal,
+                    offset: segment.offset,
+                })
+                .collect(),
+            bounded_curve_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.bounded_curve_rows)
+                .map(|segment| CreoSketchBoundedCurveSegment {
+                    external_id: segment.external_id,
+                    point_ids: segment.point_ids,
+                    center_id: segment.center_id,
+                    directions: segment.directions,
+                    arc_orientation: segment.arc_orientation,
+                    vertical_horizontal_constraint: segment.vertical_horizontal,
+                    radius_dimension_id: segment.radius_ref,
+                    secondary_radius_dimension_id: segment.radius2_ref,
+                    offset: segment.offset,
+                })
+                .collect(),
+            conic_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.conic_rows)
+                .map(|segment| CreoSketchConicSegment {
+                    external_id: segment.external_id,
+                    center_id: segment.center_id,
+                    first_coefficient_ref: segment.first_coefficient_ref,
+                    second_coefficient_ref: segment.second_coefficient_ref,
                     offset: segment.offset,
                 })
                 .collect(),
@@ -1811,6 +2033,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertical_horizontal_constraint: segment.vertical_horizontal,
                     radius_dimension_id: segment.radius_ref,
                     secondary_radius_dimension_id: segment.radius2_ref,
+                    body: segment.body.clone(),
                     offset: segment.offset,
                 })
                 .collect(),
@@ -1862,6 +2085,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                         references: line.references.clone(),
                         attributes: line.attributes.clone(),
                         endpoints: line.endpoints,
+                        body: line.body.clone(),
                         offset: line.offset,
                     },
                     crate::feature::FeatureSavedEntity::Arc(arc) => CreoSketchSavedEntity::Arc {
@@ -1870,6 +2094,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                         radius: arc.radius,
                         endpoints: arc.endpoints,
                         parameters: arc.parameters,
+                        body: arc.body.clone(),
                         offset: arc.offset,
                     },
                     crate::feature::FeatureSavedEntity::Circle(circle) => {
@@ -1877,7 +2102,19 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             entity_id: circle.entity_id,
                             center: circle.center,
                             radius: circle.radius,
+                            body: circle.body.clone(),
                             offset: circle.offset,
+                        }
+                    }
+                    crate::feature::FeatureSavedEntity::Conic(conic) => {
+                        CreoSketchSavedEntity::Conic {
+                            entity_id: conic.entity_id,
+                            endpoints: conic.endpoints,
+                            parameters: conic.parameters,
+                            coefficients: conic.coefficients,
+                            local_system: conic.local_system,
+                            body: conic.body.clone(),
+                            offset: conic.offset,
                         }
                     }
                     crate::feature::FeatureSavedEntity::Spline(spline) => {
@@ -1885,14 +2122,18 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             entity_id: spline.entity_id,
                             declared_point_count: spline.declared_point_count,
                             interpolation_points: spline.interpolation_points.clone(),
+                            interpolation_points_body: spline.interpolation_points_body.clone(),
                             endpoint_tangents: spline.endpoint_tangents,
+                            endpoint_tangents_body: spline.endpoint_tangents_body.clone(),
                             parameters: spline.parameters.clone(),
+                            parameters_body: spline.parameters_body.clone(),
                             offset: spline.offset,
                         }
                     }
                     crate::feature::FeatureSavedEntity::Dummy(dummy) => {
                         CreoSketchSavedEntity::Dummy {
                             entity_id: dummy.entity_id,
+                            body: dummy.body.clone(),
                             offset: dummy.offset,
                         }
                     }
@@ -1906,6 +2147,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     external_id: dimension.external_id,
                     dimension_type: dimension.dimension_type,
                     value: dimension.value,
+                    value_body: dimension.value_body.clone(),
                     unresolved_value_token: dimension.unresolved_value_token.clone(),
                     unit: match dimension.value_unit {
                         crate::feature::DimensionUnit::Radians => "radians",
@@ -1914,6 +2156,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     },
                     direction_byte: dimension.direction_byte,
                     auxiliary_value: dimension.auxiliary_value,
+                    auxiliary_body: dimension.auxiliary_body.clone(),
                     offset: dimension.offset,
                 })
                 .collect(),
@@ -2035,6 +2278,7 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
                         crate::feature::OutlinePhase::PostRegen => "post_regen",
                     },
                     local_values: outline.local_values.clone(),
+                    local_value_bodies: outline.local_value_bodies.clone(),
                     offset: outline.offset,
                 })
                 .collect(),

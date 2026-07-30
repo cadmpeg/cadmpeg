@@ -8,6 +8,9 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   affine offset, have unspecified normalization semantics.
 - Curve-equation `local_sys f9 04 03` inherited-slot transitions other than
   the defined rank-two body are unspecified.
+- Simultaneous curve-equation solution semantics beyond complete dimensionally
+  valid affine systems over previously valued numeric unknowns are unspecified,
+  including nonlinear systems.
 - `crv_pnt_arr f9 02 04` inherited-slot bodies outside the direct eight-slot
   pcurve form have unspecified slot transitions.
 - DICT sign lattices outside the defined scalar lanes are unspecified.
@@ -15,9 +18,12 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   placeholder images are unspecified, including variable-length `e5` forms.
 - Per-instance cone half-angle bodies outside the terminal positive-DICT form
   and `geom_type = 26` torus/sphere radius bodies outside the tagged radius
-  trailer are unspecified.
+  trailer and terminal prototype-minor-radius replay are unspecified.
 - Positional plane-envelope scalar prefixes outside the defined row lane are
   unspecified.
+- Unsuffixed terminal scalar frames with six coordinate-like trailing values
+  have unspecified field roles. Equality between one trailing coordinate pair
+  does not by itself identify the plane normal or offset.
 - The joins from later positional spline rows to their prototype data and from
   spline surfaces to surface-intersection curves are unspecified.
 - The prototype-adjacent `tab_cyl` instance rows use a construction distinct
@@ -49,8 +55,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Fields binding vertex identifiers to XYZ coordinates and rowless face uses are unspecified.
 - Section-to-datum joins, relation equations other than signed type-zero linear
   dimensions and the defined type-five and type-14 radii, type-one angular
-  relation direction selectors, `skamp_ptr` incidence types 10 through 13 and
-  15, type-35 operands that do not resolve through a section entity, and the
+  relation direction selectors, type-35 operands that do not resolve through a
+  section entity, and the
   `ed ba 10 0c 8d ee 90 b4 0c` solver sentinel are unspecified.
 - The geometric roles and selection order of multiple feature-definition `local_sys` and `transf` twelve-slot frames are unspecified.
 - The entity/locus roles of the three decoded four-slot `relat_ptr` operand vectors are unspecified.
@@ -58,10 +64,18 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   the dimension relation that drives that solver variable is unspecified.
   `uvar_id`, point key, relation identifier, relation dimension selector, and
   external dimension identifier occupy distinct namespaces.
+- The numeric interpretations of the `var_arr` scalar forms `00 XX YY`,
+  `01 XX YY ZZ`, and `34 XX YY` are unspecified.
 - The semantics of the multi-valued `relat_ptr` `used` field are unspecified.
   It is solver state, not a Boolean constraint-activation flag.
-- The geometry families and external-reference bindings of solver-only
-  `skamp_ptr` entity identifiers are unspecified.
+- The neutral semantics of a unary type-one or type-two `skamp_ptr` incidence
+  whose sense-zero operand is a `segtab` point and lacks the matching
+  `verhor`/type-fourteen axis-line structure are unspecified.
+- The neutral semantics of a unary type-33 `skamp_ptr` incidence with flags 34
+  and a sense-10 bounded-curve operand are unspecified.
+- Geometry families beyond the incidence-proven point, endpoint-bearing curve,
+  line, arc, and circular roles, and the external-reference bindings of
+  solver-only `skamp_ptr` entity identifiers, are unspecified.
 - The owner and namespace joins that expose model, feature, component, and
   scoped dimension items beyond decoded local `d<external_id>` identities to
   curve-expression `exists()` queries are unspecified.
@@ -77,8 +91,10 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The partition of shared surface references into face instances is unspecified.
 - The referents and traversal roles of `lo_restore` `direction` and
   `direction2` compact integers are unspecified.
+- The semantic roles of the four required `lo_hist` fields, its optional final
+  field, and the join from feature-local loop identifiers to boundary-surface
+  curve networks are unspecified.
 - Bindings for rowless face-use references outside the round-feature rowless-cylinder table are unspecified.
-- Positional-replay field alignment for non-class-913 edge-treatment schemas is unspecified.
 - The byte-backed relation that assigns shells to body identifiers when face-adjacency components and body-count fields disagree is unspecified.
 - Face-instance bindings for `element_colors`, `NeuPrtSld`, and display-table elements are unspecified.
 - The remaining RGB and component scalar lanes used by appearance records are unspecified.
