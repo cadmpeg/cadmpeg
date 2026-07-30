@@ -334,6 +334,9 @@ fn project_all_dimension_constraints(
             if let Some(definition) = counted_role_relation(&locus_entities, group.owner_role) {
                 return Some(definition);
             }
+            if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
+                return Some(definition);
+            }
         }
         if parameter.source_kind.starts_with("Angular Dimension") {
             let indices = group
@@ -383,9 +386,6 @@ fn project_all_dimension_constraints(
                 return Some(definition);
             }
             if group.state == 0 && group.unknown_constraint_bits == 0 {
-                if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
-                    return Some(definition);
-                }
                 return two_locus_distance_dimension(&locus_entities, parameter_id);
             }
         }

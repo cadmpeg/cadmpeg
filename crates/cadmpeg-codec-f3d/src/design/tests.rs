@@ -11029,6 +11029,41 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         constraint.definition,
         SketchConstraintDefinition::Parallel { .. }
     )));
+    let mut radial_parameter = parameter.clone();
+    radial_parameter.source_kind = "Radial Dimension-2".into();
+    let radial_with_independent_relation = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&radial_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&relation_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &curves,
+            entities: &entities_with_refs,
+        },
+        &[],
+    );
+    assert_eq!(radial_with_independent_relation.len(), 2);
+    assert!(radial_with_independent_relation
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Parallel { .. }
+        )));
+    assert!(radial_with_independent_relation
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Native {
+                parameter: Some(_),
+                ..
+            }
+        )));
     let without_dimension_frame = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
