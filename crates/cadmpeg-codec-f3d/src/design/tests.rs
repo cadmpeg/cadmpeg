@@ -11424,6 +11424,76 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             ..
         }] if field == "companion")
     ));
+
+    let line = SketchEntity {
+        id: SketchEntityId("measured-line".into()),
+        sketch,
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(3.0, 4.0),
+            end: Point2::new(3.0, 6.0),
+        },
+    };
+    let retained = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&empty_companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &[],
+            entities: std::slice::from_ref(&line),
+        },
+        &[],
+    );
+    assert!(matches!(
+        retained.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::DistanceLoci {
+                first: cadmpeg_ir::sketches::SketchLocus::Start(first),
+                second: cadmpeg_ir::sketches::SketchLocus::End(second),
+                parameter: actual_parameter,
+            },
+            ..
+        }] if first == &line.id
+            && second == &line.id
+            && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+    ));
+
+    let mut second_line = line.clone();
+    second_line.id = SketchEntityId("second-measured-line".into());
+    let retained = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&empty_companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &[],
+            entities: &[line, second_line],
+        },
+        &[],
+    );
+    assert!(matches!(
+        retained.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::Native { .. },
+            ..
+        }]
+    ));
 }
 
 #[test]

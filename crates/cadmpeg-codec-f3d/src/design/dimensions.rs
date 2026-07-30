@@ -816,6 +816,18 @@ fn project_all_dimension_constraints(
             .clone();
         let definition =
             unique_radial_dimension_definition(entities, &sketch, parameter, &parameter_id)
+                .or_else(|| {
+                    (companion.payload_byte_length == 0)
+                        .then(|| {
+                            unique_line_length_dimension_definition(
+                                entities,
+                                &sketch,
+                                parameter,
+                                &parameter_id,
+                            )
+                        })
+                        .flatten()
+                })
                 .unwrap_or_else(|| Definition::Native {
                     native_kind: parameter.source_kind.clone(),
                     native_state: None,
@@ -854,6 +866,43 @@ fn project_all_dimension_constraints(
     }));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+/// Resolve an owner-scoped linear dimension when exactly one line length
+/// satisfies its evaluated measurement.
+pub(crate) fn unique_line_length_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+    };
+
+    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+        return None;
+    }
+    let expected = parameter.evaluated_value * 10.0;
+    if !expected.is_finite() {
+        return None;
+    }
+    let mut matches = entities.iter().filter(|entity| {
+        if &entity.sketch != sketch {
+            return false;
+        }
+        let SketchGeometry::Line { start, end } = &entity.geometry else {
+            return false;
+        };
+        let measured = (end.u - start.u).hypot(end.v - start.v);
+        (measured - expected.abs()).abs() <= 1.0e-9 * (1.0 + measured.abs().max(expected.abs()))
+    });
+    let entity = matches.next()?;
+    matches.next().is_none().then(|| Definition::DistanceLoci {
+        first: SketchLocus::Start(entity.id.clone()),
+        second: SketchLocus::End(entity.id.clone()),
+        parameter: parameter_id.clone(),
+    })
 }
 
 /// Resolve an owner-scoped radial dimension when exactly one circular entity
