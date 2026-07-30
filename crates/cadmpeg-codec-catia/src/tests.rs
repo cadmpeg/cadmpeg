@@ -11162,6 +11162,18 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         instance.relation_expression.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
+    assert_eq!(
+        instance
+            .parameter_dependencies
+            .iter()
+            .map(|dependency| dependency.symbol.as_str())
+            .collect::<Vec<_>>(),
+        ["#1_", "#2_", "#2_"]
+    );
+    assert!(instance
+        .parameter_dependencies
+        .iter()
+        .all(|dependency| dependency.candidates.is_empty()));
     let context = instance
         .lead12_context_entity
         .as_ref()
@@ -11260,12 +11272,28 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         instance.relation_expression.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
+    assert_eq!(
+        instance
+            .parameter_dependencies
+            .iter()
+            .map(|dependency| dependency.symbol.as_str())
+            .collect::<Vec<_>>(),
+        ["#1_", "#2_", "#2_"]
+    );
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode lead-54 relation-program instance");
     assert_eq!(
         decoded.report.coverage["decoded_relation_program_instance_count"],
         1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_relation_program_parameter_dependency_count"],
+        3
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_relation_program_parameter_dependency_count"],
+        3
     );
     assert_eq!(
         decoded.report.coverage["decoded_lead12_relation_program_instance_count"],
@@ -11467,6 +11495,14 @@ fn decode_reports_exact_relation_program_instances() {
             decoded.report.coverage["decoded_instanced_relation_expression_count"],
             expression
         );
+        assert_eq!(
+            decoded.report.coverage["decoded_relation_program_parameter_dependency_count"],
+            expression * 3
+        );
+        assert_eq!(
+            decoded.report.coverage["unresolved_relation_program_parameter_dependency_count"],
+            expression * 3
+        );
         assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
         assert!(decoded.ir.model.parameters.is_empty());
     }
@@ -11549,6 +11585,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 stored_instance.remove("framing");
             }
             stored_instance.remove("reference_incidences");
+            stored_instance.remove("parameter_dependencies");
             stored_instance.remove("program_entity");
             stored_instance.remove("repeated_entity");
             for field in ["lead12_context_entity", "lead54_trailing_entity"] {
@@ -11569,6 +11606,22 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 Some(&expected)
             );
         }
+
+        let mut malformed_dependencies = native.clone();
+        malformed_dependencies.entity_records[1]
+            .relation_program_instance
+            .as_mut()
+            .expect("decoded relation-program instance")
+            .parameter_dependencies[0]
+            .symbol = "#999_".to_string();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed_dependencies
+            .store(&mut namespace)
+            .expect("store malformed relation-program dependencies");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
 
         let mut malformed = native;
         malformed.entity_records[1]
@@ -13769,7 +13822,7 @@ fn native_namespace_types_and_validates_formula_relations() {
     let parameter_entity = &native.entity_records[2];
     assert_eq!(
         formula.parameter_dependencies,
-        [crate::native::CatiaFormulaParameterDependency {
+        [crate::native::CatiaRelationParameterDependency {
             symbol: "#1_ /2".to_string(),
             candidates: vec![crate::native::CatiaEntityReference {
                 entity_id: parameter_entity.entity_id,
@@ -14001,7 +14054,7 @@ fn formula_relation_resolves_bare_expression_symbols() {
             .as_ref()
             .expect("complete formula relation")
             .parameter_dependencies,
-        [crate::native::CatiaFormulaParameterDependency {
+        [crate::native::CatiaRelationParameterDependency {
             symbol: "#1_".to_string(),
             candidates: vec![crate::native::CatiaEntityReference {
                 entity_id: native.entity_records[2].entity_id,

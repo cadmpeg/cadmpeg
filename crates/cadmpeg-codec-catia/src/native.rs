@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 241;
+pub const CATIA_NATIVE_VERSION: u32 = 242;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -72,6 +72,9 @@ pub(crate) const CATIA_TYPED_INCIDENCE_NULL_VERSION: u32 = 240;
 /// Native schema version retaining every exact relation-program reference incidence.
 #[cfg(test)]
 pub(crate) const CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION: u32 = 241;
+/// Native schema version retaining relation-program source-symbol dependencies.
+#[cfg(test)]
+pub(crate) const CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION: u32 = 242;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1374,19 +1377,19 @@ pub struct CatiaFormulaRelation {
     pub output_entity: CatiaEntityReference,
     /// Named parameter records selected by expression-local symbols, in occurrence order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub parameter_dependencies: Vec<CatiaFormulaParameterDependency>,
+    pub parameter_dependencies: Vec<CatiaRelationParameterDependency>,
 }
 
-/// One formula expression symbol and every matching named parameter.
+/// One relation-expression symbol and every matching named parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaFormulaParameterDependency {
+pub struct CatiaRelationParameterDependency {
     /// Exact expression-local symbol occurrence.
     pub symbol: String,
     /// Entity incidences carrying matching named parameter bindings.
     #[serde(
         default,
         skip_serializing_if = "Vec::is_empty",
-        deserialize_with = "deserialize_formula_dependency_candidates"
+        deserialize_with = "deserialize_relation_dependency_candidates"
     )]
     #[schemars(with = "Vec<CatiaEntityReference>")]
     pub candidates: Vec<CatiaEntityReference>,
@@ -1394,23 +1397,23 @@ pub struct CatiaFormulaParameterDependency {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum CatiaFormulaDependencyCandidate {
+enum CatiaRelationDependencyCandidate {
     Reference(CatiaEntityReference),
     LegacyEntity(String),
 }
 
-fn deserialize_formula_dependency_candidates<'de, D>(
+fn deserialize_relation_dependency_candidates<'de, D>(
     deserializer: D,
 ) -> Result<Vec<CatiaEntityReference>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    Vec::<CatiaFormulaDependencyCandidate>::deserialize(deserializer).map(|candidates| {
+    Vec::<CatiaRelationDependencyCandidate>::deserialize(deserializer).map(|candidates| {
         candidates
             .into_iter()
             .map(|candidate| match candidate {
-                CatiaFormulaDependencyCandidate::Reference(reference) => reference,
-                CatiaFormulaDependencyCandidate::LegacyEntity(entity) => CatiaEntityReference {
+                CatiaRelationDependencyCandidate::Reference(reference) => reference,
+                CatiaRelationDependencyCandidate::LegacyEntity(entity) => CatiaEntityReference {
                     entity: Some(entity),
                     ..CatiaEntityReference::default()
                 },
@@ -1437,6 +1440,9 @@ pub struct CatiaRelationProgramInstance {
     /// Selected entity when it carries a complete relation-expression program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_expression: Option<String>,
+    /// Named parameter records selected by expression-local symbols, in occurrence order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parameter_dependencies: Vec<CatiaRelationParameterDependency>,
     /// Same-graph incidence carried by the `ref(h)` slot of a lead-`12` frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lead12_context_entity: Option<CatiaEntityReference>,
@@ -3007,10 +3013,10 @@ mod entity_suffix_framing_tests {
 fn relation_program_instance(
     entity_id: u32,
     object: &CatiaObjectRecord,
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
+    entity_references: &CatiaEntityReferenceIndex<'_>,
     relation_expressions: &HashMap<(String, u32), String>,
+    relation_expression_sources: &CatiaRelationExpressionEntitySourceIndex,
+    parameter_bindings: &CatiaParameterBindingIndex,
 ) -> Option<CatiaRelationProgramInstance> {
     if object.entity_id != Some(entity_id)
         || object.owner_entity_id().is_none()
@@ -3034,9 +3040,9 @@ fn relation_program_instance(
             Some(entity_reference(
                 &object.parent,
                 context_entity_id,
-                entities,
-                entity_classes,
-                terminal_nulls,
+                entity_references.entities,
+                entity_references.classes,
+                entity_references.terminal_nulls,
             )),
             None,
         )
@@ -3051,15 +3057,19 @@ fn relation_program_instance(
             Some(entity_reference(
                 &object.parent,
                 trailing_entity_id,
-                entities,
-                entity_classes,
-                terminal_nulls,
+                entity_references.entities,
+                entity_references.classes,
+                entity_references.terminal_nulls,
             )),
         )
     } else {
         return None;
     };
     let program_key = (object.parent.clone(), program_entity_id);
+    let parameter_dependencies = relation_expression_sources
+        .get(&program_key)
+        .map(|source| relation_parameter_dependencies(source, &object.parent, parameter_bindings))
+        .unwrap_or_default();
     let reference_incidences = object
         .payload
         .fields
@@ -3068,9 +3078,9 @@ fn relation_program_instance(
             PayloadField::Reference { value, .. } => Some(entity_reference(
                 &object.parent,
                 *value,
-                entities,
-                entity_classes,
-                terminal_nulls,
+                entity_references.entities,
+                entity_references.classes,
+                entity_references.terminal_nulls,
             )),
             _ => None,
         })
@@ -3080,19 +3090,20 @@ fn relation_program_instance(
         program_entity: entity_reference(
             &object.parent,
             program_entity_id,
-            entities,
-            entity_classes,
-            terminal_nulls,
+            entity_references.entities,
+            entity_references.classes,
+            entity_references.terminal_nulls,
         ),
         repeated_entity: entity_reference(
             &object.parent,
             repeated_reference_entity_id,
-            entities,
-            entity_classes,
-            terminal_nulls,
+            entity_references.entities,
+            entity_references.classes,
+            entity_references.terminal_nulls,
         ),
         reference_incidences,
         relation_expression: relation_expressions.get(&program_key).cloned(),
+        parameter_dependencies,
         lead12_context_entity,
         lead54_trailing_entity,
     })
@@ -3404,17 +3415,8 @@ fn formula_relation(
     }
     let expression_object = expression_reference.target.as_ref()?;
     let source = relation_expressions.get(expression_object)?;
-    let parameter_dependencies = relation_symbols(source)
-        .into_iter()
-        .map(|symbol| {
-            let candidates = parameter_bindings
-                .get(&object.parent)
-                .and_then(|bindings| bindings.get(&symbol))
-                .cloned()
-                .unwrap_or_default();
-            CatiaFormulaParameterDependency { symbol, candidates }
-        })
-        .collect();
+    let parameter_dependencies =
+        relation_parameter_dependencies(source, &object.parent, parameter_bindings);
     Some(CatiaFormulaRelation {
         expression_entity: entity_reference(
             &object.parent,
@@ -3439,6 +3441,7 @@ fn formula_relation(
 
 type CatiaRelationExpressionIndex = HashMap<String, String>;
 type CatiaRelationExpressionEntityIndex = HashMap<(String, u32), String>;
+type CatiaRelationExpressionEntitySourceIndex = HashMap<(String, u32), String>;
 type CatiaEntityByGraphIdentityIndex = HashMap<(String, u32), String>;
 type CatiaEntityClassByGraphIdentityIndex = HashMap<(String, u32), String>;
 type CatiaTerminalNullByGraphIndex = HashMap<String, u32>;
@@ -3470,6 +3473,7 @@ fn semantic_entity_indices(
 ) -> (
     CatiaRelationExpressionIndex,
     CatiaRelationExpressionEntityIndex,
+    CatiaRelationExpressionEntitySourceIndex,
     CatiaEntityByGraphIdentityIndex,
     CatiaTerminalNullByGraphIndex,
     CatiaParameterBindingIndex,
@@ -3492,6 +3496,20 @@ fn semantic_entity_indices(
                 (entity.object_graph.clone(), entity.entity_id),
                 entity.id.clone(),
             )
+        })
+        .collect();
+    let relation_expression_sources = entities
+        .iter()
+        .filter_map(|entity| {
+            Some((
+                (entity.object_graph.clone(), entity.entity_id),
+                entity
+                    .relation_expression
+                    .as_ref()?
+                    .expression
+                    .value
+                    .clone(),
+            ))
         })
         .collect();
     let entities_by_graph_identity = entities
@@ -3539,10 +3557,29 @@ fn semantic_entity_indices(
     (
         relation_expressions,
         relation_expression_entities,
+        relation_expression_sources,
         entities_by_graph_identity,
         terminal_nulls,
         parameter_bindings,
     )
+}
+
+fn relation_parameter_dependencies(
+    source: &str,
+    graph: &str,
+    parameter_bindings: &CatiaParameterBindingIndex,
+) -> Vec<CatiaRelationParameterDependency> {
+    relation_symbols(source)
+        .into_iter()
+        .map(|symbol| {
+            let candidates = parameter_bindings
+                .get(graph)
+                .and_then(|bindings| bindings.get(&symbol))
+                .cloned()
+                .unwrap_or_default();
+            CatiaRelationParameterDependency { symbol, candidates }
+        })
+        .collect()
 }
 
 fn relation_symbols(source: &str) -> Vec<String> {
@@ -8276,6 +8313,7 @@ impl CatiaNative {
         let (
             relation_expressions,
             relation_expression_entities,
+            relation_expression_sources,
             entities_by_graph_identity,
             terminal_nulls_by_graph,
             parameter_bindings,
@@ -8296,10 +8334,14 @@ impl CatiaNative {
             entity.relation_program_instance = relation_program_instance(
                 entity.entity_id,
                 object,
-                &entities_by_graph_identity,
-                &entity_classes_by_graph_identity,
-                &terminal_nulls_by_graph,
+                &CatiaEntityReferenceIndex {
+                    entities: &entities_by_graph_identity,
+                    classes: &entity_classes_by_graph_identity,
+                    terminal_nulls: &terminal_nulls_by_graph,
+                },
                 &relation_expression_entities,
+                &relation_expression_sources,
+                &parameter_bindings,
             );
             entity.configuration_record = configuration_record(
                 entity.entity_id,
@@ -8616,6 +8658,7 @@ impl CatiaNative {
         let (
             relation_expressions,
             relation_expression_entities,
+            relation_expression_sources,
             entities_by_graph_identity,
             terminal_nulls_by_graph,
             parameter_bindings,
@@ -8674,6 +8717,7 @@ impl CatiaNative {
             || namespace.version < CATIA_RELATION_TYPED_REFERENCE_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
             || namespace.version < CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION
+            || namespace.version < CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -8686,10 +8730,14 @@ impl CatiaNative {
                         relation_program_instance(
                             entity.entity_id,
                             object,
-                            &entities_by_graph_identity,
-                            &entity_classes_by_graph_identity,
-                            &terminal_nulls_by_graph,
+                            &CatiaEntityReferenceIndex {
+                                entities: &entities_by_graph_identity,
+                                classes: &entity_classes_by_graph_identity,
+                                terminal_nulls: &terminal_nulls_by_graph,
+                            },
                             &relation_expression_entities,
+                            &relation_expression_sources,
+                            &parameter_bindings,
                         )
                     });
             }
@@ -8868,10 +8916,14 @@ impl CatiaNative {
                                 relation_program_instance(
                                     entity.entity_id,
                                     object,
-                                    &entities_by_graph_identity,
-                                    &entity_classes_by_graph_identity,
-                                    &terminal_nulls_by_graph,
+                                    &CatiaEntityReferenceIndex {
+                                        entities: &entities_by_graph_identity,
+                                        classes: &entity_classes_by_graph_identity,
+                                        terminal_nulls: &terminal_nulls_by_graph,
+                                    },
                                     &relation_expression_entities,
+                                    &relation_expression_sources,
+                                    &parameter_bindings,
                                 )
                             })
                     })
