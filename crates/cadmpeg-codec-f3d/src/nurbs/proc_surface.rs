@@ -3336,8 +3336,11 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
         (revision > 0).then_some(())?;
         let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
             decode_revision_surface_tail(span, &mut position, int_width)?;
-        // The two unextended parameter intervals: first U, then V. Each is an
-        // ordered [lo, hi] pair of optional bounds.
+        // The two unextended parameter intervals, each an ordered [lo, hi] pair
+        // of optional bounds. This subtype serializes them U-then-V; the loft
+        // wrap ranges sharing `RevisionRanges` serialize V-then-U, so the order
+        // is per subtype and is not a property of that type. Stored positionally
+        // here and labelled only by the specification.
         let unextended_ranges = [
             [
                 take_optional_range_value(span, &mut position)?,
