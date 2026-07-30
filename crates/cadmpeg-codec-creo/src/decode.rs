@@ -29419,6 +29419,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .iter()
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();
+    let mut geometry_generator_feature_count = 0;
     for generator in geometry_generator_features(scan) {
         let feature_id = generator.feature_id;
         let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
@@ -29448,6 +29449,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             definition: IrFeatureDefinition::StoredGeometry,
             native_ref: None,
         });
+        geometry_generator_feature_count += 1;
     }
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.features.operations.iter().enumerate() {
@@ -30742,12 +30744,6 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .features
         .iter()
         .filter(|feature| matches!(feature.definition, IrFeatureDefinition::Native { .. }))
-        .count();
-    let geometry_generator_feature_count = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| matches!(feature.definition, IrFeatureDefinition::StoredGeometry))
         .count();
     let mut unresolved_datum_plane_feature_count = 0;
     let mut unresolved_datum_coordinate_system_feature_count = 0;
