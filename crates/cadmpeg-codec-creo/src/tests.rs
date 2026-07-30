@@ -4592,7 +4592,7 @@ fn decode_reports_missing_declared_solver_variable_rows() {
 }
 
 #[test]
-fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
+fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions() {
     let definition = crate::feature::FeatureDefinition {
         id: 40,
         owner_feature_id: None,
@@ -4796,7 +4796,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                         [Some(1), Some(1), Some(0), Some(1)],
                         [Some(15), Some(16), Some(15), Some(1)],
                     ]),
-                    sign: 0,
+                    sign: 0xf6,
                     dimension_id: 0,
                     relation_type: 0,
                     body: Vec::new(),
@@ -4860,8 +4860,8 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
         Some(&[8.0, 30.0])
     );
     assert_eq!(
-        crate::decode::resolved_section_points(&definition).get(&8),
-        Some(&[8.0, 40.0])
+        crate::decode::resolved_section_coordinates(&definition).get(&8),
+        Some(&[None, Some(40.0)])
     );
     let mut incomplete_variables = definition.clone();
     incomplete_variables

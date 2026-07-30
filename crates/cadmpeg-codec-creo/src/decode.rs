@@ -2112,6 +2112,12 @@ fn section_line_geometry(
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
     let start = points.get(&segment.point_ids[0])?;
     let end = points.get(&segment.point_ids[1])?;
+    let scale = start
+        .iter()
+        .chain(end)
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    (((end[0] - start[0]) / scale).hypot((end[1] - start[1]) / scale) > 1e-12).then_some(())?;
     Some(SketchGeometry::Line {
         start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
         end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
@@ -3196,11 +3202,6 @@ pub(crate) fn resolved_section_coordinates(
             let delta = match relation.sign {
                 1 => magnitude,
                 0xf6 => -magnitude,
-                0 => match segment.directions[0] {
-                    Some(1) => magnitude,
-                    None => -magnitude,
-                    _ => return None,
-                },
                 _ => return None,
             };
             Some((first, second, coordinate, delta))

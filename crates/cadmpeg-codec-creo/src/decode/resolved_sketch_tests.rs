@@ -4137,6 +4137,12 @@ fn section_line_requires_two_solved_points() {
             end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
         })
     );
+    points.insert(9, [2.0, 3.0]);
+    assert!(section_line_geometry(&points, &segment).is_none());
+    points.insert(9, [2.0 + 1e-13, 3.0]);
+    assert!(section_line_geometry(&points, &segment).is_none());
+    points.insert(9, [2.0 + 1e-10, 3.0]);
+    assert!(section_line_geometry(&points, &segment).is_some());
 }
 
 #[test]

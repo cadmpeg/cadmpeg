@@ -1728,10 +1728,10 @@ For a type-zero linear-distance relation with operand-vector forms
 `a = [point0, point1, null, 1]`, `b = [0, 0, 0, 0]` or
 `b = [1, 1, 0, 1]`, and
 `c = [15, 16, 15, 1]`, the referenced dimension supplies the distance between
-the two points along the measured horizontal or vertical segment. Sign `1`
-adds the dimension and sign `f6` subtracts it. Sign zero selects the segment
-direction: first-direction `1` adds the dimension, while the null
-first-direction selector subtracts it.
+the two points along the measured horizontal or vertical segment only when the
+sign is explicit. Sign `1` adds the dimension and sign `f6` subtracts it.
+Sign zero supplies no signed coordinate equation; the segment direction fields
+do not assign the missing sign.
 Equivalent rows define one coordinate equation. Rows that assign different
 signed differences to the same unordered point pair and coordinate define no
 solved coordinate for that equation.
@@ -1848,8 +1848,10 @@ Type `0x03` has radius display semantics.
 
 A `segtab` line whose two endpoint identifiers each have complete type-1 and
 type-2 `var_arr` values is the bounded segment between those two `[u, v]`
-points. A neutral ordinate requires exactly one `var_arr` row with the point
-key and coordinate type, or repeated rows whose defined values agree.
+points when their normalized separation exceeds `1e-12`. Coincident endpoint
+coordinates do not define a bounded line. A neutral ordinate requires exactly
+one `var_arr` row with the point key and coordinate type, or repeated rows
+whose defined values agree.
 Complementary coordinate rows combine by point key. Conflicting values leave
 the point identity unresolved. Type-3 radius keys do not define section-point
 identities. It is construction geometry when its `ext_id` is
