@@ -1848,6 +1848,7 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
                         })
                         .collect(),
                     variables: block.variables.clone(),
+                    solutions: block.solutions.clone(),
                     offset: block.offset,
                     for_offset: block.for_offset,
                 })

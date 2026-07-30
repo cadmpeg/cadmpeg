@@ -472,6 +472,7 @@ struct CreoCurveExpressionSolveBlock {
     equations: Vec<CreoCurveExpressionEquation>,
     assignments: Vec<CreoCurveExpressionAssignment>,
     variables: Vec<String>,
+    solutions: Vec<Option<crate::curve::CurveExpressionValue>>,
     offset: usize,
     for_offset: usize,
 }
@@ -29696,6 +29697,19 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             .flat_map(|record| &record.solve_blocks)
             .map(|block| block.variables.len())
             .sum::<usize>();
+        let evaluated_curve_expression_solve_block_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .filter(|block| {
+                !block.solutions.is_empty() && block.solutions.iter().all(Option::is_some)
+            })
+            .count();
+        let evaluated_curve_expression_solve_variable_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .flat_map(|block| &block.solutions)
+            .filter(|solution| solution.is_some())
+            .count();
         let unresolved_curve_expression_solve_control_count = active_expressions
             .clone()
             .filter(|record| record.unresolved_solve_control)
@@ -29758,6 +29772,14 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "decoded_active_curve_expression_solve_variable_count".to_string(),
             decoded_curve_expression_solve_variable_count,
+        );
+        coverage.insert(
+            "evaluated_active_curve_expression_solve_block_count".to_string(),
+            evaluated_curve_expression_solve_block_count,
+        );
+        coverage.insert(
+            "evaluated_active_curve_expression_solve_variable_count".to_string(),
+            evaluated_curve_expression_solve_variable_count,
         );
         coverage.insert(
             "unresolved_active_curve_expression_solve_control_count".to_string(),
@@ -32561,7 +32583,9 @@ fn build_report(
         .filter(|record| {
             !record.backup
                 && (!record.prohibited_constructs.is_empty()
-                    || !record.solve_blocks.is_empty()
+                    || record.solve_blocks.iter().any(|block| {
+                        block.solutions.is_empty() || block.solutions.iter().any(Option::is_none)
+                    })
                     || record.unresolved_solve_control)
         })
         .count();
@@ -32574,7 +32598,8 @@ fn build_report(
             "Admitted curve-equation assignments transfer with their source, dependencies, and \
              closed numeric and string operator and deterministic function values. \
              {unevaluated_curve_expression_record_count} active curve-equation record(s) \
-             containing prohibited datum-curve constructs or simultaneous-solve control retain \
+             containing prohibited datum-curve constructs or unresolved simultaneous-solve \
+             control retain \
              source and dependencies without solve-dependent assignment values or derived curves."
         )
     };
@@ -32985,15 +33010,17 @@ fn build_report(
             provenance: None,
         });
     }
-    let solve_blocks = count("decoded_active_curve_expression_solve_block_count");
-    if solve_blocks != 0 {
+    let unresolved_solve_blocks = count("decoded_active_curve_expression_solve_block_count")
+        .saturating_sub(count("evaluated_active_curve_expression_solve_block_count"));
+    if unresolved_solve_blocks != 0 {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(
-                "{solve_blocks} active curve-equation simultaneous-solve block(s) retain their \
-                 ordered equations and unknowns without solved values or derived curves."
+                "{unresolved_solve_blocks} active curve-equation simultaneous-solve block(s) \
+                 retain their ordered equations and unknowns without solved values or derived \
+                 curves."
             ),
             provenance: None,
         });

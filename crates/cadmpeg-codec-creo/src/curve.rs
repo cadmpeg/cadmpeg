@@ -110,6 +110,9 @@ pub struct CurveExpressionSolveBlock {
     pub assignments: Vec<CurveExpressionAssignment>,
     /// Ordered unknowns declared by the terminating `FOR` line.
     pub variables: Vec<String>,
+    /// Solved scalar values aligned with `variables`; absent entries remain
+    /// nonlinear, underdetermined, inconsistent, or dependency-unresolved.
+    pub solutions: Vec<Option<CurveExpressionValue>>,
     /// Byte offset of the `SOLVE` line.
     pub offset: usize,
     /// Byte offset of the terminating `FOR` line.
@@ -726,23 +729,28 @@ pub(crate) fn expression_records_with_model_name(
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
             let prohibited_constructs = curve_equation_prohibited_constructs(&lines);
             let mut solve_program = curve_expression_solve_program(&lines);
-            let mut assignments = evaluate_expression_program(
+            let mut evaluation = evaluate_expression_program_details(
                 &lines,
                 model_name,
                 &ExternalRelationSymbols::default(),
             );
             if !prohibited_constructs.is_empty() || solve_program.unresolved_control {
-                for assignment in &mut assignments {
+                for assignment in &mut evaluation.assignments {
                     assignment.value = None;
                 }
+                evaluation.solve_solutions.clear();
             }
-            synchronize_solve_block_assignments(&mut solve_program.blocks, &assignments);
+            synchronize_solve_blocks(
+                &mut solve_program.blocks,
+                &evaluation.assignments,
+                &evaluation.solve_solutions,
+            );
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
                 local_system,
                 lines,
-                assignments,
+                assignments: evaluation.assignments,
                 solve_blocks: solve_program.blocks,
                 unresolved_solve_control: solve_program.unresolved_control,
                 prohibited_constructs,
@@ -760,27 +768,43 @@ pub(crate) fn reevaluate_expression_records(
     external_symbols: &ExternalRelationSymbols,
 ) {
     for record in records {
-        record.assignments =
-            evaluate_expression_program(&record.lines, model_name, external_symbols);
+        let mut evaluation =
+            evaluate_expression_program_details(&record.lines, model_name, external_symbols);
         if !record.prohibited_constructs.is_empty() || record.unresolved_solve_control {
-            for assignment in &mut record.assignments {
+            for assignment in &mut evaluation.assignments {
                 assignment.value = None;
             }
+            evaluation.solve_solutions.clear();
         }
-        synchronize_solve_block_assignments(&mut record.solve_blocks, &record.assignments);
+        synchronize_solve_blocks(
+            &mut record.solve_blocks,
+            &evaluation.assignments,
+            &evaluation.solve_solutions,
+        );
+        record.assignments = evaluation.assignments;
     }
 }
 
-fn synchronize_solve_block_assignments(
+fn synchronize_solve_blocks(
     blocks: &mut [CurveExpressionSolveBlock],
     assignments: &[CurveExpressionAssignment],
+    solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
 ) {
-    for assignment in blocks.iter_mut().flat_map(|block| &mut block.assignments) {
-        if let Some(evaluated) = assignments
-            .iter()
-            .find(|evaluated| evaluated.offset == assignment.offset)
-        {
-            *assignment = evaluated.clone();
+    for block in blocks {
+        for assignment in &mut block.assignments {
+            if let Some(evaluated) = assignments
+                .iter()
+                .find(|evaluated| evaluated.offset == assignment.offset)
+            {
+                *assignment = evaluated.clone();
+            }
+        }
+        block.solutions = solutions.get(&block.offset).map_or_else(
+            || vec![None; block.variables.len()],
+            |values| values.iter().cloned().map(Some).collect(),
+        );
+        if block.solutions.len() != block.variables.len() {
+            block.solutions = vec![None; block.variables.len()];
         }
     }
 }
@@ -1081,6 +1105,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,
                     assignments,
+                    solutions: vec![None; variables.len()],
                     variables,
                     offset: block.offset,
                     for_offset: line.offset,
@@ -1139,7 +1164,12 @@ fn curve_expression_solve_variables(source: &str) -> Option<Vec<String>> {
         .filter(|variable| !variable.is_empty())
         .map(str::to_owned)
         .collect::<Vec<_>>();
+    let keys = variables
+        .iter()
+        .map(|variable| expression_identifier_key(variable))
+        .collect::<BTreeSet<_>>();
     (!variables.is_empty()
+        && keys.len() == variables.len()
         && variables
             .iter()
             .all(|variable| valid_scoped_expression_identifier(variable)))
@@ -1395,28 +1425,45 @@ fn branch_activation(
     }
 }
 
+struct CurveExpressionEvaluation {
+    assignments: Vec<CurveExpressionAssignment>,
+    solve_solutions: BTreeMap<usize, Vec<CurveExpressionValue>>,
+}
+
+#[cfg(test)]
 fn evaluate_expression_program(
     lines: &[CurveExpressionLine],
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
 ) -> Vec<CurveExpressionAssignment> {
+    evaluate_expression_program_details(lines, model_name, external_symbols).assignments
+}
+
+fn evaluate_expression_program_details(
+    lines: &[CurveExpressionLine],
+    model_name: Option<&str>,
+    external_symbols: &ExternalRelationSymbols,
+) -> CurveExpressionEvaluation {
     let solve_program = curve_expression_solve_program(lines);
     let solve_line_is_executable = |index: &usize| {
         !solve_program.line_indices.contains(index)
             || solve_program.executable_line_indices.contains(index)
     };
     if !expression_program_control_is_valid(lines) {
-        return lines
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| solve_line_is_executable(index))
-            .map(|(_, line)| line)
-            .filter_map(expression_assignment)
-            .map(|mut assignment| {
-                assignment.activation = CurveExpressionActivation::Conditional;
-                assignment
-            })
-            .collect();
+        return CurveExpressionEvaluation {
+            assignments: lines
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| solve_line_is_executable(index))
+                .map(|(_, line)| line)
+                .filter_map(expression_assignment)
+                .map(|mut assignment| {
+                    assignment.activation = CurveExpressionActivation::Conditional;
+                    assignment
+                })
+                .collect(),
+            solve_solutions: BTreeMap::new(),
+        };
     }
 
     let mut existing_symbols = external_symbols
@@ -1460,12 +1507,21 @@ fn evaluate_expression_program(
     let mut stack = Vec::<ConditionalFrame>::new();
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::<CurveExpressionAssignment>::new();
+    let mut solve_solutions = BTreeMap::new();
+    let mut dimensionless_solve_blocks = BTreeSet::new();
     for (index, line) in lines.iter().enumerate() {
         if let Some(block) = solve_program
             .blocks
             .iter()
             .find(|block| block.offset == line.offset)
         {
+            if block.variables.iter().all(|variable| {
+                values
+                    .get(&expression_identifier_key(variable))
+                    .is_some_and(|value| matches!(value, CurveExpressionValue::Number(_)))
+            }) {
+                dimensionless_solve_blocks.insert(block.offset);
+            }
             for variable in &block.variables {
                 let key = expression_identifier_key(variable);
                 values.remove(&key);
@@ -1478,6 +1534,31 @@ fn evaluate_expression_program(
                         assignment.value = None;
                     }
                 }
+            }
+        }
+        if let Some(block) = solve_program
+            .blocks
+            .iter()
+            .find(|block| block.for_offset == line.offset)
+        {
+            if let Some(solution) = dimensionless_solve_blocks
+                .contains(&block.offset)
+                .then(|| solve_affine_expression_block(block, &values))
+                .flatten()
+            {
+                for (variable, value) in block.variables.iter().zip(&solution) {
+                    let key = expression_identifier_key(variable);
+                    values.insert(key.clone(), value.clone());
+                    for assignment in &mut assignments {
+                        if assignment
+                            .scalar_target()
+                            .is_some_and(|(name, _)| expression_identifier_key(name) == key)
+                        {
+                            assignment.value = Some(value.clone());
+                        }
+                    }
+                }
+                solve_solutions.insert(block.offset, solution);
             }
         }
         if !solve_line_is_executable(&index) {
@@ -1561,7 +1642,10 @@ fn evaluate_expression_program(
         }
         assignments.push(assignment);
     }
-    assignments
+    CurveExpressionEvaluation {
+        assignments,
+        solve_solutions,
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -2094,6 +2178,147 @@ impl ExpressionValue for AffineValue {
 
     fn finite(&self) -> bool {
         self.constant.is_finite() && self.linear.is_finite()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SimultaneousAffineValue {
+    constant: f64,
+    coefficients: BTreeMap<String, f64>,
+}
+
+impl SimultaneousAffineValue {
+    fn constant(value: f64) -> Self {
+        Self {
+            constant: value,
+            coefficients: BTreeMap::new(),
+        }
+    }
+
+    fn scale(mut self, factor: f64) -> Self {
+        self.constant *= factor;
+        for coefficient in self.coefficients.values_mut() {
+            *coefficient *= factor;
+        }
+        self
+    }
+
+    fn combine(mut self, right: Self, subtract: bool) -> Self {
+        let sign = if subtract { -1.0 } else { 1.0 };
+        self.constant += sign * right.constant;
+        for (variable, coefficient) in right.coefficients {
+            let remove = {
+                let value = self.coefficients.entry(variable.clone()).or_default();
+                *value += sign * coefficient;
+                *value == 0.0
+            };
+            if remove {
+                self.coefficients.remove(&variable);
+            }
+        }
+        self
+    }
+}
+
+impl ExpressionValue for SimultaneousAffineValue {
+    fn number(value: f64) -> Self {
+        Self::constant(value)
+    }
+
+    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
+        (unit.dimension == RelationDimension::default()).then_some(())?;
+        Some(
+            self.scale(unit.scale)
+                .combine(Self::constant(unit.offset), false),
+        )
+    }
+
+    fn add(self, right: Self) -> Option<Self> {
+        Some(self.combine(right, false))
+    }
+
+    fn subtract(self, right: Self) -> Option<Self> {
+        Some(self.combine(right, true))
+    }
+
+    fn multiply(self, right: Self) -> Option<Self> {
+        if self.coefficients.is_empty() {
+            Some(right.scale(self.constant))
+        } else if right.coefficients.is_empty() {
+            Some(self.scale(right.constant))
+        } else {
+            None
+        }
+    }
+
+    fn divide(self, right: Self) -> Option<Self> {
+        (right.coefficients.is_empty() && right.constant != 0.0)
+            .then(|| self.scale(1.0 / right.constant))
+    }
+
+    fn power(self, right: Self) -> Option<Self> {
+        if !right.coefficients.is_empty() {
+            return None;
+        }
+        if right.constant == 1.0 {
+            return Some(self);
+        }
+        if right.constant == 0.0 {
+            return Some(Self::constant(1.0));
+        }
+        self.coefficients
+            .is_empty()
+            .then(|| self.constant.powf(right.constant))
+            .filter(|value| value.is_finite())
+            .map(Self::constant)
+    }
+
+    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
+        (self.coefficients.is_empty() && right.coefficients.is_empty())
+            .then(|| Self::constant(f64::from(operator.evaluate(self.constant, right.constant))))
+    }
+
+    fn logical_and(self, right: Self) -> Option<Self> {
+        (self.coefficients.is_empty() && right.coefficients.is_empty())
+            .then(|| Self::constant(f64::from(self.constant != 0.0 && right.constant != 0.0)))
+    }
+
+    fn logical_or(self, right: Self) -> Option<Self> {
+        (self.coefficients.is_empty() && right.coefficients.is_empty())
+            .then(|| Self::constant(f64::from(self.constant != 0.0 || right.constant != 0.0)))
+    }
+
+    fn logical_not(self) -> Option<Self> {
+        self.coefficients
+            .is_empty()
+            .then(|| Self::constant(f64::from(self.constant == 0.0)))
+    }
+
+    fn function(
+        name: CreoMathFunction,
+        scope: Option<&str>,
+        arguments: &[Self],
+        _context: RelationEvaluationContext<'_>,
+    ) -> Option<Self> {
+        scope.is_none().then_some(())?;
+        let constants = arguments
+            .iter()
+            .map(|argument| {
+                argument
+                    .coefficients
+                    .is_empty()
+                    .then_some(argument.constant)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        evaluate_creo_math_function(name, &constants).map(Self::constant)
+    }
+
+    fn negate(self) -> Option<Self> {
+        Some(self.scale(-1.0))
+    }
+
+    fn finite(&self) -> bool {
+        self.constant.is_finite() && self.coefficients.values().all(|value| value.is_finite())
     }
 }
 
@@ -3097,6 +3322,153 @@ fn evaluate_affine_expression(
     let value = parser.logical_or()?;
     parser.whitespace();
     (parser.cursor == parser.source.len() && value.finite()).then_some(value)
+}
+
+fn evaluate_simultaneous_affine_expression(
+    expression: &str,
+    values: &BTreeMap<String, SimultaneousAffineValue>,
+) -> Option<SimultaneousAffineValue> {
+    let mut parser = ExpressionParser {
+        source: expression.as_bytes(),
+        cursor: 0,
+        values,
+        context: RelationEvaluationContext::default(),
+        nesting: 0,
+    };
+    let value = parser.logical_or()?;
+    parser.whitespace();
+    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
+}
+
+fn solve_affine_expression_block(
+    block: &CurveExpressionSolveBlock,
+    values: &BTreeMap<String, CurveExpressionValue>,
+) -> Option<Vec<CurveExpressionValue>> {
+    let variable_keys = block
+        .variables
+        .iter()
+        .map(|variable| expression_identifier_key(variable))
+        .collect::<Vec<_>>();
+    let mut affine_values = values
+        .iter()
+        .filter_map(|(name, value)| {
+            let CurveExpressionValue::Number(value) = value else {
+                return None;
+            };
+            Some((name.clone(), SimultaneousAffineValue::constant(*value)))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for variable in &variable_keys {
+        affine_values.insert(
+            variable.clone(),
+            SimultaneousAffineValue {
+                constant: 0.0,
+                coefficients: BTreeMap::from([(variable.clone(), 1.0)]),
+            },
+        );
+    }
+    let mut rows = block
+        .equations
+        .iter()
+        .map(|equation| {
+            let left = evaluate_simultaneous_affine_expression(&equation.left, &affine_values)?;
+            let right = evaluate_simultaneous_affine_expression(&equation.right, &affine_values)?;
+            let difference = left.combine(right, true);
+            let coefficients = variable_keys
+                .iter()
+                .map(|variable| {
+                    difference
+                        .coefficients
+                        .get(variable)
+                        .copied()
+                        .unwrap_or(0.0)
+                })
+                .collect::<Vec<_>>();
+            Some(AffineEquationRow {
+                coefficients,
+                rhs: -difference.constant,
+            })
+        })
+        .collect::<Option<Vec<AffineEquationRow>>>()?;
+    let solution = solve_unique_affine_system(&mut rows, variable_keys.len())?;
+    Some(
+        solution
+            .into_iter()
+            .map(CurveExpressionValue::Number)
+            .collect(),
+    )
+}
+
+struct AffineEquationRow {
+    coefficients: Vec<f64>,
+    rhs: f64,
+}
+
+fn solve_unique_affine_system(
+    rows: &mut [AffineEquationRow],
+    variable_count: usize,
+) -> Option<Vec<f64>> {
+    (variable_count > 0 && rows.len() >= variable_count).then_some(())?;
+    let coefficient_scale = rows
+        .iter()
+        .flat_map(|row| row.coefficients.iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let rhs_scale = rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
+    let coefficient_tolerance = 1e-12 * coefficient_scale;
+    let residual_tolerance = 1e-9 * rhs_scale;
+    let mut pivot_row = 0;
+    for column in 0..variable_count {
+        let selected = (pivot_row..rows.len()).max_by(|&first, &second| {
+            rows[first].coefficients[column]
+                .abs()
+                .total_cmp(&rows[second].coefficients[column].abs())
+        })?;
+        let divisor = rows[selected].coefficients[column];
+        (divisor.abs() > coefficient_tolerance).then_some(())?;
+        rows.swap(pivot_row, selected);
+        for coefficient in &mut rows[pivot_row].coefficients {
+            *coefficient /= divisor;
+        }
+        rows[pivot_row].rhs /= divisor;
+        let pivot_coefficients = rows[pivot_row].coefficients.clone();
+        let pivot_rhs = rows[pivot_row].rhs;
+        for (row_index, row) in rows.iter_mut().enumerate() {
+            if row_index == pivot_row {
+                continue;
+            }
+            let factor = row.coefficients[column];
+            if factor.abs() <= coefficient_tolerance {
+                continue;
+            }
+            for (coefficient, pivot) in row.coefficients.iter_mut().zip(&pivot_coefficients) {
+                *coefficient -= factor * pivot;
+                if coefficient.abs() <= coefficient_tolerance {
+                    *coefficient = 0.0;
+                }
+            }
+            row.rhs -= factor * pivot_rhs;
+        }
+        pivot_row += 1;
+    }
+    rows.iter()
+        .skip(variable_count)
+        .all(|row| {
+            row.coefficients
+                .iter()
+                .all(|coefficient| coefficient.abs() <= coefficient_tolerance)
+                && row.rhs.abs() <= residual_tolerance
+        })
+        .then_some(())?;
+    let solution = rows
+        .iter()
+        .take(variable_count)
+        .map(|row| row.rhs)
+        .collect::<Vec<_>>();
+    solution
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(solution)
 }
 
 fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, AffineValue> {
@@ -4438,6 +4810,110 @@ mod tests {
             assignments[6].value,
             Some(CurveExpressionValue::Number(101.0))
         );
+    }
+
+    #[test]
+    fn solves_complete_affine_simultaneous_equations() {
+        let lines = [
+            "x=0",
+            "y=0",
+            "sum=10",
+            "SOLVE",
+            "x+y=sum",
+            "x-y=2",
+            "FOR x,y",
+            "product=x*y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&3],
+            [
+                CurveExpressionValue::Number(6.0),
+                CurveExpressionValue::Number(4.0),
+            ]
+        );
+        assert_eq!(evaluation.assignments.len(), 4);
+        assert_eq!(
+            evaluation
+                .assignments
+                .iter()
+                .map(|assignment| assignment.value.clone())
+                .collect::<Vec<_>>(),
+            [
+                Some(CurveExpressionValue::Number(6.0)),
+                Some(CurveExpressionValue::Number(4.0)),
+                Some(CurveExpressionValue::Number(10.0)),
+                Some(CurveExpressionValue::Number(24.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_underdetermined_affine_systems_unsolved() {
+        let lines = ["x=0", "y=0", "SOLVE", "x+y=10", "FOR x,y"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+        assert_eq!(evaluation.assignments[1].value, None);
+    }
+
+    #[test]
+    fn leaves_inconsistent_affine_systems_unsolved() {
+        let lines = [
+            "x=0", "y=0", "SOLVE", "x+y=10", "x-y=2", "x+y=11", "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+        assert_eq!(evaluation.assignments[1].value, None);
+    }
+
+    #[test]
+    fn leaves_dimensioned_solve_variables_unsolved() {
+        let lines = ["x=0[mm]", "SOLVE", "x=10", "FOR x"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
     }
 
     #[test]

@@ -1079,6 +1079,16 @@ fn curve_expressions(
                     for assignment in &mut record.assignments {
                         assignment.offset += section.offset;
                     }
+                    for block in &mut record.solve_blocks {
+                        block.offset += section.offset;
+                        block.for_offset += section.offset;
+                        for equation in &mut block.equations {
+                            equation.offset += section.offset;
+                        }
+                        for assignment in &mut block.assignments {
+                            assignment.offset += section.offset;
+                        }
+                    }
                     record
                 }),
         );
