@@ -3330,6 +3330,11 @@ assignments. Unknowns may have different physical dimensions; multiplication or
 division by a known dimensioned value supplies the corresponding affine
 coefficient. Nonlinear, dimensionally inconsistent, dependency-unresolved,
 underdetermined, or inconsistent systems retain absent solution values.
+An equality or ordering comparison between two affine forms is independent of
+the unknowns when subtraction cancels every unknown coefficient. Such a
+comparison has its constant Boolean value during the solve. `if` selects an
+affine branch when its condition is constant, and `min` or `max` selects an
+affine operand when the difference between its operands is constant.
 Entering the block invalidates any preceding
 value of each declared unknown; that value does not supply following
 assignments when the block remains unsolved. A malformed block is bounded from

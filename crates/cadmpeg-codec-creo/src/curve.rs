@@ -2213,6 +2213,16 @@ impl SimultaneousAffineValue {
             .is_empty()
             .then(|| quantity_value(self.constant, self.dimension))
     }
+
+    fn constant_difference(&self, right: &Self) -> Option<f64> {
+        let difference = self.clone().combine(right.clone(), true)?;
+        difference
+            .coefficients
+            .values()
+            .all(|coefficient| *coefficient == 0.0)
+            .then_some(difference.constant)
+            .filter(|constant| constant.is_finite())
+    }
 }
 
 impl ExpressionValue for SimultaneousAffineValue {
@@ -2284,12 +2294,8 @@ impl ExpressionValue for SimultaneousAffineValue {
     }
 
     fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
-        let left = self.as_curve_value()?;
-        let right = right.as_curve_value()?;
-        let CurveExpressionValue::Number(value) = left.compare(right, operator)? else {
-            return None;
-        };
-        Some(Self::number(value))
+        let difference = self.constant_difference(&right)?;
+        Some(Self::number(f64::from(operator.evaluate(difference, 0.0))))
     }
 
     fn logical_and(self, right: Self) -> Option<Self> {
@@ -2324,11 +2330,34 @@ impl ExpressionValue for SimultaneousAffineValue {
         arguments: &[Self],
         context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
+        scope.is_none().then_some(())?;
+        match (name, arguments) {
+            (CreoMathFunction::If, [condition, when_true, when_false]) => {
+                let condition = condition.as_curve_value()?;
+                let CurveExpressionValue::Number(condition) = condition else {
+                    return None;
+                };
+                return Some(if condition == 0.0 {
+                    when_false.clone()
+                } else {
+                    when_true.clone()
+                });
+            }
+            (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
+                let difference = left.constant_difference(right)?;
+                return Some(if extremum_selects_left(name, difference, 0.0)? {
+                    left.clone()
+                } else {
+                    right.clone()
+                });
+            }
+            _ => {}
+        }
         let arguments = arguments
             .iter()
             .map(Self::as_curve_value)
             .collect::<Option<Vec<_>>>()?;
-        let result = CurveExpressionValue::function(name, scope, &arguments, context)?;
+        let result = CurveExpressionValue::function(name, None, &arguments, context)?;
         let (value, dimension) = quantity_parts_ref(&result)?;
         Some(Self::constant(value, dimension))
     }
@@ -4936,6 +4965,31 @@ mod tests {
     }
 
     #[test]
+    fn rejects_overflow_when_reducing_affine_comparison() {
+        let overflow = [
+            "x=0",
+            "limit=1e308",
+            "SOLVE",
+            "if(limit-(-limit)>0,x,0)=1",
+            "FOR x",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+        let evaluation = evaluate_expression_program_details(
+            &overflow,
+            None,
+            &ExternalRelationSymbols::default(),
+        );
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+    }
+
+    #[test]
     fn leaves_inconsistent_affine_systems_unsolved() {
         let lines = [
             "x=0", "y=0", "SOLVE", "x+y=10", "x-y=2", "x+y=11", "FOR x,y",
@@ -5021,6 +5075,63 @@ mod tests {
                     .expect("squared length dimension")
             ))
         );
+    }
+
+    #[test]
+    fn solves_affine_piecewise_expressions_with_unknown_independent_branches() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "min(x+2[mm],x+5[mm])+y=10[mm]",
+            "max(x-1[mm],x-3[mm])-y=3[mm]",
+            "if(x+1[mm]>x,x,x+100[mm])-y=4[mm]",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Length(6.0),
+                CurveExpressionValue::Length(2.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_unknown_dependent_piecewise_systems_unsolved() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "min(x,-x)+y=10[mm]",
+            "x-y=2[mm]",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+        assert_eq!(evaluation.assignments[1].value, None);
     }
 
     #[test]
