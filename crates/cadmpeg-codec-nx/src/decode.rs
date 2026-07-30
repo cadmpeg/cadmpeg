@@ -9741,9 +9741,14 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
-                ..
+                pull_direction,
+                angle,
+                outward,
             } if face_selection_is_incomplete(faces)
-                || face_selection_is_incomplete(neutral_plane) =>
+                || face_selection_is_incomplete(neutral_plane)
+                || pull_direction.is_none()
+                || angle.is_none()
+                || outward.is_none() =>
             {
                 "draft"
             }

@@ -1293,6 +1293,37 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("draft (1)"));
 
+    let draft = |pull_direction, angle, outward| FeatureDefinition::Draft {
+        faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
+            "test:face#draft".into(),
+        )]),
+        neutral_plane: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
+            "test:face#neutral".into(),
+        )]),
+        pull_direction,
+        angle,
+        outward,
+    };
+    for incomplete in [
+        draft(None, Some(cadmpeg_ir::features::Angle(0.1)), Some(false)),
+        draft(
+            Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+            None,
+            Some(false),
+        ),
+        draft(
+            Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+            Some(cadmpeg_ir::features::Angle(0.1)),
+            None,
+        ),
+    ] {
+        ir.model.features[0].definition = incomplete;
+        losses.clear();
+        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("draft (1)"));
+    }
+
     ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
         reference: None,
         distance: Length(5.0),
