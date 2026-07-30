@@ -2779,6 +2779,16 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
 
     assert_eq!(implicit.width_upper_bound(), 3);
     assert_eq!(implicit.collect::<Vec<_>>(), vec![[0, 1], [1, 2], [1, 3]]);
+
+    let mut visited = Vec::new();
+    assert_eq!(
+        domains.any_implicit_edge_candidate_with_point(0, 1, |pair| {
+            visited.push(pair);
+            pair == [1, 3]
+        }),
+        Some(true)
+    );
+    assert_eq!(visited, vec![[0, 1], [1, 2], [1, 3]]);
 }
 
 #[test]

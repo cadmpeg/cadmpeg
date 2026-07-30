@@ -468,6 +468,46 @@ impl MeshCoordinateRootDomains {
         })
     }
 
+    pub(crate) fn any_implicit_edge_candidate_with_point(
+        &self,
+        edge: usize,
+        required: usize,
+        mut valid: impl FnMut([usize; 2]) -> bool,
+    ) -> Option<bool> {
+        self.edge_candidates.get(edge)?.is_empty().then_some(())?;
+        let &[left, right] = self.edges.get(edge)?;
+        let pair = |point| {
+            if required <= point {
+                [required, point]
+            } else {
+                [point, required]
+            }
+        };
+        let required_in_left = self.domains[left].binary_search(&required).is_ok();
+        if required_in_left
+            && self.domains[right]
+                .iter()
+                .copied()
+                .filter(|point| left == right || *point != required)
+                .any(|point| valid(pair(point)))
+        {
+            return Some(true);
+        }
+        if self.domains[right].binary_search(&required).is_err() {
+            return Some(false);
+        }
+        Some(
+            self.domains[left]
+                .iter()
+                .copied()
+                .filter(|point| left == right || *point != required)
+                .filter(|point| {
+                    !required_in_left || self.domains[right].binary_search(point).is_err()
+                })
+                .any(|point| valid(pair(point))),
+        )
+    }
+
     fn coverage_matching(
         domains: &[Vec<usize>],
         point_count: usize,

@@ -1010,19 +1010,33 @@ impl IncidenceComponentSearch<'_, '_> {
                     .iter()
                     .copied()
                     .any(|supporting_edge| {
-                        supporting_edge != edge
-                            && self.active[supporting_edge]
-                            && self.assignment[supporting_edge].is_none()
-                            && self
-                                .candidate_pairs(
+                        if supporting_edge == edge
+                            || !self.active[supporting_edge]
+                            || self.assignment[supporting_edge].is_some()
+                        {
+                            return false;
+                        }
+                        let mut fits = |supporting_pair: [usize; 2]| {
+                            supporting_pair.contains(&point)
+                                && supporting_pair_fits(supporting_edge, supporting_pair)
+                        };
+                        if let Some(domains) = self
+                            .coordinate_domains
+                            .filter(|_| self.choices[supporting_edge].is_empty())
+                        {
+                            return domains
+                                .any_implicit_edge_candidate_with_point(
                                     supporting_edge,
-                                    Some(point),
-                                    self.coordinate_domains,
+                                    point,
+                                    &mut fits,
                                 )
-                                .any(|supporting_pair| {
-                                    supporting_pair.contains(&point)
-                                        && supporting_pair_fits(supporting_edge, supporting_pair)
-                                })
+                                .unwrap_or(false);
+                        }
+                        self.choices[supporting_edge]
+                            .iter()
+                            .copied()
+                            .filter(|pair| pair.contains(&point))
+                            .any(fits)
                     })
             };
             let existing_frontier_supported = self.degrees[face]
