@@ -436,8 +436,17 @@ pub(crate) struct IncidenceComponentSearch<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum IncidenceSolve<T> {
     Solved(T),
-    Rejected,
+    Rejected(IncidenceRejection),
     Exhausted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IncidenceRejection {
+    InputShape,
+    ChoicePruning,
+    FixedAssignment,
+    ComponentDomain,
+    ComponentComposition,
 }
 
 #[cfg(test)]
@@ -445,7 +454,7 @@ impl<T> IncidenceSolve<T> {
     fn into_option(self) -> Option<T> {
         match self {
             Self::Solved(value) => Some(value),
-            Self::Rejected | Self::Exhausted => None,
+            Self::Rejected(_) | Self::Exhausted => None,
         }
     }
 }
@@ -1615,7 +1624,7 @@ where
     match outcome {
         IncidenceSolve::Solved(_) if result_limit_exhausted => IncidenceSolve::Exhausted,
         IncidenceSolve::Solved(_) => IncidenceSolve::Solved(solutions),
-        IncidenceSolve::Rejected => IncidenceSolve::Rejected,
+        IncidenceSolve::Rejected(rejection) => IncidenceSolve::Rejected(rejection),
         IncidenceSolve::Exhausted => IncidenceSolve::Exhausted,
     }
 }
@@ -1838,6 +1847,7 @@ where
 
     let mut exhausted = false;
     let mut visited = 0usize;
+    let mut rejection = IncidenceRejection::InputShape;
     let result = (|| {
         if partial_solution_valid.is_some_and(|constraint| {
             constraint.active_edges.len() != choices.len()
@@ -1885,6 +1895,7 @@ where
             }
         }
         if components.is_empty() {
+            rejection = IncidenceRejection::FixedAssignment;
             let pairs = fixed.into_iter().collect::<Option<Vec<_>>>()?;
             if !boundary_domains_close(mesh_assignments, &pairs) || !solution_valid(&pairs) {
                 return None;
@@ -1927,6 +1938,7 @@ where
                 return None;
             }
             if domain.solutions.is_empty() {
+                rejection = IncidenceRejection::ComponentDomain;
                 return None;
             }
             component_domains.push((component, domain));
@@ -1943,6 +1955,7 @@ where
             .into_iter()
             .map(|(_, domain)| domain)
             .collect::<Vec<_>>();
+        rejection = IncidenceRejection::ComponentComposition;
         if visit_components(
             0,
             edge_faces,
@@ -1966,9 +1979,9 @@ where
     })();
     match result {
         Some(()) if visited > 0 => IncidenceSolve::Solved(visited),
-        Some(()) => IncidenceSolve::Rejected,
+        Some(()) => IncidenceSolve::Rejected(rejection),
         None if exhausted => IncidenceSolve::Exhausted,
-        None => IncidenceSolve::Rejected,
+        None => IncidenceSolve::Rejected(rejection),
     }
 }
 
@@ -2082,7 +2095,7 @@ where
         prune_incidence_choices(&mut choices, edge_faces, face_count, vertex_points.len())?;
         Some(choices)
     })() else {
-        return IncidenceSolve::Rejected;
+        return IncidenceSolve::Rejected(IncidenceRejection::ChoicePruning);
     };
     let complete_valid = |points: &[[usize; 2]]| {
         solution_valid(points)

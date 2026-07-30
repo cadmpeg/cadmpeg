@@ -1990,7 +1990,12 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
         },
     );
 
-    assert_eq!(outcome, crate::solve::incidence::IncidenceSolve::Rejected);
+    assert_eq!(
+        outcome,
+        crate::solve::incidence::IncidenceSolve::Rejected(
+            crate::solve::incidence::IncidenceRejection::ComponentDomain
+        )
+    );
     assert!(!visited);
 }
 
@@ -2076,7 +2081,12 @@ fn incidence_components_preflight_quotient_impossible_domains() {
         },
     );
 
-    assert_eq!(outcome, crate::solve::incidence::IncidenceSolve::Rejected);
+    assert_eq!(
+        outcome,
+        crate::solve::incidence::IncidenceSolve::Rejected(
+            crate::solve::incidence::IncidenceRejection::ComponentDomain
+        )
+    );
     assert!(!visited);
 }
 
@@ -2101,7 +2111,9 @@ fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
             None,
             &|_| true,
         ),
-        crate::solve::incidence::IncidenceSolve::Rejected
+        crate::solve::incidence::IncidenceSolve::Rejected(
+            crate::solve::incidence::IncidenceRejection::FixedAssignment
+        )
     );
 }
 
@@ -2134,7 +2146,7 @@ fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
             None,
             &|_| true,
         ),
-        IncidenceSolve::Rejected
+        IncidenceSolve::Rejected(crate::solve::incidence::IncidenceRejection::FixedAssignment)
     );
 }
 

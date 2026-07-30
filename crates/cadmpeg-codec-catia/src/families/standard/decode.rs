@@ -1693,14 +1693,71 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             "standard_topology_mesh_rejection_edge_class_constraint_count",
             mesh_quotient::MeshCandidateRejection::EdgeClassConstraint,
         ),
-        (
-            "standard_topology_mesh_rejection_endpoint_incidence_count",
-            mesh_quotient::MeshCandidateRejection::EndpointIncidence,
-        ),
     ] {
         report.coverage.insert(
             key.to_string(),
             usize::from(topology_diagnostics.mesh_rejection == Some(rejection)),
+        );
+    }
+    let endpoint_incidence_rejection =
+        topology_diagnostics
+            .mesh_rejection
+            .and_then(|rejection| match rejection {
+                mesh_quotient::MeshCandidateRejection::EndpointIncidence(rejection) => {
+                    Some(rejection)
+                }
+                _ => None,
+            });
+    report.coverage.insert(
+        "standard_topology_mesh_rejection_endpoint_incidence_count".to_string(),
+        usize::from(endpoint_incidence_rejection.is_some()),
+    );
+    report.coverage.insert(
+        "standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count".to_string(),
+        usize::from(matches!(
+            endpoint_incidence_rejection,
+            Some(mesh_quotient::MeshEndpointIncidenceRejection::NoAssignment(
+                _
+            ))
+        )),
+    );
+    report.coverage.insert(
+        "standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count"
+            .to_string(),
+        usize::from(
+            endpoint_incidence_rejection
+                == Some(mesh_quotient::MeshEndpointIncidenceRejection::BoundaryReconstruction),
+        ),
+    );
+    let incidence_rejection = endpoint_incidence_rejection.and_then(|rejection| match rejection {
+        mesh_quotient::MeshEndpointIncidenceRejection::NoAssignment(rejection) => Some(rejection),
+        mesh_quotient::MeshEndpointIncidenceRejection::BoundaryReconstruction => None,
+    });
+    for (key, rejection) in [
+        (
+            "standard_topology_mesh_rejection_incidence_input_shape_count",
+            crate::solve::incidence::IncidenceRejection::InputShape,
+        ),
+        (
+            "standard_topology_mesh_rejection_incidence_choice_pruning_count",
+            crate::solve::incidence::IncidenceRejection::ChoicePruning,
+        ),
+        (
+            "standard_topology_mesh_rejection_incidence_fixed_assignment_count",
+            crate::solve::incidence::IncidenceRejection::FixedAssignment,
+        ),
+        (
+            "standard_topology_mesh_rejection_incidence_component_domain_count",
+            crate::solve::incidence::IncidenceRejection::ComponentDomain,
+        ),
+        (
+            "standard_topology_mesh_rejection_incidence_component_composition_count",
+            crate::solve::incidence::IncidenceRejection::ComponentComposition,
+        ),
+    ] {
+        report.coverage.insert(
+            key.to_string(),
+            usize::from(incidence_rejection == Some(rejection)),
         );
     }
     report.coverage.insert(
@@ -6142,12 +6199,19 @@ mod route_tests {
 
     #[test]
     fn mesh_retry_runs_only_after_exact_rejection() {
-        use crate::solve::mesh_quotient::{MeshCandidateRejection, MeshCandidateSolve};
+        use crate::solve::incidence::IncidenceRejection;
+        use crate::solve::mesh_quotient::{
+            MeshCandidateRejection, MeshCandidateSolve, MeshEndpointIncidenceRejection,
+        };
 
         let called = Cell::new(false);
         let outcome = retry_rejected_mesh_solution(MeshCandidateSolve::Exhausted, || {
             called.set(true);
-            MeshCandidateSolve::Rejected(MeshCandidateRejection::EndpointIncidence)
+            MeshCandidateSolve::Rejected(MeshCandidateRejection::EndpointIncidence(
+                MeshEndpointIncidenceRejection::NoAssignment(
+                    IncidenceRejection::ComponentComposition,
+                ),
+            ))
         });
         assert!(matches!(outcome, MeshCandidateSolve::Exhausted));
         assert!(!called.get());

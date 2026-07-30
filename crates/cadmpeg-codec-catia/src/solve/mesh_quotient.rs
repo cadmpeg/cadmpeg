@@ -10,7 +10,7 @@ use crate::families::standard::topology::{
 use crate::solve::incidence::{
     compact_boundary_domain_viable, deferred_boundary_cycle_matches,
     labeled_assignment_endpoint_cycles_viable, visit_incidence_endpoint_pair_solutions,
-    IncidenceSolve,
+    IncidenceRejection, IncidenceSolve,
 };
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, domains_have_distinct_matching, MatchingEdgeConstraint,
@@ -41,7 +41,13 @@ pub(crate) enum MeshCandidateRejection {
     PortCardinality,
     QuotientPreparation,
     EdgeClassConstraint,
-    EndpointIncidence,
+    EndpointIncidence(MeshEndpointIncidenceRejection),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MeshEndpointIncidenceRejection {
+    NoAssignment(IncidenceRejection),
+    BoundaryReconstruction,
 }
 
 #[derive(Debug)]
@@ -5863,6 +5869,13 @@ where
     if let Some((topology, assignment)) = incidence_solution {
         return MeshCandidateSolve::Solved(topology, assignment);
     }
+    let incidence_rejection = match pair_solutions {
+        IncidenceSolve::Rejected(rejection) => {
+            MeshEndpointIncidenceRejection::NoAssignment(rejection)
+        }
+        IncidenceSolve::Solved(_) => MeshEndpointIncidenceRejection::BoundaryReconstruction,
+        IncidenceSolve::Exhausted => unreachable!("exhaustion returned before fallback"),
+    };
     let fallback = (|| {
         let assignments = mesh_domains
             .into_iter()
@@ -5886,9 +5899,9 @@ where
         }
         Some(MeshEndpointResolve::Ambiguous) => MeshCandidateSolve::Ambiguous,
         Some(MeshEndpointResolve::Exhausted) => MeshCandidateSolve::Exhausted,
-        Some(MeshEndpointResolve::Rejected) | None => {
-            MeshCandidateSolve::Rejected(MeshCandidateRejection::EndpointIncidence)
-        }
+        Some(MeshEndpointResolve::Rejected) | None => MeshCandidateSolve::Rejected(
+            MeshCandidateRejection::EndpointIncidence(incidence_rejection),
+        ),
     }
 }
 

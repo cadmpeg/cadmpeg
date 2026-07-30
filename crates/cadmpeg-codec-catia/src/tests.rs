@@ -3621,10 +3621,35 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             .report
             .coverage
             .iter()
-            .filter(|(key, _)| key.starts_with("standard_topology_mesh_rejection_"))
+            .filter(|(key, _)| {
+                key.starts_with("standard_topology_mesh_rejection_")
+                    && !key.starts_with("standard_topology_mesh_rejection_incidence_")
+                    && (!key.contains("endpoint_incidence_")
+                        || key.ends_with("endpoint_incidence_count"))
+            })
             .map(|(_, count)| count)
             .sum::<usize>()
             <= 1
+    );
+    assert_eq!(
+        result.report.coverage["standard_topology_mesh_rejection_endpoint_incidence_count"],
+        result.report.coverage
+            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"]
+            + result.report.coverage
+                ["standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count"]
+    );
+    assert_eq!(
+        result.report.coverage
+            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"],
+        result.report.coverage["standard_topology_mesh_rejection_incidence_input_shape_count"]
+            + result.report.coverage
+                ["standard_topology_mesh_rejection_incidence_choice_pruning_count"]
+            + result.report.coverage
+                ["standard_topology_mesh_rejection_incidence_fixed_assignment_count"]
+            + result.report.coverage
+                ["standard_topology_mesh_rejection_incidence_component_domain_count"]
+            + result.report.coverage
+                ["standard_topology_mesh_rejection_incidence_component_composition_count"]
     );
 
     // The produced IR validates (free carriers, no dangling references).
@@ -3745,10 +3770,35 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             .report
             .coverage
             .iter()
-            .filter(|(key, _)| key.starts_with("standard_topology_mesh_rejection_"))
+            .filter(|(key, _)| {
+                key.starts_with("standard_topology_mesh_rejection_")
+                    && !key.starts_with("standard_topology_mesh_rejection_incidence_")
+                    && (!key.contains("endpoint_incidence_")
+                        || key.ends_with("endpoint_incidence_count"))
+            })
             .map(|(_, count)| count)
             .sum::<usize>(),
         0
+    );
+    assert_eq!(
+        decoded.report.coverage["standard_topology_mesh_rejection_endpoint_incidence_count"],
+        decoded.report.coverage
+            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"]
+            + decoded.report.coverage
+                ["standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count"]
+    );
+    assert_eq!(
+        decoded.report.coverage
+            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"],
+        decoded.report.coverage["standard_topology_mesh_rejection_incidence_input_shape_count"]
+            + decoded.report.coverage
+                ["standard_topology_mesh_rejection_incidence_choice_pruning_count"]
+            + decoded.report.coverage
+                ["standard_topology_mesh_rejection_incidence_fixed_assignment_count"]
+            + decoded.report.coverage
+                ["standard_topology_mesh_rejection_incidence_component_domain_count"]
+            + decoded.report.coverage
+                ["standard_topology_mesh_rejection_incidence_component_composition_count"]
     );
 }
 
