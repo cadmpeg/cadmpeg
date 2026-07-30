@@ -10754,6 +10754,22 @@ fn decode_retains_an_opened_parser_version_expression_without_formula_incidence(
         decoded.report.coverage["decoded_relation_expression_count"],
         1
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_opened_boolean_parser_version_relation_expression_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_typed_relation_expression_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_referenced_relation_expression_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+        1
+    );
     assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
     assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
 }
@@ -10813,6 +10829,22 @@ fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incide
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
         decoded.report.coverage["decoded_relation_expression_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_parser_version_relation_expression_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_typed_relation_expression_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_referenced_relation_expression_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
         1
     );
     assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
@@ -12779,6 +12811,14 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(
         decoded.report.coverage["decoded_resolved_formula_output_count"],
         1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_referenced_relation_expression_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+        0
     );
     assert_eq!(
         decoded.report.coverage["unresolved_formula_output_count"],

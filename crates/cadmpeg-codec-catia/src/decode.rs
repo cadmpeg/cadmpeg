@@ -553,11 +553,44 @@ fn finish_decode(
         .flat_map(|record| &record.value_packets)
         .filter(|packet| matches!(packet, entity_table::EntityValuePacket::Layout { .. }))
         .count();
-    let relation_expression_count = native
+    let (
+        relation_expression_count,
+        placeholder_state_relation_expression_count,
+        parser_version_relation_expression_count,
+        boolean_parser_version_relation_expression_count,
+        opened_boolean_parser_version_relation_expression_count,
+        typed_relation_expression_count,
+    ) = native
         .entity_records
         .iter()
-        .filter(|record| record.relation_expression.is_some())
-        .count();
+        .filter_map(|record| record.relation_expression.as_ref())
+        .fold(
+            (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
+            |(total, placeholder, parser, boolean, opened, typed), expression| {
+                let (placeholder, parser, boolean, opened) = match expression.framing {
+                    crate::native::CatiaRelationExpressionFraming::PlaceholderState { .. } => {
+                        (placeholder + 1, parser, boolean, opened)
+                    }
+                    crate::native::CatiaRelationExpressionFraming::ParserVersion { .. } => {
+                        (placeholder, parser + 1, boolean, opened)
+                    }
+                    crate::native::CatiaRelationExpressionFraming::BooleanParserVersion {
+                        ..
+                    } => (placeholder, parser, boolean + 1, opened),
+                    crate::native::CatiaRelationExpressionFraming::OpenedBooleanParserVersion {
+                        ..
+                    } => (placeholder, parser, boolean, opened + 1),
+                };
+                (
+                    total + 1,
+                    placeholder,
+                    parser,
+                    boolean,
+                    opened,
+                    typed + usize::from(expression.signature.is_some()),
+                )
+            },
+        );
     let parameter_value_count = native
         .entity_records
         .iter()
@@ -732,6 +765,22 @@ fn finish_decode(
         .iter()
         .filter(|record| record.formula_relation.is_some())
         .count();
+    let referenced_relation_expressions = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.formula_relation.as_ref())
+        .map(|formula| formula.expression.as_str())
+        .collect::<HashSet<_>>();
+    let referenced_relation_expression_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record.relation_expression.is_some()
+                && referenced_relation_expressions.contains(record.id.as_str())
+        })
+        .count();
+    let unreferenced_relation_expression_count =
+        relation_expression_count - referenced_relation_expression_count;
     let resolved_formula_output_count = native
         .entity_records
         .iter()
@@ -1694,6 +1743,38 @@ fn finish_decode(
         (
             "decoded_relation_expression_count".to_string(),
             relation_expression_count,
+        ),
+        (
+            "decoded_placeholder_state_relation_expression_count".to_string(),
+            placeholder_state_relation_expression_count,
+        ),
+        (
+            "decoded_parser_version_relation_expression_count".to_string(),
+            parser_version_relation_expression_count,
+        ),
+        (
+            "decoded_boolean_parser_version_relation_expression_count".to_string(),
+            boolean_parser_version_relation_expression_count,
+        ),
+        (
+            "decoded_opened_boolean_parser_version_relation_expression_count".to_string(),
+            opened_boolean_parser_version_relation_expression_count,
+        ),
+        (
+            "decoded_typed_relation_expression_count".to_string(),
+            typed_relation_expression_count,
+        ),
+        (
+            "decoded_untyped_relation_expression_count".to_string(),
+            relation_expression_count - typed_relation_expression_count,
+        ),
+        (
+            "decoded_referenced_relation_expression_count".to_string(),
+            referenced_relation_expression_count,
+        ),
+        (
+            "unresolved_unreferenced_relation_expression_count".to_string(),
+            unreferenced_relation_expression_count,
         ),
         (
             "decoded_parameter_value_count".to_string(),

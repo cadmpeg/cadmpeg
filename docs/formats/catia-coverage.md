@@ -116,7 +116,9 @@ current scores require those matrices and representative fixtures.
   an evaluated value exists.
   Placeholder-state, Boolean-prefixed parser-version, unprefixed
   parser-version, and opened Boolean parser-version relation-expression
-  framings retain their source expressions and typed signatures. Parser-version
+  framings retain their source expressions and typed signatures. Coverage
+  partitions the four framings, typed and untyped signatures, and expressions
+  referenced or unreferenced by complete formula relations. Parser-version
   expressions remain native when their formula-instance incidence does not
   resolve.
   Parameters remain document-scoped until feature-instance ownership resolves.
