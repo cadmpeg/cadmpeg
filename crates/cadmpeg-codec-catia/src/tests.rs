@@ -2285,6 +2285,7 @@ fn standard_catpart_with_unprefixed_parser_version_relation_expression(
 fn standard_catpart_with_relation_program_instance(
     program_entity_id: u32,
     repeated_reference_entity_id: u32,
+    context_entity_id: u32,
     stored_self_entity_id: u32,
 ) -> Vec<u8> {
     let mut instance_payload = Vec::new();
@@ -2309,7 +2310,7 @@ fn standard_catpart_with_relation_program_instance(
     reference(&mut instance_payload, 25);
     atom(&mut instance_payload, 2);
     reference(&mut instance_payload, repeated_reference_entity_id);
-    reference(&mut instance_payload, 26);
+    reference(&mut instance_payload, context_entity_id);
     atom(&mut instance_payload, 2);
     reference(&mut instance_payload, 21);
     atom(&mut instance_payload, program_entity_id);
@@ -2389,6 +2390,69 @@ fn standard_catpart_with_relation_program_payload(head: &[u8], instance_payload:
         "param",
         "(#1_ : #In LENGTH,#2_ : #In LENGTH) : Real\n",
         "RelationExpFct",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
+fn standard_catpart_with_configuration_incidences(
+    first_configuration_entity_id: u32,
+    second_configuration_entity_id: u32,
+    row_successor_entity_id: u32,
+) -> Vec<u8> {
+    let reference = |payload: &mut Vec<u8>, value: u32| {
+        payload.push(0x32);
+        payload.extend_from_slice(&value.to_le_bytes());
+    };
+    let atom = |payload: &mut Vec<u8>, value: u32| {
+        payload.push(0x80);
+        payload.extend_from_slice(&value.to_le_bytes());
+    };
+    let mut configuration_payload = Vec::new();
+    reference(&mut configuration_payload, first_configuration_entity_id);
+    atom(&mut configuration_payload, 2);
+    reference(&mut configuration_payload, second_configuration_entity_id);
+    atom(&mut configuration_payload, 129);
+    configuration_payload.push(0xfe);
+    let mut row_payload = Vec::new();
+    atom(&mut row_payload, 250);
+    atom(&mut row_payload, row_successor_entity_id);
+    row_payload.push(0xfe);
+
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
+    let mut value = Vec::new();
+    for ordinal in 8_u32..=13 {
+        reference(&mut value, ordinal);
+    }
+    value.push(0xfe);
+    let mut stream = entity_table_record_with_definition_and_value(5, &definition, &value);
+    stream.extend(entity_table_record(6));
+    stream.extend(entity_table_record(7));
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&[
+        object_graph_record(&[0x12, 0x87, 0x85], &configuration_payload),
+        object_graph_record(&[0x12, 0x87, 0x86], &row_payload),
+        object_graph_record(&[0x12, 0x87, 0x87], &[0xfe]),
+    ]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "body",
+        "Configuration",
+        "configrow",
+        "body",
+        "Boolean",
+        "log(min(100,max(20*#1_,#2_)/#2_))/log(100)/2",
+        "ParserVersion",
+        "param",
+        "(#1_ : #In LENGTH,#2_ : #In LENGTH) : Real\n",
+        "RelationExpFct",
+        "opened",
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -11020,7 +11084,7 @@ fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incide
 #[test]
 fn relation_program_instance_requires_the_complete_identity_frame() {
     let native = crate::native::CatiaNative::decode(
-        &standard_catpart_with_relation_program_instance(1, 1, 2),
+        &standard_catpart_with_relation_program_instance(1, 1, 1, 2),
     );
     let instance = native.entity_records[1]
         .relation_program_instance
@@ -11044,9 +11108,18 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         instance.relation_expression.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
+    let context = instance
+        .lead12_context_entity
+        .as_ref()
+        .expect("lead-12 context entity");
+    assert_eq!(context.entity_id, 1);
+    assert_eq!(
+        context.entity.as_deref(),
+        Some(native.entity_records[0].id.as_str())
+    );
 
     let native = crate::native::CatiaNative::decode(
-        &standard_catpart_with_relation_program_instance(2, 1, 2),
+        &standard_catpart_with_relation_program_instance(2, 1, 3, 2),
     );
     let instance = native.entity_records[1]
         .relation_program_instance
@@ -11057,9 +11130,15 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         Some(native.entity_records[1].id.as_str())
     );
     assert!(instance.relation_expression.is_none());
+    let context = instance
+        .lead12_context_entity
+        .as_ref()
+        .expect("lead-12 context entity");
+    assert_eq!(context.entity_id, 3);
+    assert!(context.entity.is_none());
 
     let native = crate::native::CatiaNative::decode(
-        &standard_catpart_with_relation_program_instance(3, 3, 2),
+        &standard_catpart_with_relation_program_instance(3, 3, 1, 2),
     );
     let instance = native.entity_records[1]
         .relation_program_instance
@@ -11071,7 +11150,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
     assert!(instance.relation_expression.is_none());
 
     let native = crate::native::CatiaNative::decode(
-        &standard_catpart_with_relation_program_instance(1, 1, 3),
+        &standard_catpart_with_relation_program_instance(1, 1, 1, 3),
     );
     assert!(native
         .entity_records
@@ -11091,6 +11170,7 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         instance.framing,
         crate::native::CatiaRelationProgramInstanceFraming::Lead54
     );
+    assert!(instance.lead12_context_entity.is_none());
     let trailing = instance
         .lead54_trailing_entity
         .as_ref()
@@ -11126,6 +11206,14 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     assert_eq!(
         decoded.report.coverage["decoded_lead54_relation_program_instance_count"],
         1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_lead12_relation_program_context_entity_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_lead12_relation_program_context_entity_count"],
+        0
     );
     assert_eq!(
         decoded.report.coverage["decoded_resolved_lead54_relation_program_trailing_entity_count"],
@@ -11182,6 +11270,7 @@ fn decode_reports_exact_relation_program_instances() {
                 &mut Cursor::new(standard_catpart_with_relation_program_instance(
                     program_entity_id,
                     repeated_reference_entity_id,
+                    1,
                     2,
                 )),
                 &DecodeOptions::default(),
@@ -11197,6 +11286,15 @@ fn decode_reports_exact_relation_program_instances() {
         );
         assert_eq!(
             decoded.report.coverage["decoded_lead54_relation_program_instance_count"],
+            0
+        );
+        assert_eq!(
+            decoded.report.coverage
+                ["decoded_resolved_lead12_relation_program_context_entity_count"],
+            1
+        );
+        assert_eq!(
+            decoded.report.coverage["unresolved_lead12_relation_program_context_entity_count"],
             0
         );
         assert_eq!(
@@ -11236,7 +11334,7 @@ fn decode_reports_exact_relation_program_instances() {
 fn native_load_derives_relation_program_instances_from_older_namespaces() {
     for native in [
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance(
-            1, 1, 2,
+            1, 1, 1, 2,
         )),
         crate::native::CatiaNative::decode(
             &standard_catpart_with_lead54_relation_program_instance(1, 1, 1, 2),
@@ -11250,11 +11348,35 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         native
             .store(&mut stored)
             .expect("store older relation-program namespace");
-        for (version, remove_trailing, remove_framing, remove_repeated_reference) in [
-            (crate::native::CATIA_NATIVE_VERSION - 1, false, false, false),
-            (crate::native::CATIA_NATIVE_VERSION - 2, true, false, false),
-            (crate::native::CATIA_NATIVE_VERSION - 3, true, true, false),
-            (crate::native::CATIA_NATIVE_VERSION - 4, true, true, true),
+        for (version, remove_context, remove_trailing, remove_framing, remove_repeated_reference) in [
+            (
+                crate::native::CATIA_NATIVE_VERSION - 1,
+                true,
+                false,
+                false,
+                false,
+            ),
+            (
+                crate::native::CATIA_NATIVE_VERSION - 2,
+                true,
+                true,
+                false,
+                false,
+            ),
+            (
+                crate::native::CATIA_NATIVE_VERSION - 3,
+                true,
+                true,
+                true,
+                false,
+            ),
+            (
+                crate::native::CATIA_NATIVE_VERSION - 4,
+                true,
+                true,
+                true,
+                true,
+            ),
         ] {
             let mut namespace = stored.clone();
             namespace.version = version;
@@ -11267,6 +11389,9 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 .expect("stored relation-program field")
                 .as_object_mut()
                 .expect("stored relation-program instance");
+            if remove_context {
+                stored_instance.remove("lead12_context_entity");
+            }
             if remove_trailing {
                 stored_instance.remove("lead54_trailing_entity");
             }
@@ -11288,6 +11413,149 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             );
         }
     }
+}
+
+#[test]
+fn configuration_productions_retain_exact_same_graph_incidence() {
+    let file = standard_catpart_with_configuration_incidences(14, 5, 7);
+    let native = crate::native::CatiaNative::decode(&file);
+    let configuration = native.entity_records[0]
+        .configuration_record
+        .as_ref()
+        .expect("complete Configuration production");
+    assert_eq!(configuration.first_reference.entity_id, 14);
+    assert!(configuration.first_reference.entity.is_none());
+    assert_eq!(configuration.second_reference.entity_id, 5);
+    assert_eq!(
+        configuration.second_reference.entity.as_deref(),
+        Some(native.entity_records[0].id.as_str())
+    );
+    let row = native.entity_records[1]
+        .configuration_row_link
+        .as_ref()
+        .expect("complete configrow production");
+    assert_eq!(row.class_reference.entity_id, 6);
+    assert_eq!(
+        row.class_reference.entity.as_deref(),
+        Some(native.entity_records[1].id.as_str())
+    );
+    assert_eq!(row.successor.entity_id, 7);
+    assert_eq!(
+        row.successor.entity.as_deref(),
+        Some(native.entity_records[2].id.as_str())
+    );
+    assert!(native.entity_records[2].configuration_record.is_none());
+    assert!(native.entity_records[2].configuration_row_link.is_none());
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode configuration incidences");
+    assert_eq!(
+        decoded.report.coverage["decoded_configuration_record_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_configuration_reference_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_configuration_reference_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_configuration_row_link_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_configuration_row_class_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_configuration_row_successor_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_configuration_count"],
+        0
+    );
+    assert!(decoded.ir.model.configurations.is_empty());
+}
+
+#[test]
+fn configuration_productions_preserve_unresolved_identities() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_configuration_incidences(14, 15, 16),
+    );
+    let configuration = native.entity_records[0]
+        .configuration_record
+        .as_ref()
+        .expect("complete Configuration production");
+    assert!(configuration.first_reference.entity.is_none());
+    assert!(configuration.second_reference.entity.is_none());
+    let row = native.entity_records[1]
+        .configuration_row_link
+        .as_ref()
+        .expect("complete configrow production");
+    assert!(row.successor.entity.is_none());
+
+    let mut malformed = standard_catpart_with_configuration_incidences(14, 15, 16);
+    let marker = [0x80, 250, 0, 0, 0];
+    let offset = malformed
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("configrow marker");
+    malformed[offset + 1] = 249;
+    let malformed = crate::native::CatiaNative::decode(&malformed);
+    assert!(malformed
+        .entity_records
+        .iter()
+        .all(|entity| entity.configuration_row_link.is_none()));
+}
+
+#[test]
+fn native_load_migrates_and_validates_configuration_incidences() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_configuration_incidences(14, 5, 7),
+    );
+    let mut older = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut older)
+        .expect("store configuration namespace");
+    older.version = crate::native::CATIA_NATIVE_VERSION - 2;
+    for entity in older
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")
+    {
+        entity.fields.remove("configuration_record");
+        entity.fields.remove("configuration_row_link");
+    }
+    let migrated =
+        crate::native::CatiaNative::load(&older).expect("migrate configuration incidences");
+    assert_eq!(
+        migrated.entity_records[0].configuration_record,
+        native.entity_records[0].configuration_record
+    );
+    assert_eq!(
+        migrated.entity_records[1].configuration_row_link,
+        native.entity_records[1].configuration_row_link
+    );
+
+    let mut malformed = native;
+    malformed.entity_records[1]
+        .configuration_row_link
+        .as_mut()
+        .expect("decoded configrow link")
+        .successor
+        .entity_id = 6;
+    let mut current = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut current)
+        .expect("store malformed current namespace");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&current),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]
@@ -11727,7 +11995,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
     unique_native
         .store(&mut stored)
         .expect("store older constraint-range namespace");
-    stored.version = crate::native::CATIA_NATIVE_VERSION - 1;
+    stored.version = crate::native::CATIA_NATIVE_VERSION - 3;
     stored
         .arenas
         .get_mut("entity_records")

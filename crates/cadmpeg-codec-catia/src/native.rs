@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 229;
+pub const CATIA_NATIVE_VERSION: u32 = 231;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -35,8 +35,13 @@ const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
 const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
 #[cfg(test)]
 const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 228;
+/// Native schema version adding the compact relation frame's context incidence.
+#[cfg(test)]
+const CATIA_RELATION_PROGRAM_CONTEXT_VERSION: u32 = 231;
 #[cfg(test)]
 const CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION: u32 = 229;
+#[cfg(test)]
+const CATIA_CONFIGURATION_INCIDENCE_VERSION: u32 = 230;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1372,19 +1377,40 @@ pub struct CatiaRelationProgramInstance {
     /// Selected entity when it carries a complete relation-expression program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_expression: Option<String>,
+    /// Same-graph incidence carried by the `ref(h)` slot of a lead-`12` frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead12_context_entity: Option<CatiaEntityReference>,
     /// Trailing same-graph entity incidence carried only by lead-`54`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead54_trailing_entity: Option<CatiaRelationProgramTrailingEntity>,
+    pub lead54_trailing_entity: Option<CatiaEntityReference>,
 }
 
-/// Entity identity in the trailing atom slot of a lead-`54` relation frame.
+/// One stored entity identity and its optional same-graph resolution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaRelationProgramTrailingEntity {
+pub struct CatiaEntityReference {
     /// Stored entity identity.
     pub entity_id: u32,
     /// Same-graph entity selected by that identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity: Option<String>,
+}
+
+/// One exact self-defining `Configuration` object production.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConfigurationRecord {
+    /// Entity selected by the first stored reference.
+    pub first_reference: CatiaEntityReference,
+    /// Entity selected by the second stored reference.
+    pub second_reference: CatiaEntityReference,
+}
+
+/// One exact `configrow` successor-link production.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConfigurationRowLink {
+    /// Stored class identity whose catalog name is `configrow`.
+    pub class_reference: CatiaEntityReference,
+    /// Stored successor identity.
+    pub successor: CatiaEntityReference,
 }
 
 /// Exact framing production for a compound relation-program instance.
@@ -1468,6 +1494,12 @@ pub struct CatiaEntityRecord {
     /// Complete compound relation-program instance frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_program_instance: Option<CatiaRelationProgramInstance>,
+    /// Exact self-defining `Configuration` object production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration_record: Option<CatiaConfigurationRecord>,
+    /// Exact `configrow` successor-link production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration_row_link: Option<CatiaConfigurationRowLink>,
     /// Complete formula-to-expression and formula-to-parameter relation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula_relation: Option<CatiaFormulaRelation>,
@@ -2893,32 +2925,43 @@ fn relation_program_instance(
     {
         return None;
     }
-    let (framing, program_entity_id, repeated_reference_entity_id, lead54_trailing_entity) =
-        if object.lead == 0x12 && object.storage_ref.is_none() {
-            let (program_entity_id, repeated_reference_entity_id) =
-                relation_program_instance_lead_12(entity_id, &object.payload.fields)?;
-            (
-                CatiaRelationProgramInstanceFraming::Lead12,
-                program_entity_id,
-                repeated_reference_entity_id,
-                None,
-            )
-        } else if object.lead == 0x54 && object.storage_ref.is_some() {
-            let (program_entity_id, repeated_reference_entity_id, trailing_entity_id) =
-                relation_program_instance_lead_54(entity_id, &object.payload.fields)?;
-            let trailing_key = (object.parent.clone(), trailing_entity_id);
-            (
-                CatiaRelationProgramInstanceFraming::Lead54,
-                program_entity_id,
-                repeated_reference_entity_id,
-                Some(CatiaRelationProgramTrailingEntity {
-                    entity_id: trailing_entity_id,
-                    entity: entities.get(&trailing_key).cloned(),
-                }),
-            )
-        } else {
-            return None;
-        };
+    let (
+        framing,
+        program_entity_id,
+        repeated_reference_entity_id,
+        lead12_context_entity,
+        lead54_trailing_entity,
+    ) = if object.lead == 0x12 && object.storage_ref.is_none() {
+        let (program_entity_id, repeated_reference_entity_id, context_entity_id) =
+            relation_program_instance_lead_12(entity_id, &object.payload.fields)?;
+        let context_key = (object.parent.clone(), context_entity_id);
+        (
+            CatiaRelationProgramInstanceFraming::Lead12,
+            program_entity_id,
+            repeated_reference_entity_id,
+            Some(CatiaEntityReference {
+                entity_id: context_entity_id,
+                entity: entities.get(&context_key).cloned(),
+            }),
+            None,
+        )
+    } else if object.lead == 0x54 && object.storage_ref.is_some() {
+        let (program_entity_id, repeated_reference_entity_id, trailing_entity_id) =
+            relation_program_instance_lead_54(entity_id, &object.payload.fields)?;
+        let trailing_key = (object.parent.clone(), trailing_entity_id);
+        (
+            CatiaRelationProgramInstanceFraming::Lead54,
+            program_entity_id,
+            repeated_reference_entity_id,
+            None,
+            Some(CatiaEntityReference {
+                entity_id: trailing_entity_id,
+                entity: entities.get(&trailing_key).cloned(),
+            }),
+        )
+    } else {
+        return None;
+    };
     let program_key = (object.parent.clone(), program_entity_id);
     let repeated_reference_key = (object.parent.clone(), repeated_reference_entity_id);
     Some(CatiaRelationProgramInstance {
@@ -2928,14 +2971,88 @@ fn relation_program_instance(
         repeated_reference_entity_id,
         repeated_reference_entity: entities.get(&repeated_reference_key).cloned(),
         relation_expression: relation_expressions.get(&program_key).cloned(),
+        lead12_context_entity,
         lead54_trailing_entity,
+    })
+}
+
+fn configuration_entity_reference(
+    graph_id: &str,
+    entity_id: u32,
+    entities: &HashMap<(String, u32), String>,
+) -> CatiaEntityReference {
+    CatiaEntityReference {
+        entity_id,
+        entity: entities.get(&(graph_id.to_owned(), entity_id)).cloned(),
+    }
+}
+
+fn configuration_record(
+    entity_id: u32,
+    object: &CatiaObjectRecord,
+    entities: &HashMap<(String, u32), String>,
+) -> Option<CatiaConfigurationRecord> {
+    if object.entity_id != Some(entity_id)
+        || object.lead != 0x12
+        || object.owner_entity_id().is_none()
+        || object.class_ref != Some(entity_id)
+        || object.class_name.as_deref() != Some("Configuration")
+        || object.storage_ref.is_some()
+    {
+        return None;
+    }
+    let [PayloadField::Reference {
+        value: first_entity_id,
+        ..
+    }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
+        value: second_entity_id,
+        ..
+    }, PayloadField::Atom { value: 129, .. }, PayloadField::Terminator] =
+        object.payload.fields.as_slice()
+    else {
+        return None;
+    };
+    Some(CatiaConfigurationRecord {
+        first_reference: configuration_entity_reference(&object.parent, *first_entity_id, entities),
+        second_reference: configuration_entity_reference(
+            &object.parent,
+            *second_entity_id,
+            entities,
+        ),
+    })
+}
+
+fn configuration_row_link(
+    entity_id: u32,
+    object: &CatiaObjectRecord,
+    entities: &HashMap<(String, u32), String>,
+) -> Option<CatiaConfigurationRowLink> {
+    if object.entity_id != Some(entity_id)
+        || object.lead != 0x12
+        || object.owner_entity_id().is_none()
+        || object.class_name.as_deref() != Some("configrow")
+        || object.storage_ref.is_some()
+    {
+        return None;
+    }
+    let class_entity_id = object.class_ref?;
+    let [PayloadField::Atom { value: 250, .. }, PayloadField::Atom {
+        value: successor_entity_id,
+        ..
+    }, PayloadField::Terminator] = object.payload.fields.as_slice()
+    else {
+        return None;
+    };
+    Some(CatiaConfigurationRowLink {
+        class_reference: configuration_entity_reference(&object.parent, class_entity_id, entities),
+        successor: configuration_entity_reference(&object.parent, *successor_entity_id, entities),
     })
 }
 
 fn relation_program_instance_lead_12(
     entity_id: u32,
     fields: &[PayloadField],
-) -> Option<(u32, u32)> {
+) -> Option<(u32, u32, u32)> {
     let [PayloadField::Reference { .. }, PayloadField::Atom { value: 3, .. }, PayloadField::Reference {
         value: repeated_reference,
         ..
@@ -2948,7 +3065,10 @@ fn relation_program_instance_lead_12(
     }, PayloadField::Reference { .. }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
         value: repeated_target_reference,
         ..
-    }, PayloadField::Reference { .. }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
+    }, PayloadField::Reference {
+        value: context_entity_id,
+        ..
+    }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
         value: repeated_reference_copy,
         ..
     }, PayloadField::Atom {
@@ -2966,7 +3086,7 @@ fn relation_program_instance_lead_12(
     {
         return None;
     }
-    Some((*program_entity_id, *repeated_target))
+    Some((*program_entity_id, *repeated_target, *context_entity_id))
 }
 
 fn relation_program_instance_lead_54(
@@ -7895,6 +8015,10 @@ impl CatiaNative {
                 &entities_by_graph_identity,
                 &relation_expression_entities,
             );
+            entity.configuration_record =
+                configuration_record(entity.entity_id, object, &entities_by_graph_identity);
+            entity.configuration_row_link =
+                configuration_row_link(entity.entity_id, object, &entities_by_graph_identity);
             entity.formula_relation = formula_relation(
                 &entity.definition_schema_selections,
                 &entity.object_graph,
@@ -8227,7 +8351,9 @@ impl CatiaNative {
                     });
             }
         }
-        if namespace.version < CATIA_RELATION_PROGRAM_INSTANCE_VERSION {
+        if namespace.version < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
+            || namespace.version < CATIA_RELATION_PROGRAM_CONTEXT_VERSION
+        {
             let records_by_id = records
                 .iter()
                 .map(|record| (record.id.as_str(), record))
@@ -8254,6 +8380,28 @@ impl CatiaNative {
                         entity.entity_id,
                     );
                 }
+            }
+        }
+        if namespace.version < CATIA_CONFIGURATION_INCIDENCE_VERSION {
+            let records_by_id = records
+                .iter()
+                .map(|record| (record.id.as_str(), record))
+                .collect::<HashMap<_, _>>();
+            for entity in &mut entity_records {
+                entity.configuration_record = records_by_id
+                    .get(entity.object_record.as_str())
+                    .and_then(|object| {
+                        configuration_record(entity.entity_id, object, &entities_by_graph_identity)
+                    });
+                entity.configuration_row_link = records_by_id
+                    .get(entity.object_record.as_str())
+                    .and_then(|object| {
+                        configuration_row_link(
+                            entity.entity_id,
+                            object,
+                            &entities_by_graph_identity,
+                        )
+                    });
             }
         }
         for graph in &mut graphs {
@@ -8369,6 +8517,34 @@ impl CatiaNative {
                                     object,
                                     &entities_by_graph_identity,
                                     &relation_expression_entities,
+                                )
+                            })
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        let object = graph
+                            .records
+                            .iter()
+                            .find(|record| record.id == entity.object_record);
+                        entity.configuration_record
+                            != object.and_then(|object| {
+                                configuration_record(
+                                    entity.entity_id,
+                                    object,
+                                    &entities_by_graph_identity,
+                                )
+                            })
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        let object = graph
+                            .records
+                            .iter()
+                            .find(|record| record.id == entity.object_record);
+                        entity.configuration_row_link
+                            != object.and_then(|object| {
+                                configuration_row_link(
+                                    entity.entity_id,
+                                    object,
+                                    &entities_by_graph_identity,
                                 )
                             })
                     })
@@ -9415,6 +9591,8 @@ fn native_object_graph(
                 definition_value: None,
                 definition_chain_value: None,
                 relation_program_instance: None,
+                configuration_record: None,
+                configuration_row_link: None,
                 formula_relation: None,
                 value_packets,
                 numeric_tuple: entity.numeric_tuple,

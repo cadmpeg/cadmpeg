@@ -128,7 +128,9 @@ current scores require those matrices and representative fixtures.
   framings, resolved, unresolved, relation-expression, and other program
   instances, partitions the resolved and unresolved identity
   repeated in the atom/reference slots, and counts distinct selected
-  expressions. Separator-form coverage also partitions its resolved and
+  expressions. Compact-form coverage also partitions its resolved and
+  unresolved `ref(h)` context identity without assigning a parameter role.
+  Separator-form coverage also partitions its resolved and
   unresolved trailing entity identity.
   Parameters remain document-scoped until feature-instance ownership resolves.
   Typed `Boolean` and `String` parameters transfer when their complete
@@ -158,6 +160,10 @@ current scores require those matrices and representative fixtures.
   multiple incoming occurrences. An incoming occurrence and
   design-field containment do not establish constraint identity, ownership,
   operands, or sketch incidence.
+  Exact `Configuration` records and `configrow` successor links retain every
+  stored identity and its optional same-graph resolution. Coverage partitions
+  resolved and unresolved configuration references, row classes, and row
+  successors without counting them as transferred neutral configurations.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node. Schema fields named `PRTSketch` or `Sketch` do not establish
