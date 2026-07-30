@@ -618,23 +618,61 @@ impl HomogeneousSurfaceNet {
         })
     }
 
-    fn maximum_position_norm(&self) -> Option<f64> {
-        self.controls.iter().try_fold(0.0_f64, |maximum, control| {
-            let norm = control[..3]
-                .iter()
-                .map(|coordinate| coordinate * coordinate)
-                .sum::<f64>()
-                .sqrt();
-            norm.is_finite().then(|| maximum.max(norm))
-        })
+    fn active_control_bounds(&self, u: f64, v: f64) -> Option<HomogeneousControlBounds> {
+        let u_controls = active_spline_controls(&self.u_knots, self.u_degree, self.u_count, u)?;
+        let v_controls = active_spline_controls(&self.v_knots, self.v_degree, self.v_count, v)?;
+        let mut bounds = HomogeneousControlBounds {
+            minimum_weight: f64::INFINITY,
+            maximum_position_norm: 0.0,
+            maximum_weight_magnitude: 0.0,
+        };
+        for u in u_controls {
+            for v in v_controls.clone() {
+                let control = self.controls[u * self.v_count + v];
+                let position_norm = control[..3]
+                    .iter()
+                    .map(|coordinate| coordinate * coordinate)
+                    .sum::<f64>()
+                    .sqrt();
+                if !position_norm.is_finite() || !control[3].is_finite() {
+                    return None;
+                }
+                bounds.minimum_weight = bounds.minimum_weight.min(control[3]);
+                bounds.maximum_position_norm = bounds.maximum_position_norm.max(position_norm);
+                bounds.maximum_weight_magnitude =
+                    bounds.maximum_weight_magnitude.max(control[3].abs());
+            }
+        }
+        Some(bounds)
     }
+}
 
-    fn maximum_weight_magnitude(&self) -> Option<f64> {
-        self.controls.iter().try_fold(0.0_f64, |maximum, control| {
-            let value = control[3].abs();
-            value.is_finite().then(|| maximum.max(value))
-        })
+#[derive(Clone, Copy)]
+struct HomogeneousControlBounds {
+    minimum_weight: f64,
+    maximum_position_norm: f64,
+    maximum_weight_magnitude: f64,
+}
+
+fn active_spline_controls(
+    knots: &[f64],
+    degree: usize,
+    count: usize,
+    parameter: f64,
+) -> Option<std::ops::RangeInclusive<usize>> {
+    let lower = *knots.get(degree)?;
+    let upper = *knots.get(count)?;
+    if !parameter.is_finite() || parameter < lower || parameter > upper || lower >= upper {
+        return None;
     }
+    let span = if parameter == upper {
+        count.checked_sub(1)?
+    } else {
+        knots
+            .partition_point(|knot| *knot <= parameter)
+            .checked_sub(1)?
+    };
+    (span >= degree && span < count).then_some(span - degree..=span)
 }
 
 fn certified_curved_offset_cache_fit(
@@ -647,43 +685,23 @@ fn certified_curved_offset_cache_fit(
     const MAX_RECTANGLES: usize = 1_000_000;
 
     let support_net = HomogeneousSurfaceNet::from_homogeneous_surface(support)?;
-    let support_bounds = rational_surface_derivative_bounds(&support_net)?;
     let candidate_net = HomogeneousSurfaceNet::from_homogeneous_surface(candidate)?;
-    let candidate_bounds = rational_surface_derivative_bounds(&candidate_net)?;
-    let (residual_u_bound, residual_v_bound) = if same_basis {
-        let residual_net = HomogeneousSurfaceNet::from_homogeneous_residual(support, candidate)?;
-        let bounds = rational_surface_derivative_bounds(&residual_net)?;
-        (bounds.u, bounds.v)
+    let residual_net = if same_basis {
+        Some(HomogeneousSurfaceNet::from_homogeneous_residual(
+            support, candidate,
+        )?)
     } else {
-        (
-            support_bounds.u + candidate_bounds.u,
-            support_bounds.v + candidate_bounds.v,
-        )
+        None
     };
-    let normal_u_numerator =
-        support_bounds.uu * support_bounds.v + support_bounds.u * support_bounds.uv;
-    let normal_v_numerator =
-        support_bounds.uv * support_bounds.v + support_bounds.u * support_bounds.vv;
-    if !normal_u_numerator.is_finite() || !normal_v_numerator.is_finite() {
-        return None;
-    }
 
-    let breakpoints = |knots: &[f64], degree: usize, count: usize| {
-        let mut values = knots[degree..=count].to_vec();
-        values.sort_by(f64::total_cmp);
-        values.dedup();
-        values
-    };
-    let u_breaks = breakpoints(
-        &support_net.u_knots,
-        support_net.u_degree,
-        support_net.u_count,
-    );
-    let v_breaks = breakpoints(
-        &support_net.v_knots,
-        support_net.v_degree,
-        support_net.v_count,
-    );
+    let mut u_breaks = support_net.u_knots[support_net.u_degree..=support_net.u_count].to_vec();
+    u_breaks.extend(&candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count]);
+    u_breaks.sort_by(f64::total_cmp);
+    u_breaks.dedup();
+    let mut v_breaks = support_net.v_knots[support_net.v_degree..=support_net.v_count].to_vec();
+    v_breaks.extend(&candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count]);
+    v_breaks.sort_by(f64::total_cmp);
+    v_breaks.dedup();
     let mut rectangles = u_breaks
         .windows(2)
         .filter(|span| span[0] < span[1])
@@ -706,6 +724,24 @@ fn certified_curved_offset_cache_fit(
         }
         let u = u0 + (u1 - u0) * 0.5;
         let v = v0 + (v1 - v0) * 0.5;
+        let support_bounds = rational_surface_derivative_bounds(&support_net, u, v)?;
+        let (residual_u_bound, residual_v_bound) = if let Some(residual_net) = &residual_net {
+            let bounds = rational_surface_derivative_bounds(residual_net, u, v)?;
+            (bounds.u, bounds.v)
+        } else {
+            let candidate_bounds = rational_surface_derivative_bounds(&candidate_net, u, v)?;
+            (
+                support_bounds.u + candidate_bounds.u,
+                support_bounds.v + candidate_bounds.v,
+            )
+        };
+        let normal_u_numerator =
+            support_bounds.uu * support_bounds.v + support_bounds.u * support_bounds.uv;
+        let normal_v_numerator =
+            support_bounds.uv * support_bounds.v + support_bounds.u * support_bounds.vv;
+        if !normal_u_numerator.is_finite() || !normal_v_numerator.is_finite() {
+            return None;
+        }
         let support_point = cadmpeg_ir::eval::nurbs_surface_point(support, u, v)?;
         let candidate_point = cadmpeg_ir::eval::nurbs_surface_point(candidate, u, v)?;
         let partials = nurbs_surface_partials(support, u, v)?;
@@ -758,42 +794,42 @@ struct RationalSurfaceDerivativeBounds {
 
 fn rational_surface_derivative_bounds(
     net: &HomogeneousSurfaceNet,
+    u: f64,
+    v: f64,
 ) -> Option<RationalSurfaceDerivativeBounds> {
-    let weight_floor = net
-        .controls
-        .iter()
-        .map(|control| control[3])
-        .try_fold(f64::INFINITY, |minimum, weight| {
-            (weight.is_finite() && weight > 0.0).then(|| minimum.min(weight))
-        })?;
-    let a = net.maximum_position_norm()?;
+    let base_bounds = net.active_control_bounds(u, v)?;
+    let weight_floor = (base_bounds.minimum_weight > 0.0).then_some(base_bounds.minimum_weight)?;
+    let a = base_bounds.maximum_position_norm;
     let u_net = net.derivative(true)?;
     let v_net = net.derivative(false)?;
-    let au = u_net.maximum_position_norm()?;
-    let av = v_net.maximum_position_norm()?;
-    let wu = u_net.maximum_weight_magnitude()?;
-    let wv = v_net.maximum_weight_magnitude()?;
+    let u_bounds = u_net.active_control_bounds(u, v)?;
+    let v_bounds = v_net.active_control_bounds(u, v)?;
+    let au = u_bounds.maximum_position_norm;
+    let av = v_bounds.maximum_position_norm;
+    let wu = u_bounds.maximum_weight_magnitude;
+    let wv = v_bounds.maximum_weight_magnitude;
     let uv_net = u_net.derivative(false)?;
     let (auu, wuu) = if u_net.u_degree == 0 {
         (0.0, 0.0)
     } else {
-        let derivative = u_net.derivative(true)?;
+        let bounds = u_net.derivative(true)?.active_control_bounds(u, v)?;
         (
-            derivative.maximum_position_norm()?,
-            derivative.maximum_weight_magnitude()?,
+            bounds.maximum_position_norm,
+            bounds.maximum_weight_magnitude,
         )
     };
     let (avv, wvv) = if v_net.v_degree == 0 {
         (0.0, 0.0)
     } else {
-        let derivative = v_net.derivative(false)?;
+        let bounds = v_net.derivative(false)?.active_control_bounds(u, v)?;
         (
-            derivative.maximum_position_norm()?,
-            derivative.maximum_weight_magnitude()?,
+            bounds.maximum_position_norm,
+            bounds.maximum_weight_magnitude,
         )
     };
-    let auv = uv_net.maximum_position_norm()?;
-    let wuv = uv_net.maximum_weight_magnitude()?;
+    let uv_bounds = uv_net.active_control_bounds(u, v)?;
+    let auv = uv_bounds.maximum_position_norm;
+    let wuv = uv_bounds.maximum_weight_magnitude;
     let inverse_weight = weight_floor.recip();
     let inverse_weight_squared = inverse_weight * inverse_weight;
     let inverse_weight_cubed = inverse_weight_squared * inverse_weight;
@@ -10111,7 +10147,7 @@ mod tests {
     }
 
     #[test]
-    fn curved_offset_cache_fit_uses_global_derivative_bounds() {
+    fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
         let support = quadratic_paraboloid_surface();
         assert_eq!(
             super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
@@ -10119,6 +10155,30 @@ mod tests {
         );
         let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
             .expect("nonzero curved offset certified");
+        assert!((0.01..=0.02).contains(&bound));
+    }
+
+    #[test]
+    fn offset_cache_fit_decouples_distant_knot_span_scale() {
+        let x = [0.0, 0.25, 0.5, 1.0e9 + 0.5];
+        let z = [0.0, 0.0, 0.1, 0.2];
+        let support = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 2,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 4,
+            v_count: 2,
+            control_points: (0..4)
+                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect(),
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+
+        let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+            .expect("each regular knot span certifies independently");
         assert!((0.01..=0.02).contains(&bound));
     }
 
