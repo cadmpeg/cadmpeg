@@ -11475,6 +11475,18 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         1
     );
     assert_eq!(
+        decoded.report.coverage["decoded_complete_configuration_row_chain_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_ordered_configuration_row_link_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_configuration_row_order_count"],
+        0
+    );
+    assert_eq!(
         decoded.report.coverage["transferred_configuration_count"],
         0
     );
@@ -11510,6 +11522,25 @@ fn configuration_productions_preserve_unresolved_identities() {
         .entity_records
         .iter()
         .all(|entity| entity.configuration_row_link.is_none()));
+
+    let cyclic = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_configuration_incidences(14, 15, 6)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode cyclic configuration row");
+    assert_eq!(
+        cyclic.report.coverage["decoded_complete_configuration_row_chain_count"],
+        0
+    );
+    assert_eq!(
+        cyclic.report.coverage["decoded_ordered_configuration_row_link_count"],
+        0
+    );
+    assert_eq!(
+        cyclic.report.coverage["unresolved_configuration_row_order_count"],
+        1
+    );
 }
 
 #[test]

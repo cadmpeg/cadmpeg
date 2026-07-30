@@ -163,7 +163,9 @@ current scores require those matrices and representative fixtures.
   Exact `Configuration` records and `configrow` successor links retain every
   stored identity and its optional same-graph resolution. Coverage partitions
   resolved and unresolved configuration references, row classes, and row
-  successors without counting them as transferred neutral configurations.
+  successors. It also partitions row links that form one complete root-to-terminal
+  chain from links whose order remains unresolved. These records do not count as
+  transferred neutral configurations.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node. Schema fields named `PRTSketch` or `Sketch` do not establish
