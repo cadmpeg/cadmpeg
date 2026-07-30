@@ -170,8 +170,8 @@ pub struct TolerantVertexTail {
     /// native centimetres; `-1` denotes an unset evaluation.
     pub leading_tolerances: [f64; 2],
     /// Version-gated trailing LONG following the evaluated tolerance,
-    /// retained verbatim; absent in older streams, `0` or `1` when present.
-    /// Its semantic is unresolved.
+    /// retained verbatim; absent in older streams, a small non-negative
+    /// per-entity change counter when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trailing_field: Option<i64>,
 }
@@ -190,8 +190,8 @@ pub struct TolerantEdgeTail {
     /// tolerance, matching the stream's revision value space.
     pub entity_revision: i64,
     /// Version-gated trailing LONG following the revision stamp, retained
-    /// verbatim; absent in older streams, `0` or `1` when present. Its
-    /// semantic is unresolved.
+    /// verbatim; absent in older streams, a small non-negative per-entity
+    /// change counter when present.
     pub trailing_field: Option<i64>,
 }
 

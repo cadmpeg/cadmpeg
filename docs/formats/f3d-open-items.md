@@ -92,13 +92,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A wrong tag makes a file that Fusion cannot read.
 
-### GC-17. Variable-blend tail integer values
+### GC-17. Variable-blend approximation-current integer values
 
-**Question.** What does the count value `-1` select? Are there count values more than `1`, and what fields does such a value select? What are the values of the approximation-current integer other than `1`?
+**Question.** What are the values of the approximation-current integer other than `1`, and what does each select?
 
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the position and the type of both integers. The count integer is signed and takes the values `-1` and `1`. A count value more than `1` has no known occurrence.
+**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the position and the type of the integer, and gives the signed handedness marker that follows the fit tolerances.
 
-**Need.** The decoder reads no counted payload now. We keep the count value without a change, and we must know which value to write from a neutral model.
+**Need.** We keep the integer without a change, and we must know which value to write from a neutral model.
 
 ### GC-18. Blend-value selector values
 
@@ -121,14 +121,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We keep the two leading slots without a change. To write them from a neutral model, we must know what they hold.
 
-### GC-20. Trailing LONG of `tedge` and `tvertex`
-
-**Question.** What do the values `0`, `1`, and `2` of the `tedge` trailing LONG (`chunk[13]`) and the `tvertex` trailing LONG (`chunk[9]`) mean?
-
-**Known.** `f3d.md` §6.2 "`tedge` carries this complete" and `f3d.md` §6.2 "**Tolerant vertex:**" give the position, the type, the values `0`, `1`, and `2`, and the shared save-format gate of both fields. The value changes between records in one stream.
-
-**Need.** We keep both fields without a change. To write them from a neutral model, we must know which value to write.
-
 ### GC-21. Early-era revision-gated `loft_spl_sur` section grammar
 
 **Question.** What is the revision-gated `loft_spl_sur` section grammar in streams with save format versions 22300 through 22600?
@@ -145,31 +137,23 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We cannot read any record in a stream after the first occurrence of an unknown tag.
 
-### GC-23. Cache-first intcurve leading enum value `2`
+### GC-23. Cache-first intcurve leading enum values other than `0` and `2`
 
-**Question.** What layout does the cache-first intcurve leading enum value `2` select?
+**Question.** What layouts do the cache-first intcurve leading enum values other than `0` and `2` select?
 
-**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the leading enum. Zero selects the shared cache-first context. The value `2` occurs on `par_int_cur` records. The decoder retains a record with a nonzero value verbatim.
+**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder retains a record with a nonzero value verbatim, including value `2`, whose layout is now defined but not yet decoded.
 
-**Need.** We cannot read a record with the value `2`.
+**Need.** We cannot read a record with a value other than `0`.
 
-### GC-24. Law formula text operators `MTRAIL`, `DOMAIN`, and infix `O`
+### GC-24. Law formula text infix operator `O` and `MTRAIL` construction inputs
 
-**Question.** What are the arities and the semantics of the operators `MTRAIL` and `DOMAIN` and the infix operator `O` in stored law formula text?
+**Question.** What are the semantics of the infix operator `O` in stored law formula text? What construction inputs does an `MTRAIL` law require beyond its curve operand?
 
-**Known.** `f3d.md` §7.3 "**Law formulas**" gives the framed operator set. Stored law formula text can name `MTRAIL`, `DOMAIN`, and an infix `O`, which that set does not define. We keep formula text as text.
+**Known.** `f3d.md` §7.3 "**Law formulas**" gives `MTRAIL` as unary over stored curve law data and `DOMAIN` as an odd-arity wrapper carrying term-domain bound pairs. The infix `O` remains undefined, and the `MTRAIL` initial vector, tolerance, and mode are not stored in the formula text.
 
-**Need.** We must know the semantics to evaluate or rebuild a law that uses these operators.
+**Need.** We must know the `O` semantics to evaluate or rebuild a law that uses it, and the `MTRAIL` inputs to rebuild that law.
 
 ## 2. Container, header, and design records
-
-### DR-01. Header flag bits 1 and 2
-
-**Question.** What do bits 1 and 2 of the header flags word mean?
-
-**Known.** `f3d.md` §3 "The flags word's bit" gives bit 0, bits 1 and 2, and bits 3 and above. Bit 0 marks a history partition in both widths. Bits 1 and 2 take stream-dependent values with no known meaning. Bits 3 and above are zero. We keep bits 1 and above without a change.
-
-**Need.** We must know the bit meanings to set them correctly in a new header.
 
 ### DR-03. Second `0x01`-marker u32 of an ACT root-component link
 
