@@ -43,6 +43,9 @@ fixtures, claims above L1 remain unproven.
   do not affect solved geometry.
 - Linear extrusions and rotations transfer when profile, placement, direction,
   and termination have independent byte-backed proofs.
+- Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
+  whose axial center coordinate agrees with the repeated `fc 14` held
+  world-coordinate token.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
 - A round whose generated type-26 rows all replay the same uniquely associated

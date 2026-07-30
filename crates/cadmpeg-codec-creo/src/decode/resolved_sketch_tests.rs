@@ -13476,6 +13476,51 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             "coaxial_cone_cylinder_secant_circle"
         )) if (center.z - 1.0).abs() < 1e-12 && radius == 3.0
     ));
+    let held_token = crate::curve::FcCurveCoordinateToken {
+        value_mm: 1.0,
+        raw: vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
+        offset: 3,
+        length: 8,
+    };
+    let held_coordinates = crate::curve::FcCurveCoordinates {
+        curve_id: 77,
+        subtype: 0x14,
+        body: Vec::new(),
+        values_mm: vec![1.0; 4],
+        tokens: (0..4)
+            .map(|index| crate::curve::FcCurveCoordinateToken {
+                offset: held_token.offset + index * held_token.length,
+                ..held_token.clone()
+            })
+            .collect(),
+        opaque_spans: Vec::new(),
+        offset: 0,
+    };
+    assert_eq!(
+        fc14_held_coordinate(std::slice::from_ref(&held_coordinates), 77),
+        Some(1.0)
+    );
+    assert!(matches!(
+        select_fc14_axis_coordinate_candidate(
+            coaxial_cone_cylinder_circle_candidates(cone, coaxial_cone_cylinder),
+            1.0,
+        ),
+        Some((
+            CurveGeometry::Circle { center, radius, .. },
+            "coaxial_cone_cylinder_secant_circle"
+        )) if (center.z - 1.0).abs() < 1e-12 && radius == 3.0
+    ));
+    let mut mixed_coordinates = held_coordinates;
+    mixed_coordinates.tokens[3].value_mm = -1.0;
+    mixed_coordinates.tokens[3].raw[1] = 1;
+    assert_eq!(fc14_held_coordinate(&[mixed_coordinates], 77), None);
+    assert_eq!(
+        select_fc14_axis_coordinate_candidate(
+            coaxial_cone_cylinder_circle_candidates(cone, coaxial_cone_cylinder),
+            0.0,
+        ),
+        None
+    );
     let cone_cylinder_tangent_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [4.0, 0.0, 0.0],
         normal: [1.0, 0.0, 1.0],

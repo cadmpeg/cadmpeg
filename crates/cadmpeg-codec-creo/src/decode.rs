@@ -26597,6 +26597,67 @@ fn resolve_curve_candidates(
     Some(candidate.clone())
 }
 
+fn fc14_held_coordinate(
+    coordinates: &[crate::curve::FcCurveCoordinates],
+    curve_id: u32,
+) -> Option<f64> {
+    let mut records = coordinates
+        .iter()
+        .filter(|record| record.curve_id == curve_id && record.subtype == 0x14);
+    let record = records.next()?;
+    records.next().is_none().then_some(())?;
+    let tokens = record
+        .tokens
+        .iter()
+        .filter(|token| token.raw.first() == Some(&0x2d))
+        .collect::<Vec<_>>();
+    (tokens.len() >= 4).then_some(())?;
+    let first = tokens[0];
+    (first.value_mm.is_finite()
+        && tokens
+            .iter()
+            .all(|token| token.raw == first.raw && token.value_mm == first.value_mm))
+    .then_some(first.value_mm)
+}
+
+fn select_fc14_axis_coordinate_candidate(
+    candidates: Vec<(CurveGeometry, &'static str)>,
+    held_coordinate: f64,
+) -> Option<(CurveGeometry, &'static str)> {
+    let matching =
+        candidates
+            .into_iter()
+            .filter(|(geometry, tag)| {
+                if *tag != "coaxial_cone_cylinder_secant_circle" {
+                    return false;
+                }
+                let CurveGeometry::Circle { center, axis, .. } = geometry else {
+                    return false;
+                };
+                let axis = [axis.x, axis.y, axis.z];
+                let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {
+                    ((value.abs() - 1.0).abs() <= 1e-10).then_some(index)
+                }) else {
+                    return false;
+                };
+                if axis
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| index != axis_index && value.abs() > 1e-10)
+                {
+                    return false;
+                }
+                let center = [center.x, center.y, center.z];
+                let scale = center[axis_index].abs().max(held_coordinate.abs()).max(1.0);
+                (center[axis_index] - held_coordinate).abs() <= 1e-9 * scale
+            })
+            .collect::<Vec<_>>();
+    let [candidate] = matching.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
 #[derive(Clone)]
 struct NurbsSurfaceBoundary {
     curve: NurbsCurve,
@@ -27246,10 +27307,13 @@ fn transfer_carrier_intersection_curves(
                 resolve_curve_candidates(analytic_curve_branches(&geometry, tag), points)
             })
             .or_else(|| {
-                resolve_curve_candidates(
-                    multi_component_intersection_candidates(first, second),
-                    points,
-                )
+                let candidates = multi_component_intersection_candidates(first, second);
+                if points.is_some() {
+                    resolve_curve_candidates(candidates, points)
+                } else {
+                    let held = fc14_held_coordinate(&scan.curves.fc_coordinates, row.id)?;
+                    select_fc14_axis_coordinate_candidate(candidates, held)
+                }
             });
         let Some((geometry, tag)) = resolved else {
             continue;

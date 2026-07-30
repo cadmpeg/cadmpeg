@@ -1302,6 +1302,12 @@ Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a bod
 
 `fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the owning cylinder's axis-placement ordinate. The adjacent plane supplies the cap circle's axial coordinate. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense; subtracting the signed stored parameter from a point's polar angle determines the parameter-zero radial direction. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`; for a model-Z axis it maps to `(Y, X, Z)`. The row-frame radial vector `(A, B)` maps to `(0, B, A)`, `(A, 0, B)`, or `(B, A, 0)`, respectively. `fc 13` stores a control polyline rather than an analytic circle.
 
+In an `fc 14` body for a circle shared by an axis-aligned coaxial circular cone
+and cylinder, every `2d` world-coordinate token is the same exact token image.
+Its value is the circle center's coordinate on the common axis. The value
+selects one of the two algebraic cone-cylinder intersection circles only when
+exactly one candidate has that axial coordinate.
+
 An `fc 05` cap-circle body consists of complete four-scalar point groups after
 the `fc 05` prefix followed by the single-byte `ff` body terminator. A body
 without the terminator can end immediately after the final group. Other
