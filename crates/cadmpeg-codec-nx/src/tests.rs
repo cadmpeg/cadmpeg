@@ -1011,6 +1011,8 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
 
 #[test]
 fn nx_pattern_completeness_requires_distinct_seeds() {
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, PatternSeed};
+
     let seed = cadmpeg_ir::features::PatternSeed::Feature(cadmpeg_ir::features::FeatureId(
         "test:feature#seed".into(),
     ));
@@ -1025,6 +1027,22 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
     ));
     assert!(crate::decode::pattern_feature_is_incomplete(
         &[seed.clone(), seed],
+        &pattern,
+    ));
+    assert!(crate::decode::pattern_feature_is_incomplete(
+        &[PatternSeed::Faces(FaceSelection::Native(
+            "nx:pattern-face-selection#0".into(),
+        ))],
+        &pattern,
+    ));
+    assert!(crate::decode::pattern_feature_is_incomplete(
+        &[PatternSeed::Bodies(BodySelection::Unresolved)],
+        &pattern,
+    ));
+    assert!(!crate::decode::pattern_feature_is_incomplete(
+        &[PatternSeed::Bodies(BodySelection::Bodies(vec![
+            cadmpeg_ir::ids::BodyId("test:body#seed".into()),
+        ]))],
         &pattern,
     ));
 }
