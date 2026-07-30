@@ -4004,6 +4004,26 @@ pub(crate) fn emit_annotation_records(
         .chain(out.curves.iter().map(|entity| entity.id.0.as_str()))
         .chain(out.pcurves.iter().map(|entity| entity.id.0.as_str()))
         .collect::<HashSet<_>>();
+    let attribute_ids = out
+        .attributes
+        .iter()
+        .map(|attribute| attribute.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let unknown_ids = out
+        .unknowns
+        .iter()
+        .map(|unknown| unknown.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let procedural_ids = out
+        .procedural_surfaces
+        .iter()
+        .map(|entity| entity.id.0.as_str())
+        .chain(
+            out.procedural_curves
+                .iter()
+                .map(|entity| entity.id.0.as_str()),
+        )
+        .collect::<HashSet<_>>();
     for record in records {
         let entity_id = id(record.index as i64);
         if emitted_ids.contains(entity_id.as_str()) {
@@ -4052,11 +4072,7 @@ pub(crate) fn emit_annotation_records(
             });
         }
         let attribute_id = format!("f3d:brep:attribute#{}", record.index);
-        if out
-            .attributes
-            .iter()
-            .any(|attribute| attribute.id.0 == attribute_id)
-        {
+        if attribute_ids.contains(attribute_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
                 stream: stream.to_owned(),
@@ -4066,11 +4082,7 @@ pub(crate) fn emit_annotation_records(
             });
         }
         let unknown_id = unknown_record_id(record);
-        if out
-            .unknowns
-            .iter()
-            .any(|unknown| unknown.id.0 == unknown_id)
-        {
+        if unknown_ids.contains(unknown_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id,
                 stream: stream.to_owned(),
@@ -4089,15 +4101,7 @@ pub(crate) fn emit_annotation_records(
                 "procedural_curve",
             ),
         ] {
-            if out
-                .procedural_surfaces
-                .iter()
-                .any(|entity| entity.id.0 == synthetic_id)
-                || out
-                    .procedural_curves
-                    .iter()
-                    .any(|entity| entity.id.0 == synthetic_id)
-            {
+            if procedural_ids.contains(synthetic_id.as_str()) {
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
                     stream: stream.to_owned(),

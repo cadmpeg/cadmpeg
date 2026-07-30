@@ -157,12 +157,23 @@ fn merge_references(
             });
             continue;
         };
-        let mut component = crate::decode::decode(ctx, member_view).map_err(|error| {
-            CodecError::Malformed(format!(
-                "xref member {} failed to decode: {error}",
-                reference.relative_path
-            ))
-        })?;
+        let mut component = match crate::decode::decode(ctx, member_view) {
+            Ok(component) => component,
+            Err(error) => {
+                parent.report.losses.push(LossNote {
+                    code: LossCode::AssemblyComponentsExternal,
+                    category: LossCategory::Geometry,
+                    severity: Severity::Error,
+                    message: format!(
+                        "xref {label}: member {} failed to decode ({error}); the occurrence was \
+                         not resolved",
+                        reference.relative_path
+                    ),
+                    provenance: None,
+                });
+                continue;
+            }
+        };
         if component.ir.units != parent.ir.units {
             parent.report.losses.push(LossNote {
                 code: LossCode::AssemblyComponentsExternal,

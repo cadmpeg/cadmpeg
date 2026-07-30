@@ -5073,6 +5073,34 @@ fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
+#[test]
+fn malformed_tspline_cage_degrades_to_a_loss_note() {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+        .unwrap();
+    zip.write_all(&synthetic_geometry_smbh()).unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/TSplines.BlobParts/Cage1.tsm",
+        stored,
+    )
+    .unwrap();
+    // An edge-root index far outside the half-edge range makes the cage
+    // internally inconsistent while the entry itself stays well-formed.
+    zip.write_all(b"tsm 1.0\ner 999\n").unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let result = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("an inconsistent cage must not fail the document decode");
+    assert!(result.ir.model.subds.is_empty());
+    assert!(result.report.losses.iter().any(|loss| loss.severity
+        == cadmpeg_ir::report::Severity::Warning
+        && loss.message.contains("T-spline control cage not decoded")));
+}
+
 fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8], size: u32) {
     let central = archive
         .windows(4)

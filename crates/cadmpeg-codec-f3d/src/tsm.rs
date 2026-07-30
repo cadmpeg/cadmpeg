@@ -26,23 +26,40 @@ struct HalfEdge {
 }
 
 /// Decode every active-asset T-spline control cage in archive order.
-pub(crate) fn decode(scan: &ContainerScan) -> Result<Vec<SubdSurface>, CodecError> {
+///
+/// A cage whose program is internally inconsistent degrades to a
+/// warning-severity loss note instead of failing the document decode; its
+/// entry bytes remain retained in the container, and the count-gated Form
+/// join simply leaves the affected Form on native retention.
+pub(crate) fn decode(
+    scan: &ContainerScan,
+) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::LossNote>), CodecError> {
     let prefix = scan
         .asset_folder
         .as_ref()
         .map(|folder| format!("{folder}{ENTRY_MARKER}"));
-    scan.entries
-        .iter()
-        .filter(|entry| {
-            std::path::Path::new(&entry.name)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("tsm"))
-                && prefix
-                    .as_ref()
-                    .is_none_or(|prefix| entry.name.starts_with(prefix))
-        })
-        .map(|entry| parse(&entry.name, scan.entry_bytes(&entry.name)?))
-        .collect()
+    let mut cages = Vec::new();
+    let mut losses = Vec::new();
+    for entry in scan.entries.iter().filter(|entry| {
+        std::path::Path::new(&entry.name)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("tsm"))
+            && prefix
+                .as_ref()
+                .is_none_or(|prefix| entry.name.starts_with(prefix))
+    }) {
+        match parse(&entry.name, scan.entry_bytes(&entry.name)?) {
+            Ok(cage) => cages.push(cage),
+            Err(error) => losses.push(cadmpeg_ir::report::LossNote {
+                code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+                category: cadmpeg_ir::report::LossCategory::Geometry,
+                severity: cadmpeg_ir::report::Severity::Warning,
+                message: format!("T-spline control cage not decoded: {error}"),
+                provenance: None,
+            }),
+        }
+    }
+    Ok((cages, losses))
 }
 
 fn malformed(name: &str, message: impl std::fmt::Display) -> CodecError {

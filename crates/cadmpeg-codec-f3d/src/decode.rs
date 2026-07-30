@@ -364,6 +364,10 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                             parameter,
                             ..
                         }
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::RepeatedParallelLineDistance {
+                            parameter,
+                            ..
+                        }
                         | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::LineLength {
                             parameter,
                             ..
@@ -998,7 +1002,9 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             let annotation_records = std::mem::take(&mut brep.annotation_records);
             let (mut ir, mut native, unknowns) =
                 build_geometry_ir(&scan, &primary_model_brep, brep);
-            ir.model.subds = crate::tsm::decode(&scan)?;
+            let (subds, subd_losses) = crate::tsm::decode(&scan)?;
+            ir.model.subds = subds;
+            report.losses.extend(subd_losses);
             native.body_visibilities = body_visibilities;
             for history_brep in container::history_breps(&scan) {
                 if let Some(history) = decode_asm_history(&scan, history_brep)? {

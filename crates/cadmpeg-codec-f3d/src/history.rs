@@ -314,6 +314,13 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
     }
 }
 
+/// Materializing a state's record table runs a full B-rep decode, so the
+/// total binding cost is `states × records`. Above this budget the binding
+/// is skipped: the states keep `record_table_complete = false` and no
+/// topology, the same degrade every other early return here produces, and
+/// historical transitions stay unbound.
+const COMPLETE_TABLE_BUDGET: usize = 4_000_000;
+
 fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width: usize) {
     let Some(start) = crate::asm_header::record_stream_start(bytes) else {
         return;
@@ -321,6 +328,9 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
     let Ok(framed) = crate::sab::frame(bytes, start, bytes.len(), width) else {
         return;
     };
+    if states.len().saturating_mul(framed.len()) > COMPLETE_TABLE_BUDGET {
+        return;
+    }
     let Some(active_count) = states
         .iter()
         .flat_map(|state| &state.records)
