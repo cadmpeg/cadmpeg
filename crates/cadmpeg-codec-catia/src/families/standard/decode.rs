@@ -1668,6 +1668,41 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         "standard_topology_endpoint_domain_choice_count".to_string(),
         topology_diagnostics.endpoint_domain_choices,
     );
+    for (key, rejection) in [
+        (
+            "standard_topology_mesh_rejection_input_structure_count",
+            mesh_quotient::MeshCandidateRejection::InputStructure,
+        ),
+        (
+            "standard_topology_mesh_rejection_input_cardinality_count",
+            mesh_quotient::MeshCandidateRejection::InputCardinality,
+        ),
+        (
+            "standard_topology_mesh_rejection_face_boundary_cardinality_count",
+            mesh_quotient::MeshCandidateRejection::FaceBoundaryCardinality,
+        ),
+        (
+            "standard_topology_mesh_rejection_port_cardinality_count",
+            mesh_quotient::MeshCandidateRejection::PortCardinality,
+        ),
+        (
+            "standard_topology_mesh_rejection_quotient_preparation_count",
+            mesh_quotient::MeshCandidateRejection::QuotientPreparation,
+        ),
+        (
+            "standard_topology_mesh_rejection_edge_class_constraint_count",
+            mesh_quotient::MeshCandidateRejection::EdgeClassConstraint,
+        ),
+        (
+            "standard_topology_mesh_rejection_endpoint_incidence_count",
+            mesh_quotient::MeshCandidateRejection::EndpointIncidence,
+        ),
+    ] {
+        report.coverage.insert(
+            key.to_string(),
+            usize::from(topology_diagnostics.mesh_rejection == Some(rejection)),
+        );
+    }
     report.coverage.insert(
         "refined_consolidated_analytic_surface_count".to_string(),
         refined_analytic_surfaces.len(),
@@ -1729,6 +1764,7 @@ struct StandardTopologyDiagnostics {
     singleton_endpoint_domains: usize,
     multiple_endpoint_domains: usize,
     endpoint_domain_choices: usize,
+    mesh_rejection: Option<mesh_quotient::MeshCandidateRejection>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1772,7 +1808,7 @@ impl StandardTopologyFailure {
             Self::NativeEndpointPropagation => {
                 "standard_topology_failure_native_endpoint_propagation_count"
             }
-            Self::EmptyEndpointDomain => "standard_topology_failure_empty_endpoint_domains",
+            Self::EmptyEndpointDomain => "standard_topology_failure_empty_endpoint_domain_count",
             Self::NoTopologySolution => "standard_topology_failure_no_solution_count",
             Self::AmbiguousTopologySolution => "standard_topology_failure_ambiguous_solution_count",
             Self::TopologySearchExhausted => "standard_topology_failure_search_exhausted_count",
@@ -1819,7 +1855,7 @@ fn retry_rejected_mesh_solution(
     fallback: impl FnOnce() -> mesh_quotient::MeshCandidateSolve,
 ) -> mesh_quotient::MeshCandidateSolve {
     match preferred {
-        mesh_quotient::MeshCandidateSolve::Rejected => fallback(),
+        mesh_quotient::MeshCandidateSolve::Rejected(_) => fallback(),
         outcome => outcome,
     }
 }
@@ -3399,7 +3435,10 @@ fn attach_standard_topology(
             mesh_quotient::MeshCandidateSolve::Solved(topology, assignment) => {
                 Some((topology, assignment))
             }
-            mesh_quotient::MeshCandidateSolve::Rejected => None,
+            mesh_quotient::MeshCandidateSolve::Rejected(rejection) => {
+                diagnostics.mesh_rejection = Some(rejection);
+                None
+            }
             mesh_quotient::MeshCandidateSolve::Ambiguous => {
                 mesh_search_ambiguous = true;
                 None
@@ -6103,20 +6142,23 @@ mod route_tests {
 
     #[test]
     fn mesh_retry_runs_only_after_exact_rejection() {
-        use crate::solve::mesh_quotient::MeshCandidateSolve;
+        use crate::solve::mesh_quotient::{MeshCandidateRejection, MeshCandidateSolve};
 
         let called = Cell::new(false);
         let outcome = retry_rejected_mesh_solution(MeshCandidateSolve::Exhausted, || {
             called.set(true);
-            MeshCandidateSolve::Rejected
+            MeshCandidateSolve::Rejected(MeshCandidateRejection::EndpointIncidence)
         });
         assert!(matches!(outcome, MeshCandidateSolve::Exhausted));
         assert!(!called.get());
 
-        let outcome = retry_rejected_mesh_solution(MeshCandidateSolve::Rejected, || {
-            called.set(true);
-            MeshCandidateSolve::Ambiguous
-        });
+        let outcome = retry_rejected_mesh_solution(
+            MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure),
+            || {
+                called.set(true);
+                MeshCandidateSolve::Ambiguous
+            },
+        );
         assert!(matches!(outcome, MeshCandidateSolve::Ambiguous));
         assert!(called.get());
     }

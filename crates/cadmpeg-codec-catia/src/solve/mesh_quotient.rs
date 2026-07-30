@@ -33,9 +33,21 @@ pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 100_000;
 pub(crate) type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MeshCandidateRejection {
+    InputStructure,
+    InputCardinality,
+    FaceBoundaryCardinality,
+    PortCardinality,
+    QuotientPreparation,
+    EdgeClassConstraint,
+    EndpointIncidence,
+}
+
+#[derive(Debug)]
 pub(crate) enum MeshCandidateSolve {
     Solved(StandardTopology, Vec<usize>),
-    Rejected,
+    Rejected(MeshCandidateRejection),
     Ambiguous,
     Exhausted,
 }
@@ -5658,7 +5670,7 @@ where
         ))
     })()
     else {
-        return MeshCandidateSolve::Rejected;
+        return MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure);
     };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
@@ -5670,10 +5682,10 @@ where
             .flatten()
             .any(|point| *point >= vertex_points.len())
     {
-        return MeshCandidateSolve::Rejected;
+        return MeshCandidateSolve::Rejected(MeshCandidateRejection::InputCardinality);
     }
     if mesh_domains.len() != face_count {
-        return MeshCandidateSolve::Rejected;
+        return MeshCandidateSolve::Rejected(MeshCandidateRejection::FaceBoundaryCardinality);
     }
     for domain in &mut mesh_domains {
         if let MeshFaceBoundaryDomain::Ordered(assignments) = domain {
@@ -5681,7 +5693,7 @@ where
         }
     }
     if port_identities.len() != edge_rows.len() {
-        return MeshCandidateSolve::Rejected;
+        return MeshCandidateSolve::Rejected(MeshCandidateRejection::PortCardinality);
     }
     let mut preparation_exhausted = false;
     let Some((mesh_quotient, completed_edge_candidates)) = (|| {
@@ -5749,13 +5761,13 @@ where
         return if preparation_exhausted {
             MeshCandidateSolve::Exhausted
         } else {
-            MeshCandidateSolve::Rejected
+            MeshCandidateSolve::Rejected(MeshCandidateRejection::QuotientPreparation)
         };
     };
     let Some(class_constraint) =
         canonical_edge_class_constraint(edge_classes, &completed_edge_candidates)
     else {
-        return MeshCandidateSolve::Rejected;
+        return MeshCandidateSolve::Rejected(MeshCandidateRejection::EdgeClassConstraint);
     };
     let constraint_edges = partial_constraint_edges
         .iter()
@@ -5874,6 +5886,16 @@ where
         }
         Some(MeshEndpointResolve::Ambiguous) => MeshCandidateSolve::Ambiguous,
         Some(MeshEndpointResolve::Exhausted) => MeshCandidateSolve::Exhausted,
-        Some(MeshEndpointResolve::Rejected) | None => MeshCandidateSolve::Rejected,
+        Some(MeshEndpointResolve::Rejected) | None => {
+            MeshCandidateSolve::Rejected(MeshCandidateRejection::EndpointIncidence)
+        }
     }
+}
+
+#[test]
+fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
+    assert!(matches!(
+        parse_standard_mesh_candidate_outcome(&[], &[], &[], &[], &[], |_| true),
+        MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+    ));
 }

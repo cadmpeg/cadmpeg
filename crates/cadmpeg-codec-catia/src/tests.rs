@@ -3610,6 +3610,16 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             + result.report.coverage["standard_topology_multiple_endpoint_domain_count"],
         result.report.coverage["standard_topology_curve_support_count"]
     );
+    assert!(
+        result
+            .report
+            .coverage
+            .iter()
+            .filter(|(key, _)| key.starts_with("standard_topology_mesh_rejection_"))
+            .map(|(_, count)| count)
+            .sum::<usize>()
+            <= 1
+    );
 
     // The produced IR validates (free carriers, no dangling references).
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
@@ -3723,6 +3733,16 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             + decoded.report.coverage["standard_topology_singleton_endpoint_domain_count"]
             + decoded.report.coverage["standard_topology_multiple_endpoint_domain_count"],
         decoded.report.coverage["standard_topology_curve_support_count"]
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage
+            .iter()
+            .filter(|(key, _)| key.starts_with("standard_topology_mesh_rejection_"))
+            .map(|(_, count)| count)
+            .sum::<usize>(),
+        0
     );
 }
 
