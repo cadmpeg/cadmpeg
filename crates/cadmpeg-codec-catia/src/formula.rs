@@ -2091,6 +2091,7 @@ mod parser_tests {
             "true ? \"selected\" ; \"text\".Extract(1.5, 2)",
             "true ? 5 ; \"text\".Search(\"e\", 1.5)",
             "true ? 5 ; \"not a number\".ToReal()",
+            "true ? \"selected\" ; \"text\" - \"\"",
         ] {
             assert!(
                 evaluate_formula_expression(expression, &bindings).is_some(),
@@ -2122,6 +2123,8 @@ mod parser_tests {
             "false or (sqrt(-1) > 2)",
             "true ? 1 / 0 ; 5",
             "false ? 5 ; exp(10000)",
+            "true ? 5 ; \"text\".Search(\"t\", 1mm)",
+            "true ? \"selected\" ; \"text\".Extract(1mm, 1)",
         ] {
             assert!(
                 evaluate_formula_expression(expression, &bindings).is_none(),
