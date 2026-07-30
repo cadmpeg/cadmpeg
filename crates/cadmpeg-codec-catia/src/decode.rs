@@ -337,6 +337,17 @@ fn finish_decode(
         .flat_map(|run| &run.scalar_values)
         .filter(|value| value.name.is_some())
         .count();
+    let legacy_string_value_count = native
+        .legacy_entity_runs
+        .iter()
+        .map(|run| run.string_values.len())
+        .sum();
+    let legacy_named_string_value_count = native
+        .legacy_entity_runs
+        .iter()
+        .flat_map(|run| &run.string_values)
+        .filter(|value| value.name.is_some())
+        .count();
     let definition_schema_selection_count = native
         .entity_records
         .iter()
@@ -1441,6 +1452,14 @@ fn finish_decode(
             legacy_named_scalar_value_count,
         ),
         (
+            "decoded_legacy_string_value_count".to_string(),
+            legacy_string_value_count,
+        ),
+        (
+            "decoded_legacy_named_string_value_count".to_string(),
+            legacy_named_string_value_count,
+        ),
+        (
             "decoded_definition_schema_selection_count".to_string(),
             definition_schema_selection_count,
         ),
@@ -1942,7 +1961,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} legacy design run(s) with {legacy_entity_identity_count} source-ordered entity identity marker(s), {legacy_role_selector_count} complete schema role selector(s), {legacy_text_field_count} complete schema text field(s), including {legacy_role_text_field_count} role-bound text field(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), and {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s); {} uniquely named, literal-typed numeric parameter(s), including {} resolved through descriptor selectors, and {} closed zero-input formula(s) transferred, while remaining selector semantics, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
+                "CATIA native data retains {} legacy design run(s) with {legacy_entity_identity_count} source-ordered entity identity marker(s), {legacy_role_selector_count} complete schema role selector(s), {legacy_text_field_count} complete schema text field(s), including {legacy_role_text_field_count} role-bound text field(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s), and {legacy_string_value_count} string value(s), including {legacy_named_string_value_count} named string(s); {} uniquely named, literal-typed parameter(s), including {} resolved through descriptor selectors, and {} closed zero-input formula(s) transferred, while remaining selector semantics, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
                 native.legacy_entity_runs.len(),
                 formula_transfer.legacy_parameter_count,
                 formula_transfer.legacy_selector_parameter_count,

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 212;
+pub const CATIA_NATIVE_VERSION: u32 = 213;
 #[cfg(test)]
 const CATIA_LEGACY_ROLE_SELECTOR_VERSION: u32 = 212;
 #[cfg(test)]
@@ -3135,6 +3135,25 @@ pub struct CatiaLegacyScalarValue {
     pub evaluation: CatiaLegacyScalarEvaluation,
 }
 
+/// One complete legacy UTF-8 string-value packet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyStringValue {
+    /// Stable native identity derived from the containing run and packet offset.
+    pub id: String,
+    /// Offset of the packet prefix.
+    pub byte_offset: u64,
+    /// Stored containing identity.
+    pub entity_id: u32,
+    /// Unique co-owned `name` text field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_field: Option<u64>,
+    /// Unique co-owned stored name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Stored UTF-8 value.
+    pub value: String,
+}
+
 /// A monotonically identified pre-`7C05` run and its terminating catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaLegacyEntityRun {
@@ -3162,6 +3181,9 @@ pub struct CatiaLegacyEntityRun {
     pub type_descriptors: Vec<CatiaLegacyTypeDescriptor>,
     /// Complete typed scalar packets.
     pub scalar_values: Vec<CatiaLegacyScalarValue>,
+    /// Complete UTF-8 string-value packets.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub string_values: Vec<CatiaLegacyStringValue>,
 }
 
 /// One zero-entity face-local surface-support occurrence.
@@ -3724,6 +3746,18 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         },
                     })
                     .collect(),
+                string_values: run
+                    .string_values
+                    .into_iter()
+                    .map(|value| CatiaLegacyStringValue {
+                        id: format!("catia:legacy:string#{index:08}-{:016}", value.offset),
+                        byte_offset: value.offset as u64,
+                        entity_id: value.entity_id,
+                        name_field: value.name_offset.map(|offset| offset as u64),
+                        name: value.name,
+                        value: value.value,
+                    })
+                    .collect(),
             }
         })
         .collect()
@@ -3966,6 +4000,55 @@ fn validate_legacy_entity_runs(
                             f64::from_bits(bits).is_finite()
                         }
                         CatiaLegacyScalarEvaluation::Unset => true,
+                    }
+            })
+            && run
+                .string_values
+                .windows(2)
+                .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
+            && run.string_values.iter().all(|value| {
+                value.id == format!("catia:legacy:string#{index:08}-{:016}", value.byte_offset)
+                    && value.byte_offset >= run.byte_offset
+                    && value.byte_offset < run.catalog_offset
+                    && value.value.chars().all(|character| {
+                        !character.is_control() || matches!(character, '\t' | '\n' | '\r')
+                    })
+                    && run
+                        .identities
+                        .iter()
+                        .rfind(|identity| identity.byte_offset < value.byte_offset)
+                        .is_some_and(|identity| identity.entity_id == value.entity_id)
+                    && match (&value.name_field, &value.name) {
+                        (Some(name_field), Some(name)) => {
+                            run.string_values
+                                .iter()
+                                .filter(|candidate| candidate.entity_id == value.entity_id)
+                                .count()
+                                == 1
+                                && run
+                                    .text_fields
+                                    .iter()
+                                    .filter(|field| {
+                                        field.entity_id == value.entity_id
+                                            && field
+                                                .role
+                                                .as_ref()
+                                                .is_some_and(|role| role.name == "name")
+                                    })
+                                    .count()
+                                    == 1
+                                && run.text_fields.iter().any(|field| {
+                                    field.entity_id == value.entity_id
+                                        && field.byte_offset == *name_field
+                                        && field.value == *name
+                                        && field
+                                            .role
+                                            .as_ref()
+                                            .is_some_and(|role| role.name == "name")
+                                })
+                        }
+                        (None, None) => true,
+                        (Some(_), None) | (None, Some(_)) => false,
                     }
             });
         if !valid {

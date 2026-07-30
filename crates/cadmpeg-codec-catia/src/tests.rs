@@ -3790,6 +3790,50 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
 }
 
 #[test]
+fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.push(0x81);
+    bytes.extend([0xfd, 0x8c]);
+    bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+    bytes.extend(b"\xe8\x00\x12\x01");
+    bytes.extend([
+        12, b'R', b'e', b's', b'p', b'o', b'n', b's', b'i', b'b', b'l', b'e', 0xfe,
+    ]);
+    bytes.extend(b"\xfe\x84\x92\x82");
+    bytes.extend([7, b'S', b't', b'r', b'i', b'n', b'g', 0x83]);
+    bytes.extend(b"\xfe\x85\x93\x82\xfe");
+    bytes.extend([
+        12, b'C', b'i', b'l', b'a', b's', b' ', b'E', b'v', b'a', b'n', b's',
+    ]);
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode typed legacy string");
+
+    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+        panic!("one transferred legacy string")
+    };
+    assert_eq!(parameter.name, "Responsible");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::String(
+            "Cilas Evans".to_string()
+        ))
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_string_value_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_named_string_value_count"],
+        1
+    );
+}
+
+#[test]
 fn decode_transfers_an_unset_typed_legacy_parameter() {
     let mut bytes = zero_entity_catpart();
     bytes.push(0xea);
@@ -13743,7 +13787,7 @@ fn native_store_paths_write_the_current_schema_version() {
 #[test]
 fn native_round_trips_legacy_entity_identity_runs() {
     let mut bytes = Vec::new();
-    for entity_id in [1_u32, 4, 9] {
+    for entity_id in [1_u32, 4, 9, 12] {
         bytes.push(0xea);
         bytes.extend(entity_id.to_le_bytes());
         bytes.extend([0x81, 0xfd, 0x8c]);
@@ -13770,6 +13814,11 @@ fn native_round_trips_legacy_entity_identity_runs() {
             bytes.extend(b"\xe8\x00\x12\x01\x07Result\xfe");
             bytes.extend(b"\xfe\x84\x88\x82\xfe\xe6");
             bytes.extend(3.5_f64.to_bits().to_le_bytes());
+        } else if entity_id == 12 {
+            bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 11]);
+            bytes.extend(b"\xe8\x00\x12\x01\x0cResponsible\xfe");
+            bytes.extend(b"\xfe\x84\x92\x82\x07String\x83");
+            bytes.extend(b"\xfe\x85\x93\x82\xfe\x0cCilas Evans");
         }
     }
     let catalog_offset = bytes.len();
@@ -13783,13 +13832,13 @@ fn native_round_trips_legacy_entity_identity_runs() {
             .iter()
             .map(|identity| identity.entity_id)
             .collect::<Vec<_>>(),
-        [1, 4, 9]
+        [1, 4, 9, 12]
     );
     assert_eq!(
         native.legacy_entity_runs[0].catalog_offset,
         catalog_offset as u64
     );
-    assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 3);
+    assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 4);
     assert_eq!(
         native.legacy_entity_runs[0]
             .role_selectors
@@ -13828,6 +13877,12 @@ fn native_round_trips_legacy_entity_identity_runs() {
                 Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
                 10,
             ),
+            (
+                12,
+                "name",
+                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                12,
+            ),
         ]
     );
     assert_eq!(native.legacy_entity_runs[0].text_fields[0].entity_id, 4);
@@ -13855,7 +13910,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].relations[0].inputs[0].parameter,
         "#1_"
     );
-    assert_eq!(native.legacy_entity_runs[0].type_descriptors.len(), 2);
+    assert_eq!(native.legacy_entity_runs[0].type_descriptors.len(), 3);
     assert_eq!(
         native.legacy_entity_runs[0].type_descriptors[0].value,
         crate::native::CatiaLegacyTypeValue::Name {
@@ -13865,6 +13920,12 @@ fn native_round_trips_legacy_entity_identity_runs() {
     assert_eq!(
         native.legacy_entity_runs[0].type_descriptors[1].value,
         crate::native::CatiaLegacyTypeValue::Selector { value: 22 }
+    );
+    assert_eq!(
+        native.legacy_entity_runs[0].type_descriptors[2].value,
+        crate::native::CatiaLegacyTypeValue::Name {
+            value: "String".to_string()
+        }
     );
     assert_eq!(native.legacy_entity_runs[0].scalar_values.len(), 1);
     assert_eq!(
@@ -13885,6 +13946,17 @@ fn native_round_trips_legacy_entity_identity_runs() {
         crate::native::CatiaLegacyScalarEvaluation::Value { bits }
             if bits == 3.5_f64.to_bits()
     ));
+    assert_eq!(native.legacy_entity_runs[0].string_values.len(), 1);
+    assert_eq!(
+        native.legacy_entity_runs[0].string_values[0]
+            .name
+            .as_deref(),
+        Some("Responsible")
+    );
+    assert_eq!(
+        native.legacy_entity_runs[0].string_values[0].value,
+        "Cilas Evans"
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -13909,7 +13981,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     previous_namespace.version = 211;
     let migrated =
         crate::native::CatiaNative::load(&previous_namespace).expect("migrate legacy text roles");
-    assert_eq!(migrated.legacy_entity_runs[0].role_selectors.len(), 3);
+    assert_eq!(migrated.legacy_entity_runs[0].role_selectors.len(), 4);
     assert!(migrated.legacy_entity_runs[0]
         .role_selectors
         .iter()

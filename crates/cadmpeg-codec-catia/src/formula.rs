@@ -499,6 +499,52 @@ fn collect_legacy_parameters(
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
+        for string in &run.string_values {
+            let Some(name) = &string.name else {
+                continue;
+            };
+            let Some((value_type, selected)) = resolved_legacy_type(run, string.entity_id) else {
+                continue;
+            };
+            if value_type != "String" {
+                continue;
+            }
+            let Some(key) = string.id.strip_prefix("catia:legacy:string#") else {
+                continue;
+            };
+            let id = ParameterId(format!("catia:legacy:parameter#{key}"));
+            if candidates.contains_key(&id) {
+                continue;
+            }
+            candidates.insert(
+                id.clone(),
+                FormulaParameterCandidate {
+                    parameter: DesignParameter {
+                        id: id.clone(),
+                        owner: None,
+                        ordinal: 0,
+                        name: name.clone(),
+                        expression: String::new(),
+                        display: None,
+                        value: Some(ParameterValue::String(string.value.clone())),
+                        dependencies: Vec::new(),
+                        properties: parameter_properties("String"),
+                        pmi: None,
+                        native_ref: Some(run.id.clone()),
+                    },
+                    parameter_type: "String",
+                    formula_output: false,
+                    input_fallback: None,
+                    source_order: string.byte_offset,
+                },
+            );
+            parameters_by_entity
+                .entry(string.entity_id)
+                .or_default()
+                .push(id);
+            transfer.parameters += 1;
+            transfer.selector_parameters += usize::from(selected);
+        }
         let mut relations_by_parameter =
             HashMap::<u32, Vec<&crate::native::CatiaLegacyRelation>>::new();
         for relation in &run.relations {

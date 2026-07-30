@@ -79,6 +79,10 @@ current scores require those matrices and representative fixtures.
 - Legacy typed relations retain their `body` and `param` role selectors and
   exact parameter identities when those selectors close within one identity
   run. Each legacy identity run retains its exact outer container binding.
+  Every complete schema role selector retains its fixed or paged production,
+  containing identity, name, and value. Inclusive-length UTF-8 string packets
+  transfer as typed `String` parameters when their name and terminal type
+  resolve uniquely.
   Legacy parameter transfer is restricted to the unique declared part-history
   container; unbound runs remain eligible only in declaration-free fragments.
 - Complete numeric parameters and formula relations transfer when their type,

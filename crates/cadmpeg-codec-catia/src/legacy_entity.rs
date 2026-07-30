@@ -5,6 +5,7 @@ const CATALOG_OPEN: &[u8] = b"\xde\x04\xfe\xfe\x12CATCatalogManager";
 const TEXT_OPEN: &[u8] = b"\xe8\x00\x12\x01";
 const SCALAR_OPEN: &[u8] = b"\xfe\x85\x88\x82\xfe";
 const NAMED_SCALAR_OPEN: &[u8] = b"\xfe\x84\x88\x82\xfe";
+const STRING_OPEN: &[u8] = b"\xfe\x85\x93\x82\xfe";
 const TYPE_OPEN: &[u8] = b"\xfe\x84\x92\x82";
 
 /// Length production used by one legacy schema text field.
@@ -153,6 +154,21 @@ pub struct LegacyScalarValue {
     pub evaluation: LegacyScalarEvaluation,
 }
 
+/// One complete UTF-8 string-value packet in an identity interval.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyStringValue {
+    /// Offset of the fixed packet prefix.
+    pub offset: usize,
+    /// Stored identity whose interval contains the packet.
+    pub entity_id: u32,
+    /// Unique co-owned `name` text-field opener.
+    pub name_offset: Option<usize>,
+    /// Unique co-owned stored name.
+    pub name: Option<String>,
+    /// Stored UTF-8 value.
+    pub value: String,
+}
+
 /// One stored entity identity in a legacy identity run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LegacyEntityIdentity {
@@ -179,6 +195,8 @@ pub struct LegacyEntityRun {
     pub type_descriptors: Vec<LegacyTypeDescriptor>,
     /// Complete typed scalar packets.
     pub scalar_values: Vec<LegacyScalarValue>,
+    /// Complete UTF-8 string-value packets.
+    pub string_values: Vec<LegacyStringValue>,
 }
 
 /// Parse complete legacy identity runs terminated by the fixed schema-catalog opener.
@@ -251,6 +269,18 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         })
         .collect::<Vec<_>>();
     bind_scalar_names(&text_fields, &mut scalar_values);
+    let mut string_values = identities
+        .iter()
+        .enumerate()
+        .flat_map(|(index, identity)| {
+            let start = identity.offset + 6;
+            let end = identities
+                .get(index + 1)
+                .map_or(catalog_offset, |next| next.offset);
+            parse_string_values(data, start, end, identity.entity_id)
+        })
+        .collect::<Vec<_>>();
+    bind_string_names(&text_fields, &mut string_values);
     Some(LegacyEntityRun {
         catalog_offset,
         identities,
@@ -259,6 +289,7 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         relations,
         type_descriptors,
         scalar_values,
+        string_values,
     })
 }
 
@@ -345,6 +376,59 @@ fn parse_scalar_values(
 }
 
 fn bind_scalar_names(fields: &[LegacyTextField], values: &mut [LegacyScalarValue]) {
+    let mut counts = std::collections::HashMap::new();
+    for value in values.iter() {
+        *counts.entry(value.entity_id).or_insert(0usize) += 1;
+    }
+    for value in values {
+        if counts.get(&value.entity_id) != Some(&1) {
+            continue;
+        }
+        let mut names = fields.iter().filter(|field| {
+            field.entity_id == value.entity_id
+                && field.role.as_ref().is_some_and(|role| role.name == "name")
+        });
+        let Some(name) = names.next() else {
+            continue;
+        };
+        if names.next().is_none() {
+            value.name_offset = Some(name.offset);
+            value.name = Some(name.value.clone());
+        }
+    }
+}
+
+fn parse_string_values(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    entity_id: u32,
+) -> Vec<LegacyStringValue> {
+    memchr::memmem::find_iter(&data[start..end], STRING_OPEN)
+        .filter_map(|relative| {
+            let offset = start + relative;
+            let payload = offset.checked_add(STRING_OPEN.len())?;
+            let inclusive_length = usize::from(*data.get(payload)?);
+            if inclusive_length == 0 {
+                return None;
+            }
+            let value_end = payload.checked_add(inclusive_length)?;
+            if value_end > end {
+                return None;
+            }
+            let value = text_value_allow_empty(data.get(payload + 1..value_end)?)?;
+            Some(LegacyStringValue {
+                offset,
+                entity_id,
+                name_offset: None,
+                name: None,
+                value,
+            })
+        })
+        .collect()
+}
+
+fn bind_string_names(fields: &[LegacyTextField], values: &mut [LegacyStringValue]) {
     let mut counts = std::collections::HashMap::new();
     for value in values.iter() {
         *counts.entry(value.entity_id).or_insert(0usize) += 1;
@@ -612,17 +696,23 @@ fn length_closed_text(data: &[u8], start: usize, length: usize, end: usize) -> O
 }
 
 fn text_value(bytes: &[u8]) -> Option<String> {
+    (!bytes.is_empty()).then_some(())?;
+    text_value_allow_empty(bytes)
+}
+
+fn text_value_allow_empty(bytes: &[u8]) -> Option<String> {
     let value = std::str::from_utf8(bytes).ok()?;
-    (!value.is_empty()
-        && value
-            .chars()
-            .all(|character| !character.is_control() || matches!(character, '\t' | '\n' | '\r')))
-    .then(|| value.to_owned())
+    value
+        .chars()
+        .all(|character| !character.is_control() || matches!(character, '\t' | '\n' | '\r'))
+        .then(|| value.to_owned())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_runs, CATALOG_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, TEXT_OPEN, TYPE_OPEN};
+    use super::{
+        parse_runs, CATALOG_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, STRING_OPEN, TEXT_OPEN, TYPE_OPEN,
+    };
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
         bytes.push(0xea);
@@ -647,6 +737,7 @@ mod tests {
         assert!(runs[0].relations.is_empty());
         assert!(runs[0].type_descriptors.is_empty());
         assert!(runs[0].scalar_values.is_empty());
+        assert!(runs[0].string_values.is_empty());
         assert_eq!(
             runs[0]
                 .identities
@@ -850,6 +941,36 @@ mod tests {
         assert_eq!(value.encoding, super::LegacyScalarEncoding::Named84);
         assert_eq!(value.name.as_deref(), Some("Length."));
         assert_eq!(value.name_offset, Some(runs[0].text_fields[0].offset));
+    }
+
+    #[test]
+    fn parses_and_names_inclusive_length_string_values() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(&[5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[
+            12, b'R', b'e', b's', b'p', b'o', b'n', b's', b'i', b'b', b'l', b'e', 0xfe,
+        ]);
+        bytes.extend_from_slice(STRING_OPEN);
+        bytes.extend_from_slice(&[
+            12, b'C', b'i', b'l', b'a', b's', b' ', b'E', b'v', b'a', b'n', b's',
+        ]);
+        identity(&mut bytes, 2);
+        bytes.extend_from_slice(STRING_OPEN);
+        bytes.push(1);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let run = &parse_runs(&bytes)[0];
+        assert_eq!(run.string_values.len(), 2);
+        assert_eq!(run.string_values[0].value, "Cilas Evans");
+        assert_eq!(run.string_values[0].name.as_deref(), Some("Responsible"));
+        assert_eq!(
+            run.string_values[0].name_offset,
+            Some(run.text_fields[0].offset)
+        );
+        assert_eq!(run.string_values[1].value, "");
+        assert!(run.string_values[1].name.is_none());
     }
 
     #[test]
