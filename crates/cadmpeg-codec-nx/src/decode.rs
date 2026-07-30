@@ -3620,43 +3620,10 @@ pub(crate) fn closest_pcurve_parameters(
     if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
         return None;
     }
-    let incident = incident_pcurve_parameters(
-        degree,
-        knots,
-        control_points,
-        weights.as_deref(),
-        point,
-        seed,
-    )?;
-    if !incident.is_empty() {
-        return Some(incident);
-    }
+    let homogeneous =
+        homogeneous_pcurve_spans(degree, knots, control_points, weights.as_deref(), point)?;
     if degree != 1 || weights.is_some() {
-        let squared_distance = |parameter| {
-            let position = pcurve_uv(pcurve, parameter)?;
-            Some((position.u - point.u).powi(2) + (position.v - point.v).powi(2))
-        };
-        let samples = knot_domain_samples(knots, degree, domain);
-        let distances = samples
-            .iter()
-            .map(|parameter| squared_distance(*parameter))
-            .collect::<Option<Vec<_>>>()?;
-        let mut candidates = vec![(samples[0], distances[0])];
-        for (index, &distance) in distances.iter().enumerate() {
-            candidates.push((samples[index], distance));
-            if index > 0
-                && index + 1 < samples.len()
-                && distance <= distances[index - 1]
-                && distance <= distances[index + 1]
-            {
-                let (parameter, distance) = golden_section_minimum(
-                    samples[index - 1],
-                    samples[index + 1],
-                    &squared_distance,
-                )?;
-                candidates.push((parameter, distance));
-            }
-        }
+        let candidates = stationary_pcurve_distance_candidates(&homogeneous, seed)?;
         return closest_parameter_candidates(candidates, seed);
     }
     let candidates = control_points
@@ -3694,16 +3661,18 @@ pub(crate) fn closest_pcurve_parameters(
     closest_parameter_candidates(candidates, seed)
 }
 
-fn incident_pcurve_parameters(
+struct HomogeneousPcurveSpans {
+    spans: Vec<BezierPcurveSpan>,
+    coordinate_tolerance: f64,
+}
+
+fn homogeneous_pcurve_spans(
     degree: usize,
     knots: &[f64],
     control_points: &[Point2],
     weights: Option<&[f64]>,
     point: Point2,
-    seed: Option<f64>,
-) -> Option<Vec<f64>> {
-    const MAX_INTERVALS: usize = 100_000;
-
+) -> Option<HomogeneousPcurveSpans> {
     let count = control_points.len();
     if degree == 0
         || count <= degree
@@ -3730,13 +3699,11 @@ fn incident_pcurve_parameters(
         Some(_) => return None,
         None => vec![1.0; count],
     };
-    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
     let coordinate_scale = control_points
         .iter()
         .flat_map(|control| [control.u, control.v])
         .chain([point.u, point.v])
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let residual_tolerance = 64.0 * f64::EPSILON * coordinate_scale * minimum_weight;
     let controls = control_points
         .iter()
         .zip(weights)
@@ -3752,54 +3719,190 @@ fn incident_pcurve_parameters(
         return None;
     }
     let spans = bezier_pcurve_spans(degree, knots, controls)?;
-    let mut intervals = spans;
+    Some(HomogeneousPcurveSpans {
+        spans,
+        coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
+    })
+}
+
+fn stationary_pcurve_distance_candidates(
+    homogeneous: &HomogeneousPcurveSpans,
+    seed: Option<f64>,
+) -> Option<Vec<(f64, f64)>> {
+    let mut candidates = Vec::new();
+    for span in &homogeneous.spans {
+        let derivative = rational_squared_distance_derivative(&span.controls)?;
+        let roots = scalar_bezier_roots(ScalarBezierSpan {
+            domain: span.domain,
+            controls: derivative,
+        })?;
+        let mut parameters = vec![span.domain[0], span.domain[1]];
+        match roots {
+            ScalarBezierRoots::Constant => parameters
+                .extend(seed.filter(|seed| (span.domain[0]..=span.domain[1]).contains(seed))),
+            ScalarBezierRoots::Isolated(roots) => parameters.extend(roots),
+        }
+        candidates.extend(parameters.into_iter().map(|parameter| {
+            let distance = pcurve_residual_distance(&span.controls, parameter, span.domain);
+            (
+                parameter,
+                if distance <= homogeneous.coordinate_tolerance {
+                    0.0
+                } else {
+                    distance * distance
+                },
+            )
+        }));
+    }
+    Some(candidates)
+}
+
+fn rational_squared_distance_derivative(controls: &[[f64; 3]]) -> Option<Vec<f64>> {
+    // For residual R/W, half the squared-distance derivative has numerator
+    // ((R·R')W - (R·R)W'). Positive weights make its roots exactly the finite
+    // stationary parameters of the rational span.
+    let residual_u = controls
+        .iter()
+        .map(|control| control[0])
+        .collect::<Vec<_>>();
+    let residual_v = controls
+        .iter()
+        .map(|control| control[1])
+        .collect::<Vec<_>>();
+    let weight = controls
+        .iter()
+        .map(|control| control[2])
+        .collect::<Vec<_>>();
+    let derivative = |values: &[f64]| {
+        values
+            .windows(2)
+            .map(|pair| pair[1] - pair[0])
+            .collect::<Vec<_>>()
+    };
+    let residual_u_derivative = derivative(&residual_u);
+    let residual_v_derivative = derivative(&residual_v);
+    let weight_derivative = derivative(&weight);
+    let residual_squared = add_bernstein_polynomials(
+        bernstein_product(&residual_u, &residual_u)?,
+        bernstein_product(&residual_v, &residual_v)?,
+    )?;
+    let residual_derivative = add_bernstein_polynomials(
+        bernstein_product(&residual_u, &residual_u_derivative)?,
+        bernstein_product(&residual_v, &residual_v_derivative)?,
+    )?;
+    let first = bernstein_product(&residual_derivative, &weight)?;
+    let second = bernstein_product(&residual_squared, &weight_derivative)?;
+    subtract_bernstein_polynomials(first, second)
+}
+
+fn bernstein_product(first: &[f64], second: &[f64]) -> Option<Vec<f64>> {
+    let first_degree = first.len().checked_sub(1)?;
+    let second_degree = second.len().checked_sub(1)?;
+    let degree = first_degree.checked_add(second_degree)?;
+    (0..=degree)
+        .map(|index| {
+            let denominator = binomial_coefficient(degree, index)?;
+            let lower = index.saturating_sub(second_degree);
+            let upper = index.min(first_degree);
+            (lower..=upper)
+                .map(|first_index| {
+                    let second_index = index - first_index;
+                    Some(
+                        first[first_index]
+                            * second[second_index]
+                            * binomial_coefficient(first_degree, first_index)?
+                            * binomial_coefficient(second_degree, second_index)?
+                            / denominator,
+                    )
+                })
+                .sum::<Option<f64>>()
+                .filter(|value| value.is_finite())
+        })
+        .collect()
+}
+
+fn binomial_coefficient(n: usize, k: usize) -> Option<f64> {
+    let k = k.min(n.checked_sub(k)?);
+    (1..=k).try_fold(1.0, |value, index| {
+        let next = value * (n - k + index) as f64 / index as f64;
+        next.is_finite().then_some(next)
+    })
+}
+
+fn add_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
+    let result = (first.len() == second.len()).then(|| {
+        first
+            .into_iter()
+            .zip(second)
+            .map(|(a, b)| a + b)
+            .collect::<Vec<_>>()
+    })?;
+    result
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(result)
+}
+
+fn subtract_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
+    let result = (first.len() == second.len()).then(|| {
+        first
+            .into_iter()
+            .zip(second)
+            .map(|(a, b)| a - b)
+            .collect::<Vec<_>>()
+    })?;
+    result
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(result)
+}
+
+enum ScalarBezierRoots {
+    Constant,
+    Isolated(Vec<f64>),
+}
+
+#[derive(Clone)]
+struct ScalarBezierSpan {
+    domain: [f64; 2],
+    controls: Vec<f64>,
+}
+
+fn scalar_bezier_roots(span: ScalarBezierSpan) -> Option<ScalarBezierRoots> {
+    const MAX_INTERVALS: usize = 100_000;
+
+    let scale = span
+        .controls
+        .iter()
+        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+    let tolerance = 64.0 * f64::EPSILON * scale;
+    let constant = span.controls.iter().all(|value| *value == 0.0);
+    if constant {
+        return Some(ScalarBezierRoots::Constant);
+    }
+    let mut parameters = Vec::new();
+    if span
+        .controls
+        .first()
+        .is_some_and(|value| value.abs() <= tolerance)
+    {
+        parameters.push(span.domain[0]);
+    }
+    if span
+        .controls
+        .last()
+        .is_some_and(|value| value.abs() <= tolerance)
+    {
+        parameters.push(span.domain[1]);
+    }
+    let mut intervals = vec![span];
     let mut examined = 0usize;
-    let mut roots = Vec::new();
     while let Some(span) = intervals.pop() {
         examined += 1;
         if examined > MAX_INTERVALS {
             return None;
         }
-        let nonzero_controls = span
-            .controls
-            .iter()
-            .filter(|control| {
-                control[0].abs() > residual_tolerance || control[1].abs() > residual_tolerance
-            })
-            .collect::<Vec<_>>();
-        if nonzero_controls.len() != span.controls.len() {
-            if span.controls.first().is_some_and(|control| {
-                control[0].abs() <= residual_tolerance && control[1].abs() <= residual_tolerance
-            }) {
-                roots.push(span.domain[0]);
-            }
-            if span.controls.last().is_some_and(|control| {
-                control[0].abs() <= residual_tolerance && control[1].abs() <= residual_tolerance
-            }) {
-                roots.push(span.domain[1]);
-            }
-        }
-        let coincident = nonzero_controls.is_empty();
-        if coincident {
-            roots.push(
-                seed.filter(|seed| (span.domain[0]..=span.domain[1]).contains(seed))
-                    .unwrap_or(span.domain[0]),
-            );
-            continue;
-        }
-        let contains_zero = (0..2).all(|axis| {
-            let minimum = nonzero_controls
-                .iter()
-                .map(|control| control[axis])
-                .min_by(f64::total_cmp);
-            let maximum = nonzero_controls
-                .iter()
-                .map(|control| control[axis])
-                .max_by(f64::total_cmp);
-            minimum.is_some_and(|minimum| minimum <= residual_tolerance)
-                && maximum.is_some_and(|maximum| maximum >= -residual_tolerance)
-        });
-        if !contains_zero {
+        if scalar_bernstein_sign_variations(&span.controls) == 0 {
             continue;
         }
         let middle = span.domain[0] + (span.domain[1] - span.domain[0]) * 0.5;
@@ -3808,38 +3911,90 @@ fn incident_pcurve_parameters(
                 [span.domain[0], span.domain[1]]
                     .into_iter()
                     .min_by(|first, second| {
-                        let distance = |parameter| {
-                            pcurve_residual_distance(&span.controls, parameter, span.domain)
-                        };
-                        distance(*first).total_cmp(&distance(*second))
+                        scalar_bezier_value(&span.controls, *first, span.domain)
+                            .abs()
+                            .total_cmp(
+                                &scalar_bezier_value(&span.controls, *second, span.domain).abs(),
+                            )
                     })?;
-            if pcurve_residual_distance(&span.controls, parameter, span.domain)
-                <= residual_tolerance
-            {
-                roots.push(parameter);
+            if scalar_bezier_value(&span.controls, parameter, span.domain).abs() <= tolerance {
+                parameters.push(parameter);
             }
             continue;
         }
-        let (first, second) = subdivide_bezier_pcurve_span(span, middle);
+        let (first, second) = subdivide_scalar_bezier_span(span, middle);
+        if first.controls.last().is_some_and(|value| *value == 0.0) {
+            parameters.push(middle);
+        }
         intervals.push(second);
         intervals.push(first);
     }
-    roots.sort_by(f64::total_cmp);
-    roots.dedup_by(|first, second| {
+    parameters.sort_by(f64::total_cmp);
+    parameters.dedup_by(|first, second| {
         (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    roots.sort_by(|first, second| {
-        seed.map_or_else(
-            || first.total_cmp(second),
-            |seed| {
-                (first - seed)
-                    .abs()
-                    .total_cmp(&(second - seed).abs())
-                    .then_with(|| first.total_cmp(second))
-            },
-        )
-    });
-    Some(roots)
+    Some(ScalarBezierRoots::Isolated(parameters))
+}
+
+fn scalar_bernstein_sign_variations(controls: &[f64]) -> usize {
+    // Bernstein-form Descartes variation bounds the roots in the open span.
+    // Exact zero controls do not contribute a sign.
+    controls
+        .iter()
+        .copied()
+        .filter(|value| *value != 0.0)
+        .map(f64::is_sign_positive)
+        .fold((None, 0), |(previous, variations), positive| {
+            (
+                Some(positive),
+                variations + usize::from(previous.is_some_and(|previous| previous != positive)),
+            )
+        })
+        .1
+}
+
+fn subdivide_scalar_bezier_span(
+    span: ScalarBezierSpan,
+    middle: f64,
+) -> (ScalarBezierSpan, ScalarBezierSpan) {
+    let mut levels = vec![span.controls];
+    while levels.last().is_some_and(|level| level.len() > 1) {
+        let next = levels
+            .last()
+            .expect("nonempty Bézier subdivision level")
+            .windows(2)
+            .map(|pair| (pair[0] + pair[1]) * 0.5)
+            .collect();
+        levels.push(next);
+    }
+    let first = levels.iter().map(|level| level[0]).collect();
+    let second = levels
+        .iter()
+        .rev()
+        .map(|level| *level.last().expect("nonempty Bézier subdivision level"))
+        .collect();
+    (
+        ScalarBezierSpan {
+            domain: [span.domain[0], middle],
+            controls: first,
+        },
+        ScalarBezierSpan {
+            domain: [middle, span.domain[1]],
+            controls: second,
+        },
+    )
+}
+
+fn scalar_bezier_value(controls: &[f64], parameter: f64, domain: [f64; 2]) -> f64 {
+    let fraction = (parameter - domain[0]) / (domain[1] - domain[0]);
+    let mut values = controls.to_vec();
+    while values.len() > 1 {
+        values = values
+            .windows(2)
+            .map(|pair| (1.0 - fraction) * pair[0] + fraction * pair[1])
+            .collect();
+    }
+    values[0]
 }
 
 #[derive(Clone)]
@@ -3918,38 +4073,6 @@ fn insert_homogeneous_curve_knot(
     Some(())
 }
 
-fn subdivide_bezier_pcurve_span(
-    span: BezierPcurveSpan,
-    middle: f64,
-) -> (BezierPcurveSpan, BezierPcurveSpan) {
-    let mut levels = vec![span.controls];
-    while levels.last().is_some_and(|level| level.len() > 1) {
-        let next = levels
-            .last()
-            .expect("nonempty Bézier subdivision level")
-            .windows(2)
-            .map(|pair| std::array::from_fn(|axis| (pair[0][axis] + pair[1][axis]) * 0.5))
-            .collect();
-        levels.push(next);
-    }
-    let first = levels.iter().map(|level| level[0]).collect();
-    let second = levels
-        .iter()
-        .rev()
-        .map(|level| *level.last().expect("nonempty Bézier subdivision level"))
-        .collect();
-    (
-        BezierPcurveSpan {
-            domain: [span.domain[0], middle],
-            controls: first,
-        },
-        BezierPcurveSpan {
-            domain: [middle, span.domain[1]],
-            controls: second,
-        },
-    )
-}
-
 fn pcurve_residual_distance(controls: &[[f64; 3]], parameter: f64, domain: [f64; 2]) -> f64 {
     let fraction = (parameter - domain[0]) / (domain[1] - domain[0]);
     let mut values = controls.to_vec();
@@ -3977,7 +4100,14 @@ fn closest_parameter_candidates(
         .min_by(f64::total_cmp)?;
     let mut nearest = candidates
         .into_iter()
-        .filter(|candidate| candidate.1.total_cmp(&minimum_distance).is_eq())
+        .filter(|candidate| {
+            let scale = candidate
+                .1
+                .abs()
+                .max(minimum_distance.abs())
+                .max(f64::MIN_POSITIVE);
+            (candidate.1 - minimum_distance).abs() <= 128.0 * f64::EPSILON * scale
+        })
         .map(|candidate| candidate.0)
         .collect::<Vec<_>>();
     nearest.sort_by(|first, second| {
@@ -10070,15 +10200,15 @@ mod tests {
         .zip(weights)
         .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
         .collect::<Vec<_>>();
-        let roots = super::incident_pcurve_parameters(
-            4,
-            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            &controls,
-            Some(&weights),
-            Point2::new(0.0, 0.0),
-            Some(0.11),
-        )
-        .expect("complete homogeneous root isolation");
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 4,
+            knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            control_points: controls,
+            weights: Some(weights.to_vec()),
+            periodic: false,
+        };
+        let roots = super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(0.11))
+            .expect("complete homogeneous root isolation");
 
         assert_eq!(roots.len(), 4);
         for (actual, expected) in roots.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
@@ -10087,16 +10217,47 @@ mod tests {
     }
 
     #[test]
+    fn rational_pcurve_closest_search_retains_close_global_branches() {
+        let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
+        let control_points = [
+            0.006_306_3,
+            -0.029_213_45,
+            0.095_295_133_333_333_34,
+            -0.070_192_95,
+            0.024_297_3,
+        ]
+        .into_iter()
+        .zip(weights)
+        .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
+        .collect();
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 4,
+            knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            control_points,
+            weights: Some(weights.to_vec()),
+            periodic: false,
+        };
+        let parameters =
+            super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
+                .expect("complete global closest-point search");
+
+        assert_eq!(parameters.len(), 4, "{parameters:?}");
+        for (actual, expected) in parameters.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
+            assert!((actual - expected).abs() < 1.0e-8);
+        }
+    }
+
+    #[test]
     fn coincident_pcurve_interval_retains_seed_and_boundaries() {
-        let roots = super::incident_pcurve_parameters(
-            2,
-            &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            &[Point2::new(2.0, -3.0); 3],
-            None,
-            Point2::new(2.0, -3.0),
-            Some(0.3),
-        )
-        .expect("coincident interval");
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![Point2::new(2.0, -3.0); 3],
+            weights: None,
+            periodic: false,
+        };
+        let roots = super::closest_pcurve_parameters(&pcurve, Point2::new(2.0, -3.0), Some(0.3))
+            .expect("coincident interval");
 
         assert_eq!(roots, [0.3, 0.0, 1.0]);
     }
