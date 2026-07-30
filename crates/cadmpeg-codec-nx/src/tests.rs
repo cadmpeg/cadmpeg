@@ -604,7 +604,11 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
 
 #[test]
 fn nx_extent_completeness_checks_nested_and_face_termination() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FaceSelection, Length, Termination};
+    use cadmpeg_ir::features::FeatureId;
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, GeneratedVertexRef, Length,
+        Termination, VertexSelection,
+    };
 
     let side = |termination: Termination| ExtrudeSide {
         termination,
@@ -637,6 +641,40 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
                 faces: Vec::new(),
                 native: "nx:face-selection#1".to_string(),
             },
+        }
+    ));
+    assert!(crate::decode::termination_is_incomplete(
+        &Termination::OffsetFromFace {
+            face: FaceSelection::Native("nx:face-selection#2".to_string()),
+            offset: Length(1.0),
+        }
+    ));
+    assert!(crate::decode::termination_is_incomplete(
+        &Termination::ToVertex {
+            vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
+        }
+    ));
+    assert!(!crate::decode::termination_is_incomplete(
+        &Termination::ToVertex {
+            vertex: VertexSelection::Generated {
+                vertex: GeneratedVertexRef {
+                    feature: FeatureId("test:feature#0".into()),
+                    local_id: "vertex-0".into(),
+                },
+                native: "nx:vertex-selection#1".into(),
+            },
+        }
+    ));
+    assert!(crate::decode::extrude_start_is_incomplete(
+        &ExtrudeStart::FromFace {
+            face: FaceSelection::Native("nx:face-selection#3".to_string()),
+            offset: None,
+        }
+    ));
+    assert!(!crate::decode::extrude_start_is_incomplete(
+        &ExtrudeStart::FromFace {
+            face: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("test:face#start".into(),)]),
+            offset: None,
         }
     ));
 }

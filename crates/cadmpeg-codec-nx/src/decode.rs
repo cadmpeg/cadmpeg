@@ -22,9 +22,9 @@ use cadmpeg_ir::eval::{
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, ExtrudeExtent,
-    FaceSelection, FeatureDefinition, HoleKind, Length, ParameterId, PathRef, PatternKind,
-    ProfileRef, RadiusSpec, RibConstruction, RibDraft, SketchSpace, SweepMode, Termination,
-    TrimRegion,
+    ExtrudeStart, FaceSelection, FeatureDefinition, HoleKind, Length, ParameterId, PathRef,
+    PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, SketchSpace, SweepMode,
+    Termination, TrimRegion, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -9700,7 +9700,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                     direction,
                     cadmpeg_ir::features::ExtrudeDirection::Unresolved
                 )
-                || matches!(start, cadmpeg_ir::features::ExtrudeStart::Unresolved)
+                || extrude_start_is_incomplete(start)
                 || extrude_extent_is_incomplete(extent)
                 || matches!(op, BooleanOp::Unresolved)
                 || solid.is_none() =>
@@ -10067,18 +10067,31 @@ pub(crate) fn extrude_extent_is_incomplete(extent: &ExtrudeExtent) -> bool {
     }
 }
 
+pub(crate) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
+    match start {
+        ExtrudeStart::Unresolved => true,
+        ExtrudeStart::FromFace { face, .. } => face_selection_is_incomplete(face),
+        ExtrudeStart::ProfilePlane | ExtrudeStart::OffsetProfilePlane { .. } => false,
+    }
+}
+
 pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
     match termination {
         Termination::Unresolved => true,
         Termination::ToFace { face, .. } => face_selection_is_incomplete(face),
+        Termination::ToVertex { vertex } => {
+            matches!(
+                vertex,
+                VertexSelection::Unresolved | VertexSelection::Native(_)
+            )
+        }
+        Termination::OffsetFromFace { face, .. } => face_selection_is_incomplete(face),
         Termination::ToShape { target } => face_selection_is_incomplete(target),
         Termination::Blind { .. }
         | Termination::ThroughAll
         | Termination::ThroughNext
         | Termination::ToFirst
         | Termination::ToLast
-        | Termination::ToVertex { .. }
-        | Termination::OffsetFromFace { .. }
         | Termination::Angle { .. } => false,
     }
 }
