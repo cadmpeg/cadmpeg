@@ -423,13 +423,15 @@ pub(crate) fn reconstruct_incidence_with_edge_classes_and_mesh(
         mesh_bytes,
     )?;
     let edge_faces = completed_edge_faces.as_slice();
+    let mut face_edges = vec![Vec::new(); face_count];
+    for (edge, &[left, right]) in edge_faces.iter().enumerate() {
+        face_edges.get_mut(left)?.push(edge);
+        if right != left {
+            face_edges.get_mut(right)?.push(edge);
+        }
+    }
     let mut faces = Vec::with_capacity(face_count);
-    for face in 0..face_count {
-        let incident: Vec<usize> = edge_faces
-            .iter()
-            .enumerate()
-            .filter_map(|(edge, adjacent)| adjacent.contains(&face).then_some(edge))
-            .collect();
+    for incident in face_edges {
         let cycles = incidence_cycles(&incident, edge_points)?;
         faces.push(FaceTopology {
             boundaries: cycles
@@ -810,7 +812,19 @@ pub(crate) fn incidence_cycles(
         .copied()
         .filter(|edge| edge_points[*edge][0] != edge_points[*edge][1])
         .collect();
-    while let Some(&first) = unseen.iter().min() {
+    let mut ordered_unseen = unseen.iter().copied().collect::<Vec<_>>();
+    ordered_unseen.sort_unstable();
+    let mut next_unseen = 0;
+    loop {
+        while ordered_unseen
+            .get(next_unseen)
+            .is_some_and(|edge| !unseen.contains(edge))
+        {
+            next_unseen += 1;
+        }
+        let Some(&first) = ordered_unseen.get(next_unseen) else {
+            break;
+        };
         let start_vertex = edge_points[first][0];
         let mut vertex = start_vertex;
         let mut edge = first;

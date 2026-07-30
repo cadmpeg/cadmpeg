@@ -2447,13 +2447,14 @@ pub fn propagate_edge_port_points(
             }
         }
         for (ports, pair) in edge_ports.iter().zip(&mut resolved) {
-            if pair.is_none() {
-                if let (Some(&left), Some(&right)) =
-                    (port_points.get(&ports[0]), port_points.get(&ports[1]))
-                {
-                    if ports[0] == ports[1] || left != right {
-                        *pair = Some([left, right]);
+            if let (Some(&left), Some(&right)) =
+                (port_points.get(&ports[0]), port_points.get(&ports[1]))
+            {
+                if ports[0] == ports[1] || left != right {
+                    if pair.is_some_and(|pair| !same_unordered_pair(pair, [left, right])) {
+                        return None;
                     }
+                    *pair = Some([left, right]);
                 }
             }
         }

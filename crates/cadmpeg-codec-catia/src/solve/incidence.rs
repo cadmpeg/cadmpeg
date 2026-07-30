@@ -6,13 +6,13 @@ use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, EdgeRow, StandardTopology,
 };
 use crate::solve::mesh_quotient::{
-    mesh_assignment_endpoint_cycles_viable_where, mesh_face_endpoint_configurations,
-    MeshConstraintBudget, MeshEndpointPair, MeshEndpointSolutionFilter,
-    MeshFaceEndpointConfigurations, MeshPartialEndpointConstraint, MeshQuotient,
-    MeshQuotientGaugeState, MAX_MESH_CONSTRAINT_OPERATIONS,
+    initial_mesh_quotient, mesh_assignment_endpoint_cycles_viable_where,
+    mesh_face_endpoint_configurations, MeshConstraintBudget, MeshEndpointPair,
+    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshPartialEndpointConstraint,
+    MeshQuotient, MeshQuotientGaugeState, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
-    bind_edge_port_candidates, same_unordered_pair, MeshBoundaryEdgeCandidate,
+    propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
     MeshDeferredBoundaryCycle, MeshDeferredFaceBoundary, MeshFaceBoundaryAssignment,
     MeshFaceBoundaryDomain,
 };
@@ -366,6 +366,7 @@ pub(crate) enum IncidenceSolve<T> {
     Exhausted,
 }
 
+#[cfg(test)]
 impl<T> IncidenceSolve<T> {
     fn into_option(self) -> Option<T> {
         match self {
@@ -1889,129 +1890,77 @@ pub(crate) fn reconstruct_incidence_candidates(
     edge_ports: Option<&[[u32; 2]]>,
     face_count: usize,
 ) -> Option<StandardTopology> {
+    const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
+
     if edge_ports.is_some_and(|ports| ports.len() != edge_candidates.len()) {
         return None;
     }
-    let port_compatible = |pairs: &[[usize; 2]]| {
-        edge_ports.is_none_or(|ports| {
-            let singleton = pairs
-                .iter()
-                .copied()
-                .map(|pair| vec![pair])
-                .collect::<Vec<_>>();
-            bind_edge_port_candidates(ports, &singleton).is_some()
-        })
+    let quotient = match edge_ports {
+        Some(ports) => Some(initial_mesh_quotient(
+            edge_candidates,
+            vertex_points.len(),
+            ports,
+        )?),
+        None => None,
     };
-    let pair_solutions = incidence_endpoint_pair_solutions(
-        edge_rows,
-        vertex_points,
-        edge_faces,
-        edge_candidates,
-        face_count,
-        None,
-        None,
-        None,
-        &port_compatible,
-    )?;
-    let mut solution = None;
-    for pairs in pair_solutions {
-        let pairs = match edge_ports {
-            Some(ports) => {
-                let singleton = pairs.into_iter().map(|pair| vec![pair]).collect::<Vec<_>>();
-                bind_edge_port_candidates(ports, &singleton)?
-            }
-            None => pairs,
-        };
-        let candidate = reconstruct_incidence(
-            edge_rows.to_vec(),
-            vertex_points.to_vec(),
-            edge_faces,
-            &pairs,
-            face_count,
-        )?;
-        match &solution {
-            Some(stored) if *stored != candidate => return None,
-            None => solution = Some(candidate),
-            Some(_) => {}
-        }
-    }
-    solution
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn incidence_endpoint_pair_solutions<F>(
-    edge_rows: &[EdgeRow],
-    vertex_points: &[[f64; 3]],
-    edge_faces: &[[usize; 2]],
-    edge_candidates: &[Vec<[usize; 2]>],
-    face_count: usize,
-    mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
-    partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
-    solution_valid: &F,
-) -> Option<Vec<Vec<[usize; 2]>>>
-where
-    F: Fn(&[[usize; 2]]) -> bool,
-{
-    incidence_endpoint_pair_solution_outcome(
-        edge_rows,
-        vertex_points,
-        edge_faces,
-        edge_candidates,
-        face_count,
-        mesh_assignments,
-        mesh_quotient,
-        partial_solution_valid,
-        solution_valid,
-    )
-    .into_option()
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn incidence_endpoint_pair_solution_outcome<F>(
-    edge_rows: &[EdgeRow],
-    vertex_points: &[[f64; 3]],
-    edge_faces: &[[usize; 2]],
-    edge_candidates: &[Vec<[usize; 2]>],
-    face_count: usize,
-    mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
-    partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
-    solution_valid: &F,
-) -> IncidenceSolve<Vec<Vec<[usize; 2]>>>
-where
-    F: Fn(&[[usize; 2]]) -> bool,
-{
-    const MAX_PAIR_SOLUTIONS: usize = 256;
-    let mut solutions = Vec::new();
-    let mut result_limit_exhausted = false;
+    let mut solution_pairs: Option<Vec<[usize; 2]>> = None;
+    let mut assignment_count = 0usize;
+    let mut invalid = false;
     let outcome = visit_incidence_endpoint_pair_solutions(
         edge_rows,
         vertex_points,
         edge_faces,
         edge_candidates,
         face_count,
-        mesh_assignments,
-        mesh_quotient,
-        partial_solution_valid,
-        solution_valid,
+        None,
+        quotient.as_ref(),
+        None,
+        &|_| true,
         &mut |pairs| {
-            if solutions.len() == MAX_PAIR_SOLUTIONS {
-                result_limit_exhausted = true;
-                ControlFlow::Break(())
-            } else {
-                solutions.push(pairs.to_vec());
-                ControlFlow::Continue(())
+            if assignment_count == MAX_TOPOLOGY_ASSIGNMENTS {
+                invalid = true;
+                return ControlFlow::Break(());
             }
+            assignment_count += 1;
+            let oriented;
+            let pairs = if let Some(ports) = edge_ports {
+                let Some(propagated) = propagate_edge_port_points(
+                    ports,
+                    &pairs.iter().copied().map(Some).collect::<Vec<_>>(),
+                ) else {
+                    invalid = true;
+                    return ControlFlow::Break(());
+                };
+                let Some(pairs) = propagated.into_iter().collect::<Option<Vec<_>>>() else {
+                    invalid = true;
+                    return ControlFlow::Break(());
+                };
+                oriented = pairs;
+                oriented.as_slice()
+            } else {
+                pairs
+            };
+            if let Some(stored) = &solution_pairs {
+                if stored.as_slice() != pairs {
+                    invalid = true;
+                    return ControlFlow::Break(());
+                }
+                return ControlFlow::Continue(());
+            }
+            solution_pairs = Some(pairs.to_vec());
+            ControlFlow::Continue(())
         },
     );
-    match outcome {
-        IncidenceSolve::Solved(_) if result_limit_exhausted => IncidenceSolve::Exhausted,
-        IncidenceSolve::Solved(_) if solutions.is_empty() => IncidenceSolve::Rejected,
-        IncidenceSolve::Solved(_) => IncidenceSolve::Solved(solutions),
-        IncidenceSolve::Rejected => IncidenceSolve::Rejected,
-        IncidenceSolve::Exhausted => IncidenceSolve::Exhausted,
+    if invalid || !matches!(outcome, IncidenceSolve::Solved(_)) {
+        return None;
     }
+    reconstruct_incidence(
+        edge_rows.to_vec(),
+        vertex_points.to_vec(),
+        edge_faces,
+        &solution_pairs?,
+        face_count,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
