@@ -884,22 +884,11 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut offset = 0usize;
-        while offset + 30 <= bytes.len() {
-            let Some(relative) = bytes[offset..]
-                .windows(4)
-                .position(|window| window == [3, 0, 0, 0])
-            else {
-                break;
-            };
-            let start = offset + relative;
-            offset = start + 1;
+        let indexed_offsets = indexed_record_offsets(bytes).collect::<Vec<_>>();
+        for &start in &indexed_offsets {
             let Some(class_tag) = bytes.get(start + 4..start + 7) else {
-                break;
-            };
-            if !class_tag.iter().all(u8::is_ascii_digit) {
                 continue;
-            }
+            };
             let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
             let Some((entity_suffix, entity_id, optional_slot_present, end)) =
@@ -957,7 +946,6 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 member_indices,
                 member_offsets,
             });
-            offset = record_end;
         }
 
         // Legacy Design streams do not carry textual entity headers. Their
@@ -975,9 +963,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .filter(|entity| native_stream(&entity.id) == Some(scope.as_str()))
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<std::collections::HashSet<_>>();
-        let mut position = 0usize;
-        while let Some(start) = next_indexed_record_offset(bytes, position) {
-            position = start + 1;
+        for start in indexed_offsets {
             let Some(entity_suffix) = u32_at(bytes, start + 7) else {
                 continue;
             };
@@ -2610,14 +2596,15 @@ pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
     u32_at(bytes, at.checked_add(7)?)
 }
 
-pub(crate) fn next_indexed_record_offset(bytes: &[u8], mut position: usize) -> Option<usize> {
-    while position + 11 <= bytes.len() {
-        if indexed_record_header_at(bytes, position) {
-            return Some(position);
-        }
-        position += 1;
-    }
-    None
+pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {
+    indexed_record_offsets(bytes.get(position..)?)
+        .next()
+        .map(|at| position + at)
+}
+
+pub(crate) fn indexed_record_offsets(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
+    memchr::memmem::find_iter(bytes, &[3, 0, 0, 0])
+        .filter(|at| indexed_record_header_at(bytes, *at))
 }
 
 pub(crate) fn next_indexed_record_offset_with_index(
