@@ -77,6 +77,8 @@ fixtures, claims above L1 remain unproven.
   model-context queries without becoming parameter dependencies.
   Colon-scoped assignment targets retain their complete typed identity and
   source-order value semantics without emitting false local parameters.
+  Unscoped dimension, tolerance, and pattern targets retain their typed system
+  namespace and source-order value semantics without emitting user parameters.
   Left-hand `value(parameter,row[,column])` statements retain a typed table-cell
   target and its complete dependency order without emitting a false scalar
   parameter.

@@ -113,6 +113,13 @@ pub enum CurveExpressionTarget {
         /// Complete scoped relation identifier.
         name: String,
     },
+    /// Unscoped Creo dimension, tolerance, or pattern system symbol.
+    SystemSymbol {
+        /// Complete system identifier.
+        name: String,
+        /// Namespace family selected by the identifier prefix.
+        family: CurveExpressionSystemSymbolFamily,
+    },
     /// Cell of a series or list parameter.
     TableCell {
         /// Table-valued parameter identifier.
@@ -124,6 +131,28 @@ pub enum CurveExpressionTarget {
     },
 }
 
+/// Namespace family of an unscoped Creo relation system symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CurveExpressionSystemSymbolFamily {
+    /// Parent-model or assembly dimension (`d#`).
+    Dimension,
+    /// Section dimension (`sd#`).
+    SectionDimension,
+    /// Reference dimension (`rd#`).
+    ReferenceDimension,
+    /// Section reference dimension (`rsd#`).
+    SectionReferenceDimension,
+    /// Known parent dimension used in a section (`kd#`).
+    KnownDimension,
+    /// Driven dimension (`ad#`).
+    DrivenDimension,
+    /// Pattern instance count (`p#`).
+    PatternCount,
+    /// Plus, minus, or symmetric tolerance component.
+    Tolerance,
+}
+
 impl CurveExpressionAssignment {
     pub(crate) fn parameter_target(&self) -> Option<(&str, Option<&str>)> {
         match &self.target {
@@ -132,6 +161,7 @@ impl CurveExpressionAssignment {
                 declared_unit,
             } => Some((name, declared_unit.as_deref())),
             CurveExpressionTarget::ScopedSymbol { .. }
+            | CurveExpressionTarget::SystemSymbol { .. }
             | CurveExpressionTarget::TableCell { .. } => None,
         }
     }
@@ -143,6 +173,7 @@ impl CurveExpressionAssignment {
                 declared_unit,
             } => Some((name, declared_unit.as_deref())),
             CurveExpressionTarget::ScopedSymbol { name } => Some((name, None)),
+            CurveExpressionTarget::SystemSymbol { name, .. } => Some((name, None)),
             CurveExpressionTarget::TableCell { .. } => None,
         }
     }
@@ -948,6 +979,12 @@ fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
         valid_scoped_expression_identifier(name).then(|| CurveExpressionTarget::ScopedSymbol {
             name: name.to_owned(),
         })
+    } else if let Some(family) = expression_system_symbol_family(name) {
+        declared_unit.is_none().then_some(())?;
+        Some(CurveExpressionTarget::SystemSymbol {
+            name: name.to_owned(),
+            family,
+        })
     } else {
         valid_expression_identifier(name).then(|| CurveExpressionTarget::Parameter {
             name: name.to_owned(),
@@ -965,6 +1002,28 @@ fn valid_expression_identifier(name: &str) -> bool {
 
 fn valid_scoped_expression_identifier(name: &str) -> bool {
     expression_identifier_end(name.as_bytes(), 0) == Some(name.len())
+}
+
+fn expression_system_symbol_family(name: &str) -> Option<CurveExpressionSystemSymbolFamily> {
+    let digit_start = name
+        .bytes()
+        .position(|byte| byte.is_ascii_digit())
+        .filter(|digit_start| *digit_start != 0)?;
+    name.get(digit_start..)?
+        .bytes()
+        .all(|byte| byte.is_ascii_digit())
+        .then_some(())?;
+    match name.get(..digit_start)?.to_ascii_lowercase().as_str() {
+        "d" => Some(CurveExpressionSystemSymbolFamily::Dimension),
+        "sd" => Some(CurveExpressionSystemSymbolFamily::SectionDimension),
+        "rd" => Some(CurveExpressionSystemSymbolFamily::ReferenceDimension),
+        "rsd" => Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension),
+        "kd" => Some(CurveExpressionSystemSymbolFamily::KnownDimension),
+        "ad" => Some(CurveExpressionSystemSymbolFamily::DrivenDimension),
+        "p" => Some(CurveExpressionSystemSymbolFamily::PatternCount),
+        "tpm" | "tp" | "tm" => Some(CurveExpressionSystemSymbolFamily::Tolerance),
+        _ => None,
+    }
 }
 
 fn split_assignment_target_arguments(source: &str) -> Option<Vec<&str>> {
@@ -4405,6 +4464,59 @@ mod tests {
         assert!(assignments[..2]
             .iter()
             .all(|assignment| assignment.parameter_target().is_none()));
+    }
+
+    #[test]
+    fn classifies_and_evaluates_unscoped_system_symbol_targets() {
+        use CurveExpressionSystemSymbolFamily::{
+            Dimension, DrivenDimension, KnownDimension, PatternCount, ReferenceDimension,
+            SectionDimension, SectionReferenceDimension, Tolerance,
+        };
+
+        let targets = [
+            ("d7", Dimension),
+            ("sd8", SectionDimension),
+            ("rd9", ReferenceDimension),
+            ("rsd10", SectionReferenceDimension),
+            ("kd11", KnownDimension),
+            ("Ad12", DrivenDimension),
+            ("p13", PatternCount),
+            ("tpm14", Tolerance),
+            ("tp15", Tolerance),
+            ("tm16", Tolerance),
+        ];
+        let mut sources = targets
+            .iter()
+            .enumerate()
+            .map(|(index, (name, _))| format!("{name}={}", index + 1))
+            .collect::<Vec<_>>();
+        sources.push("sum=d7+sd8+rd9+rsd10+kd11+Ad12+p13+tpm14+tp15+tm16".to_owned());
+        let lines = sources
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine { text, offset })
+            .collect::<Vec<_>>();
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments.len(), targets.len() + 1);
+        for (assignment, (name, family)) in assignments.iter().zip(targets) {
+            assert_eq!(
+                assignment.target,
+                CurveExpressionTarget::SystemSymbol {
+                    name: name.to_owned(),
+                    family,
+                }
+            );
+            assert!(assignment.parameter_target().is_none());
+        }
+        assert_eq!(
+            assignments
+                .last()
+                .and_then(|assignment| assignment.value.clone()),
+            Some(CurveExpressionValue::Number(55.0))
+        );
     }
 
     #[test]

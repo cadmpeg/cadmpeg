@@ -3348,6 +3348,14 @@ identifier such as `d7:0` or `width:fid_25:cid_12`. The assignment drives that
 scoped item and does not declare an unscoped local parameter. A scoped target
 cannot carry a new-parameter unit declaration. Its evaluated value becomes the
 current value of the complete scoped identifier for following source lines.
+Unscoped system targets use the prefixes `d` for a model dimension, `sd` for a
+section dimension, `rd` for a reference dimension, `rsd` for a section
+reference dimension, `kd` for a known parent dimension, `ad` for a driven
+dimension, `p` for a pattern instance count, and `tpm`, `tp`, or `tm` for a
+tolerance component, followed by one or more decimal digits. A system target
+drives that system item, does not declare a user parameter, cannot carry a
+new-parameter unit declaration, and supplies the complete identifier's current
+value to following source lines.
 
 A `crv_fr_eqn` program containing calls to `abs`, `ceil`, `floor`, `extract`, `if`,
 `itos`, or `search`, or containing `IF`, `ELSE`, or `ENDIF` control lines, is
