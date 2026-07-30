@@ -3482,6 +3482,12 @@ fn standard_decode_retains_vertex_allocation_tags() {
 #[test]
 fn scan_parses_outer_directory_with_absolute_extents() {
     let bytes = outer_directory_catpart();
+    let directory_offset =
+        usize::try_from(u32::from_be_bytes(bytes[8..12].try_into().unwrap())).unwrap();
+    assert_eq!(
+        crate::container::outer_stream_directory_range(&bytes),
+        Some(directory_offset..bytes.len())
+    );
     let scan = crate::container::scan_bytes(bytes.clone());
     let outer = scan.outer.as_ref().expect("outer directory");
     assert_eq!(outer.inner, 0);
@@ -14249,8 +14255,12 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("complete compact schema program");
     assert_eq!(schema_program.byte_offset, schema_program_offset as u64);
     assert_eq!(
-        schema_program.footer_byte_offset,
+        schema_program.boundary_byte_offset,
         schema_footer_offset as u64
+    );
+    assert_eq!(
+        schema_program.boundary,
+        crate::native::CatiaLegacySchemaProgramBoundary::VendorFooter
     );
     assert_eq!(
         schema_program.data,
@@ -14433,6 +14443,31 @@ fn native_round_trips_legacy_entity_identity_runs() {
             .expect("migrated schema program")
             .identifiers,
         schema_program.identifiers
+    );
+
+    let mut previous_boundary_namespace = namespace.clone();
+    let mut previous_boundary_runs: Vec<crate::native::CatiaLegacyEntityRun> =
+        previous_boundary_namespace
+            .arena_as("legacy_entity_runs")
+            .expect("load previous schema-program boundary");
+    previous_boundary_runs[0]
+        .schema_program
+        .as_mut()
+        .expect("schema program")
+        .boundary = crate::native::CatiaLegacySchemaProgramBoundary::StreamDirectory;
+    previous_boundary_namespace
+        .set_arena("legacy_entity_runs", &previous_boundary_runs)
+        .expect("store previous schema-program boundary");
+    previous_boundary_namespace.version = 222;
+    let migrated_boundary = crate::native::CatiaNative::load(&previous_boundary_namespace)
+        .expect("migrate schema-program boundary");
+    assert_eq!(
+        migrated_boundary.legacy_entity_runs[0]
+            .schema_program
+            .as_ref()
+            .expect("migrated schema program")
+            .boundary,
+        crate::native::CatiaLegacySchemaProgramBoundary::VendorFooter
     );
 
     let mut invalid_schema_program = native.clone();

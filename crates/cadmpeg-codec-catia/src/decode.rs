@@ -288,6 +288,22 @@ fn finish_decode(
         .iter()
         .filter(|run| run.schema_program.is_some())
         .count();
+    let legacy_vendor_footer_schema_program_count = native
+        .legacy_entity_runs
+        .iter()
+        .filter_map(|run| run.schema_program.as_ref())
+        .filter(|program| {
+            program.boundary == crate::native::CatiaLegacySchemaProgramBoundary::VendorFooter
+        })
+        .count();
+    let legacy_directory_bound_schema_program_count = native
+        .legacy_entity_runs
+        .iter()
+        .filter_map(|run| run.schema_program.as_ref())
+        .filter(|program| {
+            program.boundary == crate::native::CatiaLegacySchemaProgramBoundary::StreamDirectory
+        })
+        .count();
     let legacy_schema_identifier_count = native
         .legacy_entity_runs
         .iter()
@@ -1497,6 +1513,14 @@ fn finish_decode(
         (
             "decoded_legacy_schema_program_count".to_string(),
             legacy_schema_program_count,
+        ),
+        (
+            "decoded_legacy_vendor_footer_schema_program_count".to_string(),
+            legacy_vendor_footer_schema_program_count,
+        ),
+        (
+            "decoded_legacy_directory_bound_schema_program_count".to_string(),
+            legacy_directory_bound_schema_program_count,
         ),
         (
             "decoded_legacy_schema_identifier_count".to_string(),

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity framing for the pre-`7C05` design stream.
 
+use crate::container;
+
 const CATALOG_OPEN: &[u8] = b"\xde\x04\xfe\xfe\x12CATCatalogManager";
 const SCHEMA_PROGRAM_PREFIX: &[u8] = b"\xfe\xfe\xfe";
 const SCHEMA_PROGRAM_FOOTER: &[u8] = b"\x4e\x11\x00\x00\x00DASSAULT-SYSTEMES\x05\x00\x00\x00CATIA";
@@ -276,12 +278,23 @@ pub struct LegacyEntityIdentity {
 pub struct LegacySchemaProgram {
     /// Offset of the first program byte after the fixed prefix.
     pub offset: usize,
-    /// Offset of the fixed vendor footer following the program.
-    pub footer_offset: usize,
+    /// Offset of the production following the program.
+    pub boundary_offset: usize,
+    /// Production that closes the program.
+    pub boundary: LegacySchemaProgramBoundary,
     /// Exact program bytes, including the terminal `FE`.
     pub bytes: Vec<u8>,
     /// Complete inclusive-length identifier packets in source order.
     pub identifiers: Vec<LegacySchemaIdentifier>,
+}
+
+/// Production that closes a compact legacy schema program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacySchemaProgramBoundary {
+    /// Fixed vendor footer preceded by the terminal `FE`.
+    VendorFooter,
+    /// Validated outer stream directory preceded by the terminal `FE`.
+    StreamDirectory,
 }
 
 /// One complete inclusive-length identifier packet in a compact schema program.
@@ -325,12 +338,24 @@ pub struct LegacyEntityRun {
 /// Parse complete legacy identity runs terminated by the fixed schema-catalog opener.
 #[must_use]
 pub fn parse_runs(data: &[u8]) -> Vec<LegacyEntityRun> {
+    let directory_offset = container::outer_stream_directory_range(data).map(|range| range.start);
+    parse_runs_with_directory_offset(data, directory_offset)
+}
+
+fn parse_runs_with_directory_offset(
+    data: &[u8],
+    directory_offset: Option<usize>,
+) -> Vec<LegacyEntityRun> {
     memchr::memmem::find_iter(data, CATALOG_OPEN)
-        .filter_map(|catalog_offset| parse_run_before(data, catalog_offset))
+        .filter_map(|catalog_offset| parse_run_before(data, catalog_offset, directory_offset))
         .collect()
 }
 
-fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRun> {
+fn parse_run_before(
+    data: &[u8],
+    catalog_offset: usize,
+    directory_offset: Option<usize>,
+) -> Option<LegacyEntityRun> {
     let mut identities = data[..catalog_offset]
         .windows(6)
         .enumerate()
@@ -425,7 +450,7 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
     bind_integer_names(&text_fields, &mut integer_values);
     Some(LegacyEntityRun {
         catalog_offset,
-        schema_program: parse_schema_program(data, catalog_offset),
+        schema_program: parse_schema_program(data, catalog_offset, directory_offset),
         identities,
         role_selectors,
         text_fields,
@@ -439,7 +464,11 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
     })
 }
 
-fn parse_schema_program(data: &[u8], catalog_offset: usize) -> Option<LegacySchemaProgram> {
+fn parse_schema_program(
+    data: &[u8],
+    catalog_offset: usize,
+    directory_offset: Option<usize>,
+) -> Option<LegacySchemaProgram> {
     let prefix_offset = catalog_offset.checked_add(CATALOG_OPEN.len())?;
     let offset = prefix_offset.checked_add(SCHEMA_PROGRAM_PREFIX.len())?;
     if data.get(prefix_offset..offset)? != SCHEMA_PROGRAM_PREFIX {
@@ -453,11 +482,27 @@ fn parse_schema_program(data: &[u8], catalog_offset: usize) -> Option<LegacySche
             let footer_offset = offset.checked_add(relative)?;
             (footer_offset > offset && data.get(footer_offset - 1) == Some(&0xfe))
                 .then_some(footer_offset)
-        })?;
-    let bytes = data.get(offset..footer_offset)?.to_vec();
+        });
+    let (boundary_offset, boundary) = if let Some(footer_offset) = footer_offset {
+        (footer_offset, LegacySchemaProgramBoundary::VendorFooter)
+    } else {
+        let directory_offset = directory_offset?;
+        if directory_offset <= offset
+            || directory_offset > search_end
+            || data.get(directory_offset - 1) != Some(&0xfe)
+        {
+            return None;
+        }
+        (
+            directory_offset,
+            LegacySchemaProgramBoundary::StreamDirectory,
+        )
+    };
+    let bytes = data.get(offset..boundary_offset)?.to_vec();
     Some(LegacySchemaProgram {
         offset,
-        footer_offset,
+        boundary_offset,
+        boundary,
         identifiers: parse_schema_identifiers(&bytes, offset),
         bytes,
     })
@@ -1257,10 +1302,11 @@ fn text_value_allow_empty(bytes: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_runs, LegacyRoleName, LegacyRoleSelector, LegacyRoleSelectorEncoding, CATALOG_OPEN,
-        INTEGER_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, SCHEMA_PROGRAM_FOOTER, SCHEMA_PROGRAM_PREFIX,
-        STRING_OPEN, TEXT_OPEN, TYPE_OPEN,
+        parse_runs, parse_runs_with_directory_offset, LegacyRoleName, LegacyRoleSelector,
+        LegacyRoleSelectorEncoding, CATALOG_OPEN, INTEGER_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN,
+        SCHEMA_PROGRAM_FOOTER, SCHEMA_PROGRAM_PREFIX, STRING_OPEN, TEXT_OPEN, TYPE_OPEN,
     };
+    use crate::container;
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
         identity_with_lead(bytes, entity_id, 0x81);
@@ -1303,7 +1349,11 @@ mod tests {
             .as_ref()
             .expect("complete schema program");
         assert_eq!(program.offset, program_offset);
-        assert_eq!(program.footer_offset, footer_offset);
+        assert_eq!(program.boundary_offset, footer_offset);
+        assert_eq!(
+            program.boundary,
+            super::LegacySchemaProgramBoundary::VendorFooter
+        );
         assert_eq!(program.bytes, [0x81, 0x04, b'F', b'o', b'o', 0x84, 0xfe]);
         assert_eq!(
             program.identifiers,
@@ -1327,7 +1377,7 @@ mod tests {
             .schema_program
             .as_ref()
             .expect("first complete footer closes the program");
-        assert_eq!(repeated.footer_offset, footer_offset);
+        assert_eq!(repeated.boundary_offset, footer_offset);
 
         let mut incomplete_footer = bytes;
         let incomplete_footer_offset = program_offset + 1;
@@ -1341,8 +1391,41 @@ mod tests {
             .as_ref()
             .expect("incomplete footer does not shadow a complete footer");
         assert_eq!(
-            program.footer_offset,
+            program.boundary_offset,
             footer_offset + SCHEMA_PROGRAM_FOOTER.len()
+        );
+    }
+
+    #[test]
+    fn retains_a_schema_program_closed_by_the_outer_directory() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(CATALOG_OPEN);
+        bytes.extend_from_slice(SCHEMA_PROGRAM_PREFIX);
+        let program_offset = bytes.len();
+        bytes.extend_from_slice(&[0x81, 0x04, b'F', b'o', b'o', 0x84, 0xfe]);
+        let directory_offset = bytes.len();
+        bytes.extend_from_slice(container::DIR_MAGIC);
+
+        let runs = parse_runs_with_directory_offset(&bytes, Some(directory_offset));
+        let program = runs[0]
+            .schema_program
+            .as_ref()
+            .expect("directory-bound schema program");
+        assert_eq!(program.offset, program_offset);
+        assert_eq!(program.boundary_offset, directory_offset);
+        assert_eq!(
+            program.boundary,
+            super::LegacySchemaProgramBoundary::StreamDirectory
+        );
+        assert_eq!(program.bytes, [0x81, 0x04, b'F', b'o', b'o', 0x84, 0xfe]);
+
+        let mut unterminated = bytes;
+        unterminated[directory_offset - 1] = 0x81;
+        assert!(
+            parse_runs_with_directory_offset(&unterminated, Some(directory_offset))[0]
+                .schema_program
+                .is_none()
         );
     }
 

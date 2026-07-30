@@ -615,10 +615,22 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
 /// in its descriptors are absolute file offsets.
 #[must_use]
 pub fn parse_outer_stream_directory(data: &[u8]) -> Option<InnerDir> {
+    parse_outer_stream_directory_with_range(data).map(|(_, directory)| directory)
+}
+
+/// Parse and return the exact outer stream-directory byte range.
+#[must_use]
+pub fn outer_stream_directory_range(data: &[u8]) -> Option<Range<usize>> {
+    parse_outer_stream_directory_with_range(data).map(|(range, _)| range)
+}
+
+fn parse_outer_stream_directory_with_range(data: &[u8]) -> Option<(Range<usize>, InnerDir)> {
     let dir_offset = usize::try_from(u32_be(data, 8)?).ok()?;
     let dir_length = usize::try_from(u32_be(data, 12)?).ok()?;
-    (dir_offset.checked_add(dir_length)? == data.len()).then_some(())?;
-    parse_directory_region(data, 0, dir_offset, dir_length)
+    let dir_end = dir_offset.checked_add(dir_length)?;
+    (dir_end == data.len()).then_some(())?;
+    let directory = parse_directory_region(data, 0, dir_offset, dir_length)?;
+    Some((dir_offset..dir_end, directory))
 }
 
 fn parse_directory_region(

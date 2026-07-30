@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 222;
+pub const CATIA_NATIVE_VERSION: u32 = 223;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -29,6 +29,8 @@ const CATIA_LEGACY_ROLE_SELECTOR_VERSION: u32 = 212;
 const CATIA_LEGACY_ROLE_FIELD_CODE_VERSION: u32 = 220;
 #[cfg(test)]
 const CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION: u32 = 222;
+#[cfg(test)]
+const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -2987,8 +2989,12 @@ pub struct CatiaLegacyEntityIdentity {
 pub struct CatiaLegacySchemaProgram {
     /// Offset of the first program byte after the fixed prefix.
     pub byte_offset: u64,
-    /// Offset of the fixed vendor footer following the program.
-    pub footer_byte_offset: u64,
+    /// Offset of the production following the program.
+    #[serde(alias = "footer_byte_offset")]
+    pub boundary_byte_offset: u64,
+    /// Production that closes the program.
+    #[serde(default)]
+    pub boundary: CatiaLegacySchemaProgramBoundary,
     /// Exact program bytes, including the terminal `FE`.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
@@ -2996,6 +3002,17 @@ pub struct CatiaLegacySchemaProgram {
     /// Complete inclusive-length identifier packets in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub identifiers: Vec<CatiaLegacySchemaIdentifier>,
+}
+
+/// Production that closes a compact legacy schema program.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaLegacySchemaProgramBoundary {
+    /// Fixed vendor footer preceded by the terminal `FE`.
+    #[default]
+    VendorFooter,
+    /// Validated outer stream directory preceded by the terminal `FE`.
+    StreamDirectory,
 }
 
 /// One complete inclusive-length identifier packet in a compact schema program.
@@ -3766,7 +3783,15 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                 catalog_offset: run.catalog_offset as u64,
                 schema_program: run.schema_program.map(|program| CatiaLegacySchemaProgram {
                     byte_offset: program.offset as u64,
-                    footer_byte_offset: program.footer_offset as u64,
+                    boundary_byte_offset: program.boundary_offset as u64,
+                    boundary: match program.boundary {
+                        legacy_entity::LegacySchemaProgramBoundary::VendorFooter => {
+                            CatiaLegacySchemaProgramBoundary::VendorFooter
+                        }
+                        legacy_entity::LegacySchemaProgramBoundary::StreamDirectory => {
+                            CatiaLegacySchemaProgramBoundary::StreamDirectory
+                        }
+                    },
                     data: program.bytes,
                     identifiers: program
                         .identifiers
@@ -4176,7 +4201,7 @@ fn validate_legacy_entity_runs(
                     && u64::try_from(program.data.len())
                         .ok()
                         .and_then(|len| program.byte_offset.checked_add(len))
-                        == Some(program.footer_byte_offset)
+                        == Some(program.boundary_byte_offset)
                     && legacy_schema_identifiers(program)
                         .is_some_and(|identifiers| program.identifiers == identifiers)
             })
@@ -8256,6 +8281,14 @@ impl CatiaNative {
                         "legacy schema-program offset exceeds the platform index range".to_string(),
                     )
                 })?;
+            }
+        }
+        if namespace.version < CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION {
+            for program in legacy_entity_runs
+                .iter_mut()
+                .filter_map(|run| run.schema_program.as_mut())
+            {
+                program.boundary = CatiaLegacySchemaProgramBoundary::VendorFooter;
             }
         }
         legacy_entity_runs.sort_by_key(|run| run.byte_offset);

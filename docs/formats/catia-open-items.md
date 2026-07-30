@@ -12,8 +12,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 ## Design intent
 
-- The closing production for compact schema programs without the fixed
-  `DASSAULT-SYSTEMES` / `CATIA` footer is unresolved.
 - Compact schema-program record semantics and the mapping from selected role
   bytes to field meanings are unresolved.
 - The relation between application-specific `CATFeatCont` object graphs and the
