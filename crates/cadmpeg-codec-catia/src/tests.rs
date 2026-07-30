@@ -3774,6 +3774,18 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         bytes.extend([0xe3, selector_low]);
     }
 
+    fn selected_compound_field(
+        bytes: &mut Vec<u8>,
+        value: &str,
+        role_selector: u8,
+        selector_low: u8,
+    ) {
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.push(u8::try_from(value.len() + 1).expect("short value"));
+        bytes.extend(value.as_bytes());
+        bytes.extend([role_selector, 0xe3, selector_low]);
+    }
+
     let mut bytes = zero_entity_catpart();
     bytes.push(0xea);
     bytes.extend(1_u32.to_le_bytes());
@@ -3781,6 +3793,17 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     compound_field(&mut bytes, "", "body", 0x53);
     compound_field(&mut bytes, "2 * #1_", "param", 0x52);
     compound_field(&mut bytes, "(#1_ : #In LENGTH) : LENGTH\n", "opened", 0x51);
+    bytes.push(0xea);
+    bytes.extend(2_u32.to_le_bytes());
+    bytes.push(0xfd);
+    selected_compound_field(&mut bytes, "", 0xcf, 0x9f);
+    selected_compound_field(&mut bytes, "#1_ + #2_", 0xd1, 0x9e);
+    selected_compound_field(
+        &mut bytes,
+        "(#1_ : #In LENGTH,#2_ : #In LENGTH) : LENGTH\n",
+        0xd3,
+        0x9d,
+    );
     bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
 
     let decoded = CatiaCodec
@@ -3788,17 +3811,21 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         .expect("decode compound legacy fields");
     assert_eq!(
         decoded.report.coverage["decoded_legacy_text_field_count"],
-        3
+        6
     );
     assert_eq!(
         decoded.report.coverage["decoded_legacy_e3_role_tail_text_field_count"],
-        3
+        6
     );
     assert_eq!(
         decoded.report.coverage["decoded_legacy_role_text_field_count"],
-        2
+        4
     );
-    assert_eq!(decoded.report.coverage["decoded_legacy_relation_count"], 1);
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_selected_role_count"],
+        3
+    );
+    assert_eq!(decoded.report.coverage["decoded_legacy_relation_count"], 2);
 
     let native = crate::native::CatiaNative::load(
         decoded
@@ -3818,6 +3845,26 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         native.legacy_entity_runs[0].relations[0].expression,
         "2 * #1_"
     );
+    assert_eq!(
+        native.legacy_entity_runs[0].relations[1].expression,
+        "#1_ + #2_"
+    );
+    assert_eq!(
+        native.legacy_entity_runs[0].text_fields[4]
+            .role
+            .as_ref()
+            .map(|role| (&role.name, role.selector)),
+        Some((&crate::native::CatiaLegacyRoleName::Selector(0xcf), 4768))
+    );
+
+    let mut invalid = native;
+    invalid.legacy_entity_runs[0].role_selectors[3].name =
+        crate::native::CatiaLegacyRoleName::Selector(0);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid selected role");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
 }
 
 #[test]
@@ -14056,7 +14103,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
             .map(|role| {
                 (
                     role.entity_id,
-                    role.name.as_str(),
+                    role.name.literal().expect("literal role"),
                     role.encoding,
                     role.selector,
                 )
@@ -14107,14 +14154,14 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].text_fields[0]
             .role
             .as_ref()
-            .map(|role| (role.name.as_str(), role.selector)),
+            .map(|role| { (role.name.literal().expect("literal role"), role.selector,) }),
         Some(("body", 4))
     );
     assert_eq!(
         native.legacy_entity_runs[0].text_fields[1]
             .role
             .as_ref()
-            .map(|role| (role.name.as_str(), role.selector)),
+            .map(|role| { (role.name.literal().expect("literal role"), role.selector,) }),
         Some(("param", 9))
     );
     assert_eq!(native.legacy_entity_runs[0].relations.len(), 1);

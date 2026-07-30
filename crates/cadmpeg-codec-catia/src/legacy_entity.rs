@@ -29,15 +29,40 @@ pub enum LegacyRoleSelectorEncoding {
     Paged,
 }
 
+/// Stored representation of one legacy schema role name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LegacyRoleName {
+    /// Inclusive-length UTF-8 role name.
+    Literal(String),
+    /// Unresolved one-byte schema selector.
+    Selector(u8),
+}
+
+impl LegacyRoleName {
+    fn literal(&self) -> Option<&str> {
+        match self {
+            Self::Literal(value) => Some(value),
+            Self::Selector(_) => None,
+        }
+    }
+
+    fn byte_len(&self) -> usize {
+        match self {
+            Self::Literal(value) => 1 + value.len(),
+            Self::Selector(_) => 1,
+        }
+    }
+}
+
 /// One length-framed schema role and its selector.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyRoleSelector {
-    /// Offset of the role-name length byte.
+    /// Offset of the literal length or schema-selector byte.
     pub offset: usize,
     /// Stored identity whose interval contains the role.
     pub entity_id: u32,
-    /// Stored UTF-8 role name.
-    pub name: String,
+    /// Stored literal or unresolved role name.
+    pub name: LegacyRoleName,
     /// Selector framing production.
     pub encoding: LegacyRoleSelectorEncoding,
     /// Stored selector following the role name.
@@ -369,9 +394,9 @@ fn parse_synchronous_states(
 ) -> Vec<LegacyRelationSynchronousState> {
     roles
         .iter()
-        .filter(|role| role.name == "synchrone")
+        .filter(|role| role.name.literal() == Some("synchrone"))
         .filter_map(|role| {
-            let at = role_selector_end(role)?;
+            let at = role.end_offset()?;
             let end = at.checked_add(6)?;
             let interval_end = identities
                 .iter()
@@ -396,17 +421,6 @@ fn parse_synchronous_states(
             })
         })
         .collect()
-}
-
-fn role_selector_end(role: &LegacyRoleSelector) -> Option<usize> {
-    let selector_len = match role.encoding {
-        LegacyRoleSelectorEncoding::FixedU32 => 5,
-        LegacyRoleSelectorEncoding::Paged => 2,
-    };
-    role.offset
-        .checked_add(1)?
-        .checked_add(role.name.len())?
-        .checked_add(selector_len)
 }
 
 fn parse_type_descriptors(
@@ -611,7 +625,11 @@ fn bind_integer_names(fields: &[LegacyTextField], values: &mut [LegacyIntegerVal
 
 fn unique_co_owned_name(fields: &[LegacyTextField], entity_id: u32) -> Option<&LegacyTextField> {
     let mut names = fields.iter().filter(|field| {
-        field.entity_id == entity_id && field.role.as_ref().is_some_and(|role| role.name == "name")
+        field.entity_id == entity_id
+            && field
+                .role
+                .as_ref()
+                .is_some_and(|role| role.name.literal() == Some("name"))
     });
     let name = names.next()?;
     names.next().is_none().then_some(name)
@@ -630,14 +648,20 @@ fn parse_relations(
             .position(|field| field.entity_id != entity_id)
             .map_or(fields.len(), |relative| start + relative);
         let entity_fields = &fields[start..end];
-        let mut expressions = entity_fields
-            .iter()
-            .filter(|field| field.role.as_ref().is_some_and(|role| role.name == "body"));
+        let mut expressions = entity_fields.iter().filter(|field| {
+            field
+                .role
+                .as_ref()
+                .is_some_and(|role| role.name.literal() == Some("body"))
+        });
         let expression = expressions.next();
         let duplicate_expression = expressions.next();
-        let mut signatures = entity_fields
-            .iter()
-            .filter(|field| field.role.as_ref().is_some_and(|role| role.name == "param"));
+        let mut signatures = entity_fields.iter().filter(|field| {
+            field
+                .role
+                .as_ref()
+                .is_some_and(|role| role.name.literal() == Some("param"))
+        });
         let signature = signatures.next();
         let duplicate_signature = signatures.next();
         let role_bound_pair = match (
@@ -653,7 +677,27 @@ fn parse_relations(
             }
             _ => None,
         };
-        let pair = role_bound_pair.or_else(|| {
+        let selected_role_pair = match entity_fields {
+            [prelude, expression, signature]
+                if prelude.value.is_empty()
+                    && prelude.role.is_none()
+                    && prelude.encoding == LegacyTextEncoding::U8InclusiveLengthE3RoleTail
+                    && expression.encoding == LegacyTextEncoding::U8InclusiveLengthE3RoleTail
+                    && signature.encoding == LegacyTextEncoding::U8InclusiveLengthE3RoleTail
+                    && expression
+                        .role
+                        .as_ref()
+                        .is_some_and(|role| matches!(&role.name, LegacyRoleName::Selector(_)))
+                    && signature
+                        .role
+                        .as_ref()
+                        .is_some_and(|role| matches!(&role.name, LegacyRoleName::Selector(_))) =>
+            {
+                Some((expression, signature))
+            }
+            _ => None,
+        };
+        let pair = role_bound_pair.or(selected_role_pair).or_else(|| {
             let [expression, signature] = entity_fields else {
                 return None;
             };
@@ -690,7 +734,7 @@ fn relation_role_selector(field: &LegacyTextField, role_name: &str) -> Option<u3
     field
         .role
         .as_ref()
-        .filter(|role| role.name == role_name)
+        .filter(|role| role.name.literal() == Some(role_name))
         .map(|role| role.selector)
 }
 
@@ -768,14 +812,14 @@ fn parse_text_fields(
     memchr::memmem::find_iter(&data[start..end], TEXT_OPEN)
         .filter_map(|relative| {
             let offset = start + relative;
-            let payload = offset + TEXT_OPEN.len();
+            let payload = offset.checked_add(TEXT_OPEN.len())?;
             parse_text_field(data, payload, end).map(|(encoding, value)| LegacyTextField {
                 offset,
                 entity_id,
                 encoding,
                 role: role_selectors
                     .iter()
-                    .find(|role| role.end_offset() == offset)
+                    .find(|role| role.end_offset() == Some(offset))
                     .cloned(),
                 value,
             })
@@ -784,14 +828,13 @@ fn parse_text_fields(
 }
 
 impl LegacyRoleSelector {
-    fn end_offset(&self) -> usize {
+    fn end_offset(&self) -> Option<usize> {
         self.offset
-            + 1
-            + self.name.len()
-            + match self.encoding {
+            .checked_add(self.name.byte_len())?
+            .checked_add(match self.encoding {
                 LegacyRoleSelectorEncoding::FixedU32 => 5,
                 LegacyRoleSelectorEncoding::Paged => 2,
-            }
+            })
     }
 }
 
@@ -801,7 +844,7 @@ fn parse_role_selectors(
     end: usize,
     entity_id: u32,
 ) -> Vec<LegacyRoleSelector> {
-    (start..end)
+    let mut roles = (start..end)
         .filter_map(|offset| {
             let inclusive_length = usize::from(*data.get(offset)?);
             if !(2..=u8::MAX as usize).contains(&inclusive_length) {
@@ -846,12 +889,43 @@ fn parse_role_selectors(
             (selector != 0).then_some(LegacyRoleSelector {
                 offset,
                 entity_id,
-                name,
+                name: LegacyRoleName::Literal(name),
                 encoding,
                 selector,
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    roles.extend(
+        memchr::memmem::find_iter(&data[start..end], TEXT_OPEN).filter_map(|relative| {
+            let payload = start.checked_add(relative)?.checked_add(TEXT_OPEN.len())?;
+            let value_length = usize::from(*data.get(payload)?).checked_sub(1)?;
+            let role_offset = payload.checked_add(1)?.checked_add(value_length)?;
+            let name_selector = *data.get(role_offset)?;
+            let page_offset = role_offset.checked_add(1)?;
+            let low_offset = role_offset.checked_add(2)?;
+            if name_selector == 0 || data.get(page_offset) != Some(&0xe3) {
+                return None;
+            }
+            let selector_low = *data.get(low_offset)?;
+            if role_offset.checked_add(3)? > end
+                || text_value_allow_empty(data.get(payload.checked_add(1)?..role_offset)?).is_none()
+            {
+                return None;
+            }
+            Some(LegacyRoleSelector {
+                offset: role_offset,
+                entity_id,
+                name: LegacyRoleName::Selector(name_selector),
+                encoding: LegacyRoleSelectorEncoding::Paged,
+                selector: u32::from(0xe3_u8 - 0xd1)
+                    .checked_mul(256)?
+                    .checked_add(u32::from(selector_low))?
+                    .checked_add(1)?,
+            })
+        }),
+    );
+    roles.sort_by_key(|role| role.offset);
+    roles
 }
 
 fn valid_role_name(name: &str) -> bool {
@@ -890,6 +964,12 @@ fn role_tailed_text(data: &[u8], start: usize, length: usize, end: usize) -> Opt
     let value_end = start.checked_add(length)?;
     if value_end >= end {
         return None;
+    }
+    if value_end.checked_add(3)? <= end
+        && data.get(value_end).is_some_and(|selector| *selector != 0)
+        && data.get(value_end + 1) == Some(&0xe3)
+    {
+        return text_value_allow_empty(data.get(start..value_end)?);
     }
     let role_length = usize::from(*data.get(value_end)?);
     if role_length < 2 {
@@ -931,8 +1011,8 @@ fn text_value_allow_empty(bytes: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_runs, CATALOG_OPEN, INTEGER_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, STRING_OPEN,
-        TEXT_OPEN, TYPE_OPEN,
+        parse_runs, LegacyRoleName, LegacyRoleSelector, LegacyRoleSelectorEncoding, CATALOG_OPEN,
+        INTEGER_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, STRING_OPEN, TEXT_OPEN, TYPE_OPEN,
     };
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
@@ -944,6 +1024,18 @@ mod tests {
         bytes.extend_from_slice(&entity_id.to_le_bytes());
         bytes.push(lead);
         bytes.extend_from_slice(&[0xfd, 0x8c]);
+    }
+
+    #[test]
+    fn role_selector_boundary_rejects_offset_overflow() {
+        let role = LegacyRoleSelector {
+            offset: usize::MAX,
+            entity_id: 1,
+            name: LegacyRoleName::Literal("body".to_string()),
+            encoding: LegacyRoleSelectorEncoding::Paged,
+            selector: 1,
+        };
+        assert_eq!(role.end_offset(), None);
     }
 
     #[test]
@@ -1072,11 +1164,11 @@ mod tests {
         let run = &parse_runs(&bytes)[0];
         let fields = &run.text_fields;
         let body = fields[0].role.as_ref().expect("paged role selector");
-        assert_eq!(body.name, "body");
+        assert_eq!(body.name.literal(), Some("body"));
         assert_eq!(body.selector, 4134);
         assert_eq!(body.encoding, super::LegacyRoleSelectorEncoding::Paged);
         let parameter = fields[1].role.as_ref().expect("fixed role selector");
-        assert_eq!(parameter.name, "param");
+        assert_eq!(parameter.name.literal(), Some("param"));
         assert_eq!(parameter.selector, 15108);
         assert_eq!(
             parameter.encoding,
@@ -1085,7 +1177,7 @@ mod tests {
         assert_eq!(
             run.role_selectors
                 .iter()
-                .map(|role| (role.name.as_str(), role.selector))
+                .filter_map(|role| role.name.literal().map(|name| (name, role.selector)))
                 .collect::<Vec<_>>(),
             [("body", 4134), ("param", 15108), ("paramin", 43)]
         );
@@ -1208,25 +1300,47 @@ mod tests {
             bytes.extend_from_slice(&[0xe3, selector]);
         }
 
+        fn selected_compound_field(
+            bytes: &mut Vec<u8>,
+            value: &str,
+            role_selector: u8,
+            selector_low: u8,
+        ) {
+            bytes.extend_from_slice(TEXT_OPEN);
+            bytes.push(u8::try_from(value.len() + 1).expect("short value"));
+            bytes.extend_from_slice(value.as_bytes());
+            bytes.extend_from_slice(&[role_selector, 0xe3, selector_low]);
+        }
+
         let mut bytes = Vec::new();
         identity(&mut bytes, 1);
         identity_with_lead(&mut bytes, 93, 0xe5);
         compound_field(&mut bytes, "", "body", 0x53);
         compound_field(&mut bytes, "2 * #1_", "param", 0x52);
         compound_field(&mut bytes, "(#1_ : #In LENGTH) : LENGTH\n", "opened", 0x51);
+        identity_with_lead(&mut bytes, 99, 0xfd);
+        selected_compound_field(&mut bytes, "", 0xcf, 0x9f);
+        selected_compound_field(&mut bytes, "#1_ + #2_", 0xd1, 0x9e);
+        selected_compound_field(
+            &mut bytes,
+            "(#1_ : #In LENGTH,#2_ : #In LENGTH) : LENGTH\n",
+            0xd3,
+            0x9d,
+        );
         bytes.extend_from_slice(CATALOG_OPEN);
 
         let run = &parse_runs(&bytes)[0];
-        assert_eq!(run.text_fields.len(), 3);
+        assert_eq!(run.text_fields.len(), 6);
         assert!(run.text_fields.iter().all(|field| {
             field.encoding == super::LegacyTextEncoding::U8InclusiveLengthE3RoleTail
         }));
         assert_eq!(
             run.text_fields
                 .iter()
+                .take(3)
                 .map(|field| (
                     field.value.as_str(),
-                    field.role.as_ref().map(|role| role.name.as_str())
+                    field.role.as_ref().and_then(|role| role.name.literal())
                 ))
                 .collect::<Vec<_>>(),
             [
@@ -1238,8 +1352,12 @@ mod tests {
         assert_eq!(
             run.role_selectors
                 .iter()
-                .filter(|role| matches!(role.name.as_str(), "body" | "param" | "opened"))
-                .map(|role| (role.name.as_str(), role.selector, role.encoding))
+                .filter(|role| { matches!(role.name.literal(), Some("body" | "param" | "opened")) })
+                .filter_map(|role| {
+                    role.name
+                        .literal()
+                        .map(|name| (name, role.selector, role.encoding))
+                })
                 .collect::<Vec<_>>(),
             [
                 ("body", 4692, super::LegacyRoleSelectorEncoding::Paged),
@@ -1252,6 +1370,24 @@ mod tests {
         assert_eq!(relation.body_selector, Some(4692));
         assert_eq!(relation.parameter_selector, Some(4691));
         assert_eq!(relation.parameter_entity_id, None);
+        assert_eq!(
+            run.text_fields[4]
+                .role
+                .as_ref()
+                .map(|role| (&role.name, role.selector)),
+            Some((&super::LegacyRoleName::Selector(0xcf), 4768))
+        );
+        assert_eq!(
+            run.text_fields[5]
+                .role
+                .as_ref()
+                .map(|role| (&role.name, role.selector)),
+            Some((&super::LegacyRoleName::Selector(0xd1), 4767))
+        );
+        assert_eq!(run.relations.len(), 2);
+        assert_eq!(run.relations[1].expression, "#1_ + #2_");
+        assert_eq!(run.relations[1].body_selector, None);
+        assert_eq!(run.relations[1].parameter_selector, None);
     }
 
     #[test]
