@@ -1530,6 +1530,161 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
 }
 
 #[test]
+fn nx_revolve_completeness_checks_construction_and_output_lineage() {
+    use cadmpeg_ir::features::{
+        Angle, BooleanOp, Feature, FeatureDefinition, FeatureId, GeneratedVertexRef, PathRef,
+        ProfileRef, RevolutionAxis, RevolutionConstruction, RevolveExtent, Termination,
+        VertexSelection,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let output = ir.model.bodies[0].id.clone();
+    let face = ir.model.faces[0].id.clone();
+    let complete = RevolutionConstruction {
+        profile: Some(ProfileRef::Faces(vec![face])),
+        axis: Some(RevolutionAxis {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        }),
+        extent: Some(RevolveExtent::OneSided {
+            termination: Termination::Angle { angle: Angle(1.0) },
+        }),
+        axis_reference: None,
+        solid: Some(true),
+        face_maker_class: None,
+        fuse_order: None,
+        allow_multi_profile_faces: None,
+    };
+    assert!(!crate::decode::revolve_feature_is_incomplete(
+        &complete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    assert_eq!(
+        crate::decode::body_output_feature_family(&FeatureDefinition::Revolve {
+            construction: complete.clone(),
+            op: BooleanOp::NewBody,
+        }),
+        Some("revolve"),
+    );
+
+    let mut incomplete = complete.clone();
+    incomplete.profile = None;
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.axis = None;
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.axis.as_mut().unwrap().direction = Vector3::new(0.0, 0.0, 2.0);
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.extent = None;
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.extent = Some(RevolveExtent::OneSided {
+        termination: Termination::Angle { angle: Angle(0.0) },
+    });
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.axis_reference = Some(PathRef::Native("test:axis".into()));
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.solid = None;
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.face_maker_class = Some(" ".into());
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    let source = FeatureId("test:feature#vertex-source".into());
+    incomplete = complete.clone();
+    incomplete.extent = Some(RevolveExtent::OneSided {
+        termination: Termination::ToVertex {
+            vertex: VertexSelection::Generated {
+                vertex: GeneratedVertexRef {
+                    feature: source.clone(),
+                    local_id: "vertex-0".into(),
+                },
+                native: "test:vertex-selection".into(),
+            },
+        },
+    });
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    assert!(!crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[source],
+    ));
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &complete,
+        BooleanOp::Unresolved,
+        &[],
+    ));
+
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#revolve".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: vec![output],
+        definition: FeatureDefinition::Revolve {
+            construction: complete,
+            op: BooleanOp::NewBody,
+        },
+        native_ref: None,
+    });
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    ir.model.features[0].outputs.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("revolve (1)"));
+}
+
+#[test]
 fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
     use cadmpeg_ir::features::{EdgeSelection, FaceSelection, ProfileRef};
     use cadmpeg_ir::ids::{EdgeId, FaceId};

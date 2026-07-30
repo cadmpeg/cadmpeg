@@ -25,8 +25,9 @@ use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, ExtrudeExtent,
     ExtrudeStart, FaceSelection, FeatureDefinition, FeatureId, HoleKind, Length, LoftPointSection,
-    LoftSection, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec, RibConstruction,
-    RibDraft, SketchSpace, SweepMode, SweepOrientation, Termination, TrimRegion, VertexSelection,
+    LoftSection, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolutionConstruction,
+    RevolveExtent, RibConstruction, RibDraft, SketchSpace, SweepMode, SweepOrientation,
+    Termination, TrimRegion, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -10329,6 +10330,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "extrude"
             }
+            FeatureDefinition::Revolve { construction, op }
+                if revolve_feature_is_incomplete(construction, *op, &feature.dependencies) =>
+            {
+                "revolve"
+            }
             FeatureDefinition::Sweep {
                 profile,
                 sections,
@@ -10646,6 +10652,7 @@ pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Opti
         FeatureDefinition::SewBodies { .. } => Some("sew bodies"),
         FeatureDefinition::TrimBodies { .. } => Some("trim bodies"),
         FeatureDefinition::Extrude { .. } => Some("extrude"),
+        FeatureDefinition::Revolve { .. } => Some("revolve"),
         FeatureDefinition::Sweep { .. } => Some("sweep"),
         FeatureDefinition::OffsetSurface { .. } => Some("offset surface"),
         FeatureDefinition::Thicken { .. } => Some("thicken"),
@@ -10965,6 +10972,43 @@ pub(crate) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
         ExtrudeStart::OffsetProfilePlane { offset } => !offset.0.is_finite(),
         ExtrudeStart::ProfilePlane => false,
     }
+}
+
+pub(crate) fn revolve_feature_is_incomplete(
+    construction: &RevolutionConstruction,
+    op: BooleanOp,
+    dependencies: &[FeatureId],
+) -> bool {
+    construction
+        .profile
+        .as_ref()
+        .is_none_or(profile_ref_is_incomplete)
+        || construction.axis.is_none_or(|axis| {
+            !finite_feature_point(axis.origin) || !unit_feature_direction(axis.direction)
+        })
+        || construction.extent.as_ref().is_none_or(|extent| {
+            let side_is_incomplete = |termination: &Termination| {
+                termination_is_incomplete(termination)
+                    || termination_dependency_is_incomplete(termination, dependencies)
+            };
+            match extent {
+                RevolveExtent::OneSided { termination }
+                | RevolveExtent::Symmetric { termination } => side_is_incomplete(termination),
+                RevolveExtent::TwoSided { first, second } => {
+                    side_is_incomplete(first) || side_is_incomplete(second)
+                }
+            }
+        })
+        || construction
+            .axis_reference
+            .as_ref()
+            .is_some_and(path_ref_is_incomplete)
+        || construction.solid.is_none()
+        || construction
+            .face_maker_class
+            .as_ref()
+            .is_some_and(|class| class.trim().is_empty())
+        || matches!(op, BooleanOp::Unresolved)
 }
 
 pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
