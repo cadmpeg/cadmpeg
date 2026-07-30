@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 231;
+pub const CATIA_NATIVE_VERSION: u32 = 232;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -34,14 +34,17 @@ const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
 #[cfg(test)]
 const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
 #[cfg(test)]
-const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 228;
+pub(crate) const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 228;
 /// Native schema version adding the compact relation frame's context incidence.
 #[cfg(test)]
-const CATIA_RELATION_PROGRAM_CONTEXT_VERSION: u32 = 231;
+pub(crate) const CATIA_RELATION_PROGRAM_CONTEXT_VERSION: u32 = 231;
 #[cfg(test)]
-const CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION: u32 = 229;
+pub(crate) const CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION: u32 = 229;
 #[cfg(test)]
 const CATIA_CONFIGURATION_INCIDENCE_VERSION: u32 = 230;
+/// Native schema version separating configuration schema and entity references.
+#[cfg(test)]
+pub(crate) const CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION: u32 = 232;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1398,10 +1401,14 @@ pub struct CatiaEntityReference {
 /// One exact self-defining `Configuration` object production.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaConfigurationRecord {
-    /// Entity selected by the first stored reference.
-    pub first_reference: CatiaEntityReference,
+    /// Stored value-schema ordinal selected by the first reference.
+    pub schema_ordinal: u32,
+    /// Selected schema-catalog entry.
+    pub schema_entry: String,
+    /// Selected schema-catalog name.
+    pub schema_name: String,
     /// Entity selected by the second stored reference.
-    pub second_reference: CatiaEntityReference,
+    pub entity_reference: CatiaEntityReference,
 }
 
 /// One exact `configrow` successor-link production.
@@ -2990,6 +2997,7 @@ fn configuration_entity_reference(
 fn configuration_record(
     entity_id: u32,
     object: &CatiaObjectRecord,
+    value_schema_selections: &[CatiaEntityValueSchemaSelection],
     entities: &HashMap<(String, u32), String>,
 ) -> Option<CatiaConfigurationRecord> {
     if object.entity_id != Some(entity_id)
@@ -3002,21 +3010,30 @@ fn configuration_record(
         return None;
     }
     let [PayloadField::Reference {
-        value: first_entity_id,
+        value: schema_ordinal,
         ..
     }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
-        value: second_entity_id,
+        value: referenced_entity_id,
         ..
     }, PayloadField::Atom { value: 129, .. }, PayloadField::Terminator] =
         object.payload.fields.as_slice()
     else {
         return None;
     };
+    let mut matching_selections = value_schema_selections
+        .iter()
+        .filter(|selection| selection.ordinal == *schema_ordinal);
+    let selection = matching_selections.next()?;
+    if matching_selections.next().is_some() {
+        return None;
+    }
     Some(CatiaConfigurationRecord {
-        first_reference: configuration_entity_reference(&object.parent, *first_entity_id, entities),
-        second_reference: configuration_entity_reference(
+        schema_ordinal: *schema_ordinal,
+        schema_entry: selection.entry.clone(),
+        schema_name: selection.name.clone(),
+        entity_reference: configuration_entity_reference(
             &object.parent,
-            *second_entity_id,
+            *referenced_entity_id,
             entities,
         ),
     })
@@ -8015,8 +8032,12 @@ impl CatiaNative {
                 &entities_by_graph_identity,
                 &relation_expression_entities,
             );
-            entity.configuration_record =
-                configuration_record(entity.entity_id, object, &entities_by_graph_identity);
+            entity.configuration_record = configuration_record(
+                entity.entity_id,
+                object,
+                &entity.value_schema_selections,
+                &entities_by_graph_identity,
+            );
             entity.configuration_row_link =
                 configuration_row_link(entity.entity_id, object, &entities_by_graph_identity);
             entity.formula_relation = formula_relation(
@@ -8382,7 +8403,9 @@ impl CatiaNative {
                 }
             }
         }
-        if namespace.version < CATIA_CONFIGURATION_INCIDENCE_VERSION {
+        if namespace.version < CATIA_CONFIGURATION_INCIDENCE_VERSION
+            || namespace.version < CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION
+        {
             let records_by_id = records
                 .iter()
                 .map(|record| (record.id.as_str(), record))
@@ -8391,7 +8414,12 @@ impl CatiaNative {
                 entity.configuration_record = records_by_id
                     .get(entity.object_record.as_str())
                     .and_then(|object| {
-                        configuration_record(entity.entity_id, object, &entities_by_graph_identity)
+                        configuration_record(
+                            entity.entity_id,
+                            object,
+                            &entity.value_schema_selections,
+                            &entities_by_graph_identity,
+                        )
                     });
                 entity.configuration_row_link = records_by_id
                     .get(entity.object_record.as_str())
@@ -8530,6 +8558,7 @@ impl CatiaNative {
                                 configuration_record(
                                     entity.entity_id,
                                     object,
+                                    &entity.value_schema_selections,
                                     &entities_by_graph_identity,
                                 )
                             })

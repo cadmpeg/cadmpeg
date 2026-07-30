@@ -867,11 +867,10 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.configuration_record.as_ref())
-        .flat_map(|record| [&record.first_reference, &record.second_reference])
-        .filter(|reference| reference.entity.is_some())
+        .filter(|record| record.entity_reference.entity.is_some())
         .count();
     let unresolved_configuration_reference_count =
-        configuration_record_count * 2 - resolved_configuration_reference_count;
+        configuration_record_count - resolved_configuration_reference_count;
     let configuration_row_link_count = native
         .entity_records
         .iter()
@@ -1957,11 +1956,15 @@ fn finish_decode(
             configuration_record_count,
         ),
         (
-            "decoded_resolved_configuration_reference_count".to_string(),
+            "decoded_configuration_schema_reference_count".to_string(),
+            configuration_record_count,
+        ),
+        (
+            "decoded_resolved_configuration_entity_reference_count".to_string(),
             resolved_configuration_reference_count,
         ),
         (
-            "unresolved_configuration_reference_count".to_string(),
+            "unresolved_configuration_entity_reference_count".to_string(),
             unresolved_configuration_reference_count,
         ),
         (

@@ -160,12 +160,14 @@ current scores require those matrices and representative fixtures.
   multiple incoming occurrences. An incoming occurrence and
   design-field containment do not establish constraint identity, ownership,
   operands, or sketch incidence.
-  Exact `Configuration` records and `configrow` successor links retain every
-  stored identity and its optional same-graph resolution. Coverage partitions
-  resolved and unresolved configuration references, row classes, and row
-  successors. It also partitions row links that form one complete root-to-terminal
-  chain from links whose order remains unresolved. These records do not count as
-  transferred neutral configurations.
+  Exact `Configuration` records retain the first reference as a selected
+  value-schema ordinal, entry, and name, and retain the second reference as an
+  independently resolved or unresolved same-graph entity identity. Exact
+  `configrow` successor links retain their class and successor identities.
+  Coverage partitions schema references, resolved and unresolved entity
+  references, row classes, and row successors. It also partitions row links that
+  form one complete root-to-terminal chain from links whose order remains
+  unresolved. These records do not count as transferred neutral configurations.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node. Schema fields named `PRTSketch` or `Sketch` do not establish

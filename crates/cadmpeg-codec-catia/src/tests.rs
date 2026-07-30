@@ -2399,7 +2399,7 @@ fn standard_catpart_with_relation_program_payload(head: &[u8], instance_payload:
 }
 
 fn standard_catpart_with_configuration_incidences(
-    first_configuration_entity_id: u32,
+    configuration_schema_ordinal: u32,
     second_configuration_entity_id: u32,
     row_successor_entity_id: u32,
 ) -> Vec<u8> {
@@ -2412,7 +2412,7 @@ fn standard_catpart_with_configuration_incidences(
         payload.extend_from_slice(&value.to_le_bytes());
     };
     let mut configuration_payload = Vec::new();
-    reference(&mut configuration_payload, first_configuration_entity_id);
+    reference(&mut configuration_payload, configuration_schema_ordinal);
     atom(&mut configuration_payload, 2);
     reference(&mut configuration_payload, second_configuration_entity_id);
     atom(&mut configuration_payload, 129);
@@ -11350,28 +11350,28 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .expect("store older relation-program namespace");
         for (version, remove_context, remove_trailing, remove_framing, remove_repeated_reference) in [
             (
-                crate::native::CATIA_NATIVE_VERSION - 1,
+                crate::native::CATIA_RELATION_PROGRAM_CONTEXT_VERSION - 1,
                 true,
                 false,
                 false,
                 false,
             ),
             (
-                crate::native::CATIA_NATIVE_VERSION - 2,
+                crate::native::CATIA_RELATION_PROGRAM_CONTEXT_VERSION - 2,
                 true,
                 true,
                 false,
                 false,
             ),
             (
-                crate::native::CATIA_NATIVE_VERSION - 3,
+                crate::native::CATIA_RELATION_PROGRAM_INSTANCE_VERSION,
                 true,
                 true,
                 true,
                 false,
             ),
             (
-                crate::native::CATIA_NATIVE_VERSION - 4,
+                crate::native::CATIA_RELATION_PROGRAM_INSTANCE_VERSION - 1,
                 true,
                 true,
                 true,
@@ -11417,17 +11417,17 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
 
 #[test]
 fn configuration_productions_retain_exact_same_graph_incidence() {
-    let file = standard_catpart_with_configuration_incidences(14, 5, 7);
+    let file = standard_catpart_with_configuration_incidences(8, 5, 7);
     let native = crate::native::CatiaNative::decode(&file);
     let configuration = native.entity_records[0]
         .configuration_record
         .as_ref()
         .expect("complete Configuration production");
-    assert_eq!(configuration.first_reference.entity_id, 14);
-    assert!(configuration.first_reference.entity.is_none());
-    assert_eq!(configuration.second_reference.entity_id, 5);
+    assert_eq!(configuration.schema_ordinal, 8);
+    assert_eq!(configuration.schema_name, "Boolean");
+    assert_eq!(configuration.entity_reference.entity_id, 5);
     assert_eq!(
-        configuration.second_reference.entity.as_deref(),
+        configuration.entity_reference.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
     let row = native.entity_records[1]
@@ -11455,12 +11455,16 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_configuration_reference_count"],
+        decoded.report.coverage["decoded_configuration_schema_reference_count"],
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_reference_count"],
+        decoded.report.coverage["decoded_resolved_configuration_entity_reference_count"],
         1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_configuration_entity_reference_count"],
+        0
     );
     assert_eq!(
         decoded.report.coverage["decoded_configuration_row_link_count"],
@@ -11496,21 +11500,28 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
 #[test]
 fn configuration_productions_preserve_unresolved_identities() {
     let native = crate::native::CatiaNative::decode(
-        &standard_catpart_with_configuration_incidences(14, 15, 16),
+        &standard_catpart_with_configuration_incidences(8, 15, 16),
     );
     let configuration = native.entity_records[0]
         .configuration_record
         .as_ref()
         .expect("complete Configuration production");
-    assert!(configuration.first_reference.entity.is_none());
-    assert!(configuration.second_reference.entity.is_none());
+    assert_eq!(configuration.schema_name, "Boolean");
+    assert!(configuration.entity_reference.entity.is_none());
     let row = native.entity_records[1]
         .configuration_row_link
         .as_ref()
         .expect("complete configrow production");
     assert!(row.successor.entity.is_none());
 
-    let mut malformed = standard_catpart_with_configuration_incidences(14, 15, 16);
+    let mismatched_schema = crate::native::CatiaNative::decode(
+        &standard_catpart_with_configuration_incidences(14, 15, 16),
+    );
+    assert!(mismatched_schema.entity_records[0]
+        .configuration_record
+        .is_none());
+
+    let mut malformed = standard_catpart_with_configuration_incidences(8, 15, 16);
     let marker = [0x80, 250, 0, 0, 0];
     let offset = malformed
         .windows(marker.len())
@@ -11525,7 +11536,7 @@ fn configuration_productions_preserve_unresolved_identities() {
 
     let cyclic = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_configuration_incidences(14, 15, 6)),
+            &mut Cursor::new(standard_catpart_with_configuration_incidences(8, 15, 6)),
             &DecodeOptions::default(),
         )
         .expect("decode cyclic configuration row");
@@ -11546,13 +11557,13 @@ fn configuration_productions_preserve_unresolved_identities() {
 #[test]
 fn native_load_migrates_and_validates_configuration_incidences() {
     let native = crate::native::CatiaNative::decode(
-        &standard_catpart_with_configuration_incidences(14, 5, 7),
+        &standard_catpart_with_configuration_incidences(8, 5, 7),
     );
     let mut older = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut older)
         .expect("store configuration namespace");
-    older.version = crate::native::CATIA_NATIVE_VERSION - 2;
+    older.version = crate::native::CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION - 1;
     for entity in older
         .arenas
         .get_mut("entity_records")
@@ -12026,7 +12037,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
     unique_native
         .store(&mut stored)
         .expect("store older constraint-range namespace");
-    stored.version = crate::native::CATIA_NATIVE_VERSION - 3;
+    stored.version = crate::native::CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION - 1;
     stored
         .arenas
         .get_mut("entity_records")
