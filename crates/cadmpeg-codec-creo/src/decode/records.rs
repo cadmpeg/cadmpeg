@@ -1944,6 +1944,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertical_horizontal_constraint: segment.vertical_horizontal,
                     radius_dimension_id: segment.radius_ref,
                     secondary_radius_dimension_id: segment.radius2_ref,
+                    body: segment.body.clone(),
                     offset: segment.offset,
                 })
                 .collect(),
@@ -2032,6 +2033,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertical_horizontal_constraint: segment.vertical_horizontal,
                     radius_dimension_id: segment.radius_ref,
                     secondary_radius_dimension_id: segment.radius2_ref,
+                    body: segment.body.clone(),
                     offset: segment.offset,
                 })
                 .collect(),

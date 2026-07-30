@@ -468,6 +468,7 @@ fn closed_fallback_profile_selects_revolution_segments() {
         radius_ref: None,
         radius2_ref: None,
         external_id,
+        body: Vec::new(),
         offset: 0,
     };
     let segments = [segment(9), segment(10), segment(11)];
@@ -4129,6 +4130,7 @@ fn section_line_requires_two_solved_points() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 12,
+        body: Vec::new(),
         offset: 40,
     };
     let mut points = BTreeMap::from([(7, [2.0, 3.0])]);
@@ -4250,6 +4252,7 @@ fn section_point_uses_its_single_solved_position() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 4,
+        body: Vec::new(),
         offset: 40,
     };
     let points = BTreeMap::from([(7, [2.0, 3.0])]);
@@ -4274,6 +4277,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 12,
+        body: Vec::new(),
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
@@ -4641,6 +4645,7 @@ fn saved_line_joins_through_order_table() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 42,
+        body: Vec::new(),
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
@@ -5694,6 +5699,7 @@ fn saved_arc_joins_through_order_table() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 42,
+        body: Vec::new(),
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
@@ -6063,11 +6069,13 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 42,
+        body: Vec::new(),
         offset: 40,
     };
     let anchor = crate::feature::FeatureSegment {
         point_ids: [5, 6],
         external_id: 41,
+        body: Vec::new(),
         offset: 39,
         ..segment.clone()
     };
@@ -6238,6 +6246,7 @@ fn arc_carriers_use_trim_vertices() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 42,
+        body: Vec::new(),
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
@@ -6388,6 +6397,7 @@ fn placed_extrusion_line_defines_plane() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 3,
+        body: Vec::new(),
         offset: 9,
     };
     let points = BTreeMap::from([(1, [2.0, 3.0]), (2, [6.0, 3.0])]);
@@ -6460,6 +6470,7 @@ fn placed_extrusion_arc_defines_cylinder() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 4,
+        body: Vec::new(),
         offset: 9,
     };
     let points = BTreeMap::from([(1, [2.0, 0.0]), (2, [-2.0, 0.0]), (3, [0.0, 0.0])]);
@@ -6510,6 +6521,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 12,
+        body: Vec::new(),
         offset: 40,
     };
     let entity = SketchEntityId("entity".into());
@@ -6755,6 +6767,7 @@ fn dimension_identity_includes_its_feature_definition() {
             radius_ref: Some(circle.radius_ref),
             radius2_ref: Some(7),
             external_id: circle.external_id,
+            body: Vec::new(),
             offset: circle.offset,
         });
     let retained_slots = section_segment_radius_constraints(&definition, &sketch_917);
@@ -6806,6 +6819,7 @@ fn dimension_identity_includes_its_feature_definition() {
             radius_ref: Some(8),
             radius2_ref: Some(9),
             external_id: 43,
+            body: Vec::new(),
             offset: 21,
         });
     let typed_slots = section_segment_radius_constraints(&definition, &sketch_917);
@@ -6975,6 +6989,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 12,
+        body: Vec::new(),
         offset: 40,
     };
     let arc = crate::feature::FeatureSegment {
@@ -6987,6 +7002,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 13,
+        body: Vec::new(),
         offset: 41,
     };
     let point = crate::feature::FeatureSegment {
@@ -6999,6 +7015,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 14,
+        body: Vec::new(),
         offset: 42,
     };
     let other_line = crate::feature::FeatureSegment {
@@ -7011,6 +7028,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 15,
+        body: Vec::new(),
         offset: 43,
     };
     let other_arc = crate::feature::FeatureSegment {
@@ -7023,6 +7041,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 16,
+        body: Vec::new(),
         offset: 44,
     };
     let relations = crate::feature::FeatureRelationTable {
@@ -8964,6 +8983,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         radius_ref: None,
         radius2_ref: None,
         external_id: 99,
+        body: Vec::new(),
         offset: 600,
     };
     let mut opaque_entity = definition.clone();
@@ -9332,6 +9352,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         radius_ref: Some(0),
         radius2_ref: None,
         external_id: 99,
+        body: Vec::new(),
         offset: 602,
     };
     opaque_family_collision
@@ -11061,6 +11082,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             radius_ref: None,
             radius2_ref: None,
             external_id: 17,
+            body: Vec::new(),
             offset: 87,
         });
     synchronize_segment_count(&mut coincident_definition);
@@ -11673,6 +11695,7 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
         radius_ref: Some(4),
         radius2_ref: None,
         external_id: 12,
+        body: Vec::new(),
         offset: 40,
     };
     let points = BTreeMap::from([(1, [0.0, -2.0]), (2, [0.0, 2.0]), (3, [0.0, 0.0])]);
@@ -11788,6 +11811,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id,
+                body: Vec::new(),
                 offset: external_id as usize,
             })
             .collect(),
@@ -11852,6 +11876,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id,
+                body: Vec::new(),
                 offset: external_id as usize,
             })
             .collect(),
@@ -11896,6 +11921,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
             radius_ref: None,
             radius2_ref: None,
             external_id,
+            body: Vec::new(),
             offset: external_id as usize,
         })
         .collect(),
@@ -11985,6 +12011,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id: 1,
+                body: Vec::new(),
                 offset: 2,
             }],
             circle_rows: Vec::new(),
@@ -12191,6 +12218,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id: 42,
+                body: Vec::new(),
                 offset: 20,
             }],
             offset: 20,

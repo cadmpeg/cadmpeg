@@ -920,6 +920,10 @@ pub struct FeatureSegment {
     pub radius2_ref: Option<u32>,
     /// External segment identifier used by the order table.
     pub external_id: u32,
+    /// Exact positional row bytes from the optional type wrapper or family
+    /// discriminator through the `e2` row close. Empty for a labeled
+    /// prototype row.
+    pub body: Vec<u8>,
     /// Byte offset of the positional row in the original stream.
     pub offset: usize,
 }
@@ -1033,6 +1037,10 @@ pub struct FeatureOpaqueSegment {
     pub radius2_ref: Option<u32>,
     /// External segment identifier used by section tables.
     pub external_id: u32,
+    /// Exact positional row bytes from the optional type wrapper or family
+    /// discriminator through the `e2` row close. Empty for a labeled
+    /// prototype row.
+    pub body: Vec<u8>,
     /// Byte offset of the row in the original stream.
     pub offset: usize,
 }
@@ -2573,6 +2581,7 @@ fn segment_table_body(
             radius_ref: radius_ref[0],
             radius2_ref: radius2_ref[0],
             external_id: external_id[0]?,
+            body: Vec::new(),
             offset,
         })
     })();
@@ -2687,6 +2696,7 @@ fn segment_table_body(
                     radius_ref,
                     radius2_ref,
                     external_id,
+                    body: payload[row_start..=p].to_vec(),
                     offset: row_start,
                 },
                 &mut segments,
@@ -2837,6 +2847,7 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         radius_ref: row.radius_ref,
         radius2_ref: row.radius2_ref,
         external_id: row.external_id,
+        body: row.body,
         offset: row.offset,
     });
 }
@@ -9310,6 +9321,7 @@ mod tests {
         assert!(segments.centered_line_rows.is_empty());
         assert_eq!(segments.opaque_rows.len(), 1);
         assert_eq!(segments.opaque_rows[0].kind, 47);
+        assert_eq!(segments.opaque_rows[0].body, missing_construction_ref[10..]);
     }
 
     #[test]
@@ -9328,6 +9340,11 @@ mod tests {
         assert_eq!(segments.rows[0].directions, [Some(0), Some(0), Some(1)]);
         assert_eq!(segments.rows[0].point_ids, [9, 11]);
         assert_eq!(segments.rows[0].external_id, 0);
+        assert_eq!(
+            segments.rows[0].body,
+            payload[10..],
+            "the retained body includes the optional type wrapper and row close"
+        );
     }
 
     #[test]
@@ -10182,6 +10199,7 @@ mod tests {
             radius_ref: None,
             radius2_ref: None,
             external_id,
+            body: Vec::new(),
             offset: 0,
         };
         let segments = FeatureSegmentTable {
@@ -10975,6 +10993,7 @@ mod tests {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id: 42,
+                body: Vec::new(),
                 offset: 0,
             }],
             circle_rows: Vec::new(),
@@ -11070,6 +11089,7 @@ mod tests {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id: 42,
+                body: Vec::new(),
                 offset: 0,
             }],
             circle_rows: Vec::new(),
@@ -11131,6 +11151,7 @@ mod tests {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id: 43,
+                body: Vec::new(),
                 offset: 0,
             }],
             circle_rows: Vec::new(),

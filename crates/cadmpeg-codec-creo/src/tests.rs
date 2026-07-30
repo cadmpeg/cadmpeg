@@ -4332,6 +4332,10 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     assert_eq!(segments.rows[0].center_id, None);
     assert_eq!(segments.rows[0].external_id, 42);
     assert_eq!(
+        segments.rows[0].body,
+        [2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]
+    );
+    assert_eq!(
         segments.rows[1].kind,
         crate::feature::FeatureSegmentKind::Arc
     );
@@ -4349,6 +4353,16 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
+    let native_sketch = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0];
+    assert_eq!(
+        native_sketch.fields["segments"][0]["body"]
+            .as_array()
+            .expect("segment body")
+            .iter()
+            .map(|byte| byte.as_u64().expect("byte"))
+            .collect::<Vec<_>>(),
+        [2, 0, 0, 0, 7, 8, 246, 0, 0, 246, 246, 42, 226]
+    );
     let sketch = result
         .ir
         .model
@@ -4847,6 +4861,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 1,
+                    body: Vec::new(),
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
@@ -4859,6 +4874,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 4,
+                    body: Vec::new(),
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
@@ -4871,6 +4887,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 5,
+                    body: Vec::new(),
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
@@ -4883,6 +4900,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 3,
+                    body: Vec::new(),
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
@@ -4895,6 +4913,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 2,
+                    body: Vec::new(),
                     offset: 0,
                 },
             ],

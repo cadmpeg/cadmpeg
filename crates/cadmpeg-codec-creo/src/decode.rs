@@ -331,6 +331,7 @@ struct CreoSketchSegment {
     vertical_horizontal_constraint: Option<u32>,
     radius_dimension_id: Option<u32>,
     secondary_radius_dimension_id: Option<u32>,
+    body: Vec<u8>,
     offset: usize,
 }
 
@@ -398,6 +399,7 @@ struct CreoSketchOpaqueSegment {
     vertical_horizontal_constraint: Option<u32>,
     radius_dimension_id: Option<u32>,
     secondary_radius_dimension_id: Option<u32>,
+    body: Vec<u8>,
     offset: usize,
 }
 

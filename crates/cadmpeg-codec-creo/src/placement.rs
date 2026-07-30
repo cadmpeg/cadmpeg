@@ -1448,6 +1448,7 @@ mod tests {
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 43,
+                    body: Vec::new(),
                     offset: 20,
                 }],
                 circle_rows: Vec::new(),
@@ -1787,6 +1788,7 @@ mod tests {
             radius_ref: None,
             radius2_ref: None,
             external_id,
+            body: Vec::new(),
             offset: external_id as usize,
         };
         let definition = FeatureDefinition {
@@ -1963,6 +1965,7 @@ mod tests {
             radius_ref: None,
             radius2_ref: None,
             external_id,
+            body: Vec::new(),
             offset: external_id as usize,
         };
         let definition = FeatureDefinition {
