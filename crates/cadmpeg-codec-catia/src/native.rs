@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 228;
+pub const CATIA_NATIVE_VERSION: u32 = 229;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -35,6 +35,8 @@ const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
 const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
 #[cfg(test)]
 const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 228;
+#[cfg(test)]
+const CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION: u32 = 229;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1283,6 +1285,20 @@ pub struct CatiaConstraintRange {
     pub framing: CatiaConstraintRangeFraming,
     /// Stored evaluation state.
     pub evaluation: CatiaEntityEvaluation,
+    /// Exact same-graph payload-reference occurrences selecting this range.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incoming_references: Vec<CatiaConstraintRangeIncomingReference>,
+}
+
+/// One exact payload-reference occurrence selecting a constraint range.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConstraintRangeIncomingReference {
+    /// Object record carrying the reference occurrence.
+    pub object_record: String,
+    /// Byte offset of the reference field within that object's payload.
+    pub payload_offset: u64,
+    /// Structural container of the reference occurrence.
+    pub source: CatiaObjectRecordReferenceSource,
 }
 
 /// One definition-selected entity whose complete value occupies its suffix.
@@ -2500,7 +2516,43 @@ fn constraint_range(
         },
         framing,
         evaluation: evaluation.clone(),
+        incoming_references: Vec::new(),
     })
+}
+
+fn constraint_range_incoming_references(
+    records: &[CatiaObjectRecord],
+    graph_id: &str,
+    entity_id: u32,
+) -> Vec<CatiaConstraintRangeIncomingReference> {
+    records
+        .iter()
+        .filter(|record| record.parent == graph_id)
+        .flat_map(|record| {
+            record
+                .references
+                .iter()
+                .filter(move |reference| reference.entity_id == entity_id)
+                .map(|reference| CatiaConstraintRangeIncomingReference {
+                    object_record: record.id.clone(),
+                    payload_offset: reference.payload_offset,
+                    source: reference.source.clone(),
+                })
+        })
+        .collect()
+}
+
+fn resolved_constraint_range(
+    lead: u8,
+    values: &[CatiaEntityValueSchemaSelection],
+    suffix_value: Option<&CatiaEntitySuffixValue>,
+    records: &[CatiaObjectRecord],
+    graph_id: &str,
+    entity_id: u32,
+) -> Option<CatiaConstraintRange> {
+    let mut range = constraint_range(lead, values, suffix_value)?;
+    range.incoming_references = constraint_range_incoming_references(records, graph_id, entity_id);
+    Some(range)
 }
 
 fn definition_value(
@@ -7793,10 +7845,13 @@ impl CatiaNative {
                     &entity.value_schema_selections,
                     entity.suffix_value.as_ref(),
                 );
-                entity.constraint_range = constraint_range(
+                entity.constraint_range = resolved_constraint_range(
                     entity.lead,
                     &entity.value_schema_selections,
                     entity.suffix_value.as_ref(),
+                    &graph.records,
+                    &graph.id,
+                    entity.entity_id,
                 );
                 entity.definition_value = definition_value(
                     entity.lead,
@@ -8190,6 +8245,17 @@ impl CatiaNative {
                     });
             }
         }
+        if namespace.version < CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION {
+            for entity in &mut entity_records {
+                if let Some(range) = &mut entity.constraint_range {
+                    range.incoming_references = constraint_range_incoming_references(
+                        &records,
+                        &entity.object_graph,
+                        entity.entity_id,
+                    );
+                }
+            }
+        }
         for graph in &mut graphs {
             graph.records = records
                 .iter()
@@ -8262,10 +8328,13 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.constraint_range
-                            != constraint_range(
+                            != resolved_constraint_range(
                                 entity.lead,
                                 &entity.value_schema_selections,
                                 entity.suffix_value.as_ref(),
+                                &graph.records,
+                                &graph.id,
+                                entity.entity_id,
                             )
                     })
                     || graph_entities.iter().any(|entity| {

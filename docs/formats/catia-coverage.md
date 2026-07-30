@@ -153,8 +153,9 @@ current scores require those matrices and representative fixtures.
   `rad`, `grad`, and `deg` to radians.
   Complete constraint-range productions are counted separately as dimension or
   complex-constraint ranges and finite or unset evaluations. Coverage retains
-  the total exact incoming reference occurrences and partitions ranges with
-  zero, one, or multiple incoming occurrences. An incoming occurrence and
+  every exact incoming reference occurrence with its source object, payload
+  offset, and field or list position, and partitions ranges with zero, one, or
+  multiple incoming occurrences. An incoming occurrence and
   design-field containment do not establish constraint identity, ownership,
   operands, or sketch incidence.
 - Design objects consisting entirely of one exact empty principal-plane

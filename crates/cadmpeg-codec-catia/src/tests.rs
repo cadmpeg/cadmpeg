@@ -11250,10 +11250,11 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         native
             .store(&mut stored)
             .expect("store older relation-program namespace");
-        for (version, remove_framing, remove_repeated_reference) in [
-            (crate::native::CATIA_NATIVE_VERSION - 1, false, false),
-            (crate::native::CATIA_NATIVE_VERSION - 2, true, false),
-            (crate::native::CATIA_NATIVE_VERSION - 3, true, true),
+        for (version, remove_trailing, remove_framing, remove_repeated_reference) in [
+            (crate::native::CATIA_NATIVE_VERSION - 1, false, false, false),
+            (crate::native::CATIA_NATIVE_VERSION - 2, true, false, false),
+            (crate::native::CATIA_NATIVE_VERSION - 3, true, true, false),
+            (crate::native::CATIA_NATIVE_VERSION - 4, true, true, true),
         ] {
             let mut namespace = stored.clone();
             namespace.version = version;
@@ -11266,7 +11267,9 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 .expect("stored relation-program field")
                 .as_object_mut()
                 .expect("stored relation-program instance");
-            stored_instance.remove("lead54_trailing_entity");
+            if remove_trailing {
+                stored_instance.remove("lead54_trailing_entity");
+            }
             if remove_framing {
                 stored_instance.remove("framing");
             }
@@ -11590,11 +11593,29 @@ fn native_namespace_types_dimension_constraint_ranges() {
         file[8..12].copy_from_slice(&be32(file_len));
         file
     };
+    let unique_file = referenced_file(1);
+    let unique_native = crate::native::CatiaNative::decode(&unique_file);
+    let incoming = &unique_native.entity_records[0]
+        .constraint_range
+        .as_ref()
+        .expect("complete referenced constraint range")
+        .incoming_references;
+    assert_eq!(incoming.len(), 1);
+    assert_eq!(
+        incoming[0].object_record,
+        unique_native.object_graphs[0].records[1].id
+    );
+    assert_eq!(
+        incoming[0].payload_offset,
+        unique_native.object_graphs[0].records[1].references[0].payload_offset
+    );
+    assert_eq!(
+        incoming[0].source,
+        unique_native.object_graphs[0].records[1].references[0].source
+    );
+
     let uniquely_referenced = CatiaCodec
-        .decode(
-            &mut Cursor::new(referenced_file(1)),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(unique_file), &DecodeOptions::default())
         .expect("decode uniquely referenced constraint range");
     assert_eq!(
         uniquely_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
@@ -11613,11 +11634,28 @@ fn native_namespace_types_dimension_constraint_ranges() {
         0
     );
 
+    let multiple_file = referenced_file(2);
+    let multiple_native = crate::native::CatiaNative::decode(&multiple_file);
+    let incoming = &multiple_native.entity_records[0]
+        .constraint_range
+        .as_ref()
+        .expect("complete multiply referenced constraint range")
+        .incoming_references;
+    assert_eq!(incoming.len(), 2);
+    assert_eq!(
+        incoming
+            .iter()
+            .map(|reference| reference.payload_offset)
+            .collect::<Vec<_>>(),
+        multiple_native.object_graphs[0].records[1]
+            .references
+            .iter()
+            .map(|reference| reference.payload_offset)
+            .collect::<Vec<_>>()
+    );
+
     let multiply_referenced = CatiaCodec
-        .decode(
-            &mut Cursor::new(referenced_file(2)),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(multiple_file), &DecodeOptions::default())
         .expect("decode multiply referenced constraint range");
     assert_eq!(
         multiply_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
@@ -11668,6 +11706,49 @@ fn native_namespace_types_dimension_constraint_ranges() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let mut malformed = unique_native.clone();
+    malformed.entity_records[0]
+        .constraint_range
+        .as_mut()
+        .expect("complete referenced constraint range")
+        .incoming_references[0]
+        .payload_offset += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed constraint-range incidence");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    unique_native
+        .store(&mut stored)
+        .expect("store older constraint-range namespace");
+    stored.version = crate::native::CATIA_NATIVE_VERSION - 1;
+    stored
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("constraint_range")
+        .expect("stored constraint range")
+        .as_object_mut()
+        .expect("stored constraint-range object")
+        .remove("incoming_references");
+    let migrated =
+        crate::native::CatiaNative::load(&stored).expect("migrate constraint-range incidence");
+    assert_eq!(
+        migrated.entity_records[0]
+            .constraint_range
+            .as_ref()
+            .expect("migrated constraint range")
+            .incoming_references
+            .len(),
+        1
+    );
 }
 
 #[test]

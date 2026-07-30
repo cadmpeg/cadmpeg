@@ -633,22 +633,8 @@ fn finish_decode(
     ) = native
         .entity_records
         .iter()
-        .filter(|record| record.constraint_range.is_some())
-        .map(|entity| {
-            native
-                .object_graphs
-                .iter()
-                .find(|graph| graph.id == entity.object_graph)
-                .map(|graph| {
-                    graph
-                        .records
-                        .iter()
-                        .flat_map(|record| &record.references)
-                        .filter(|reference| reference.entity_id == entity.entity_id)
-                        .count()
-                })
-                .unwrap_or_default()
-        })
+        .filter_map(|record| record.constraint_range.as_ref())
+        .map(|range| range.incoming_references.len())
         .fold(
             (0_usize, 0_usize, 0_usize, 0_usize),
             |(references, zero, one, multiple), count| match count {
