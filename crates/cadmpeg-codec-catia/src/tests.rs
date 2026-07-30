@@ -3719,10 +3719,10 @@ fn decode_zero_entity_falls_back_to_metadata() {
 #[test]
 fn decode_accounts_for_unresolved_legacy_entity_runs() {
     let mut bytes = zero_entity_catpart();
-    for entity_id in [1_u32, 3, 8] {
+    for (entity_id, lead) in [(1_u32, 0x81), (3, 0xe5), (8, 0xfd)] {
         bytes.push(0xea);
         bytes.extend(entity_id.to_le_bytes());
-        bytes.extend([0x81, 0xfd, 0x8c]);
+        bytes.extend([lead, 0xfd, 0x8c]);
     }
     bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
 
@@ -3736,6 +3736,22 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
     assert_eq!(
         decoded.report.coverage["decoded_legacy_entity_identity_count"],
         3
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_identity_lead_81_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_identity_lead_82_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_identity_lead_e5_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_identity_lead_fd_count"],
+        1
     );
     assert_eq!(
         decoded.report.coverage["decoded_legacy_role_selector_count"],
@@ -13967,6 +13983,10 @@ fn native_round_trips_legacy_entity_identity_runs() {
             .collect::<Vec<_>>(),
         [1, 4, 9, 12, 13]
     );
+    assert!(native.legacy_entity_runs[0]
+        .identities
+        .iter()
+        .all(|identity| identity.lead == 0x81));
     assert_eq!(
         native.legacy_entity_runs[0].catalog_offset,
         catalog_offset as u64
@@ -14118,6 +14138,28 @@ fn native_round_trips_legacy_entity_identity_runs() {
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load legacy entity run");
     assert_eq!(loaded.legacy_entity_runs, native.legacy_entity_runs);
 
+    let mut previous_identity_namespace = namespace.clone();
+    let mut previous_identity_runs: Vec<crate::native::CatiaLegacyEntityRun> =
+        previous_identity_namespace
+            .arena_as("legacy_entity_runs")
+            .expect("load previous identity runs");
+    for identity in previous_identity_runs
+        .iter_mut()
+        .flat_map(|run| &mut run.identities)
+    {
+        identity.lead = 0;
+    }
+    previous_identity_namespace
+        .set_arena("legacy_entity_runs", &previous_identity_runs)
+        .expect("store previous identity runs");
+    previous_identity_namespace.version = 215;
+    let migrated_identity = crate::native::CatiaNative::load(&previous_identity_namespace)
+        .expect("migrate legacy identity leads");
+    assert!(migrated_identity.legacy_entity_runs[0]
+        .identities
+        .iter()
+        .all(|identity| identity.lead == 0x81));
+
     let mut previous_namespace = namespace.clone();
     let mut previous_runs: Vec<crate::native::CatiaLegacyEntityRun> = previous_namespace
         .arena_as("legacy_entity_runs")
@@ -14149,6 +14191,14 @@ fn native_round_trips_legacy_entity_identity_runs() {
     invalid_type_name
         .store(&mut namespace)
         .expect("store invalid legacy type name");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+
+    let mut invalid_lead = native.clone();
+    invalid_lead.legacy_entity_runs[0].identities[0].lead = 0xe6;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_lead
+        .store(&mut namespace)
+        .expect("store invalid legacy identity lead");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
     let mut invalid_name = native.clone();

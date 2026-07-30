@@ -216,6 +216,8 @@ pub struct LegacyEntityIdentity {
     pub offset: usize,
     /// Little-endian identity following the delimiter.
     pub entity_id: u32,
+    /// Stored record lead following the identity.
+    pub lead: u8,
 }
 
 /// A monotonically identified legacy run terminated by its schema catalog.
@@ -256,11 +258,15 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         .windows(6)
         .enumerate()
         .filter_map(|(offset, bytes)| {
-            if bytes[0] != 0xea || bytes[5] != 0x81 {
+            if bytes[0] != 0xea || !matches!(bytes[5], 0x81 | 0x82 | 0xe5 | 0xfd) {
                 return None;
             }
             let entity_id = u32::from_le_bytes(bytes[1..5].try_into().ok()?);
-            (entity_id != 0).then_some(LegacyEntityIdentity { offset, entity_id })
+            (entity_id != 0).then_some(LegacyEntityIdentity {
+                offset,
+                entity_id,
+                lead: bytes[5],
+            })
         })
         .collect::<Vec<_>>();
     identities.last()?;
@@ -874,9 +880,13 @@ mod tests {
     };
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
+        identity_with_lead(bytes, entity_id, 0x81);
+    }
+
+    fn identity_with_lead(bytes: &mut Vec<u8>, entity_id: u32, lead: u8) {
         bytes.push(0xea);
         bytes.extend_from_slice(&entity_id.to_le_bytes());
-        bytes.push(0x81);
+        bytes.push(lead);
         bytes.extend_from_slice(&[0xfd, 0x8c]);
     }
 
@@ -906,6 +916,46 @@ mod tests {
                 .map(|identity| identity.entity_id)
                 .collect::<Vec<_>>(),
             [1, 4, 7]
+        );
+        assert!(runs[0]
+            .identities
+            .iter()
+            .all(|identity| identity.lead == 0x81));
+    }
+
+    #[test]
+    fn parses_each_admitted_identity_record_lead() {
+        let mut bytes = Vec::new();
+        for (entity_id, lead) in [(1, 0x81), (2, 0x82), (3, 0xe5), (4, 0xfd)] {
+            identity_with_lead(&mut bytes, entity_id, lead);
+        }
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        assert_eq!(
+            parse_runs(&bytes)[0]
+                .identities
+                .iter()
+                .map(|identity| (identity.entity_id, identity.lead))
+                .collect::<Vec<_>>(),
+            [(1, 0x81), (2, 0x82), (3, 0xe5), (4, 0xfd)]
+        );
+    }
+
+    #[test]
+    fn unsupported_record_leads_do_not_split_identity_intervals() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        identity_with_lead(&mut bytes, 2, 0xe6);
+        identity(&mut bytes, 3);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        assert_eq!(
+            parse_runs(&bytes)[0]
+                .identities
+                .iter()
+                .map(|identity| identity.entity_id)
+                .collect::<Vec<_>>(),
+            [1, 3]
         );
     }
 

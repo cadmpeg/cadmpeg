@@ -20,7 +20,9 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 215;
+pub const CATIA_NATIVE_VERSION: u32 = 216;
+#[cfg(test)]
+const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
 const CATIA_LEGACY_ROLE_SELECTOR_VERSION: u32 = 212;
 #[cfg(test)]
@@ -2971,6 +2973,9 @@ pub struct CatiaLegacyEntityIdentity {
     pub byte_offset: u64,
     /// Little-endian identity following the delimiter.
     pub entity_id: u32,
+    /// Stored record lead following the identity.
+    #[serde(default)]
+    pub lead: u8,
 }
 
 /// Framing production used by a legacy schema text field.
@@ -3672,6 +3677,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                     .map(|identity| CatiaLegacyEntityIdentity {
                         byte_offset: identity.offset as u64,
                         entity_id: identity.entity_id,
+                        lead: identity.lead,
                     })
                     .collect(),
                 role_selectors: run
@@ -3945,13 +3951,18 @@ fn validate_legacy_entity_runs(
                 identity.byte_offset == run.byte_offset && identity.entity_id == 1
             })
             && run.identities.windows(2).all(|pair| {
-                pair[0].byte_offset < pair[1].byte_offset && pair[0].entity_id < pair[1].entity_id
-            })
-            && run.identities.last().is_some_and(|identity| {
-                identity
+                pair[0]
                     .byte_offset
                     .checked_add(6)
-                    .is_some_and(|end| end <= run.catalog_offset)
+                    .is_some_and(|end| end <= pair[1].byte_offset)
+                    && pair[0].entity_id < pair[1].entity_id
+            })
+            && run.identities.iter().all(|identity| {
+                matches!(identity.lead, 0x81 | 0x82 | 0xe5 | 0xfd)
+                    && identity
+                        .byte_offset
+                        .checked_add(6)
+                        .is_some_and(|end| end <= run.catalog_offset)
             })
             && run
                 .role_selectors
@@ -7938,6 +7949,14 @@ impl CatiaNative {
             } else {
                 Vec::new()
             };
+        if namespace.version < CATIA_LEGACY_IDENTITY_LEAD_VERSION {
+            for identity in legacy_entity_runs
+                .iter_mut()
+                .flat_map(|run| &mut run.identities)
+            {
+                identity.lead = 0x81;
+            }
+        }
         if namespace.version < CATIA_LEGACY_ROLE_SELECTOR_VERSION {
             for run in &mut legacy_entity_runs {
                 for field in &mut run.text_fields {
