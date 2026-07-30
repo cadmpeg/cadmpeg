@@ -26,24 +26,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Some records do not include a cache. For those records, the field layout is the only source of the face shape. We must know the layout to read them and to write them. The decoder keeps these records as opaque bytes now.
 
-### GC-03. Second boolean of a cache-first `par_int_cur`
-
-**Question.** What does the second boolean flag at the end of a cache-first `par_int_cur` record control?
-
-**Known.** `f3d.md` §7.3 "**Surface curves**" gives the first flag. The first flag is the support-slot selector. The second flag takes the value `true` and the value `false`. Two records in one file can have different values. No other field changes with it.
-
-**Need.** We keep this flag without a change. To make this record from a neutral model, we must know which value to write.
-
-### GC-05. Second boolean of the `off_spl_sur` sense pair
-
-**Question.** What does each boolean of the revision-gated `off_spl_sur` sense pair control? Which of the two mixed states gives which offset side?
-
-**Known.** `f3d.md` §7.3 `off_spl_sur` gives the pair a joint role. The pair holds record-level progenitor sense state. It is not a per-axis decomposition. The pair takes the states false/false, true/false, false/true, and true/true. A true/true pair occurs with both signs of the stored distance. A false/false pair gives the offset side in the sign of the stored distance.
-
-**Need.** We must know the individual roles to set the offset side correctly when we write this record.
-
-**Note.** An earlier model gave the first boolean the offset-direction reversal role and gave the second boolean no effect. Commit `636c2c71d` withdrew that model. Do not use it.
-
 ### GC-06. `off_spl_sur` ASM extension prefix
 
 **Question.** What do the two booleans of the `off_spl_sur` ASM extension prefix control?
