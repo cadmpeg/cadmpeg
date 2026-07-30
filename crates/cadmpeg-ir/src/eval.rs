@@ -997,6 +997,16 @@ pub fn curve_tangent(geometry: &CurveGeometry, t: f64) -> Option<Vector3> {
         .filter(|tangent| tangent.x.is_finite() && tangent.y.is_finite() && tangent.z.is_finite())
 }
 
+/// Evaluate the exact second derivative of a directly stored curve.
+pub fn curve_second_derivative(geometry: &CurveGeometry, t: f64) -> Option<Vector3> {
+    if !t.is_finite() {
+        return None;
+    }
+    curve_second_derivative_inner(geometry, t, 0).filter(|derivative| {
+        derivative.x.is_finite() && derivative.y.is_finite() && derivative.z.is_finite()
+    })
+}
+
 fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Vector3> {
     if depth > 256 {
         return None;
@@ -1063,6 +1073,75 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
     }
 }
 
+fn curve_second_derivative_inner(
+    geometry: &CurveGeometry,
+    t: f64,
+    depth: usize,
+) -> Option<Vector3> {
+    if depth > 256 {
+        return None;
+    }
+    let zero = Vector3::new(0.0, 0.0, 0.0);
+    match geometry {
+        CurveGeometry::Line { .. } => Some(zero),
+        CurveGeometry::Circle {
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => Some(vector_sum(&[
+            (-radius * t.cos(), *ref_direction),
+            (-radius * t.sin(), cross(*axis, *ref_direction)),
+        ])),
+        CurveGeometry::Ellipse {
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(vector_sum(&[
+            (-major_radius * t.cos(), *major_direction),
+            (-minor_radius * t.sin(), cross(*axis, *major_direction)),
+        ])),
+        CurveGeometry::Parabola {
+            major_direction,
+            focal_distance,
+            ..
+        } => Some(vector_sum(&[(2.0 * focal_distance, *major_direction)])),
+        CurveGeometry::Hyperbola {
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(vector_sum(&[
+            (major_radius * t.cosh(), *major_direction),
+            (minor_radius * t.sinh(), cross(*axis, *major_direction)),
+        ])),
+        CurveGeometry::Nurbs(nurbs) => {
+            let parameter = map_nurbs_curve_parameter(nurbs, t)?;
+            nurbs_curve_second_derivative(
+                nurbs.degree,
+                &nurbs.knots,
+                &nurbs.control_points,
+                nurbs.weights.as_deref(),
+                parameter,
+            )
+        }
+        CurveGeometry::Polyline {
+            points, parameters, ..
+        } => polyline_tangent(points, parameters.as_deref(), t).map(|_| zero),
+        CurveGeometry::Transformed { basis, transform } => {
+            curve_second_derivative_inner(basis, t, depth + 1)
+                .map(|derivative| affine_vector(*transform, derivative))
+        }
+        CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Unknown { .. } => None,
+    }
+}
+
 fn nurbs_curve_tangent(
     degree: u32,
     knots: &[f64],
@@ -1102,6 +1181,65 @@ fn nurbs_curve_tangent(
         (weighted_derivative.z * weight - weighted.z * weight_derivative) / (weight * weight),
     );
     (tangent.x.is_finite() && tangent.y.is_finite() && tangent.z.is_finite()).then_some(tangent)
+}
+
+fn nurbs_curve_second_derivative(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point3],
+    weights: Option<&[f64]>,
+    t: f64,
+) -> Option<Vector3> {
+    let degree = usize::try_from(degree).ok()?;
+    let span = bspline_span(knots, degree, control_points.len(), t)?;
+    let basis = bspline_basis(knots, degree, span, t);
+    let first_basis = bspline_basis_derivative(knots, degree, span, t);
+    let second_basis = bspline_basis_second_derivative(knots, degree, span, t);
+    let mut weighted = Vector3::new(0.0, 0.0, 0.0);
+    let mut weighted_first = Vector3::new(0.0, 0.0, 0.0);
+    let mut weighted_second = Vector3::new(0.0, 0.0, 0.0);
+    let mut weight = 0.0;
+    let mut weight_first = 0.0;
+    let mut weight_second = 0.0;
+    for local in 0..=degree {
+        let index = span - degree + local;
+        let control = control_points.get(index)?;
+        let control_weight = weights
+            .and_then(|weights| weights.get(index).copied())
+            .unwrap_or(1.0);
+        let accumulate = |target: &mut Vector3, factor: f64| {
+            target.x += factor * control.x;
+            target.y += factor * control.y;
+            target.z += factor * control.z;
+        };
+        let basis = basis[local] * control_weight;
+        let first = first_basis[local] * control_weight;
+        let second = second_basis[local] * control_weight;
+        accumulate(&mut weighted, basis);
+        accumulate(&mut weighted_first, first);
+        accumulate(&mut weighted_second, second);
+        weight += basis;
+        weight_first += first;
+        weight_second += second;
+    }
+    if weight == 0.0 {
+        return None;
+    }
+    let point = Vector3::new(
+        weighted.x / weight,
+        weighted.y / weight,
+        weighted.z / weight,
+    );
+    let first = Vector3::new(
+        (weighted_first.x - point.x * weight_first) / weight,
+        (weighted_first.y - point.y * weight_first) / weight,
+        (weighted_first.z - point.z * weight_first) / weight,
+    );
+    Some(Vector3::new(
+        (weighted_second.x - point.x * weight_second - 2.0 * weight_first * first.x) / weight,
+        (weighted_second.y - point.y * weight_second - 2.0 * weight_first * first.y) / weight,
+        (weighted_second.z - point.z * weight_second - 2.0 * weight_first * first.z) / weight,
+    ))
 }
 
 /// Evaluate a curve carrier selected by arena id, including supported
@@ -1901,6 +2039,11 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
     pcurve_uv_inner(geometry, t, 0)
 }
 
+/// Evaluate the exact first derivative of a directly stored pcurve.
+pub fn pcurve_tangent(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
+    pcurve_uv_differential_inner(geometry, t, 0)?.tangent
+}
+
 fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Point2> {
     if depth > 256 {
         return None;
@@ -2167,10 +2310,11 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 #[cfg(test)]
 mod tests {
     use super::{
-        curve_point, curve_tangent, model_surface_partials_by_id, model_surface_point_by_id,
-        nurbs_curve_parameter_near_point, nurbs_curve_speed_bound, nurbs_surface_isocurve,
-        nurbs_surface_partials, nurbs_surface_point, nurbs_surface_second_partials, pcurve_uv,
-        surface_partials, surface_second_partials,
+        curve_point, curve_second_derivative, curve_tangent, model_surface_partials_by_id,
+        model_surface_point_by_id, nurbs_curve_parameter_near_point, nurbs_curve_speed_bound,
+        nurbs_surface_isocurve, nurbs_surface_partials, nurbs_surface_point,
+        nurbs_surface_second_partials, pcurve_tangent, pcurve_uv, surface_partials,
+        surface_second_partials,
     };
     use crate::geometry::{
         CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
@@ -2387,7 +2531,7 @@ mod tests {
     }
 
     #[test]
-    fn analytic_and_rational_curve_tangents_are_exact() {
+    fn analytic_and_rational_curve_derivatives_are_exact() {
         let parameter = 1.0e16;
         let circle = CurveGeometry::Circle {
             center: Point3::new(0.0, 0.0, 0.0),
@@ -2399,6 +2543,14 @@ mod tests {
         assert_eq!(
             tangent,
             Vector3::new(-3.0 * parameter.sin(), 3.0 * parameter.cos(), 0.0)
+        );
+        assert_eq!(
+            curve_second_derivative(&circle, parameter),
+            Some(Vector3::new(
+                -3.0 * parameter.cos(),
+                -3.0 * parameter.sin(),
+                0.0,
+            ))
         );
         assert_eq!(curve_tangent(&circle, f64::NAN), None);
 
@@ -2416,8 +2568,11 @@ mod tests {
         for parameter in [0.0, 0.5, 1.0] {
             let point = curve_point(&arc, parameter).expect("rational arc point");
             let tangent = curve_tangent(&arc, parameter).expect("rational arc tangent");
+            let second =
+                curve_second_derivative(&arc, parameter).expect("rational arc acceleration");
             let radial_dot = point.x * tangent.x + point.y * tangent.y;
             assert!(radial_dot.abs() < 1e-12);
+            assert!((point.x * second.x + point.y * second.y + tangent.dot(tangent)).abs() < 1e-11);
             assert!(tangent.norm() > 0.0);
         }
 
@@ -2576,11 +2731,14 @@ mod tests {
             periodic: false,
         };
 
+        let circle_tangent =
+            pcurve_tangent(&circle, std::f64::consts::FRAC_PI_2).expect("circle tangent");
         let circle = pcurve_uv(&circle, std::f64::consts::FRAC_PI_2).expect("circle evaluates");
         let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).expect("ellipse evaluates");
         let polar = pcurve_uv(&polar, std::f64::consts::FRAC_PI_2).expect("polar curve evaluates");
         let polar_nurbs = pcurve_uv(&polar_nurbs, 0.5).expect("polar NURBS evaluates");
         assert!((circle.u - 2.0).abs() < 1e-12 && (circle.v + 1.0).abs() < 1e-12);
+        assert!((circle_tangent.u + 4.0).abs() < 1e-12 && circle_tangent.v.abs() < 1e-12);
         assert!(ellipse.u.abs() < 1e-12 && (ellipse.v - 3.0).abs() < 1e-12);
         assert!((polar.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
         assert!((polar.v - 3.0).abs() < 1e-12);

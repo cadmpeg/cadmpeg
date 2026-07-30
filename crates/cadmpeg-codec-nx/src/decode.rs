@@ -16,9 +16,10 @@ use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, curve_point, curve_tangent, model_surface_partials_by_id,
-    model_surface_point_by_id, nurbs_curve_speed_bound, nurbs_surface_isocurve,
-    nurbs_surface_partials, pcurve_uv, surface_partials, surface_point,
+    analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
+    model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_speed_bound,
+    nurbs_surface_isocurve, nurbs_surface_partials, pcurve_tangent, pcurve_uv, surface_partials,
+    surface_point,
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
@@ -3445,7 +3446,8 @@ pub(crate) fn refine_blend_surface_parameters(
                 (second.z - first.z) / width,
             ))
         };
-        let du = derivative(u_step)?;
+        let du = blend_surface_u_derivative(ir, surface, parameters.u, parameters.v, depth + 1)
+            .or_else(|| derivative(u_step))?;
         let (_, tangent, first, second, radius) =
             blend_surface_frame(ir, surface, parameters.u, depth + 1)?;
         let alpha = signed_angle(first, second, tangent);
@@ -3531,6 +3533,170 @@ fn blend_surface_point_from_frame(
         center.y + radius * radial.y,
         center.z + radius * radial.z,
     )
+}
+
+pub(crate) fn blend_surface_u_derivative(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    u: f64,
+    v: f64,
+    depth: usize,
+) -> Option<Vector3> {
+    (depth < 32).then_some(())?;
+    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
+    let carrier = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| candidate.id == spine)?;
+    let center = curve_point(&carrier.geometry, u)?;
+    let velocity = curve_tangent(&carrier.geometry, u)?;
+    let acceleration = curve_second_derivative(&carrier.geometry, u)?;
+    let speed = velocity.norm();
+    if !speed.is_finite() || speed == 0.0 {
+        return None;
+    }
+    let tangent = Vector3::new(velocity.x / speed, velocity.y / speed, velocity.z / speed);
+    let tangential_acceleration = dot_vector(tangent, acceleration);
+    let tangent_derivative = Vector3::new(
+        (acceleration.x - tangential_acceleration * tangent.x) / speed,
+        (acceleration.y - tangential_acceleration * tangent.y) / speed,
+        (acceleration.z - tangential_acceleration * tangent.z) / speed,
+    );
+    let contact_context = BlendContactDerivativeContext {
+        ir,
+        spine: &spine,
+        parameter: u,
+        center,
+        center_derivative: velocity,
+        radius,
+        depth: depth + 1,
+    };
+    let (first, first_derivative) = contact_context.direction_derivative(&supports[0])?;
+    let (second, second_derivative) = contact_context.direction_derivative(&supports[1])?;
+
+    let cross = cross_vector(first, second);
+    let cosine = dot_vector(first, second);
+    let sine = dot_vector(cross, tangent);
+    let cosine_derivative =
+        dot_vector(first_derivative, second) + dot_vector(first, second_derivative);
+    let cross_derivative =
+        cross_vector(first_derivative, second) + cross_vector(first, second_derivative);
+    let sine_derivative =
+        dot_vector(cross_derivative, tangent) + dot_vector(cross, tangent_derivative);
+    let angle_denominator = cosine * cosine + sine * sine;
+    if !angle_denominator.is_finite() || angle_denominator == 0.0 {
+        return None;
+    }
+    let alpha = sine.atan2(cosine);
+    let alpha_derivative =
+        (cosine * sine_derivative - sine * cosine_derivative) / angle_denominator;
+    let theta = v * alpha;
+    let theta_derivative = v * alpha_derivative;
+    let theta_cosine = theta.cos();
+    let theta_sine = theta.sin();
+    let tangent_cross_first = cross_vector(tangent, first);
+    let tangent_cross_first_derivative =
+        cross_vector(tangent_derivative, first) + cross_vector(tangent, first_derivative);
+    let tangent_dot_first = dot_vector(tangent, first);
+    let tangent_dot_first_derivative =
+        dot_vector(tangent_derivative, first) + dot_vector(tangent, first_derivative);
+    let radial_component = |first: f64,
+                            first_derivative: f64,
+                            tangent_cross_first: f64,
+                            tangent_cross_first_derivative: f64,
+                            tangent: f64,
+                            tangent_derivative: f64| {
+        first_derivative * theta_cosine - first * theta_sine * theta_derivative
+            + tangent_cross_first_derivative * theta_sine
+            + tangent_cross_first * theta_cosine * theta_derivative
+            + tangent_derivative * tangent_dot_first * (1.0 - theta_cosine)
+            + tangent * tangent_dot_first_derivative * (1.0 - theta_cosine)
+            + tangent * tangent_dot_first * theta_sine * theta_derivative
+    };
+    let radial_derivative = Vector3::new(
+        radial_component(
+            first.x,
+            first_derivative.x,
+            tangent_cross_first.x,
+            tangent_cross_first_derivative.x,
+            tangent.x,
+            tangent_derivative.x,
+        ),
+        radial_component(
+            first.y,
+            first_derivative.y,
+            tangent_cross_first.y,
+            tangent_cross_first_derivative.y,
+            tangent.y,
+            tangent_derivative.y,
+        ),
+        radial_component(
+            first.z,
+            first_derivative.z,
+            tangent_cross_first.z,
+            tangent_cross_first_derivative.z,
+            tangent.z,
+            tangent_derivative.z,
+        ),
+    );
+    Some(Vector3::new(
+        velocity.x + radius * radial_derivative.x,
+        velocity.y + radius * radial_derivative.y,
+        velocity.z + radius * radial_derivative.z,
+    ))
+}
+
+struct BlendContactDerivativeContext<'a> {
+    ir: &'a CadIr,
+    spine: &'a CurveId,
+    parameter: f64,
+    center: Point3,
+    center_derivative: Vector3,
+    radius: f64,
+    depth: usize,
+}
+
+impl BlendContactDerivativeContext<'_> {
+    fn direction_derivative(&self, support: &SurfaceId) -> Option<(Vector3, Vector3)> {
+        (self.depth < 32).then_some(())?;
+        let pcurve =
+            spine_contact_pcurve(self.ir, support, self.spine, self.radius, self.depth + 1)?;
+        let uv = pcurve_uv(pcurve, self.parameter)?;
+        let uv_derivative = pcurve_tangent(pcurve, self.parameter)?;
+        let support = model_surface_partials_by_id(self.ir, support, uv.u, uv.v)?;
+        let contact_derivative = Vector3::new(
+            support.du.x * uv_derivative.u + support.dv.x * uv_derivative.v,
+            support.du.y * uv_derivative.u + support.dv.y * uv_derivative.v,
+            support.du.z * uv_derivative.u + support.dv.z * uv_derivative.v,
+        );
+        let offset = Vector3::new(
+            support.point.x - self.center.x,
+            support.point.y - self.center.y,
+            support.point.z - self.center.z,
+        );
+        let magnitude = offset.norm();
+        if !magnitude.is_finite() || magnitude == 0.0 {
+            return None;
+        }
+        let direction = Vector3::new(
+            offset.x / magnitude,
+            offset.y / magnitude,
+            offset.z / magnitude,
+        );
+        let offset_derivative = Vector3::new(
+            contact_derivative.x - self.center_derivative.x,
+            contact_derivative.y - self.center_derivative.y,
+            contact_derivative.z - self.center_derivative.z,
+        );
+        let radial_derivative = dot_vector(direction, offset_derivative);
+        let direction_derivative = Vector3::new(
+            (offset_derivative.x - radial_derivative * direction.x) / magnitude,
+            (offset_derivative.y - radial_derivative * direction.y) / magnitude,
+            (offset_derivative.z - radial_derivative * direction.z) / magnitude,
+        );
+        Some((direction, direction_derivative))
+    }
 }
 
 fn blend_surface_frame(

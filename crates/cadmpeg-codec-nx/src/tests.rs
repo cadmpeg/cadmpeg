@@ -6825,6 +6825,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         if let SurfaceGeometry::Plane { origin, .. } = &mut carrier.geometry {
             origin.x += 1.0e12;
             origin.y += 1.0e12;
+            origin.z += 1.0e12;
         }
     }
     let translated_point =
@@ -11117,11 +11118,58 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!((continued.u - expected.u).abs() < 1.0e-8);
     assert!((continued.v - expected.v).abs() < 1.0e-8);
 
+    let mut varying_frame = ir.clone();
+    varying_frame
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == spine)
+        .unwrap()
+        .geometry = CurveGeometry::Parabola {
+        vertex: cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
+        axis: Vector3::new(0.0, 1.0, 0.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        focal_distance: 0.5,
+    };
+    let parameters = Point2::new(0.4, 0.35);
+    let exact = crate::decode::blend_surface_u_derivative(
+        &varying_frame,
+        &surface,
+        parameters.u,
+        parameters.v,
+        0,
+    )
+    .expect("complete rolling-ball frame has an exact derivative");
+    let step = 1.0e-6;
+    let before = crate::decode::blend_surface_point(
+        &varying_frame,
+        &surface,
+        parameters.u - step,
+        parameters.v,
+    )
+    .unwrap();
+    let after = crate::decode::blend_surface_point(
+        &varying_frame,
+        &surface,
+        parameters.u + step,
+        parameters.v,
+    )
+    .unwrap();
+    let numerical = Vector3::new(
+        (after.x - before.x) / (2.0 * step),
+        (after.y - before.y) / (2.0 * step),
+        (after.z - before.z) / (2.0 * step),
+    );
+    assert!((exact.x - numerical.x).abs() < 1.0e-7);
+    assert!((exact.y - numerical.y).abs() < 1.0e-7);
+    assert!((exact.z - numerical.z).abs() < 1.0e-7);
+
     let mut translated = ir.clone();
     for carrier in &mut translated.model.surfaces {
         if let SurfaceGeometry::Plane { origin, .. } = &mut carrier.geometry {
             origin.x += 1.0e12;
             origin.y += 1.0e12;
+            origin.z += 1.0e12;
         }
     }
     let CurveGeometry::Line { origin, .. } = &mut translated
@@ -11136,6 +11184,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     };
     origin.x += 1.0e12;
     origin.y += 1.0e12;
+    origin.z += 1.0e12;
     let translated_point =
         crate::decode::blend_surface_point(&translated, &surface, expected.u, expected.v).unwrap();
     let translated_parameters = crate::decode::blend_surface_parameters_for_fit(
