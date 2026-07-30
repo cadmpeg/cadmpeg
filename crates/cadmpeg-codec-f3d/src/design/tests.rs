@@ -11350,6 +11350,51 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
                 && operand_ref == &companion.id)
     ));
 
+    let mut radial_parameter = parameter.clone();
+    radial_parameter.source_kind = "Radial Dimension-2".into();
+    let radial_entity = SketchEntity {
+        id: SketchEntityId("circle".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+        },
+    };
+    let retained = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&radial_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &[],
+            entities: std::slice::from_ref(&radial_entity),
+        },
+        &[],
+    );
+    assert!(matches!(
+        retained.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::Radius {
+                entity,
+                parameter: actual_parameter,
+            },
+            native_ref: Some(native_ref),
+            ..
+        }] if entity == &radial_entity.id
+            && actual_parameter.0 == format!("f3d:model:parameter#{}:{stream}4", stream.len())
+            && native_ref == &companion.id
+    ));
+
     let mut empty_companion = companion;
     empty_companion.payload_byte_length = 0;
     let retained = project_dimension_constraints(

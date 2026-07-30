@@ -814,31 +814,28 @@ fn project_all_dimension_constraints(
         let sketch = sketches_by_scope
             .get(&(scope, owner.scope_record_index))?
             .clone();
-        let definition = (companion.payload_byte_length == 0)
-            .then(|| {
-                unique_radial_dimension_definition(entities, &sketch, parameter, &parameter_id)
-            })
-            .flatten()
-            .unwrap_or_else(|| Definition::Native {
-                native_kind: parameter.source_kind.clone(),
-                native_state: None,
-                entities: Vec::new(),
-                parameter: Some(parameter_id.clone()),
-                operands: vec![SketchNativeOperand {
-                    native_kind: "dimension_companion".into(),
-                    native_field: Some(
-                        if companion.payload_byte_length == 0 {
-                            "companion"
-                        } else {
-                            "companion_payload"
-                        }
-                        .into(),
-                    ),
-                    native_role: None,
-                    object_index: companion.record_index,
-                    native_ref: Some(companion.id.clone()),
-                }],
-            });
+        let definition =
+            unique_radial_dimension_definition(entities, &sketch, parameter, &parameter_id)
+                .unwrap_or_else(|| Definition::Native {
+                    native_kind: parameter.source_kind.clone(),
+                    native_state: None,
+                    entities: Vec::new(),
+                    parameter: Some(parameter_id.clone()),
+                    operands: vec![SketchNativeOperand {
+                        native_kind: "dimension_companion".into(),
+                        native_field: Some(
+                            if companion.payload_byte_length == 0 {
+                                "companion"
+                            } else {
+                                "companion_payload"
+                            }
+                            .into(),
+                        ),
+                        native_role: None,
+                        object_index: companion.record_index,
+                        native_ref: Some(companion.id.clone()),
+                    }],
+                });
         Some(SketchConstraint {
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
             sketch,
