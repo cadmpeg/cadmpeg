@@ -2390,6 +2390,9 @@ impl ExpressionValue for SimultaneousAffineValue {
                 (left.dimension == tolerance_dimension && tolerance >= 0.0).then_some(())?;
                 return Some(Self::number(f64::from(difference.abs() <= tolerance)));
             }
+            (CreoMathFunction::Pow, [base, exponent]) => {
+                return base.clone().power(exponent.clone());
+            }
             _ => {}
         }
         let arguments = arguments
@@ -5066,6 +5069,36 @@ mod tests {
             evaluation.solve_solutions[&2],
             [
                 CurveExpressionValue::Number(3.0),
+                CurveExpressionValue::Number(4.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn solves_affine_systems_with_fixed_function_powers() {
+        let lines = [
+            "x=0[mm]",
+            "y=0",
+            "SOLVE",
+            "pow(x,1)=3[mm]",
+            "y+pow(x,0)=5",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Length(3.0),
                 CurveExpressionValue::Number(4.0),
             ]
         );
