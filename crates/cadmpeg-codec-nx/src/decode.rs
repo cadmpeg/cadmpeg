@@ -6830,11 +6830,11 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches(
         let [edge] = edges.as_slice() else {
             continue;
         };
-        if vertex_points.get(&edge.start) != Some(&endpoints[0])
-            || vertex_points.get(&edge.end) != Some(&endpoints[1])
-        {
-            continue;
-        }
+        let edge_reversed = match (vertex_points.get(&edge.start), vertex_points.get(&edge.end)) {
+            (Some(start), Some(end)) if start == &endpoints[0] && end == &endpoints[1] => false,
+            (Some(start), Some(end)) if start == &endpoints[1] && end == &endpoints[0] => true,
+            _ => continue,
+        };
         let candidates = supports.each_ref().map(|support| {
             incident
                 .get(&(procedural.curve.clone(), support.clone()))
@@ -6892,30 +6892,31 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches(
         else {
             continue;
         };
-        let pcurves = [first.geometry.clone(), second.geometry.clone()];
-        let endpoints_match = supports.iter().zip(&pcurves).all(|(support, pcurve)| {
-            first_range
-                .iter()
-                .zip(endpoints)
-                .all(|(parameter, endpoint)| {
-                    pcurve_uv(pcurve, *parameter)
-                        .and_then(|uv| decoded_surface_point(ir, support, uv.u, uv.v))
-                        .is_some_and(|point| point_distance(point, *endpoint) <= *tolerance)
-                })
+        let carriers = [first, second];
+        let pcurves: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
+            orient_tolerant_intersection_pcurve(
+                ir,
+                &supports[side],
+                &carriers[side].geometry,
+                first_range,
+                *endpoints,
+                *tolerance,
+            )
         });
-        if endpoints_match {
+        if let [Some(first), Some(second)] = pcurves {
             replacements.push((
                 procedural.id.clone(),
                 edge.id.clone(),
+                edge_reversed,
                 TolerantIntersectionParameterization {
-                    pcurves,
+                    pcurves: [first, second],
                     parameter_range: first_range,
                 },
             ));
         }
     }
 
-    for (procedural_id, edge_id, parameterization) in replacements {
+    for (procedural_id, edge_id, edge_reversed, parameterization) in replacements {
         let Some(procedural) = ir
             .model
             .procedural_curves
@@ -6937,9 +6938,188 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches(
         let range = parameterization.parameter_range;
         *slot = Some(parameterization);
         if let Some(edge) = ir.model.edges.iter_mut().find(|edge| edge.id == edge_id) {
+            if edge_reversed {
+                std::mem::swap(&mut edge.start, &mut edge.end);
+            }
             edge.param_range = Some(range);
             annotations.derived(&edge.id, "param_range");
         }
+    }
+}
+
+fn orient_tolerant_intersection_pcurve(
+    ir: &CadIr,
+    support: &SurfaceId,
+    pcurve: &PcurveGeometry,
+    range: [f64; 2],
+    endpoints: [Point3; 2],
+    tolerance: f64,
+) -> Option<PcurveGeometry> {
+    let points = range.map(|parameter| {
+        let uv = pcurve_uv(pcurve, parameter)?;
+        decoded_surface_point(ir, support, uv.u, uv.v)
+    });
+    let [Some(first), Some(second)] = points else {
+        return None;
+    };
+    let forward = point_distance(first, endpoints[0]) <= tolerance
+        && point_distance(second, endpoints[1]) <= tolerance;
+    let reversed = point_distance(first, endpoints[1]) <= tolerance
+        && point_distance(second, endpoints[0]) <= tolerance;
+    match (forward, reversed) {
+        (true, false) => Some(pcurve.clone()),
+        (false, true) => reverse_pcurve_over_range(pcurve, range),
+        _ => None,
+    }
+}
+
+fn reverse_pcurve_over_range(
+    pcurve: &PcurveGeometry,
+    [start, end]: [f64; 2],
+) -> Option<PcurveGeometry> {
+    let reflection = start + end;
+    if !reflection.is_finite() {
+        return None;
+    }
+    match pcurve {
+        PcurveGeometry::Line { origin, direction } => Some(PcurveGeometry::Line {
+            origin: Point2::new(
+                origin.u + reflection * direction.u,
+                origin.v + reflection * direction.v,
+            ),
+            direction: Point2::new(-direction.u, -direction.v),
+        }),
+        PcurveGeometry::PolarHarmonic {
+            radial_center,
+            radial_cos,
+            radial_sin,
+            axial_origin,
+            axial_cos,
+            axial_sin,
+        } => {
+            let cosine = reflection.cos();
+            let sine = reflection.sin();
+            Some(PcurveGeometry::PolarHarmonic {
+                radial_center: *radial_center,
+                radial_cos: Point2::new(
+                    cosine * radial_cos.u + sine * radial_sin.u,
+                    cosine * radial_cos.v + sine * radial_sin.v,
+                ),
+                radial_sin: Point2::new(
+                    sine * radial_cos.u - cosine * radial_sin.u,
+                    sine * radial_cos.v - cosine * radial_sin.v,
+                ),
+                axial_origin: *axial_origin,
+                axial_cos: cosine * axial_cos + sine * axial_sin,
+                axial_sin: sine * axial_cos - cosine * axial_sin,
+            })
+        }
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            axial_control_points,
+            weights,
+            periodic,
+        } => {
+            let reversed_knots = knots
+                .iter()
+                .rev()
+                .map(|knot| reflection - knot)
+                .collect::<Vec<_>>();
+            let mut radial_control_points = radial_control_points.clone();
+            radial_control_points.reverse();
+            let mut axial_control_points = axial_control_points.clone();
+            axial_control_points.reverse();
+            let mut weights = weights.clone();
+            if let Some(weights) = &mut weights {
+                weights.reverse();
+            }
+            let finite = reversed_knots
+                .iter()
+                .chain(
+                    radial_control_points
+                        .iter()
+                        .flat_map(|point| [&point.u, &point.v]),
+                )
+                .chain(&axial_control_points)
+                .all(|value| value.is_finite());
+            finite.then_some(PcurveGeometry::PolarNurbs {
+                degree: *degree,
+                knots: reversed_knots,
+                radial_control_points,
+                axial_control_points,
+                weights,
+                periodic: *periodic,
+            })
+        }
+        PcurveGeometry::Circle {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        } => {
+            let cosine = reflection.cos();
+            let sine = reflection.sin();
+            let reversed_x = Point2::new(
+                cosine * x_axis.u + sine * y_axis.u,
+                cosine * x_axis.v + sine * y_axis.v,
+            );
+            let reversed_y = Point2::new(
+                sine * x_axis.u - cosine * y_axis.u,
+                sine * x_axis.v - cosine * y_axis.v,
+            );
+            [reversed_x.u, reversed_x.v, reversed_y.u, reversed_y.v]
+                .into_iter()
+                .all(f64::is_finite)
+                .then_some(PcurveGeometry::Circle {
+                    center: *center,
+                    x_axis: reversed_x,
+                    y_axis: reversed_y,
+                    radius: *radius,
+                })
+        }
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => {
+            let reversed_knots = knots
+                .iter()
+                .rev()
+                .map(|knot| reflection - knot)
+                .collect::<Vec<_>>();
+            let mut control_points = control_points.clone();
+            control_points.reverse();
+            let mut weights = weights.clone();
+            if let Some(weights) = &mut weights {
+                weights.reverse();
+            }
+            let finite = reversed_knots
+                .iter()
+                .chain(control_points.iter().flat_map(|point| [&point.u, &point.v]))
+                .all(|value| value.is_finite());
+            finite.then_some(PcurveGeometry::Nurbs {
+                degree: *degree,
+                knots: reversed_knots,
+                control_points,
+                weights,
+                periodic: *periodic,
+            })
+        }
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            basis,
+        } => Some(PcurveGeometry::Trimmed {
+            parameter_range: *parameter_range,
+            basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+        }),
+        PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Offset { .. } => None,
     }
 }
 
@@ -10200,6 +10380,91 @@ mod tests {
             cadmpeg_ir::eval::model_surface_point_by_id(&ir, &surfaces[0], 5.0, 0.0),
             cadmpeg_ir::eval::model_surface_point_by_id(&ir, &surfaces[1], 5.0, 0.0)
         );
+
+        let ProceduralCurveDefinition::TolerantIntersection {
+            parameterization, ..
+        } = &mut ir.model.procedural_curves[0].definition
+        else {
+            unreachable!();
+        };
+        *parameterization = None;
+        let edge = &mut ir.model.edges[0];
+        edge.param_range = None;
+        std::mem::swap(&mut edge.start, &mut edge.end);
+        for pcurve in &mut ir.model.pcurves {
+            pcurve.geometry = PcurveGeometry::Line {
+                origin: Point2::new(10.0, 0.0),
+                direction: Point2::new(-1.0, 0.0),
+            };
+        }
+        super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+            &mut ir,
+            &serialized,
+            &mut AnnotationBuilder::new(),
+        );
+        let ProceduralCurveDefinition::TolerantIntersection {
+            parameterization: Some(parameterization),
+            ..
+        } = &ir.model.procedural_curves[0].definition
+        else {
+            panic!("reversed serialized branch transferred");
+        };
+        assert!(parameterization.pcurves.iter().all(|pcurve| matches!(
+            pcurve,
+            PcurveGeometry::Line { origin, direction }
+                if origin.u == 0.0 && direction.u == 1.0
+        )));
+        assert_eq!(ir.model.edges[0].start, vertices[0]);
+        assert_eq!(ir.model.edges[0].end, vertices[1]);
+
+        let ProceduralCurveDefinition::TolerantIntersection {
+            tolerance,
+            parameterization,
+            ..
+        } = &mut ir.model.procedural_curves[0].definition
+        else {
+            unreachable!();
+        };
+        *tolerance = 10.0;
+        *parameterization = None;
+        ir.model.edges[0].param_range = None;
+        super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+            &mut ir,
+            &serialized,
+            &mut AnnotationBuilder::new(),
+        );
+        assert!(matches!(
+            ir.model.procedural_curves[0].definition,
+            ProceduralCurveDefinition::TolerantIntersection {
+                parameterization: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+            control_points: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 2.0),
+                Point2::new(3.0, 1.0),
+            ],
+            weights: Some(vec![1.0, 2.0, 1.5]),
+            periodic: false,
+        };
+        let range = [0.25, 1.75];
+        let reversed =
+            super::reverse_pcurve_over_range(&pcurve, range).expect("reversible NURBS pcurve");
+        for parameter in [range[0], 0.5, 1.0, 1.5, range[1]] {
+            let expected =
+                cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
+            let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+            assert!((actual.u - expected.u).abs() < 1.0e-12);
+            assert!((actual.v - expected.v).abs() < 1.0e-12);
+        }
     }
 
     #[test]
