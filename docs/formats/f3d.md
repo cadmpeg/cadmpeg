@@ -199,26 +199,26 @@ The stream is a tag-typed SAB (ACIS binary) token stream.
 
 ### 4.1 Tag table
 
-| Tag                         | Symbol               | Payload     | Meaning                                         |
-| --------------------------- | -------------------- | ----------- | ----------------------------------------------- |
-| `0x02`                      | CHAR                 | 1 B         | unsigned 8-bit                                  |
-| `0x03`                      | SHORT                | 2 B         | signed 16-bit                                   |
-| `0x04`                      | LONG                 | ref_size    | signed int (32 or 64-bit per header)            |
-| `0x05`                      | FLOAT                | 4 B         | IEEE float32                                    |
-| `0x06`                      | DOUBLE               | 8 B         | IEEE float64                                    |
+| Tag                         | Symbol               | Payload                   | Meaning                                                           |
+| --------------------------- | -------------------- | ------------------------- | ----------------------------------------------------------------- |
+| `0x02`                      | CHAR                 | 1 B                       | unsigned 8-bit                                                    |
+| `0x03`                      | SHORT                | 2 B                       | signed 16-bit                                                     |
+| `0x04`                      | LONG                 | ref_size                  | signed int (32 or 64-bit per header)                              |
+| `0x05`                      | FLOAT                | 4 B                       | IEEE float32                                                      |
+| `0x06`                      | DOUBLE               | 8 B                       | IEEE float64                                                      |
 | `0x07`/`0x08`/`0x09`/`0x12` | UTF-8 string         | 1/2/ref_size/ref_size + N | length-prefixed string (8-bit, 16-bit, ref_size, ref_size length) |
-| `0x0A`                      | TRUE                 | 0 B         | logical true (data token, **not** a terminator) |
-| `0x0B`                      | FALSE                | 0 B         | logical false / sentinel                        |
-| `0x0C`                      | ENTITY_REF           | ref_size    | RecordTable index                               |
-| `0x0D`                      | IDENT                | 1 + N       | record/class name token (leaf)                  |
-| `0x0E`                      | SUBIDENT             | 1 + N       | base-class name token                           |
-| `0x0F` / `0x10`             | SUBTYPE_OPEN / CLOSE | 0 B         | brace-balanced subtype delimiters               |
-| `0x11`                      | TERMINATOR           | 0 B         | end of current record                           |
-| `0x13`                      | POSITION             | 24 B        | 3D point (3×f64)                                |
-| `0x14`                      | VECTOR_3D            | 24 B        | 3D vector (3×f64)                               |
-| `0x15`                      | ENUM_VALUE           | ref_size    | enumeration / secondary integer                 |
-| `0x16`                      | VECTOR_2D            | 16 B        | 2D `(u,v)`                                      |
-| `0x17`                      | INT64                | 8 B         | AutoCAD int64 attribute value                   |
+| `0x0A`                      | TRUE                 | 0 B                       | logical true (data token, **not** a terminator)                   |
+| `0x0B`                      | FALSE                | 0 B                       | logical false / sentinel                                          |
+| `0x0C`                      | ENTITY_REF           | ref_size                  | RecordTable index                                                 |
+| `0x0D`                      | IDENT                | 1 + N                     | record/class name token (leaf)                                    |
+| `0x0E`                      | SUBIDENT             | 1 + N                     | base-class name token                                             |
+| `0x0F` / `0x10`             | SUBTYPE_OPEN / CLOSE | 0 B                       | brace-balanced subtype delimiters                                 |
+| `0x11`                      | TERMINATOR           | 0 B                       | end of current record                                             |
+| `0x13`                      | POSITION             | 24 B                      | 3D point (3×f64)                                                  |
+| `0x14`                      | VECTOR_3D            | 24 B                      | 3D vector (3×f64)                                                 |
+| `0x15`                      | ENUM_VALUE           | ref_size                  | enumeration / secondary integer                                   |
+| `0x16`                      | VECTOR_2D            | 16 B                      | 2D `(u,v)`                                                        |
+| `0x17`                      | INT64                | 8 B                       | AutoCAD int64 attribute value                                     |
 
 - `0x11` terminates the current top-level record; the next record's name-token chain begins at the following byte.
 - `0x0A`/`0x0B` inside a record are booleans (often `reversed`/`forward`), **never** record boundaries.

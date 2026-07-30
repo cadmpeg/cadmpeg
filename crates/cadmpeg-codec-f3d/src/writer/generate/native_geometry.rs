@@ -1420,6 +1420,37 @@ fn native_loft_subdata(
     Ok(())
 }
 
+/// Emit the fields every loft profile member shares after its type-selected
+/// payload: the optional ASM integer, the constraint subdata, and the optional
+/// direction selected by the second native flag.
+fn native_loft_profile_tail(
+    bytes: &mut Vec<u8>,
+    data: &cadmpeg_ir::geometry::LoftProfileData,
+) -> Result<(), CodecError> {
+    if let Some(asm_extension) = data.asm_extension {
+        native_i64(bytes, asm_extension);
+    }
+    native_loft_subdata(bytes, &data.subdata)?;
+    bytes.push(native_bool(data.direction.is_some()));
+    if let Some(direction) = data.direction {
+        native_vector(bytes, [direction.x, direction.y, direction.z]);
+    }
+    Ok(())
+}
+
+/// The first native constraint flag, required by every member form that stores
+/// a support surface.
+fn required_first_flag(
+    data: &cadmpeg_ir::geometry::LoftProfileData,
+    context: &str,
+) -> Result<u8, CodecError> {
+    data.first_flag.map(native_bool).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "{context} profile members require the first constraint flag"
+        ))
+    })
+}
+
 fn native_loft_section(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -1447,41 +1478,39 @@ fn native_loft_section(
                     native_optional_f64(bytes, value);
                 }
             }
-            if let Some(surface_id) = &member.data.surface {
-                let surface = target
-                    .model
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == *surface_id)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "loft references missing surface {surface_id}"
-                        ))
-                    })?;
-                if member.endpoints.is_some() {
-                    native_embedded_surface_with_bounds(
-                        bytes,
-                        &surface.geometry,
-                        &member.data.support_bounds,
-                    )?;
+            // A type-zero member stores two nullable UV curve slots in place of
+            // the support surface and the first flag.
+            if member.type_code == 0 && member.data.first_flag.is_none() {
+                native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
+                native_optional_pcurve(bytes, member.data.secondary_pcurve.as_ref())?;
+            } else {
+                if let Some(surface_id) = &member.data.surface {
+                    let surface = target
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|surface| surface.id == *surface_id)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "loft references missing surface {surface_id}"
+                            ))
+                        })?;
+                    if member.endpoints.is_some() {
+                        native_embedded_surface_with_bounds(
+                            bytes,
+                            &surface.geometry,
+                            &member.data.support_bounds,
+                        )?;
+                    } else {
+                        native_embedded_surface(bytes, &surface.geometry)?;
+                    }
                 } else {
-                    native_embedded_surface(bytes, &surface.geometry)?;
+                    native_ident(bytes, "null_surface")?;
                 }
-            } else {
-                native_ident(bytes, "null_surface")?;
+                native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
+                bytes.push(required_first_flag(&member.data, "loft")?);
             }
-            if let Some(pcurve) = &member.data.pcurve {
-                native_nurbs_pcurve_block(bytes, pcurve)?;
-            } else {
-                native_ident(bytes, "nullbs")?;
-            }
-            bytes.push(native_bool(member.data.first_flag));
-            native_i64(bytes, member.data.asm_extension);
-            native_loft_subdata(bytes, &member.data.subdata)?;
-            bytes.push(native_bool(member.data.direction.is_some()));
-            if let Some(direction) = member.data.direction {
-                native_vector(bytes, [direction.x, direction.y, direction.z]);
-            }
+            native_loft_profile_tail(bytes, &member.data)?;
         }
         if let Some(path_curve) = &entry.path.curve {
             let path = native_loft_curve_in_range(target, path_curve, parameter_range)?;
@@ -1571,13 +1600,8 @@ fn native_compound_loft_scale(
             })?;
         native_embedded_surface(bytes, &surface.geometry)?;
         native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
-        bytes.push(native_bool(member.data.first_flag));
-        native_i64(bytes, member.data.asm_extension);
-        native_loft_subdata(bytes, &member.data.subdata)?;
-        bytes.push(native_bool(member.data.direction.is_some()));
-        if let Some(direction) = member.data.direction {
-            native_vector(bytes, [direction.x, direction.y, direction.z]);
-        }
+        bytes.push(required_first_flag(&member.data, "compound loft")?);
+        native_loft_profile_tail(bytes, &member.data)?;
     }
     native_nurbs_curve(bytes, &native_loft_curve(target, &scale.path)?)?;
     native_i64(
@@ -2335,13 +2359,8 @@ fn native_skin_profile_data(
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
     native_optional_pcurve(bytes, data.pcurve.as_ref())?;
-    bytes.push(native_bool(data.first_flag));
-    native_i64(bytes, data.asm_extension);
-    native_loft_subdata(bytes, &data.subdata)?;
-    bytes.push(native_bool(data.direction.is_some()));
-    if let Some(direction) = data.direction {
-        native_vector(bytes, [direction.x, direction.y, direction.z]);
-    }
+    bytes.push(required_first_flag(data, "skin")?);
+    native_loft_profile_tail(bytes, data)?;
     Ok(())
 }
 
@@ -3448,37 +3467,35 @@ fn native_revision_cl_scale(
         for value in endpoints {
             native_optional_f64(bytes, value);
         }
-        if let Some(surface_id) = &member.data.surface {
-            let surface = target
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == *surface_id)
-                .ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "compound loft references missing surface {surface_id}"
-                    ))
-                })?;
-            native_embedded_surface_with_bounds(
-                bytes,
-                &surface.geometry,
-                &member.data.support_bounds,
-            )?;
+        // A type-zero member stores two nullable UV curve slots in place of the
+        // support surface and the first flag.
+        if member.type_code == 0 && member.data.first_flag.is_none() {
+            native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
+            native_optional_pcurve(bytes, member.data.secondary_pcurve.as_ref())?;
         } else {
-            native_ident(bytes, "null_surface")?;
+            if let Some(surface_id) = &member.data.surface {
+                let surface = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *surface_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "compound loft references missing surface {surface_id}"
+                        ))
+                    })?;
+                native_embedded_surface_with_bounds(
+                    bytes,
+                    &surface.geometry,
+                    &member.data.support_bounds,
+                )?;
+            } else {
+                native_ident(bytes, "null_surface")?;
+            }
+            native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
+            bytes.push(required_first_flag(&member.data, "revision compound loft")?);
         }
-        if let Some(pcurve) = &member.data.pcurve {
-            native_nurbs_pcurve_block(bytes, pcurve)?;
-        } else {
-            native_ident(bytes, "nullbs")?;
-        }
-        bytes.push(native_bool(member.data.first_flag));
-        native_i64(bytes, member.data.asm_extension);
-        native_loft_subdata(bytes, &member.data.subdata)?;
-        bytes.push(native_bool(member.data.direction.is_some()));
-        if let Some(direction) = member.data.direction {
-            native_vector(bytes, [direction.x, direction.y, direction.z]);
-        }
+        native_loft_profile_tail(bytes, &member.data)?;
     }
     if let Some(path_curve) = &path.curve {
         let curve = native_loft_curve_in_range(target, path_curve, None)?;

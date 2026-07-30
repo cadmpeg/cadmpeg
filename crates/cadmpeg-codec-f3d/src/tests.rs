@@ -2511,39 +2511,169 @@ fn generated_revision_sweep_surface_round_trips() {
     assert_revision_surface_round_trip(smbh, "sweep");
 }
 
-#[test]
-fn generated_revision_loft_surface_round_trips() {
-    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
-        t_long(surface, 1);
-        t_dbl(surface, 0.0);
-        t_long(surface, 1);
-        t_long(surface, 1);
-        surface.extend_from_slice(&generated_curve_block());
-        surface.extend_from_slice(&[0x0b, 0x0b]);
+/// A revision-gated `loft_spl_sur` body holding one section entry with one
+/// profile member. `type_code` selects the member payload: a nonzero type
+/// stores the support surface, one nullable pcurve, and the first flag; a zero
+/// type stores two nullable pcurve slots and no first flag. `asm_extension`
+/// carries the ASM integer only when the stream save format stores it.
+fn push_revision_loft_body(surface: &mut Vec<u8>, type_code: i64, asm_extension: Option<i64>) {
+    t_long(surface, 1);
+    t_dbl(surface, 0.0);
+    t_long(surface, 1);
+    t_long(surface, type_code);
+    surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&[0x0b, 0x0b]);
+    if type_code == 0 {
+        surface.extend_from_slice(&generated_pcurve_block());
+        t_ident(surface, "nullbs");
+    } else {
         t_ident(surface, "null_surface");
         t_ident(surface, "nullbs");
         surface.push(0x0b);
-        t_long(surface, -1);
-        t_long(surface, 213);
-        t_long(surface, 1);
-        t_long(surface, 1);
-        for value in [0.0, 1.0, 0.25, 0.75, 0.5, 1.5] {
-            t_dbl(surface, value);
-        }
-        surface.push(0x0b);
-        t_ident(surface, "null_curve");
-        t_long(surface, 0);
-        t_long(surface, -1);
-        t_long(surface, 0);
-        for value in [0.0, 1.0, 0.0, 1.0] {
-            surface.push(0x0a);
-            t_dbl(surface, value);
-        }
-        surface.extend_from_slice(&[0x0b; 4]);
-        t_long(surface, 0);
-        t_long(surface, 0);
-        push_revision_surface_tail(surface);
+    }
+    if let Some(value) = asm_extension {
+        t_long(surface, value);
+    }
+    t_long(surface, 213);
+    t_long(surface, 1);
+    t_long(surface, 1);
+    for value in [0.0, 1.0, 0.25, 0.75, 0.5, 1.5] {
+        t_dbl(surface, value);
+    }
+    surface.push(0x0b);
+    t_ident(surface, "null_curve");
+    t_long(surface, 0);
+    t_long(surface, -1);
+    t_long(surface, 0);
+    for value in [0.0, 1.0, 0.0, 1.0] {
+        surface.push(0x0a);
+        t_dbl(surface, value);
+    }
+    surface.extend_from_slice(&[0x0b; 4]);
+    t_long(surface, 0);
+    t_long(surface, 0);
+    push_revision_surface_tail(surface);
+}
+
+/// Rewrite a `BinaryFile8` stream's save-format version word.
+fn with_save_format(mut smbh: Vec<u8>, version: u32) -> Vec<u8> {
+    smbh[15..19].copy_from_slice(&version.to_le_bytes());
+    smbh
+}
+
+/// The single revision-gated profile member of a decoded loft construction.
+fn decoded_revision_loft_member(
+    ir: &cadmpeg_ir::document::CadIr,
+) -> &cadmpeg_ir::geometry::LoftProfileMember {
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft {
+        sections,
+        revision_form,
+        ..
+    } = &ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("revision loft construction")
+        .definition
+    else {
+        panic!("expected a loft construction")
+    };
+    assert!(revision_form.is_some());
+    &sections[0].entries[0].profile[0]
+}
+
+/// Byte-exact re-emission of the decoded construction's subtype span.
+fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::CadIr) -> Vec<u8> {
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("procedural construction");
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == procedural.surface)
+        .expect("solved surface");
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(cache) = &surface.geometry else {
+        panic!("expected a solved NURBS cache")
+    };
+    let mut bytes = Vec::new();
+    crate::writer::generate::native_geometry::native_procedural_surface(
+        &mut bytes, ir, surface, cache,
+    )
+    .expect("regenerate procedural surface");
+    let inner = bytes
+        .iter()
+        .position(|&byte| byte == 0x0f)
+        .expect("subtype opening");
+    crate::nurbs::subtypes::subtype_span(&bytes, inner, 8)
+        .expect("subtype span")
+        .to_vec()
+}
+
+#[test]
+fn generated_revision_loft_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+        push_revision_loft_body(surface, 1, Some(-1));
     });
+    assert_revision_surface_round_trip(smbh, "loft");
+}
+
+#[test]
+fn revision_loft_member_omits_the_asm_integer_in_an_early_save_format_stream() {
+    // Save format 22600: the constraint subdata follows the first flag with no
+    // ASM integer between them.
+    let smbh = with_save_format(
+        synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+            push_revision_loft_body(surface, 1, None);
+        }),
+        22600,
+    );
+    let subtype = {
+        let start = asm_header::record_stream_start(&smbh).unwrap();
+        let limit = asm_header::solved_record_limit(&smbh).unwrap();
+        let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+        let record = &records[9];
+        let slice = &smbh[record.offset..record.offset + record.len];
+        let inner = slice.iter().position(|&byte| byte == 0x0f).unwrap();
+        crate::nurbs::subtypes::subtype_span(slice, inner, 8)
+            .unwrap()
+            .to_vec()
+    };
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("early-era revision loft decode");
+    let member = decoded_revision_loft_member(&decoded.ir);
+    assert_eq!(member.type_code, 1);
+    assert_eq!(member.data.first_flag, Some(false));
+    assert_eq!(member.data.asm_extension, None);
+    assert_eq!(member.data.secondary_pcurve, None);
+    assert_eq!(regenerated_procedural_surface_span(&decoded.ir), subtype);
+}
+
+#[test]
+fn revision_loft_type_zero_member_stores_two_pcurve_slots() {
+    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+        push_revision_loft_body(surface, 0, Some(-1));
+    });
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("type-zero revision loft decode");
+    let member = decoded_revision_loft_member(&decoded.ir);
+    assert_eq!(member.type_code, 0);
+    assert_eq!(member.data.surface, None);
+    assert!(member.data.pcurve.is_some());
+    assert_eq!(member.data.secondary_pcurve, None);
+    assert_eq!(member.data.first_flag, None);
+    assert_eq!(member.data.asm_extension, Some(-1));
     assert_revision_surface_round_trip(smbh, "loft");
 }
 
@@ -15938,7 +16068,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     };
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].type_code, 9);
-    assert_eq!(profiles[0].data.asm_extension, -1);
+    assert_eq!(profiles[0].data.asm_extension, Some(-1));
     assert!(profiles[0].data.pcurve.is_some());
     assert!(profiles[0].data.direction.is_some());
     assert_eq!(*tail, [-1, 7]);

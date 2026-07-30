@@ -602,8 +602,9 @@ pub(crate) struct EmbeddedLoftProfileData {
     pub(crate) surface: Option<SurfaceGeometry>,
     pub(crate) support_bounds: [Option<f64>; 4],
     pub(crate) pcurve: Option<NurbsPcurve>,
-    pub(crate) first_flag: bool,
-    pub(crate) asm_extension: i64,
+    pub(crate) secondary_pcurve: Option<NurbsPcurve>,
+    pub(crate) first_flag: Option<bool>,
+    pub(crate) asm_extension: Option<i64>,
     pub(crate) subdata: cadmpeg_ir::geometry::LoftSubdata,
     pub(crate) direction: Option<Vector3>,
 }
@@ -1076,25 +1077,79 @@ pub(crate) fn ellipse_to_nurbs(
     })
 }
 
-/// Revision-gated loft profile data: bounded support, nullable pcurve, flags,
-/// and constraint subdata with trailing row pairs.
+/// Payload form of a revision-gated loft profile member, selected by the
+/// member's type integer.
+#[derive(Clone, Copy)]
+enum RevisionLoftMemberForm {
+    /// Nonzero type: bounded support surface, one nullable BS2 pcurve, and the
+    /// first flag.
+    Support,
+    /// Zero type: two nullable BS2 pcurve slots and no first flag.
+    PcurvePair,
+}
+
+impl RevisionLoftMemberForm {
+    /// The form the member's type integer selects.
+    fn of(type_code: i64) -> Self {
+        if type_code == 0 {
+            Self::PcurvePair
+        } else {
+            Self::Support
+        }
+    }
+}
+
+/// The highest stream save format version whose revision-gated loft profile
+/// members omit the ASM integer between the member payload and its constraint
+/// subdata. Save format 22300 through 22600 streams omit it; save format 23200
+/// streams carry it.
+const LOFT_ASM_EXTENSION_ABSENT_THROUGH: u32 = 22600;
+
+/// Whether a revision-gated loft profile member in this stream carries the ASM
+/// integer. The gate keys on the stream save format, not on the record's own
+/// serializer revision stamp: one revision stamp takes the integer in a later
+/// stream and omits it in an earlier one.
+fn revision_loft_carries_asm_extension(active_bytes: &[u8]) -> bool {
+    crate::asm_header::parse(active_bytes)
+        .and_then(|header| header.save_format_version)
+        .is_none_or(|version| version > LOFT_ASM_EXTENSION_ABSENT_THROUGH)
+}
+
+/// Revision-gated loft profile data: the type-selected member payload, an
+/// optional ASM integer, and constraint subdata with trailing row pairs.
 fn decode_revision_loft_profile_data(
     bytes: &[u8],
     position: &mut usize,
     int_width: usize,
     active_bytes: &[u8],
     tables: &SubtypeTables,
+    form: RevisionLoftMemberForm,
+    asm_extension_present: bool,
 ) -> Option<EmbeddedLoftProfileData> {
-    let (surface, support_bounds) = decode_optional_embedded_surface_with_bounds(
-        bytes,
-        position,
-        int_width,
-        active_bytes,
-        tables,
-    )?;
-    let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-    let first_flag = take_bool(bytes, position)?;
-    let asm_extension = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let (surface, support_bounds, pcurve, secondary_pcurve, first_flag) = match form {
+        RevisionLoftMemberForm::Support => {
+            let (surface, support_bounds) = decode_optional_embedded_surface_with_bounds(
+                bytes,
+                position,
+                int_width,
+                active_bytes,
+                tables,
+            )?;
+            let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+            let first_flag = take_bool(bytes, position)?;
+            (surface, support_bounds, pcurve, None, Some(first_flag))
+        }
+        RevisionLoftMemberForm::PcurvePair => {
+            let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+            let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+            (None, [None; 4], pcurve, secondary_pcurve, None)
+        }
+    };
+    let asm_extension = if asm_extension_present {
+        Some(take_tagged_int(bytes, position, 0x04, int_width)?)
+    } else {
+        None
+    };
     let subdata = decode_loft_subdata_form(bytes, position, int_width, true)?;
     let direction = if take_bool(bytes, position)? {
         let value = take_native_vec3(bytes, position, 0x14)?;
@@ -1106,6 +1161,7 @@ fn decode_revision_loft_profile_data(
         surface,
         support_bounds,
         pcurve,
+        secondary_pcurve,
         first_flag,
         asm_extension,
         subdata,
@@ -1119,6 +1175,7 @@ fn decode_revision_loft_section(
     int_width: usize,
     active_bytes: &[u8],
     tables: &SubtypeTables,
+    asm_extension_present: bool,
 ) -> Option<Vec<EmbeddedLoftSectionEntry>> {
     let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
     let count = bounded_len(count as u64, 9, bytes.len().saturating_sub(*position))?;
@@ -1152,6 +1209,8 @@ fn decode_revision_loft_section(
                 int_width,
                 active_bytes,
                 tables,
+                RevisionLoftMemberForm::of(type_code),
+                asm_extension_present,
             )?;
             profile.push(EmbeddedLoftProfileMember {
                 type_code,
@@ -1294,8 +1353,9 @@ fn decode_loft_profile_data(
         surface: Some(surface),
         support_bounds: [None; 4],
         pcurve,
-        first_flag,
-        asm_extension,
+        secondary_pcurve: None,
+        first_flag: Some(first_flag),
+        asm_extension: Some(asm_extension),
         subdata,
         direction,
     })
@@ -1373,9 +1433,24 @@ fn decode_revision_loft(
     let (active_bytes, tables) = resolver?;
     let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
     (revision > 0).then_some(())?;
+    let asm_extension_present = revision_loft_carries_asm_extension(active_bytes);
     let sections = [
-        decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
-        decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
+        decode_revision_loft_section(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+            asm_extension_present,
+        )?,
+        decode_revision_loft_section(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+            asm_extension_present,
+        )?,
     ];
     let wrap_ranges = [
         [
@@ -1519,6 +1594,7 @@ fn decode_revision_cl_scale(
     int_width: usize,
     active_bytes: &[u8],
     tables: &SubtypeTables,
+    asm_extension_present: bool,
 ) -> Option<(Vec<EmbeddedLoftProfileMember>, EmbeddedLoftPath)> {
     let member_count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
     let member_count = bounded_len(
@@ -1540,8 +1616,15 @@ fn decode_revision_cl_scale(
             take_optional_range_value(bytes, position)?,
             take_optional_range_value(bytes, position)?,
         ];
-        let data =
-            decode_revision_loft_profile_data(bytes, position, int_width, active_bytes, tables)?;
+        let data = decode_revision_loft_profile_data(
+            bytes,
+            position,
+            int_width,
+            active_bytes,
+            tables,
+            RevisionLoftMemberForm::of(type_code),
+            asm_extension_present,
+        )?;
         profile.push(EmbeddedLoftProfileMember {
             type_code,
             curve,
@@ -1605,8 +1688,15 @@ fn decode_revision_compound_loft(
     (revision > 0).then_some(())?;
     let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
         decode_revision_surface_tail(span, &mut position, int_width)?;
-    let (base_profile, base_path) =
-        decode_revision_cl_scale(span, &mut position, int_width, active_bytes, tables)?;
+    let asm_extension_present = revision_loft_carries_asm_extension(active_bytes);
+    let (base_profile, base_path) = decode_revision_cl_scale(
+        span,
+        &mut position,
+        int_width,
+        active_bytes,
+        tables,
+        asm_extension_present,
+    )?;
     let entry_count =
         usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
     let entry_count = bounded_len(
@@ -1616,8 +1706,14 @@ fn decode_revision_compound_loft(
     )?;
     let mut entries = Vec::with_capacity(entry_count);
     for _ in 0..entry_count {
-        let (profile, path) =
-            decode_revision_cl_scale(span, &mut position, int_width, active_bytes, tables)?;
+        let (profile, path) = decode_revision_cl_scale(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+            asm_extension_present,
+        )?;
         let parameter = take_f64(span, &mut position)?;
         entries.push(EmbeddedLoftSectionEntry {
             parameter,

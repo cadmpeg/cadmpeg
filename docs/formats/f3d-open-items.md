@@ -121,13 +121,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We keep the two leading slots without a change. To write them from a neutral model, we must know what they hold.
 
-### GC-21. Early-era revision-gated `loft_spl_sur` section grammar
+### GC-21. Revision-gated `loft_spl_sur` type-zero member and ASM-integer gate
 
-**Question.** What is the revision-gated `loft_spl_sur` section grammar in streams with save format versions 22300 through 22600?
+**Question.** What do the two nullable BS2 pcurve slots of a type-zero profile member hold? What form does a type-zero member take in a save-format-23200 stream? At which save format version does the ASM integer start?
 
-**Known.** `f3d.md` §7.3 `loft_spl_sur` gives the revision-gated section grammar. Records in save-format-23200 streams parse under that grammar. Records in save-format 22300 through 22600 streams do not: the first section fails to parse. The decoder retains those records verbatim and decodes no construction from them.
+**Known.** `f3d.md` §7.3 `loft_spl_sur` gives the two member forms and the save-format gate of the ASM integer. A type-zero member stores two nullable BS2 pcurve slots in place of the support surface and the first flag. The decoder keeps both slots. Type-zero members occur in save format 22300 through 22600 streams. No type-zero member occurs in a save-format-23200 stream. No stream with a save format version between 22600 and 23200 holds a revision-gated loft. The decoder reads the ASM integer in each stream with a save format version above 22600.
 
-**Need.** We cannot read the construction of a revision-gated loft in an earlier-era stream.
+**Need.** We keep the two slots without a change. To write them from a neutral model, we must know what they hold. To write a type-zero member into a save-format-23200 stream, we must know if that stream keeps the ASM integer. To write a stream with a save format version between 22600 and 23200, we must know if that stream keeps the ASM integer.
 
 ### GC-22. Tags `0x33` and `0x34`
 

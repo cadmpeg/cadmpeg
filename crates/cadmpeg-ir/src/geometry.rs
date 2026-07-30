@@ -1161,10 +1161,17 @@ pub struct LoftProfileData {
     /// UV curve on the support, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveGeometry>,
-    /// First native constraint flag.
-    pub first_flag: bool,
-    /// ASM extension integer following the first flag.
-    pub asm_extension: i64,
+    /// Second UV curve slot, carried only by the type-zero member form and
+    /// absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_pcurve: Option<PcurveGeometry>,
+    /// First native constraint flag, absent from the type-zero member form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_flag: Option<bool>,
+    /// ASM extension integer following the first flag, absent from member
+    /// forms that omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asm_extension: Option<i64>,
     /// Native constraint table.
     pub subdata: LoftSubdata,
     /// Optional direction selected by the second native flag.

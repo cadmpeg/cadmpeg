@@ -503,13 +503,11 @@ fn emit_loft_surface(
                                                         });
                                                         surface
                                                     });
-                                                    let pcurve = member.data.pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                                                        degree: pcurve.degree,
-                                                        knots: pcurve.knots,
-                                                        control_points: pcurve.control_points,
-                                                        weights: pcurve.weights,
-                                                        periodic: pcurve.periodic,
-                                                    });
+                                                    let pcurve = member.data.pcurve.map(embedded_pcurve_geometry);
+                                                    let secondary_pcurve = member
+                                                        .data
+                                                        .secondary_pcurve
+                                                        .map(embedded_pcurve_geometry);
                                                     cadmpeg_ir::geometry::LoftProfileMember {
                                                         type_code: member.type_code,
                                                         curve,
@@ -518,6 +516,7 @@ fn emit_loft_surface(
                                                             surface,
                                                             support_bounds: member.data.support_bounds,
                                                             pcurve,
+                                                            secondary_pcurve,
                                                             first_flag: member.data.first_flag,
                                                             asm_extension: member.data.asm_extension,
                                                             subdata: member.data.subdata,
@@ -615,6 +614,10 @@ fn emit_compound_loft_surface(
                                                 pcurve: member
                                                     .data
                                                     .pcurve
+                                                    .map(embedded_pcurve_geometry),
+                                                secondary_pcurve: member
+                                                    .data
+                                                    .secondary_pcurve
                                                     .map(embedded_pcurve_geometry),
                                                 first_flag: member.data.first_flag,
                                                 asm_extension: member.data.asm_extension,
@@ -788,6 +791,10 @@ fn emit_scaled_compound_loft_surface(
                                                 pcurve: member
                                                     .data
                                                     .pcurve
+                                                    .map(embedded_pcurve_geometry),
+                                                secondary_pcurve: member
+                                                    .data
+                                                    .secondary_pcurve
                                                     .map(embedded_pcurve_geometry),
                                                 first_flag: member.data.first_flag,
                                                 asm_extension: member.data.asm_extension,
@@ -1195,6 +1202,10 @@ fn emit_skin_surface(
                             surface,
                             support_bounds: profile.data.support_bounds,
                             pcurve: profile.data.pcurve.map(embedded_pcurve_geometry),
+                            secondary_pcurve: profile
+                                .data
+                                .secondary_pcurve
+                                .map(embedded_pcurve_geometry),
                             first_flag: profile.data.first_flag,
                             asm_extension: profile.data.asm_extension,
                             subdata: profile.data.subdata,
@@ -1380,6 +1391,10 @@ fn emit_net_surface(
                                                             pcurve: member.data.pcurve.map(
                                                                 embedded_pcurve_geometry,
                                                             ),
+                                                            secondary_pcurve: member
+                                                                .data
+                                                                .secondary_pcurve
+                                                                .map(embedded_pcurve_geometry),
                                                             first_flag: member.data.first_flag,
                                                             asm_extension: member
                                                                 .data
@@ -2050,6 +2065,10 @@ fn emit_revision_compound_loft_surface(
                         surface,
                         support_bounds: member.data.support_bounds,
                         pcurve: member.data.pcurve.map(embedded_pcurve_geometry),
+                        secondary_pcurve: member
+                            .data
+                            .secondary_pcurve
+                            .map(embedded_pcurve_geometry),
                         first_flag: member.data.first_flag,
                         asm_extension: member.data.asm_extension,
                         subdata: member.data.subdata,
