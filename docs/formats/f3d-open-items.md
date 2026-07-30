@@ -191,19 +191,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the member-role values of a sketch relation mean?
 
-**Known.** `f3d.md` §8.1 "A sketch relation is" gives two special cases. A `0x20000000000` relation uses the path role and the text role. A `0x2000000000` relation uses role `1` for result curves. The same line states that the role is relation-specific and does not classify an input member or a generated member by itself.
+**Known.** `f3d.md` §8.1 "A sketch relation is" gives two special cases. A `0x20000000000` relation uses the path role and the text role. A `0x2000000000` relation uses role `1` for result curves. The same line states that the role is relation-specific and does not classify an input member or a generated member by itself. A spatial-sketch `Coincident` relation between a point and a surface carries the surface-member role values `0` to `3`. No one of these four values changes the point-on-surface relation.
 
 **Need.** We must know the general value set to classify members in every other relation.
-
-### DR-07. Point-to-surface loci of roles `0` to `3`
-
-**Question.** Which point-to-surface locus does each sketch-relation member-role value `0`, `1`, `2`, and `3` select?
-
-**Known.** `f3d.md` §8.1 "A spatial-sketch `Coincident` relation" states that the surface member role does not change the neutral point-on-surface relation. The four values do not select the four control-grid corners.
-
-**Need.** We must know the locus to build the correct neutral constraint.
-
-**Conflict.** `f3d.md` §8.1 "A spatial-sketch `Coincident` relation" can mean that the role selects no locus at all. If that is the intent, this item is not valid and must be removed. Decide the intent of `f3d.md` §8.1 "A spatial-sketch `Coincident` relation".
 
 ### DR-08. Member roles of a spline-group relation
 
