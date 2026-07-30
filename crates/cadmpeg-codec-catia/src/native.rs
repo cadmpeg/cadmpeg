@@ -34,7 +34,7 @@ const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
 #[cfg(test)]
 const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
 #[cfg(test)]
-const CATIA_RELATION_EXPRESSION_INSTANCE_VERSION: u32 = 225;
+const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 225;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1336,13 +1336,17 @@ pub struct CatiaFormulaParameterDependency {
     pub candidates: Vec<String>,
 }
 
-/// One exact compound instance frame selecting a relation-expression entity.
+/// One exact compound relation-program instance frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaRelationExpressionInstance {
+pub struct CatiaRelationProgramInstance {
     /// Stored entity identity in the frame's program slot.
-    pub expression_entity_id: u32,
-    /// Same-graph relation-expression entity selected by that identity.
-    pub expression: String,
+    pub program_entity_id: u32,
+    /// Same-graph entity selected by that identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+    /// Selected entity when it carries a complete relation-expression program.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relation_expression: Option<String>,
 }
 
 /// Field order used by a repeated-reference schema preamble.
@@ -1413,9 +1417,9 @@ pub struct CatiaEntityRecord {
     /// Complete value bound by a two-definition role chain.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub definition_chain_value: Option<CatiaDefinitionChainValue>,
-    /// Complete compound instance frame selecting a relation-expression entity.
+    /// Complete compound relation-program instance frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relation_expression_instance: Option<CatiaRelationExpressionInstance>,
+    pub relation_program_instance: Option<CatiaRelationProgramInstance>,
     /// Complete formula-to-expression and formula-to-parameter relation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula_relation: Option<CatiaFormulaRelation>,
@@ -2793,11 +2797,12 @@ mod entity_suffix_framing_tests {
     }
 }
 
-fn relation_expression_instance(
+fn relation_program_instance(
     entity_id: u32,
     object: &CatiaObjectRecord,
+    entities: &HashMap<(String, u32), String>,
     relation_expressions: &HashMap<(String, u32), String>,
-) -> Option<CatiaRelationExpressionInstance> {
+) -> Option<CatiaRelationProgramInstance> {
     if object.lead != 0x12
         || object.entity_id != Some(entity_id)
         || object.owner_entity_id().is_none()
@@ -2822,7 +2827,7 @@ fn relation_expression_instance(
         value: repeated_reference_copy,
         ..
     }, PayloadField::Atom {
-        value: expression_entity_id,
+        value: program_entity_id,
         ..
     }, PayloadField::Reference { .. }, PayloadField::Atom {
         value: stored_self, ..
@@ -2836,12 +2841,11 @@ fn relation_expression_instance(
     {
         return None;
     }
-    let expression = relation_expressions
-        .get(&(object.parent.clone(), *expression_entity_id))?
-        .clone();
-    Some(CatiaRelationExpressionInstance {
-        expression_entity_id: *expression_entity_id,
-        expression,
+    let key = (object.parent.clone(), *program_entity_id);
+    Some(CatiaRelationProgramInstance {
+        program_entity_id: *program_entity_id,
+        program: entities.get(&key).cloned(),
+        relation_expression: relation_expressions.get(&key).cloned(),
     })
 }
 
@@ -2916,6 +2920,7 @@ fn formula_relation(
 
 type CatiaRelationExpressionIndex = HashMap<String, (String, String)>;
 type CatiaRelationExpressionEntityIndex = HashMap<(String, u32), String>;
+type CatiaEntityByGraphIdentityIndex = HashMap<(String, u32), String>;
 type CatiaEntityByObjectIndex = HashMap<String, String>;
 type CatiaParameterBindingIndex = HashMap<String, HashMap<String, Vec<String>>>;
 
@@ -2924,6 +2929,7 @@ fn semantic_entity_indices(
 ) -> (
     CatiaRelationExpressionIndex,
     CatiaRelationExpressionEntityIndex,
+    CatiaEntityByGraphIdentityIndex,
     CatiaEntityByObjectIndex,
     CatiaParameterBindingIndex,
 ) {
@@ -2940,6 +2946,15 @@ fn semantic_entity_indices(
     let relation_expression_entities = entities
         .iter()
         .filter(|entity| entity.relation_expression.is_some())
+        .map(|entity| {
+            (
+                (entity.object_graph.clone(), entity.entity_id),
+                entity.id.clone(),
+            )
+        })
+        .collect();
+    let entities_by_graph_identity = entities
+        .iter()
         .map(|entity| {
             (
                 (entity.object_graph.clone(), entity.entity_id),
@@ -2966,6 +2981,7 @@ fn semantic_entity_indices(
     (
         relation_expressions,
         relation_expression_entities,
+        entities_by_graph_identity,
         entities_by_object,
         parameter_bindings,
     )
@@ -7693,6 +7709,7 @@ impl CatiaNative {
         let (
             relation_expressions,
             relation_expression_entities,
+            entities_by_graph_identity,
             entities_by_object,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records);
@@ -7709,9 +7726,10 @@ impl CatiaNative {
             else {
                 continue;
             };
-            entity.relation_expression_instance = relation_expression_instance(
+            entity.relation_program_instance = relation_program_instance(
                 entity.entity_id,
                 object,
+                &entities_by_graph_identity,
                 &relation_expression_entities,
             );
             entity.formula_relation = formula_relation(
@@ -8001,6 +8019,7 @@ impl CatiaNative {
         let (
             relation_expressions,
             relation_expression_entities,
+            entities_by_graph_identity,
             entities_by_object,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records);
@@ -8045,18 +8064,19 @@ impl CatiaNative {
                     });
             }
         }
-        if namespace.version < CATIA_RELATION_EXPRESSION_INSTANCE_VERSION {
+        if namespace.version < CATIA_RELATION_PROGRAM_INSTANCE_VERSION {
             let records_by_id = records
                 .iter()
                 .map(|record| (record.id.as_str(), record))
                 .collect::<HashMap<_, _>>();
             for entity in &mut entity_records {
-                entity.relation_expression_instance = records_by_id
+                entity.relation_program_instance = records_by_id
                     .get(entity.object_record.as_str())
                     .and_then(|object| {
-                        relation_expression_instance(
+                        relation_program_instance(
                             entity.entity_id,
                             object,
+                            &entities_by_graph_identity,
                             &relation_expression_entities,
                         )
                     });
@@ -8165,11 +8185,12 @@ impl CatiaNative {
                             .records
                             .iter()
                             .find(|record| record.id == entity.object_record);
-                        entity.relation_expression_instance
+                        entity.relation_program_instance
                             != object.and_then(|object| {
-                                relation_expression_instance(
+                                relation_program_instance(
                                     entity.entity_id,
                                     object,
+                                    &entities_by_graph_identity,
                                     &relation_expression_entities,
                                 )
                             })
@@ -9216,7 +9237,7 @@ fn native_object_graph(
                 constraint_range: None,
                 definition_value: None,
                 definition_chain_value: None,
-                relation_expression_instance: None,
+                relation_program_instance: None,
                 formula_relation: None,
                 value_packets,
                 numeric_tuple: entity.numeric_tuple,
