@@ -468,6 +468,12 @@ pub(crate) enum IncidenceSolve<T> {
     Exhausted,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CoordinateRootPolicy {
+    RequireUnique,
+    DeferToVisitor,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IncidenceRejection {
     InputShape,
@@ -1659,6 +1665,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn visit_component_incidence_pair_solutions<F, V>(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
@@ -1666,6 +1673,37 @@ pub(crate) fn visit_component_incidence_pair_solutions<F, V>(
     point_count: usize,
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
     mesh_quotient: Option<&MeshQuotient>,
+    partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
+    solution_valid: &F,
+    visitor: &mut V,
+) -> IncidenceSolve<usize>
+where
+    F: Fn(&[[usize; 2]]) -> bool,
+    V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
+{
+    visit_component_incidence_pair_solutions_with_coordinate_root_policy(
+        choices,
+        edge_faces,
+        face_count,
+        point_count,
+        mesh_assignments,
+        mesh_quotient,
+        CoordinateRootPolicy::RequireUnique,
+        partial_solution_valid,
+        solution_valid,
+        visitor,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
+    choices: &[Vec<[usize; 2]>],
+    edge_faces: &[[usize; 2]],
+    face_count: usize,
+    point_count: usize,
+    mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
+    mesh_quotient: Option<&MeshQuotient>,
+    coordinate_root_policy: CoordinateRootPolicy,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
     visitor: &mut V,
@@ -1688,6 +1726,7 @@ where
         face_edges: &[Vec<usize>],
         mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
         mesh_quotient: Option<&MeshQuotient>,
+        coordinate_root_policy: CoordinateRootPolicy,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
         assignment: &[Option<[usize; 2]>],
         degrees: &[BTreeMap<usize, u8>],
@@ -1761,6 +1800,11 @@ where
                 };
                 match outcome {
                     CoordinateRootClosure::Solved(_) => true,
+                    CoordinateRootClosure::Ambiguous
+                        if coordinate_root_policy == CoordinateRootPolicy::DeferToVisitor =>
+                    {
+                        true
+                    }
                     CoordinateRootClosure::Ambiguous => {
                         coordinate_ambiguous.set(true);
                         false
@@ -1806,6 +1850,7 @@ where
         edge_faces: &[[usize; 2]],
         mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
         mesh_quotient: Option<&MeshQuotient>,
+        coordinate_root_policy: CoordinateRootPolicy,
         solution_valid: &F,
         assignment: &mut [Option<[usize; 2]>],
         degrees: &mut [BTreeMap<usize, u8>],
@@ -1856,6 +1901,8 @@ where
                 );
                 match outcome {
                     CoordinateRootClosure::Solved(_) => {}
+                    CoordinateRootClosure::Ambiguous
+                        if coordinate_root_policy == CoordinateRootPolicy::DeferToVisitor => {}
                     CoordinateRootClosure::Ambiguous => {
                         *ambiguous = true;
                         return Ok(ControlFlow::Continue(()));
@@ -1890,6 +1937,7 @@ where
                 edge_faces,
                 mesh_assignments,
                 mesh_quotient,
+                coordinate_root_policy,
                 solution_valid,
                 assignment,
                 degrees,
@@ -2013,6 +2061,8 @@ where
                 );
                 match outcome {
                     CoordinateRootClosure::Solved(_) => {}
+                    CoordinateRootClosure::Ambiguous
+                        if coordinate_root_policy == CoordinateRootPolicy::DeferToVisitor => {}
                     CoordinateRootClosure::Ambiguous => {
                         ambiguous = true;
                         return Some(());
@@ -2038,6 +2088,7 @@ where
                 &face_edges,
                 mesh_assignments,
                 mesh_quotient,
+                coordinate_root_policy,
                 partial_solution_valid,
                 &fixed,
                 &degrees,
@@ -2081,6 +2132,7 @@ where
             edge_faces,
             mesh_assignments,
             mesh_quotient,
+            coordinate_root_policy,
             solution_valid,
             &mut fixed,
             &mut degrees,
@@ -2208,6 +2260,41 @@ where
     F: Fn(&[[usize; 2]]) -> bool,
     V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
 {
+    visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
+        edge_rows,
+        vertex_points,
+        edge_faces,
+        edge_candidates,
+        face_count,
+        mesh_assignments,
+        mesh_quotient,
+        CoordinateRootPolicy::RequireUnique,
+        partial_solution_valid,
+        complete_solution_budget,
+        solution_valid,
+        visitor,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<F, V>(
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    edge_faces: &[[usize; 2]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    face_count: usize,
+    mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
+    mesh_quotient: Option<&MeshQuotient>,
+    coordinate_root_policy: CoordinateRootPolicy,
+    partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
+    complete_solution_budget: Option<&MeshConstraintBudget>,
+    solution_valid: &F,
+    visitor: &mut V,
+) -> IncidenceSolve<usize>
+where
+    F: Fn(&[[usize; 2]]) -> bool,
+    V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
+{
     let Some(choices) = (|| {
         let mut choices = edge_candidates.to_vec();
         for candidates in &mut choices {
@@ -2243,13 +2330,14 @@ where
             visitor(points)
         }
     };
-    let outcome = visit_component_incidence_pair_solutions(
+    let outcome = visit_component_incidence_pair_solutions_with_coordinate_root_policy(
         &choices,
         edge_faces,
         face_count,
         vertex_points.len(),
         mesh_assignments,
         mesh_quotient,
+        coordinate_root_policy,
         partial_solution_valid,
         &complete_valid,
         &mut budgeted_visitor,

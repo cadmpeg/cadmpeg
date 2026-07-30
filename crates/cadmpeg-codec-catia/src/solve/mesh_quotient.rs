@@ -9,7 +9,8 @@ use crate::families::standard::topology::{
 };
 use crate::solve::incidence::{
     compact_boundary_domain_viable, deferred_boundary_cycle_matches,
-    labeled_assignment_endpoint_cycles_viable, visit_incidence_endpoint_pair_solutions,
+    labeled_assignment_endpoint_cycles_viable,
+    visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy, CoordinateRootPolicy,
     IncidenceRejection, IncidenceSolve,
 };
 use crate::solve::matching::{
@@ -5879,7 +5880,7 @@ where
     let mut incidence_solution = None;
     let mut incidence_ambiguity = None;
     let mut incidence_exhausted = false;
-    let pair_solutions = visit_incidence_endpoint_pair_solutions(
+    let pair_solutions = visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
         &edge_rows,
         &vertex_points,
         edge_faces,
@@ -5887,6 +5888,7 @@ where
         face_count,
         Some(&mesh_domains),
         Some(&mesh_quotient),
+        CoordinateRootPolicy::DeferToVisitor,
         Some(MeshPartialEndpointConstraint {
             active_edges: &constraint_edges,
             coupled_edges: partial_constraint_edges,
