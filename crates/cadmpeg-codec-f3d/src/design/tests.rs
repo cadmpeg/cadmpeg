@@ -11607,10 +11607,47 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             == [SketchEntityId("first".into()), SketchEntityId("second".into())]
     ));
 
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 2.0),
+        },
+    };
+    let mut point_entities = entities.clone();
+    point_entities.push(point);
+    assert!(matches!(
+        crate::design::dimensions::unique_point_line_dimension_definition(
+            &point_entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        ),
+        Some(SketchConstraintDefinition::Distance {
+            entities,
+            ..
+        }) if entities.as_slice()
+            == [SketchEntityId("point".into()), SketchEntityId("first".into())]
+    ));
+
     entities.push(line("third", Point2::new(-1.0, 4.0), Point2::new(3.0, 4.0)));
     assert!(
         crate::design::dimensions::unique_parallel_line_dimension_definition(
             &entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        )
+        .is_none()
+    );
+    point_entities.push(entities.last().expect("third line").clone());
+    assert!(
+        crate::design::dimensions::unique_point_line_dimension_definition(
+            &point_entities,
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId("parameter".into()),

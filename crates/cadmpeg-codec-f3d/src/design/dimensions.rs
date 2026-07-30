@@ -832,6 +832,14 @@ fn project_all_dimension_constraints(
                         &parameter_id,
                     )
                 })
+                .or_else(|| {
+                    unique_point_line_dimension_definition(
+                        entities,
+                        &sketch,
+                        parameter,
+                        &parameter_id,
+                    )
+                })
                 .unwrap_or_else(|| Definition::Native {
                     native_kind: parameter.source_kind.clone(),
                     native_state: None,
@@ -870,6 +878,53 @@ fn project_all_dimension_constraints(
     }));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+/// Resolve an owner-scoped linear dimension when exactly one point-line pair
+/// has the evaluated perpendicular separation.
+pub(crate) fn unique_point_line_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
+    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+        return None;
+    }
+    let evaluated_mm = parameter.evaluated_value * 10.0;
+    if !evaluated_mm.is_finite() {
+        return None;
+    }
+    let points = entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Point { .. })
+        })
+        .collect::<Vec<_>>();
+    let lines = entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+        })
+        .collect::<Vec<_>>();
+    let mut matched = None;
+    for point in points {
+        for line in &lines {
+            if point_line_separation(point, line, evaluated_mm) {
+                if matched.is_some() {
+                    return None;
+                }
+                matched = Some((point, *line));
+            }
+        }
+    }
+    let (point, line) = matched?;
+    Some(Definition::Distance {
+        entities: vec![point.id.clone(), line.id.clone()],
+        parameter: parameter_id.clone(),
+    })
 }
 
 /// Resolve an owner-scoped linear dimension when exactly one parallel-line
