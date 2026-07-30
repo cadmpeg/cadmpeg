@@ -3107,6 +3107,41 @@ fn block_placement_must_be_finite_and_affine() {
 }
 
 #[test]
+fn body_combine_requires_exactly_one_resolved_target() {
+    use crate::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
+    use crate::ids::BodyId;
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#invalid-combine-target".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Combine {
+            target: BodySelection::Bodies(vec![
+                body.clone(),
+                BodyId("synthetic:test:body#other-target".into()),
+            ]),
+            tools: BodySelection::Bodies(vec![body]),
+            op: BooleanOp::Join,
+        },
+        native_ref: None,
+    });
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "body combine target is invalid"));
+}
+
+#[test]
 fn explicit_extrusion_direction_must_be_nonzero() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,

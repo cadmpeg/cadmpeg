@@ -2898,6 +2898,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Combine { target, tools, .. } => {
                 body_selections.push(target);
                 body_selections.push(tools);
+                let target_count = match target {
+                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                        Some(bodies.len())
+                    }
+                    BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Generated { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Local { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Unresolved | BodySelection::Native(_) => None,
+                };
+                if target_count.is_some_and(|count| count != 1) {
+                    feature_geometry_error(findings, feature, "body combine target is invalid");
+                }
             }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
                 body_selections.push(targets);

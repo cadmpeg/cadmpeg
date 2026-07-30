@@ -10274,16 +10274,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 bodies,
                 gap_tolerance,
             } if body_selection_is_incomplete(bodies)
-                || match bodies {
-                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                        bodies.len() < 2
-                    }
-                    BodySelection::Local { bodies, .. } => bodies.len() < 2,
-                    BodySelection::Unresolved
-                    | BodySelection::Historical { .. }
-                    | BodySelection::Generated { .. }
-                    | BodySelection::Native(_) => false,
-                }
+                || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
                 || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance)) =>
             {
                 "sew bodies"
@@ -10410,6 +10401,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Combine { target, tools, op }
                 if body_selection_is_incomplete(target)
                     || body_selection_is_incomplete(tools)
+                    || resolved_body_selection_len(target) != Some(1)
                     || body_selections_overlap(target, tools)
                     || matches!(op, BooleanOp::Unresolved) =>
             {
@@ -11247,6 +11239,19 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
         | BodySelection::Historical { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
+        | BodySelection::Native(_) => None,
+    }
+}
+
+fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
+    match selection {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            Some(bodies.len())
+        }
+        BodySelection::Local { bodies, .. } => Some(bodies.len()),
+        BodySelection::Unresolved
+        | BodySelection::Historical { .. }
+        | BodySelection::Generated { .. }
         | BodySelection::Native(_) => None,
     }
 }

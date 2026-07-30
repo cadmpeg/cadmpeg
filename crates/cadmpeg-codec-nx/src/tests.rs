@@ -1980,6 +1980,22 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("sew bodies (1)"));
 
+    ir.model.features[0].definition = FeatureDefinition::Combine {
+        target: cadmpeg_ir::features::BodySelection::Local {
+            bodies: vec!["target-a".into(), "target-b".into()],
+            native: "nx:body-selection#targets".into(),
+        },
+        tools: cadmpeg_ir::features::BodySelection::Local {
+            bodies: vec!["tool".into()],
+            native: "nx:body-selection#tools".into(),
+        },
+        op: cadmpeg_ir::features::BooleanOp::Join,
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("body combine (1)"));
+
     ir.model.features[0].definition = FeatureDefinition::BaseFeature {
         bodies: cadmpeg_ir::features::BodySelection::Unresolved,
     };
