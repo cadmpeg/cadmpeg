@@ -2118,8 +2118,11 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             entity_id: spline.entity_id,
                             declared_point_count: spline.declared_point_count,
                             interpolation_points: spline.interpolation_points.clone(),
+                            interpolation_points_body: spline.interpolation_points_body.clone(),
                             endpoint_tangents: spline.endpoint_tangents,
+                            endpoint_tangents_body: spline.endpoint_tangents_body.clone(),
                             parameters: spline.parameters.clone(),
+                            parameters_body: spline.parameters_body.clone(),
                             offset: spline.offset,
                         }
                     }

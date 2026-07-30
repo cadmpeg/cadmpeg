@@ -3206,6 +3206,11 @@ consume the second as a dictionary index.
 The spline identity, declared point count, and complete point prefix remain
 present when the point body is incomplete. Neutral spline geometry requires the
 complete declared point count.
+The retained `i_pnts` value body begins at `f9` and ends after the last complete
+point triple. A complete `end_tangts` value body retains its `f9 02 03` wrapper
+and six tangent scalars. A complete `params` value body retains its `f8
+<count>` wrapper and all parameter scalars. Incomplete tangent and parameter
+fields have no decoded value body.
 The saved spline identifier is null when the spline is not assigned an
 `order_table.int_id`. `end_tangts f9 02 03` carries two endpoint tangent
 triples. `params f8 <count>` carries one scalar interpolation parameter per

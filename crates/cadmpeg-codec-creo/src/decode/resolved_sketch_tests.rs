@@ -12109,8 +12109,11 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         entity_id: Some(7),
         declared_point_count: Some(3),
         interpolation_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        interpolation_points_body: Vec::new(),
         endpoint_tangents: Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+        endpoint_tangents_body: None,
         parameters: Some(vec![0.0, 1.0, 2.0]),
+        parameters_body: None,
         offset: 10,
     };
     let nurbs = saved_spline_nurbs(&spline).expect("clamped interpolation spline");

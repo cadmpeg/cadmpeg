@@ -1596,10 +1596,16 @@ pub struct FeatureSavedSpline {
     pub declared_point_count: Option<u32>,
     /// Complete interpolation-point prefix in stored parameter order.
     pub interpolation_points: Vec<[f64; 3]>,
+    /// Exact `i_pnts` value bytes through the last complete interpolation point.
+    pub interpolation_points_body: Vec<u8>,
     /// Two stored endpoint tangent triples, when every scalar is defined.
     pub endpoint_tangents: Option<[[f64; 3]; 2]>,
+    /// Exact complete `end_tangts` value bytes, including its array wrapper.
+    pub endpoint_tangents_body: Option<Vec<u8>>,
     /// One stored interpolation parameter per point, when complete.
     pub parameters: Option<Vec<f64>>,
+    /// Exact complete `params` value bytes, including its array wrapper.
+    pub parameters_body: Option<Vec<u8>>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -5723,7 +5729,12 @@ fn saved_spline_entities(
     cache: &scalar::ScalarCache,
 ) -> Vec<FeatureSavedEntity> {
     const LABEL: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0";
+    const POINTS_LABEL: &[u8] = b"\xe0\x02i_pnts\0";
     const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
+    const TANGENTS_LABEL: &[u8] = b"\xe0\x02end_tangts\0";
+    const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
+    const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
+    const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
     let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = find_bytes(payload, LABEL, search, end) {
@@ -5734,13 +5745,16 @@ fn saved_spline_entities(
         let mut declared_point_count = None;
         let mut point_count = None;
         let mut points = Vec::new();
+        let mut interpolation_points_body = Vec::new();
         let mut fields_start = body_start;
         if let Some(points_label) = points_label {
+            let value_start = points_label + POINTS_LABEL.len();
             let extents_start = points_label + POINTS.len();
             let (declared, dimensions_end) = psb::compact_int(payload, extents_start);
             let (coordinate_count, mut cursor) = psb::compact_int(payload, dimensions_end);
             if dimensions_end > extents_start && cursor > dimensions_end && coordinate_count == 3 {
                 declared_point_count = Some(declared);
+                interpolation_points_body = payload[value_start..cursor].to_vec();
                 point_count = usize::try_from(declared).ok().filter(|point_count| {
                     point_count.saturating_mul(3)
                         <= body_end.saturating_sub(cursor).saturating_mul(16).max(12)
@@ -5769,31 +5783,33 @@ fn saved_spline_entities(
                         cursor = next_cursor;
                     }
                     fields_start = cursor;
+                    interpolation_points_body = payload[value_start..cursor].to_vec();
                 }
             }
         }
-        let endpoint_tangents = find_bytes(
-            payload,
-            b"\xe0\x02end_tangts\0\xf9\x02\x03",
-            fields_start,
-            body_end,
-        )
-        .and_then(|label| {
-            let mut at = label + b"\xe0\x02end_tangts\0\xf9\x02\x03".len();
-            let mut tangents = [[0.0; 3]; 2];
-            for tangent in &mut tangents {
-                for coordinate in tangent {
-                    let (value, next) = scalar::decode_in_lane(payload, at, cache)?;
-                    (next <= body_end).then_some(())?;
-                    *coordinate = value;
-                    at = next;
+        let decoded_tangents =
+            find_bytes(payload, TANGENTS, fields_start, body_end).and_then(|label| {
+                let value_start = label + TANGENTS_LABEL.len();
+                let mut at = label + TANGENTS.len();
+                let mut tangents = [[0.0; 3]; 2];
+                for tangent in &mut tangents {
+                    for coordinate in tangent {
+                        let (value, next) = scalar::decode_in_lane(payload, at, cache)?;
+                        (next <= body_end).then_some(())?;
+                        *coordinate = value;
+                        at = next;
+                    }
                 }
-            }
-            Some(tangents)
-        });
-        let parameters = point_count.and_then(|point_count| {
-            find_bytes(payload, b"\xe0\x02params\0\xf8", fields_start, body_end).and_then(|label| {
-                let count_at = label + b"\xe0\x02params\0\xf8".len();
+                Some((tangents, payload[value_start..at].to_vec()))
+            });
+        let (endpoint_tangents, endpoint_tangents_body) = decoded_tangents
+            .map_or((None, None), |(tangents, body)| {
+                (Some(tangents), Some(body))
+            });
+        let decoded_parameters = point_count.and_then(|point_count| {
+            find_bytes(payload, PARAMETERS, fields_start, body_end).and_then(|label| {
+                let value_start = label + PARAMETERS_LABEL.len();
+                let count_at = label + PARAMETERS.len();
                 let (count, mut at) = psb::compact_int(payload, count_at);
                 (usize::try_from(count).ok() == Some(point_count) && at > count_at).then_some(())?;
                 let mut values = Vec::with_capacity(point_count);
@@ -5803,15 +5819,22 @@ fn saved_spline_entities(
                     values.push(value);
                     at = next;
                 }
-                Some(values)
+                Some((values, payload[value_start..at].to_vec()))
             })
         });
+        let (parameters, parameters_body) = decoded_parameters
+            .map_or((None, None), |(parameters, body)| {
+                (Some(parameters), Some(body))
+            });
         entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
             entity_id: saved_entity_id(payload, body_start, entity_id_end),
             declared_point_count,
             interpolation_points: points,
+            interpolation_points_body,
             endpoint_tangents,
+            endpoint_tangents_body,
             parameters,
+            parameters_body,
             offset: entity_offset,
         }));
         search = body_start;
@@ -11239,10 +11262,22 @@ mod tests {
             [[1.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
         );
         assert_eq!(
+            spline.interpolation_points_body,
+            b"\xf9\x02\x03\xe4\x0f\x0d\x0f\xe4\x0f"
+        );
+        assert_eq!(
             spline.endpoint_tangents,
             Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
         );
+        assert_eq!(
+            spline.endpoint_tangents_body.as_deref(),
+            Some(b"\xf9\x02\x03\xe4\x0f\x0f\xe4\x0f\x0f".as_slice())
+        );
         assert_eq!(spline.parameters, Some(vec![0.0, 1.0]));
+        assert_eq!(
+            spline.parameters_body.as_deref(),
+            Some(b"\xf8\x02\x0f\xe4".as_slice())
+        );
     }
 
     #[test]
@@ -11260,6 +11295,11 @@ mod tests {
         };
         assert_eq!(spline.declared_point_count, Some(136));
         assert_eq!(spline.interpolation_points.len(), 136);
+        assert_eq!(
+            spline.interpolation_points_body,
+            payload
+                [b"\xe0\x00save_entity_ptr(spline)\0\xe3\xe0\x01id\0\x07\xe0\x02i_pnts\0".len()..]
+        );
         assert!(spline
             .interpolation_points
             .iter()
@@ -11282,8 +11322,14 @@ mod tests {
         assert_eq!(spline.entity_id, Some(7));
         assert_eq!(spline.declared_point_count, Some(2));
         assert_eq!(spline.interpolation_points, [[0.0; 3]]);
+        assert_eq!(
+            spline.interpolation_points_body,
+            b"\xf9\x02\x03\x0f\x0f\x0f"
+        );
         assert_eq!(spline.endpoint_tangents, None);
+        assert_eq!(spline.endpoint_tangents_body, None);
         assert_eq!(spline.parameters, None);
+        assert_eq!(spline.parameters_body, None);
     }
 
     #[test]
@@ -11299,6 +11345,22 @@ mod tests {
         assert_eq!(spline.entity_id, Some(7));
         assert_eq!(spline.declared_point_count, None);
         assert!(spline.interpolation_points.is_empty());
+        assert!(spline.interpolation_points_body.is_empty());
+    }
+
+    #[test]
+    fn saved_spline_retains_a_valid_point_wrapper_when_allocation_is_rejected() {
+        let payload = b"\xe0\x00save_entity_ptr(spline)\0\xe3\xe0\x02i_pnts\0\xf9\xbf\xff\x03";
+
+        let entities =
+            saved_spline_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+        let [FeatureSavedEntity::Spline(spline)] = entities.as_slice() else {
+            panic!("saved spline");
+        };
+
+        assert_eq!(spline.declared_point_count, Some(16_383));
+        assert!(spline.interpolation_points.is_empty());
+        assert_eq!(spline.interpolation_points_body, b"\xf9\xbf\xff\x03");
     }
 
     #[test]

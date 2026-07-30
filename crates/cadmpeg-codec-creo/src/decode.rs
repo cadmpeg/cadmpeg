@@ -288,8 +288,11 @@ enum CreoSketchSavedEntity {
         entity_id: Option<u32>,
         declared_point_count: Option<u32>,
         interpolation_points: Vec<[f64; 3]>,
+        interpolation_points_body: Vec<u8>,
         endpoint_tangents: Option<[[f64; 3]; 2]>,
+        endpoint_tangents_body: Option<Vec<u8>>,
         parameters: Option<Vec<f64>>,
+        parameters_body: Option<Vec<u8>>,
         offset: usize,
     },
     Dummy {
