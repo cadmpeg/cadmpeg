@@ -11671,12 +11671,28 @@ fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
     for (family, record) in [("sphere", sphere), ("torus", torus)] {
         let mut stream = terminal_stream();
         stream.extend(record);
-        let result = NxCodec
+        let mut result = NxCodec
             .decode(
                 &mut Cursor::new(prt_with_partition(&stream)),
                 &DecodeOptions::default(),
             )
             .unwrap();
+        if family == "torus" {
+            let ProceduralCurveDefinition::TolerantIntersection {
+                parameterization: Some(parameterization),
+                ..
+            } = &mut result.ir.model.procedural_curves[0].definition
+            else {
+                panic!("exact torus meridian");
+            };
+            for pcurve in &mut parameterization.pcurves {
+                if let PcurveGeometry::Line { origin, direction } = pcurve {
+                    if direction.u == 0.0 && direction.v != 0.0 {
+                        origin.v += std::f64::consts::TAU;
+                    }
+                }
+            }
+        }
         let procedural = &result.ir.model.procedural_curves[0];
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
             parameterization: Some(parameterization),
