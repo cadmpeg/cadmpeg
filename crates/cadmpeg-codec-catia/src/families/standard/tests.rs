@@ -552,6 +552,16 @@ fn incidence_propagation_indexes_wide_endpoint_support_domains() {
 }
 
 #[test]
+fn incidence_propagation_does_not_allocate_the_declared_point_product() {
+    let mut choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+
+    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, usize::MAX)
+        .expect("sparse endpoint incidence is independent of the declared cardinality");
+    assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
+}
+
+#[test]
 fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
     let choices = vec![vec![[0, 1], [0, 2]], vec![[0, 2]]];
     let edge_faces = [[0, 0], [0, 0]];

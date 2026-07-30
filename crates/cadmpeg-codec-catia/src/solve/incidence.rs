@@ -17,7 +17,7 @@ use crate::solve::missing_edge::{
     MeshFaceBoundaryDomain,
 };
 use crate::solve::UnionFind;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::ControlFlow;
 
 pub(crate) fn prune_incidence_choices(
@@ -33,19 +33,24 @@ pub(crate) fn prune_incidence_choices(
             .filter_map(move |(rank, face)| (rank == 0 || face != faces[0]).then_some(face))
     }
 
-    fn fits(degrees: &[Vec<u8>], edge_faces: &[[usize; 2]], edge: usize, pair: [usize; 2]) -> bool {
+    fn fits(
+        degrees: &[BTreeMap<usize, u8>],
+        edge_faces: &[[usize; 2]],
+        edge: usize,
+        pair: [usize; 2],
+    ) -> bool {
         unique_faces(edge_faces[edge]).all(|face| {
             pair.iter().enumerate().all(|(rank, &point)| {
                 let multiplicity = 1 + usize::from(rank == 0 && pair[0] == pair[1]);
-                usize::from(degrees[face][point]) + multiplicity <= 2
+                usize::from(degrees[face].get(&point).copied().unwrap_or(0)) + multiplicity <= 2
             })
         })
     }
 
     fn preserves_new_degree_support(
-        supports: &[Vec<u32>],
+        supports: &[BTreeMap<usize, u32>],
         edge_supports: &[HashSet<usize>],
-        degrees: &[Vec<u8>],
+        degrees: &[BTreeMap<usize, u8>],
         edge_faces: &[[usize; 2]],
         edge: usize,
         pair: [usize; 2],
@@ -56,14 +61,15 @@ pub(crate) fn prune_incidence_choices(
                     return true;
                 }
                 let selected_degree = 1 + u8::from(pair[0] == pair[1]);
-                degrees[face][point] + selected_degree != 1
-                    || supports[face][point] > u32::from(edge_supports[edge].contains(&point))
+                degrees[face].get(&point).copied().unwrap_or(0) + selected_degree != 1
+                    || supports[face].get(&point).copied().unwrap_or(0)
+                        > u32::from(edge_supports[edge].contains(&point))
             })
         })
     }
 
     fn remove_edge_support(
-        supports: &mut [Vec<u32>],
+        supports: &mut [BTreeMap<usize, u32>],
         edge_supports: &mut [HashSet<usize>],
         edge_faces: &[[usize; 2]],
         edge: usize,
@@ -75,7 +81,11 @@ pub(crate) fn prune_incidence_choices(
             .collect::<Vec<_>>();
         for face in unique_faces(edge_faces[edge]) {
             for &point in &removed {
-                supports[face][point] = supports[face][point].checked_sub(1)?;
+                let count = supports[face].get_mut(&point)?;
+                *count = count.checked_sub(1)?;
+                if *count == 0 {
+                    supports[face].remove(&point);
+                }
             }
         }
         edge_supports[edge] = retained;
@@ -98,12 +108,13 @@ pub(crate) fn prune_incidence_choices(
         choices.iter().flatten().copied().collect::<HashSet<_>>()
     }
 
-    fn degree_one_points(degrees: &[Vec<u8>], face: usize) -> impl Iterator<Item = usize> + '_ {
+    fn degree_one_points(
+        degrees: &[BTreeMap<usize, u8>],
+        face: usize,
+    ) -> impl Iterator<Item = usize> + '_ {
         degrees[face]
             .iter()
-            .copied()
-            .enumerate()
-            .filter_map(|(point, degree)| (degree == 1).then_some(point))
+            .filter_map(|(&point, &degree)| (degree == 1).then_some(point))
     }
 
     if choices.len() != edge_faces.len()
@@ -124,16 +135,17 @@ pub(crate) fn prune_incidence_choices(
         }
     }
     let mut fixed = vec![false; choices.len()];
-    let mut degrees = vec![vec![0u8; point_count]; face_count];
+    let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
     let mut edge_supports = choices
         .iter()
         .map(|pairs| choice_points(pairs))
         .collect::<Vec<_>>();
-    let mut supports = vec![vec![0u32; point_count]; face_count];
+    let mut supports = vec![BTreeMap::<usize, u32>::new(); face_count];
     for (edge, points) in edge_supports.iter().enumerate() {
         for face in unique_faces(edge_faces[edge]) {
             for &point in points {
-                supports[face][point] = supports[face][point].checked_add(1)?;
+                let count = supports[face].entry(point).or_default();
+                *count = count.checked_add(1)?;
             }
         }
     }
@@ -176,7 +188,8 @@ pub(crate) fn prune_incidence_choices(
             };
             for face in unique_faces(edge_faces[edge]) {
                 for point in pair {
-                    degrees[face][*point] = degrees[face][*point].checked_add(1)?;
+                    let degree = degrees[face].entry(*point).or_default();
+                    *degree = degree.checked_add(1)?;
                 }
             }
             remove_edge_support(
@@ -191,7 +204,7 @@ pub(crate) fn prune_incidence_choices(
         }
         for face in 0..face_count {
             for point in degree_one_points(&degrees, face) {
-                match supports[face][point] {
+                match supports[face].get(&point).copied().unwrap_or(0) {
                     0 => return None,
                     1 => {
                         let edge = sole_supporting_edge(&face_edges, &edge_supports, face, point)?;
