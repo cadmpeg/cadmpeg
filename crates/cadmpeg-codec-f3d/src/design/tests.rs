@@ -36,7 +36,7 @@ use crate::design::decode::scopes::{
     exact_joint_origin_frame, exact_path_feature_construction,
     exact_rectangular_pattern_construction, exact_scale_operation, exact_solid_primitive,
     exact_surface_stitch_operation, exact_work_plane_frame, exact_work_point_position,
-    parse_parameter_scope,
+    parse_parameter_scope, IndexedRecordOffsets,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -3540,16 +3540,17 @@ fn work_point_direct_record_carries_model_space_position() {
         class_tag: "427".into(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &header).expect("WorkPoint scope");
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("WorkPoint scope");
     assert_eq!(
-        exact_work_point_position(&bytes, &scope),
+        exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
         Some(([1.25, -2.5, 3.75], position_at as u64))
     );
     bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
     bytes[point_at + 94..point_at + 98].copy_from_slice(&1u32.to_le_bytes());
     bytes.drain(point_at + 197..point_at + 208);
     assert_eq!(
-        exact_work_point_position(&bytes, &scope),
+        exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
         Some(([1.25, -2.5, 3.75], position_at as u64))
     );
 }
@@ -3608,7 +3609,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         byte_offset: 0,
     };
 
-    let mut scope = parse_parameter_scope(&bytes, &header).unwrap();
+    let mut scope =
+        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap();
     assert_eq!(scope.kind, "Sketch");
     assert_eq!(scope.feature_ordinal, 1);
     assert_eq!(scope.feature_ordinal_offset, feature_ordinal_at as u64);
@@ -3620,17 +3622,26 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(scope.frame_length, paired_at as u64);
     assert_eq!(scope.paired_class_tag, "261");
     assert_eq!(scope.paired_byte_offset, paired_at as u64);
-    let discovered = crate::design::decode::scopes::parameter_scope_candidate_headers(&bytes)
-        .into_iter()
-        .filter_map(|header| parse_parameter_scope(&bytes, &header))
-        .collect::<Vec<_>>();
+    let discovered = crate::design::decode::scopes::parameter_scope_candidate_headers(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+    )
+    .into_iter()
+    .filter_map(|header| {
+        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+    })
+    .collect::<Vec<_>>();
     assert_eq!(discovered.len(), 1);
     assert_eq!(discovered[0].record_index, 12);
 
     let mut compact_tail = bytes.clone();
     compact_tail.remove(paired_at - 1);
-    let compact =
-        parse_parameter_scope(&compact_tail, &header).expect("scope with compact fixed tail");
+    let compact = parse_parameter_scope(
+        &compact_tail,
+        &IndexedRecordOffsets::build(&compact_tail),
+        &header,
+    )
+    .expect("scope with compact fixed tail");
     assert_eq!(compact.kind, "Sketch");
     assert_eq!(compact.frame_length, paired_at as u64 - 1);
     assert_eq!(compact.previous_history_state_id, Some(2));
@@ -3646,8 +3657,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     extended_tail.extend_from_slice(&3u32.to_le_bytes());
     extended_tail.extend_from_slice(b"261");
     extended_tail.extend_from_slice(&12u32.to_le_bytes());
-    let extended =
-        parse_parameter_scope(&extended_tail, &header).expect("scope with extended fixed tail");
+    let extended = parse_parameter_scope(
+        &extended_tail,
+        &IndexedRecordOffsets::build(&extended_tail),
+        &header,
+    )
+    .expect("scope with extended fixed tail");
     assert_eq!(extended.previous_history_state_id, Some(3));
     assert_eq!(
         extended.previous_history_state_id_offset,
@@ -3674,8 +3689,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     copy_scope.extend_from_slice(&3u32.to_le_bytes());
     copy_scope.extend_from_slice(b"259");
     copy_scope.extend_from_slice(&12u32.to_le_bytes());
-    let copy = parse_parameter_scope(&copy_scope, &header)
-        .expect("CopyPasteBodies scope with extended tail");
+    let copy = parse_parameter_scope(
+        &copy_scope,
+        &IndexedRecordOffsets::build(&copy_scope),
+        &header,
+    )
+    .expect("CopyPasteBodies scope with extended tail");
     assert_eq!(copy.kind, "CopyPasteBodies");
     assert_eq!(copy.feature_ordinal, 2);
     assert_eq!(copy.feature_ordinal_offset, copy_feature_ordinal_at as u64);
@@ -3721,6 +3740,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     operation_scope.reference_members = vec![55, 66];
     let operation = crate::design::decode::scopes::exact_copy_paste_bodies_operation(
         &operation_bytes,
+        &IndexedRecordOffsets::build(&operation_bytes),
         &operation_scope,
     )
     .expect("single-body CopyPasteBodies relation");
@@ -3742,8 +3762,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     generic_references[reference_count_at..reference_count_at + 4]
         .copy_from_slice(&2u32.to_le_bytes());
     generic_references.splice(reference_at + 10..reference_at + 10, generic_reference);
-    let generic_scope =
-        parse_parameter_scope(&generic_references, &header).expect("generic-table Sketch scope");
+    let generic_scope = parse_parameter_scope(
+        &generic_references,
+        &IndexedRecordOffsets::build(&generic_references),
+        &header,
+    )
+    .expect("generic-table Sketch scope");
     assert_eq!(generic_scope.kind, "Sketch");
     assert_eq!(generic_scope.reference_members, [55, 56]);
 
@@ -3769,7 +3793,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     work_plane.extend_from_slice(b"261");
     work_plane.extend_from_slice(&55u32.to_le_bytes());
     bytes.extend_from_slice(&work_plane);
-    let decoded = exact_work_plane_frame(&bytes, &scope).expect("exact WorkPlane frame");
+    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("exact WorkPlane frame");
     assert_eq!(decoded.transform, transform);
     assert_eq!(decoded.transform_offset, (work_plane_at + 76) as u64);
     assert_eq!(decoded.reference, Some((99, (work_plane_at + 58) as u64)));
@@ -3791,8 +3816,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&extended);
     let mut extended_scope = scope.clone();
     extended_scope.reference_members = vec![57];
-    let decoded = exact_work_plane_frame(&bytes, &extended_scope)
-        .expect("extended referenced WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &extended_scope,
+    )
+    .expect("extended referenced WorkPlane frame");
     assert_eq!(decoded.transform, transform);
     assert_eq!(decoded.transform_offset, (extended_at + 76) as u64);
     assert_eq!(decoded.reference, Some((100, (extended_at + 58) as u64)));
@@ -3813,7 +3842,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&direct);
     let mut direct_scope = scope.clone();
     direct_scope.reference_members = vec![56];
-    let decoded = exact_work_plane_frame(&bytes, &direct_scope).expect("direct WorkPlane frame");
+    let decoded =
+        exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &direct_scope)
+            .expect("direct WorkPlane frame");
     assert_eq!(decoded.transform, transform);
     assert_eq!(decoded.transform_offset, (direct_at + 66) as u64);
     assert_eq!(decoded.reference, None);
@@ -3834,7 +3865,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut compact_scope = scope.clone();
     compact_scope.reference_members = vec![58];
     let decoded =
-        exact_work_plane_frame(&bytes, &compact_scope).expect("compact direct WorkPlane frame");
+        exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_scope)
+            .expect("compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform);
     assert_eq!(decoded.transform_offset, (compact_at + 49) as u64);
     assert_eq!(decoded.reference, None);
@@ -3854,8 +3886,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&compact_450);
     let mut compact_450_scope = scope.clone();
     compact_450_scope.reference_members = vec![59];
-    let decoded = exact_work_plane_frame(&bytes, &compact_450_scope)
-        .expect("class-450 compact direct WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_450_scope,
+    )
+    .expect("class-450 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform);
     assert_eq!(decoded.transform_offset, (compact_450_at + 50) as u64);
     assert_eq!(decoded.reference, None);
@@ -3878,8 +3914,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut joint_origin_scope = scope.clone();
     joint_origin_scope.kind = "JointOrigin".into();
     joint_origin_scope.reference_members = vec![60];
-    let decoded =
-        exact_joint_origin_frame(&bytes, &joint_origin_scope).expect("exact JointOrigin frame");
+    let decoded = exact_joint_origin_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &joint_origin_scope,
+    )
+    .expect("exact JointOrigin frame");
     assert_eq!(decoded.transform, transform);
     assert_eq!(decoded.transform_offset, (joint_origin_at + 60) as u64);
     assert_eq!(decoded.reference, Some((61, (joint_origin_at + 46) as u64)));
@@ -3903,8 +3943,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut move_scope = scope.clone();
     move_scope.kind = "Move".into();
     move_scope.reference_members = vec![90];
-    let decoded = crate::design::decode::scopes::exact_move_operation(&bytes, &move_scope)
-        .expect("class-368 Move frame");
+    let decoded = crate::design::decode::scopes::exact_move_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &move_scope,
+    )
+    .expect("class-368 Move frame");
     assert_eq!(decoded.transform, move_transform);
     assert_eq!(decoded.transform_offset, (move_at + 48) as u64);
     assert_eq!(decoded.form, 5);
@@ -3926,8 +3970,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut compact_move_scope = scope.clone();
     compact_move_scope.kind = "Move".into();
     compact_move_scope.reference_members = vec![91];
-    let decoded = crate::design::decode::scopes::exact_move_operation(&bytes, &compact_move_scope)
-        .expect("class-296 Move frame");
+    let decoded = crate::design::decode::scopes::exact_move_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_move_scope,
+    )
+    .expect("class-296 Move frame");
     assert_eq!(decoded.transform, move_transform);
     assert_eq!(decoded.transform_offset, (compact_move_at + 48) as u64);
     assert_eq!(decoded.transform_record_index, 91);
@@ -3935,8 +3983,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.form_offset, (compact_move_at + 43) as u64);
     bytes[compact_move_at + 4..compact_move_at + 7].copy_from_slice(b"362");
     bytes[compact_move_at + 43..compact_move_at + 47].copy_from_slice(&5u32.to_le_bytes());
-    let decoded = crate::design::decode::scopes::exact_move_operation(&bytes, &compact_move_scope)
-        .expect("class-362 Move frame");
+    let decoded = crate::design::decode::scopes::exact_move_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_move_scope,
+    )
+    .expect("class-362 Move frame");
     assert_eq!(decoded.transform, move_transform);
     assert_eq!(decoded.form, 5);
 
@@ -3997,7 +4049,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     sphere_scope.kind = "SpherePrimitive".into();
     sphere_scope.frame_length = 462;
     assert!(matches!(
-        exact_solid_primitive(&bytes, &sphere_scope),
+        exact_solid_primitive(&bytes, &IndexedRecordOffsets::build(&bytes), &sphere_scope),
         Some(DesignSolidPrimitive::Sphere {
             diameter: 8.0,
             diameter_record_index: 70,
@@ -4040,7 +4092,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     torus_scope.kind = "TorusPrimitive".into();
     torus_scope.frame_length = 486;
     assert!(matches!(
-        exact_solid_primitive(&bytes, &torus_scope),
+        exact_solid_primitive(&bytes, &IndexedRecordOffsets::build(&bytes), &torus_scope),
         Some(DesignSolidPrimitive::Torus {
             major_diameter: 15.0,
             minor_diameter: 4.0,
@@ -4069,7 +4121,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     offset_scope.frame_length = 286;
     offset_scope.reference_members = vec![1, 2, 3, 73];
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &offset_scope),
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces {
             distance: -0.5,
             distance_record_index: 73,
@@ -4097,7 +4149,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     offset_scope.frame_length = 275;
     offset_scope.reference_members = vec![1, 2, 1_777];
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &offset_scope),
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces {
             distance: 0.254,
             distance_record_index: 1_777,
@@ -4125,7 +4177,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     thicken_scope.frame_length = 301;
     thicken_scope.reference_members = vec![1, 2, 74];
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &thicken_scope),
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken {
             signed_thickness: -1.0,
             thickness_record_index: 74,
@@ -4133,7 +4185,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         })
     ));
     thicken_scope.frame_length = 295;
-    assert_eq!(exact_direct_face_operation(&bytes, &thicken_scope), None);
+    assert_eq!(
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
+        None
+    );
     let compact_thicken_at = bytes.len();
     let mut compact_thicken = vec![0; 295];
     compact_thicken[45] = 1;
@@ -4142,14 +4197,15 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&compact_thicken);
     thicken_scope.byte_offset = compact_thicken_at as u64;
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &thicken_scope),
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken {
             signed_thickness: -1.0,
             thickness_record_index: 74,
             ..
         })
     ));
-    thicken_scope.direct_face_operation = exact_direct_face_operation(&bytes, &thicken_scope);
+    thicken_scope.direct_face_operation =
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope);
     let thicken_group = DesignConstructionOperandGroup {
         id: "thicken-group".into(),
         scope_record_index: thicken_scope.record_index,
@@ -4224,7 +4280,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     shell_scope.kind = "Shell".into();
     shell_scope.frame_length = 278;
     shell_scope.reference_members = vec![200, 201, 1_778];
-    shell_scope.direct_face_operation = exact_direct_face_operation(&bytes, &shell_scope);
+    shell_scope.direct_face_operation =
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &shell_scope);
     assert!(matches!(
         shell_scope.direct_face_operation,
         Some(DesignDirectFaceOperation::Shell {
@@ -4284,7 +4341,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         ..shell_scope.clone()
     };
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &compact_shell_scope),
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_shell_scope),
         Some(DesignDirectFaceOperation::Shell {
             thickness: 0.25,
             thickness_record_index: 9_000,
@@ -4293,8 +4350,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         }) if outward_offset == (compact_shell_at + 21) as u64
     ));
-    compact_shell_scope.direct_face_operation =
-        exact_direct_face_operation(&bytes, &compact_shell_scope);
+    compact_shell_scope.direct_face_operation = exact_direct_face_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_shell_scope,
+    );
     shell_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
         crate::design::feature_project::project_shell(
@@ -4310,7 +4370,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         }) if body == "shell-group" && removed.is_empty()
     ));
-    offset_scope.direct_face_operation = exact_direct_face_operation(&bytes, &offset_scope);
+    offset_scope.direct_face_operation =
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope);
     let mut offset_group = thicken_group.clone();
     offset_group.id = "offset-group".into();
     offset_group.scope_record_index = offset_scope.record_index;
@@ -4330,7 +4391,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         }) if native == "offset-group"
     ));
     bytes[compact_thicken_at + 46] = 0;
-    assert_eq!(exact_direct_face_operation(&bytes, &thicken_scope), None);
+    assert_eq!(
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
+        None
+    );
 
     for (record_index, ordinal, value) in [(75u32, 0u8, -2.0f64), (76, 1, 0.0)] {
         let mut scalar = vec![0; 104];
@@ -4362,7 +4426,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     });
     extrude_scope.reference_members = vec![50, 75, 76, 51];
     assert_eq!(
-        exact_fixed_extrude_parameters(&bytes, &extrude_scope),
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
         Some(DesignFixedExtrudeParameters {
             along_distance: -2.0,
             along_distance_record_index: 75,
@@ -4373,7 +4441,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         })
     );
     extrude_scope.reference_members.push(75);
-    assert_eq!(exact_fixed_extrude_parameters(&bytes, &extrude_scope), None);
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
+        None
+    );
 
     let draft_start = bytes.len();
     for (record_index, ordinal, value) in [(175u32, 0u8, 0.4f64), (176, 1, 0.0)] {
@@ -4395,7 +4470,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     draft_scope.frame_length = 361;
     draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
     assert_eq!(
-        exact_draft_operation(&bytes, &draft_scope),
+        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
         Some(DesignDraftOperation {
             angle: 0.4,
             angle_record_index: 175,
@@ -4405,7 +4480,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         })
     );
     draft_scope.reference_members.swap(0, 1);
-    assert_eq!(exact_draft_operation(&bytes, &draft_scope), None);
+    assert_eq!(
+        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        None
+    );
 
     let fillet_start = bytes.len();
     for (record_index, ordinal, value) in [
@@ -4432,7 +4510,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     fillet_scope.kind = "Fillet".into();
     fillet_scope.reference_members = vec![77, 50, 78, 79, 87, 88];
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &fillet_scope),
+        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::DesignFixedFilletGroup {
                 tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
@@ -4455,7 +4533,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     );
     fillet_scope.reference_members = vec![50, 77];
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &fillet_scope),
+        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::DesignFixedFilletGroup {
                 tangency_weight: None,
@@ -4492,7 +4570,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&89u32.to_le_bytes());
     fillet_scope.reference_members = vec![89];
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &fillet_scope),
+        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::DesignFixedFilletGroup {
                 tangency_weight: None,
@@ -4527,8 +4605,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         bytes.extend_from_slice(&scalar);
     }
     fillet_scope.reference_members = vec![92, 93, 94, 95];
-    let fixed = exact_fixed_fillet_parameters(&bytes, &fillet_scope)
-        .expect("two constant-radius Fillet scalar groups");
+    let fixed =
+        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope)
+            .expect("two constant-radius Fillet scalar groups");
     assert_eq!(fixed.groups.len(), 2);
     assert_eq!(fixed.groups[0].radii, [0.5]);
     assert_eq!(fixed.groups[1].radii, [0.25]);
@@ -4557,7 +4636,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     chamfer_scope.kind = "Chamfer".into();
     chamfer_scope.reference_members = vec![86];
     assert_eq!(
-        exact_fixed_chamfer_parameters(&bytes, &chamfer_scope),
+        exact_fixed_chamfer_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &chamfer_scope
+        ),
         Some(DesignFixedChamferParameters::EqualDistance {
             distance: crate::records::DesignFixedChamferDistance {
                 value: 0.04,
@@ -4577,7 +4660,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&second_chamfer_scalar);
     chamfer_scope.reference_members = vec![86, 96];
     assert_eq!(
-        exact_fixed_chamfer_parameters(&bytes, &chamfer_scope),
+        exact_fixed_chamfer_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &chamfer_scope
+        ),
         Some(DesignFixedChamferParameters::TwoDistances {
             first: crate::records::DesignFixedChamferDistance {
                 value: 0.04,
@@ -4618,7 +4705,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     revolve_scope.kind = "Revolve".into();
     revolve_scope.frame_length = 386;
     revolve_scope.reference_members = vec![200, 201, 202, 203, 1_779, 1_780, 204];
-    let revolve_construction = exact_path_feature_construction(&bytes, &revolve_scope);
+    let revolve_construction = exact_path_feature_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &revolve_scope,
+    );
     assert_eq!(
         revolve_construction,
         Some(DesignPathFeatureConstruction::Revolve {
@@ -4658,7 +4749,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     loft_scope.kind = "Loft".into();
     loft_scope.frame_length = 376;
     assert_eq!(
-        exact_path_feature_construction(&bytes, &loft_scope),
+        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &loft_scope),
         Some(DesignPathFeatureConstruction::Loft {
             operation: DesignExtrudeOperation::Join,
             operation_offset: (loft_start + 29) as u64,
@@ -4772,7 +4863,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     sweep_scope.frame_length = 499;
     sweep_scope.reference_members = (80..86).collect();
     assert_eq!(
-        exact_path_feature_construction(&bytes, &sweep_scope),
+        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &sweep_scope),
         Some(DesignPathFeatureConstruction::Sweep {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: (sweep_start + 25) as u64,
@@ -4784,7 +4875,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         })
     );
     sweep_scope.id = "stream:sweep-scope".into();
-    sweep_scope.path_feature_construction = exact_path_feature_construction(&bytes, &sweep_scope);
+    sweep_scope.path_feature_construction =
+        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &sweep_scope);
     let sweep_group = |ordinal: u32, role: u64| {
         let mut group = thicken_group.clone();
         group.id = format!("stream:sweep-group-{ordinal}");
@@ -5080,8 +5172,10 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         class_tag: "382".into(),
         byte_offset: 0,
     };
-    let mut scope = parse_parameter_scope(&bytes, &header).expect("Combine scope");
-    let operation = exact_combine_operation(&bytes, &scope).expect("Combine construction");
+    let mut scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("Combine scope");
+    let operation = exact_combine_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("Combine construction");
     assert_eq!(
         operation,
         DesignCombineOperation {
@@ -5138,7 +5232,8 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &header).expect("localized Sketch scope");
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("localized Sketch scope");
     assert_eq!(scope.kind, "Esquisse");
     assert_eq!(scope.reference_members, [55, 56]);
     assert!(scope.entity_id.is_none());
@@ -5194,7 +5289,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             class_tag: "301".into(),
             byte_offset: 0,
         };
-        parse_parameter_scope(&bytes, &header).unwrap()
+        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
     };
 
     let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, None, false);
@@ -5335,7 +5430,8 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &header).expect("Coil scope");
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("Coil scope");
     assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::Cut));
     assert_eq!(scope.coil_operation_offset, Some(20));
     assert_eq!(scope.coil_extent, Some(DesignCoilExtent::HeightPitch));
@@ -5390,7 +5486,8 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &header).expect("compact Coil scope");
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("compact Coil scope");
     assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::NewBody));
     assert_eq!(scope.coil_extent, Some(DesignCoilExtent::RevolutionsHeight));
     assert_eq!(
@@ -5404,7 +5501,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     assert_eq!(scope.coil_clockwise, Some(false));
 
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
-    assert!(parse_parameter_scope(&bytes, &header).is_none());
+    assert!(parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).is_none());
 }
 
 #[test]
@@ -6125,7 +6222,12 @@ fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
     header(&mut bytes, *b"258", 301);
 
     assert_eq!(
-        exact_surface_stitch_operation(&bytes, 12, &[100, 200, 300, 301]),
+        exact_surface_stitch_operation(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            12,
+            &[100, 200, 300, 301]
+        ),
         Some(DesignSurfaceStitchOperation {
             gap_tolerance: 0.01,
             gap_tolerance_offset: 40,
@@ -9761,6 +9863,65 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
     )
     .unwrap();
     assert_eq!(supplementary, lines);
+}
+
+#[test]
+fn parallel_group_binds_one_common_axis_angle() {
+    let line = |id: &str, end: Point2| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end,
+        },
+    };
+    let first = line("generated:line#first", Point2::new(1.0, 1.0));
+    let second = line("generated:line#second", Point2::new(-2.0, -2.0));
+    let mismatch = line("generated:line#mismatch", Point2::new(1.0, 0.0));
+    let crossed = line("generated:line#crossed", Point2::new(1.0, -1.0));
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(44),
+        "45 deg",
+        "Angular Dimension-2",
+        Some("deg"),
+        "d1",
+        std::f64::consts::FRAC_PI_4,
+    ))
+    .expect("generated angular dimension is canonical");
+    let parameter_id = ParameterId("generated:parameter#axis-angle".into());
+
+    assert!(matches!(
+        crate::design::dimensions::parallel_group_axis_angle_definition(
+            &[&first, &second],
+            &parameter,
+            &parameter_id,
+        ),
+        Some(SketchConstraintDefinition::AngleToAxis {
+            entity,
+            axis: SketchAxis::Horizontal,
+            parameter,
+        }) if entity == first.id && parameter == parameter_id
+    ));
+    assert!(
+        crate::design::dimensions::parallel_group_axis_angle_definition(
+            &[&first, &mismatch],
+            &parameter,
+            &parameter_id,
+        )
+        .is_none()
+    );
+    assert!(
+        crate::design::dimensions::parallel_group_axis_angle_definition(
+            &[&first, &crossed],
+            &parameter,
+            &parameter_id,
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -15705,7 +15866,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         paired_byte_offset: 329,
     };
     assert_eq!(
-        exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]),
+        exact_circular_pattern_construction_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &[]
+        ),
         Some(DesignCircularPatternConstruction {
             count: 25,
             count_record_index,
@@ -15744,8 +15910,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         owner(count_record_index, 0, 25.0, 101),
         owner(angle_record_index, 1, std::f64::consts::TAU, 202),
     ];
-    let owner_backed =
-        exact_circular_pattern_construction_with_owners(&bytes, &scope, &owners).unwrap();
+    let owner_backed = exact_circular_pattern_construction_with_owners(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &owners,
+    )
+    .unwrap();
     assert_eq!(owner_backed.count, 25);
     assert_eq!(owner_backed.count_offset, 101);
     assert_eq!(owner_backed.angle, std::f64::consts::TAU);
@@ -15754,17 +15925,33 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     bytes[angle_start + 4] = b'3';
 
     bytes[axis_start + 89..axis_start + 93].copy_from_slice(&6_u32.to_le_bytes());
-    assert!(exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]).is_some());
+    assert!(exact_circular_pattern_construction_with_owners(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &[]
+    )
+    .is_some());
     bytes[axis_start + 89..axis_start + 93].fill(0);
     assert_eq!(
-        exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]),
+        exact_circular_pattern_construction_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &[]
+        ),
         None
     );
     bytes[axis_start + 89..axis_start + 93].copy_from_slice(&9_u32.to_le_bytes());
 
     bytes[axis_start + 57..axis_start + 65].copy_from_slice(&1.0_f64.to_le_bytes());
     assert_eq!(
-        exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]),
+        exact_circular_pattern_construction_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &[]
+        ),
         None
     );
     bytes[axis_start + 57..axis_start + 65].fill(0);
@@ -15772,7 +15959,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .reference_members
         .extend([axis_record_index, selection_record_index]);
     assert_eq!(
-        exact_circular_pattern_construction_with_owners(&bytes, &scope, &[]),
+        exact_circular_pattern_construction_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &[]
+        ),
         None
     );
 
@@ -15783,8 +15975,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         owner(52, 2, 10.0, 503),
         owner(53, 3, 0.0, 504),
     ];
-    let rectangular = exact_rectangular_pattern_construction(&[], &scope, &rectangular_owners)
-        .expect("exact rectangular-pattern scalar lanes");
+    let rectangular = exact_rectangular_pattern_construction(
+        &[],
+        &IndexedRecordOffsets::build(&[]),
+        &scope,
+        &rectangular_owners,
+    )
+    .expect("exact rectangular-pattern scalar lanes");
     assert_eq!(rectangular.u_count, 3);
     assert_eq!(rectangular.v_count, 1);
     assert_eq!(rectangular.u_extent, 10.0);
@@ -15830,8 +16027,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     append_transform_record(&mut bytes, 130, [2.0, 3.0, 14.0]);
     append_header(&mut bytes, 140);
     scope.reference_members = vec![100, 50, 51, 52, 53, 110, 120, 130, 140];
-    let rectangular = exact_rectangular_pattern_construction(&bytes, &scope, &rectangular_owners)
-        .expect("rectangular-pattern placement run");
+    let rectangular = exact_rectangular_pattern_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .expect("rectangular-pattern placement run");
     let instances = rectangular.instances.expect("exact placement run");
     assert_eq!(instances.record_indices, [100, 120, 130]);
     assert_eq!(
@@ -15846,26 +16048,46 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut invalid_inactive_spacing = rectangular_owners.clone();
     invalid_inactive_spacing[3].evaluated_value = 1.0;
     assert_eq!(
-        exact_rectangular_pattern_construction(&[], &scope, &invalid_inactive_spacing),
+        exact_rectangular_pattern_construction(
+            &[],
+            &IndexedRecordOffsets::build(&[]),
+            &scope,
+            &invalid_inactive_spacing
+        ),
         None
     );
     let mut duplicate_lane = rectangular_owners.clone();
     duplicate_lane[3].local_ordinal = 2;
     assert_eq!(
-        exact_rectangular_pattern_construction(&[], &scope, &duplicate_lane),
+        exact_rectangular_pattern_construction(
+            &[],
+            &IndexedRecordOffsets::build(&[]),
+            &scope,
+            &duplicate_lane
+        ),
         None
     );
     let mut excess_lane = rectangular_owners.to_vec();
     excess_lane.push(owner(54, 4, 1.0, 505));
     assert_eq!(
-        exact_rectangular_pattern_construction(&[], &scope, &excess_lane),
+        exact_rectangular_pattern_construction(
+            &[],
+            &IndexedRecordOffsets::build(&[]),
+            &scope,
+            &excess_lane
+        ),
         None
     );
 
     scope.kind = "Assemble".into();
     scope.reference_members = vec![50, 51, 52, 53];
-    let alignment = exact_assembly_alignment(&bytes, &scope, &rectangular_owners)
-        .expect("exact assembly scalar lanes");
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .expect("exact assembly scalar lanes");
     assert_eq!(alignment.angle, 3.0);
     assert_eq!(alignment.offset, [1.0, 10.0, 0.0]);
     assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
@@ -15916,9 +16138,14 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     scope.frame_length = 637;
     scope.paired_byte_offset = 637;
     scope.paired_class_tag = "259".into();
-    let frames = exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)
-        .and_then(|alignment| alignment.operand_frames)
-        .expect("exact assembly operand frames");
+    let frames = exact_assembly_alignment(
+        &assembly_bytes,
+        &IndexedRecordOffsets::build(&assembly_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_frames)
+    .expect("exact assembly operand frames");
     assert_eq!(
         frames.map(|frame| (
             frame.reference_record_index,
@@ -15963,9 +16190,14 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assembly_bytes.extend_from_slice(&3_u32.to_le_bytes());
     assembly_bytes.extend_from_slice(b"396");
     assembly_bytes.extend_from_slice(&70_u32.to_le_bytes());
-    let paths = exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)
-        .and_then(|alignment| alignment.operand_paths)
-        .expect("exact assembly occurrence paths");
+    let paths = exact_assembly_alignment(
+        &assembly_bytes,
+        &IndexedRecordOffsets::build(&assembly_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("exact assembly occurrence paths");
     assert_eq!(
         paths.map(|path| (path.record_index, path.occurrence_guids)),
         [
@@ -15980,20 +16212,31 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         ]
     );
     assembly_bytes[25] = 0;
-    assert!(
-        exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)
-            .and_then(|alignment| alignment.operand_frames)
-            .is_some()
-    );
+    assert!(exact_assembly_alignment(
+        &assembly_bytes,
+        &IndexedRecordOffsets::build(&assembly_bytes),
+        &scope,
+        &rectangular_owners
+    )
+    .and_then(|alignment| alignment.operand_frames)
+    .is_some());
     assembly_bytes[25] = 2;
-    assert!(
-        exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners)
-            .is_some_and(|alignment| alignment.operand_frames.is_none())
-    );
+    assert!(exact_assembly_alignment(
+        &assembly_bytes,
+        &IndexedRecordOffsets::build(&assembly_bytes),
+        &scope,
+        &rectangular_owners
+    )
+    .is_some_and(|alignment| alignment.operand_frames.is_none()));
 
     scope.reference_members.push(99);
     assert_eq!(
-        exact_assembly_alignment(&assembly_bytes, &scope, &rectangular_owners),
+        exact_assembly_alignment(
+            &assembly_bytes,
+            &IndexedRecordOffsets::build(&assembly_bytes),
+            &scope,
+            &rectangular_owners
+        ),
         None
     );
 }
@@ -16117,7 +16360,8 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     };
 
     let construction =
-        exact_component_insert_construction(&bytes, &scope).expect("component insert construction");
+        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .expect("component insert construction");
 
     assert_eq!(construction.relation_record_index, 20);
     assert_eq!(construction.carrier_record_index, 10);

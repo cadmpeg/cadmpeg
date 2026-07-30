@@ -3,9 +3,7 @@
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
-use crate::design::decode::sketch::{
-    next_indexed_record_offset, next_indexed_record_offset_with_index, valid_sketch_transform,
-};
+use crate::design::decode::sketch::{next_indexed_record_offset, valid_sketch_transform};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
@@ -28,6 +26,55 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use std::collections::{HashMap, HashSet};
 
+/// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
+/// the record index the header carries at `offset + 7`.
+///
+/// An indexed-record header is a three-digit length-prefixed ASCII class tag
+/// followed by a u32 record index, so a header at `offset` always exposes its
+/// index at `offset + 7`. A record index appears once per header, and the
+/// consecutive offsets of one index delimit that record's frames.
+pub(crate) struct IndexedRecordOffsets {
+    by_record_index: HashMap<u32, Vec<usize>>,
+}
+
+impl IndexedRecordOffsets {
+    /// Index every indexed-record header in `bytes` in one forward pass.
+    pub(crate) fn build(bytes: &[u8]) -> Self {
+        let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
+        let mut position = 0;
+        while let Some(at) = next_indexed_record_offset(bytes, position) {
+            if let Some(record_index) = u32_at(bytes, at + 7) {
+                by_record_index.entry(record_index).or_default().push(at);
+            }
+            position = at.saturating_add(1);
+        }
+        Self { by_record_index }
+    }
+
+    /// Ascending header offsets carrying `record_index`.
+    fn offsets(&self, record_index: u32) -> &[usize] {
+        self.by_record_index
+            .get(&record_index)
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// The first header at or after `position` that carries `record_index`.
+    fn first_at_or_after(&self, position: usize, record_index: u32) -> Option<usize> {
+        let offsets = self.offsets(record_index);
+        offsets
+            .get(offsets.partition_point(|offset| *offset < position))
+            .copied()
+    }
+
+    /// Consecutive header offsets carrying `record_index`, each pair delimiting
+    /// one frame of that record.
+    fn frames(&self, record_index: u32) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.offsets(record_index)
+            .windows(2)
+            .map(|pair| (pair[0], pair[1]))
+    }
+}
+
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub fn decode_parameter_scopes(
@@ -44,8 +91,9 @@ pub fn decode_parameter_scopes(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);
-        for header in parameter_scope_candidate_headers(bytes) {
-            let Some(mut scope) = parse_parameter_scope(bytes, &header) else {
+        let records = IndexedRecordOffsets::build(bytes);
+        for header in parameter_scope_candidate_headers(bytes, &records) {
+            let Some(mut scope) = parse_parameter_scope(bytes, &records, &header) else {
                 continue;
             };
             scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
@@ -84,7 +132,7 @@ pub fn decode_parameter_scopes(
                 }
             }
             if scope.kind == "WorkPlane" {
-                if let Some(frame) = exact_work_plane_frame(bytes, &scope) {
+                if let Some(frame) = exact_work_plane_frame(bytes, &records, &scope) {
                     scope.work_plane_transform = Some(frame.transform);
                     scope.work_plane_transform_offset = Some(frame.transform_offset);
                     if let Some((reference, reference_offset)) = frame.reference {
@@ -94,7 +142,7 @@ pub fn decode_parameter_scopes(
                 }
             }
             if scope.kind == "JointOrigin" {
-                if let Some(frame) = exact_joint_origin_frame(bytes, &scope) {
+                if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
                     scope.joint_origin_transform = Some(frame.transform);
                     scope.joint_origin_transform_offset = Some(frame.transform_offset);
                     if let Some((reference, reference_offset)) = frame.reference {
@@ -103,31 +151,44 @@ pub fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some((position, offset)) = exact_work_point_position(bytes, &scope) {
+            if let Some((position, offset)) = exact_work_point_position(bytes, &records, &scope) {
                 scope.work_point_position = Some(position);
                 scope.work_point_position_offset = Some(offset);
             }
-            scope.solid_primitive = exact_solid_primitive(bytes, &scope);
-            scope.direct_face_operation = exact_direct_face_operation(bytes, &scope);
-            scope.move_operation = exact_move_operation(bytes, &scope);
+            scope.solid_primitive = exact_solid_primitive(bytes, &records, &scope);
+            scope.direct_face_operation = exact_direct_face_operation(bytes, &records, &scope);
+            scope.move_operation = exact_move_operation(bytes, &records, &scope);
             scope.scale_operation = exact_scale_operation(bytes, &scope);
-            scope.fixed_extrude_parameters = exact_fixed_extrude_parameters(bytes, &scope);
-            scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &scope);
-            scope.fixed_chamfer_parameters = exact_fixed_chamfer_parameters(bytes, &scope);
-            scope.path_feature_construction = exact_path_feature_construction(bytes, &scope);
-            scope.combine_operation = exact_combine_operation(bytes, &scope);
-            scope.draft_operation = exact_draft_operation(bytes, &scope);
-            scope.circular_pattern_construction =
-                exact_circular_pattern_construction_with_owners(bytes, &scope, parameter_owners);
+            scope.fixed_extrude_parameters =
+                exact_fixed_extrude_parameters(bytes, &records, &scope);
+            scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &records, &scope);
+            scope.fixed_chamfer_parameters =
+                exact_fixed_chamfer_parameters(bytes, &records, &scope);
+            scope.path_feature_construction =
+                exact_path_feature_construction(bytes, &records, &scope);
+            scope.combine_operation = exact_combine_operation(bytes, &records, &scope);
+            scope.draft_operation = exact_draft_operation(bytes, &records, &scope);
+            scope.circular_pattern_construction = exact_circular_pattern_construction_with_owners(
+                bytes,
+                &records,
+                &scope,
+                parameter_owners,
+            );
             scope.rectangular_pattern_construction =
-                exact_rectangular_pattern_construction(bytes, &scope, parameter_owners);
-            scope.assembly_alignment = exact_assembly_alignment(bytes, &scope, parameter_owners);
+                exact_rectangular_pattern_construction(bytes, &records, &scope, parameter_owners);
+            scope.assembly_alignment =
+                exact_assembly_alignment(bytes, &records, &scope, parameter_owners);
             scope.component_insert_construction =
-                exact_component_insert_construction(bytes, &scope);
-            scope.copy_paste_component_operation =
-                exact_copy_paste_component_operation(bytes, &scope, component_occurrences);
+                exact_component_insert_construction(bytes, &records, &scope);
+            scope.copy_paste_component_operation = exact_copy_paste_component_operation(
+                bytes,
+                &records,
+                &scope,
+                component_occurrences,
+            );
             bind_component_pattern_occurrences(&mut scope, component_occurrences);
-            scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
+            scope.copy_paste_bodies_operation =
+                exact_copy_paste_bodies_operation(bytes, &records, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             out.push(scope);
         }
@@ -139,6 +200,7 @@ pub fn decode_parameter_scopes(
 
 pub(crate) fn exact_assembly_alignment(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignAssemblyAlignment> {
@@ -195,12 +257,13 @@ pub(crate) fn exact_assembly_alignment(
     alignment.operand_paths = alignment
         .operand_frames
         .as_ref()
-        .and_then(|frames| exact_assembly_operand_paths(bytes, scope, frames));
+        .and_then(|frames| exact_assembly_operand_paths(bytes, records, scope, frames));
     Some(alignment)
 }
 
 pub(crate) fn exact_component_insert_construction(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignComponentInsertConstruction> {
     let start = usize::try_from(scope.byte_offset).ok()?;
@@ -219,7 +282,7 @@ pub(crate) fn exact_component_insert_construction(
         return None;
     }
     let transform = rigid_transform_at(bytes, start + 50)?;
-    let relation_at = next_indexed_record_offset_with_index(bytes, 0, relation_record_index)?;
+    let relation_at = records.first_at_or_after(0, relation_record_index)?;
     if relation_at >= start
         || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
         || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
@@ -234,7 +297,7 @@ pub(crate) fn exact_component_insert_construction(
         return None;
     }
     let carrier_record_index = u32_at(bytes, relation_at + 22)?;
-    let carrier_at = unique_indexed_record_before(bytes, carrier_record_index, relation_at)?;
+    let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
     let mut placements = Vec::new();
     for at in carrier_at + 11..relation_at {
         let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 1..=256) else {
@@ -267,6 +330,7 @@ pub(crate) fn exact_component_insert_construction(
 
 fn exact_copy_paste_component_operation(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     occurrences: &[DesignComponentOccurrence],
 ) -> Option<DesignCopyPasteComponentOperation> {
@@ -283,7 +347,7 @@ fn exact_copy_paste_component_operation(
     }
     let source_transform = rigid_transform_at(bytes, start + 38)?;
     let copied_transform = rigid_transform_at(bytes, start + 194)?;
-    let relation_at = next_indexed_record_offset_with_index(bytes, 0, relation_record_index)?;
+    let relation_at = records.first_at_or_after(0, relation_record_index)?;
     if relation_at >= start
         || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
         || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
@@ -405,20 +469,16 @@ fn bind_component_pattern_occurrences(
     });
 }
 
-fn unique_indexed_record_before(bytes: &[u8], record_index: u32, end: usize) -> Option<usize> {
-    let mut position = 0;
-    let mut found = None;
-    while let Some(at) = next_indexed_record_offset(bytes, position) {
-        if at >= end {
-            break;
-        }
-        let (_, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_tag) == Some(record_index) && found.replace(at).is_some() {
-            return None;
-        }
-        position = at.checked_add(1)?;
-    }
-    found
+fn unique_indexed_record_before(
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    end: usize,
+) -> Option<usize> {
+    let offsets = records.offsets(record_index);
+    let [at] = &offsets[..offsets.partition_point(|offset| *offset < end)] else {
+        return None;
+    };
+    Some(*at)
 }
 
 pub(crate) fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
@@ -473,20 +533,17 @@ fn exact_assembly_operand_frames(
 
 fn exact_assembly_operand_paths(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
     let search_start = usize::try_from(scope.paired_byte_offset).ok()?;
-    let construction_at = next_indexed_record_offset_with_index(
-        bytes,
-        search_start,
-        frames[0].reference_record_index,
-    )?;
+    let construction_at =
+        records.first_at_or_after(search_start, frames[0].reference_record_index)?;
     let first_record_index = frames[0].reference_record_index.checked_sub(5)?;
     let second_record_index = frames[0].reference_record_index.checked_sub(2)?;
-    let first_at = next_indexed_record_offset_with_index(bytes, search_start, first_record_index)?;
-    let second_at =
-        next_indexed_record_offset_with_index(bytes, first_at + 11, second_record_index)?;
+    let first_at = records.first_at_or_after(search_start, first_record_index)?;
+    let second_at = records.first_at_or_after(first_at + 11, second_record_index)?;
     if !(first_at < second_at && second_at < construction_at) {
         return None;
     }
@@ -535,6 +592,7 @@ fn exact_assembly_operand_path(
 
 pub(crate) fn exact_rectangular_pattern_construction(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignRectangularPatternConstruction> {
@@ -594,12 +652,14 @@ pub(crate) fn exact_rectangular_pattern_construction(
         ],
         instances: None,
     };
-    construction.instances = exact_rectangular_pattern_instances(bytes, scope, &construction);
+    construction.instances =
+        exact_rectangular_pattern_instances(bytes, records, scope, &construction);
     Some(construction)
 }
 
 fn exact_rectangular_pattern_instances(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
 ) -> Option<DesignRectangularPatternInstances> {
@@ -630,7 +690,8 @@ fn exact_rectangular_pattern_instances(
         .reference_members
         .iter()
         .map(|record_index| {
-            next_indexed_record_offset_with_index(bytes, 0, *record_index)
+            records
+                .first_at_or_after(0, *record_index)
                 .map(|offset| (*record_index, offset))
         })
         .collect::<Option<Vec<_>>>()?;
@@ -738,6 +799,7 @@ fn translation_delta(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> [f64; 3] {
 
 pub(crate) fn exact_circular_pattern_construction_with_owners(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[crate::records::DesignParameterOwner],
 ) -> Option<DesignCircularPatternConstruction> {
@@ -749,7 +811,7 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         let [record_index, selection_record_index] = pair else {
             continue;
         };
-        for (start, paired_at) in indexed_record_pairs(bytes, *record_index) {
+        for (start, paired_at) in records.frames(*record_index) {
             if let Some((origin, direction)) = exact_circular_pattern_axis(
                 bytes,
                 start,
@@ -794,7 +856,7 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
     let mut count_candidates = owner_count_candidates.collect::<Vec<_>>();
     if count_candidates.is_empty() {
         count_candidates.extend(scope.reference_members.iter().filter_map(|record_index| {
-            exact_fixed_pattern_count(bytes, *record_index, scope.record_index)
+            exact_fixed_pattern_count(bytes, records, *record_index, scope.record_index)
                 .map(|(count, count_offset)| (count, *record_index, count_offset))
         }));
     }
@@ -818,7 +880,7 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
     let mut angle_candidates = owner_angle_candidates.collect::<Vec<_>>();
     if angle_candidates.is_empty() {
         angle_candidates.extend(scope.reference_members.iter().filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
             (scalar.owner_record_index == Some(scope.record_index)
                 && scalar.ordinal == 1
                 && scalar.value > 0.0)
@@ -1098,11 +1160,12 @@ fn exact_circular_pattern_axis(
 
 fn exact_fixed_pattern_count(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<(u32, u64)> {
-    let candidates = indexed_record_pairs(bytes, record_index)
-        .into_iter()
+    let candidates = records
+        .frames(record_index)
         .filter_map(|(start, paired_at)| {
             let (class_tag, after_tag) =
                 lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
@@ -1141,6 +1204,7 @@ fn exact_fixed_pattern_count(
 
 pub(crate) fn exact_copy_paste_bodies_operation(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignCopyPasteBodiesOperation> {
     if scope.kind != "CopyPasteBodies" || scope.reference_members.len() < 2 {
@@ -1155,8 +1219,7 @@ pub(crate) fn exact_copy_paste_bodies_operation(
     let search_at = usize::try_from(scope.paired_byte_offset)
         .ok()?
         .checked_add(1)?;
-    let body_group_at =
-        next_indexed_record_offset_with_index(bytes, search_at, body_group_record_index)?;
+    let body_group_at = records.first_at_or_after(search_at, body_group_record_index)?;
     let (body_group_class_tag, body_group_after_tag) =
         lp_ascii_filtered(bytes, body_group_at, 0..=2000, u8::is_ascii_graphic)?;
     let body_group_after_index = body_group_after_tag.checked_add(4)?;
@@ -1180,8 +1243,7 @@ pub(crate) fn exact_copy_paste_bodies_operation(
         body_operand_record_offsets.push(u64::try_from(body_group_cursor + 1).ok()?);
         body_group_cursor = body_group_cursor.checked_add(11)?;
     }
-    let relation_at =
-        next_indexed_record_offset_with_index(bytes, search_at, relation_record_index)?;
+    let relation_at = records.first_at_or_after(search_at, relation_record_index)?;
     let (relation_class_tag, after_tag) =
         lp_ascii_filtered(bytes, relation_at, 0..=2000, u8::is_ascii_graphic)?;
     let after_index = after_tag.checked_add(4)?;
@@ -1377,6 +1439,7 @@ pub(crate) fn exact_base_feature_construction(
 
 pub(crate) fn exact_solid_primitive(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSolidPrimitive> {
     if !matches!(scope.kind.as_str(), "SpherePrimitive" | "TorusPrimitive") {
@@ -1410,7 +1473,7 @@ pub(crate) fn exact_solid_primitive(
         {
             let diameter_record_index = u32_at(bytes, start + 42)?;
             let (diameter, diameter_offset) =
-                exact_primitive_diameter(bytes, diameter_record_index)?;
+                exact_primitive_diameter(bytes, records, diameter_record_index)?;
             let (transform, transform_offset) = matrix(64)?;
             Some(DesignSolidPrimitive::Sphere {
                 transform,
@@ -1436,9 +1499,9 @@ pub(crate) fn exact_solid_primitive(
                 return None;
             }
             let (major_diameter, major_diameter_offset) =
-                exact_primitive_diameter(bytes, major_diameter_record_index)?;
+                exact_primitive_diameter(bytes, records, major_diameter_record_index)?;
             let (minor_diameter, minor_diameter_offset) =
-                exact_primitive_diameter(bytes, minor_diameter_record_index)?;
+                exact_primitive_diameter(bytes, records, minor_diameter_record_index)?;
             let (transform, transform_offset) = matrix(75)?;
             Some(DesignSolidPrimitive::Torus {
                 transform,
@@ -1457,8 +1520,12 @@ pub(crate) fn exact_solid_primitive(
     }
 }
 
-fn exact_primitive_diameter(bytes: &[u8], record_index: u32) -> Option<(f64, u64)> {
-    let scalar = exact_fixed_scalar(bytes, record_index)?;
+fn exact_primitive_diameter(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+) -> Option<(f64, u64)> {
+    let scalar = exact_fixed_scalar(bytes, records, record_index)?;
     (scalar.value > 0.0).then_some((scalar.value, scalar.value_offset))
 }
 
@@ -1470,20 +1537,15 @@ struct FixedScalarFrame {
     value_offset: u64,
 }
 
-fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<FixedScalarFrame> {
-    let mut headers = Vec::new();
-    let mut position = 0;
-    while let Some(at) = next_indexed_record_offset(bytes, position) {
-        if u32_at(bytes, at + 7) == Some(record_index) {
-            headers.push(at);
-        }
-        position = at + 1;
-    }
-    let candidates = headers
-        .windows(2)
-        .filter_map(|pair| {
-            let start = pair[0];
-            let frame_length = pair[1].checked_sub(start)?;
+fn exact_fixed_scalar(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+) -> Option<FixedScalarFrame> {
+    let candidates = records
+        .frames(record_index)
+        .filter_map(|(start, end)| {
+            let frame_length = end.checked_sub(start)?;
             matches!(frame_length, 100 | 103 | 104 | 105).then_some(())?;
             if frame_length == 100 || frame_length == 103 {
                 let (class_tag, after_tag) =
@@ -1529,6 +1591,7 @@ fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<FixedScalarFram
 
 pub(crate) fn exact_direct_face_operation(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
     let start = usize::try_from(scope.byte_offset).ok()?;
@@ -1546,7 +1609,7 @@ pub(crate) fn exact_direct_face_operation(
             if scope.reference_members.last() != Some(&distance_record_index) {
                 return None;
             }
-            let scalar = exact_fixed_scalar(bytes, distance_record_index)?;
+            let scalar = exact_fixed_scalar(bytes, records, distance_record_index)?;
             Some(DesignDirectFaceOperation::OffsetFaces {
                 distance: scalar.value,
                 distance_record_index,
@@ -1568,7 +1631,7 @@ pub(crate) fn exact_direct_face_operation(
             if scope.reference_members.last() != Some(&thickness_record_index) {
                 return None;
             }
-            let scalar = exact_fixed_scalar(bytes, thickness_record_index)?;
+            let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
             if scalar.value == 0.0 {
                 return None;
             }
@@ -1618,7 +1681,7 @@ pub(crate) fn exact_direct_face_operation(
             if scope.reference_members.last() != Some(&thickness_record_index) {
                 return None;
             }
-            let scalar = exact_fixed_scalar(bytes, thickness_record_index)?;
+            let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
             if scalar.value <= 0.0 {
                 return None;
             }
@@ -1636,6 +1699,7 @@ pub(crate) fn exact_direct_face_operation(
 
 pub(crate) fn exact_move_operation(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignMoveOperation> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Move) {
@@ -1643,7 +1707,7 @@ pub(crate) fn exact_move_operation(
     }
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
-        for (start, paired) in indexed_record_pairs(bytes, *record_index) {
+        for (start, paired) in records.frames(*record_index) {
             let (class_tag, after_tag) =
                 lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
             let frame_length = paired.checked_sub(start)?;
@@ -1728,6 +1792,7 @@ pub(crate) fn exact_scale_operation(
 
 pub(crate) fn exact_fixed_extrude_parameters(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignFixedExtrudeParameters> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Extrude)
@@ -1742,7 +1807,7 @@ pub(crate) fn exact_fixed_extrude_parameters(
         .reference_members
         .iter()
         .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
             (scalar.owner_record_index == Some(scope.record_index))
                 .then_some((*record_index, scalar))
         })
@@ -1767,6 +1832,7 @@ pub(crate) fn exact_fixed_extrude_parameters(
 
 pub(crate) fn exact_fixed_fillet_parameters(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignFixedFilletParameters> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Fillet) {
@@ -1776,7 +1842,7 @@ pub(crate) fn exact_fixed_fillet_parameters(
         .reference_members
         .iter()
         .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
             (scalar.owner_record_index == Some(scope.record_index))
                 .then_some((*record_index, scalar))
         })
@@ -1867,6 +1933,7 @@ pub(crate) fn exact_fixed_fillet_parameters(
 
 pub(crate) fn exact_fixed_chamfer_parameters(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignFixedChamferParameters> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Chamfer) {
@@ -1876,7 +1943,7 @@ pub(crate) fn exact_fixed_chamfer_parameters(
         .reference_members
         .iter()
         .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
             (scalar.owner_record_index == Some(scope.record_index))
                 .then_some((*record_index, scalar))
         })
@@ -1907,6 +1974,7 @@ pub(crate) fn exact_fixed_chamfer_parameters(
 
 pub(crate) fn exact_path_feature_construction(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignPathFeatureConstruction> {
     let start = usize::try_from(scope.byte_offset).ok()?;
@@ -1930,7 +1998,7 @@ pub(crate) fn exact_path_feature_construction(
                 .reference_members
                 .iter()
                 .filter_map(|record_index| {
-                    let scalar = exact_fixed_scalar(bytes, *record_index)?;
+                    let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
                     (scalar.owner_record_index == Some(scope.record_index))
                         .then_some((*record_index, scalar))
                 })
@@ -1971,7 +2039,7 @@ pub(crate) fn exact_path_feature_construction(
                 .reference_members
                 .iter()
                 .filter_map(|record_index| {
-                    let scalar = exact_fixed_scalar(bytes, *record_index)?;
+                    let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
                     (scalar.owner_record_index == Some(scope.record_index))
                         .then_some((*record_index, scalar))
                 })
@@ -2005,11 +2073,12 @@ pub(crate) struct ScopePlacementFrame {
 
 pub(crate) fn exact_work_plane_frame(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
-        for (start, paired) in indexed_record_pairs(bytes, *record_index) {
+        for (start, paired) in records.frames(*record_index) {
             let frame_length = paired.checked_sub(start)?;
             let (matrix_at, reference) = match frame_length {
                 321 if bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) => {
@@ -2057,6 +2126,7 @@ pub(crate) fn exact_work_plane_frame(
 
 pub(crate) fn exact_joint_origin_frame(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
     if scope.kind != "JointOrigin" {
@@ -2064,7 +2134,7 @@ pub(crate) fn exact_joint_origin_frame(
     }
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
-        for (start, paired) in indexed_record_pairs(bytes, *record_index) {
+        for (start, paired) in records.frames(*record_index) {
             if !matches!(paired.checked_sub(start)?, 336 | 347)
                 || bytes.get(start + 11..start + 45)? != [0; 34]
                 || bytes.get(start + 50..start + 60)? != [0; 10]
@@ -2095,6 +2165,7 @@ pub(crate) fn exact_joint_origin_frame(
 
 pub(crate) fn exact_work_point_position(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<([f64; 3], u64)> {
     if scope.kind != "WorkPoint" {
@@ -2107,7 +2178,7 @@ pub(crate) fn exact_work_point_position(
         .collect::<HashSet<_>>();
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
-        for (start, paired) in indexed_record_pairs(bytes, *record_index) {
+        for (start, paired) in records.frames(*record_index) {
             let (class_tag, after_tag) =
                 lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
             if class_tag != "282" || u32_at(bytes, after_tag) != Some(*record_index) {
@@ -2153,18 +2224,9 @@ pub(crate) fn exact_work_point_position(
     Some(*candidate)
 }
 
-fn indexed_record_pairs(bytes: &[u8], record_index: u32) -> Vec<(usize, usize)> {
-    let mut headers = Vec::new();
-    let mut position = 0;
-    while let Some(at) = next_indexed_record_offset_with_index(bytes, position, record_index) {
-        headers.push(at);
-        position = at + 1;
-    }
-    headers.windows(2).map(|pair| (pair[0], pair[1])).collect()
-}
-
 pub(crate) fn exact_combine_operation(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignCombineOperation> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Combine)
@@ -2197,8 +2259,7 @@ pub(crate) fn exact_combine_operation(
         let [operation_record_index, selection_record_index] = pair else {
             return None;
         };
-        let operation_frames = indexed_record_pairs(bytes, *operation_record_index);
-        let [(operation_at, operation_end)] = operation_frames.as_slice() else {
+        let [operation_at, operation_end] = records.offsets(*operation_record_index) else {
             return None;
         };
         match combine_operation_identity_role(
@@ -2212,8 +2273,7 @@ pub(crate) fn exact_combine_operation(
             }
             CombineOperandRole::Tool => tools.push(*selection_record_index),
         }
-        let selection_frames = indexed_record_pairs(bytes, *selection_record_index);
-        let [(selection_at, selection_end)] = selection_frames.as_slice() else {
+        let [selection_at, selection_end] = records.offsets(*selection_record_index) else {
             return None;
         };
         if !contains_consecutive_guid_pair(bytes.get(*selection_at..*selection_end)?) {
@@ -2276,6 +2336,7 @@ fn combine_operation_identity_role(
 
 pub(crate) fn exact_draft_operation(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDraftOperation> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Draft)
@@ -2288,7 +2349,7 @@ pub(crate) fn exact_draft_operation(
         .reference_members
         .iter()
         .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
             (scalar.owner_record_index == Some(scope.record_index))
                 .then_some((*record_index, scalar))
         })
@@ -2325,34 +2386,28 @@ fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
     })
 }
 
-pub(crate) fn parameter_scope_candidate_headers(bytes: &[u8]) -> Vec<DesignRecordHeader> {
-    let mut indexed = HashMap::<u32, Vec<(usize, String)>>::new();
-    let mut position = 0;
-    while let Some(at) = next_indexed_record_offset(bytes, position) {
-        if let Some((class_tag, after_tag)) =
-            lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
-        {
-            if let Some(record_index) = u32_at(bytes, after_tag) {
-                indexed
-                    .entry(record_index)
-                    .or_default()
-                    .push((at, class_tag));
-            }
-        }
-        position = at.saturating_add(1);
-    }
-    indexed
-        .into_iter()
-        .flat_map(|(record_index, occurrences)| {
-            let candidate_count = occurrences.len().saturating_sub(1);
-            occurrences
-                .into_iter()
-                .take(candidate_count)
-                .map(move |(at, class_tag)| DesignRecordHeader {
-                    id: String::new(),
-                    record_index,
-                    class_tag,
-                    byte_offset: at as u64,
+/// Every indexed-record header that can open a parameter scope: a scope is
+/// delimited by two headers carrying its record index, so the last header of an
+/// index opens nothing.
+pub(crate) fn parameter_scope_candidate_headers(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+) -> Vec<DesignRecordHeader> {
+    records
+        .by_record_index
+        .iter()
+        .flat_map(|(record_index, offsets)| {
+            offsets[..offsets.len().saturating_sub(1)]
+                .iter()
+                .filter_map(|at| {
+                    let (class_tag, _) =
+                        lp_ascii_filtered(bytes, *at, 0..=2000, u8::is_ascii_graphic)?;
+                    Some(DesignRecordHeader {
+                        id: String::new(),
+                        record_index: *record_index,
+                        class_tag,
+                        byte_offset: *at as u64,
+                    })
                 })
         })
         .collect()
@@ -2368,18 +2423,13 @@ pub(crate) fn parameter_scope_tail_length_is_valid(kind: &str, tail_length: usiz
 
 pub(crate) fn parse_parameter_scope(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     header: &DesignRecordHeader,
 ) -> Option<DesignParameterScope> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let mut position = start.checked_add(11)?;
-    let (paired_at, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, position)?;
-        let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_tag)? == header.record_index {
-            break (at, class_tag);
-        }
-        position = at.checked_add(1)?;
-    };
+    let paired_at = records.first_at_or_after(start.checked_add(11)?, header.record_index)?;
+    let (paired_class_tag, _) =
+        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let mut candidates = Vec::new();
     for at in start + 11..paired_at {
         if let Some((kind, end)) = lp_utf16_bounded(bytes, at, 1..=256) {
@@ -2450,7 +2500,7 @@ pub(crate) fn parse_parameter_scope(
         return None;
     };
     let surface_stitch_operation = if kind == "SurfaceStitch" {
-        exact_surface_stitch_operation(bytes, header.record_index, reference_members)
+        exact_surface_stitch_operation(bytes, records, header.record_index, reference_members)
     } else {
         None
     };
@@ -2778,6 +2828,7 @@ fn exact_legacy_shifted_extrude_prologue(
 
 pub(crate) fn exact_surface_stitch_operation(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope_record_index: u32,
     references: &[u32],
 ) -> Option<DesignSurfaceStitchOperation> {
@@ -2786,7 +2837,7 @@ pub(crate) fn exact_surface_stitch_operation(
     }
     let tolerance_record_index = references[references.len() - 2];
     let settings_record_index = references[references.len() - 1];
-    let scalar = exact_fixed_scalar(bytes, tolerance_record_index)?;
+    let scalar = exact_fixed_scalar(bytes, records, tolerance_record_index)?;
     if scalar.owner_record_index != Some(scope_record_index) || scalar.ordinal != 0 {
         return None;
     }
