@@ -1006,38 +1006,46 @@ impl IncidenceComponentSearch<'_, '_> {
                     .is_ok()
             };
             let support_exists = |point| {
-                self.face_edges[face]
-                    .iter()
-                    .copied()
-                    .any(|supporting_edge| {
-                        if supporting_edge == edge
-                            || !self.active[supporting_edge]
-                            || self.assignment[supporting_edge].is_some()
+                for &supporting_edge in &self.face_edges[face] {
+                    if !self.budget.charge() {
+                        return false;
+                    }
+                    if supporting_edge == edge
+                        || !self.active[supporting_edge]
+                        || self.assignment[supporting_edge].is_some()
+                    {
+                        continue;
+                    }
+                    let mut fits = |supporting_pair: [usize; 2]| {
+                        supporting_pair_fits(supporting_edge, supporting_pair)
+                    };
+                    if let Some(domains) = self
+                        .coordinate_domains
+                        .filter(|_| self.choices[supporting_edge].is_empty())
+                    {
+                        if domains
+                            .any_implicit_edge_candidate_with_point(
+                                supporting_edge,
+                                point,
+                                Some(self.budget),
+                                &mut fits,
+                            )
+                            .unwrap_or(false)
                         {
+                            return true;
+                        }
+                        continue;
+                    }
+                    for supporting_pair in self.choices[supporting_edge].iter().copied() {
+                        if !self.budget.charge() {
                             return false;
                         }
-                        let mut fits = |supporting_pair: [usize; 2]| {
-                            supporting_pair.contains(&point)
-                                && supporting_pair_fits(supporting_edge, supporting_pair)
-                        };
-                        if let Some(domains) = self
-                            .coordinate_domains
-                            .filter(|_| self.choices[supporting_edge].is_empty())
-                        {
-                            return domains
-                                .any_implicit_edge_candidate_with_point(
-                                    supporting_edge,
-                                    point,
-                                    &mut fits,
-                                )
-                                .unwrap_or(false);
+                        if supporting_pair.contains(&point) && fits(supporting_pair) {
+                            return true;
                         }
-                        self.choices[supporting_edge]
-                            .iter()
-                            .copied()
-                            .filter(|pair| pair.contains(&point))
-                            .any(fits)
-                    })
+                    }
+                }
+                false
             };
             let existing_frontier_supported = self.degrees[face]
                 .iter()
@@ -1058,10 +1066,12 @@ impl IncidenceComponentSearch<'_, '_> {
                     .all(|(_, point)| support_exists(point))
         });
         #[cfg(test)]
-        assert_eq!(
-            preserved,
-            self.degree_support_preserved_by_constraint_scan(edge, pair)
-        );
+        if !self.budget.exhausted.get() {
+            assert_eq!(
+                preserved,
+                self.degree_support_preserved_by_constraint_scan(edge, pair)
+            );
+        }
         preserved
     }
 
@@ -1682,6 +1692,7 @@ impl IncidenceComponentSearch<'_, '_> {
         });
         let component_faces = self.component_faces();
         self.search_with_quotient(&quotient_states, self.coordinate_domains, &component_faces);
+        self.exhausted |= self.budget.exhausted.get();
     }
 
     fn search_with_quotient(

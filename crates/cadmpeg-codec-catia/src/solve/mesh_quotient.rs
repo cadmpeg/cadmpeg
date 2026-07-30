@@ -472,6 +472,7 @@ impl MeshCoordinateRootDomains {
         &self,
         edge: usize,
         required: usize,
+        budget: Option<&MeshConstraintBudget>,
         mut valid: impl FnMut([usize; 2]) -> bool,
     ) -> Option<bool> {
         self.edge_candidates.get(edge)?.is_empty().then_some(())?;
@@ -484,28 +485,37 @@ impl MeshCoordinateRootDomains {
             }
         };
         let required_in_left = self.domains[left].binary_search(&required).is_ok();
-        if required_in_left
-            && self.domains[right]
+        if required_in_left {
+            for point in self.domains[right]
                 .iter()
                 .copied()
                 .filter(|point| left == right || *point != required)
-                .any(|point| valid(pair(point)))
-        {
-            return Some(true);
+            {
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return None;
+                }
+                if valid(pair(point)) {
+                    return Some(true);
+                }
+            }
         }
         if self.domains[right].binary_search(&required).is_err() {
             return Some(false);
         }
-        Some(
-            self.domains[left]
-                .iter()
-                .copied()
-                .filter(|point| left == right || *point != required)
-                .filter(|point| {
-                    !required_in_left || self.domains[right].binary_search(point).is_err()
-                })
-                .any(|point| valid(pair(point))),
-        )
+        for point in self.domains[left]
+            .iter()
+            .copied()
+            .filter(|point| left == right || *point != required)
+            .filter(|point| !required_in_left || self.domains[right].binary_search(point).is_err())
+        {
+            if budget.is_some_and(|budget| !budget.charge()) {
+                return None;
+            }
+            if valid(pair(point)) {
+                return Some(true);
+            }
+        }
+        Some(false)
     }
 
     fn coverage_matching(

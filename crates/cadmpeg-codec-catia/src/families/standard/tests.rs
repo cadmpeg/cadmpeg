@@ -653,6 +653,43 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
 }
 
 #[test]
+fn incidence_degree_support_scan_exhausts_its_component_budget() {
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let budget = MeshConstraintBudget::new(1);
+    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1)],
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert!(!search.candidate_fits(0, [0, 1]));
+    assert!(budget.exhausted.get());
+    search.search();
+    assert!(search.exhausted);
+}
+
+#[test]
 fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
     let choices = vec![vec![[0, 1]], vec![[1, 2]]];
     let edge_faces = [[0, 0], [0, 1]];
@@ -2782,13 +2819,20 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
 
     let mut visited = Vec::new();
     assert_eq!(
-        domains.any_implicit_edge_candidate_with_point(0, 1, |pair| {
+        domains.any_implicit_edge_candidate_with_point(0, 1, None, |pair| {
             visited.push(pair);
             pair == [1, 3]
         }),
         Some(true)
     );
     assert_eq!(visited, vec![[0, 1], [1, 2], [1, 3]]);
+
+    let budget = MeshConstraintBudget::new(2);
+    assert_eq!(
+        domains.any_implicit_edge_candidate_with_point(0, 1, Some(&budget), |_| false),
+        None
+    );
+    assert!(budget.exhausted.get());
 }
 
 #[test]
