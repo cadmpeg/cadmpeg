@@ -26,6 +26,50 @@ fn cross(a: Vector3, b: Vector3) -> Vector3 {
     )
 }
 
+/// Test whether two model-space points are reflections across a line carrier.
+///
+/// The line is unbounded for the reflection operation but its two stored
+/// endpoints must define a finite, nondegenerate direction.
+pub fn spatial_points_are_reflections(
+    first: Point3,
+    second: Point3,
+    axis_start: Point3,
+    axis_end: Point3,
+) -> bool {
+    let axis = Vector3::new(
+        axis_end.x - axis_start.x,
+        axis_end.y - axis_start.y,
+        axis_end.z - axis_start.z,
+    );
+    let axis_length = axis.norm();
+    if !axis_length.is_finite() || axis_length <= 1.0e-12 {
+        return false;
+    }
+    let midpoint = Point3::new(
+        0.5 * (first.x + second.x),
+        0.5 * (first.y + second.y),
+        0.5 * (first.z + second.z),
+    );
+    let from_axis = Vector3::new(
+        midpoint.x - axis_start.x,
+        midpoint.y - axis_start.y,
+        midpoint.z - axis_start.z,
+    );
+    let separation = Vector3::new(second.x - first.x, second.y - first.y, second.z - first.z);
+    let scale = 1.0
+        + axis_length
+            .max(from_axis.norm())
+            .max(separation.norm())
+            .max(first.x.abs())
+            .max(first.y.abs())
+            .max(first.z.abs())
+            .max(second.x.abs())
+            .max(second.y.abs())
+            .max(second.z.abs());
+    axis.cross(from_axis).norm() <= 1.0e-9 * axis_length * scale
+        && axis.dot(separation).abs() <= 1.0e-9 * axis_length * scale
+}
+
 /// Recover native parameters for an analytic surface point.
 pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) -> Option<Point2> {
     let components = |origin: Point3, axis: Vector3, reference: Vector3| {

@@ -3656,7 +3656,19 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::Coincident {
                 first: point.clone(),
+                second: coincident_point.clone(),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#symmetric".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::Symmetric {
+                first: point.clone(),
                 second: coincident_point,
+                axis: line.clone(),
             },
             native_ref: None,
         });

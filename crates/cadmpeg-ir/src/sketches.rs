@@ -359,6 +359,15 @@ pub enum SpatialSketchConstraintDefinition {
         /// Second coincident point.
         second: SpatialSketchEntityId,
     },
+    /// Two model-space sketch points are mirror images across a model-space line.
+    Symmetric {
+        /// First symmetric point.
+        first: SpatialSketchEntityId,
+        /// Second symmetric point.
+        second: SpatialSketchEntityId,
+        /// Bounded line whose infinite carrier is the reflection axis.
+        axis: SpatialSketchEntityId,
+    },
     /// A model-space point lies on a model-space surface.
     PointOnSurface {
         /// Point constrained to the surface.

@@ -10437,6 +10437,112 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             && second == &spatial_entities[1].id
     ));
 
+    let axis_record = SketchCurveIdentity {
+        id: format!("{stream}:sketch-curve#42"),
+        record_index: 42,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset: 0,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: 42,
+        secondary_id: 0,
+        geometry: None,
+    };
+    let axis_entity = cadmpeg_ir::sketches::SpatialSketchEntity {
+        id: cadmpeg_ir::sketches::SpatialSketchEntityId("spatial-axis".into()),
+        sketch: spatial_sketch.id.clone(),
+        construction: true,
+        native_ref: Some(axis_record.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: cadmpeg_ir::sketches::SpatialSketchGeometry::Line {
+            start: Point3::new(-1.0, 1.0, 0.0),
+            end: Point3::new(1.0, 1.0, 0.0),
+        },
+    };
+    let symmetry_group = DesignDimensionLocusGroup {
+        id: format!("{stream}:design-dimension-locus-group#31"),
+        companion_record_index: 22,
+        byte_offset: 0,
+        class_tag: "277".into(),
+        record_index: 31,
+        frame_length: 100,
+        loci: vec![
+            DesignDimensionLocus {
+                geometry_record_index: 42,
+                geometry_reference_offset: 0,
+                role: 5,
+                role_offset: 0,
+            },
+            DesignDimensionLocus {
+                geometry_record_index: 40,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+            DesignDimensionLocus {
+                geometry_record_index: 41,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+        ],
+        owner_reference: 100,
+        owner_reference_offset: 0,
+        owner_role: 0x400,
+        owner_role_offset: 0,
+        state: 0,
+        state_offset: 0,
+        constraint_kinds: Vec::new(),
+        unknown_constraint_bits: 0,
+        return_members: vec![40, 41, 42],
+        return_member_offsets: vec![0, 0, 0],
+        next_class_tag: "273".into(),
+        next_record_index: 32,
+        next_byte_offset: 0,
+    };
+    let mut symmetry_parameter = parameter.clone();
+    symmetry_parameter.source_kind = "Linear Dimension-6".into();
+    let mut symmetry_entities = spatial_entities.clone();
+    symmetry_entities.push(axis_entity.clone());
+    let symmetry_constraints = project_spatial_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&symmetry_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&symmetry_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &points,
+            curves: std::slice::from_ref(&axis_record),
+            entities: &[],
+        },
+        std::slice::from_ref(&spatial_sketch),
+        &symmetry_entities,
+    );
+    assert_eq!(symmetry_constraints.len(), 2, "{symmetry_constraints:#?}");
+    assert!(symmetry_constraints.iter().any(|constraint| matches!(
+        &constraint.definition,
+        SpatialSketchConstraintDefinition::Symmetric {
+            first,
+            second,
+            axis,
+        } if first == &spatial_entities[0].id
+            && second == &spatial_entities[1].id
+            && axis == &axis_entity.id
+    )));
+    assert!(symmetry_constraints.iter().any(|constraint| matches!(
+        constraint.definition,
+        SpatialSketchConstraintDefinition::Native {
+            parameter: Some(_),
+            ..
+        }
+    )));
+
     let mut zero_parameter = parameter;
     zero_parameter.evaluated_value = 0.0;
     let mut duplicate_pair = pair.clone();

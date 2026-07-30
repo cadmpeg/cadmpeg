@@ -764,6 +764,11 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
                 vec![first.clone(), second.clone()]
             }
+            SpatialConstraint::Symmetric {
+                first,
+                second,
+                axis,
+            } => vec![first.clone(), second.clone(), axis.clone()],
             SpatialConstraint::Midpoint { point, entity } => {
                 vec![point.clone(), entity.clone()]
             }
@@ -813,6 +818,32 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     &constraint.id.0,
                     "spatial coincidence requires two points",
                 );
+            }
+            SpatialConstraint::Symmetric {
+                first,
+                second,
+                axis,
+            } => {
+                let solved = match (
+                    spatial_geometry.get(first),
+                    spatial_geometry.get(second),
+                    spatial_geometry.get(axis),
+                ) {
+                    (
+                        Some(SpatialSketchGeometry::Point { position: first }),
+                        Some(SpatialSketchGeometry::Point { position: second }),
+                        Some(SpatialSketchGeometry::Line { start, end }),
+                    ) => crate::eval::spatial_points_are_reflections(*first, *second, *start, *end),
+                    _ => false,
+                };
+                if !solved {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial symmetry requires two points reflected across a nondegenerate line",
+                    );
+                }
             }
             SpatialConstraint::Midpoint { point, entity }
                 if !matches!(

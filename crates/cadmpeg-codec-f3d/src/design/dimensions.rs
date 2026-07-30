@@ -1068,12 +1068,15 @@ pub fn project_spatial_dimension_constraints(
     spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SpatialSketchConstraint, SpatialSketchConstraintDefinition,
+        SketchConstraintDefinition, SketchNativeOperand, SpatialSketchConstraint,
+        SpatialSketchConstraintDefinition,
     };
 
     let &DimensionConstraintInputs {
         placements,
         parameters,
+        owners,
+        companions,
         points,
         curves,
         ..
@@ -1087,6 +1090,16 @@ pub fn project_spatial_dimension_constraints(
                 .iter()
                 .any(|sketch| sketch.id == spatial_id)
                 .then(|| (neutral_sketch_id(placement), spatial_id))
+        })
+        .collect::<HashMap<_, _>>();
+    let spatial_by_scope = placements
+        .iter()
+        .filter_map(|placement| {
+            let scope = native_stream(&placement.id)?;
+            let scope_record_index = placement.scope_record_index?;
+            spatial_by_planar_id
+                .get(&neutral_sketch_id(placement))
+                .map(|sketch| ((scope, scope_record_index), sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
     let native_record_indices = points
@@ -1122,10 +1135,16 @@ pub fn project_spatial_dimension_constraints(
             ))
         })
         .collect::<HashMap<_, _>>();
-    project_all_dimension_constraints(inputs)
+    let mut source_parameters = HashSet::new();
+    let mut projected = project_all_dimension_constraints(inputs)
         .into_iter()
         .filter_map(|constraint| {
             let sketch = spatial_by_planar_id.get(&constraint.sketch)?.clone();
+            source_parameters.extend(
+                constraint_parameters(&constraint.definition)
+                    .into_iter()
+                    .cloned(),
+            );
             let definition = match constraint.definition {
                 SketchConstraintDefinition::Native {
                     native_kind,
@@ -1134,12 +1153,24 @@ pub fn project_spatial_dimension_constraints(
                     operands,
                     ..
                 } => {
+                    let symmetry = spatial_reflection_symmetry(
+                        &native_kind,
+                        native_state,
+                        &operands,
+                        constraint.native_ref.as_deref(),
+                        &sketch,
+                        &spatial_by_record,
+                    );
                     let distance = parameter.as_ref().and_then(|parameter| {
                         let expected = *parameter_lengths.get(parameter)?;
                         let scope = native_stream(constraint.native_ref.as_deref()?)?;
                         let measured = operands
                             .iter()
-                            .filter(|operand| operand.object_index != 0)
+                            .filter(|operand| {
+                                operand.native_field.as_deref().is_some_and(|field| {
+                                    field == "locus" || field.ends_with("_locus")
+                                }) && operand.object_index != 0
+                            })
                             .map(|operand| {
                                 spatial_by_record
                                     .get(&(scope, operand.object_index))
@@ -1180,12 +1211,14 @@ pub fn project_spatial_dimension_constraints(
                             None
                         }
                     });
-                    distance.unwrap_or(SpatialSketchConstraintDefinition::Native {
-                        native_kind,
-                        native_state,
-                        parameter,
-                        operands,
-                    })
+                    symmetry
+                        .or(distance)
+                        .unwrap_or(SpatialSketchConstraintDefinition::Native {
+                            native_kind,
+                            native_state,
+                            parameter,
+                            operands,
+                        })
                 }
                 _ => return None,
             };
@@ -1196,7 +1229,152 @@ pub fn project_spatial_dimension_constraints(
                 native_ref: constraint.native_ref,
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    let retained_parameters = projected
+        .iter()
+        .filter_map(|constraint| match &constraint.definition {
+            SpatialSketchConstraintDefinition::Native {
+                parameter: Some(parameter),
+                ..
+            }
+            | SpatialSketchConstraintDefinition::PointDistance { parameter, .. }
+            | SpatialSketchConstraintDefinition::ParallelLineDistance { parameter, .. } => {
+                Some(parameter)
+            }
+            _ => None,
+        })
+        .cloned()
+        .collect::<HashSet<_>>();
+    let parameters_by_id = parameters
+        .iter()
+        .map(|parameter| (neutral_parameter_id(parameter), parameter))
+        .collect::<HashMap<_, _>>();
+    let owners_by_record = owners
+        .iter()
+        .filter_map(|owner| Some(((native_stream(&owner.id)?, owner.record_index), owner)))
+        .collect::<HashMap<_, _>>();
+    let companions_by_record = companions
+        .iter()
+        .filter_map(|companion| {
+            Some((
+                (native_stream(&companion.id)?, companion.record_index),
+                companion,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut missing = source_parameters
+        .difference(&retained_parameters)
+        .cloned()
+        .collect::<Vec<_>>();
+    missing.sort_by(|first, second| first.0.cmp(&second.0));
+    projected.extend(missing.into_iter().filter_map(|parameter_id| {
+        let parameter = parameters_by_id.get(&parameter_id)?;
+        let scope = native_stream(&parameter.id)?;
+        let owner = owners_by_record.get(&(scope, parameter.owner_record_index?))?;
+        let companion = companions_by_record.get(&(scope, owner.companion_record_index))?;
+        let sketch = spatial_by_scope
+            .get(&(scope, owner.scope_record_index))?
+            .clone();
+        Some(SpatialSketchConstraint {
+            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+            sketch,
+            definition: SpatialSketchConstraintDefinition::Native {
+                native_kind: parameter.source_kind.clone(),
+                native_state: None,
+                parameter: Some(parameter_id),
+                operands: vec![SketchNativeOperand {
+                    native_kind: "dimension_companion".into(),
+                    native_field: Some(
+                        if companion.payload_byte_length == 0 {
+                            "companion"
+                        } else {
+                            "companion_payload"
+                        }
+                        .into(),
+                    ),
+                    native_role: None,
+                    object_index: companion.record_index,
+                    native_ref: Some(companion.id.clone()),
+                }],
+            },
+            native_ref: Some(companion.id.clone()),
+        })
+    }));
+    projected
+}
+
+fn spatial_reflection_symmetry(
+    native_kind: &str,
+    native_state: Option<u64>,
+    operands: &[cadmpeg_ir::sketches::SketchNativeOperand],
+    native_ref: Option<&str>,
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
+    spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
+    };
+
+    if !native_kind.starts_with("Linear Dimension") || native_state != Some(0) {
+        return None;
+    }
+    let mut owners = operands
+        .iter()
+        .filter(|operand| operand.native_field.as_deref() == Some("owner"));
+    let owner = owners.next()?;
+    if owners.next().is_some() {
+        return None;
+    }
+    if owner.native_role != Some(0x400) {
+        return None;
+    }
+    let scope = native_stream(native_ref?)?;
+    let entities = operands
+        .iter()
+        .filter(|operand| operand.native_field.as_deref() == Some("locus"))
+        .map(|operand| {
+            spatial_by_record
+                .get(&(scope, operand.object_index))
+                .copied()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second, third] = entities.as_slice() else {
+        return None;
+    };
+    if entities.iter().any(|entity| &entity.sketch != sketch)
+        || first.id == second.id
+        || first.id == third.id
+        || second.id == third.id
+    {
+        return None;
+    }
+    let mut points = Vec::with_capacity(2);
+    let mut axis = None;
+    for entity in entities {
+        match entity.geometry {
+            SpatialSketchGeometry::Point { position } => points.push((entity, position)),
+            SpatialSketchGeometry::Line { start, end } if axis.is_none() => {
+                axis = Some((entity, start, end));
+            }
+            _ => return None,
+        }
+    }
+    let [(first, first_position), (second, second_position)] = points.as_slice() else {
+        return None;
+    };
+    let (axis, axis_start, axis_end) = axis?;
+    cadmpeg_ir::eval::spatial_points_are_reflections(
+        *first_position,
+        *second_position,
+        axis_start,
+        axis_end,
+    )
+    .then(|| Definition::Symmetric {
+        first: first.id.clone(),
+        second: second.id.clone(),
+        axis: axis.id.clone(),
+    })
 }
 
 pub(crate) fn spatial_point_distance_matches(
