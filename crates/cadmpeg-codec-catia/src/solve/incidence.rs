@@ -490,6 +490,89 @@ struct AppliedFaceConfiguration {
     coordinate_domains: Option<MeshCoordinateRootDomains>,
 }
 
+struct FaceConfigurationDomain {
+    width: usize,
+    face: usize,
+    configurations: MeshFaceEndpointConfigurations,
+}
+
+fn face_configurations_compatible(
+    left: &[(usize, [usize; 2])],
+    right: &[(usize, [usize; 2])],
+) -> bool {
+    let (mut left_index, mut right_index) = (0, 0);
+    while left_index < left.len() && right_index < right.len() {
+        match left[left_index].0.cmp(&right[right_index].0) {
+            std::cmp::Ordering::Less => left_index += 1,
+            std::cmp::Ordering::Greater => right_index += 1,
+            std::cmp::Ordering::Equal => {
+                if left[left_index].1 != right[right_index].1 {
+                    return false;
+                }
+                left_index += 1;
+                right_index += 1;
+            }
+        }
+    }
+    true
+}
+
+pub(crate) fn prune_face_configuration_support(
+    domains: &mut [MeshFaceEndpointConfigurations],
+    budget: &MeshConstraintBudget,
+) -> bool {
+    let edge_sets = domains
+        .iter()
+        .map(|domain| {
+            domain
+                .iter()
+                .flatten()
+                .map(|(edge, _)| *edge)
+                .collect::<HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    loop {
+        let mut changed = false;
+        for left in 0..domains.len() {
+            for right in 0..domains.len() {
+                if left == right || edge_sets[left].is_disjoint(&edge_sets[right]) {
+                    continue;
+                }
+                let mut keep = Vec::with_capacity(domains[left].len());
+                for candidate in &domains[left] {
+                    let mut supported = false;
+                    for other in &domains[right] {
+                        let work = candidate.len().saturating_add(other.len()).max(1);
+                        if !budget.charge_by(work) {
+                            return true;
+                        }
+                        if face_configurations_compatible(candidate, other) {
+                            supported = true;
+                            break;
+                        }
+                    }
+                    keep.push(supported);
+                }
+                if keep.iter().all(|supported| !supported) {
+                    return false;
+                }
+                if keep.iter().any(|supported| !supported) {
+                    let mut index = 0;
+                    domains[left].retain(|_| {
+                        let retain = keep[index];
+                        index += 1;
+                        retain
+                    });
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            return true;
+        }
+    }
+}
+
 impl Iterator for IncidenceCandidatePairs {
     type Item = [usize; 2];
 
@@ -1361,7 +1444,7 @@ impl IncidenceComponentSearch<'_, '_> {
             })
             .collect::<Vec<_>>();
         faces.sort_by_key(|(width, face, _)| (*width, *face));
-        let mut best = None;
+        let mut domains = Vec::new();
         for (width, face, assignments) in faces {
             if !self.boundary_propagation_budget.charge() {
                 break;
@@ -1395,15 +1478,42 @@ impl IncidenceComponentSearch<'_, '_> {
             if projected.iter().all(Vec::is_empty) {
                 continue;
             }
-            let rank = (projected.len(), width, face);
-            if best.as_ref().is_none_or(|(best_rank, _)| rank < *best_rank) {
-                best = Some((rank, projected));
-                if rank.0 == 1 {
-                    break;
-                }
+            let forced = projected.len() == 1;
+            domains.push(FaceConfigurationDomain {
+                width,
+                face,
+                configurations: projected,
+            });
+            if forced {
+                break;
             }
         }
-        best.map(|(_, projected)| projected)
+        if domains.is_empty() {
+            return None;
+        }
+        if domains
+            .iter()
+            .all(|domain| domain.configurations.len() != 1)
+        {
+            let mut configuration_domains = domains
+                .iter_mut()
+                .map(|domain| std::mem::take(&mut domain.configurations))
+                .collect::<Vec<_>>();
+            let viable = prune_face_configuration_support(
+                &mut configuration_domains,
+                self.boundary_propagation_budget,
+            );
+            for (domain, configurations) in domains.iter_mut().zip(configuration_domains) {
+                domain.configurations = configurations;
+            }
+            if !viable {
+                return Some(Vec::new());
+            }
+        }
+        domains
+            .into_iter()
+            .min_by_key(|domain| (domain.configurations.len(), domain.width, domain.face))
+            .map(|domain| domain.configurations)
     }
 
     fn search_face_configurations(

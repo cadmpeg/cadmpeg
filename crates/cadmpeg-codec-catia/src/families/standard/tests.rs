@@ -17,7 +17,10 @@ use crate::families::standard::topology::{
     complete_duplicate_face_slots, reconstruct_incidence, solve_boundary_orientation_constraints,
     Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, StandardTopology, TrimRecord,
 };
-use crate::solve::incidence::{compact_boundary_domain_viable, reconstruct_incidence_candidates};
+use crate::solve::incidence::{
+    compact_boundary_domain_viable, prune_face_configuration_support,
+    reconstruct_incidence_candidates,
+};
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::mesh_quotient::{
     canonical_edge_class_assignment, canonicalize_mesh_vertex_labels,
@@ -1072,6 +1075,32 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
         search.face_configuration_options(),
         Some(vec![vec![(1, [10, 11]), (2, [10, 11])]])
     );
+}
+
+#[test]
+fn incidence_face_configuration_support_retains_shared_edge_correlations() {
+    let correlated = vec![
+        vec![(0, [0, 1]), (1, [2, 3])],
+        vec![(0, [4, 5]), (1, [6, 7])],
+    ];
+    let mut domains = vec![correlated.clone(), vec![vec![(0, [0, 1]), (1, [2, 3])]]];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_face_configuration_support(&mut domains, &budget));
+    assert_eq!(domains[0], vec![correlated[0].clone()]);
+
+    let mut incompatible = vec![correlated, vec![vec![(0, [0, 1]), (1, [6, 7])]]];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    assert!(!prune_face_configuration_support(
+        &mut incompatible,
+        &budget
+    ));
+
+    let preserved = incompatible.clone();
+    let budget = MeshConstraintBudget::new(0);
+    assert!(prune_face_configuration_support(&mut incompatible, &budget));
+    assert_eq!(incompatible, preserved);
+    assert!(budget.exhausted.get());
 }
 
 #[test]
