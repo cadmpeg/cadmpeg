@@ -7611,10 +7611,50 @@ fn reverse_pcurve_over_range(
             parameter_range: *parameter_range,
             basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
         }),
+        PcurveGeometry::Offset { distance, basis } => Some(PcurveGeometry::Offset {
+            distance: -*distance,
+            basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+        }),
+        PcurveGeometry::Ellipse {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } if reflection == 0.0 => Some(PcurveGeometry::Ellipse {
+            center: *center,
+            x_axis: *x_axis,
+            y_axis: Point2::new(-y_axis.u, -y_axis.v),
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        }),
+        PcurveGeometry::Parabola {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        } if reflection == 0.0 => Some(PcurveGeometry::Parabola {
+            vertex: *vertex,
+            x_axis: *x_axis,
+            y_axis: Point2::new(-y_axis.u, -y_axis.v),
+            focal_distance: *focal_distance,
+        }),
+        PcurveGeometry::Hyperbola {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } if reflection == 0.0 => Some(PcurveGeometry::Hyperbola {
+            center: *center,
+            x_axis: *x_axis,
+            y_axis: Point2::new(-y_axis.u, -y_axis.v),
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        }),
         PcurveGeometry::Ellipse { .. }
         | PcurveGeometry::Parabola { .. }
-        | PcurveGeometry::Hyperbola { .. }
-        | PcurveGeometry::Offset { .. } => None,
+        | PcurveGeometry::Hyperbola { .. } => None,
     }
 }
 
@@ -11163,6 +11203,63 @@ mod tests {
         assert_eq!(ir.model.edges[0].start, vertices[0]);
         assert_eq!(ir.model.edges[0].end, vertices[1]);
 
+        let range = [-1.5, 1.5];
+        let canonical = PcurveGeometry::Ellipse {
+            center: Point2::new(5.0, 0.0),
+            x_axis: Point2::new(1.0, 0.0),
+            y_axis: Point2::new(0.0, 1.0),
+            major_radius: 4.0,
+            minor_radius: 2.0,
+        };
+        let endpoints = range.map(|parameter| {
+            let uv = cadmpeg_ir::eval::pcurve_uv(&canonical, parameter).unwrap();
+            Point3::new(uv.u, uv.v, 0.0)
+        });
+        for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
+            point.position = position;
+        }
+        let ProceduralCurveDefinition::TolerantIntersection {
+            endpoints: stored_endpoints,
+            parameterization,
+            ..
+        } = &mut ir.model.procedural_curves[0].definition
+        else {
+            unreachable!();
+        };
+        *stored_endpoints = endpoints;
+        *parameterization = None;
+        ir.model.edges[0].param_range = None;
+        for coedge in &mut ir.model.coedges {
+            coedge.pcurves[0].parameter_range = Some(range);
+        }
+        for pcurve in &mut ir.model.pcurves {
+            pcurve.parameter_range = Some(range);
+            pcurve.geometry = PcurveGeometry::Ellipse {
+                center: Point2::new(5.0, 0.0),
+                x_axis: Point2::new(1.0, 0.0),
+                y_axis: Point2::new(0.0, -1.0),
+                major_radius: 4.0,
+                minor_radius: 2.0,
+            };
+        }
+        super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+            &mut ir,
+            &serialized,
+            &mut AnnotationBuilder::new(),
+        );
+        let ProceduralCurveDefinition::TolerantIntersection {
+            parameterization: Some(parameterization),
+            ..
+        } = &ir.model.procedural_curves[0].definition
+        else {
+            panic!("reversed symmetric conic branches transferred");
+        };
+        assert_eq!(parameterization.parameter_range, range);
+        assert!(parameterization.pcurves.iter().all(|pcurve| matches!(
+            pcurve,
+            PcurveGeometry::Ellipse { y_axis, .. } if y_axis.v == 1.0
+        )));
+
         let ProceduralCurveDefinition::TolerantIntersection {
             tolerance,
             parameterization,
@@ -11210,6 +11307,74 @@ mod tests {
             let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
             assert!((actual.u - expected.u).abs() < 1.0e-12);
             assert!((actual.v - expected.v).abs() < 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
+        let carriers = [
+            PcurveGeometry::Ellipse {
+                center: Point2::new(2.0, 3.0),
+                x_axis: Point2::new(1.0, 0.0),
+                y_axis: Point2::new(0.0, 1.0),
+                major_radius: 4.0,
+                minor_radius: 2.0,
+            },
+            PcurveGeometry::Parabola {
+                vertex: Point2::new(2.0, 3.0),
+                x_axis: Point2::new(1.0, 0.0),
+                y_axis: Point2::new(0.0, 1.0),
+                focal_distance: 0.75,
+            },
+            PcurveGeometry::Hyperbola {
+                center: Point2::new(2.0, 3.0),
+                x_axis: Point2::new(1.0, 0.0),
+                y_axis: Point2::new(0.0, 1.0),
+                major_radius: 4.0,
+                minor_radius: 2.0,
+            },
+        ];
+        let range = [-1.5, 1.5];
+        for carrier in carriers {
+            let reversed = super::reverse_pcurve_over_range(&carrier, range)
+                .expect("symmetric analytic pcurve is exactly reversible");
+            for parameter in [-1.5, -0.75, 0.0, 0.75, 1.5] {
+                let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, -parameter).unwrap();
+                let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+                assert!((actual.u - expected.u).abs() < 1e-12);
+                assert!((actual.v - expected.v).abs() < 1e-12);
+            }
+            assert!(super::reverse_pcurve_over_range(&carrier, [0.0, 1.5]).is_none());
+        }
+    }
+
+    #[test]
+    fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
+        let pcurve = PcurveGeometry::Offset {
+            distance: 2.5,
+            basis: Box::new(PcurveGeometry::Line {
+                origin: Point2::new(1.0, 3.0),
+                direction: Point2::new(2.0, -1.0),
+            }),
+        };
+        let PcurveGeometry::Offset { distance, basis } =
+            super::reverse_pcurve_over_range(&pcurve, [2.0, 6.0])
+                .expect("offset construction is exactly reversible")
+        else {
+            panic!("reversed offset");
+        };
+        assert_eq!(distance, -2.5);
+        for parameter in [2.0, 3.0, 5.0, 6.0] {
+            let expected = cadmpeg_ir::eval::pcurve_uv(
+                match &pcurve {
+                    PcurveGeometry::Offset { basis, .. } => basis,
+                    _ => unreachable!(),
+                },
+                8.0 - parameter,
+            )
+            .unwrap();
+            let actual = cadmpeg_ir::eval::pcurve_uv(&basis, parameter).unwrap();
+            assert_eq!(actual, expected);
         }
     }
 
