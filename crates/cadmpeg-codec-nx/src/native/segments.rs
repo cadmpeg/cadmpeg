@@ -185,6 +185,10 @@ pub fn terminal_feature_body_indices(
         }
         last_writers.insert(canonical(reference.body_object_index), Some(position));
     }
+    for operation in booleans {
+        let position = *positions.get(operation.operation_label.as_str())?;
+        last_writers.insert(canonical(operation.target_object_index), Some(position));
+    }
     let mut consumed = BTreeSet::new();
     for operation in booleans {
         let position = *positions.get(operation.operation_label.as_str())?;
@@ -682,6 +686,65 @@ mod tests {
         assert_eq!(
             super::terminal_feature_body_indices(&labels, &references, &[], &booleans, &[], &[]),
             Some([10].into_iter().collect())
+        );
+    }
+
+    #[test]
+    fn later_boolean_target_write_supersedes_earlier_consumption() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{
+            FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
+        };
+
+        let label = |ordinal: u32| FeatureOperationLabel {
+            id: format!("operation#{ordinal}"),
+            section_link: "history#0".to_string(),
+            ordinal,
+            value: "UNITE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [label(0), label(1)];
+        let boolean = |ordinal: usize, target: u32, tools: Vec<u32>| FeatureBooleanOperation {
+            id: format!("boolean#{ordinal}"),
+            operation_label: labels[ordinal].id.clone(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: target,
+            raw_target_object_index: vec![target as u8],
+            target_source_offset: ordinal as u64,
+            tool_object_indices: tools,
+            raw_tool_object_indices: Vec::new(),
+            tool_source_offsets: Vec::new(),
+            source_offset: ordinal as u64,
+        };
+        let booleans = [boolean(0, 20, vec![10]), boolean(1, 10, vec![20])];
+        let bindings = [
+            SegmentBodyBinding {
+                id: "binding#0".to_string(),
+                stream_link: "stream#0".to_string(),
+                stream_ordinal: 0,
+                stream_kind: "partition".to_string(),
+                body_object_index: 10,
+                body_alias_object_index: 11,
+                stream_role: 19,
+                source_offset: 0,
+            },
+            SegmentBodyBinding {
+                id: "binding#1".to_string(),
+                stream_link: "stream#1".to_string(),
+                stream_ordinal: 1,
+                stream_kind: "partition".to_string(),
+                body_object_index: 20,
+                body_alias_object_index: 21,
+                stream_role: 19,
+                source_offset: 1,
+            },
+        ];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &[], &[], &booleans, &[], &bindings),
+            Some([10, 11].into_iter().collect())
         );
     }
 
