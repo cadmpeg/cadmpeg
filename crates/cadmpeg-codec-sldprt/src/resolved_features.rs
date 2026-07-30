@@ -46088,6 +46088,8 @@ mod profile_join_tests {
         let definition = SketchConstraintDefinition::Native {
             native_kind: "sldprt:marker-relation:34".into(),
             native_state: None,
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
             entities: vec![entity_id.clone()],
             parameter: None,
             operands: Vec::new(),
@@ -46128,6 +46130,8 @@ mod profile_join_tests {
         let definition = |entities| SketchConstraintDefinition::Native {
             native_kind: "sldprt:marker-relation:4".into(),
             native_state: None,
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
             entities,
             parameter: None,
             operands: Vec::new(),
@@ -46174,6 +46178,8 @@ mod profile_join_tests {
             &SketchConstraintDefinition::Native {
                 native_kind: "sldprt:marker-relation:4".into(),
                 native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
                 entities: Vec::new(),
                 parameter: None,
                 operands: vec![
