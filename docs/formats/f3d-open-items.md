@@ -26,14 +26,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Some records do not include a cache. For those records, the field layout is the only source of the face shape. We must know the layout to read them and to write them. The decoder keeps these records as opaque bytes now.
 
-### GC-02. Standalone `offset` and `sur-sur-int` layout
-
-**Question.** What fields does a standalone `offset` record have? What fields does a standalone `sur-sur-int` record have?
-
-**Known.** The name `offset` is related to the `off_spl_sur` construction. The name `sur-sur-int` is related to the surface-to-surface intersection graph. Other records store that graph.
-
-**Need.** We must know the field boundaries to read these two record names directly.
-
 ### GC-03. Second boolean of a cache-first `par_int_cur`
 
 **Question.** What does the second boolean flag at the end of a cache-first `par_int_cur` record control?
@@ -42,21 +34,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We keep this flag without a change. To make this record from a neutral model, we must know which value to write.
 
-### GC-04. Single parameter curve in a cache-first `par_int_cur`
-
-**Question.** Can a cache-first `par_int_cur` record store only one parameter-curve slot? If it can, what controls this?
-
-**Known.** `f3d.md` §7.3 "**Surface curves**" gives two ordered parameter-curve slots. An absent curve uses the `nullbs` sentinel in its slot.
-
-**Need.** A record with one slot moves all fields after it. The decoder then reads the record incorrectly.
-
-**Conflict.** `f3d.md` §7.3 `int_int_cur` and `f3d.md` §7.3 "**Surface curves**" give two parameter curves with no option. The decoder reads exactly two. This item says that records with one curve exist. Both statements cannot be correct. Decide which one is correct.
-
 ### GC-05. Second boolean of the `off_spl_sur` sense pair
 
 **Question.** What does each boolean of the revision-gated `off_spl_sur` sense pair control? Which of the two mixed states gives which offset side?
 
-**Known.** `f3d.md` §7.3 `off_spl_sur` gives the pair a joint role. The pair holds record-level progenitor sense state. It is not a per-axis decomposition. The pair takes the states false/false, true/false, and false/true. A false/false pair gives the offset side in the sign of the stored distance.
+**Known.** `f3d.md` §7.3 `off_spl_sur` gives the pair a joint role. The pair holds record-level progenitor sense state. It is not a per-axis decomposition. The pair takes the states false/false, true/false, false/true, and true/true. A true/true pair occurs with both signs of the stored distance. A false/false pair gives the offset side in the sign of the stored distance.
 
 **Need.** We must know the individual roles to set the offset side correctly when we write this record.
 
@@ -66,7 +48,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the two booleans of the `off_spl_sur` ASM extension prefix control?
 
-**Known.** `f3d.md` §7.3 `off_spl_sur` gives the position of the prefix. The prefix comes after the sense pair and before the shared revision-gated surface tail.
+**Known.** `f3d.md` §7.3 `off_spl_sur` gives the position of the prefix. The prefix comes after the sense pair and before the shared revision-gated surface tail. The prefix takes the state false/false. No other state has a known occurrence.
 
 **Need.** We must know which value to write for each boolean when we make this record.
 
@@ -82,49 +64,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the enum at the start of the shared revision-gated surface tail select? What are its nonzero values? What layout does each nonzero value select?
 
-**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the value zero. Zero selects the full solved-cache tail. A nonzero value has no known layout. The decoder keeps a record with a nonzero value as opaque bytes.
+**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the value zero. Zero selects the full solved-cache tail. A nonzero value has no known layout and no known occurrence. The decoder keeps a record with a nonzero value as opaque bytes.
 
 **Need.** We must know the nonzero layouts to read those records and to build a neutral model from them.
-
-### GC-09. Law operators `MIN`, `MAX`, and `STEP`
-
-**Question.** Does the framed law-expression layout accept the operators `MIN`, `MAX`, and `STEP`? If it accepts them, how many operands does each operator take? Where does each operand stop?
-
-**Known.** These three operators have a variable number of operands. `STEP` is present in stored law formula strings. We keep those strings as text. They have no framed node, no child count, and no delimiter. `MIN` and `MAX` have no known framed form. `f3d.md` §7.3 "**Law formulas**" gives the fixed operand count of every other framed operator.
-
-**Need.** The net, skin, and sweep payloads use framed law expressions. We must know the operand boundary to write a framed expression that uses these three operators.
-
-### GC-10. Variable-blend side extension integer
-
-**Question.** What does the integer between the secondary pcurve and the tertiary pcurve of a variable-blend support side control?
-
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the position and the type of the integer. `f3d.md` §7.6 "`definition_index` is the subtype" gives its presence rule. A modern side has this integer and a tertiary pcurve. A legacy side stops after the secondary pcurve. The value does not change with the presence of the secondary pcurve.
-
-**Need.** We keep this integer without a change. To make a variable-blend side from a neutral model, we must know which value to write.
-
-### GC-11. U and V order of unextended intervals
-
-**Question.** Which of the two unextended parameter intervals gives the U direction? Which gives the V direction? This applies to a revision-gated `exact_spl_sur` and to a revision-gated `t_spl_sur`.
-
-**Known.** `f3d.md` §7.3 `exact_spl_sur` gives two intervals in serialized order. Each interval gives the unextended range in one direction. The specification does not say which direction comes first.
-
-**Need.** The neutral model stores a U range and a V range. A wrong order gives the surface a wrong parameter range.
-
-**Conflict.** A comment in `decode_exact_spl_sur` in `crates/cadmpeg-codec-f3d/src/nurbs/proc_surface.rs` says that the first interval is U and the second is V. The comment gives no source. Either prove the order and put it in `f3d.md`, or remove the claim from the comment.
-
-### GC-12. Closure direction of `loft_spl_sur` wrap ranges
-
-**Question.** Which of the two `loft_spl_sur` wrap-range intervals gives which closure direction of the solved surface?
-
-**Known.** `f3d.md` §7.3 `loft_spl_sur` gives the two intervals in serialized order. A non-empty interval shows that the solved surface is closed in one direction. The interval order does not agree with a rule that makes the first interval U.
-
-**Need.** The neutral model records closure per direction. A wrong order closes the wrong direction.
 
 ### GC-13. `cl_loft_spl_sur` tail kind values
 
 **Question.** What are the nonzero values of the revision-gated `cl_loft_spl_sur` tail-kind integer? What layout does each nonzero value select?
 
-**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload. The decoder rejects every nonzero kind.
+**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload. The revision-gated form takes tail kind `0`; no nonzero kind has a known occurrence in that form. The decoder rejects every nonzero kind.
 
 **Need.** We cannot read a record with a nonzero kind.
 
@@ -132,19 +80,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What controls the presence of the trailing BS3 curve in the kind-zero `cl_loft_spl_sur` payload?
 
-**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload with an optional trailing BS3 curve. `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the bool-gated encoding for the optional parameter values in the same payload. The decoder finds the trailing curve with a look-ahead for the subtype-close byte.
+**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload with an optional trailing BS3 curve. `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the bool-gated encoding for the optional parameter values in the same payload. The trailing curve is present exactly when the two optional parameter values are present in their bool-gated encoding; the present pair can be the descending no-range sentinel, so the rule couples to the encoding and not to the numeric values. The decoder finds the trailing curve with a look-ahead for the subtype-close byte and keeps that look-ahead until the rule is confirmed more widely.
 
 **Need.** The look-ahead rule is not in the specification. We must state the true presence rule to write this payload correctly.
-
-### GC-15. First integer of a legacy variable-blend record
-
-**Question.** Is there an older `var_blend_spl_sur` or `srf_srf_v_bl_spl_sur` layout in which the first integer is a subtype definition-table index and not the serializer revision?
-
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` says that the record starts with a serializer-revision integer. `f3d.md` §7.6 `rb_blend_spl_sur` gives the related record a `LONG definition_index` in the same position.
-
-**Need.** A wrong reading of the first integer moves every field after it.
-
-**Conflict.** `f3d.md` §7.3 `var_blend_spl_sur` states the serializer-revision integer as a fact for all layouts. This item questions that statement for older layouts. Either limit the specification sentence to the revision era, or remove this item.
 
 ### GC-16. Token tags of a revision-gated `VBL_SURF` `deg` boundary
 
@@ -156,11 +94,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-17. Variable-blend tail integer values
 
-**Question.** What are the values of the approximation-current integer other than `1`? What are the values of the count integer other than `1`? What fields does a count value more than `1` select?
+**Question.** What does the count value `-1` select? Are there count values more than `1`, and what fields does such a value select? What are the values of the approximation-current integer other than `1`?
 
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the position and the type of both integers. The count integer is not negative.
+**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the position and the type of both integers. The count integer is signed and takes the values `-1` and `1`. A count value more than `1` has no known occurrence.
 
-**Need.** The decoder reads no counted payload now. A count value more than `1` adds fields that we do not read.
+**Need.** The decoder reads no counted payload now. We keep the count value without a change, and we must know which value to write from a neutral model.
 
 ### GC-18. Blend-value selector values
 
@@ -179,25 +117,57 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the first two tolerance evaluations of a `tvertex` record hold? What controls the set state of each one?
 
-**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots. The last slot is always set and is the vertex tolerance. A `-1` slot shows an unset evaluation. Any leading slot can be unset. When slots two and three are both set, they do not decrease in slot order.
+**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots. A set last slot is the vertex tolerance. A `-1` slot shows an unset evaluation. Any slot can be unset, including all three. When slots two and three are both set, they do not decrease in slot order. A set leading slot is not equal to an incident tolerant-edge tolerance, and not equal to the largest or the smallest incident tolerant-edge tolerance.
 
 **Need.** We keep the two leading slots without a change. To write them from a neutral model, we must know what they hold.
 
 ### GC-20. Trailing LONG of `tedge` and `tvertex`
 
-**Question.** What does the `tedge` trailing LONG (`chunk[13]`) control? What does the `tvertex` trailing LONG (`chunk[9]`) control? Do the two fields use the same version gate?
+**Question.** What do the values `0`, `1`, and `2` of the `tedge` trailing LONG (`chunk[13]`) and the `tvertex` trailing LONG (`chunk[9]`) mean?
 
-**Known.** `f3d.md` §6.2 "`tedge` carries this complete" and `f3d.md` §6.2 "**Tolerant vertex:**" give the position, the type, the values `0` and `1`, and the version gate of each field.
+**Known.** `f3d.md` §6.2 "`tedge` carries this complete" and `f3d.md` §6.2 "**Tolerant vertex:**" give the position, the type, the values `0`, `1`, and `2`, and the shared save-format gate of both fields. The value changes between records in one stream.
 
-**Need.** We keep both fields without a change. To write them from a neutral model, we must know which value to write. The decoder accepts each field when a `Long` token is present. No document proves that the two gates are the same.
+**Need.** We keep both fields without a change. To write them from a neutral model, we must know which value to write.
+
+### GC-21. Early-era revision-gated `loft_spl_sur` section grammar
+
+**Question.** What is the revision-gated `loft_spl_sur` section grammar in streams with save format versions 22300 through 22600?
+
+**Known.** `f3d.md` §7.3 `loft_spl_sur` gives the revision-gated section grammar. Records in save-format-23200 streams parse under that grammar. Records in save-format 22300 through 22600 streams do not: the first section fails to parse. The decoder retains those records verbatim and decodes no construction from them.
+
+**Need.** We cannot read the construction of a revision-gated loft in an earlier-era stream.
+
+### GC-22. Tags `0x33` and `0x34`
+
+**Question.** What payload does tag `0x33` carry? What payload does tag `0x34` carry?
+
+**Known.** `f3d.md` §4.1 gives the tag table. It has no entry for `0x33` or `0x34`. A stream that contains one of these tags cannot be framed past it.
+
+**Need.** We cannot read any record in a stream after the first occurrence of an unknown tag.
+
+### GC-23. Cache-first intcurve leading enum value `2`
+
+**Question.** What layout does the cache-first intcurve leading enum value `2` select?
+
+**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the leading enum. Zero selects the shared cache-first context. The value `2` occurs on `par_int_cur` records. The decoder retains a record with a nonzero value verbatim.
+
+**Need.** We cannot read a record with the value `2`.
+
+### GC-24. Law formula text operators `MTRAIL`, `DOMAIN`, and infix `O`
+
+**Question.** What are the arities and the semantics of the operators `MTRAIL` and `DOMAIN` and the infix operator `O` in stored law formula text?
+
+**Known.** `f3d.md` §7.3 "**Law formulas**" gives the framed operator set. Stored law formula text can name `MTRAIL`, `DOMAIN`, and an infix `O`, which that set does not define. We keep formula text as text.
+
+**Need.** We must know the semantics to evaluate or rebuild a law that uses these operators.
 
 ## 2. Container, header, and design records
 
-### DR-01. Header flag bits 1 and above
+### DR-01. Header flag bits 1 and 2
 
-**Question.** What do bits 1 and above of the header flags word mean?
+**Question.** What do bits 1 and 2 of the header flags word mean?
 
-**Known.** `f3d.md` §3 "The flags word's bit" gives bit 0. Bit 0 marks a history partition in both widths. We keep the other bits without a change.
+**Known.** `f3d.md` §3 "The flags word's bit" gives bit 0, bits 1 and 2, and bits 3 and above. Bit 0 marks a history partition in both widths. Bits 1 and 2 take stream-dependent values with no known meaning. Bits 3 and above are zero. We keep bits 1 and above without a change.
 
 **Need.** We must know the bit meanings to set them correctly in a new header.
 
@@ -208,14 +178,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `f3d.md` §8.1 "The ACT root-component link" gives the byte sequence. It holds `0x01`, `u32 3`, five zero bytes, `0x01`, and `u32 registry_flag`. The value of `registry_flag` is `0` or `1`.
 
 **Need.** We must know the meaning to write the correct value in a new record.
-
-### DR-04. Configuration rules without paired members
-
-**Question.** What is the activation layout of a configuration-rule object that has no paired string `when` member and `activate` member?
-
-**Known.** `f3d.md` §1.2 "Configuration tables and rules" gives the paired form. The `when` member holds the activation condition. The `activate` member holds the target variant name. `f3d.md` §1.2 "Each table variant has" keeps unrecognized members without a change.
-
-**Need.** We cannot build the activation condition of a rule that uses another form.
 
 ### DR-05. Recipe records of a non-locus parameter companion
 
@@ -282,11 +244,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-11. Eighth `CoilPrimitive` reference
 
-**Question.** What does the eighth ordered `CoilPrimitive` scope reference select?
+**Question.** Which entity does the member identity of the eighth ordered `CoilPrimitive` reference select? What is the layout of the larger ten-reference `CoilPrimitive` form?
 
-**Known.** `f3d.md` §8.1 "`CoilPrimitive` is the compact" gives seven of the eight references. The first two keep the placement construction. Five of the other six each control one compact parameter: `Diameter`, `SectionSize`, `TaperAngle`, `Revolutions`, and `Height`.
+**Known.** `f3d.md` §8.1 "`CoilPrimitive` is the compact" gives all eight references of the 427-byte form. The eighth is a counted selection group with one persistently identified member. It is not a compact parameter: the scope owns exactly five parameters, and the five parameter references name all of them. A larger `CoilPrimitive` form has a 573-byte frame and ten ordered references with no known layout.
 
-**Need.** We must know the eighth reference to keep the complete feature input set.
+**Need.** We must know the selected entity to keep the complete feature input set, and the ten-reference layout to read that form.
 
 ### DR-12. `EntityGenesis` placement field at offset 45
 
@@ -344,17 +306,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-18. Shifted Extrude extent pairs
 
-**Question.** What do the shifted Extrude extent-discriminator pairs other than `(1, 1)`, `(1, 2)`, `(2, 0)`, and `(3, 2)` mean?
+**Question.** What does the `(3, 0)` pair mean? What do the shifted extent-discriminator pairs other than the defined set mean? Which field determines the extent form when the pair and the stored parameter set disagree?
 
-**Known.** `f3d.md` §8.1 "The shifted Extrude prologue" gives those four pairs. They use the same meanings as the current prologue.
+**Known.** `f3d.md` §8.1 "The shifted Extrude prologue" gives the pairs `(1, 1)`, `(1, 2)`, `(2, 0)`, `(3, 2)`, `(1, 0)`, and `(2, 1)`. A `(3, 0)` pair occurs with two object-terminated travel directions. The pair does not alone determine the extent form.
 
-**Need.** We must know the other pairs to build the extent in a neutral model.
+**Need.** We must know the remaining pairs and the form rule to build the extent in a neutral model.
 
 ### DR-19. Construction-group fields
 
 **Question.** What do the construction-group scalar fields hold? What does the variant byte control? What do the group-role values outside the defined feature-specific sets mean?
 
-**Known.** `f3d.md` §8.1 "Every `Extrude`, `Extrusion`, `Fillet`," gives the positions and the value limits. The group holds a nonzero u32, a finite f64, a second copy of the u32, then `01`, a `variant` byte, and a zero byte. The value of `variant` is zero or one. The same paragraph defines the Extrude roles `0x08`, `0x41`, and `0x11` only.
+**Known.** `f3d.md` §8.1 "Every `Extrude`, `Extrusion`, `Fillet`," gives the positions and the value limits. The group holds a nonzero u32, a finite f64, a second copy of the u32, then `01`, a `variant` byte, and a zero byte. The value of `variant` is zero or one. The same paragraph defines the Extrude roles `0x08`, `0x41`, and `0x11` only. The f64 is not equal to a compact-parameter value in the same feature scope, with or without unit scaling. The u32 is below 256, has one value for all groups of one feature scope, and does not decrease with the record index. A `variant` value of one occurs only on a scope that has no history state.
 
 **Need.** We must know the field meanings to write a construction group from a neutral model. The role value `0x0000000500000000` in an Extrude scope is one case of an undefined role.
 
@@ -386,7 +348,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do the signed angle, the neutral-plane orientation, the explicit pull direction, and the outward-material convention of a `Draft` scope relate to each other?
 
-**Known.** `f3d.md` §8.1 "A `Draft` scope is" gives the field roles. The first scalar is the nonzero signed draft angle in radians. Another field selects the neutral plane.
+**Known.** `f3d.md` §8.1 "A `Draft` scope has" gives the field roles. The first scalar is the nonzero signed draft angle in radians. Another field selects the neutral plane.
 
 **Need.** The pull direction and the outward flag are redundant with the angle sign and the plane. We must know the relation to compute them. The neutral model leaves both empty now.
 
@@ -402,7 +364,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the six-byte fields after the Base Feature body suffixes and after the Base Feature record references hold?
 
-**Known.** `f3d.md` §8.1 "A `Base Feature` scope" states that every value has a six-byte trailing field. The decoder keeps each field as six opaque bytes.
+**Known.** `f3d.md` §8.1 "A `Base Feature` scope" states that every value has a six-byte trailing field. The fields are zero except one per-scope form that reads as `u16 0` and then `u32 1` across a scope's body-entity run. The decoder keeps each field as six opaque bytes.
 
 **Need.** We must know the meaning to write a Base Feature from a neutral model.
 
@@ -440,35 +402,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the `0x01`-tagged eight-byte value before the owning-design GUID hold? This value is in a `DcXRefPCIFeature` record.
 
-**Known.** `f3d.md` §1.4 "**Design-segment XRef records.**" gives the field order. The record holds marker-tagged integer fields, then this eight-byte value, then a `u32`-count NUL-terminated ASCII GUID. The GUID names the owning design object.
+**Known.** `f3d.md` §1.4 "**Design-segment XRef records.**" gives the field order. The record holds marker-tagged integer fields, then this eight-byte value, then a `u32`-count NUL-terminated ASCII GUID. The GUID names the owning design object. The value repeats across the records of one occurrence group, occurs with different owning GUIDs, and is not a fragment of a GUID.
 
 **Need.** We must know the meaning to write this record from a neutral model.
 
-### XR-04. Occurrence-placement tail u32 fields
+### XR-04. Occurrence-placement tail fields
 
-**Question.** What do the two u32 fields of the role-adjacent occurrence-placement tail hold?
+**Question.** Which record does the marked record reference that opens the role-adjacent occurrence-placement tail select? What does the per-entry u32 hold?
 
-**Known.** `f3d.md` §1.4 "**Placement.**" gives the layout. The tail starts after the occurrence-role string with `u8 0` and one u32. Then it has zero or more entries. Each entry holds `u8 1`, a u64 record reference, two zero bytes, and a u32. The decoder skips both u32 fields.
+**Known.** `f3d.md` §1.4 "**Placement.**" gives the layout. The tail starts after the occurrence-role string with `u8 0` and one marked record reference. Then it has zero or more entries. Each entry holds `u8 1`, a u64 record reference, two zero bytes, and a u32. A record with one or more entries has no known occurrence.
 
 **Need.** We must know the meanings to write a complete occurrence placement.
 
 ## 4. Material assets
-
-### MA-01. TextureURI leading u8
-
-**Question.** What does the u8 before a TextureURI path count hold?
-
-**Known.** `f3d.md` §8.2 "Boolean stores one u8." gives the layout. TextureURI stores one u8, then a little-endian u32 path count. The decoder discards the u8.
-
-**Need.** We must know the meaning to write a texture URI from a neutral model.
-
-### MA-02. `texture_RealWorldOffsetX` prelude
-
-**Question.** What does the u32 prelude before `texture_RealWorldOffsetX` hold?
-
-**Known.** `f3d.md` §8.2 "`UnifiedBitmapSchema` and `BumpMapSchema` records" states that one u32 prelude comes before this property. It gives no meaning.
-
-**Need.** We must know the meaning to write the texture offset from a neutral model.
 
 ### MA-03. Distance unit-tag values
 
