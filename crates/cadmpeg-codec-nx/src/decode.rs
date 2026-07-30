@@ -7476,7 +7476,7 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches(
         let ProceduralCurveDefinition::TolerantIntersection {
             supports,
             endpoints,
-            tolerance,
+            tolerance: _,
             parameterization: None,
         } = &procedural.definition
         else {
@@ -7564,7 +7564,7 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches(
             .fit_tolerance
             .zip(second.fit_tolerance)
             .map(|(first, second)| first + second)
-            .filter(|bound| bound.is_finite() && *bound <= *tolerance)
+            .filter(|bound| bound.is_finite() && *bound <= endpoint_tolerance)
             .map(|_| ())
         else {
             continue;
@@ -7578,7 +7578,7 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches(
                 &carriers[side].geometry,
                 first_range,
                 *endpoints,
-                *tolerance,
+                endpoint_tolerance,
             )
         });
         if let [Some(first), Some(second)] = pcurves {
@@ -11774,7 +11774,7 @@ mod tests {
             definition: ProceduralCurveDefinition::TolerantIntersection {
                 supports: surfaces.clone(),
                 endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-                tolerance: 0.03,
+                tolerance: 0.01,
                 parameterization: None,
             },
             cache_fit_tolerance: None,
@@ -12027,7 +12027,7 @@ mod tests {
         assert!(matches!(
             ir.model.procedural_curves[0].definition,
             ProceduralCurveDefinition::TolerantIntersection {
-                parameterization: None,
+                parameterization: Some(_),
                 ..
             }
         ));
