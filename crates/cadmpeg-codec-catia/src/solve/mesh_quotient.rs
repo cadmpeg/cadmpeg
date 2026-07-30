@@ -15,7 +15,8 @@ use crate::solve::incidence::{
 };
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, domains_have_distinct_matching,
-    repair_distinct_domain_matching_with_budget, MatchingEdgeConstraint,
+    repair_distinct_domain_matching_with_budget, retain_distinct_matching_supports,
+    MatchingEdgeConstraint,
 };
 #[cfg(test)]
 use crate::solve::missing_edge::standard_mesh_boundary_assignments;
@@ -315,6 +316,129 @@ impl MeshCoordinateRootDomains {
             .flatten()
     }
 
+    fn refine_domains(
+        &self,
+        mut domains: Vec<Vec<usize>>,
+        edge_candidates: &[Vec<[usize; 2]>],
+        initial_edges: &[usize],
+        mut propagate_all_different: bool,
+        budget: Option<&MeshConstraintBudget>,
+    ) -> Option<(Vec<Vec<usize>>, Vec<usize>)> {
+        let mut affected_edges = initial_edges.to_vec();
+        let mut coverage_matching = self.coverage_matching.clone();
+        let propagate_globally = propagate_all_different;
+        loop {
+            let domain_lengths = domains.iter().map(Vec::len).collect::<Vec<_>>();
+            if !enforce_edge_arc_consistency_from(
+                &mut domains,
+                &self.edges,
+                &self.root_edges,
+                edge_candidates,
+                &affected_edges,
+                budget,
+            ) {
+                return None;
+            }
+            let mut roots_by_point = vec![Vec::new(); self.point_count];
+            for (root, domain) in domains.iter().enumerate() {
+                for &point in domain {
+                    roots_by_point[point].push(root);
+                }
+            }
+            let repaired_matching = repair_distinct_domain_matching_with_budget(
+                roots_by_point.iter().map(Vec::as_slice),
+                domains.len(),
+                &coverage_matching,
+                budget,
+            )?;
+            propagate_all_different |= repaired_matching != coverage_matching;
+            coverage_matching = repaired_matching;
+            if !propagate_all_different {
+                return Some((domains, coverage_matching));
+            }
+            let changed_roots = domains
+                .iter()
+                .zip(domain_lengths)
+                .enumerate()
+                .filter_map(|(root, (domain, before))| (domain.len() != before).then_some(root))
+                .collect::<Vec<_>>();
+            let affected_points = if propagate_globally {
+                (0..self.point_count).collect::<Vec<_>>()
+            } else {
+                if changed_roots.is_empty() {
+                    return Some((domains, coverage_matching));
+                }
+                let mut reached_roots = vec![false; domains.len()];
+                let mut reached_points = vec![false; self.point_count];
+                let mut root_queue = VecDeque::from(changed_roots);
+                while let Some(root) = root_queue.pop_front() {
+                    if reached_roots[root] {
+                        continue;
+                    }
+                    reached_roots[root] = true;
+                    for &point in &domains[root] {
+                        if reached_points[point] {
+                            continue;
+                        }
+                        reached_points[point] = true;
+                        for &neighbor in &roots_by_point[point] {
+                            if !reached_roots[neighbor] {
+                                root_queue.push_back(neighbor);
+                            }
+                        }
+                    }
+                }
+                reached_points
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(point, reached)| reached.then_some(point))
+                    .collect()
+            };
+            let mut affected_domains = affected_points
+                .iter()
+                .map(|point| roots_by_point[*point].clone())
+                .collect::<Vec<_>>();
+            let affected_matching = affected_points
+                .iter()
+                .map(|point| coverage_matching[*point])
+                .collect::<Vec<_>>();
+            let support_count = affected_domains.iter().map(Vec::len).sum::<usize>();
+            let propagation_work = support_count.saturating_mul(4);
+            if budget.is_some_and(|budget| propagation_work > budget.remaining.get()) {
+                return Some((domains, coverage_matching));
+            }
+            retain_distinct_matching_supports(
+                &mut affected_domains,
+                domains.len(),
+                &affected_matching,
+                budget,
+            )?;
+            for (point, supported) in affected_points.into_iter().zip(affected_domains) {
+                roots_by_point[point] = supported;
+            }
+            let mut affected_roots = Vec::new();
+            for (root, domain) in domains.iter_mut().enumerate() {
+                let before = domain.len();
+                domain.retain(|point| roots_by_point[*point].binary_search(&root).is_ok());
+                if domain.is_empty() {
+                    return None;
+                }
+                if domain.len() != before {
+                    affected_roots.push(root);
+                }
+            }
+            if affected_roots.is_empty() {
+                return Some((domains, coverage_matching));
+            }
+            affected_edges = affected_roots
+                .into_iter()
+                .flat_map(|root| self.root_edges[root].iter().copied())
+                .collect();
+            affected_edges.sort_unstable();
+            affected_edges.dedup();
+        }
+    }
+
     pub(crate) fn refine_edge_candidate_arc(
         &self,
         edge: usize,
@@ -330,23 +454,19 @@ impl MeshCoordinateRootDomains {
         }
         let mut edge_candidates = self.edge_candidates.as_ref().clone();
         edge_candidates[edge] = vec![pair];
-        let mut domains = self.domains.clone();
-        if !enforce_edge_arc_consistency_from(
-            &mut domains,
-            &self.edges,
-            &self.root_edges,
+        let (domains, coverage_matching) = self.refine_domains(
+            self.domains.clone(),
             &edge_candidates,
             &[edge],
+            false,
             budget,
-        ) {
-            return None;
-        }
+        )?;
         Some(Self {
             domains,
             edges: Arc::clone(&self.edges),
             root_edges: Arc::clone(&self.root_edges),
             edge_candidates: Arc::new(edge_candidates),
-            coverage_matching: self.coverage_matching.clone(),
+            coverage_matching,
             point_count: self.point_count,
         })
     }
@@ -368,27 +488,11 @@ impl MeshCoordinateRootDomains {
         if changed.is_empty() {
             return Some(self.clone());
         }
-        let mut domains = self.domains.clone();
-        if !enforce_edge_arc_consistency_from(
-            &mut domains,
-            &self.edges,
-            &self.root_edges,
+        let (domains, coverage_matching) = self.refine_domains(
+            self.domains.clone(),
             edge_candidates,
             &changed,
-            budget,
-        ) {
-            return None;
-        }
-        let mut roots_by_point = vec![Vec::new(); self.point_count];
-        for (root, domain) in domains.iter().enumerate() {
-            for &point in domain {
-                roots_by_point[point].push(root);
-            }
-        }
-        let coverage_matching = repair_distinct_domain_matching_with_budget(
-            roots_by_point.iter().map(Vec::as_slice),
-            domains.len(),
-            &self.coverage_matching,
+            false,
             budget,
         )?;
         Some(Self {
@@ -698,13 +802,25 @@ impl MeshQuotient {
         }
         let coverage_matching =
             MeshCoordinateRootDomains::coverage_matching(&domains, point_count, budget)?;
-        Some(MeshCoordinateRootDomains {
+        let coordinate_domains = MeshCoordinateRootDomains {
             domains,
             edges: Arc::new(edges),
             root_edges: Arc::new(root_edges),
             edge_candidates: Arc::new(supported_candidates),
             coverage_matching,
             point_count,
+        };
+        let (domains, coverage_matching) = coordinate_domains.refine_domains(
+            coordinate_domains.domains.clone(),
+            &coordinate_domains.edge_candidates,
+            &edge_ids,
+            true,
+            budget,
+        )?;
+        Some(MeshCoordinateRootDomains {
+            domains,
+            coverage_matching,
+            ..coordinate_domains
         })
     }
 
