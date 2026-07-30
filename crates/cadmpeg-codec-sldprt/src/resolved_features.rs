@@ -494,6 +494,8 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             let extended_profile_point = extended_profile_point_coordinates(payload, offset);
             let compact_profile_point =
                 legacy_extended_linked_profile_point_coordinates(payload, offset);
+            let single_incidence_profile_point =
+                legacy_single_incidence_profile_point_coordinates(payload, offset);
             let packed_profile_point =
                 packed_legacy_linked_profile_point_coordinates(payload, offset);
             let compact_legacy_profile_point =
@@ -506,6 +508,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 .map(|(coordinates, _)| coordinates)
                 .or(extended_profile_point)
                 .or(compact_profile_point)
+                .or(single_incidence_profile_point)
                 .or(packed_profile_point)
                 .or(compact_legacy_profile_point)
                 .or(terminal_profile_point)
@@ -515,6 +518,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 || legacy_line_handle_coordinates(payload, offset).is_some()
                 || extended_profile_point.is_some()
                 || compact_profile_point.is_some()
+                || single_incidence_profile_point.is_some()
                 || packed_profile_point.is_some()
                 || compact_legacy_profile_point.is_some()
                 || terminal_profile_point.is_some()
@@ -1041,6 +1045,66 @@ fn legacy_extended_linked_profile_point_coordinates(
             || split_identities
             || terminal_sentinel
             || continuation)
+    {
+        return None;
+    }
+    finite_coordinate_pair(payload, offset + 58)
+}
+
+fn legacy_single_incidence_profile_point_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[f64; 2]> {
+    let code = marker_native_code(payload, offset)?;
+    let link_state = payload
+        .get(offset + 76..offset + 78)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_le_bytes)?;
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || !matches!((code, link_state), (0, 2) | (2, 1))
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 23..offset + 29) != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
+        || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
+    {
+        return None;
+    }
+    let cell = payload.get(offset + 78..offset + 90)?;
+    let selector = u16::from_le_bytes(cell[..2].try_into().ok()?);
+    let identifier = u16::from_le_bytes(cell[2..4].try_into().ok()?);
+    if matches!(selector, 0 | u16::MAX)
+        || matches!(identifier, 0 | u16::MAX)
+        || cell[4..8] != [0xff; 4]
+        || cell[8..12] != [0; 4]
+        || payload.get(offset + 90..offset + 96) != Some(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00])
+    {
+        return None;
+    }
+    let identity = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+    };
+    let terminal_identity = payload.get(offset + 96..offset + 136) == Some(&[0; 40])
+        && identity(136).is_some_and(|identity| identity != 0);
+    let paired_identities = payload.get(offset + 96..offset + 128) == Some(&[0; 32])
+        && matches!(
+            [identity(128), identity(136)],
+            [Some(first), Some(second)]
+                if first != 0
+                    && first != u32::MAX
+                    && second != 0
+                    && second != u32::MAX
+                    && first != second
+        )
+        && payload.get(offset + 132..offset + 136) == Some(&[0; 4]);
+    if !(terminal_identity || paired_identities)
+        || !sketch_marker_prefix_at(payload, offset.checked_add(140)?)
     {
         return None;
     }
@@ -1961,10 +2025,11 @@ mod marker_tests {
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
         legacy_long_profile_line_endpoint_indices, legacy_offset_plane_face_alias,
         legacy_reference_axis_triads, legacy_referenced_wide_arc_endpoint_indices,
-        legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
-        legacy_terminal_indexed_profile_line, legacy_terminal_profile_endpoint_offset,
-        legacy_undetailed_profile_line, legacy_unlocated_geometry_handle, linked_profile_point,
-        marker_coordinates, marker_curve_endpoint_markers, marker_is_geometry_locus,
+        legacy_single_face_reference_path_at, legacy_single_incidence_profile_point_coordinates,
+        legacy_state_five_curve_endpoint_indices, legacy_terminal_indexed_profile_line,
+        legacy_terminal_profile_endpoint_offset, legacy_undetailed_profile_line,
+        legacy_unlocated_geometry_handle, linked_profile_point, marker_coordinates,
+        marker_curve_endpoint_markers, marker_is_geometry_locus,
         marker_is_selected_construction_line, marker_local_id, marker_local_links,
         marker_object_index, marker_spatial_coordinates, matrix_reference_plane_frame,
         minimal_reference_plane_frame, mirror_pattern_component_path_at,
@@ -8237,6 +8302,50 @@ mod marker_tests {
         payload[128..132].fill(0xff);
         assert_eq!(
             compact_legacy_linked_profile_point_coordinates(&payload, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
+        let mut payload = vec![0; 140 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+        payload[58..66].copy_from_slice(&0.052f64.to_le_bytes());
+        payload[66..74].copy_from_slice(&(-0.01f64).to_le_bytes());
+        payload[76..78].copy_from_slice(&1u16.to_le_bytes());
+        payload[78..82].copy_from_slice(&[0x29, 0x81, 0x0e, 0x00]);
+        payload[82..86].fill(0xff);
+        payload[90..96].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00]);
+        payload[136..140].copy_from_slice(&24u32.to_le_bytes());
+        payload[140..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(
+            legacy_single_incidence_profile_point_coordinates(&payload, 0),
+            Some([0.052, -0.01])
+        );
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[17..21].fill(0);
+        payload[76..78].copy_from_slice(&2u16.to_le_bytes());
+        payload[96..140].fill(0);
+        payload[128..132].copy_from_slice(&1u32.to_le_bytes());
+        payload[136..140].copy_from_slice(&10u32.to_le_bytes());
+        assert_eq!(
+            legacy_single_incidence_profile_point_coordinates(&payload, 0),
+            Some([0.052, -0.01])
+        );
+        payload[136..140].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            legacy_single_incidence_profile_point_coordinates(&payload, 0),
             None
         );
     }
