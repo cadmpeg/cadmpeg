@@ -3449,6 +3449,119 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 }
 
 #[test]
+fn offset_plane_references_must_be_declared_dependencies_in_every_configuration() {
+    use crate::features::{
+        ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
+        Feature, FeatureDefinition, FeatureId, Length,
+    };
+    use std::collections::{BTreeMap, HashSet};
+
+    let mut ir = unit_cube();
+    let source = FeatureId("synthetic:test:feature#datum-plane".into());
+    let offset = FeatureId("synthetic:test:feature#offset-plane".into());
+    let feature = |id, ordinal, definition| Feature {
+        id,
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    ir.model.features = vec![
+        feature(
+            source.clone(),
+            0,
+            FeatureDefinition::DatumPlane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+        ),
+        feature(
+            offset.clone(),
+            1,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(source.clone()),
+                distance: Length(5.0),
+            },
+        ),
+    ];
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId("synthetic:test:configuration#offset-plane".into()),
+        ordinal: 0,
+        active: false,
+        source_index: None,
+        name: "Offset".into(),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        suppressed_features: Vec::new(),
+        bodies: ConfigurationBodies::Unresolved,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::from([(
+            offset.clone(),
+            ConfigurationFeatureState {
+                suppressed: false,
+                dependencies: Vec::new(),
+                outputs: Vec::new(),
+                definition: ir.model.features[1].definition.clone(),
+            },
+        )]),
+        native_ref: None,
+    });
+
+    let findings = validate(&ir, Vec::new())
+        .findings
+        .into_iter()
+        .map(|finding| finding.message)
+        .collect::<HashSet<_>>();
+    assert!(findings.contains(&format!(
+        "offset plane omits reference feature `{}` from its dependencies",
+        source.0
+    )));
+    assert!(findings.contains(&format!(
+        "configuration offset plane omits reference feature `{}` from its dependencies",
+        source.0
+    )));
+
+    ir.model.features[1].dependencies.push(source.clone());
+    ir.model.configurations[0]
+        .feature_states
+        .get_mut(&offset)
+        .expect("offset-plane state")
+        .dependencies
+        .push(source);
+    let state = ir.model.configurations[0]
+        .feature_states
+        .get_mut(&offset)
+        .expect("offset-plane state");
+    let FeatureDefinition::DatumOffsetPlane { distance, .. } = &mut state.definition else {
+        unreachable!()
+    };
+    *distance = Length(f64::NAN);
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| { finding.message == "configuration datum-plane offset is invalid" }));
+    let state = ir.model.configurations[0]
+        .feature_states
+        .get_mut(&offset)
+        .expect("offset-plane state");
+    let FeatureDefinition::DatumOffsetPlane { distance, .. } = &mut state.definition else {
+        unreachable!()
+    };
+    *distance = Length(5.0);
+    assert!(validate(&ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn resolved_datum_geometry_must_be_finite_and_coherent() {
     use crate::features::{Feature, FeatureDefinition, FeatureId};
 

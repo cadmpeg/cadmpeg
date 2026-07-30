@@ -2099,6 +2099,56 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     });
                 }
             }
+            if let FeatureDefinition::DatumOffsetPlane {
+                reference,
+                distance,
+            } = &state.definition
+            {
+                if let Some(reference) = reference {
+                    match features.get(reference.0.as_str()) {
+                        None => ref_error(
+                            findings,
+                            &configuration.id.0,
+                            "configuration reference plane",
+                            &reference.0,
+                        ),
+                        Some(reference_ordinal)
+                            if feature_ordinal.is_some_and(|feature_ordinal| {
+                                *reference_ordinal >= feature_ordinal
+                            }) =>
+                        {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "configuration reference plane `{}` does not precede `{}`",
+                                    reference.0, feature.0
+                                ),
+                                entity: Some(configuration.id.0.clone()),
+                            });
+                        }
+                        Some(_) if !state.dependencies.contains(reference) => {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "configuration offset plane omits reference feature `{}` from its dependencies",
+                                    reference.0
+                                ),
+                                entity: Some(configuration.id.0.clone()),
+                            });
+                        }
+                        Some(_) => {}
+                    }
+                }
+                if !distance.0.is_finite() {
+                    geometry_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration datum-plane offset is invalid",
+                    );
+                }
+            }
             let mut outputs = HashSet::new();
             for output in &state.outputs {
                 if !ids.bodies.contains(&output.0) {
@@ -3890,6 +3940,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             ),
                             entity: Some(feature.id.0.clone()),
                         }),
+                        Some(_) if !feature.dependencies.contains(reference) => {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "offset plane omits reference feature `{}` from its dependencies",
+                                    reference.0
+                                ),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
                         Some(_) => {}
                     }
                 }
