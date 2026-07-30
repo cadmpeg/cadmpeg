@@ -17,9 +17,9 @@ use std::collections::HashMap;
 use crate::families::a5a8::records::{a5_pcurves, a5_surfaces, FreeformSurface};
 use crate::families::b2::records::{
     b2_circles, b2_class25_descriptors, b2_cone_point, b2_cones, b2_cylinder_point, b2_cylinders,
-    b2_edge_nodes, b2_edge_parameters, b2_embedded_cylinders, b2_pcurves, b2_use_metadata,
-    point_distance, B2Circle, B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode,
-    B2EdgeParameters, B2EmbeddedCylinder, B2UseMetadata,
+    b2_edge_nodes, b2_edge_parameters, b2_embedded_cylinders, b2_pcurves, b2_tori,
+    b2_torus_geometry, b2_use_metadata, point_distance, B2Circle, B2Class25Descriptor, B2Cone,
+    B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder, B2Torus, B2UseMetadata,
 };
 use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
@@ -303,6 +303,11 @@ pub enum ConsolidatedSupportBinding {
     },
     /// `b2 03 29` cone selected by endpoint lifts.
     Cone {
+        /// Carrier record byte offset.
+        pos: usize,
+    },
+    /// `b2 03 2b` torus selected by endpoint lifts through its scaled chart.
+    Torus {
         /// Carrier record byte offset.
         pos: usize,
     },
@@ -668,6 +673,7 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
     let standalone = b2_cylinders(data);
     let circles = b2_circles(data);
     let cones = b2_cones(data);
+    let tori = b2_tori(data);
     let surfaces = a5_surfaces(data);
     consolidated_edge_blocks(data)
         .into_iter()
@@ -718,6 +724,16 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                         winners.append(&mut cone_winners);
                     }
                 }
+                if winners.is_empty() {
+                    let mut torus_winners: Vec<_> = tori
+                        .iter()
+                        .filter(|torus| pcurve_endpoints_match_torus(pcurve, torus, &points))
+                        .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos })
+                        .collect();
+                    if torus_winners.len() == 1 {
+                        winners.append(&mut torus_winners);
+                    }
+                }
                 (winners.len() == 1).then(|| winners.remove(0))
             });
             for anchor_side in [0, 1] {
@@ -732,6 +748,7 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                         &standalone,
                         &embedded,
                         &cones,
+                        &tori,
                         &surfaces,
                     )
                 }) else {
@@ -772,6 +789,7 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                                 &standalone,
                                 &embedded,
                                 &cones,
+                                &tori,
                                 &surfaces,
                             )?;
                             Some((binding, points))
@@ -795,8 +813,15 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                     supports = winner.map(Some);
                 }
             }
-            let shared_loci =
-                resolved_support_loci(&block, &supports, &standalone, &embedded, &cones, &surfaces);
+            let shared_loci = resolved_support_loci(
+                &block,
+                &supports,
+                &standalone,
+                &embedded,
+                &cones,
+                &tori,
+                &surfaces,
+            );
             let endpoint_loci = shared_loci
                 .as_ref()
                 .and_then(|points| Some([*points.first()?, *points.last()?]));
@@ -825,6 +850,7 @@ fn resolved_support_loci(
     cylinders: &[B2Cylinder],
     embedded: &[B2EmbeddedCylinder],
     cones: &[B2Cone],
+    tori: &[B2Torus],
     surfaces: &[FreeformSurface],
 ) -> Option<Vec<Point3>> {
     let candidates = supports
@@ -837,6 +863,7 @@ fn resolved_support_loci(
                 cylinders,
                 embedded,
                 cones,
+                tori,
                 surfaces,
             )?;
             (!points.is_empty()).then_some(points)
@@ -855,6 +882,7 @@ fn support_points(
     cylinders: &[B2Cylinder],
     embedded: &[B2EmbeddedCylinder],
     cones: &[B2Cone],
+    tori: &[B2Torus],
     surfaces: &[FreeformSurface],
 ) -> Option<Vec<Point3>> {
     match binding {
@@ -882,6 +910,14 @@ fn support_points(
                 .map(|uv| b2_cone_point(carrier, *uv))
                 .collect()
         }
+        ConsolidatedSupportBinding::Torus { pos } => {
+            let carrier = tori.iter().find(|value| value.pos == *pos)?;
+            pcurve
+                .points
+                .iter()
+                .map(|uv| b2_torus_point(carrier, *uv))
+                .collect()
+        }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
             let SurfaceGeometry::Nurbs(surface) = &surfaces
                 .iter()
@@ -906,6 +942,14 @@ fn support_points(
         }
         ConsolidatedSupportBinding::Circle { .. } => None,
     }
+}
+
+fn b2_torus_point(torus: &B2Torus, [u, v]: [f64; 2]) -> Option<Point3> {
+    cadmpeg_ir::eval::surface_point(
+        &b2_torus_geometry(torus),
+        u / torus.major_scale,
+        v / torus.minor_scale,
+    )
 }
 
 fn nurbs_carrier_offset(
@@ -975,6 +1019,23 @@ fn pcurve_endpoints_match_cone(
     };
     [*first, *last].into_iter().all(|uv| {
         b2_cone_point(cone, uv).is_some_and(|point| {
+            vertices
+                .iter()
+                .any(|vertex| point_distance(point, *vertex) < 2e-3)
+        })
+    })
+}
+
+fn pcurve_endpoints_match_torus(
+    pcurve: &ConsolidatedPcurve,
+    torus: &B2Torus,
+    vertices: &[Point3],
+) -> bool {
+    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+        return false;
+    };
+    [*first, *last].into_iter().all(|uv| {
+        b2_torus_point(torus, uv).is_some_and(|point| {
             vertices
                 .iter()
                 .any(|vertex| point_distance(point, *vertex) < 2e-3)

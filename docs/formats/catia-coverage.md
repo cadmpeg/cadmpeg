@@ -247,7 +247,11 @@ current scores require those matrices and representative fixtures.
   analytic line carrier and stored parameter interval.
 - Consolidated edge-run coverage partitions runs with zero, one, or two
   resolved support bindings and independently counts shared sampled loci and
-  endpoint loci. A run with one resolved support transfers as a parametric
+  endpoint loci. A validated consolidated torus binds one pcurve side when its
+  stored coordinates, divided by the torus major and minor chart scales, lift
+  both endpoints to stored vertices and exactly one torus satisfies that
+  relation. Multiple matching tori leave the side unresolved. A run with one
+  resolved support transfers as a parametric
   surface curve; it does not imply that the unresolved partner surface has
   resolved. When its unordered endpoint loci select exactly one standard spline
   edge whose existing surface-intersection construction has no pcurves, that

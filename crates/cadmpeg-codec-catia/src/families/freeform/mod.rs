@@ -725,6 +725,7 @@ pub(crate) enum ConsolidatedCarrierKey {
     Cylinder(usize),
     EmbeddedCylinder(usize),
     Cone(usize),
+    Torus(usize),
     NurbsOffset(usize, u64),
 }
 
@@ -735,6 +736,9 @@ pub(crate) enum ConsolidatedCarrierChart<'a> {
     },
     Cone {
         cone: &'a crate::families::b2::records::B2Cone,
+    },
+    Torus {
+        torus: &'a crate::families::b2::records::B2Torus,
     },
 }
 
@@ -762,6 +766,7 @@ impl ConsolidatedCarrierChart<'_> {
                 u / cone.angular_scale,
                 (v - cone.slant_range[0]) * cone.half_angle.cos(),
             ],
+            Self::Torus { torus } => [u / torus.major_scale, v / torus.minor_scale],
         }
     }
 
@@ -770,6 +775,7 @@ impl ConsolidatedCarrierChart<'_> {
             Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],
             Self::Cone { cone } => [u / cone.angular_scale, v * cone.half_angle.cos()],
+            Self::Torus { torus } => [u / torus.major_scale, v / torus.minor_scale],
         }
     }
 }
@@ -819,6 +825,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     let cones = crate::families::b2::records::b2_cones(data)
         .into_iter()
         .map(|cone| (cone.pos, cone))
+        .collect::<HashMap<_, _>>();
+    let tori = crate::families::b2::records::b2_tori(data)
+        .into_iter()
+        .map(|torus| (torus.pos, torus))
         .collect::<HashMap<_, _>>();
     let complete_runs =
         crate::families::consolidated::records::consolidated_topology_edge_runs(data)
@@ -1075,6 +1085,19 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         "cone",
                     )
                 }
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos }) => {
+                    let Some(torus) = tori.get(pos) else {
+                        continue;
+                    };
+                    (
+                        ConsolidatedCarrierKey::Torus(*pos),
+                        crate::families::b2::records::b2_torus_geometry(torus),
+                        None,
+                        ConsolidatedCarrierChart::Torus { torus },
+                        "consolidated_b2_03_2b_torus",
+                        "torus",
+                    )
+                }
                 Some(
                     crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { .. }
                     | crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier { .. },
@@ -1096,6 +1119,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         ConsolidatedCarrierKey::Cylinder(pos)
                         | ConsolidatedCarrierKey::EmbeddedCylinder(pos)
                         | ConsolidatedCarrierKey::Cone(pos)
+                        | ConsolidatedCarrierKey::Torus(pos)
                         | ConsolidatedCarrierKey::NurbsOffset(pos, _) => pos as u64,
                     },
                     "resolved_pcurve_support",

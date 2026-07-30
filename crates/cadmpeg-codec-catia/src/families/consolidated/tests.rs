@@ -6,9 +6,9 @@
 use crate::tests::{
     a5_circle_bound_edge_stream, a5_cone_bound_edge_stream, a5_cylinder_bound_edge_stream,
     a5_edge_block_stream, a5_native_edge_run_stream, a5_nurbs_bound_edge_stream,
-    a5_nurbs_pair_bound_edge_stream, a5_pcurve_stream, a6_pcurve_stream, append_b5_record,
-    b2_circle_stream, b2_edge_block_stream, b2_edge_parameter_stream_for,
-    b2_topology_edge_run_stream, b3_cylinder_stream, le_f32,
+    a5_nurbs_pair_bound_edge_stream, a5_pcurve_stream, a5_torus_bound_edge_stream,
+    a6_pcurve_stream, append_b5_record, b2_circle_stream, b2_edge_block_stream,
+    b2_edge_parameter_stream_for, b2_topology_edge_run_stream, b3_cylinder_stream, le_f32,
 };
 
 #[test]
@@ -333,6 +333,32 @@ fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
         Some(ConsolidatedSupportBinding::Cone { .. })
     ));
     assert!(blocks[0].endpoint_loci.is_some());
+}
+
+#[test]
+fn a5_edge_binding_resolves_torus_by_scaled_chart_endpoint_lifts() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_torus_bound_edge_stream(),
+    );
+    assert!(blocks[0]
+        .supports
+        .iter()
+        .all(|support| matches!(support, Some(ConsolidatedSupportBinding::Torus { .. }))));
+    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
+    let endpoints = blocks[0].endpoint_loci.expect("lifted torus endpoints");
+    assert!(endpoints[0].distance_squared(cadmpeg_ir::math::Point3::new(1.0, 11.0, 3.0)) < 1e-24);
+    assert!(endpoints[1].distance_squared(cadmpeg_ir::math::Point3::new(-8.0, 2.0, 3.0)) < 1e-24);
+}
+
+#[test]
+fn a5_edge_binding_rejects_duplicate_torus_endpoint_lifts() {
+    let mut bytes = a5_torus_bound_edge_stream();
+    bytes.extend_from_slice(&crate::tests::b2_torus_stream());
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert_eq!(blocks[0].supports, [None, None]);
 }
 
 #[test]

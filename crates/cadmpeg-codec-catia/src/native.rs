@@ -787,6 +787,11 @@ pub enum CatiaConsolidatedSupportBinding {
         /// Carrier record byte offset.
         byte_offset: u64,
     },
+    /// Doubly periodic `b2 03 2b` torus.
+    Torus {
+        /// Carrier record byte offset.
+        byte_offset: u64,
+    },
     /// Consolidated NURBS carrier with an optional constant normal offset.
     NurbsCarrier {
         /// Carrier record byte offset.
@@ -6229,6 +6234,11 @@ fn native_consolidated_support_binding(
                 byte_offset: *pos as u64,
             }
         }
+        crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos } => {
+            CatiaConsolidatedSupportBinding::Torus {
+                byte_offset: *pos as u64,
+            }
+        }
         crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier {
             pos,
             offset,
@@ -7621,6 +7631,7 @@ struct ConsolidatedSupportArenas<'a> {
     cylinders: &'a [CatiaConsolidatedCylinder],
     embedded_cylinders: &'a [CatiaConsolidatedEmbeddedCylinder],
     groups: &'a [CatiaConsolidatedGroup],
+    tori: &'a [CatiaConsolidatedTorus],
 }
 
 #[cfg(test)]
@@ -7652,6 +7663,11 @@ fn validate_consolidated_edge_runs(
         .cones
         .iter()
         .map(|cone| cone.byte_offset)
+        .collect::<HashSet<_>>();
+    let torus_offsets = supports
+        .tori
+        .iter()
+        .map(|torus| torus.byte_offset)
         .collect::<HashSet<_>>();
     let cylinder_offsets = supports
         .cylinders
@@ -7812,6 +7828,9 @@ fn validate_consolidated_edge_runs(
                 }
                 CatiaConsolidatedSupportBinding::Cone { byte_offset } => {
                     cone_offsets.contains(byte_offset)
+                }
+                CatiaConsolidatedSupportBinding::Torus { byte_offset } => {
+                    torus_offsets.contains(byte_offset)
                 }
                 CatiaConsolidatedSupportBinding::NurbsCarrier { offset, .. } => offset.is_finite(),
             });
@@ -9524,6 +9543,7 @@ impl CatiaNative {
                 cylinders: &consolidated_cylinders,
                 embedded_cylinders: &consolidated_embedded_cylinders,
                 groups: &consolidated_groups,
+                tori: &consolidated_tori,
             },
             &consolidated_edge_nodes,
             &consolidated_vertex_identities,

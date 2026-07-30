@@ -1517,7 +1517,7 @@ pub(crate) fn b2_group_stream() -> Vec<u8> {
     ]
 }
 
-fn a5_pcurve_stream_with_uv(u: [f64; 2], v: [f64; 2]) -> Vec<u8> {
+pub(crate) fn a5_pcurve_stream_with_uv(u: [f64; 2], v: [f64; 2]) -> Vec<u8> {
     let mut payload = vec![0x08, 0x34, 0x12, 21, 9, 0x08, 9];
     for value in [0.0f64, 1.0] {
         payload.extend_from_slice(&le_f64(value));
@@ -1569,6 +1569,27 @@ pub(crate) fn a5_cone_bound_edge_stream() -> Vec<u8> {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
             bytes.extend_from_slice(&(value as f32).to_le_bytes());
+        }
+    }
+    bytes
+}
+
+pub(crate) fn a5_torus_bound_edge_stream() -> Vec<u8> {
+    let major_scale = 14.0;
+    let u = [
+        major_scale * std::f64::consts::FRAC_PI_2,
+        major_scale * std::f64::consts::PI,
+    ];
+    let v = [0.0, 0.0];
+    let mut bytes = a5_pcurve_stream_with_uv(u, v);
+    bytes.extend_from_slice(&a5_pcurve_stream_with_uv(u, v));
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    bytes.extend_from_slice(&b2_torus_stream());
+    for point in [[1.0f32, 11.0, 3.0], [-8.0, 2.0, 3.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
         }
     }
     bytes
@@ -7162,6 +7183,38 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
             &Vec::<crate::native::CatiaConsolidatedCylinder>::new(),
         )
         .expect("remove retained cylinders");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_resolved_consolidated_torus_supports() {
+    use crate::native::CatiaConsolidatedSupportBinding;
+
+    let native = crate::native::CatiaNative::decode(&a5_torus_bound_edge_stream());
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated torus edge run");
+    };
+    assert!(run
+        .support_bindings
+        .iter()
+        .all(|binding| matches!(binding, Some(CatiaConsolidatedSupportBinding::Torus { .. }))));
+    assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store torus-bound CATIA edge run");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load torus-bound CATIA edge run"),
+        native
+    );
+
+    namespace
+        .set_arena(
+            "consolidated_tori",
+            &Vec::<crate::native::CatiaConsolidatedTorus>::new(),
+        )
+        .expect("remove retained tori");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 }
 
