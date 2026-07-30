@@ -1226,6 +1226,9 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
     ])];
     let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = MeshConstraintBudget::new(2);
+    let prepared =
+        prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
+            .expect("compiled face factors");
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1234,10 +1237,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
-        face_configuration_domains: Some(vec![Some(vec![
-            vec![(0, [0, 0]), (1, [0, 0])],
-            vec![(0, [1, 1]), (1, [1, 1])],
-        ])]),
+        face_configuration_domains: Some(prepared),
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true; 2],
@@ -1298,7 +1298,7 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
     )
     .expect("ordered face factors");
 
-    assert!(prepared.iter().flatten().any(Vec::is_empty));
+    assert!(prepared.domains().iter().flatten().any(Vec::is_empty));
 
     let compatible = vec![vec![[0, 1]], vec![[0, 1], [0, 2]], vec![[0, 1]]];
     let selected = vec![Some([0, 1]), None, Some([0, 1])];
@@ -1309,7 +1309,11 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
         &[false, true, false],
     )
     .expect("compatible ordered face factors");
-    assert!(prepared.iter().flatten().all(|domain| domain.len() == 1));
+    assert!(prepared
+        .domains()
+        .iter()
+        .flatten()
+        .all(|domain| domain.len() == 1));
 }
 
 #[test]

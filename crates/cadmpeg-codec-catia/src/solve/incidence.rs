@@ -458,7 +458,7 @@ pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) edge_faces: &'a [[usize; 2]],
     pub(crate) face_edges: &'a [Vec<usize>],
     pub(crate) mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
-    pub(crate) face_configuration_domains: Option<Vec<Option<MeshFaceEndpointConfigurations>>>,
+    pub(crate) face_configuration_domains: Option<PreparedFaceFactors>,
     pub(crate) mesh_quotient: Option<&'a MeshQuotient>,
     pub(crate) coordinate_domains: Option<&'a MeshCoordinateRootDomains>,
     pub(crate) active: Vec<bool>,
@@ -501,6 +501,238 @@ struct FaceConfigurationDomain {
     width: usize,
     face: usize,
     configurations: MeshFaceEndpointConfigurations,
+}
+
+struct FaceFactorArc {
+    left: usize,
+    right: usize,
+    supports: Vec<Vec<u64>>,
+}
+
+struct FaceFactorGraph {
+    arcs: Vec<FaceFactorArc>,
+    incoming: Vec<Vec<usize>>,
+    domain_lengths: Vec<usize>,
+}
+
+pub(crate) struct PreparedFaceFactors {
+    domains: Vec<Option<MeshFaceEndpointConfigurations>>,
+    factor_faces: Vec<usize>,
+    factor_by_face: Vec<Option<usize>>,
+    graph: Option<FaceFactorGraph>,
+}
+
+fn full_configuration_mask(len: usize) -> Vec<u64> {
+    let mut mask = vec![u64::MAX; len.div_ceil(u64::BITS as usize)];
+    if let Some(last) = mask.last_mut() {
+        let remainder = len % u64::BITS as usize;
+        if remainder != 0 {
+            *last = (1 << remainder) - 1;
+        }
+    }
+    mask
+}
+
+fn configuration_mask_contains(mask: &[u64], index: usize) -> bool {
+    mask.get(index / u64::BITS as usize)
+        .is_some_and(|word| word & (1 << (index % u64::BITS as usize)) != 0)
+}
+
+impl FaceFactorGraph {
+    fn compile(
+        domains: &[MeshFaceEndpointConfigurations],
+        budget: &MeshConstraintBudget,
+    ) -> Option<Self> {
+        let edge_sets = domains
+            .iter()
+            .map(|domain| {
+                domain
+                    .iter()
+                    .flatten()
+                    .map(|(edge, _)| *edge)
+                    .collect::<HashSet<_>>()
+            })
+            .collect::<Vec<_>>();
+        let mut right_indexes = Vec::with_capacity(domains.len());
+        for domain in domains {
+            let word_count = domain.len().div_ceil(u64::BITS as usize);
+            let mut present = HashMap::<usize, Vec<u64>>::new();
+            let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
+            for (configuration, candidate) in domain.iter().enumerate() {
+                if !budget.charge_by(candidate.len().max(1)) {
+                    return None;
+                }
+                let word = configuration / u64::BITS as usize;
+                let bit = 1 << (configuration % u64::BITS as usize);
+                for &(edge, pair) in candidate {
+                    present.entry(edge).or_insert_with(|| vec![0; word_count])[word] |= bit;
+                    matching
+                        .entry((edge, pair))
+                        .or_insert_with(|| vec![0; word_count])[word] |= bit;
+                }
+            }
+            right_indexes.push((present, matching));
+        }
+        let mut arcs = Vec::new();
+        let mut incoming = vec![Vec::new(); domains.len()];
+        for left in 0..domains.len() {
+            for right in 0..domains.len() {
+                if left == right || edge_sets[left].is_disjoint(&edge_sets[right]) {
+                    continue;
+                }
+                let word_count = domains[right].len().div_ceil(u64::BITS as usize);
+                let (present, matching) = &right_indexes[right];
+                let mut supports = Vec::with_capacity(domains[left].len());
+                for candidate in &domains[left] {
+                    if !budget.charge_by(candidate.len().saturating_add(word_count).max(1)) {
+                        return None;
+                    }
+                    let mut compatible = full_configuration_mask(domains[right].len());
+                    for &(edge, pair) in candidate {
+                        let Some(edge_present) = present.get(&edge) else {
+                            continue;
+                        };
+                        let edge_matching = matching.get(&(edge, pair));
+                        for word in 0..word_count {
+                            compatible[word] &=
+                                !edge_present[word] | edge_matching.map_or(0, |mask| mask[word]);
+                        }
+                    }
+                    supports.push(compatible);
+                }
+                let arc = arcs.len();
+                arcs.push(FaceFactorArc {
+                    left,
+                    right,
+                    supports,
+                });
+                incoming[right].push(arc);
+            }
+        }
+        Some(Self {
+            arcs,
+            incoming,
+            domain_lengths: domains.iter().map(Vec::len).collect(),
+        })
+    }
+
+    fn full_state(&self) -> Vec<Vec<u64>> {
+        self.domain_lengths
+            .iter()
+            .map(|length| full_configuration_mask(*length))
+            .collect()
+    }
+
+    fn propagate(
+        &self,
+        active: &mut [Vec<u64>],
+        initial: impl IntoIterator<Item = usize>,
+        budget: &MeshConstraintBudget,
+    ) -> Option<bool> {
+        let mut queue = initial.into_iter().collect::<VecDeque<_>>();
+        while let Some(arc_index) = queue.pop_front() {
+            let arc = &self.arcs[arc_index];
+            let mut changed = false;
+            for (configuration, supports) in arc.supports.iter().enumerate() {
+                if !configuration_mask_contains(&active[arc.left], configuration) {
+                    continue;
+                }
+                if !budget.charge_by(supports.len().max(1)) {
+                    return None;
+                }
+                if supports
+                    .iter()
+                    .zip(&active[arc.right])
+                    .any(|(supports, active)| supports & active != 0)
+                {
+                    continue;
+                }
+                active[arc.left][configuration / u64::BITS as usize] &=
+                    !(1 << (configuration % u64::BITS as usize));
+                changed = true;
+            }
+            if !changed {
+                continue;
+            }
+            if active[arc.left].iter().all(|word| *word == 0) {
+                return Some(false);
+            }
+            queue.extend(self.incoming[arc.left].iter().copied());
+        }
+        Some(true)
+    }
+
+    fn propagate_all(
+        &self,
+        active: &mut [Vec<u64>],
+        budget: &MeshConstraintBudget,
+    ) -> Option<bool> {
+        self.propagate(active, 0..self.arcs.len(), budget)
+    }
+
+    fn propagate_from(
+        &self,
+        domain: usize,
+        active: &mut [Vec<u64>],
+        budget: &MeshConstraintBudget,
+    ) -> Option<bool> {
+        self.propagate(active, self.incoming[domain].iter().copied(), budget)
+    }
+}
+
+impl PreparedFaceFactors {
+    #[cfg(test)]
+    pub(crate) fn domains(&self) -> &[Option<MeshFaceEndpointConfigurations>] {
+        &self.domains
+    }
+
+    fn assignment_state(
+        &self,
+        assignment: &[Option<[usize; 2]>],
+        budget: &MeshConstraintBudget,
+    ) -> Result<Option<Vec<Vec<u64>>>, ()> {
+        let Some(graph) = &self.graph else {
+            return Ok(None);
+        };
+        let mut active = graph.full_state();
+        for (factor, &face) in self.factor_faces.iter().enumerate() {
+            let Some(configurations) = self.domains.get(face).and_then(Option::as_ref) else {
+                return Err(());
+            };
+            for (configuration, pairs) in configurations.iter().enumerate() {
+                if pairs.iter().all(|(edge, pair)| {
+                    assignment
+                        .get(*edge)
+                        .copied()
+                        .flatten()
+                        .is_none_or(|selected| same_unordered_pair(selected, *pair))
+                }) {
+                    continue;
+                }
+                active[factor][configuration / u64::BITS as usize] &=
+                    !(1 << (configuration % u64::BITS as usize));
+            }
+            if active[factor].iter().all(|word| *word == 0) {
+                return Err(());
+            }
+        }
+        match graph.propagate_all(&mut active, budget) {
+            Some(true) => Ok(Some(active)),
+            Some(false) => Err(()),
+            None => Ok(None),
+        }
+    }
+}
+
+fn retain_configuration_masks(domains: &mut [MeshFaceEndpointConfigurations], active: &[Vec<u64>]) {
+    for (domain, mask) in domains.iter_mut().zip(active) {
+        let mut index = 0;
+        domain.retain(|_| {
+            let retain = configuration_mask_contains(mask, index);
+            index += 1;
+            retain
+        });
+    }
 }
 
 pub(crate) fn prune_face_configuration_support(
@@ -595,151 +827,12 @@ pub(crate) fn prune_face_configuration_singleton_support(
     domains: &mut [MeshFaceEndpointConfigurations],
     budget: &MeshConstraintBudget,
 ) -> bool {
-    struct FaceFactorArc {
-        left: usize,
-        right: usize,
-        supports: Vec<Vec<u64>>,
-    }
-
-    fn full_mask(len: usize) -> Vec<u64> {
-        let mut mask = vec![u64::MAX; len.div_ceil(u64::BITS as usize)];
-        if let Some(last) = mask.last_mut() {
-            let remainder = len % u64::BITS as usize;
-            if remainder != 0 {
-                *last = (1 << remainder) - 1;
-            }
-        }
-        mask
-    }
-
-    fn mask_contains(mask: &[u64], index: usize) -> bool {
-        mask.get(index / u64::BITS as usize)
-            .is_some_and(|word| word & (1 << (index % u64::BITS as usize)) != 0)
-    }
-
-    fn retain_masks(domains: &mut [MeshFaceEndpointConfigurations], active: &[Vec<u64>]) {
-        for (domain, mask) in domains.iter_mut().zip(active) {
-            let mut index = 0;
-            domain.retain(|_| {
-                let retain = mask_contains(mask, index);
-                index += 1;
-                retain
-            });
-        }
-    }
-
-    fn propagate(
-        arcs: &[FaceFactorArc],
-        incoming: &[Vec<usize>],
-        active: &mut [Vec<u64>],
-        initial: impl IntoIterator<Item = usize>,
-        budget: &MeshConstraintBudget,
-    ) -> Option<bool> {
-        let mut queue = initial.into_iter().collect::<VecDeque<_>>();
-        while let Some(arc_index) = queue.pop_front() {
-            let arc = &arcs[arc_index];
-            let mut changed = false;
-            for (configuration, supports) in arc.supports.iter().enumerate() {
-                if !mask_contains(&active[arc.left], configuration) {
-                    continue;
-                }
-                if !budget.charge_by(supports.len().max(1)) {
-                    return None;
-                }
-                if supports
-                    .iter()
-                    .zip(&active[arc.right])
-                    .any(|(supports, active)| supports & active != 0)
-                {
-                    continue;
-                }
-                active[arc.left][configuration / u64::BITS as usize] &=
-                    !(1 << (configuration % u64::BITS as usize));
-                changed = true;
-            }
-            if !changed {
-                continue;
-            }
-            if active[arc.left].iter().all(|word| *word == 0) {
-                return Some(false);
-            }
-            queue.extend(incoming[arc.left].iter().copied());
-        }
-        Some(true)
-    }
-
-    let edge_sets = domains
-        .iter()
-        .map(|domain| {
-            domain
-                .iter()
-                .flatten()
-                .map(|(edge, _)| *edge)
-                .collect::<HashSet<_>>()
-        })
-        .collect::<Vec<_>>();
-    let mut right_indexes = Vec::with_capacity(domains.len());
-    for domain in domains.iter() {
-        let word_count = domain.len().div_ceil(u64::BITS as usize);
-        let mut present = HashMap::<usize, Vec<u64>>::new();
-        let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
-        for (configuration, candidate) in domain.iter().enumerate() {
-            if !budget.charge_by(candidate.len().max(1)) {
-                return true;
-            }
-            let word = configuration / u64::BITS as usize;
-            let bit = 1 << (configuration % u64::BITS as usize);
-            for &(edge, pair) in candidate {
-                present.entry(edge).or_insert_with(|| vec![0; word_count])[word] |= bit;
-                matching
-                    .entry((edge, pair))
-                    .or_insert_with(|| vec![0; word_count])[word] |= bit;
-            }
-        }
-        right_indexes.push((present, matching));
-    }
-    let mut arcs = Vec::new();
-    let mut incoming = vec![Vec::new(); domains.len()];
-    for left in 0..domains.len() {
-        for right in 0..domains.len() {
-            if left == right || edge_sets[left].is_disjoint(&edge_sets[right]) {
-                continue;
-            }
-            let word_count = domains[right].len().div_ceil(u64::BITS as usize);
-            let (present, matching) = &right_indexes[right];
-            let mut configuration_supports = Vec::with_capacity(domains[left].len());
-            for candidate in &domains[left] {
-                if !budget.charge_by(candidate.len().saturating_add(word_count).max(1)) {
-                    return true;
-                }
-                let mut supports = full_mask(domains[right].len());
-                for &(edge, pair) in candidate {
-                    let Some(edge_present) = present.get(&edge) else {
-                        continue;
-                    };
-                    let edge_matching = matching.get(&(edge, pair));
-                    for word in 0..word_count {
-                        supports[word] &=
-                            !edge_present[word] | edge_matching.map_or(0, |mask| mask[word]);
-                    }
-                }
-                configuration_supports.push(supports);
-            }
-            let arc = arcs.len();
-            arcs.push(FaceFactorArc {
-                left,
-                right,
-                supports: configuration_supports,
-            });
-            incoming[right].push(arc);
-        }
-    }
-    let mut active = domains
-        .iter()
-        .map(|domain| full_mask(domain.len()))
-        .collect::<Vec<_>>();
+    let Some(graph) = FaceFactorGraph::compile(domains, budget) else {
+        return true;
+    };
+    let mut active = graph.full_state();
     let active_clone_work = active.iter().map(Vec::len).sum::<usize>().max(1);
-    match propagate(&arcs, &incoming, &mut active, 0..arcs.len(), budget) {
+    match graph.propagate_all(&mut active, budget) {
         Some(true) => {}
         Some(false) => return false,
         None => return true,
@@ -763,24 +856,18 @@ pub(crate) fn prune_face_configuration_singleton_support(
                 continue;
             }
             for configuration in 0..domains[domain].len() {
-                if !mask_contains(&active[domain], configuration) {
+                if !configuration_mask_contains(&active[domain], configuration) {
                     continue;
                 }
                 if !budget.charge_by(active_clone_work) {
-                    retain_masks(domains, &active);
+                    retain_configuration_masks(domains, &active);
                     return true;
                 }
                 let mut trial = active.clone();
                 trial[domain].fill(0);
                 trial[domain][configuration / u64::BITS as usize] =
                     1 << (configuration % u64::BITS as usize);
-                match propagate(
-                    &arcs,
-                    &incoming,
-                    &mut trial,
-                    incoming[domain].iter().copied(),
-                    budget,
-                ) {
+                match graph.propagate_from(domain, &mut trial, budget) {
                     Some(true) => {}
                     Some(false) => {
                         active[domain][configuration / u64::BITS as usize] &=
@@ -789,7 +876,7 @@ pub(crate) fn prune_face_configuration_singleton_support(
                         domain_changed = true;
                     }
                     None => {
-                        retain_masks(domains, &active);
+                        retain_configuration_masks(domains, &active);
                         return true;
                     }
                 }
@@ -798,24 +885,18 @@ pub(crate) fn prune_face_configuration_singleton_support(
                 return false;
             }
             if domain_changed {
-                match propagate(
-                    &arcs,
-                    &incoming,
-                    &mut active,
-                    incoming[domain].iter().copied(),
-                    budget,
-                ) {
+                match graph.propagate_from(domain, &mut active, budget) {
                     Some(true) => {}
                     Some(false) => return false,
                     None => {
-                        retain_masks(domains, &active);
+                        retain_configuration_masks(domains, &active);
                         return true;
                     }
                 }
             }
         }
         if !changed {
-            retain_masks(domains, &active);
+            retain_configuration_masks(domains, &active);
             return true;
         }
     }
@@ -901,7 +982,7 @@ pub(crate) fn prepare_face_configuration_domains(
     choices: &[Vec<[usize; 2]>],
     selected: &[Option<[usize; 2]>],
     active: &[bool],
-) -> Option<Vec<Option<MeshFaceEndpointConfigurations>>> {
+) -> Option<PreparedFaceFactors> {
     let assignments = assignments?;
     let mut domains = vec![None; assignments.len()];
     for (face, domain) in assignments.iter().enumerate() {
@@ -957,12 +1038,23 @@ pub(crate) fn prepare_face_configuration_domains(
             domain.clear();
         }
     }
-    for (face, configurations) in retained_faces.into_iter().zip(configurations) {
+    let graph_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let graph = FaceFactorGraph::compile(&configurations, &graph_budget);
+    let mut factor_by_face = vec![None; domains.len()];
+    for (factor, &face) in retained_faces.iter().enumerate() {
+        factor_by_face[face] = Some(factor);
+    }
+    for (face, configurations) in retained_faces.iter().copied().zip(configurations) {
         if let Some(domain) = &mut domains[face] {
             *domain = configurations;
         }
     }
-    Some(domains)
+    Some(PreparedFaceFactors {
+        domains,
+        factor_faces: retained_faces,
+        factor_by_face,
+        graph,
+    })
 }
 
 impl Iterator for IncidenceCandidatePairs {
@@ -1879,6 +1971,15 @@ impl IncidenceComponentSearch<'_, '_> {
         component_faces: &[usize],
     ) -> Option<MeshFaceEndpointConfigurations> {
         let mesh_assignments = self.mesh_assignments?;
+        let factor_state = match self.face_configuration_domains.as_ref() {
+            Some(factors) => {
+                match factors.assignment_state(&self.assignment, self.boundary_propagation_budget) {
+                    Ok(state) => state,
+                    Err(()) => return Some(Vec::new()),
+                }
+            }
+            None => None,
+        };
         let mut faces = component_faces
             .iter()
             .copied()
@@ -1915,14 +2016,28 @@ impl IncidenceComponentSearch<'_, '_> {
             if !self.boundary_propagation_budget.charge() {
                 break;
             }
+            let factor_mask = self
+                .face_configuration_domains
+                .as_ref()
+                .and_then(|factors| factors.factor_by_face.get(face))
+                .copied()
+                .flatten()
+                .zip(factor_state.as_ref())
+                .map(|(factor, state)| state[factor].as_slice());
             let configurations = if let Some(persistent) = self
                 .face_configuration_domains
                 .as_ref()
-                .and_then(|domains| domains.get(face))
+                .and_then(|factors| factors.domains.get(face))
                 .and_then(Option::as_ref)
             {
                 persistent
                     .iter()
+                    .enumerate()
+                    .filter(|(configuration, _)| {
+                        factor_mask
+                            .is_none_or(|mask| configuration_mask_contains(mask, *configuration))
+                    })
+                    .map(|(_, configuration)| configuration)
                     .filter(|configuration| {
                         configuration.iter().all(|(edge, pair)| {
                             self.assignment[*edge]
