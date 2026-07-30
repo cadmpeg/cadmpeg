@@ -13806,7 +13806,7 @@ fn decode_evaluates_integer_part_as_an_integer_result() {
 }
 
 #[test]
-fn decode_evaluates_variadic_extrema_and_real_remainder() {
+fn decode_evaluates_variadic_extrema_and_integer_part_remainder() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
@@ -13814,7 +13814,7 @@ fn decode_evaluates_variadic_extrema_and_real_remainder() {
                 false,
                 &[],
                 "Real",
-                Some(9.8),
+                Some(9.0),
                 "min(8,5,7,3)+max(1,4,2)+mod(7.8,3)+max(1)",
             )),
             &DecodeOptions::default(),
@@ -13826,12 +13826,12 @@ fn decode_evaluates_variadic_extrema_and_real_remainder() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(9.8))
+        Some(cadmpeg_ir::features::ParameterValue::Real(9.0))
     );
 }
 
 #[test]
-fn decode_evaluates_remainder_without_truncating_a_negative_real_dividend() {
+fn decode_evaluates_remainder_of_a_negative_real_dividend_integer_part() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
@@ -13839,7 +13839,7 @@ fn decode_evaluates_remainder_without_truncating_a_negative_real_dividend() {
                 false,
                 &[],
                 "Real",
-                Some(-1.5),
+                Some(-1.0),
                 "mod(-7.5,3)",
             )),
             &DecodeOptions::default(),
@@ -13851,7 +13851,7 @@ fn decode_evaluates_remainder_without_truncating_a_negative_real_dividend() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(-1.5))
+        Some(cadmpeg_ir::features::ParameterValue::Real(-1.0))
     );
 }
 

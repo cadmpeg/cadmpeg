@@ -1759,7 +1759,7 @@ impl FormulaExpressionParser<'_, '_> {
                         || (divisor.satisfies_source_type("Integer") && divisor.value != 0.0)) =>
             {
                 self.scalar_result(if self.evaluate {
-                    dividend.value % divisor.value
+                    dividend.value.trunc() % divisor.value
                 } else {
                     0.0
                 })
