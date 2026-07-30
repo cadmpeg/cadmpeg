@@ -18,7 +18,6 @@ use crate::solve::missing_edge::{
     MeshFaceBoundaryDomain,
 };
 use crate::solve::UnionFind;
-use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::ControlFlow;
 
@@ -449,6 +448,7 @@ pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) face_edges: &'a [Vec<usize>],
     pub(crate) mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
     pub(crate) mesh_quotient: Option<&'a MeshQuotient>,
+    pub(crate) coordinate_domains: Option<&'a MeshCoordinateRootDomains>,
     pub(crate) active: Vec<bool>,
     pub(crate) edges: &'a [usize],
     pub(crate) constraints: Vec<(usize, usize)>,
@@ -892,7 +892,12 @@ impl IncidenceComponentSearch<'_, '_> {
         viable && !self.budget.exhausted.get()
     }
 
-    fn constraint_options(&self, face: usize, point: usize) -> Vec<(usize, [usize; 2])> {
+    fn constraint_options(
+        &self,
+        face: usize,
+        point: usize,
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) -> Vec<(usize, [usize; 2])> {
         let mut options = self.face_edges[face]
             .iter()
             .copied()
@@ -904,14 +909,26 @@ impl IncidenceComponentSearch<'_, '_> {
                     .filter(move |pair| pair.contains(&point))
                     .map(move |pair| (edge, pair))
             })
-            .filter(|(edge, pair)| self.candidate_fits(*edge, *pair))
+            .filter(|(edge, pair)| {
+                self.candidate_fits(*edge, *pair)
+                    && coordinate_domains
+                        .is_none_or(|domains| domains.supports_edge_candidate(*edge, *pair))
+            })
             .collect::<Vec<_>>();
         options.sort_unstable();
         options.dedup();
         options
     }
 
-    pub(crate) fn branch_options(&self) -> Option<Vec<(usize, [usize; 2])>> {
+    pub(crate) fn branch_options(
+        &self,
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) -> Option<Vec<(usize, [usize; 2])>> {
+        let viable = |edge, pair| {
+            self.candidate_fits(edge, pair)
+                && coordinate_domains
+                    .is_none_or(|domains| domains.supports_edge_candidate(edge, pair))
+        };
         for &edge in self.edges {
             if self.assignment[edge].is_some() || !self.branch_edge_ready(edge) {
                 continue;
@@ -919,7 +936,7 @@ impl IncidenceComponentSearch<'_, '_> {
             let mut viable = self.choices[edge]
                 .iter()
                 .copied()
-                .filter(|pair| self.candidate_fits(edge, *pair));
+                .filter(|pair| viable(edge, *pair));
             let pair = viable.next()?;
             if viable.next().is_none() {
                 return Some(vec![(edge, pair)]);
@@ -938,14 +955,14 @@ impl IncidenceComponentSearch<'_, '_> {
                 .min_by_key(|&edge| {
                     self.choices[edge]
                         .iter()
-                        .filter(|pair| self.candidate_fits(edge, **pair))
+                        .filter(|pair| viable(edge, **pair))
                         .count()
                 });
             if let Some(edge) = edge {
                 let options = self.choices[edge]
                     .iter()
                     .copied()
-                    .filter(|pair| self.candidate_fits(edge, *pair))
+                    .filter(|pair| viable(edge, *pair))
                     .map(|pair| (edge, pair))
                     .collect::<Vec<_>>();
                 return (!options.is_empty()).then_some(options);
@@ -956,7 +973,7 @@ impl IncidenceComponentSearch<'_, '_> {
             if self.degree(face, point) != 1 {
                 continue;
             }
-            let options = self.constraint_options(face, point);
+            let options = self.constraint_options(face, point, coordinate_domains);
             if options.is_empty() {
                 return None;
             }
@@ -985,14 +1002,14 @@ impl IncidenceComponentSearch<'_, '_> {
             .min_by_key(|&edge| {
                 self.choices[edge]
                     .iter()
-                    .filter(|pair| self.candidate_fits(edge, **pair))
+                    .filter(|pair| viable(edge, **pair))
                     .count()
             });
         Some(edge.map_or_else(Vec::new, |edge| {
             self.choices[edge]
                 .iter()
                 .copied()
-                .filter(|pair| self.candidate_fits(edge, *pair))
+                .filter(|pair| viable(edge, *pair))
                 .map(|pair| (edge, pair))
                 .collect()
         }))
@@ -1141,11 +1158,13 @@ impl IncidenceComponentSearch<'_, '_> {
         &mut self,
         options: MeshFaceEndpointConfigurations,
         quotient_states: &[MeshQuotientGaugeState],
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
     ) {
         for option in options {
             let mut assigned = Vec::new();
             let mut affected_faces = HashSet::new();
             let mut viable = true;
+            let mut next_coordinate_domains = coordinate_domains.cloned();
             for (edge, pair) in option {
                 if !self.active[edge] || self.assignment[edge].is_some() {
                     continue;
@@ -1156,6 +1175,18 @@ impl IncidenceComponentSearch<'_, '_> {
                     }
                     viable = false;
                     break;
+                }
+                if let Some(domains) = next_coordinate_domains.take() {
+                    let Some(refined) =
+                        domains.refine_edge_candidate_arc(edge, pair, Some(self.budget))
+                    else {
+                        if self.budget.exhausted.get() {
+                            self.exhausted = true;
+                        }
+                        viable = false;
+                        break;
+                    };
+                    next_coordinate_domains = Some(refined);
                 }
                 self.adjust(edge, pair, true);
                 self.assignment[edge] = Some(pair);
@@ -1171,7 +1202,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 if let Some(next_states) =
                     self.advance_ordered_faces(affected_faces, quotient_states.to_vec())
                 {
-                    self.search_with_quotient(&next_states);
+                    self.search_with_quotient(&next_states, next_coordinate_domains.as_ref());
                 }
             }
             for (edge, pair) in assigned.into_iter().rev() {
@@ -1188,10 +1219,14 @@ impl IncidenceComponentSearch<'_, '_> {
         let quotient_states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
             vec![(quotient.clone(), HashSet::new())]
         });
-        self.search_with_quotient(&quotient_states);
+        self.search_with_quotient(&quotient_states, self.coordinate_domains);
     }
 
-    fn search_with_quotient(&mut self, quotient_states: &[MeshQuotientGaugeState]) {
+    fn search_with_quotient(
+        &mut self,
+        quotient_states: &[MeshQuotientGaugeState],
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) {
         if self.exhausted || self.stopped {
             return;
         }
@@ -1208,13 +1243,17 @@ impl IncidenceComponentSearch<'_, '_> {
             return;
         }
         let solutions_before = self.solutions.len();
-        self.search_state(quotient_states);
+        self.search_state(quotient_states, coordinate_domains);
         if !self.exhausted && self.solutions.len() == solutions_before {
             self.dead_states.insert(state);
         }
     }
 
-    fn search_state(&mut self, quotient_states: &[MeshQuotientGaugeState]) {
+    fn search_state(
+        &mut self,
+        quotient_states: &[MeshQuotientGaugeState],
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) {
         const MAX_SOLUTIONS: usize = 256;
         if self.exhausted || self.stopped {
             return;
@@ -1230,11 +1269,11 @@ impl IncidenceComponentSearch<'_, '_> {
         }
         if let Some(options) = face_options {
             if !options.is_empty() {
-                self.search_face_configurations(options, quotient_states);
+                self.search_face_configurations(options, quotient_states, coordinate_domains);
             }
             return;
         }
-        let Some(options) = self.branch_options() else {
+        let Some(options) = self.branch_options(coordinate_domains) else {
             return;
         };
         if options.is_empty() {
@@ -1281,6 +1320,20 @@ impl IncidenceComponentSearch<'_, '_> {
                 }
                 continue;
             }
+            let next_coordinate_domains = if let Some(domains) = coordinate_domains {
+                let Some(refined) =
+                    domains.refine_edge_candidate_arc(edge, pair, Some(self.budget))
+                else {
+                    if self.budget.exhausted.get() {
+                        self.exhausted = true;
+                        return;
+                    }
+                    continue;
+                };
+                Some(refined)
+            } else {
+                None
+            };
             self.adjust(edge, pair, true);
             self.assignment[edge] = Some(pair);
             let mut faces = self.edge_faces[edge].to_vec();
@@ -1293,7 +1346,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 if let Some(next_states) =
                     self.advance_ordered_faces(faces, quotient_states.to_vec())
                 {
-                    self.search_with_quotient(&next_states);
+                    self.search_with_quotient(&next_states, next_coordinate_domains.as_ref());
                 }
             }
             self.assignment[edge] = None;
@@ -1772,7 +1825,6 @@ where
         }
         let mut constraints = constraints.into_iter().collect::<Vec<_>>();
         constraints.sort_unstable();
-        let coordinate_exhausted = Cell::new(false);
         let filter = |solution: &[MeshEndpointPair]| {
             let mut completed = assignment.to_vec();
             for &(edge, pair) in solution {
@@ -1786,26 +1838,8 @@ where
                 mesh_assignments,
                 point_count,
             );
-            if !locally_closed {
-                return false;
-            }
-            if !partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed)) {
-                return false;
-            }
-            coordinate_domains.is_none_or(|domains| {
-                let candidates = completed
-                    .iter()
-                    .enumerate()
-                    .map(|(edge, pair)| {
-                        pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
-                    })
-                    .collect::<Vec<_>>();
-                let viable = domains.candidates_viable(&candidates, Some(budget));
-                if !viable && budget.exhausted.get() {
-                    coordinate_exhausted.set(true);
-                }
-                viable
-            })
+            locally_closed
+                && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed))
         };
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
         let mut search = IncidenceComponentSearch {
@@ -1814,6 +1848,7 @@ where
             face_edges,
             mesh_assignments,
             mesh_quotient: None,
+            coordinate_domains,
             active,
             edges: component,
             constraints,
@@ -1829,7 +1864,7 @@ where
             stopped: false,
         };
         search.search();
-        search.exhausted || coordinate_exhausted.get()
+        search.exhausted
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2144,7 +2179,26 @@ where
         for component in &components {
             let preflight_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
-            let mut accept_first = |_: &[MeshEndpointPair]| {
+            let mut accept_first = |solution: &[MeshEndpointPair]| {
+                let mut completed = fixed.clone();
+                for &(edge, pair) in solution {
+                    completed[edge] = Some(pair);
+                }
+                let coordinate_feasible = coordinate_domains.as_ref().is_none_or(|domains| {
+                    let candidates = completed
+                        .iter()
+                        .enumerate()
+                        .map(|(edge, pair)| {
+                            pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
+                        })
+                        .collect::<Vec<_>>();
+                    domains
+                        .refine_candidates(&candidates, Some(&preflight_budget))
+                        .is_some()
+                });
+                if !coordinate_feasible {
+                    return ControlFlow::Continue(());
+                }
                 found = true;
                 ControlFlow::Break(())
             };

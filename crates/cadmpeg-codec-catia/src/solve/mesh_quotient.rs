@@ -282,6 +282,16 @@ impl MeshCoordinateRootDomains {
         &self.edge_candidates
     }
 
+    pub(crate) fn supports_edge_candidate(&self, edge: usize, pair: [usize; 2]) -> bool {
+        let Some(&[left, right]) = self.edges.get(edge) else {
+            return false;
+        };
+        (self.domains[left].binary_search(&pair[0]).is_ok()
+            && self.domains[right].binary_search(&pair[1]).is_ok())
+            || (self.domains[left].binary_search(&pair[1]).is_ok()
+                && self.domains[right].binary_search(&pair[0]).is_ok())
+    }
+
     fn coverage_matching(
         domains: &[Vec<usize>],
         point_count: usize,
@@ -305,12 +315,40 @@ impl MeshCoordinateRootDomains {
             .flatten()
     }
 
-    pub(crate) fn candidates_viable(
+    pub(crate) fn refine_edge_candidate_arc(
         &self,
-        edge_candidates: &[Vec<[usize; 2]>],
+        edge: usize,
+        pair: [usize; 2],
         budget: Option<&MeshConstraintBudget>,
-    ) -> bool {
-        self.refine_candidates(edge_candidates, budget).is_some()
+    ) -> Option<Self> {
+        let candidates = self.edge_candidates.get(edge)?;
+        if candidates.as_slice() == [pair] {
+            return Some(self.clone());
+        }
+        if !candidates.contains(&pair) {
+            return None;
+        }
+        let mut edge_candidates = self.edge_candidates.as_ref().clone();
+        edge_candidates[edge] = vec![pair];
+        let mut domains = self.domains.clone();
+        if !enforce_edge_arc_consistency_from(
+            &mut domains,
+            &self.edges,
+            &self.root_edges,
+            &edge_candidates,
+            &[edge],
+            budget,
+        ) {
+            return None;
+        }
+        Some(Self {
+            domains,
+            edges: Arc::clone(&self.edges),
+            root_edges: Arc::clone(&self.root_edges),
+            edge_candidates: Arc::new(edge_candidates),
+            coverage_matching: self.coverage_matching.clone(),
+            point_count: self.point_count,
+        })
     }
 
     pub(crate) fn refine_candidates(

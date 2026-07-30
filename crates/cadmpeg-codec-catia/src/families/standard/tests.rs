@@ -626,6 +626,7 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         face_edges: &face_edges,
         mesh_assignments: None,
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![true; 2],
         edges: &[0, 1],
         constraints: vec![(0, 0), (0, 1), (0, 2)],
@@ -657,6 +658,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         face_edges: &face_edges,
         mesh_assignments: None,
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![true; 2],
         edges: &[0, 1],
         constraints: vec![(0, 0), (0, 1), (0, 2), (1, 1), (1, 2)],
@@ -696,6 +698,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         face_edges: &face_edges,
         mesh_assignments: None,
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![true; EDGE_COUNT],
         edges: &edges,
         constraints,
@@ -732,6 +735,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         face_edges: &face_edges,
         mesh_assignments: None,
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![true; 2],
         edges: &edges,
         constraints: Vec::new(),
@@ -753,7 +757,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     };
 
     assert_eq!(
-        search.branch_options(),
+        search.branch_options(None),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
     );
 }
@@ -777,6 +781,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         face_edges: &face_edges,
         mesh_assignments: None,
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![true, true, false],
         edges: &[0, 1],
         constraints: Vec::new(),
@@ -798,7 +803,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     };
 
     assert_eq!(
-        search.branch_options(),
+        search.branch_options(None),
         Some(vec![(0, [0, 1]), (0, [0, 2])])
     );
 
@@ -808,7 +813,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         ..search
     };
     assert_eq!(
-        independent.branch_options(),
+        independent.branch_options(None),
         Some(vec![(2, [3, 4]), (2, [3, 5])])
     );
 }
@@ -826,6 +831,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         face_edges: &face_edges,
         mesh_assignments: None,
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![true],
         edges: &edges,
         constraints: vec![(0, 0)],
@@ -869,6 +875,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![false],
         edges: &[],
         constraints: Vec::new(),
@@ -917,6 +924,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![true, true],
         edges: &[0, 1],
         constraints: Vec::new(),
@@ -973,6 +981,7 @@ fn incidence_candidate_defers_global_quotient_validation_until_selection() {
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
         mesh_quotient: Some(&quotient),
+        coordinate_domains: None,
         active: vec![true],
         edges: &[0],
         constraints: vec![(0, 0)],
@@ -1022,6 +1031,7 @@ fn incidence_selection_validates_only_its_affected_faces() {
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
         mesh_quotient: Some(&quotient),
+        coordinate_domains: None,
         active: vec![true, false],
         edges: &[0],
         constraints: vec![(0, 0)],
@@ -2480,6 +2490,25 @@ fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
         domains.edge_candidates(),
         &[vec![[0, 1]], vec![[0, 1]], vec![[0, 1]], vec![[2, 2]]]
     );
+}
+
+#[test]
+fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
+    let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 3]], vec![[2, 3]]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &candidates,
+        4,
+        &[[10, 11], [11, 12], [13, 14]],
+    )
+    .expect("initial quotient");
+    let domains = quotient
+        .prepare_coordinate_root_domains(4, &candidates, None)
+        .expect("coordinate root domains")
+        .refine_edge_candidate_arc(0, [0, 1], None)
+        .expect("selected edge pair");
+
+    assert!(domains.supports_edge_candidate(1, [1, 3]));
+    assert!(!domains.supports_edge_candidate(1, [2, 3]));
 }
 
 #[test]
