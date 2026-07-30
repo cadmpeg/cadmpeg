@@ -1305,11 +1305,14 @@ fn legacy_inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64;
 fn legacy_line_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     let code = marker_native_code(payload, offset)?;
     let handle_state = u16::from_le_bytes(payload.get(offset + 76..offset + 78)?.try_into().ok()?);
-    if !matches!((code, handle_state), (0, 2 | 3) | (1, 2)) {
+    if !matches!((code, handle_state), (0 | 1, 2 | 3) | (2, 2)) {
         return None;
     }
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
-        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || !matches!(
+            payload.get(offset + 23..offset + 27),
+            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+        )
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
         || payload.get(offset + 31..offset + 39)
@@ -1326,15 +1329,28 @@ fn legacy_line_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64;
         u16::from_le_bytes(payload.get(offset + 96..offset + 98)?.try_into().ok()?);
     let valid_line_handle_id = matches!(
         (code, handle_state, line_handle_id),
-        (0, 2, 1) | (0, 3, 3) | (1, 2, 0 | 3)
-    );
+        (0, 2, 1) | (0, 3, 3) | (1, 2 | 3, 0 | 3) | (2, 2, 0 | 3)
+    ) && (payload.get(offset + 23..offset + 27)
+        == Some(&[0x04, 0x00, 0x02, 0x00])
+        || matches!((code, handle_state, line_handle_id), (1, 2, 0)));
+    let identity_bearing_tail = payload.get(offset + 124..offset + 162) == Some(&[0; 38])
+        && matches!(
+            (
+                payload.get(offset + 162..offset + 166),
+                payload.get(offset + 166..offset + 170)
+            ),
+            (Some(identity), Some(next_object))
+                if identity == next_object
+                    && identity != [0; 4]
+                    && identity != [0xff; 4]
+        );
     let line_handle = valid_line_handle_id
         && payload.get(offset + 98..offset + 106)
             == Some(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
         && payload.get(offset + 110..offset + 114) == Some(&[0xff; 4])
         && payload.get(offset + 114..offset + 118) == Some(&[0; 4])
         && payload.get(offset + 118..offset + 124) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
-        && payload.get(offset + 124..offset + 166) == Some(&[0; 42])
+        && (payload.get(offset + 124..offset + 166) == Some(&[0; 42]) || identity_bearing_tail)
         && sketch_marker_prefix_at(payload, offset.checked_add(170)?);
     let arc_handle_id = payload
         .get(offset + 119..offset + 121)
@@ -1370,10 +1386,13 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
     if !matches!((code, handle_state), (2, 2 | 3) | (0, 3)) {
         return None;
     }
-    let declaration_tag = if handle_state == 2 {
-        [0x00, 0x00]
-    } else {
-        [0x03, 0x00]
+    let declaration_tag = match handle_state {
+        2 => payload.get(offset + 96..offset + 98) == Some(&[0x00, 0x00]),
+        3 => matches!(
+            payload.get(offset + 96..offset + 98),
+            Some([0x01 | 0x03, 0x00])
+        ),
+        _ => unreachable!(),
     };
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -1390,19 +1409,9 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
     let declaration = payload.get(offset + 78..offset + 84)
         == Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
         && payload.get(offset + 84..offset + 96) == Some(b"sgLineHandle")
-        && payload.get(offset + 96..offset + 106)
-            == Some(&[
-                declaration_tag[0],
-                declaration_tag[1],
-                0xff,
-                0xff,
-                0xff,
-                0xff,
-                0x00,
-                0x00,
-                0x00,
-                0x00,
-            ])
+        && declaration_tag
+        && payload.get(offset + 98..offset + 106)
+            == Some(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
         && payload
             .get(offset + 106..offset + 108)
             .is_some_and(|selector| selector != [0; 2])
@@ -8106,6 +8115,37 @@ mod marker_tests {
         payload[96..98].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(legacy_line_handle_coordinates(&payload, 0), None);
         payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[76..78].copy_from_slice(&3u16.to_le_bytes());
+        payload[96..98].fill(0);
+        assert_eq!(
+            legacy_line_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[76..78].copy_from_slice(&2u16.to_le_bytes());
+        payload[96..98].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(
+            legacy_line_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[96..98].fill(0);
+        assert_eq!(
+            legacy_line_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[162..166].copy_from_slice(&3u32.to_le_bytes());
+        payload[166..170].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            legacy_line_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        payload[166..170].copy_from_slice(&4u32.to_le_bytes());
+        assert_eq!(legacy_line_handle_coordinates(&payload, 0), None);
+        payload[162..170].fill(0);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
         payload.resize(177 + LEGACY_SKETCH_MARKER.len(), 0);
         payload[96..177].fill(0);
         payload[96..108].copy_from_slice(&[
@@ -8125,6 +8165,18 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            legacy_line_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        assert_eq!(
+            legacy_line_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
         payload[17..21].fill(0);
         payload[96..98].copy_from_slice(&3u16.to_le_bytes());
         payload[119..121].fill(0);
@@ -8512,7 +8564,12 @@ mod marker_tests {
             sketch_input_entities(&declaration, "lane")[0].kind,
             SketchInputKind::Point
         );
-        declaration[96..98].fill(0);
+        declaration[96..98].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(
+            extended_profile_point_coordinates(&declaration, 0),
+            Some([0.435, 0.0075])
+        );
+        declaration[96..98].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(extended_profile_point_coordinates(&declaration, 0), None);
 
         let mut compact_declaration = common(162);
