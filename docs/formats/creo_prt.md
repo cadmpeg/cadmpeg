@@ -3187,6 +3187,12 @@ Named saved arcs and circles retain their identity and each decoded scalar
 field when later center, radius, endpoint, or parameter fields are absent.
 Positional saved arcs retain their uniquely joined identity and ordered
 12-slot scalar prefix at a structural row boundary.
+Named saved circle, conic, and dummy bodies begin after their entity labels and
+end before the following entity label. A named saved arc body ends before its
+first positional replay-row separator or the following entity label, whichever
+comes first. Positional saved arc bodies begin at the row identifier and end
+before the row-closing `e3`. These bodies preserve the exact stored fields
+independently of decoded geometry.
 The line prototype can close with `f1 e3`; positional line rows follow that
 close. Within saved-section three-scalar coordinate fields, `18 e5` expands to
 the coordinate triple `[0, 1, 0]`. In a saved-line coordinate row, `41` occupies

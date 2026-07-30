@@ -265,12 +265,14 @@ enum CreoSketchSavedEntity {
         radius: Option<f64>,
         endpoints: [[Option<f64>; 3]; 2],
         parameters: [Option<f64>; 2],
+        body: Vec<u8>,
         offset: usize,
     },
     Circle {
         entity_id: u32,
         center: [Option<f64>; 3],
         radius: Option<f64>,
+        body: Vec<u8>,
         offset: usize,
     },
     Conic {
@@ -279,6 +281,7 @@ enum CreoSketchSavedEntity {
         parameters: [Option<f64>; 2],
         coefficients: [Option<f64>; 2],
         local_system: Option<[f64; 12]>,
+        body: Vec<u8>,
         offset: usize,
     },
     Spline {
@@ -291,6 +294,7 @@ enum CreoSketchSavedEntity {
     },
     Dummy {
         entity_id: Option<u32>,
+        body: Vec<u8>,
         offset: usize,
     },
 }
@@ -2717,6 +2721,7 @@ mod saved_conic_geometry_tests {
             local_system: Some([
                 0.8, -0.6, 0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 1.0, 128.0, 75.0, 0.0,
             ]),
+            body: Vec::new(),
             offset: 40,
         });
 

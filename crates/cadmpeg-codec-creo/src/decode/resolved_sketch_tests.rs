@@ -5495,6 +5495,7 @@ fn complete_saved_circle_defines_full_section_geometry() {
         entity_id: 7,
         center: [Some(2.0), Some(-3.0), Some(0.0)],
         radius: Some(4.5),
+        body: Vec::new(),
         offset: 19,
     });
 
@@ -5729,6 +5730,7 @@ fn saved_arc_joins_through_order_table() {
                         [Some(-2.0), Some(0.0), Some(0.0)],
                     ],
                     parameters: [None; 2],
+                    body: Vec::new(),
                     offset: 20,
                 },
             )],
@@ -6284,6 +6286,7 @@ fn arc_carriers_use_trim_vertices() {
                     radius: Some(2.0),
                     endpoints: [[None; 3]; 2],
                     parameters: [None; 2],
+                    body: Vec::new(),
                     offset: 20,
                 },
             )],
@@ -8689,6 +8692,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
                 entity_id: 20,
                 center: [Some(0.0), Some(0.0), Some(0.0)],
                 radius: Some(4.0),
+                body: Vec::new(),
                 offset: 93,
             },
         )],

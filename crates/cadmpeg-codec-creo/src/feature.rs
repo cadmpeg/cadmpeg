@@ -1547,6 +1547,8 @@ pub struct FeatureSavedArc {
     pub endpoints: [[Option<f64>; 3]; 2],
     /// Start and end curve parameters.
     pub parameters: [Option<f64>; 2],
+    /// Exact entity-body or positional-row bytes, excluding the structural boundary.
+    pub body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -1560,6 +1562,8 @@ pub struct FeatureSavedCircle {
     pub center: [Option<f64>; 3],
     /// Circle radius.
     pub radius: Option<f64>,
+    /// Exact entity-body bytes, excluding the following entity boundary.
+    pub body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -1577,6 +1581,8 @@ pub struct FeatureSavedConic {
     pub coefficients: [Option<f64>; 2],
     /// Two in-plane axes, positive normal, and origin.
     pub local_system: Option<[f64; 12]>,
+    /// Exact entity-body bytes, excluding the following entity boundary.
+    pub body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -1603,6 +1609,8 @@ pub struct FeatureSavedSpline {
 pub struct FeatureSavedDummy {
     /// Saved-section entity identifier, when stored.
     pub entity_id: Option<u32>,
+    /// Exact entity-body bytes, excluding the following entity boundary.
+    pub body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -5513,11 +5521,7 @@ fn saved_positional_generated_entities(
                     _ => false,
                 };
                 if orientation_matches {
-                    let body_end = if payload.get(row_end.saturating_sub(1)) == Some(&0xe3) {
-                        row_end - 1
-                    } else {
-                        row_end
-                    };
+                    let body_end = saved_positional_body_end(payload, row_end);
                     entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
                         entity_id,
                         references: Vec::new(),
@@ -5529,6 +5533,7 @@ fn saved_positional_generated_entities(
                 }
             }
             FeatureSegmentKind::Arc => {
+                let body_end = saved_positional_body_end(payload, row_end);
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center: [values[0], values[1], values[2]],
@@ -5538,6 +5543,7 @@ fn saved_positional_generated_entities(
                         [values[7], values[8], values[9]],
                     ],
                     parameters: [values[10], values[11]],
+                    body: payload[row_start..body_end].to_vec(),
                     offset: row_start,
                 }));
             }
@@ -5545,6 +5551,14 @@ fn saved_positional_generated_entities(
         }
     }
     entities
+}
+
+fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
+    if payload.get(row_end.saturating_sub(1)) == Some(&0xe3) {
+        row_end.saturating_sub(1)
+    } else {
+        row_end
+    }
 }
 
 fn saved_circular_entities(
@@ -5573,6 +5587,24 @@ fn saved_circular_entities(
             let radius = saved_named_scalars::<1>(payload, b"radius", body_start, body_end, cache)
                 .unwrap_or([None])[0];
             if kind == "arc" {
+                let positional = saved_positional_generated_entities(
+                    payload,
+                    body_start,
+                    body_end,
+                    cache,
+                    order_table,
+                    segments,
+                );
+                let named_body_end = positional.iter().map(saved_entity_offset).min().map_or(
+                    body_end,
+                    |row_start| {
+                        if payload.get(row_start.saturating_sub(1)) == Some(&0xe3) {
+                            row_start.saturating_sub(1)
+                        } else {
+                            row_start
+                        }
+                    },
+                );
                 let first = saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
                     .unwrap_or([None; 3]);
                 let second =
@@ -5590,21 +5622,16 @@ fn saved_circular_entities(
                     radius,
                     endpoints: [first, second],
                     parameters: [start_parameter, end_parameter],
+                    body: payload[body_start..named_body_end].to_vec(),
                     offset: entity_offset,
                 }));
-                entities.extend(saved_positional_generated_entities(
-                    payload,
-                    body_start,
-                    body_end,
-                    cache,
-                    order_table,
-                    segments,
-                ));
+                entities.extend(positional);
             } else {
                 entities.push(FeatureSavedEntity::Circle(FeatureSavedCircle {
                     entity_id,
                     center,
                     radius,
+                    body: payload[body_start..body_end].to_vec(),
                     offset: entity_offset,
                 }));
             }
@@ -5664,6 +5691,7 @@ fn saved_conic_entities(
             parameters: [start_parameter, end_parameter],
             coefficients: [first_coefficient, second_coefficient],
             local_system,
+            body: payload[body_start..body_end].to_vec(),
             offset: entity_offset,
         }));
         search = body_end;
@@ -5680,6 +5708,7 @@ fn saved_dummy_entities(payload: &[u8], start: usize, end: usize) -> Vec<Feature
         let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
         entities.push(FeatureSavedEntity::Dummy(FeatureSavedDummy {
             entity_id: saved_entity_id(payload, body_start, body_end),
+            body: payload[body_start..body_end].to_vec(),
             offset: entity_offset,
         }));
         search = body_end;
@@ -10850,9 +10879,17 @@ mod tests {
         assert_eq!(arc.radius, None);
         assert_eq!(arc.endpoints, [[None; 3]; 2]);
         assert_eq!(arc.parameters, [None; 2]);
+        let arc_body_start = b"\xe0\x00entity(arc)\0".len();
+        let circle_label = b"\xe0\x00entity(circle)\0";
+        let circle_offset = payload
+            .windows(circle_label.len())
+            .position(|window| window == circle_label)
+            .expect("circle boundary");
+        assert_eq!(arc.body, payload[arc_body_start..circle_offset]);
         assert_eq!(circle.entity_id, 8);
         assert_eq!(circle.center, [None; 3]);
         assert_eq!(circle.radius, Some(0.0));
+        assert_eq!(circle.body, payload[circle_offset + circle_label.len()..]);
     }
 
     #[test]
@@ -10881,6 +10918,7 @@ mod tests {
             conic.local_system,
             Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
         );
+        assert_eq!(conic.body, payload[b"\xe0\x00entity(conic)\0".len()..]);
     }
 
     #[test]
@@ -10942,6 +10980,7 @@ mod tests {
         assert_eq!(arc.entity_id, 7);
         assert_eq!(arc.center, [Some(0.0); 3]);
         assert_eq!(arc.radius, Some(0.0));
+        assert_eq!(arc.body, payload[1..payload.len() - 1]);
         let section = positional_saved_section(
             &payload,
             0,
@@ -10953,6 +10992,28 @@ mod tests {
         .expect("positional saved section");
         assert_eq!(section.entities.len(), 1);
         assert_eq!(section.offset, 1);
+
+        let named_prefix = b"\xe0\x00entity(arc)\0\xe0\x01id\0\x09";
+        let mut named_payload = named_prefix.to_vec();
+        named_payload.extend_from_slice(&payload);
+        let named_entities = saved_circular_entities(
+            &named_payload,
+            0,
+            named_payload.len(),
+            &scalar::ScalarCache::default(),
+            Some(&order),
+            Some(&segments),
+        );
+        let [FeatureSavedEntity::Arc(named), FeatureSavedEntity::Arc(replay)] =
+            named_entities.as_slice()
+        else {
+            panic!("named arc and replay");
+        };
+        assert_eq!(
+            named.body, b"\xe0\x01id\0\x09",
+            "named body must stop before the replay separator"
+        );
+        assert_eq!(replay.body, payload[1..payload.len() - 1]);
     }
 
     #[test]

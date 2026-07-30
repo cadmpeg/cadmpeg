@@ -6026,6 +6026,19 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     assert_eq!(saved[0]["kind"], "arc");
     assert_eq!(saved[1]["kind"], "circle");
     assert_eq!(saved[2]["kind"], "dummy");
+    for (native, expected) in saved.as_array().expect("saved entity array").iter().zip([
+        &arc.body,
+        &circle.body,
+        &dummy.body,
+    ]) {
+        let body = native["body"]
+            .as_array()
+            .expect("saved entity body")
+            .iter()
+            .map(|byte| byte.as_u64().expect("byte") as u8)
+            .collect::<Vec<_>>();
+        assert_eq!(&body, expected);
+    }
 }
 
 #[test]

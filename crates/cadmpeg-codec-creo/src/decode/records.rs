@@ -2090,6 +2090,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                         radius: arc.radius,
                         endpoints: arc.endpoints,
                         parameters: arc.parameters,
+                        body: arc.body.clone(),
                         offset: arc.offset,
                     },
                     crate::feature::FeatureSavedEntity::Circle(circle) => {
@@ -2097,6 +2098,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             entity_id: circle.entity_id,
                             center: circle.center,
                             radius: circle.radius,
+                            body: circle.body.clone(),
                             offset: circle.offset,
                         }
                     }
@@ -2107,6 +2109,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             parameters: conic.parameters,
                             coefficients: conic.coefficients,
                             local_system: conic.local_system,
+                            body: conic.body.clone(),
                             offset: conic.offset,
                         }
                     }
@@ -2123,6 +2126,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     crate::feature::FeatureSavedEntity::Dummy(dummy) => {
                         CreoSketchSavedEntity::Dummy {
                             entity_id: dummy.entity_id,
+                            body: dummy.body.clone(),
                             offset: dummy.offset,
                         }
                     }
