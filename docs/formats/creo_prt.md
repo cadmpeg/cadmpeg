@@ -3334,7 +3334,10 @@ An equality or ordering comparison between two affine forms is independent of
 the unknowns when subtraction cancels every unknown coefficient. Such a
 comparison has its constant Boolean value during the solve. `if` selects an
 affine branch when its condition is constant, and `min` or `max` selects an
-affine operand when the difference between its operands is constant.
+affine operand when the difference between its operands is constant. `bound`
+and `dead` likewise reduce when the value and both bounds have pairwise
+constant differences. `near` and `dbl_in_tol` reduce when their operand
+difference and nonnegative tolerance are constant.
 Entering the block invalidates any preceding
 value of each declared unknown; that value does not supply following
 assignments when the block remains unsolved. A malformed block is bounded from

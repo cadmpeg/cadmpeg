@@ -2351,6 +2351,34 @@ impl ExpressionValue for SimultaneousAffineValue {
                     right.clone()
                 });
             }
+            (CreoMathFunction::Bound, [value, lower, upper]) => {
+                (lower.constant_difference(upper)? < 0.0).then_some(())?;
+                return Some(if value.constant_difference(lower)? < 0.0 {
+                    lower.clone()
+                } else if value.constant_difference(upper)? > 0.0 {
+                    upper.clone()
+                } else {
+                    value.clone()
+                });
+            }
+            (CreoMathFunction::Dead, [value, lower, upper]) => {
+                (lower.constant_difference(upper)? <= 0.0).then_some(())?;
+                let result = if value.constant_difference(lower)? < 0.0 {
+                    value.clone().combine(lower.clone(), true)?
+                } else if value.constant_difference(upper)? > 0.0 {
+                    value.clone().combine(upper.clone(), true)?
+                } else {
+                    Self::constant(0.0, value.dimension)
+                };
+                return Some(result);
+            }
+            (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
+                let difference = left.constant_difference(right)?;
+                let tolerance = tolerance.as_curve_value()?;
+                let (tolerance, tolerance_dimension) = quantity_parts_ref(&tolerance)?;
+                (left.dimension == tolerance_dimension && tolerance >= 0.0).then_some(())?;
+                return Some(Self::number(f64::from(difference.abs() <= tolerance)));
+            }
             _ => {}
         }
         let arguments = arguments
@@ -5115,6 +5143,64 @@ mod tests {
             "y=0[mm]",
             "SOLVE",
             "min(x,-x)+y=10[mm]",
+            "x-y=2[mm]",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+        assert_eq!(evaluation.assignments[1].value, None);
+    }
+
+    #[test]
+    fn solves_parallel_affine_clamps_deadbands_and_tolerance_tests() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "bound(x+2[mm],x+1[mm],x+3[mm])+y=10[mm]",
+            "dead(x+4[mm],x+1[mm],x+3[mm])-y=1[mm]",
+            "near(x+1[mm],x+2[mm],1[mm])=1",
+            "dbl_in_tol(x+2[mm],x+1[mm],1[mm])=1",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Length(8.0),
+                CurveExpressionValue::Length(0.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_unknown_dependent_clamps_unsolved() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "bound(x,0[mm],10[mm])+y=10[mm]",
             "x-y=2[mm]",
             "FOR x,y",
         ]
