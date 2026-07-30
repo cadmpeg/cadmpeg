@@ -336,15 +336,33 @@ impl CadIr {
     }
 
     /// Parse JSON and reject any unsupported `ir_version`.
+    ///
+    /// The version is read by a probe that names `ir_version` and nothing else,
+    /// which serde skips past without building. Reading the version out of a
+    /// [`serde_json::Value`] of the whole document instead would hold that tree
+    /// — an allocation per member at every depth — for as long as it takes to
+    /// build the typed document from it, so a load would peak at both. The
+    /// document text is scanned twice and materialized once.
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        let value: serde_json::Value = serde_json::from_str(s)?;
-        let version = value.get("ir_version").and_then(serde_json::Value::as_str);
+        /// Every member but `ir_version` is skipped, and the version stays a
+        /// [`serde_json::Value`] so a non-string one is reported as an
+        /// unsupported version rather than as a type error.
+        #[derive(Deserialize)]
+        struct VersionProbe {
+            ir_version: Option<serde_json::Value>,
+        }
+
+        let probe = serde_json::from_str::<VersionProbe>(s)?;
+        let version = probe
+            .ir_version
+            .as_ref()
+            .and_then(serde_json::Value::as_str);
         if version != Some(IR_VERSION) {
             return Err(<serde_json::Error as serde::de::Error>::custom(format!(
                 "unsupported ir_version {version:?}; expected {IR_VERSION}"
             )));
         }
-        serde_json::from_value(value)
+        serde_json::from_str(s)
     }
 
     /// Sort model, native, and unknown-record arenas by identity.
