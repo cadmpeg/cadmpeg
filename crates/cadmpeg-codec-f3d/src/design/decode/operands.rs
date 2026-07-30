@@ -840,10 +840,12 @@ pub(crate) fn parse_construction_operand_group(
         after_property_type.checked_add(8)?
     };
     let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
-    if count == 0 {
+    let mut position = count_at.checked_add(4)?;
+    // Each member consumes 11 bytes; a count the remaining bytes cannot
+    // supply is corrupt and must not reach the allocator.
+    if count == 0 || count > bytes.len().saturating_sub(position) / 11 {
         return None;
     }
-    let mut position = count_at.checked_add(4)?;
     let mut members = Vec::with_capacity(count);
     let mut member_offsets = Vec::with_capacity(count);
     for _ in 0..count {
@@ -1222,10 +1224,12 @@ pub(crate) fn parse_extrude_selection_group(
         return None;
     }
     let member_count = usize::try_from(u32_at(bytes, start + 32)?).ok()?;
-    if member_count == 0 {
+    let mut position = start.checked_add(36)?;
+    // Each member consumes 11 bytes; a count the remaining bytes cannot
+    // supply is corrupt and must not reach the allocator.
+    if member_count == 0 || member_count > bytes.len().saturating_sub(position) / 11 {
         return None;
     }
-    let mut position = start.checked_add(36)?;
     let mut members = Vec::with_capacity(member_count);
     let mut member_offsets = Vec::with_capacity(member_count);
     for _ in 0..member_count {
@@ -1653,8 +1657,13 @@ fn parse_body_recipe_operand_frame(
     {
         return None;
     }
-    let mut references = Vec::with_capacity(reference_count);
     let mut cursor = start.checked_add(25)?;
+    // Each reference consumes 12 bytes; a count the remaining bytes cannot
+    // supply is corrupt and must not reach the allocator.
+    if reference_count > bytes.len().saturating_sub(cursor) / 12 {
+        return None;
+    }
+    let mut references = Vec::with_capacity(reference_count);
     for _ in 0..reference_count {
         references.push(DesignBodyRecipeReference {
             design_reference: read_u64(bytes, cursor)?,
@@ -2286,6 +2295,11 @@ fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyReci
     let Some(mut remaining) = words.get(2..).and_then(recipe_delimiter) else {
         return Vec::new();
     };
+    // Each scalar consumes at least one remaining word; a larger count is
+    // corrupt and must not reach the allocator.
+    if scalar_count > remaining.len() {
+        return Vec::new();
+    }
     let mut scalars = Vec::with_capacity(scalar_count);
     for _ in 0..scalar_count {
         let Some((&scalar, tail)) = remaining.split_first() else {

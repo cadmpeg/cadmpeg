@@ -5809,6 +5809,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         u64::try_from(flagless_paired_at).unwrap()
     );
 
+    // A corrupt member count larger than the remaining bytes can supply must
+    // fail the parse without reaching the allocator.
+    let mut bombed = bytes.clone();
+    bombed[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(parse_construction_operand_group(&bombed, &scope, 0, &record).is_none());
+
     let mut direct = Vec::new();
     header(&mut direct, *b"283", 100);
     direct.extend_from_slice(&[0; 10]);
