@@ -942,7 +942,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.formula_relation.as_ref())
-        .map(|formula| formula.expression.as_str())
+        .filter_map(|formula| formula.expression_entity.entity.as_deref())
         .collect::<HashSet<_>>();
     let referenced_relation_expression_count = native
         .entity_records
@@ -971,6 +971,12 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.formula_relation.as_ref())
         .filter(|formula| formula.output_entity.class_name.is_some())
+        .count();
+    let classified_formula_expression_entity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.formula_relation.as_ref())
+        .filter(|formula| formula.expression_entity.class_name.is_some())
         .count();
     let unresolved_formula_output_count =
         formula_relation_count - resolved_formula_output_count - null_formula_output_count;
@@ -2235,6 +2241,14 @@ fn finish_decode(
         (
             "unclassified_formula_output_entity_count".to_string(),
             formula_relation_count - classified_formula_output_entity_count,
+        ),
+        (
+            "decoded_classified_formula_expression_entity_count".to_string(),
+            classified_formula_expression_entity_count,
+        ),
+        (
+            "unclassified_formula_expression_entity_count".to_string(),
+            formula_relation_count - classified_formula_expression_entity_count,
         ),
         (
             "unresolved_formula_output_count".to_string(),

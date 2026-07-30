@@ -13472,7 +13472,20 @@ fn native_namespace_types_and_validates_formula_relations() {
         .formula_relation
         .as_ref()
         .expect("complete formula relation");
-    assert_eq!(formula.expression, native.entity_records[1].id);
+    assert_eq!(formula.expression_entity.entity_id, 2);
+    assert_eq!(
+        formula.expression_entity.entity.as_deref(),
+        Some(native.entity_records[1].id.as_str())
+    );
+    assert_eq!(
+        formula.expression_entity.class_name,
+        native
+            .object_graphs
+            .iter()
+            .flat_map(|graph| &graph.records)
+            .find(|record| record.entity_id == Some(2))
+            .and_then(|record| record.class_name.clone())
+    );
     assert_eq!(formula.output_entity.entity_id, 99);
     assert_eq!(formula.output_entity.entity, None);
     assert_eq!(
@@ -13497,6 +13510,13 @@ fn native_namespace_types_and_validates_formula_relations() {
         .expect("stored formula relation")
         .as_object_mut()
         .expect("stored formula-relation object");
+    let expression = formula_fields
+        .remove("expression_entity")
+        .expect("stored expression entity");
+    let expression = expression
+        .as_object()
+        .expect("stored expression-entity object");
+    formula_fields.insert("expression".to_string(), expression["entity"].clone());
     let output = formula_fields
         .remove("output_entity")
         .expect("stored output entity");
@@ -13516,6 +13536,37 @@ fn native_namespace_types_and_validates_formula_relations() {
     version_235_namespace.version = crate::native::CATIA_FORMULA_OUTPUT_REFERENCE_VERSION - 1;
     let migrated = crate::native::CatiaNative::load(&version_235_namespace)
         .expect("migrate formula output reference");
+    assert_eq!(
+        migrated.entity_records[0].formula_relation,
+        Some(expected_formula.clone())
+    );
+
+    let mut version_236_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_236_namespace)
+        .expect("store current formula expression reference");
+    let formula_fields = version_236_namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("formula_relation")
+        .expect("stored formula relation")
+        .as_object_mut()
+        .expect("stored formula-relation object");
+    let expression = formula_fields
+        .remove("expression_entity")
+        .expect("stored expression entity");
+    formula_fields.insert(
+        "expression".to_string(),
+        expression
+            .as_object()
+            .expect("stored expression-entity object")["entity"]
+            .clone(),
+    );
+    version_236_namespace.version = crate::native::CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&version_236_namespace)
+        .expect("migrate formula expression reference");
     assert_eq!(
         migrated.entity_records[0].formula_relation,
         Some(expected_formula.clone())
@@ -13839,6 +13890,21 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(
         decoded.report.coverage["unclassified_formula_output_entity_count"],
         usize::from(output_entity.class_name.is_none())
+    );
+    let expression_classified = native.entity_records[0]
+        .formula_relation
+        .as_ref()
+        .expect("complete formula relation")
+        .expression_entity
+        .class_name
+        .is_some();
+    assert_eq!(
+        decoded.report.coverage["decoded_classified_formula_expression_entity_count"],
+        usize::from(expression_classified)
+    );
+    assert_eq!(
+        decoded.report.coverage["unclassified_formula_expression_entity_count"],
+        usize::from(!expression_classified)
     );
     assert_eq!(
         decoded.report.coverage["decoded_referenced_relation_expression_count"],

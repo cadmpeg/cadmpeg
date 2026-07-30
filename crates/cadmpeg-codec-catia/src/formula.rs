@@ -70,7 +70,12 @@ pub(crate) fn transfer_parameters(
         let Some(formula) = &formula_entity.formula_relation else {
             continue;
         };
-        let Some(expression_entity) = entities.get(formula.expression.as_str()) else {
+        let Some(expression_entity) = formula
+            .expression_entity
+            .entity
+            .as_deref()
+            .and_then(|expression| entities.get(expression))
+        else {
             continue;
         };
         let Some(expression) = &expression_entity.relation_expression else {

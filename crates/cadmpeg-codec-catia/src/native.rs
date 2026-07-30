@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 236;
+pub const CATIA_NATIVE_VERSION: u32 = 237;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -57,6 +57,9 @@ pub(crate) const CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION: u32 = 235;
 /// Native namespace version that unifies formula output incidence.
 #[cfg(test)]
 pub(crate) const CATIA_FORMULA_OUTPUT_REFERENCE_VERSION: u32 = 236;
+/// Native namespace version that unifies formula expression incidence.
+#[cfg(test)]
+pub(crate) const CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION: u32 = 237;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1350,8 +1353,9 @@ pub struct CatiaDefinitionChainValue {
 /// One complete formula relation stored by an entity and its object payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaFormulaRelation {
-    /// Complete relation-expression entity selected by the second payload reference.
-    pub expression: String,
+    /// Complete relation-expression incidence selected by the second payload reference.
+    #[serde(default)]
+    pub expression_entity: CatiaEntityReference,
     /// Output parameter incidence selected by the third payload reference.
     #[serde(default)]
     pub output_entity: CatiaEntityReference,
@@ -3196,7 +3200,7 @@ fn formula_relation(
     definitions: &[CatiaDefinitionSchemaSelection],
     entity_id: u32,
     object: &CatiaObjectRecord,
-    relation_expressions: &HashMap<String, (String, String)>,
+    relation_expressions: &HashMap<String, String>,
     entities: &HashMap<(String, u32), String>,
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     parameter_bindings: &HashMap<String, HashMap<String, Vec<String>>>,
@@ -3236,7 +3240,7 @@ fn formula_relation(
         return None;
     }
     let expression_object = expression_reference.target.as_ref()?;
-    let (expression, source) = relation_expressions.get(expression_object)?;
+    let source = relation_expressions.get(expression_object)?;
     let parameter_dependencies = relation_symbols(source)
         .into_iter()
         .map(|symbol| {
@@ -3249,7 +3253,12 @@ fn formula_relation(
         })
         .collect();
     Some(CatiaFormulaRelation {
-        expression: expression.clone(),
+        expression_entity: entity_reference(
+            &object.parent,
+            *expression_entity_id,
+            entities,
+            entity_classes,
+        ),
         output_entity: CatiaEntityReference {
             is_null: parameter_reference.is_null,
             ..entity_reference(
@@ -3263,7 +3272,7 @@ fn formula_relation(
     })
 }
 
-type CatiaRelationExpressionIndex = HashMap<String, (String, String)>;
+type CatiaRelationExpressionIndex = HashMap<String, String>;
 type CatiaRelationExpressionEntityIndex = HashMap<(String, u32), String>;
 type CatiaEntityByGraphIdentityIndex = HashMap<(String, u32), String>;
 type CatiaEntityClassByGraphIdentityIndex = HashMap<(String, u32), String>;
@@ -3297,7 +3306,7 @@ fn semantic_entity_indices(
             let expression = entity.relation_expression.as_ref()?;
             Some((
                 entity.object_record.clone(),
-                (entity.id.clone(), expression.expression.value.clone()),
+                expression.expression.value.clone(),
             ))
         })
         .collect();
@@ -8415,6 +8424,7 @@ impl CatiaNative {
         if namespace.version < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
             || namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION
             || namespace.version < CATIA_FORMULA_OUTPUT_REFERENCE_VERSION
+            || namespace.version < CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION
         {
             let records_by_id = records
                 .iter()
