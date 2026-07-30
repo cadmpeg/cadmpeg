@@ -2411,7 +2411,34 @@ fn generated_revision_offset_surface_round_trips() {
         }
         push_revision_surface_tail(surface);
     });
-    assert_revision_surface_round_trip(smbh, "offset");
+    assert_revision_surface_round_trip(smbh.clone(), "offset");
+
+    // The revision-gated layout shares byte positions with the pre-revision
+    // U/V sense enums but no grammar, so its four-boolean carrier run travels
+    // in the revision form and leaves the enum slots empty.
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("revision offset decode");
+    let ProceduralSurfaceDefinition::Offset {
+        u_sense,
+        v_sense,
+        extension_flags,
+        revision_form,
+        ..
+    } = &result.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected offset surface construction")
+    };
+    assert_eq!((*u_sense, *v_sense), (None, None));
+    assert!(extension_flags.is_empty());
+    assert_eq!(
+        revision_form.as_ref().expect("revision form").flags,
+        [false, true, false, false]
+    );
 }
 
 #[test]
