@@ -3796,6 +3796,7 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     bytes.push(0xea);
     bytes.extend(2_u32.to_le_bytes());
     bytes.push(0xfd);
+    bytes.extend([0xa2, 0xe3, 0xa0]);
     selected_compound_field(&mut bytes, "", 0xcf, 0x9f);
     selected_compound_field(&mut bytes, "#1_ + #2_", 0xd1, 0x9e);
     selected_compound_field(
@@ -3819,11 +3820,15 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     );
     assert_eq!(
         decoded.report.coverage["decoded_legacy_role_text_field_count"],
-        4
+        5
     );
     assert_eq!(
         decoded.report.coverage["decoded_legacy_selected_role_count"],
-        3
+        4
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_schema_field_count"],
+        5
     );
     assert_eq!(decoded.report.coverage["decoded_legacy_relation_count"], 2);
 
@@ -3848,6 +3853,13 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     assert_eq!(
         native.legacy_entity_runs[0].relations[1].expression,
         "#1_ + #2_"
+    );
+    assert_eq!(
+        native.legacy_entity_runs[0].text_fields[3]
+            .role
+            .as_ref()
+            .map(|role| (&role.name, role.selector)),
+        Some((&crate::native::CatiaLegacyRoleName::Selector(0xa2), 4769))
     );
     assert_eq!(
         native.legacy_entity_runs[0].text_fields[4]

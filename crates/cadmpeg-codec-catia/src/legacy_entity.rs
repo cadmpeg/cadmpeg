@@ -1522,6 +1522,7 @@ mod tests {
         compound_field(&mut bytes, "2 * #1_", "param", 0x52);
         compound_field(&mut bytes, "(#1_ : #In LENGTH) : LENGTH\n", "opened", 0x51);
         identity_with_lead(&mut bytes, 99, 0xfd);
+        bytes.extend_from_slice(&[0xa2, 0xe3, 0xa0]);
         selected_compound_field(&mut bytes, "", 0xcf, 0x9f);
         selected_compound_field(&mut bytes, "#1_ + #2_", 0xd1, 0x9e);
         selected_compound_field(
@@ -1573,6 +1574,13 @@ mod tests {
         assert_eq!(relation.body_selector, Some(4692));
         assert_eq!(relation.parameter_selector, Some(4691));
         assert_eq!(relation.parameter_entity_id, None);
+        assert_eq!(
+            run.text_fields[3]
+                .role
+                .as_ref()
+                .map(|role| (&role.name, role.selector)),
+            Some((&super::LegacyRoleName::Selector(0xa2), 4769))
+        );
         assert_eq!(
             run.text_fields[4]
                 .role
