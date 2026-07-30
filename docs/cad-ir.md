@@ -102,7 +102,7 @@ A wire edge appears in exactly one shell's `wire_edges` and in no coedge. A free
 
 ## Geometry and canonical parameterization
 
-Surface carriers are plane, cylinder, cone, sphere, torus, NURBS, procedural, or unknown. Curve carriers are line, circle, ellipse, parabola, hyperbola, degenerate, NURBS, procedural, or unknown. Pcurves are line or NURBS curves in a surface's `(u, v)` space. A subdivision surface is a Catmull–Clark control cage with vertices, edges, directed face edge uses, endpoint sharpness, edge tags, vertex tags, and sector coefficients.
+Surface carriers are plane, cylinder, cone, sphere, torus, NURBS, procedural, or unknown. Curve carriers are line, circle, ellipse, parabola, hyperbola, degenerate, NURBS, procedural, or unknown. Pcurves are analytic, first-order harmonic, first-order hyperbolic, polar, NURBS, trimmed, or signed-offset curves in a surface's `(u, v)` space. A subdivision surface is a Catmull–Clark control cage with vertices, edges, directed face edge uses, endpoint sharpness, edge tags, vertex tags, and sector coefficients.
 
 Free surface, curve, subdivision-surface, and tessellation carriers may carry a `SourceObjectAssociation`. The association records the source format and native object identifier, effective name, color, visibility, layer, and outermost-to-innermost instance path. These fields preserve source-object identity and display metadata when no topology entity owns the carrier.
 

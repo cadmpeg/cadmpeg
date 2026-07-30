@@ -479,8 +479,10 @@ fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64;
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
         | PcurveGeometry::Parabola { .. }
         | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. }
         | PcurveGeometry::PolarHarmonic { .. } => None,
     }
 }

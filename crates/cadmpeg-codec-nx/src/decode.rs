@@ -7476,6 +7476,13 @@ fn reverse_pcurve_over_range(
     if !reflection.is_finite() {
         return None;
     }
+    let combine = |first: Point2, first_scale: f64, second: Point2, second_scale: f64| {
+        let value = Point2::new(
+            first_scale * first.u + second_scale * second.u,
+            first_scale * first.v + second_scale * second.v,
+        );
+        (value.u.is_finite() && value.v.is_finite()).then_some(value)
+    };
     match pcurve {
         PcurveGeometry::Line { origin, direction } => Some(PcurveGeometry::Line {
             origin: Point2::new(
@@ -7507,6 +7514,32 @@ fn reverse_pcurve_over_range(
                 axial_origin: *axial_origin,
                 axial_cos: cosine * axial_cos + sine * axial_sin,
                 axial_sin: sine * axial_cos - cosine * axial_sin,
+            })
+        }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine: source_cosine,
+            sine: source_sine,
+        } => {
+            let cosine = reflection.cos();
+            let sine = reflection.sin();
+            Some(PcurveGeometry::Harmonic {
+                center: *center,
+                cosine: combine(*source_cosine, cosine, *source_sine, sine)?,
+                sine: combine(*source_cosine, sine, *source_sine, -cosine)?,
+            })
+        }
+        PcurveGeometry::Hyperbolic {
+            center,
+            cosine: source_cosine,
+            sine: source_sine,
+        } => {
+            let cosine = reflection.cosh();
+            let sine = reflection.sinh();
+            Some(PcurveGeometry::Hyperbolic {
+                center: *center,
+                cosine: combine(*source_cosine, cosine, *source_sine, sine)?,
+                sine: combine(*source_cosine, -sine, *source_sine, -cosine)?,
             })
         }
         PcurveGeometry::PolarNurbs {
@@ -7628,6 +7661,26 @@ fn reverse_pcurve_over_range(
             major_radius: *major_radius,
             minor_radius: *minor_radius,
         }),
+        PcurveGeometry::Ellipse {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => {
+            let cosine = reflection.cos();
+            let sine = reflection.sin();
+            Some(PcurveGeometry::Harmonic {
+                center: *center,
+                cosine: combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
+                sine: combine(
+                    *x_axis,
+                    major_radius * sine,
+                    *y_axis,
+                    -minor_radius * cosine,
+                )?,
+            })
+        }
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -7692,7 +7745,26 @@ fn reverse_pcurve_over_range(
             major_radius: *major_radius,
             minor_radius: *minor_radius,
         }),
-        PcurveGeometry::Ellipse { .. } | PcurveGeometry::Hyperbola { .. } => None,
+        PcurveGeometry::Hyperbola {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => {
+            let cosine = reflection.cosh();
+            let sine = reflection.sinh();
+            Some(PcurveGeometry::Hyperbolic {
+                center: *center,
+                cosine: combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
+                sine: combine(
+                    *x_axis,
+                    -major_radius * sine,
+                    *y_axis,
+                    -minor_radius * cosine,
+                )?,
+            })
+        }
         PcurveGeometry::Parabola { .. } => None,
     }
 }
@@ -11383,8 +11455,56 @@ mod tests {
                 assert!((actual.u - expected.u).abs() < 1e-12);
                 assert!((actual.v - expected.v).abs() < 1e-12);
             }
-            if !matches!(carrier, PcurveGeometry::Parabola { .. }) {
-                assert!(super::reverse_pcurve_over_range(&carrier, [0.0, 1.5]).is_none());
+        }
+    }
+
+    #[test]
+    fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
+        let carriers = [
+            PcurveGeometry::Ellipse {
+                center: Point2::new(2.0, 3.0),
+                x_axis: Point2::new(0.6, 0.8),
+                y_axis: Point2::new(-0.8, 0.6),
+                major_radius: 4.0,
+                minor_radius: 2.0,
+            },
+            PcurveGeometry::Hyperbola {
+                center: Point2::new(-3.0, 5.0),
+                x_axis: Point2::new(0.8, -0.6),
+                y_axis: Point2::new(0.6, 0.8),
+                major_radius: 2.5,
+                minor_radius: 1.25,
+            },
+        ];
+        let range = [0.25, 1.75];
+        for carrier in carriers {
+            let reversed = super::reverse_pcurve_over_range(&carrier, range)
+                .expect("a finite conic interval has an exact coefficient reflection");
+            assert!(matches!(
+                (&carrier, &reversed),
+                (
+                    PcurveGeometry::Ellipse { .. },
+                    PcurveGeometry::Harmonic { .. }
+                ) | (
+                    PcurveGeometry::Hyperbola { .. },
+                    PcurveGeometry::Hyperbolic { .. }
+                )
+            ));
+            for parameter in [0.25, 0.5, 1.0, 1.5, 1.75] {
+                let expected =
+                    cadmpeg_ir::eval::pcurve_uv(&carrier, range[0] + range[1] - parameter).unwrap();
+                let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+                assert!((actual.u - expected.u).abs() < 1e-12);
+                assert!((actual.v - expected.v).abs() < 1e-12);
+            }
+
+            let reflected_twice = super::reverse_pcurve_over_range(&reversed, range)
+                .expect("general conic coefficients remain exactly reversible");
+            for parameter in [0.25, 0.75, 1.25, 1.75] {
+                let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, parameter).unwrap();
+                let actual = cadmpeg_ir::eval::pcurve_uv(&reflected_twice, parameter).unwrap();
+                assert!((actual.u - expected.u).abs() < 1e-12);
+                assert!((actual.v - expected.v).abs() < 1e-12);
             }
         }
     }

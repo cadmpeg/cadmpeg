@@ -2999,6 +2999,15 @@ pub enum PcurveGeometry {
         /// Semi-minor radius.
         minor_radius: f64,
     },
+    /// General first-order harmonic curve in parameter space.
+    Harmonic {
+        /// Constant coefficient.
+        center: Point2,
+        /// Coefficient multiplying `cos(t)`.
+        cosine: Point2,
+        /// Coefficient multiplying `sin(t)`.
+        sine: Point2,
+    },
     /// Parabola in parameter space.
     Parabola {
         /// Parabola vertex.
@@ -3022,6 +3031,15 @@ pub enum PcurveGeometry {
         major_radius: f64,
         /// Semi-conjugate radius.
         minor_radius: f64,
+    },
+    /// General first-order hyperbolic curve in parameter space.
+    Hyperbolic {
+        /// Constant coefficient.
+        center: Point2,
+        /// Coefficient multiplying `cosh(t)`.
+        cosine: Point2,
+        /// Coefficient multiplying `sinh(t)`.
+        sine: Point2,
     },
     /// A free-form NURBS curve in parameter space (control points are (u, v)).
     Nurbs {

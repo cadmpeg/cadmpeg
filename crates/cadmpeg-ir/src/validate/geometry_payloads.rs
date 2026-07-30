@@ -1860,6 +1860,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && !nonpositive(*major_radius)
                     && !nonpositive(*minor_radius)
             }
+            crate::geometry::PcurveGeometry::Harmonic {
+                center,
+                cosine,
+                sine,
+            }
+            | crate::geometry::PcurveGeometry::Hyperbolic {
+                center,
+                cosine,
+                sine,
+            } => {
+                point_finite(center)
+                    && point_finite(cosine)
+                    && point_finite(sine)
+                    && (direction_valid(cosine) || direction_valid(sine))
+            }
             crate::geometry::PcurveGeometry::Parabola {
                 vertex,
                 x_axis,
@@ -2421,6 +2436,18 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                 && finite(&[*major_radius, *minor_radius])
                 && *major_radius > 0.0
                 && *minor_radius > 0.0
+        }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            point(center) && point(cosine) && point(sine) && (direction(cosine) || direction(sine))
         }
         PcurveGeometry::Parabola {
             vertex,

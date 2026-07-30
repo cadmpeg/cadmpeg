@@ -1355,6 +1355,11 @@ fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Po
                 (minor_radius * t.sin(), *y_axis),
             ],
         )),
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        } => Some(offset2(*center, &[(t.cos(), *cosine), (t.sin(), *sine)])),
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -1378,6 +1383,11 @@ fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Po
                 (minor_radius * t.sinh(), *y_axis),
             ],
         )),
+        PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => Some(offset2(*center, &[(t.cosh(), *cosine), (t.sinh(), *sine)])),
         PcurveGeometry::PolarHarmonic {
             radial_center,
             radial_cos,
@@ -1617,5 +1627,35 @@ mod tests {
         assert!((polar.v - 3.0).abs() < 1e-12);
         assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
         assert!((polar_nurbs.v - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
+        let harmonic = PcurveGeometry::Harmonic {
+            center: Point2::new(2.0, 3.0),
+            cosine: Point2::new(4.0, -1.0),
+            sine: Point2::new(2.0, 5.0),
+        };
+        let hyperbolic = PcurveGeometry::Hyperbolic {
+            center: Point2::new(-3.0, 7.0),
+            cosine: Point2::new(2.5, -4.0),
+            sine: Point2::new(1.5, 0.75),
+        };
+        let angle = std::f64::consts::FRAC_PI_3;
+        assert_eq!(
+            pcurve_uv(&harmonic, angle),
+            Some(Point2::new(
+                2.0 + 4.0 * angle.cos() + 2.0 * angle.sin(),
+                3.0 - angle.cos() + 5.0 * angle.sin(),
+            ))
+        );
+        let parameter = 0.75_f64;
+        assert_eq!(
+            pcurve_uv(&hyperbolic, parameter),
+            Some(Point2::new(
+                -3.0 + 2.5 * parameter.cosh() + 1.5 * parameter.sinh(),
+                7.0 - 4.0 * parameter.cosh() + 0.75 * parameter.sinh(),
+            ))
+        );
     }
 }
