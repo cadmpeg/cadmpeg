@@ -2559,7 +2559,8 @@ fn evaluate_creo_relation_function(
 ) -> Option<CurveExpressionValue> {
     use CurveExpressionValue::{Angle, Length, Number, Quantity, String};
     let value = match (name, arguments) {
-        (CreoMathFunction::Itos, [Number(value)]) if value.is_finite() => {
+        (CreoMathFunction::Itos, [argument]) => {
+            let (value, _) = quantity_parts_ref(argument)?;
             let rounded = value.round();
             if rounded == 0.0 {
                 String(std::string::String::new())
@@ -2567,18 +2568,17 @@ fn evaluate_creo_relation_function(
                 String(format!("{rounded:.0}"))
             }
         }
-        (CreoMathFunction::Rtos, [Number(value)]) => {
-            String(format_relation_real(*value, None, false)?)
-        }
-        (CreoMathFunction::Rtos, [Number(value), Number(decimals)]) => String(
-            format_relation_real(*value, Some(relation_precision(*decimals)?), false)?,
-        ),
-        (CreoMathFunction::Rtos, [Number(value), Number(decimals), Number(scientific)]) => {
-            String(format_relation_real(
-                *value,
-                Some(relation_precision(*decimals)?),
-                *scientific != 0.0,
-            )?)
+        (CreoMathFunction::Rtos, [argument, controls @ ..]) => {
+            let (value, _) = quantity_parts_ref(argument)?;
+            let (decimals, scientific) = match controls {
+                [] => (None, false),
+                [Number(decimals)] => (Some(relation_precision(*decimals)?), false),
+                [Number(decimals), Number(scientific)] => {
+                    (Some(relation_precision(*decimals)?), *scientific != 0.0)
+                }
+                _ => return None,
+            };
+            String(format_relation_real(value, decimals, scientific)?)
         }
         (CreoMathFunction::RelModelName, []) => String(context.model_name?.to_owned()),
         (CreoMathFunction::RelModelType, []) => String("part".to_owned()),
@@ -5037,7 +5037,11 @@ mod tests {
             ("rtos(0)", ""),
             ("rtos(-0,3,YES)", ""),
             ("rtos(0.01234,2,TRUE)", "1.23e-02"),
+            ("rtos(25.4[mm],1)", "25.4"),
+            ("rtos(0.5[rad],3)", "28.648"),
+            ("rtos(2[N],0)", "2000"),
             ("rel_model_type()", "part"),
+            ("itos(1.6[mm])", "2"),
             ("itos(1e20)", "100000000000000000000"),
             ("itos(-1e20)", "-100000000000000000000"),
         ];
@@ -5084,6 +5088,17 @@ mod tests {
             ),
             None
         );
+        for expression in ["rtos('one')", "rtos(1,2[mm])", "itos('one')"] {
+            assert_eq!(
+                evaluate_relation_expression(
+                    expression,
+                    &values,
+                    RelationEvaluationContext::default()
+                ),
+                None,
+                "{expression}"
+            );
+        }
         assert_eq!(
             evaluate_relation_expression(
                 "rel_model_name()",

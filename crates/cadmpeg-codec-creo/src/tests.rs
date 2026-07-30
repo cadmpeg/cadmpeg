@@ -6230,6 +6230,51 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
 }
 
 #[test]
+fn decode_evaluates_dimensioned_relation_string_conversion() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x03length_text=rtos(1[in],1)\0\
+        angle_text=rtos(0.5[rad],3)\0force_text=rtos(2[N],0)\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let values = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.name.as_str(), parameter.value.as_ref()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    assert_eq!(
+        values["length_text"],
+        Some(&cadmpeg_ir::features::ParameterValue::String(
+            "25.4".to_owned()
+        ))
+    );
+    assert_eq!(
+        values["angle_text"],
+        Some(&cadmpeg_ir::features::ParameterValue::String(
+            "28.648".to_owned()
+        ))
+    );
+    assert_eq!(
+        values["force_text"],
+        Some(&cadmpeg_ir::features::ParameterValue::String(
+            "2000".to_owned()
+        ))
+    );
+    assert_eq!(
+        result.report.coverage["evaluated_active_curve_expression_assignment_count"],
+        3
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn decode_retains_scoped_model_name_call_as_model_context() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x01component_name=rel_model_name:27()\0"

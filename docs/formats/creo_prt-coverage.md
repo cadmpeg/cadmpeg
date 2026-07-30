@@ -68,7 +68,9 @@ fixtures, claims above L1 remain unproven.
   types.
   Conditional selection, range and deadband functions, sign and remainder,
   rounding, tolerance tests, and trigonometric results preserve dimensional
-  validity and typed angular results.
+  validity and typed angular results. Integer and real string conversion accepts
+  every numeric scalar in canonical relation units while keeping formatting
+  controls dimensionless.
   Context-dependent cabling, case-study, graph, trajectory, mass-property, and
   material functions and series/list parameter queries retain their argument
   dependencies without treating the function name as a parameter; their values
