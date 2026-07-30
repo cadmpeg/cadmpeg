@@ -825,7 +825,30 @@ fn project_all_dimension_constraints(
         let sketch = sketches_by_scope
             .get(&(scope, owner.scope_record_index))?
             .clone();
-        let definition = owner_scoped_radial_dimension_definition(
+        let parallel_axis_angles = groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == Some(scope)
+                    && group.companion_record_index == companion.record_index
+            })
+            .filter_map(|group| {
+                let Definition::Parallel { first, second } =
+                    exact_group_definition(scope, group, parameter, parameter_id.clone())?
+                else {
+                    return None;
+                };
+                let members = [
+                    entities.iter().find(|entity| entity.id == first)?,
+                    entities.iter().find(|entity| entity.id == second)?,
+                ];
+                parallel_group_axis_angle_definition(&members, parameter, &parameter_id)
+            })
+            .collect::<Vec<_>>();
+        let parallel_axis_angle = match parallel_axis_angles.as_slice() {
+            [definition] => Some(definition.clone()),
+            _ => None,
+        };
+        let owner_scoped_definition = owner_scoped_radial_dimension_definition(
             entities,
             &sketch,
             parameter,
@@ -867,27 +890,29 @@ fn project_all_dimension_constraints(
         })
         .or_else(|| {
             concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id)
-        })
-        .unwrap_or_else(|| Definition::Native {
-            native_kind: parameter.source_kind.clone(),
-            native_state: None,
-            entities: Vec::new(),
-            parameter: Some(parameter_id.clone()),
-            operands: vec![SketchNativeOperand {
-                native_kind: "dimension_companion".into(),
-                native_field: Some(
-                    if companion.payload_byte_length == 0 {
-                        "companion"
-                    } else {
-                        "companion_payload"
-                    }
-                    .into(),
-                ),
-                native_role: None,
-                object_index: companion.record_index,
-                native_ref: Some(companion.id.clone()),
-            }],
         });
+        let definition = parallel_axis_angle
+            .or(owner_scoped_definition)
+            .unwrap_or_else(|| Definition::Native {
+                native_kind: parameter.source_kind.clone(),
+                native_state: None,
+                entities: Vec::new(),
+                parameter: Some(parameter_id.clone()),
+                operands: vec![SketchNativeOperand {
+                    native_kind: "dimension_companion".into(),
+                    native_field: Some(
+                        if companion.payload_byte_length == 0 {
+                            "companion"
+                        } else {
+                            "companion_payload"
+                        }
+                        .into(),
+                    ),
+                    native_role: None,
+                    object_index: companion.record_index,
+                    native_ref: Some(companion.id.clone()),
+                }],
+            });
         Some(SketchConstraint {
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
             sketch,
@@ -906,6 +931,43 @@ fn project_all_dimension_constraints(
     }));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+/// Bind an angular parameter to the common direction of one exact parallel
+/// relation carried by the same dimension companion.
+pub(crate) fn parallel_group_axis_angle_definition(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchAxis, SketchConstraintDefinition as Definition, SketchGeometry,
+    };
+
+    let [first, second] = entities else {
+        return None;
+    };
+    if parameter.source_kind != "Angular Dimension-2"
+        || !design_dimension_unit(parameter)
+        || parallel_line_distance(first, second).is_none()
+    {
+        return None;
+    }
+    let horizontal_axis = SketchGeometry::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    };
+    (line_angle_matches(&first.geometry, &horizontal_axis, parameter.evaluated_value)
+        && line_angle_matches(
+            &second.geometry,
+            &horizontal_axis,
+            parameter.evaluated_value,
+        ))
+    .then(|| Definition::AngleToAxis {
+        entity: first.id.clone(),
+        axis: SketchAxis::Horizontal,
+        parameter: parameter_id.clone(),
+    })
 }
 
 /// Resolve one or more disjoint owner-scoped concentric-circle separations
