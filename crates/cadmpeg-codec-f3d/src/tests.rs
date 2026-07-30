@@ -208,6 +208,18 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
+    // Storing what was loaded reproduces the stored arenas exactly, including
+    // the construction-history tree that `load` grafts across five arenas and
+    // `store` splits apart again. `f3z` merging depends on it: it appends a
+    // member's stored records onto the root's rather than routing the merged
+    // population through the typed form.
+    for name in crate::native::F3D_ARENA_NAMES {
+        assert_eq!(
+            round_trip.arenas.get(*name),
+            original.arenas.get(*name),
+            "native arena {name} did not survive a typed round trip"
+        );
+    }
     assert_eq!(round_trip.version, crate::native::F3D_NATIVE_VERSION);
     assert_eq!(
         round_trip

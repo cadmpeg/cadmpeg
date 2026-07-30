@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
@@ -121,8 +121,45 @@ macro_rules! declare_model {
             pub fn finalize(&mut self) {
                 $(self.$field.sort_by_key($key);)*
             }
+
+            /// Append every arena of `other` onto the matching arena of this
+            /// model, passing each entity through `rewrite`.
+            ///
+            /// Derived from the same `arena_registry!` declaration as
+            /// [`finalize`](Self::finalize), so a new arena is merged without
+            /// editing any call site. One entity is handed to `rewrite` at a
+            /// time, which bounds a rewriting caller's transient storage by the
+            /// largest single entity rather than by the whole model.
+            pub fn extend_rewritten<R: EntityRewrite>(
+                &mut self,
+                other: Self,
+                rewrite: &mut R,
+            ) -> Result<(), R::Error> {
+                $(
+                    self.$field.reserve(other.$field.len());
+                    for entity in other.$field {
+                        self.$field.push(rewrite.rewrite(entity)?);
+                    }
+                )*
+                Ok(())
+            }
         }
     };
+}
+
+/// Per-entity rewrite applied by [`Model::extend_rewritten`].
+///
+/// The method is generic over the entity type because each arena holds its own,
+/// so an implementation reaches every arena through one bound rather than one
+/// method per arena. Entities are serializable, which lets a rewrite that is
+/// uniform over the serialized shape — such as rescoping every identity string
+/// in a subtree — run without a per-type traversal.
+pub trait EntityRewrite {
+    /// Failure raised while rewriting one entity.
+    type Error;
+
+    /// Rewrite one arena entity.
+    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error>;
 }
 
 /// The IR schema version this build produces and accepts.

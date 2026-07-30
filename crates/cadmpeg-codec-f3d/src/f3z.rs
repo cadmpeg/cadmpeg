@@ -8,16 +8,16 @@
 //! and merges the component models into the root document with every
 //! occurrence-local Design placement applied from child to ancestor.
 
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_value::Value;
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::DecodeContext;
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::{EntityRewrite, Model};
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::{Native, NativeRecord};
 
 use crate::container::ContainerScan;
-use crate::native::F3dNative;
 use crate::records::XrefReference;
 use crate::xref::{self, XrefTable};
 
@@ -102,18 +102,34 @@ pub fn decode(
     Ok(DecodeResult::new(root.ir, root.report))
 }
 
+/// Read the two external-reference arenas out of a decoded document.
+///
+/// Only those two arenas are parsed. A member's retained source population
+/// reaches hundreds of thousands of records, and deserializing all of them to
+/// find its outgoing references costs far more than the archive traversal it
+/// serves.
 fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(XrefTable::default());
     };
-    let native = F3dNative::load(namespace)
-        .map_err(|error| CodecError::Malformed(format!("invalid F3D native data: {error}")))?;
+    let invalid = |error| CodecError::Malformed(format!("invalid F3D native data: {error}"));
     Ok(XrefTable {
-        designs: native.xref_designs,
-        references: native.xref_references,
+        designs: namespace.arena_as("xref_designs").map_err(invalid)?,
+        references: namespace.arena_as("xref_references").map_err(invalid)?,
     })
 }
 
+/// Resolve `table`'s outgoing references against the archive and merge each
+/// resolved member into `parent`, returning the number of merged occurrences.
+///
+/// `parent` accumulates in its own document form: a member's arenas are
+/// appended entity by entity and record by record as it is resolved, and the
+/// member is dropped before the next one is decoded. Nothing beyond the
+/// occupancy of the merged document and one member is resident at any point.
+///
+/// A reference that cannot be resolved -- a cycle, an absent member, a member
+/// that fails to decode, or one whose units differ -- is recorded as a loss and
+/// skipped, leaving the rest of the archive to merge.
 fn merge_references(
     ctx: &DecodeContext<'_>,
     parent: &mut DecodeResult,
@@ -122,8 +138,6 @@ fn merge_references(
     stack: &mut Vec<String>,
 ) -> Result<usize, CodecError> {
     let mut merged = 0usize;
-    let mut model_value = serialize_model(&parent.ir.model)?;
-    let mut native_value = serialize_native(&parent.ir)?;
     for reference in &table.references {
         let occurrence = occurrence_key(reference);
         let label = xref::design_for(table, reference).map_or_else(
@@ -191,18 +205,25 @@ fn merge_references(
         stack.push(reference.relative_path.clone());
         let descendants = merge_references(ctx, &mut component, scan, &child_table, stack)?;
         stack.pop();
+        let DecodeResult {
+            ir: mut component_ir,
+            report: component_report,
+            ..
+        } = component;
         if let Some(transform) = reference.transform {
-            apply_occurrence_transform(&mut component.ir.model, transform);
+            apply_occurrence_transform(&mut component_ir.model, transform);
         }
-        let mut component_value = serialize_model(&component.ir.model)?;
-        remap_ids(&mut component_value, &occurrence);
-        extend_arenas(&mut model_value, component_value)?;
-        let mut component_native = serialize_native(&component.ir)?;
-        remap_ids(&mut component_native, &occurrence);
-        extend_native_arenas(&mut native_value, component_native)?;
+        let mut scope = OccurrenceScope {
+            occurrence: &occurrence,
+        };
+        parent
+            .ir
+            .model
+            .extend_rewritten(component_ir.model, &mut scope)?;
+        extend_native(&mut parent.ir.native, component_ir.native, &occurrence);
         merged += descendants + 1;
-        parent.report.geometry_transferred |= component.report.geometry_transferred;
-        for loss in component.report.losses {
+        parent.report.geometry_transferred |= component_report.geometry_transferred;
+        for loss in component_report.losses {
             parent.report.losses.push(LossNote {
                 message: format!("xref {label}: {}", loss.message),
                 ..loss
@@ -219,35 +240,7 @@ fn merge_references(
             reference.relative_path
         ));
     }
-    parent.ir.model = model_value.deserialize_into().map_err(|error| {
-        CodecError::Malformed(format!("merged model round-trip failed: {error}"))
-    })?;
-    let native: F3dNative = native_value.deserialize_into().map_err(|error| {
-        CodecError::Malformed(format!("merged native data round-trip failed: {error}"))
-    })?;
-    native
-        .store(parent.ir.native.namespace_mut("f3d"))
-        .map_err(|error| {
-            CodecError::Malformed(format!("merged native data is invalid: {error}"))
-        })?;
     Ok(merged)
-}
-
-fn serialize_model(model: &Model) -> Result<Value, CodecError> {
-    serde_value::to_value(model)
-        .map_err(|error| CodecError::Malformed(format!("model serialization failed: {error}")))
-}
-
-fn serialize_native(ir: &cadmpeg_ir::CadIr) -> Result<Value, CodecError> {
-    let native = ir
-        .native
-        .namespace("f3d")
-        .map(F3dNative::load)
-        .transpose()
-        .map_err(|error| CodecError::Malformed(format!("invalid F3D native data: {error}")))?
-        .unwrap_or_default();
-    serde_value::to_value(native)
-        .map_err(|error| CodecError::Malformed(format!("native serialization failed: {error}")))
 }
 
 /// The id-prefix key for one occurrence: its role string, or its ordinal when
@@ -289,15 +282,47 @@ fn compose_transforms(
     cadmpeg_ir::transform::Transform { rows }
 }
 
-/// Rewrite every `f3d:`-namespaced id string in a serialized [`Model`] to the
-/// occurrence-scoped form `f3d:xref/<occurrence>/<rest>`. Model entity ids and
-/// their cross-references all carry the `f3d:` prefix, so the rewrite keeps
-/// each occurrence's graph internally consistent and disjoint from the root's.
+/// Rescope one `f3d:`-namespaced identity to `f3d:xref/<occurrence>/<rest>`,
+/// and leave every other string alone.
+///
+/// Model entity ids, their cross-references, and native record ids all carry
+/// the `f3d:` prefix, so applying the rewrite to every string of an entity or
+/// record keeps each occurrence's graph internally consistent and disjoint from
+/// the root's without knowing which strings are identities.
+fn rescope(text: &str, occurrence: &str) -> Option<String> {
+    text.strip_prefix("f3d:")
+        .map(|rest| format!("f3d:xref/{occurrence}/{rest}"))
+}
+
+/// Rescopes one model entity at a time while its arena is appended onto the
+/// root model's.
+struct OccurrenceScope<'a> {
+    occurrence: &'a str,
+}
+
+impl EntityRewrite for OccurrenceScope<'_> {
+    type Error = CodecError;
+
+    /// Model entities are rescoped through [`serde_value`] rather than through
+    /// JSON: their coordinate fields are `f64`, and JSON cannot carry a
+    /// non-finite one.
+    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, CodecError> {
+        let mut value = serde_value::to_value(entity).map_err(|error| {
+            CodecError::Malformed(format!("model serialization failed: {error}"))
+        })?;
+        remap_ids(&mut value, self.occurrence);
+        value.deserialize_into().map_err(|error| {
+            CodecError::Malformed(format!("merged model round-trip failed: {error}"))
+        })
+    }
+}
+
+/// Rescope every string of one serialized model entity, map keys included.
 fn remap_ids(value: &mut Value, occurrence: &str) {
     match value {
         Value::String(text) => {
-            if let Some(rest) = text.strip_prefix("f3d:") {
-                *text = format!("f3d:xref/{occurrence}/{rest}");
+            if let Some(rescoped) = rescope(text, occurrence) {
+                *text = rescoped;
             }
         }
         Value::Seq(items) => {
@@ -318,62 +343,82 @@ fn remap_ids(value: &mut Value, occurrence: &str) {
     }
 }
 
-/// Append every serialized component arena onto the corresponding root arena.
-fn extend_arenas(root: &mut Value, component: Value) -> Result<(), CodecError> {
-    let (Value::Map(root_fields), Value::Map(mut component_fields)) = (root, component) else {
-        return Err(CodecError::Malformed(
-            "serialized model is not a struct map".into(),
-        ));
+/// Append every `f3d` native arena of `component` onto the root's, rescoping
+/// each record into `occurrence`.
+///
+/// Records are moved across one at a time in their stored JSON form. The whole
+/// merged population is never held as a parsed value tree, and neither is the
+/// whole component's: only the record being rescoped is parsed.
+fn extend_native(root: &mut Native, mut component: Native, occurrence: &str) {
+    let Some(mut source) = component.0.remove("f3d") else {
+        return;
     };
-    for name in Model::arena_names() {
-        let key = Value::String((*name).to_string());
-        let Some(Value::Seq(source)) = component_fields.remove(&key) else {
+    let target = root.namespace_mut("f3d");
+    for name in crate::native::F3D_ARENA_NAMES {
+        let Some(records) = source.arenas.remove(*name) else {
             continue;
         };
-        if source.is_empty() {
+        if records.is_empty() {
             continue;
         }
-        let Some(Value::Seq(target)) = root_fields.get_mut(&key) else {
-            root_fields.insert(key, Value::Seq(source));
-            continue;
-        };
-        target.extend(source);
+        let arena = target.arenas.entry((*name).to_string()).or_default();
+        arena.reserve(records.len());
+        for record in records {
+            arena.push(rescope_record(&record, occurrence));
+        }
     }
-    Ok(())
 }
 
-fn extend_native_arenas(root: &mut Value, component: Value) -> Result<(), CodecError> {
-    let (Value::Map(root_fields), Value::Map(mut component_fields)) = (root, component) else {
-        return Err(CodecError::Malformed(
-            "serialized native data is not a struct map".into(),
-        ));
-    };
-    for name in crate::native::F3D_ARENA_NAMES {
-        let key = Value::String((*name).to_string());
-        let Some(Value::Seq(source)) = component_fields.remove(&key) else {
-            continue;
-        };
-        if source.is_empty() {
-            continue;
+/// Rescope one native record's identity and every identity it references.
+fn rescope_record(record: &NativeRecord, occurrence: &str) -> NativeRecord {
+    let mut fields = record.fields();
+    rescope_json_fields(&mut fields, occurrence);
+    let id = rescope(record.id(), occurrence).unwrap_or_else(|| record.id().to_owned());
+    NativeRecord::new(id, fields)
+}
+
+/// Rescope every string of one native record field value.
+fn rescope_json(value: &mut serde_json::Value, occurrence: &str) {
+    match value {
+        serde_json::Value::String(text) => {
+            if let Some(rescoped) = rescope(text, occurrence) {
+                *text = rescoped;
+            }
         }
-        let Some(Value::Seq(target)) = root_fields.get_mut(&key) else {
-            return Err(CodecError::Malformed(format!(
-                "serialized native arena {name} is not a sequence"
-            )));
-        };
-        target.extend(source);
+        serde_json::Value::Array(items) => {
+            for item in items {
+                rescope_json(item, occurrence);
+            }
+        }
+        serde_json::Value::Object(fields) => rescope_json_fields(fields, occurrence),
+        _ => {}
     }
-    Ok(())
+}
+
+/// Rescope one JSON object's values, and its keys when a record keys a map by
+/// identity. Rescoping a key can move it, so the map is rebuilt in that case
+/// and left in place otherwise.
+fn rescope_json_fields(fields: &mut serde_json::Map<String, serde_json::Value>, occurrence: &str) {
+    if fields.keys().any(|key| key.starts_with("f3d:")) {
+        for (key, mut value) in std::mem::take(fields) {
+            rescope_json(&mut value, occurrence);
+            fields.insert(rescope(&key, occurrence).unwrap_or(key), value);
+        }
+        return;
+    }
+    for value in fields.values_mut() {
+        rescope_json(value, occurrence);
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::native::F3dNative;
     use crate::records::DesignSketchPlacement;
     use cadmpeg_ir::document::Model;
     use cadmpeg_ir::ids::{BodyId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
     use cadmpeg_ir::transform::Transform;
+    use cadmpeg_ir::{Native, NativeRecord};
 
     #[test]
     fn occurrence_transform_composes_outside_existing_body_transform() {
@@ -407,7 +452,7 @@ mod tests {
 
     #[test]
     fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
-        let mut root = super::serialize_model(&Model::default()).expect("serialize root model");
+        let mut merged = Model::default();
         let component = Model {
             bodies: vec![Body {
                 id: BodyId("f3d:brep:entity#1".into()),
@@ -426,12 +471,14 @@ mod tests {
             ..Model::default()
         };
         for ordinal in 0..2 {
-            let mut occurrence =
-                super::serialize_model(&component).expect("serialize component model");
-            super::remap_ids(&mut occurrence, &format!("role/occurrence-{ordinal}"));
-            super::extend_arenas(&mut root, occurrence).expect("merge component arenas");
+            let occurrence = format!("role/occurrence-{ordinal}");
+            let mut scope = super::OccurrenceScope {
+                occurrence: &occurrence,
+            };
+            merged
+                .extend_rewritten(component.clone(), &mut scope)
+                .expect("merge component arenas");
         }
-        let merged: Model = root.deserialize_into().expect("deserialize merged model");
 
         for ordinal in 0..2 {
             let prefix = format!("f3d:xref/role/occurrence-{ordinal}/brep:entity#");
@@ -444,38 +491,79 @@ mod tests {
 
     #[test]
     fn occurrence_merge_remaps_and_retains_native_records() {
-        let mut root = serde_value::to_value(F3dNative::default()).expect("serialize root native");
-        let mut component = F3dNative::default();
+        let placement = DesignSketchPlacement {
+            id: "f3d:Design/BulkStream.dat:design-sketch-placement#42".into(),
+            scope_record_index: None,
+            entity_id: "Sketch_1".into(),
+            entity_suffix: 1,
+            byte_offset: 42,
+            class_tag: "001".into(),
+            record_index: 7,
+            frame_length: 34,
+            transform: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: None,
+            paired_class_tag: "002".into(),
+            paired_byte_offset: 76,
+            member_run_head: true,
+        };
+        let mut component = Native::default();
         component
-            .design_sketch_placements
-            .push(DesignSketchPlacement {
-                id: "f3d:Design/BulkStream.dat:design-sketch-placement#42".into(),
-                scope_record_index: None,
-                entity_id: "Sketch_1".into(),
-                entity_suffix: 1,
-                byte_offset: 42,
-                class_tag: "001".into(),
-                record_index: 7,
-                frame_length: 34,
-                transform: [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ],
-                transform_offset: None,
-                paired_class_tag: "002".into(),
-                paired_byte_offset: 76,
-                member_run_head: true,
-            });
-        let mut occurrence = serde_value::to_value(component).expect("serialize component native");
-        super::remap_ids(&mut occurrence, "role/occurrence-0");
-        super::extend_native_arenas(&mut root, occurrence).expect("merge component native");
+            .namespace_mut("f3d")
+            .set_arena("design_sketch_placements", &[placement])
+            .expect("store component native");
+        let mut root = Native::default();
+        super::extend_native(&mut root, component, "role/occurrence-0");
 
-        let merged: F3dNative = root.deserialize_into().expect("deserialize merged native");
+        let merged: Vec<DesignSketchPlacement> = root
+            .namespace("f3d")
+            .expect("merged f3d namespace")
+            .arena_as("design_sketch_placements")
+            .expect("read merged arena");
         assert_eq!(
-            merged.design_sketch_placements[0].id,
+            merged[0].id,
             "f3d:xref/role/occurrence-0/Design/BulkStream.dat:design-sketch-placement#42"
+        );
+    }
+
+    #[test]
+    fn occurrence_merge_remaps_native_record_map_keys_and_nested_payloads() {
+        let record = NativeRecord::new(
+            "f3d:Design/Configurations.json:design-configuration#1",
+            serde_json::json!({
+                "channels": {
+                    "f3d:brep:entity#2": "kept",
+                    "plain": "f3d:brep:entity#3",
+                },
+                "payload": [{"link": "f3d:brep:entity#4"}, "not-an-id"],
+            })
+            .as_object()
+            .expect("object payload")
+            .clone(),
+        );
+
+        let rescoped = super::rescope_record(&record, "role/occurrence-0");
+
+        assert_eq!(
+            rescoped.id(),
+            "f3d:xref/role/occurrence-0/Design/Configurations.json:design-configuration#1"
+        );
+        assert_eq!(
+            serde_json::Value::Object(rescoped.fields()),
+            serde_json::json!({
+                "channels": {
+                    "f3d:xref/role/occurrence-0/brep:entity#2": "kept",
+                    "plain": "f3d:xref/role/occurrence-0/brep:entity#3",
+                },
+                "payload": [
+                    {"link": "f3d:xref/role/occurrence-0/brep:entity#4"},
+                    "not-an-id",
+                ],
+            })
         );
     }
 }
