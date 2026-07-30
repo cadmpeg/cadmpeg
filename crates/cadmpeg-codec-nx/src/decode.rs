@@ -3623,7 +3623,7 @@ pub(crate) fn closest_pcurve_parameters(
     let homogeneous =
         homogeneous_pcurve_spans(degree, knots, control_points, weights.as_deref(), point)?;
     if degree != 1 || weights.is_some() {
-        let candidates = stationary_pcurve_distance_candidates(&homogeneous, seed)?;
+        let candidates = stationary_rational_distance_candidates(&homogeneous, seed)?;
         return closest_parameter_candidates(candidates, seed);
     }
     let candidates = control_points
@@ -3661,8 +3661,8 @@ pub(crate) fn closest_pcurve_parameters(
     closest_parameter_candidates(candidates, seed)
 }
 
-struct HomogeneousPcurveSpans {
-    spans: Vec<BezierPcurveSpan>,
+struct HomogeneousCurveSpans<const DIMENSION: usize> {
+    spans: Vec<BezierSpan<DIMENSION>>,
     coordinate_tolerance: f64,
 }
 
@@ -3672,7 +3672,7 @@ fn homogeneous_pcurve_spans(
     control_points: &[Point2],
     weights: Option<&[f64]>,
     point: Point2,
-) -> Option<HomogeneousPcurveSpans> {
+) -> Option<HomogeneousCurveSpans<3>> {
     let count = control_points.len();
     if degree == 0
         || count <= degree
@@ -3718,15 +3718,15 @@ fn homogeneous_pcurve_spans(
     if controls.iter().flatten().any(|value| !value.is_finite()) {
         return None;
     }
-    let spans = bezier_pcurve_spans(degree, knots, controls)?;
-    Some(HomogeneousPcurveSpans {
+    let spans = bezier_spans(degree, knots, controls)?;
+    Some(HomogeneousCurveSpans {
         spans,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     })
 }
 
-fn stationary_pcurve_distance_candidates(
-    homogeneous: &HomogeneousPcurveSpans,
+fn stationary_rational_distance_candidates<const DIMENSION: usize>(
+    homogeneous: &HomogeneousCurveSpans<DIMENSION>,
     seed: Option<f64>,
 ) -> Option<Vec<(f64, f64)>> {
     let mut candidates = Vec::new();
@@ -3743,7 +3743,7 @@ fn stationary_pcurve_distance_candidates(
             ScalarBezierRoots::Isolated(roots) => parameters.extend(roots),
         }
         candidates.extend(parameters.into_iter().map(|parameter| {
-            let distance = pcurve_residual_distance(&span.controls, parameter, span.domain);
+            let distance = homogeneous_residual_distance(&span.controls, parameter, span.domain);
             (
                 parameter,
                 if distance <= homogeneous.coordinate_tolerance {
@@ -3757,21 +3757,15 @@ fn stationary_pcurve_distance_candidates(
     Some(candidates)
 }
 
-fn rational_squared_distance_derivative(controls: &[[f64; 3]]) -> Option<Vec<f64>> {
+fn rational_squared_distance_derivative<const DIMENSION: usize>(
+    controls: &[[f64; DIMENSION]],
+) -> Option<Vec<f64>> {
     // For residual R/W, half the squared-distance derivative has numerator
     // ((R·R')W - (R·R)W'). Positive weights make its roots exactly the finite
     // stationary parameters of the rational span.
-    let residual_u = controls
-        .iter()
-        .map(|control| control[0])
-        .collect::<Vec<_>>();
-    let residual_v = controls
-        .iter()
-        .map(|control| control[1])
-        .collect::<Vec<_>>();
     let weight = controls
         .iter()
-        .map(|control| control[2])
+        .map(|control| control[DIMENSION - 1])
         .collect::<Vec<_>>();
     let derivative = |values: &[f64]| {
         values
@@ -3779,16 +3773,24 @@ fn rational_squared_distance_derivative(controls: &[[f64; 3]]) -> Option<Vec<f64
             .map(|pair| pair[1] - pair[0])
             .collect::<Vec<_>>()
     };
-    let residual_u_derivative = derivative(&residual_u);
-    let residual_v_derivative = derivative(&residual_v);
     let weight_derivative = derivative(&weight);
-    let residual_squared = add_bernstein_polynomials(
-        bernstein_product(&residual_u, &residual_u)?,
-        bernstein_product(&residual_v, &residual_v)?,
+    let residuals = (0..DIMENSION - 1)
+        .map(|axis| {
+            controls
+                .iter()
+                .map(|control| control[axis])
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let residual_squared = sum_bernstein_polynomials(
+        residuals
+            .iter()
+            .map(|residual| bernstein_product(residual, residual)),
     )?;
-    let residual_derivative = add_bernstein_polynomials(
-        bernstein_product(&residual_u, &residual_u_derivative)?,
-        bernstein_product(&residual_v, &residual_v_derivative)?,
+    let residual_derivative = sum_bernstein_polynomials(
+        residuals
+            .iter()
+            .map(|residual| bernstein_product(residual, &derivative(residual))),
     )?;
     let first = bernstein_product(&residual_derivative, &weight)?;
     let second = bernstein_product(&residual_squared, &weight_derivative)?;
@@ -3841,6 +3843,18 @@ fn add_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f6
         .iter()
         .all(|value| value.is_finite())
         .then_some(result)
+}
+
+fn sum_bernstein_polynomials(
+    polynomials: impl IntoIterator<Item = Option<Vec<f64>>>,
+) -> Option<Vec<f64>> {
+    polynomials.into_iter().try_fold(None, |sum, polynomial| {
+        let polynomial = polynomial?;
+        Some(Some(match sum {
+            Some(sum) => add_bernstein_polynomials(sum, polynomial)?,
+            None => polynomial,
+        }))
+    })?
 }
 
 fn subtract_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
@@ -3998,16 +4012,16 @@ fn scalar_bezier_value(controls: &[f64], parameter: f64, domain: [f64; 2]) -> f6
 }
 
 #[derive(Clone)]
-struct BezierPcurveSpan {
+struct BezierSpan<const DIMENSION: usize> {
     domain: [f64; 2],
-    controls: Vec<[f64; 3]>,
+    controls: Vec<[f64; DIMENSION]>,
 }
 
-fn bezier_pcurve_spans(
+fn bezier_spans<const DIMENSION: usize>(
     degree: usize,
     knots: &[f64],
-    mut controls: Vec<[f64; 3]>,
-) -> Option<Vec<BezierPcurveSpan>> {
+    mut controls: Vec<[f64; DIMENSION]>,
+) -> Option<Vec<BezierSpan<DIMENSION>>> {
     let mut knots = knots.to_vec();
     let domain = [*knots.get(degree)?, *knots.get(controls.len())?];
     let mut internal = knots[degree + 1..controls.len()]
@@ -4031,7 +4045,7 @@ fn bezier_pcurve_spans(
         .filter_map(|(index, domain)| {
             (domain[0] < domain[1]).then(|| {
                 let start = index.checked_mul(degree)?;
-                Some(BezierPcurveSpan {
+                Some(BezierSpan {
                     domain: [domain[0], domain[1]],
                     controls: controls.get(start..=start + degree)?.to_vec(),
                 })
@@ -4041,10 +4055,10 @@ fn bezier_pcurve_spans(
     (!spans.is_empty()).then_some(spans)
 }
 
-fn insert_homogeneous_curve_knot(
+fn insert_homogeneous_curve_knot<const DIMENSION: usize>(
     degree: usize,
     knots: &mut Vec<f64>,
-    controls: &mut Vec<[f64; 3]>,
+    controls: &mut Vec<[f64; DIMENSION]>,
     knot: f64,
 ) -> Option<()> {
     let count = controls.len();
@@ -4055,7 +4069,7 @@ fn insert_homogeneous_curve_knot(
     if multiplicity >= degree {
         return Some(());
     }
-    let mut inserted = vec![[0.0; 3]; count + 1];
+    let mut inserted = vec![[0.0; DIMENSION]; count + 1];
     inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
     inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
     for index in span - degree + 1..=span - multiplicity {
@@ -4073,7 +4087,11 @@ fn insert_homogeneous_curve_knot(
     Some(())
 }
 
-fn pcurve_residual_distance(controls: &[[f64; 3]], parameter: f64, domain: [f64; 2]) -> f64 {
+fn homogeneous_residual_distance<const DIMENSION: usize>(
+    controls: &[[f64; DIMENSION]],
+    parameter: f64,
+    domain: [f64; 2],
+) -> f64 {
     let fraction = (parameter - domain[0]) / (domain[1] - domain[0]);
     let mut values = controls.to_vec();
     while values.len() > 1 {
@@ -4086,7 +4104,12 @@ fn pcurve_residual_distance(controls: &[[f64; 3]], parameter: f64, domain: [f64;
             })
             .collect();
     }
-    values[0][0].hypot(values[0][1]) / values[0][2]
+    values[0][..DIMENSION - 1]
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt()
+        / values[0][DIMENSION - 1]
 }
 
 fn closest_parameter_candidates(
@@ -4611,22 +4634,7 @@ pub(crate) fn closest_spine_parameter(
             point,
             seed,
         ),
-        CurveGeometry::Nurbs(nurbs) => {
-            let degree = usize::try_from(nurbs.degree).ok()?;
-            let count = nurbs.control_points.len();
-            let domain = [*nurbs.knots.get(degree)?, *nurbs.knots.get(count)?];
-            if domain[0] >= domain[1] {
-                return None;
-            }
-            closest_nurbs_curve_parameter(
-                &carrier.geometry,
-                &nurbs.knots,
-                degree,
-                domain,
-                point,
-                seed,
-            )
-        }
+        CurveGeometry::Nurbs(nurbs) => closest_nurbs_curve_parameter(nurbs, point, seed),
         _ => None,
     }
 }
@@ -4686,87 +4694,70 @@ fn closest_periodic_analytic_curve_parameter(
 }
 
 fn closest_nurbs_curve_parameter(
-    geometry: &CurveGeometry,
-    knots: &[f64],
-    degree: usize,
-    domain: [f64; 2],
+    curve: &NurbsCurve,
     point: Point3,
     seed: Option<f64>,
 ) -> Option<f64> {
-    let squared_distance = |parameter| {
-        let position = curve_point(geometry, parameter)?;
-        Some(
-            (position.x - point.x).powi(2)
-                + (position.y - point.y).powi(2)
-                + (position.z - point.z).powi(2),
-        )
+    let degree = usize::try_from(curve.degree).ok()?;
+    let count = curve.control_points.len();
+    if degree == 0
+        || count <= degree
+        || curve.knots.len() != count.checked_add(degree)?.checked_add(1)?
+        || curve.knots.iter().any(|knot| !knot.is_finite())
+        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || curve.control_points.iter().any(|control| {
+            !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
+        })
+        || !point.x.is_finite()
+        || !point.y.is_finite()
+        || !point.z.is_finite()
+    {
+        return None;
+    }
+    let weights = match &curve.weights {
+        Some(weights)
+            if weights.len() == count
+                && weights
+                    .iter()
+                    .all(|weight| weight.is_finite() && *weight > 0.0) =>
+        {
+            weights.clone()
+        }
+        Some(_) => return None,
+        None => vec![1.0; count],
     };
-    let samples = knot_domain_samples(knots, degree, domain);
-    let distances = samples
+    let coordinate_scale = curve
+        .control_points
         .iter()
-        .map(|parameter| squared_distance(*parameter))
-        .collect::<Option<Vec<_>>>()?;
-    let mut best = samples[0];
-    let mut best_distance = distances[0];
-    let mut best_seed_distance = seed.map_or(best.abs(), |seed| (best - seed).abs());
-    let mut consider = |parameter: f64, distance: f64| {
-        let seed_distance = seed.map_or(parameter.abs(), |seed| (parameter - seed).abs());
-        let same_point = (distance - best_distance).abs()
-            <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
-        if distance < best_distance && !same_point
-            || same_point && seed_distance < best_seed_distance
-        {
-            best = parameter;
-            best_distance = distance;
-            best_seed_distance = seed_distance;
-        }
+        .flat_map(|control| [control.x, control.y, control.z])
+        .chain([point.x, point.y, point.z])
+        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+    let controls = curve
+        .control_points
+        .iter()
+        .zip(weights)
+        .map(|(control, weight)| {
+            [
+                weight * (control.x - point.x),
+                weight * (control.y - point.y),
+                weight * (control.z - point.z),
+                weight,
+            ]
+        })
+        .collect::<Vec<_>>();
+    if controls.iter().flatten().any(|value| !value.is_finite()) {
+        return None;
+    }
+    let homogeneous = HomogeneousCurveSpans {
+        spans: bezier_spans(degree, &curve.knots, controls)?,
+        coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     };
-    for (index, &distance) in distances.iter().enumerate() {
-        consider(samples[index], distance);
-        if index > 0
-            && index + 1 < samples.len()
-            && distance <= distances[index - 1]
-            && distance <= distances[index + 1]
-        {
-            let (parameter, distance) =
-                golden_section_minimum(samples[index - 1], samples[index + 1], &squared_distance)?;
-            consider(parameter, distance);
-        }
-    }
-    if let Some(seed) = seed {
-        let seed = seed.clamp(domain[0], domain[1]);
-        let insertion = samples.partition_point(|parameter| *parameter < seed);
-        let lower = samples[insertion.saturating_sub(1)];
-        let upper = samples[insertion.min(samples.len() - 1)];
-        if lower < upper {
-            let (parameter, distance) = golden_section_minimum(lower, upper, &squared_distance)?;
-            consider(parameter, distance);
-        } else {
-            consider(seed, squared_distance(seed)?);
-        }
-    }
-    Some(best)
-}
-
-fn knot_domain_samples(knots: &[f64], degree: usize, domain: [f64; 2]) -> Vec<f64> {
-    let subdivisions = 2 * (degree + 1).max(2);
-    let mut samples = vec![domain[0]];
-    for span in knots[degree..].windows(2) {
-        let start = span[0].max(domain[0]);
-        let end = span[1].min(domain[1]);
-        if start >= end {
-            continue;
-        }
-        for index in 1..=subdivisions {
-            samples.push(start + (end - start) * index as f64 / subdivisions as f64);
-        }
-        if end >= domain[1] {
-            break;
-        }
-    }
-    samples.sort_by(f64::total_cmp);
-    samples.dedup_by(|left, right| *left == *right);
-    samples
+    closest_parameter_candidates(
+        stationary_rational_distance_candidates(&homogeneous, seed)?,
+        seed,
+    )?
+    .into_iter()
+    .next()
 }
 
 fn golden_section_minimum(
@@ -10248,6 +10239,41 @@ mod tests {
     }
 
     #[test]
+    fn rational_spine_closest_search_resolves_close_global_branches() {
+        let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
+        let control_points = [
+            0.006_306_3,
+            -0.029_213_45,
+            0.095_295_133_333_333_34,
+            -0.070_192_95,
+            0.024_297_3,
+        ]
+        .into_iter()
+        .zip(weights)
+        .map(|(numerator, weight)| Point3::new(numerator / weight, 0.0, 0.0))
+        .collect();
+        let curve = NurbsCurve {
+            degree: 4,
+            knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            control_points,
+            weights: Some(weights.to_vec()),
+            periodic: false,
+        };
+        let point = Point3::new(0.0, 1.0e-4, 0.0);
+
+        let first = super::closest_nurbs_curve_parameter(&curve, point, Some(0.099))
+            .expect("first close branch");
+        let second = super::closest_nurbs_curve_parameter(&curve, point, Some(0.101))
+            .expect("second close branch");
+        let remote = super::closest_nurbs_curve_parameter(&curve, point, Some(0.69))
+            .expect("remote global branch");
+
+        assert!((first - 0.1).abs() < 1.0e-8);
+        assert!((second - 0.1001).abs() < 1.0e-8);
+        assert!((remote - 0.7).abs() < 1.0e-8);
+    }
+
+    #[test]
     fn coincident_pcurve_interval_retains_seed_and_boundaries() {
         let pcurve = PcurveGeometry::Nurbs {
             degree: 2,
@@ -10278,8 +10304,7 @@ mod tests {
             .zip(weights)
             .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
             .collect();
-        let spans =
-            super::bezier_pcurve_spans(2, &knots, controls).expect("valid Bézier extraction");
+        let spans = super::bezier_spans(2, &knots, controls).expect("valid Bézier extraction");
 
         assert_eq!(spans.len(), 3);
         for span in spans {
@@ -10294,7 +10319,7 @@ mod tests {
                 )
                 .expect("source NURBS evaluation");
                 let actual =
-                    super::pcurve_residual_distance(&span.controls, parameter, span.domain);
+                    super::homogeneous_residual_distance(&span.controls, parameter, span.domain);
                 assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
             }
         }
