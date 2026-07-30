@@ -330,6 +330,11 @@ fn project_all_dimension_constraints(
         ) {
             return Some(definition);
         }
+        if group.state == 0 && group.unknown_constraint_bits == 0 {
+            if let Some(definition) = counted_role_relation(&locus_entities, group.owner_role) {
+                return Some(definition);
+            }
+        }
         if parameter.source_kind.starts_with("Angular Dimension") {
             let indices = group
                 .loci
@@ -378,9 +383,6 @@ fn project_all_dimension_constraints(
                 return Some(definition);
             }
             if group.state == 0 && group.unknown_constraint_bits == 0 {
-                if let Some(definition) = counted_axis_relation(&locus_entities, group.owner_role) {
-                    return Some(definition);
-                }
                 if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
                     return Some(definition);
                 }
@@ -2285,7 +2287,7 @@ pub(crate) fn two_locus_distance_dimension(
     })
 }
 
-pub(crate) fn counted_axis_relation(
+pub(crate) fn counted_role_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     owner_role: u32,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
@@ -2293,26 +2295,169 @@ pub(crate) fn counted_axis_relation(
         SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
     };
 
-    let [entity] = entities else {
-        return None;
-    };
-    let Geometry::Line { start, end } = &entity.geometry else {
-        return None;
-    };
-    let du = end.u - start.u;
-    let dv = end.v - start.v;
-    let length = du.hypot(dv);
-    if length <= 1.0e-12 {
-        return None;
-    }
     match owner_role {
-        0x40 if dv.abs() <= 1.0e-9 * length => Some(Definition::Horizontal {
-            entity: entity.id.clone(),
-        }),
-        0x80 if du.abs() <= 1.0e-9 * length => Some(Definition::Vertical {
-            entity: entity.id.clone(),
-        }),
+        0x40 | 0x80 => {
+            let [entity] = entities else {
+                return None;
+            };
+            let Geometry::Line { start, end } = &entity.geometry else {
+                return None;
+            };
+            let du = end.u - start.u;
+            let dv = end.v - start.v;
+            let length = du.hypot(dv);
+            if length <= 1.0e-12 {
+                return None;
+            }
+            match owner_role {
+                0x40 if dv.abs() <= 1.0e-9 * length => Some(Definition::Horizontal {
+                    entity: entity.id.clone(),
+                }),
+                0x80 if du.abs() <= 1.0e-9 * length => Some(Definition::Vertical {
+                    entity: entity.id.clone(),
+                }),
+                _ => None,
+            }
+        }
+        0x100 if exact_line_arc_tangency(entities) => {
+            let [first, second] = entities else {
+                unreachable!("exact line-arc tangency requires two entities")
+            };
+            Some(Definition::Tangent {
+                first: first.id.clone(),
+                second: second.id.clone(),
+            })
+        }
+        0x800 if exact_equal_size(entities) => {
+            let [first, second] = entities else {
+                unreachable!("exact equal size requires two entities")
+            };
+            Some(Definition::Equal {
+                first: first.id.clone(),
+                second: second.id.clone(),
+            })
+        }
         _ => None,
+    }
+}
+
+fn exact_line_arc_tangency(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry as Geometry;
+
+    let [first, second] = entities else {
+        return false;
+    };
+    let (line_start, line_end, center, radius, arc_start, arc_end) =
+        match (&first.geometry, &second.geometry) {
+            (
+                Geometry::Line {
+                    start: line_start,
+                    end: line_end,
+                },
+                Geometry::Arc {
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                },
+            )
+            | (
+                Geometry::Arc {
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                },
+                Geometry::Line {
+                    start: line_start,
+                    end: line_end,
+                },
+            ) => (
+                *line_start,
+                *line_end,
+                *center,
+                radius.0,
+                Point2::new(
+                    center.u + radius.0 * start_angle.0.cos(),
+                    center.v + radius.0 * start_angle.0.sin(),
+                ),
+                Point2::new(
+                    center.u + radius.0 * end_angle.0.cos(),
+                    center.v + radius.0 * end_angle.0.sin(),
+                ),
+            ),
+            _ => return false,
+        };
+    let line_direction = Point2::new(line_end.u - line_start.u, line_end.v - line_start.v);
+    let line_length = line_direction.u.hypot(line_direction.v);
+    if radius <= 0.0 || line_length <= 1.0e-12 {
+        return false;
+    }
+    [line_start, line_end].into_iter().any(|line_point| {
+        [arc_start, arc_end].into_iter().any(|arc_point| {
+            let scale = 1.0
+                + line_point
+                    .u
+                    .abs()
+                    .max(line_point.v.abs())
+                    .max(arc_point.u.abs())
+                    .max(arc_point.v.abs())
+                    .max(radius);
+            let radius_direction = Point2::new(arc_point.u - center.u, arc_point.v - center.v);
+            (line_point.u - arc_point.u).abs() <= 1.0e-9 * scale
+                && (line_point.v - arc_point.v).abs() <= 1.0e-9 * scale
+                && (line_direction.u * radius_direction.u + line_direction.v * radius_direction.v)
+                    .abs()
+                    <= 1.0e-9 * line_length * radius
+        })
+    })
+}
+
+fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry as Geometry;
+
+    let [first, second] = entities else {
+        return false;
+    };
+    if first.id == second.id {
+        return false;
+    }
+    let close = |first: f64, second: f64| {
+        (first - second).abs() <= 1.0e-9 * (1.0 + first.abs().max(second.abs()))
+    };
+    match (&first.geometry, &second.geometry) {
+        (
+            Geometry::Line {
+                start: first_start,
+                end: first_end,
+            },
+            Geometry::Line {
+                start: second_start,
+                end: second_end,
+            },
+        ) => {
+            let first_length = (first_end.u - first_start.u).hypot(first_end.v - first_start.v);
+            let second_length =
+                (second_end.u - second_start.u).hypot(second_end.v - second_start.v);
+            first_length > 1.0e-12 && second_length > 1.0e-12 && close(first_length, second_length)
+        }
+        (
+            Geometry::Circle { radius: first, .. } | Geometry::Arc { radius: first, .. },
+            Geometry::Circle { radius: second, .. } | Geometry::Arc { radius: second, .. },
+        ) => close(first.0, second.0),
+        (
+            Geometry::Ellipse {
+                major_radius: first_major,
+                minor_radius: first_minor,
+                ..
+            },
+            Geometry::Ellipse {
+                major_radius: second_major,
+                minor_radius: second_minor,
+                ..
+            },
+        ) => close(first_major.0, second_major.0) && close(first_minor.0, second_minor.0),
+        _ => false,
     }
 }
 

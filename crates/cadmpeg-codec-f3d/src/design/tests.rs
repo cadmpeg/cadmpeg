@@ -45,7 +45,7 @@ use crate::design::decode::sketch::{
     parse_sketch_surface,
 };
 use crate::design::dimensions::{
-    bind_dimension_loci, counted_axis_relation, directional_point_dimension,
+    bind_dimension_loci, counted_role_relation, directional_point_dimension,
     exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
     exact_offset_constraint, expression_identifiers, indirect_angular_lines,
     null_locus_dimension_definition, offset_parameter_factor, point_lies_on_sketch_geometry,
@@ -10649,7 +10649,7 @@ fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
 }
 
 #[test]
-fn counted_axis_roles_require_matching_single_line_geometry() {
+fn counted_roles_require_matching_solved_geometry() {
     let line = |id: &str, start, end| cadmpeg_ir::sketches::SketchEntity {
         id: SketchEntityId(id.into()),
         sketch: SketchId("generated:sketch#0".into()),
@@ -10671,17 +10671,49 @@ fn counted_axis_roles_require_matching_single_line_geometry() {
     );
 
     assert!(matches!(
-        counted_axis_relation(&[&horizontal], 0x40),
+        counted_role_relation(&[&horizontal], 0x40),
         Some(SketchConstraintDefinition::Horizontal { entity })
             if entity == horizontal.id
     ));
     assert!(matches!(
-        counted_axis_relation(&[&vertical], 0x80),
+        counted_role_relation(&[&vertical], 0x80),
         Some(SketchConstraintDefinition::Vertical { entity })
             if entity == vertical.id
     ));
-    assert!(counted_axis_relation(&[&horizontal], 0x80).is_none());
-    assert!(counted_axis_relation(&[&horizontal, &vertical], 0x40).is_none());
+    assert!(counted_role_relation(&[&horizontal], 0x80).is_none());
+    assert!(counted_role_relation(&[&horizontal, &vertical], 0x40).is_none());
+
+    let arc = cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId("generated:arc#tangent".into()),
+        sketch: horizontal.sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(-2.0, 2.0),
+            radius: Length(1.0),
+            start_angle: Angle(std::f64::consts::FRAC_PI_2),
+            end_angle: Angle(std::f64::consts::PI),
+        },
+    };
+    assert!(matches!(
+        counted_role_relation(&[&arc, &horizontal], 0x100),
+        Some(SketchConstraintDefinition::Tangent { first, second })
+            if first == arc.id && second == horizontal.id
+    ));
+
+    let mut equal_arc = arc.clone();
+    equal_arc.id = SketchEntityId("generated:arc#equal".into());
+    assert!(matches!(
+        counted_role_relation(&[&arc, &equal_arc], 0x800),
+        Some(SketchConstraintDefinition::Equal { first, second })
+            if first == arc.id && second == equal_arc.id
+    ));
+    if let SketchGeometry::Arc { radius, .. } = &mut equal_arc.geometry {
+        *radius = Length(2.0);
+    }
+    assert!(counted_role_relation(&[&arc, &equal_arc], 0x800).is_none());
 }
 
 #[test]
