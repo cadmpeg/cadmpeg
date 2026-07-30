@@ -597,17 +597,15 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
         return None;
     }
     let inner = find_subslice(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
-    if inner + 16 > data.len() {
-        return None;
-    }
-    let a = u32_be(data, inner + 8)? as usize;
-    let b = u32_be(data, inner + 12)?;
-    let dir_offset = inner + a;
-    if dir_offset + 16 > data.len() || &data[dir_offset..dir_offset + 16] != DIR_MAGIC {
+    let a = u32_be(data, inner.checked_add(8)?)? as usize;
+    let b = u32_be(data, inner.checked_add(12)?)?;
+    let dir_offset = inner.checked_add(a)?;
+    let magic_end = dir_offset.checked_add(DIR_MAGIC.len())?;
+    if data.get(dir_offset..magic_end) != Some(DIR_MAGIC) {
         return None;
     }
     let b_usize = b as usize;
-    if b == 0 || dir_offset + b_usize > data.len() {
+    if b == 0 || dir_offset.checked_add(b_usize)? > data.len() {
         return None;
     }
     parse_directory_region(data, inner, dir_offset, b_usize)
@@ -694,14 +692,13 @@ fn parse_extents(
         let log_len = u32_be(dirbuf, base + 8)?;
         let log_off = u32_be(dirbuf, base + 12)?;
         let flags = u32_be(dirbuf, base + 16)?;
-        if phys_len == 0
-            || physical_base + phys_off as usize + phys_len as usize > file_len
-            || log_off as usize != cum
-            || log_len != phys_len
-        {
+        let phys_end = physical_base
+            .checked_add(phys_off as usize)?
+            .checked_add(phys_len as usize)?;
+        if phys_len == 0 || phys_end > file_len || log_off as usize != cum || log_len != phys_len {
             return None;
         }
-        cum += log_len as usize;
+        cum = cum.checked_add(log_len as usize)?;
         extents.push(Extent {
             phys_off,
             phys_len,
@@ -1255,6 +1252,7 @@ mod tests {
             parse_extents(&directory, 0, 1, 0, 64).expect("complete extent");
         assert_eq!(logical_length, 8);
         assert_eq!(extents[0].flags, 0xa501_0080);
+        assert!(parse_extents(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
     }
 
     #[test]
