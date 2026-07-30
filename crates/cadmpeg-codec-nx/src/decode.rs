@@ -10091,7 +10091,14 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Block {
                 dimensions,
                 placement,
-            } if dimensions.is_none() || placement.is_none() => "block",
+            } if dimensions.is_none_or(|dimensions| {
+                dimensions
+                    .into_iter()
+                    .any(|dimension| !positive_feature_length(dimension))
+            }) || placement.is_none() =>
+            {
+                "block"
+            }
             FeatureDefinition::DatumOffsetPlane {
                 reference,
                 distance,
@@ -10132,11 +10139,14 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 centerline,
                 guides,
                 op,
+                max_degree,
                 ..
             } if sections.len() < 2
                 || sections.iter().any(loft_section_is_incomplete)
                 || centerline.as_ref().is_some_and(path_ref_is_incomplete)
                 || guides.iter().any(path_ref_is_incomplete)
+                || (centerline.is_some() && !guides.is_empty())
+                || max_degree.is_some_and(|degree| degree == 0)
                 || matches!(op, BooleanOp::Unresolved) =>
             {
                 "loft"
@@ -10168,7 +10178,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 distance,
                 method,
             } if face_selection_is_incomplete(faces)
-                || distance.is_none()
+                || distance.is_none_or(|distance| !positive_feature_length(distance))
                 || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved) =>
             {
                 "extend surface"
@@ -10205,7 +10215,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 if groups.is_empty()
                     || groups.iter().any(|group| {
                         edge_selection_is_incomplete(&group.edges)
-                            || matches!(group.spec, ChamferSpec::Unresolved { .. })
+                            || chamfer_spec_is_incomplete(&group.spec)
                     }) =>
             {
                 "chamfer"
@@ -10215,6 +10225,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                     || groups.iter().any(|group| {
                         edge_selection_is_incomplete(&group.edges)
                             || radius_spec_is_incomplete(&group.radius)
+                            || group
+                                .tangency_weight
+                                .is_some_and(|weight| !weight.is_finite())
                     }) =>
             {
                 "fillet"
@@ -10254,16 +10267,33 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 extent,
                 op,
                 solid,
+                direction_source,
+                face_maker,
                 ..
             } if profile_ref_is_incomplete(profile)
                 || matches!(
                     direction,
                     cadmpeg_ir::features::ExtrudeDirection::Unresolved
                 )
+                || matches!(
+                    direction,
+                    cadmpeg_ir::features::ExtrudeDirection::Explicit(direction)
+                        if !valid_feature_direction(*direction)
+                )
                 || extrude_start_is_incomplete(start)
                 || extrude_extent_is_incomplete(extent)
                 || matches!(op, BooleanOp::Unresolved)
-                || solid.is_none() =>
+                || solid.is_none()
+                || direction_source.as_ref().is_some_and(|source| {
+                    matches!(
+                        source,
+                        cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }
+                            if path_ref_is_incomplete(reference)
+                    )
+                })
+                || face_maker
+                    .as_ref()
+                    .is_some_and(|maker| maker.class.trim().is_empty()) =>
             {
                 "extrude"
             }
@@ -10275,6 +10305,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 orientation,
                 transition,
                 transformation,
+                twist,
+                scale,
                 ..
             } if profile.as_ref().is_none_or(profile_ref_is_incomplete)
                 || sections.iter().any(profile_ref_is_incomplete)
@@ -10284,12 +10316,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                     .as_ref()
                     .is_none_or(sweep_orientation_is_incomplete)
                 || transition.is_none()
-                || transformation.is_none() =>
+                || transformation.is_none()
+                || twist.is_some_and(|twist| !twist.0.is_finite())
+                || scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) =>
             {
                 "sweep"
             }
             FeatureDefinition::OffsetSurface { faces, distance }
-                if face_selection_is_incomplete(faces) || distance.is_none() =>
+                if face_selection_is_incomplete(faces)
+                    || distance.is_none_or(|distance| !distance.0.is_finite()) =>
             {
                 "offset surface"
             }
@@ -10297,7 +10332,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 faces,
                 thickness,
                 side,
-            } if face_selection_is_incomplete(faces) || thickness.is_none() || side.is_none() => {
+            } if face_selection_is_incomplete(faces)
+                || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
+                || side.is_none() =>
+            {
                 "thicken"
             }
             FeatureDefinition::Draft {
@@ -10308,8 +10346,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 outward,
             } if face_selection_is_incomplete(faces)
                 || face_selection_is_incomplete(neutral_plane)
-                || pull_direction.is_none()
-                || angle.is_none()
+                || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
+                || angle.is_none_or(|angle| !angle.0.is_finite())
                 || outward.is_none() =>
             {
                 "draft"
@@ -10687,20 +10725,89 @@ pub(crate) fn hole_feature_is_incomplete(
         || placements_incomplete
         || location_unresolved
         || orientation_unresolved
-        || matches!(kind, HoleKind::Unresolved { .. })
-        || exit_kind.is_some_and(|kind| matches!(kind, HoleKind::Unresolved { .. }))
-        || diameter.is_none()
+        || hole_kind_is_incomplete(kind, diameter)
+        || exit_kind.is_some_and(|kind| hole_kind_is_incomplete(kind, diameter))
+        || diameter.is_none_or(|diameter| !positive_feature_length(diameter))
         || extent.is_none_or(termination_is_incomplete)
 }
 
+fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bool {
+    let valid_angle = |angle: cadmpeg_ir::features::Angle| {
+        angle.0.is_finite() && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
+    };
+    match kind {
+        HoleKind::Unresolved { .. } => true,
+        HoleKind::Simple => false,
+        HoleKind::Chamfer { diameter, angle } | HoleKind::Countersink { diameter, angle } => {
+            !positive_feature_length(*diameter) || !valid_angle(*angle)
+        }
+        HoleKind::SimpleDrilled { drill_point_angle } => !valid_angle(*drill_point_angle),
+        HoleKind::Counterbore { diameter, depth } => {
+            !positive_feature_length(*diameter) || !positive_feature_length(*depth)
+        }
+        HoleKind::CounterboreDrilled {
+            diameter,
+            depth,
+            drill_point_angle,
+        } => {
+            !positive_feature_length(*diameter)
+                || !positive_feature_length(*depth)
+                || !valid_angle(*drill_point_angle)
+        }
+        HoleKind::Threaded {
+            major_diameter,
+            thread_depth,
+            pitch,
+            drill_point_angle,
+        } => {
+            !positive_feature_length(*major_diameter)
+                || !positive_feature_length(*thread_depth)
+                || pitch.is_some_and(|pitch| !positive_feature_length(pitch))
+                || !valid_angle(*drill_point_angle)
+                || bore_diameter.is_none_or(|diameter| major_diameter.0 <= diameter.0)
+        }
+        HoleKind::Counterdrill {
+            diameter,
+            depth,
+            angle,
+        } => {
+            !positive_feature_length(*diameter)
+                || !positive_feature_length(*depth)
+                || !valid_angle(*angle)
+        }
+    }
+}
+
+fn chamfer_spec_is_incomplete(spec: &ChamferSpec) -> bool {
+    match spec {
+        ChamferSpec::Unresolved { .. } => true,
+        ChamferSpec::Distance { distance } => !positive_feature_length(*distance),
+        ChamferSpec::TwoDistances { first, second } => {
+            !positive_feature_length(*first) || !positive_feature_length(*second)
+        }
+        ChamferSpec::DistanceAngle { distance, angle } => {
+            !positive_feature_length(*distance)
+                || !angle.0.is_finite()
+                || angle.0 <= 0.0
+                || angle.0 >= std::f64::consts::PI
+        }
+    }
+}
+
 pub(crate) fn extrude_extent_is_incomplete(extent: &ExtrudeExtent) -> bool {
+    let side_is_incomplete = |side: &cadmpeg_ir::features::ExtrudeSide| {
+        termination_is_incomplete(&side.termination)
+            || side.draft.is_some_and(|angle| {
+                !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
+            })
+            || side.offset.is_some_and(|offset| !offset.0.is_finite())
+    };
     match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-            termination_is_incomplete(&side.termination)
+            side_is_incomplete(side)
         }
         ExtrudeExtent::TwoSided { first, second } => {
-            termination_is_incomplete(&first.termination)
-                || termination_is_incomplete(&second.termination)
+            side_is_incomplete(first) || side_is_incomplete(second)
         }
     }
 }
@@ -10708,29 +10815,36 @@ pub(crate) fn extrude_extent_is_incomplete(extent: &ExtrudeExtent) -> bool {
 pub(crate) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
     match start {
         ExtrudeStart::Unresolved => true,
-        ExtrudeStart::FromFace { face, .. } => face_selection_is_incomplete(face),
-        ExtrudeStart::ProfilePlane | ExtrudeStart::OffsetProfilePlane { .. } => false,
+        ExtrudeStart::FromFace { face, offset } => {
+            face_selection_is_incomplete(face) || offset.is_some_and(|offset| !offset.0.is_finite())
+        }
+        ExtrudeStart::OffsetProfilePlane { offset } => !offset.0.is_finite(),
+        ExtrudeStart::ProfilePlane => false,
     }
 }
 
 pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
     match termination {
         Termination::Unresolved => true,
-        Termination::ToFace { face, .. } => face_selection_is_incomplete(face),
+        Termination::ToFace { face, offset } => {
+            face_selection_is_incomplete(face) || offset.is_some_and(|offset| !offset.0.is_finite())
+        }
         Termination::ToVertex { vertex } => {
             matches!(
                 vertex,
                 VertexSelection::Unresolved | VertexSelection::Native(_)
             )
         }
-        Termination::OffsetFromFace { face, .. } => face_selection_is_incomplete(face),
+        Termination::OffsetFromFace { face, offset } => {
+            face_selection_is_incomplete(face) || !positive_feature_length(*offset)
+        }
         Termination::ToShape { target } => face_selection_is_incomplete(target),
-        Termination::Blind { .. }
-        | Termination::ThroughAll
+        Termination::Blind { length } => !length.0.is_finite() || length.0 == 0.0,
+        Termination::Angle { angle } => !angle.0.is_finite() || angle.0 <= 0.0,
+        Termination::ThroughAll
         | Termination::ThroughNext
         | Termination::ToFirst
-        | Termination::ToLast
-        | Termination::Angle { .. } => false,
+        | Termination::ToLast => false,
     }
 }
 
@@ -10739,10 +10853,15 @@ pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: Bool
         .profile
         .as_ref()
         .is_none_or(profile_ref_is_incomplete)
-        || construction.direction.is_none()
-        || construction.thickness.is_none()
+        || construction
+            .direction
+            .is_none_or(|direction| !valid_feature_direction(direction))
+        || construction
+            .thickness
+            .is_none_or(|thickness| !positive_feature_length(thickness))
         || construction.side.is_none()
         || matches!(construction.draft, RibDraft::Unresolved)
+        || matches!(construction.draft, RibDraft::Angle(angle) if !angle.0.is_finite())
         || matches!(op, BooleanOp::Unresolved)
 }
 
@@ -10759,31 +10878,99 @@ pub(crate) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
 pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) -> bool {
     match orientation {
         SweepOrientation::Auxiliary { path, .. } => path_ref_is_incomplete(path),
-        SweepOrientation::CorrectedFrenet
-        | SweepOrientation::Fixed
-        | SweepOrientation::Frenet
-        | SweepOrientation::Binormal { .. } => false,
+        SweepOrientation::Binormal { direction } => !valid_feature_direction(*direction),
+        SweepOrientation::CorrectedFrenet | SweepOrientation::Fixed | SweepOrientation::Frenet => {
+            false
+        }
     }
 }
 
 pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
     match pattern {
         PatternKind::Unresolved { .. } => true,
-        PatternKind::Linear { direction, .. } => direction.is_none(),
-        PatternKind::LinearOffsets { direction, offsets } => {
-            direction.is_none() || offsets.is_empty()
+        PatternKind::Linear {
+            direction,
+            spacing,
+            count,
+            second,
+        } => {
+            direction.is_none_or(|direction| !valid_feature_direction(direction))
+                || !positive_feature_length(*spacing)
+                || *count == 0
+                || second.as_ref().is_some_and(|second| {
+                    !valid_feature_direction(second.direction)
+                        || !positive_feature_length(second.spacing)
+                        || second.count == 0
+                })
         }
-        PatternKind::Circular { .. } | PatternKind::Mirror { .. } => false,
-        PatternKind::CircularAngles { angles, .. } => angles.is_empty(),
-        PatternKind::CurveDriven { path, .. } => path.as_ref().is_none_or(path_ref_is_incomplete),
-        PatternKind::Scale { center, .. } => {
+        PatternKind::LinearOffsets { direction, offsets } => {
+            direction.is_none_or(|direction| !valid_feature_direction(direction))
+                || !valid_increasing_locations(offsets.iter().map(|offset| offset.0))
+        }
+        PatternKind::Circular {
+            axis_origin,
+            axis_dir,
+            angle,
+            count,
+        } => {
+            !finite_feature_point(*axis_origin)
+                || !valid_feature_direction(*axis_dir)
+                || !angle.0.is_finite()
+                || angle.0 <= 0.0
+                || *count == 0
+        }
+        PatternKind::CircularAngles {
+            axis_origin,
+            axis_dir,
+            angles,
+        } => {
+            !finite_feature_point(*axis_origin)
+                || !valid_feature_direction(*axis_dir)
+                || !valid_increasing_locations(angles.iter().map(|angle| angle.0))
+        }
+        PatternKind::Mirror {
+            plane_origin,
+            plane_normal,
+        } => !finite_feature_point(*plane_origin) || !valid_feature_direction(*plane_normal),
+        PatternKind::CurveDriven {
+            path,
+            spacing,
+            count,
+        } => {
+            path.as_ref().is_none_or(path_ref_is_incomplete)
+                || !positive_feature_length(*spacing)
+                || *count == 0
+        }
+        PatternKind::Scale {
+            center,
+            final_factor,
+            count,
+        } => {
             matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
+                || matches!(
+                    center,
+                    cadmpeg_ir::features::PatternScaleCenter::Point(point)
+                        if !finite_feature_point(*point)
+                )
+                || !final_factor.is_finite()
+                || *final_factor <= 0.0
+                || *count < 2
         }
         PatternKind::Composite { stages } => {
             stages.is_empty()
-                || stages
-                    .iter()
-                    .any(|stage| pattern_is_incomplete(&stage.pattern))
+                || stages.iter().enumerate().any(|(index, stage)| {
+                    stage.combination
+                        != if index == 0 {
+                            cadmpeg_ir::features::PatternStageCombination::Initialize
+                        } else if matches!(*stage.pattern, PatternKind::Scale { .. }) {
+                            cadmpeg_ir::features::PatternStageCombination::AlignedSlices
+                        } else {
+                            cadmpeg_ir::features::PatternStageCombination::CartesianProduct
+                        }
+                        || matches!(*stage.pattern, PatternKind::Composite { .. })
+                        || pattern_is_incomplete(&stage.pattern)
+                })
+                || pattern_composition_is_incomplete(stages)
         }
     }
 }
@@ -10810,9 +10997,89 @@ pub(crate) fn pattern_feature_is_incomplete(
 pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
     match radius {
         RadiusSpec::Unresolved { .. } => true,
-        RadiusSpec::Constant { .. } => false,
-        RadiusSpec::Chordal { .. } => false,
-        RadiusSpec::Variable { points } => points.len() < 2,
+        RadiusSpec::Constant { radius } => !positive_feature_length(*radius),
+        RadiusSpec::Chordal { chord_length } => !positive_feature_length(*chord_length),
+        RadiusSpec::Variable { points } => {
+            points.len() < 2
+                || points.iter().any(|point| {
+                    !point.parameter.is_finite()
+                        || !(0.0..=1.0).contains(&point.parameter)
+                        || !point.radius.0.is_finite()
+                        || point.radius.0 < 0.0
+                })
+                || !points.iter().any(|point| point.radius.0 > 0.0)
+                || points
+                    .windows(2)
+                    .any(|pair| pair[0].parameter >= pair[1].parameter)
+        }
+    }
+}
+
+fn positive_feature_length(length: Length) -> bool {
+    length.0.is_finite() && length.0 > 0.0
+}
+
+fn valid_feature_direction(direction: Vector3) -> bool {
+    direction.norm().is_finite() && direction.norm() > 0.0
+}
+
+fn finite_feature_point(point: Point3) -> bool {
+    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+}
+
+fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
+    let mut locations = locations;
+    let Some(first) = locations.next() else {
+        return false;
+    };
+    first == 0.0
+        && locations
+            .try_fold(first, |previous, location| {
+                (location.is_finite() && location > previous).then_some(location)
+            })
+            .is_some()
+}
+
+fn pattern_composition_is_incomplete(stages: &[cadmpeg_ir::features::PatternStage]) -> bool {
+    let mut occurrences = None;
+    stages.iter().enumerate().any(|(index, stage)| {
+        let Some(stage_count) = pattern_occurrence_count(&stage.pattern) else {
+            return false;
+        };
+        if stage_count == 0 {
+            return true;
+        }
+        if index == 0 {
+            occurrences = Some(stage_count);
+            return false;
+        }
+        match stage.combination {
+            cadmpeg_ir::features::PatternStageCombination::CartesianProduct => {
+                if let Some(count) = occurrences {
+                    occurrences = count.checked_mul(stage_count);
+                    occurrences.is_none()
+                } else {
+                    false
+                }
+            }
+            cadmpeg_ir::features::PatternStageCombination::AlignedSlices => {
+                occurrences.is_some_and(|count| count % stage_count != 0)
+            }
+            cadmpeg_ir::features::PatternStageCombination::Initialize => true,
+        }
+    })
+}
+
+fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
+    match pattern {
+        PatternKind::Linear { count, .. }
+        | PatternKind::Circular { count, .. }
+        | PatternKind::CurveDriven { count, .. }
+        | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
+        PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
+        PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
+        PatternKind::Mirror { .. } => Some(2),
+        PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
     }
 }
 

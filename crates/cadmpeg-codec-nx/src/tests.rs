@@ -600,6 +600,36 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length(5.0)),
         Some(&Termination::ThroughAll),
     ));
+    assert!(crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
+        (&HoleKind::Simple, None),
+        Some(Length(0.0)),
+        Some(&Termination::ThroughAll),
+    ));
+    assert!(crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
+        (
+            &HoleKind::Chamfer {
+                diameter: Length(7.0),
+                angle: cadmpeg_ir::features::Angle(f64::NAN),
+            },
+            None,
+        ),
+        Some(Length(5.0)),
+        Some(&Termination::ThroughAll),
+    ));
 }
 
 #[test]
@@ -627,6 +657,22 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     assert!(crate::decode::extrude_extent_is_incomplete(
         &ExtrudeExtent::Symmetric {
             side: side(Termination::Unresolved),
+        }
+    ));
+    assert!(crate::decode::extrude_extent_is_incomplete(
+        &ExtrudeExtent::OneSided {
+            side: side(Termination::Blind {
+                length: Length(f64::NAN),
+            }),
+        }
+    ));
+    assert!(crate::decode::extrude_extent_is_incomplete(
+        &ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::ThroughAll,
+                draft: Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2,)),
+                offset: None,
+            },
         }
     ));
     assert!(crate::decode::termination_is_incomplete(
@@ -677,6 +723,11 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
             offset: None,
         }
     ));
+    assert!(crate::decode::extrude_start_is_incomplete(
+        &ExtrudeStart::OffsetProfilePlane {
+            offset: Length(f64::INFINITY),
+        }
+    ));
 }
 
 #[test]
@@ -702,6 +753,18 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         &construction,
         BooleanOp::Join,
     ));
+    construction.direction = Some(Vector3::new(0.0, 0.0, 0.0));
+    assert!(crate::decode::rib_feature_is_incomplete(
+        &construction,
+        BooleanOp::Join,
+    ));
+    construction.direction = Some(Vector3::new(0.0, 0.0, 1.0));
+    construction.thickness = Some(Length(0.0));
+    assert!(crate::decode::rib_feature_is_incomplete(
+        &construction,
+        BooleanOp::Join,
+    ));
+    construction.thickness = Some(Length(2.0));
     construction.profile = Some(ProfileRef::Faces(Vec::new()));
     assert!(crate::decode::rib_feature_is_incomplete(
         &construction,
@@ -735,6 +798,11 @@ fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
             curvilinear: false,
         }
     ));
+    assert!(crate::decode::sweep_orientation_is_incomplete(
+        &SweepOrientation::Binormal {
+            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0),
+        }
+    ));
 }
 
 #[test]
@@ -753,6 +821,18 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
     assert!(!crate::decode::pattern_is_incomplete(&linear));
     assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
         direction: None,
+        spacing: Length(10.0),
+        count: 3,
+        second: None,
+    }));
+    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
+        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+        spacing: Length(0.0),
+        count: 3,
+        second: None,
+    }));
+    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
+        direction: Some(Vector3::new(0.0, 0.0, 0.0)),
         spacing: Length(10.0),
         count: 3,
         second: None,
@@ -777,6 +857,24 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
             }],
         }
     ));
+    assert!(crate::decode::pattern_is_incomplete(
+        &PatternKind::Composite {
+            stages: vec![
+                PatternStage {
+                    pattern: Box::new(linear),
+                    combination: PatternStageCombination::Initialize,
+                },
+                PatternStage {
+                    pattern: Box::new(PatternKind::Scale {
+                        center: cadmpeg_ir::features::PatternScaleCenter::FirstSeedCentroid,
+                        final_factor: 2.0,
+                        count: 2,
+                    }),
+                    combination: PatternStageCombination::AlignedSlices,
+                },
+            ],
+        }
+    ));
 }
 
 #[test]
@@ -792,6 +890,20 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
                 parameter: 0.0,
                 radius: Length(2.0),
             }],
+        }
+    ));
+    assert!(crate::decode::radius_spec_is_incomplete(
+        &RadiusSpec::Variable {
+            points: vec![
+                VariableRadius {
+                    parameter: 0.5,
+                    radius: Length(2.0),
+                },
+                VariableRadius {
+                    parameter: 0.5,
+                    radius: Length(3.0),
+                },
+            ],
         }
     ));
     assert!(!crate::decode::radius_spec_is_incomplete(
@@ -811,6 +923,11 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
     assert!(!crate::decode::radius_spec_is_incomplete(
         &RadiusSpec::Constant {
             radius: Length(2.0),
+        }
+    ));
+    assert!(crate::decode::radius_spec_is_incomplete(
+        &RadiusSpec::Constant {
+            radius: Length(0.0),
         }
     ));
 }
@@ -1131,6 +1248,11 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     for incomplete in [
         definition(
             ExtrudeDirection::Unresolved,
+            ExtrudeStart::ProfilePlane,
+            Some(true),
+        ),
+        definition(
+            ExtrudeDirection::Explicit(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
             ExtrudeStart::ProfilePlane,
             Some(true),
         ),
