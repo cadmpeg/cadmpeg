@@ -492,6 +492,8 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
         .map(|(ordinal, (offset, code))| {
             let linked_point = linked_profile_point(payload, offset);
             let extended_profile_point = extended_profile_point_coordinates(payload, offset);
+            let additional_linked_profile_point =
+                additional_linked_profile_point_coordinates(payload, offset);
             let compact_profile_point =
                 legacy_extended_linked_profile_point_coordinates(payload, offset);
             let single_incidence_profile_point =
@@ -507,6 +509,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             let coordinates_m = linked_point
                 .map(|(coordinates, _)| coordinates)
                 .or(extended_profile_point)
+                .or(additional_linked_profile_point)
                 .or(compact_profile_point)
                 .or(single_incidence_profile_point)
                 .or(packed_profile_point)
@@ -517,6 +520,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             let kind = if marker_spatial_coordinates(payload, offset).is_some()
                 || legacy_line_handle_coordinates(payload, offset).is_some()
                 || extended_profile_point.is_some()
+                || additional_linked_profile_point.is_some()
                 || compact_profile_point.is_some()
                 || single_incidence_profile_point.is_some()
                 || packed_profile_point.is_some()
@@ -1823,6 +1827,56 @@ fn linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePo
     ))
 }
 
+fn additional_linked_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    let marker = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())?;
+    let locus_and_state = (
+        payload.get(offset + 23..offset + 27)?,
+        payload.get(offset + 74..offset + 78)?,
+    );
+    let alternate_layout = (marker == LEGACY_EXTENDED_SKETCH_MARKER
+        && locus_and_state == (&[0x04, 0x00, 0x02, 0x00], &[0x01, 0x00, 0x03, 0x00]))
+        || (marker == LEGACY_SKETCH_MARKER
+            && locus_and_state == (&[0x05, 0x00, 0x01, 0x00], &[0x00, 0x00, 0x02, 0x00]));
+    if !alternate_layout
+        || !matches!(marker_native_code(payload, offset), Some(0 | 2))
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
+        || payload.get(offset + 102..offset + 108) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        || payload.get(offset + 108..offset + 150) != Some(&[0; 42])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(154)?)
+    {
+        return None;
+    }
+    let cells = [
+        payload.get(offset + 78..offset + 90)?,
+        payload.get(offset + 90..offset + 102)?,
+    ];
+    let links = cells.map(|cell| {
+        (
+            u16::from_le_bytes([cell[0], cell[1]]),
+            u16::from_le_bytes([cell[2], cell[3]]),
+            cell[4..8] == [0xff; 4] && cell[8..12] == [0; 4],
+        )
+    });
+    if !matches!(
+        links,
+        [(first_selector, first_id, true), (second_selector, second_id, true)]
+            if first_selector != 0
+                && first_selector != u16::MAX
+                && second_selector != 0
+                && second_selector != u16::MAX
+                && (first_selector, first_id) != (second_selector, second_id)
+    ) {
+        return None;
+    }
+    finite_coordinate_pair(payload, offset + 58)
+}
+
 fn current_reverse_incidence_endpoint_offsets(
     payload: &[u8],
     curve: &SketchInputEntity,
@@ -1962,6 +2016,7 @@ fn legacy_extended_profile_curve_kind(payload: &[u8], offset: usize) -> Option<S
 #[cfg(test)]
 mod marker_tests {
     use super::{
+        additional_linked_profile_point_coordinates,
         alternate_current_indexed_curve_endpoint_indices,
         alternate_current_selected_axis_endpoint_indices, angled_reference_plane_frame,
         append_spatial_vertex, arc_angle_relation_kind, auxiliary_profile_record,
@@ -6164,6 +6219,24 @@ mod marker_tests {
         );
         payload[offset + 17..offset + 21].fill(0);
         payload[offset + 92..offset + 94].copy_from_slice(&3u16.to_le_bytes());
+
+        payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[offset + 74..offset + 78].copy_from_slice(&[0x01, 0x00, 0x03, 0x00]);
+        assert_eq!(
+            additional_linked_profile_point_coordinates(&payload, offset),
+            Some([1.25, -2.5])
+        );
+        assert_eq!(linked_profile_point(&payload, offset), None);
+        payload[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[offset + 74..offset + 78].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+        assert_eq!(
+            additional_linked_profile_point_coordinates(&payload, offset),
+            Some([1.25, -2.5])
+        );
+        assert_eq!(linked_profile_point(&payload, offset), None);
+        payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
 
         let mut extended = vec![0; offset + 158 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
         extended[..offset + 108].copy_from_slice(&payload[..offset + 108]);
