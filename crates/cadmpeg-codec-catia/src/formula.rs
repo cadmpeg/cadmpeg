@@ -1645,7 +1645,7 @@ impl FormulaExpressionParser<'_, '_> {
             return Some(EvaluatedFormulaValue::Scalar(result));
         }
 
-        if function == "LinearInterpolation" {
+        if matches!(function, "LinearInterpolation" | "CubicInterpolation") {
             let [start, end, fraction] = arguments.as_slice() else {
                 return None;
             };
@@ -1655,8 +1655,13 @@ impl FormulaExpressionParser<'_, '_> {
             {
                 return None;
             }
+            let fraction = if function == "CubicInterpolation" {
+                fraction.value * fraction.value * (3.0 - 2.0 * fraction.value)
+            } else {
+                fraction.value
+            };
             return self
-                .scalar_result(start.value + (end.value - start.value) * fraction.value)
+                .scalar_result(start.value + (end.value - start.value) * fraction)
                 .map(EvaluatedFormulaValue::Scalar);
         }
 
