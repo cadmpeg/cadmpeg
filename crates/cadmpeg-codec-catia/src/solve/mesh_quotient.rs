@@ -1717,6 +1717,23 @@ impl MeshQuotient {
         }
         let mut components = components.into_values().collect::<Vec<_>>();
         components.sort_by_key(|component| component[0]);
+        let face_incidence_counts = incidence.map(|(edge_faces, boundary_domains)| {
+            if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
+                return Vec::new();
+            }
+            let mut counts = vec![0usize; boundary_domains.len()];
+            for faces in edge_faces {
+                for (rank, face) in faces.iter().copied().enumerate() {
+                    if rank == 0 || face != faces[0] {
+                        counts[face] += 1;
+                    }
+                }
+            }
+            counts
+        });
+        if face_incidence_counts.as_ref().is_some_and(Vec::is_empty) {
+            return None;
+        }
         let mut assignment = vec![None; roots.len()];
         for component in components {
             let component_set = component.iter().copied().collect::<HashSet<_>>();
@@ -1766,25 +1783,15 @@ impl MeshQuotient {
             if incidence.is_some() && face_edges.is_none() {
                 return None;
             }
-            let closed_faces = incidence.map(|(edge_faces, boundary_domains)| {
-                let face_count = boundary_domains.len();
-                if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
-                    return Vec::new();
-                }
-                let local_edges = edge_ids.iter().copied().collect::<HashSet<_>>();
-                let mut closed = vec![true; face_count];
-                for (edge, faces) in edge_faces.iter().copied().enumerate() {
-                    for (rank, face) in faces.into_iter().enumerate() {
-                        if (rank == 0 || face != faces[0]) && !local_edges.contains(&edge) {
-                            closed[face] = false;
-                        }
-                    }
-                }
-                closed
+            let closed_faces = face_incidence_counts.as_ref().map(|counts| {
+                face_edges
+                    .as_ref()
+                    .expect("incidence face edges accompany incidence counts")
+                    .iter()
+                    .zip(counts)
+                    .map(|(local, total)| local.len() == *total)
+                    .collect::<Vec<_>>()
             });
-            if closed_faces.as_ref().is_some_and(Vec::is_empty) {
-                return None;
-            }
             let mut local_domains = component
                 .iter()
                 .map(|root| domains[*root].clone())

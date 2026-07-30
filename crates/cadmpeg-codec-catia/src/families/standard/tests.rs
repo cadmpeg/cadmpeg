@@ -4464,6 +4464,67 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
 }
 
 #[test]
+fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
+    const COMPONENT_COUNT: usize = 40;
+    let point_count = COMPONENT_COUNT * 3;
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(COMPONENT_COUNT * 6),
+        domains: (0..COMPONENT_COUNT)
+            .flat_map(|component| {
+                let points = Arc::new((component * 3..component * 3 + 3).collect::<HashSet<_>>());
+                std::iter::repeat_n(points, 6)
+            })
+            .collect(),
+        members: (0..COMPONENT_COUNT * 6).map(|node| vec![node]).collect(),
+    };
+    let mut candidates = Vec::new();
+    let mut edge_faces = Vec::new();
+    let mut domains = Vec::new();
+    for component in 0..COMPONENT_COUNT {
+        let node = component * 6;
+        let point = component * 3;
+        let first_edge = candidates.len();
+        quotient
+            .merge(node + 1, node + 2)
+            .expect("shared first corner");
+        quotient
+            .merge(node + 3, node + 4)
+            .expect("shared second corner");
+        candidates.extend([
+            vec![[point, point + 1]],
+            vec![[point + 1, point + 2]],
+            vec![[point, point + 2]],
+        ]);
+        edge_faces.extend([[component, component]; 3]);
+        domains.push(MeshFaceBoundaryDomain::Ordered(vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![(first_edge..first_edge + 3)
+                    .map(|edge| MeshBoundaryEdgeCandidate {
+                        edge,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    })
+                    .collect()],
+            },
+        ]));
+    }
+    let budget = MeshConstraintBudget::new(20_000);
+
+    assert!(quotient
+        .close_coordinate_roots_for_incidence_with_budget(
+            point_count,
+            &candidates,
+            &edge_faces,
+            COMPONENT_COUNT,
+            &domains,
+            Some(&budget),
+        )
+        .is_some());
+    assert!(!budget.exhausted.get());
+}
+
+#[test]
 fn quotient_closure_does_not_budget_forced_component_depth() {
     const ROOT_COUNT: usize = 10_000;
     let mut quotient = MeshQuotient {
