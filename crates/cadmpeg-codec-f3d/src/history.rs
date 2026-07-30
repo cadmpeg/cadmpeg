@@ -3388,89 +3388,155 @@ fn stable_ref(id: &str) -> Option<i64> {
         .ok()
 }
 
-/// Resolve one Design persistent local identity to its invariant stable ASM
-/// history family and the states containing that slot.
+/// Topology families and states containing one requested stable ASM slot.
+#[derive(Default)]
+struct HistoricalIdentityMembership {
+    kinds: HashSet<AsmHistoricalEntityKind>,
+    states: Vec<i64>,
+}
+
+#[derive(Default)]
+struct HistoricalRevisionMembership {
+    entity_refs: HashSet<i64>,
+    states: Vec<i64>,
+}
+
+/// Ambiguity-aware ASM identity data restricted to the Design identities a
+/// binding pass requests.
+struct HistoricalIdentityIndex {
+    identities: HashMap<i64, HistoricalIdentityMembership>,
+    revisions: HashMap<i64, HistoricalRevisionMembership>,
+}
+
+impl HistoricalIdentityIndex {
+    fn build(histories: &[AsmHistory], local_ids: impl IntoIterator<Item = u64>) -> Self {
+        let record_refs = local_ids
+            .into_iter()
+            .filter_map(|local_id| i64::try_from(local_id).ok())
+            .collect::<HashSet<_>>();
+        let mut identities = HashMap::<i64, HistoricalIdentityMembership>::new();
+        let mut revisions = HashMap::<i64, HistoricalRevisionMembership>::new();
+        if record_refs.is_empty() {
+            return Self {
+                identities,
+                revisions,
+            };
+        }
+        let ambiguous_states = ambiguous_history_state_ids(histories);
+        for state in histories
+            .iter()
+            .flat_map(|history| &history.states)
+            .filter(|state| !ambiguous_states.contains(&state.state_id))
+        {
+            for version in &state.entity_versions {
+                if record_refs.contains(&version.record_ref) {
+                    let membership = revisions.entry(version.record_ref).or_default();
+                    membership.entity_refs.insert(version.entity_ref);
+                    if !membership.states.contains(&state.state_id) {
+                        membership.states.push(state.state_id);
+                    }
+                }
+            }
+        }
+        let entity_refs = record_refs
+            .iter()
+            .copied()
+            .chain(
+                revisions
+                    .values()
+                    .flat_map(|revision| revision.entity_refs.iter().copied()),
+            )
+            .collect::<HashSet<_>>();
+        for state in histories
+            .iter()
+            .flat_map(|history| &history.states)
+            .filter(|state| !ambiguous_states.contains(&state.state_id))
+        {
+            let Some(topology) = &state.topology else {
+                continue;
+            };
+            let families: [(AsmHistoricalEntityKind, &[i64]); 12] = [
+                (AsmHistoricalEntityKind::Body, &topology.bodies),
+                (AsmHistoricalEntityKind::Region, &topology.regions),
+                (AsmHistoricalEntityKind::Shell, &topology.shells),
+                (AsmHistoricalEntityKind::Face, &topology.faces),
+                (AsmHistoricalEntityKind::Loop, &topology.loops),
+                (AsmHistoricalEntityKind::Coedge, &topology.coedges),
+                (AsmHistoricalEntityKind::Edge, &topology.edges),
+                (AsmHistoricalEntityKind::Vertex, &topology.vertices),
+                (AsmHistoricalEntityKind::Point, &topology.points),
+                (AsmHistoricalEntityKind::Surface, &topology.surfaces),
+                (AsmHistoricalEntityKind::Curve, &topology.curves),
+                (AsmHistoricalEntityKind::Pcurve, &topology.pcurves),
+            ];
+            for (kind, members) in families {
+                for entity_ref in members
+                    .iter()
+                    .filter(|entity_ref| entity_refs.contains(entity_ref))
+                {
+                    let membership = identities.entry(*entity_ref).or_default();
+                    membership.kinds.insert(kind);
+                    if !membership.states.contains(&state.state_id) {
+                        membership.states.push(state.state_id);
+                    }
+                }
+            }
+        }
+        Self {
+            identities,
+            revisions,
+        }
+    }
+
+    fn identity_kind(&self, local_id: u64) -> Option<(AsmHistoricalEntityKind, Vec<i64>)> {
+        let entity_ref = i64::try_from(local_id).ok()?;
+        let membership = self.identities.get(&entity_ref)?;
+        let mut kinds = membership.kinds.iter();
+        let kind = *kinds.next()?;
+        kinds
+            .next()
+            .is_none()
+            .then(|| (kind, membership.states.clone()))
+    }
+
+    fn selection_identity_kind(
+        &self,
+        local_id: u64,
+    ) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
+        let record_ref = i64::try_from(local_id).ok()?;
+        let revision = self.revisions.get(&record_ref);
+        if let Some((kind, states)) = self.identity_kind(local_id) {
+            return revision
+                .is_none_or(|revision| {
+                    revision.entity_refs.is_empty()
+                        || revision.entity_refs == HashSet::from([record_ref])
+                })
+                .then_some((kind, record_ref, states));
+        }
+        let revision = revision?;
+        let mut entity_refs = revision.entity_refs.iter();
+        let entity_ref = *entity_refs.next()?;
+        if entity_refs.next().is_some() {
+            return None;
+        }
+        let (kind, _) = self.identity_kind(u64::try_from(entity_ref).ok()?)?;
+        Some((kind, entity_ref, revision.states.clone()))
+    }
+}
+
+#[cfg(test)]
 fn historical_identity_kind(
     histories: &[AsmHistory],
     local_id: u64,
 ) -> Option<(AsmHistoricalEntityKind, Vec<i64>)> {
-    let entity_ref = i64::try_from(local_id).ok()?;
-    let ambiguous_states = ambiguous_history_state_ids(histories);
-    let mut kinds = HashSet::new();
-    let mut states = Vec::new();
-    for state in histories
-        .iter()
-        .flat_map(|history| &history.states)
-        .filter(|state| !ambiguous_states.contains(&state.state_id))
-    {
-        let Some(topology) = &state.topology else {
-            continue;
-        };
-        let families: [(AsmHistoricalEntityKind, &[i64]); 12] = [
-            (AsmHistoricalEntityKind::Body, &topology.bodies),
-            (AsmHistoricalEntityKind::Region, &topology.regions),
-            (AsmHistoricalEntityKind::Shell, &topology.shells),
-            (AsmHistoricalEntityKind::Face, &topology.faces),
-            (AsmHistoricalEntityKind::Loop, &topology.loops),
-            (AsmHistoricalEntityKind::Coedge, &topology.coedges),
-            (AsmHistoricalEntityKind::Edge, &topology.edges),
-            (AsmHistoricalEntityKind::Vertex, &topology.vertices),
-            (AsmHistoricalEntityKind::Point, &topology.points),
-            (AsmHistoricalEntityKind::Surface, &topology.surfaces),
-            (AsmHistoricalEntityKind::Curve, &topology.curves),
-            (AsmHistoricalEntityKind::Pcurve, &topology.pcurves),
-        ];
-        for (kind, members) in families {
-            if members.contains(&entity_ref) {
-                kinds.insert(kind);
-                if !states.contains(&state.state_id) {
-                    states.push(state.state_id);
-                }
-            }
-        }
-    }
-    let mut kinds = kinds.into_iter();
-    let kind = kinds.next()?;
-    if kinds.next().is_some() {
-        return None;
-    }
-    Some((kind, states))
+    HistoricalIdentityIndex::build(histories, [local_id]).identity_kind(local_id)
 }
 
 pub(crate) fn historical_selection_identity_kind(
     histories: &[AsmHistory],
     local_id: u64,
 ) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
-    let record_ref = i64::try_from(local_id).ok()?;
-    let ambiguous_states = ambiguous_history_state_ids(histories);
-    let mut entity_refs = HashSet::new();
-    let mut states = Vec::new();
-    for state in histories
-        .iter()
-        .flat_map(|history| &history.states)
-        .filter(|state| !ambiguous_states.contains(&state.state_id))
-    {
-        for version in &state.entity_versions {
-            if version.record_ref == record_ref {
-                entity_refs.insert(version.entity_ref);
-                if !states.contains(&state.state_id) {
-                    states.push(state.state_id);
-                }
-            }
-        }
-    }
-    if let Some(resolved) = historical_identity_kind(histories, local_id) {
-        return (entity_refs.is_empty() || entity_refs == HashSet::from([record_ref]))
-            .then_some((resolved.0, record_ref, resolved.1));
-    }
-    let mut entity_refs = entity_refs.into_iter();
-    let entity_ref = entity_refs.next()?;
-    if entity_refs.next().is_some() {
-        return None;
-    }
-    let entity_ref = u64::try_from(entity_ref).ok()?;
-    let (kind, _) = historical_identity_kind(histories, entity_ref)?;
-    Some((kind, i64::try_from(entity_ref).ok()?, states))
+    HistoricalIdentityIndex::build(histories, [local_id]).selection_identity_kind(local_id)
 }
 
 fn ambiguous_history_state_ids(histories: &[AsmHistory]) -> HashSet<i64> {
@@ -3488,12 +3554,14 @@ pub(crate) fn bind_extrude_selection_history(
     members: &mut [DesignExtrudeSelectionMember],
     histories: &[AsmHistory],
 ) {
+    let identities =
+        HistoricalIdentityIndex::build(histories, members.iter().map(|member| member.local_id));
     for member in members {
         member.historical_entity_kind = None;
         member.historical_entity_ref = None;
         member.historical_state_ids.clear();
         if let Some((kind, entity_ref, states)) =
-            historical_selection_identity_kind(histories, member.local_id)
+            identities.selection_identity_kind(member.local_id)
         {
             member.historical_entity_kind = Some(kind);
             member.historical_entity_ref = Some(entity_ref);
@@ -3509,6 +3577,12 @@ pub(crate) fn bind_entity_selection_history(
     scopes: &[crate::records::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    let identities = HistoricalIdentityIndex::build(
+        histories,
+        operands
+            .iter()
+            .flat_map(|operand| [operand.primary_identity, operand.secondary_identity]),
+    );
     for operand in operands {
         operand.historical_edge_candidates.clear();
         operand.resolved_edge_slot = None;
@@ -3542,7 +3616,7 @@ pub(crate) fn bind_entity_selection_history(
         operand.historical_edge_candidates = entity_selection_edge_candidates(
             [operand.primary_identity, operand.secondary_identity],
             previous_state_id,
-            histories,
+            &identities,
             topology,
         );
         operand.resolved_edge_slot =
@@ -3553,7 +3627,7 @@ pub(crate) fn bind_entity_selection_history(
 fn entity_selection_edge_candidates(
     identities: [u64; 2],
     previous_state_id: i64,
-    histories: &[AsmHistory],
+    history_identities: &HistoricalIdentityIndex,
     topology: &AsmHistoricalTopology,
 ) -> Vec<crate::records::DesignEntitySelectionEdgeCandidate> {
     use crate::records::DesignEntitySelectionEdgeCandidate;
@@ -3563,7 +3637,7 @@ fn entity_selection_edge_candidates(
         .enumerate()
         .filter_map(|(identity_ordinal, local_id)| {
             let (kind, entity_ref, states) =
-                historical_selection_identity_kind(histories, local_id)?;
+                history_identities.selection_identity_kind(local_id)?;
             states.contains(&previous_state_id).then_some(())?;
             let mut edge_slots = historical_identity_edges(kind, entity_ref, topology)
                 .into_iter()
@@ -3600,6 +3674,18 @@ pub(crate) fn bind_edge_identity_history(
     scopes: &[crate::records::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    let history_identities = HistoricalIdentityIndex::build(
+        histories,
+        operands
+            .iter()
+            .map(|operand| operand.local_id)
+            .chain(identities.iter().filter_map(|identity| {
+                identity
+                    .persistent_identity
+                    .as_ref()
+                    .map(|persistent| persistent.local_id)
+            })),
+    );
     let mut states_by_id = HashMap::<i64, Option<&AsmDeltaState>>::new();
     for state in histories.iter().flat_map(|history| &history.states) {
         states_by_id
@@ -3636,9 +3722,9 @@ pub(crate) fn bind_edge_identity_history(
                     && scope.record_index == operand.scope_record_index
             })
             .and_then(|scope| scope.history_state_id);
-        if let Some((kind, entity_ref, states)) =
-            historical_selection_identity_kind(histories, operand.local_id)
-                .filter(|(_, _, states)| states.contains(&previous_state_id))
+        if let Some((kind, entity_ref, states)) = history_identities
+            .selection_identity_kind(operand.local_id)
+            .filter(|(_, _, states)| states.contains(&previous_state_id))
         {
             operand.historical_entity_kind = Some(kind);
             operand.historical_entity_ref = Some(entity_ref);
@@ -3704,7 +3790,7 @@ pub(crate) fn bind_edge_identity_history(
                 .then_some(identity)?;
             let persistent = identity.persistent_identity.as_ref()?;
             let (kind, entity_ref, states) =
-                historical_selection_identity_kind(histories, persistent.local_id)?;
+                history_identities.selection_identity_kind(persistent.local_id)?;
             states.contains(&previous_state_id).then_some(())?;
             Some((
                 historical_identity_edge(kind, entity_ref, topology)?,
@@ -5689,7 +5775,8 @@ mod tests {
                 transition: None,
             }],
         };
-        let candidates = entity_selection_edge_candidates([700, 800], 3, &[history], &topology);
+        let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&history), [700, 800]);
+        let candidates = entity_selection_edge_candidates([700, 800], 3, &identities, &topology);
         assert_eq!(
             candidates,
             [
