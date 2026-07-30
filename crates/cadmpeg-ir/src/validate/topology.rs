@@ -1963,6 +1963,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 );
             }
         }
+        let mut suppressed_features = HashSet::new();
         for feature in &configuration.suppressed_features {
             if !feature_ids.contains(feature.0.as_str()) {
                 ref_error(
@@ -1971,6 +1972,54 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     "configuration suppressed feature",
                     &feature.0,
                 );
+            }
+            if !suppressed_features.insert(feature) {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: format!("configuration repeats suppressed feature `{}`", feature.0),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+        }
+        for parameter in configuration.parameter_values.keys() {
+            if !parameter_ids.contains(parameter.0.as_str()) {
+                ref_error(
+                    findings,
+                    &configuration.id.0,
+                    "configuration parameter value",
+                    &parameter.0,
+                );
+            }
+        }
+        for (feature, state) in &configuration.feature_states {
+            if !feature_ids.contains(feature.0.as_str()) {
+                ref_error(
+                    findings,
+                    &configuration.id.0,
+                    "configuration feature state",
+                    &feature.0,
+                );
+            }
+            for dependency in &state.dependencies {
+                if !feature_ids.contains(dependency.0.as_str()) {
+                    ref_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration feature dependency",
+                        &dependency.0,
+                    );
+                }
+            }
+            for output in &state.outputs {
+                if !ids.bodies.contains(&output.0) {
+                    ref_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration feature output",
+                        &output.0,
+                    );
+                }
             }
         }
     }

@@ -1260,7 +1260,8 @@ fn tessellation_counts_must_be_consistent() {
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
     use crate::features::{
-        ConfigurationId, DesignConfiguration, DesignParameter, FeatureId, ParameterId,
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter,
+        FeatureDefinition, FeatureId, ParameterId, ParameterValue,
     };
     use crate::ids::BodyId;
     use std::collections::BTreeMap;
@@ -1317,14 +1318,50 @@ fn configuration_body_membership_round_trips_and_validates() {
     }));
     ir.model.configurations[0].parameter_overrides.clear();
 
-    ir.model.configurations[0].suppressed_features =
-        vec![FeatureId("synthetic:test:feature#missing".into())];
+    let missing_feature = FeatureId("synthetic:test:feature#missing".into());
+    ir.model.configurations[0].suppressed_features = vec![missing_feature.clone(), missing_feature];
     let report = validate(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message.contains("configuration suppressed feature")
     }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("repeats suppressed feature")
+    }));
     ir.model.configurations[0].suppressed_features.clear();
+
+    ir.model.configurations[0].parameter_values = BTreeMap::from([(
+        ParameterId("synthetic:test:parameter#missing-value".into()),
+        ParameterValue::Real(1.0),
+    )]);
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        FeatureId("synthetic:test:feature#missing-state".into()),
+        ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: vec![FeatureId(
+                "synthetic:test:feature#missing-dependency".into(),
+            )],
+            outputs: vec![BodyId("synthetic:test:body#missing-output".into())],
+            definition: FeatureDefinition::DatumPoint {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        },
+    )]);
+    let report = validate(&ir, Vec::new());
+    for reference in [
+        "configuration parameter value",
+        "configuration feature state",
+        "configuration feature dependency",
+        "configuration feature output",
+    ] {
+        assert!(report.findings.iter().any(|finding| {
+            finding.entity.as_deref() == Some(configuration_id.0.as_str())
+                && finding.message.contains(reference)
+        }));
+    }
+    ir.model.configurations[0].parameter_values.clear();
+    ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(vec![
         BodyId("synthetic:test:body#missing".into()),
