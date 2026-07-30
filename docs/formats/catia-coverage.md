@@ -134,10 +134,11 @@ current scores require those matrices and representative fixtures.
   products, quotients, extrema, trigonometric calls, absolute values, and
   square roots. Typed comparisons, Boolean literals, negation, lazy
   conjunctions and disjunctions, and equal-typed lazy ternaries transfer
-  predicate and conditional formulas. String literals,
-  concatenation, equality, replacement, signed-integer formatting,
-  Unicode-scalar length, and first-occurrence search evaluate with typed string
-  results. Length literals normalize
+  predicate and conditional formulas. String literals, concatenation,
+  occurrence removal, equality, replacement, case conversion, signed-integer
+  formatting, Unicode-scalar length and extraction, indexed directional
+  search, and finite decimal conversion evaluate with typed results. Length
+  literals normalize
   `micron`, `mm`, `cm`, `m`, `km`,
   `in`, `ft`, `yard`, and `mile` to millimetres; angle literals normalize
   `rad`, `grad`, and `deg` to radians.

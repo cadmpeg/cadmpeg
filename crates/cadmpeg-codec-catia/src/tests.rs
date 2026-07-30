@@ -4663,18 +4663,14 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
 
 #[test]
 fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
-    fn legacy_string_constant(stored: &str) -> Vec<u8> {
+    fn legacy_string_constant(expression: &str, stored: &str) -> Vec<u8> {
         let mut bytes = zero_entity_catpart();
         bytes.push(0xea);
         bytes.extend(1_u32.to_le_bytes());
         bytes.push(0x81);
         bytes.extend([0xfd, 0x8c]);
         for (role, selector, value) in [
-            (
-                "body",
-                1_u32,
-                "ReplaceSubText(\"Cilas Evans\",\"Cilas\",\"Easy\")",
-            ),
+            ("body", 1_u32, expression),
             ("param", 4_u32, "() : String\n"),
         ] {
             bytes.push(u8::try_from(role.len() + 1).expect("short role"));
@@ -4703,7 +4699,10 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
 
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(legacy_string_constant("Easy Evans")),
+            &mut Cursor::new(legacy_string_constant(
+                "ReplaceSubText(\"Cilas Evans\",\"Cilas\",\"Easy\")",
+                "Easy Evans",
+            )),
             &DecodeOptions::default(),
         )
         .expect("decode closed legacy string formula");
@@ -4726,7 +4725,10 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
 
     let mismatched = CatiaCodec
         .decode(
-            &mut Cursor::new(legacy_string_constant("Cilas Evans")),
+            &mut Cursor::new(legacy_string_constant(
+                "ReplaceSubText(\"Cilas Evans\",\"Cilas\",\"Easy\")",
+                "Cilas Evans",
+            )),
             &DecodeOptions::default(),
         )
         .expect("decode mismatched legacy string formula");
@@ -4734,6 +4736,31 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     assert_eq!(
         mismatched.report.coverage["transferred_legacy_formula_count"],
         0
+    );
+
+    let methods = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_string_constant(
+                "ToLower(\"MIXED\").Extract(1,4) - \"x\"",
+                "ied",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode closed legacy string-method formula");
+    let [parameter] = methods.ir.model.parameters.as_slice() else {
+        panic!("one legacy string-method formula parameter")
+    };
+    assert_eq!(
+        parameter.expression,
+        "ToLower(\"MIXED\").Extract(1,4) - \"x\""
+    );
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::ParameterValue::String("ied".to_string()))
+    );
+    assert_eq!(
+        methods.report.coverage["transferred_legacy_formula_count"],
+        1
     );
 }
 

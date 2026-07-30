@@ -1192,6 +1192,21 @@ impl FormulaExpressionParser<'_, '_> {
                     continue;
                 }
             }
+            if operator == b'-' {
+                if let (EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) =
+                    (&value, &right)
+                {
+                    if self.evaluate && right.is_empty() {
+                        return None;
+                    }
+                    value = EvaluatedFormulaValue::String(if self.evaluate {
+                        left.replace(right, "")
+                    } else {
+                        String::new()
+                    });
+                    continue;
+                }
+            }
             let mut left = value.scalar()?;
             let right = right.scalar()?;
             if left.dimension != right.dimension {
@@ -1392,16 +1407,91 @@ impl FormulaExpressionParser<'_, '_> {
                     EvaluatedFormulaValue::String(value),
                     [EvaluatedFormulaValue::String(needle)],
                 ) => {
-                    let index = if let Some(byte_offset) = value.find(needle.as_str()) {
-                        i64::try_from(value[..byte_offset].chars().count()).ok()?
-                    } else {
-                        -1
-                    };
+                    let index = Self::search_string(&value, needle, 0, true)?;
                     EvaluatedFormulaValue::Scalar(finite_scalar(index as f64)?)
+                }
+                (
+                    "Search",
+                    EvaluatedFormulaValue::String(value),
+                    [EvaluatedFormulaValue::String(needle), EvaluatedFormulaValue::Scalar(start)],
+                ) => {
+                    let start = self.string_index(*start)?;
+                    let index = Self::search_string(&value, needle, start, true)?;
+                    EvaluatedFormulaValue::Scalar(finite_scalar(index as f64)?)
+                }
+                (
+                    "Search",
+                    EvaluatedFormulaValue::String(value),
+                    [EvaluatedFormulaValue::String(needle), EvaluatedFormulaValue::Scalar(start), EvaluatedFormulaValue::Boolean(forward)],
+                ) => {
+                    let start = self.string_index(*start)?;
+                    let index = Self::search_string(&value, needle, start, *forward)?;
+                    EvaluatedFormulaValue::Scalar(finite_scalar(index as f64)?)
+                }
+                (
+                    "Extract",
+                    EvaluatedFormulaValue::String(value),
+                    [EvaluatedFormulaValue::Scalar(start), EvaluatedFormulaValue::Scalar(length)],
+                ) => {
+                    let start = self.string_index(*start)?;
+                    let length = self.string_index(*length)?;
+                    EvaluatedFormulaValue::String(if self.evaluate {
+                        let end = start.checked_add(length)?;
+                        let start = Self::string_boundary(&value, start)?;
+                        let end = Self::string_boundary(&value, end)?;
+                        value[start..end].to_string()
+                    } else {
+                        String::new()
+                    })
+                }
+                ("ToReal", EvaluatedFormulaValue::String(value), []) => {
+                    let value = if self.evaluate {
+                        value.parse::<f64>().ok()?
+                    } else {
+                        0.0
+                    };
+                    EvaluatedFormulaValue::Scalar(finite_scalar(value)?)
                 }
                 _ => return None,
             };
         }
+    }
+
+    fn string_index(&self, value: EvaluatedFormulaScalar) -> Option<usize> {
+        (value.dimension == FormulaDimension::SCALAR).then_some(())?;
+        if !self.evaluate {
+            return Some(0);
+        }
+        value.satisfies_source_type("Integer").then_some(())?;
+        usize::try_from(value.value as i64).ok()
+    }
+
+    fn string_boundary(value: &str, index: usize) -> Option<usize> {
+        if index == value.chars().count() {
+            Some(value.len())
+        } else {
+            value.char_indices().nth(index).map(|(offset, _)| offset)
+        }
+    }
+
+    fn search_string(value: &str, needle: &str, start: usize, forward: bool) -> Option<i64> {
+        let character_count = value.chars().count();
+        if start > character_count {
+            return Some(-1);
+        }
+        let byte_offset = if forward {
+            let start_byte = Self::string_boundary(value, start)?;
+            value[start_byte..]
+                .find(needle)
+                .map(|offset| start_byte + offset)
+        } else {
+            let end_character = character_count.checked_sub(start)?;
+            let end_byte = Self::string_boundary(value, end_character)?;
+            value[..end_byte].rfind(needle)
+        };
+        byte_offset.map_or(Some(-1), |offset| {
+            i64::try_from(value[..offset].chars().count()).ok()
+        })
     }
 
     fn string_literal(&mut self) -> Option<String> {
@@ -1455,6 +1545,21 @@ impl FormulaExpressionParser<'_, '_> {
             }
             return Some(EvaluatedFormulaValue::String(if self.evaluate {
                 format!("{:.0}", value.value)
+            } else {
+                String::new()
+            }));
+        }
+
+        if matches!(function, "ToUpper" | "ToLower") {
+            let [EvaluatedFormulaValue::String(value)] = arguments.as_slice() else {
+                return None;
+            };
+            return Some(EvaluatedFormulaValue::String(if self.evaluate {
+                if function == "ToUpper" {
+                    value.to_uppercase()
+                } else {
+                    value.to_lowercase()
+                }
             } else {
                 String::new()
             }));
@@ -1982,6 +2087,27 @@ mod parser_tests {
                 .as_deref(),
             Some("selected")
         );
+        for expression in [
+            "true ? \"selected\" ; \"text\".Extract(1.5, 2)",
+            "true ? 5 ; \"text\".Search(\"e\", 1.5)",
+            "true ? 5 ; \"not a number\".ToReal()",
+        ] {
+            assert!(
+                evaluate_formula_expression(expression, &bindings).is_some(),
+                "{expression}"
+            );
+        }
+        assert_eq!(
+            evaluate_formula_expression("true ? \"selected\" ; \"text\".Extract(-1,1)", &bindings,)
+                .and_then(EvaluatedFormulaValue::string)
+                .as_deref(),
+            Some("selected")
+        );
+        assert!(
+            evaluate_formula_expression("false ? \"not a number\".ToReal() ; 5", &bindings,)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .is_some_and(|value| value.value == 5.0)
+        );
     }
 
     #[test]
@@ -2063,6 +2189,69 @@ mod parser_tests {
                 .and_then(EvaluatedFormulaValue::boolean)
                 .is_some_and(|value| value)
         );
+        assert_eq!(
+            evaluate_formula_expression("\"Cilas Evans Evans\".Search(\"Evans\",7)", &bindings)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .map(|value| value.value),
+            Some(12.0)
+        );
+        assert_eq!(
+            evaluate_formula_expression(
+                "\"Cilas Evans Evans\".Search(\"Evans\",0,false)",
+                &bindings,
+            )
+            .and_then(EvaluatedFormulaValue::scalar)
+            .map(|value| value.value),
+            Some(12.0)
+        );
+        assert_eq!(
+            evaluate_formula_expression("\"é猫x猫\".Search(\"猫\",2)", &bindings)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .map(|value| value.value),
+            Some(3.0)
+        );
+        assert_eq!(
+            evaluate_formula_expression("\"text\".Search(\"t\",5)", &bindings)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .map(|value| value.value),
+            Some(-1.0)
+        );
+        assert_eq!(
+            evaluate_formula_expression("\"é猫x\".Extract(1,1)", &bindings)
+                .and_then(EvaluatedFormulaValue::string)
+                .as_deref(),
+            Some("猫")
+        );
+        assert_eq!(
+            evaluate_formula_expression("\"é猫x\".Extract(3,0)", &bindings)
+                .and_then(EvaluatedFormulaValue::string)
+                .as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            evaluate_formula_expression("ToUpper(\"Mixed Straße\")", &bindings)
+                .and_then(EvaluatedFormulaValue::string)
+                .as_deref(),
+            Some("MIXED STRASSE")
+        );
+        assert_eq!(
+            evaluate_formula_expression("ToLower(\"Mixed Case\")", &bindings)
+                .and_then(EvaluatedFormulaValue::string)
+                .as_deref(),
+            Some("mixed case")
+        );
+        assert_eq!(
+            evaluate_formula_expression("\"12.5\".ToReal()", &bindings)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .map(|value| value.value),
+            Some(12.5)
+        );
+        assert_eq!(
+            evaluate_formula_expression("\"AAxxAA\" - \"AA\"", &bindings)
+                .and_then(EvaluatedFormulaValue::string)
+                .as_deref(),
+            Some("xx")
+        );
     }
 
     #[test]
@@ -2071,12 +2260,18 @@ mod parser_tests {
         for expression in [
             "\"unterminated",
             "\"unsupported\\\\escape\"",
-            "\"text\" - \"text\"",
             "\"text\" + 1",
             "ToString(1.5)",
             "ReplaceSubText(\"text\",\"\",\"x\")",
             "\"text\".Search(1)",
+            "\"text\".Search(\"t\",-1)",
             "\"text\".Length(1)",
+            "\"text\".Extract(1)",
+            "\"text\".Extract(-1,1)",
+            "\"text\".Extract(3,2)",
+            "\"not a number\".ToReal()",
+            "ToUpper(1)",
+            "\"text\" - \"\"",
             "\"text\".Unknown()",
         ] {
             assert!(
