@@ -14232,6 +14232,44 @@ fn native_store_paths_write_the_current_schema_version() {
 }
 
 #[test]
+fn native_migrates_and_validates_evaluated_value_names() {
+    let mut bytes = Vec::new();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.push(0x81);
+    bytes.extend([0x58, 0xd1, 8]);
+    bytes.extend(b"\xe8\x00\x12\x01\x06Count\xfe");
+    bytes.extend([0x5f, 0xd1, 9]);
+    bytes.extend(b"\xe8\xc4\x17\x01\xfe\xfe");
+    bytes.extend(b"\xfe\x85\x9d\x82\xfe\x8c");
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let value = &native.legacy_entity_runs[0].integer_values[0];
+    assert_eq!(value.name.as_deref(), Some("Count"));
+
+    let mut invalid = native.clone();
+    invalid.legacy_entity_runs[0].integer_values[0].name = None;
+    invalid.legacy_entity_runs[0].integer_values[0].name_field = None;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store noncanonical evaluated value name");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    let mut previous_namespace = invalid_namespace;
+    previous_namespace.version = 223;
+    let migrated = crate::native::CatiaNative::load(&previous_namespace)
+        .expect("migrate evaluated value name");
+    assert_eq!(
+        migrated.legacy_entity_runs[0].integer_values[0]
+            .name
+            .as_deref(),
+        Some("Count")
+    );
+}
+
+#[test]
 fn native_round_trips_legacy_entity_identity_runs() {
     let mut bytes = Vec::new();
     for entity_id in [1_u32, 4, 9, 12, 13] {

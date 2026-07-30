@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 223;
+pub const CATIA_NATIVE_VERSION: u32 = 224;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -31,6 +31,8 @@ const CATIA_LEGACY_ROLE_FIELD_CODE_VERSION: u32 = 220;
 const CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION: u32 = 222;
 #[cfg(test)]
 const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
+#[cfg(test)]
+const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -3065,7 +3067,6 @@ impl CatiaLegacyRoleName {
         }
     }
 
-    #[cfg(test)]
     fn byte_len(&self) -> usize {
         match self {
             Self::Literal(value) => 1 + value.len(),
@@ -3101,6 +3102,18 @@ pub struct CatiaLegacyRoleSelector {
     /// Field code when an `E8 <field-code:u16le> 01` opener follows immediately.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_code: Option<u16>,
+}
+
+impl CatiaLegacyRoleSelector {
+    pub(crate) fn end_offset(&self) -> Option<u64> {
+        let selector_len = match self.encoding? {
+            CatiaLegacyRoleSelectorEncoding::FixedU32 => 5,
+            CatiaLegacyRoleSelectorEncoding::Paged => 2,
+        };
+        self.byte_offset
+            .checked_add(u64::try_from(self.name.byte_len()).ok()?)?
+            .checked_add(selector_len)
+    }
 }
 
 /// One complete legacy schema text field.
@@ -4008,17 +4021,6 @@ fn valid_legacy_identifier(value: &str) -> bool {
 }
 
 #[cfg(test)]
-fn legacy_role_selector_end(role: &CatiaLegacyRoleSelector) -> Option<u64> {
-    let selector_len = match role.encoding? {
-        CatiaLegacyRoleSelectorEncoding::FixedU32 => 5,
-        CatiaLegacyRoleSelectorEncoding::Paged => 2,
-    };
-    role.byte_offset
-        .checked_add(u64::try_from(role.name.byte_len()).ok()?)?
-        .checked_add(selector_len)
-}
-
-#[cfg(test)]
 fn legacy_schema_identifiers(
     program: &CatiaLegacySchemaProgram,
 ) -> Option<Vec<CatiaLegacySchemaIdentifier>> {
@@ -4032,6 +4034,52 @@ fn legacy_schema_identifiers(
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+fn legacy_value_name(
+    roles: &[CatiaLegacyRoleSelector],
+    fields: &[CatiaLegacyTextField],
+    entity_id: u32,
+    value_offset: u64,
+) -> Option<(u64, String)> {
+    let mut literal_names = fields.iter().filter(|field| {
+        field.entity_id == entity_id
+            && field
+                .role
+                .as_ref()
+                .is_some_and(|role| role.name.literal() == Some("name"))
+    });
+    if let Some(name) = literal_names.next() {
+        if literal_names.next().is_none() {
+            return Some((name.byte_offset, name.value.clone()));
+        }
+        return None;
+    }
+
+    let mut evaluation_roles = roles.iter().filter(|role| {
+        role.entity_id == entity_id
+            && role.field_code == Some(0x17c4)
+            && role.end_offset().and_then(|offset| offset.checked_add(6)) == Some(value_offset)
+    });
+    let evaluation_role = evaluation_roles.next()?;
+    if evaluation_roles.next().is_some() {
+        return None;
+    }
+    let mut names = fields.iter().filter(|field| {
+        field.entity_id == entity_id
+            && field.byte_offset < evaluation_role.byte_offset
+            && valid_legacy_identifier(&field.value)
+            && field
+                .role
+                .as_ref()
+                .is_some_and(|role| role.field_code == Some(0x1200))
+    });
+    let name = names.next()?;
+    names
+        .next()
+        .is_none()
+        .then(|| (name.byte_offset, name.value.clone()))
 }
 
 #[cfg(test)]
@@ -4246,7 +4294,7 @@ fn validate_legacy_entity_runs(
                                 .find(|next| next.byte_offset > identity.byte_offset)
                                 .map_or(run.catalog_offset, |next| next.byte_offset);
                             identity.entity_id == role.entity_id
-                                && legacy_role_selector_end(role).is_none_or(|end| {
+                                && role.end_offset().is_none_or(|end| {
                                     end <= interval_end
                                         && role.field_code.is_none_or(|_| {
                                             end.checked_add(4)
@@ -4282,8 +4330,7 @@ fn validate_legacy_entity_runs(
                                 CatiaLegacyRoleName::Selector(selector) => *selector != 0,
                             }
                             && run.role_selectors.contains(role)
-                            && legacy_role_selector_end(role)
-                                .is_none_or(|end| end == field.byte_offset)
+                            && role.end_offset().is_none_or(|end| end == field.byte_offset)
                             && (!require_field_codes || role.field_code == Some(0x1200))
                             && run
                                 .identities
@@ -4306,7 +4353,7 @@ fn validate_legacy_entity_runs(
                     && run.role_selectors.windows(2).any(|roles| {
                         roles[0].byte_offset == field.role_byte_offset
                             && roles[0].entity_id == field.entity_id
-                            && legacy_role_selector_end(&roles[0]) == Some(field.byte_offset)
+                            && roles[0].end_offset() == Some(field.byte_offset)
                             && (!require_field_codes
                                 || roles[0].field_code == Some(field.field_code))
                             && roles[1].byte_offset == field.boundary_role_byte_offset
@@ -4340,7 +4387,8 @@ fn validate_legacy_entity_runs(
                                 && role.entity_id == state.entity_id
                                 && (role.name.literal() == Some("synchrone")
                                     || (matches!(&role.name, CatiaLegacyRoleName::Selector(_))
-                                        && legacy_role_selector_end(role)
+                                        && role
+                                            .end_offset()
                                             .and_then(|end| end.checked_add(5))
                                             .is_some_and(|next_role_offset| {
                                                 run.role_selectors.iter().any(|next| {
@@ -4383,35 +4431,29 @@ fn validate_legacy_entity_runs(
                         .iter()
                         .rfind(|identity| identity.byte_offset < value.byte_offset)
                         .is_some_and(|identity| identity.entity_id == value.entity_id)
+                    && (value.name.is_none()
+                        || run
+                            .scalar_values
+                            .iter()
+                            .filter(|candidate| candidate.entity_id == value.entity_id)
+                            .count()
+                            == 1)
                     && match (&value.name_field, &value.name) {
                         (Some(name_field), Some(name)) => {
-                            run.scalar_values
-                                .iter()
-                                .filter(|candidate| candidate.entity_id == value.entity_id)
-                                .count()
-                                == 1
-                                && run
-                                    .text_fields
-                                    .iter()
-                                    .filter(|field| {
-                                        field.entity_id == value.entity_id
-                                            && field.role.as_ref().is_some_and(|role| {
-                                                role.name.literal() == Some("name")
-                                            })
-                                    })
-                                    .count()
-                                    == 1
-                                && run.text_fields.iter().any(|field| {
-                                    field.entity_id == value.entity_id
-                                        && field.byte_offset == *name_field
-                                        && field.value == *name
-                                        && field
-                                            .role
-                                            .as_ref()
-                                            .is_some_and(|role| role.name.literal() == Some("name"))
-                                })
+                            legacy_value_name(
+                                &run.role_selectors,
+                                &run.text_fields,
+                                value.entity_id,
+                                value.byte_offset,
+                            ) == Some((*name_field, name.clone()))
                         }
-                        (None, None) => true,
+                        (None, None) => legacy_value_name(
+                            &run.role_selectors,
+                            &run.text_fields,
+                            value.entity_id,
+                            value.byte_offset,
+                        )
+                        .is_none(),
                         (Some(_), None) | (None, Some(_)) => false,
                     }
                     && match value.evaluation {
@@ -4437,35 +4479,29 @@ fn validate_legacy_entity_runs(
                         .iter()
                         .rfind(|identity| identity.byte_offset < value.byte_offset)
                         .is_some_and(|identity| identity.entity_id == value.entity_id)
+                    && (value.name.is_none()
+                        || run
+                            .string_values
+                            .iter()
+                            .filter(|candidate| candidate.entity_id == value.entity_id)
+                            .count()
+                            == 1)
                     && match (&value.name_field, &value.name) {
                         (Some(name_field), Some(name)) => {
-                            run.string_values
-                                .iter()
-                                .filter(|candidate| candidate.entity_id == value.entity_id)
-                                .count()
-                                == 1
-                                && run
-                                    .text_fields
-                                    .iter()
-                                    .filter(|field| {
-                                        field.entity_id == value.entity_id
-                                            && field.role.as_ref().is_some_and(|role| {
-                                                role.name.literal() == Some("name")
-                                            })
-                                    })
-                                    .count()
-                                    == 1
-                                && run.text_fields.iter().any(|field| {
-                                    field.entity_id == value.entity_id
-                                        && field.byte_offset == *name_field
-                                        && field.value == *name
-                                        && field
-                                            .role
-                                            .as_ref()
-                                            .is_some_and(|role| role.name.literal() == Some("name"))
-                                })
+                            legacy_value_name(
+                                &run.role_selectors,
+                                &run.text_fields,
+                                value.entity_id,
+                                value.byte_offset,
+                            ) == Some((*name_field, name.clone()))
                         }
-                        (None, None) => true,
+                        (None, None) => legacy_value_name(
+                            &run.role_selectors,
+                            &run.text_fields,
+                            value.entity_id,
+                            value.byte_offset,
+                        )
+                        .is_none(),
                         (Some(_), None) | (None, Some(_)) => false,
                     }
             })
@@ -4486,35 +4522,29 @@ fn validate_legacy_entity_runs(
                         .iter()
                         .rfind(|identity| identity.byte_offset < value.byte_offset)
                         .is_some_and(|identity| identity.entity_id == value.entity_id)
+                    && (value.name.is_none()
+                        || run
+                            .integer_values
+                            .iter()
+                            .filter(|candidate| candidate.entity_id == value.entity_id)
+                            .count()
+                            == 1)
                     && match (&value.name_field, &value.name) {
                         (Some(name_field), Some(name)) => {
-                            run.integer_values
-                                .iter()
-                                .filter(|candidate| candidate.entity_id == value.entity_id)
-                                .count()
-                                == 1
-                                && run
-                                    .text_fields
-                                    .iter()
-                                    .filter(|field| {
-                                        field.entity_id == value.entity_id
-                                            && field.role.as_ref().is_some_and(|role| {
-                                                role.name.literal() == Some("name")
-                                            })
-                                    })
-                                    .count()
-                                    == 1
-                                && run.text_fields.iter().any(|field| {
-                                    field.entity_id == value.entity_id
-                                        && field.byte_offset == *name_field
-                                        && field.value == *name
-                                        && field
-                                            .role
-                                            .as_ref()
-                                            .is_some_and(|role| role.name.literal() == Some("name"))
-                                })
+                            legacy_value_name(
+                                &run.role_selectors,
+                                &run.text_fields,
+                                value.entity_id,
+                                value.byte_offset,
+                            ) == Some((*name_field, name.clone()))
                         }
-                        (None, None) => true,
+                        (None, None) => legacy_value_name(
+                            &run.role_selectors,
+                            &run.text_fields,
+                            value.entity_id,
+                            value.byte_offset,
+                        )
+                        .is_none(),
                         (Some(_), None) | (None, Some(_)) => false,
                     }
             });
@@ -8289,6 +8319,73 @@ impl CatiaNative {
                 .filter_map(|run| run.schema_program.as_mut())
             {
                 program.boundary = CatiaLegacySchemaProgramBoundary::VendorFooter;
+            }
+        }
+        if namespace.version < CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION {
+            for run in &mut legacy_entity_runs {
+                for index in 0..run.scalar_values.len() {
+                    let entity_id = run.scalar_values[index].entity_id;
+                    let value_offset = run.scalar_values[index].byte_offset;
+                    let name = (run
+                        .scalar_values
+                        .iter()
+                        .filter(|value| value.entity_id == entity_id)
+                        .count()
+                        == 1)
+                        .then(|| {
+                            legacy_value_name(
+                                &run.role_selectors,
+                                &run.text_fields,
+                                entity_id,
+                                value_offset,
+                            )
+                        })
+                        .flatten();
+                    run.scalar_values[index].name_field = name.as_ref().map(|(offset, _)| *offset);
+                    run.scalar_values[index].name = name.map(|(_, name)| name);
+                }
+                for index in 0..run.string_values.len() {
+                    let entity_id = run.string_values[index].entity_id;
+                    let value_offset = run.string_values[index].byte_offset;
+                    let name = (run
+                        .string_values
+                        .iter()
+                        .filter(|value| value.entity_id == entity_id)
+                        .count()
+                        == 1)
+                        .then(|| {
+                            legacy_value_name(
+                                &run.role_selectors,
+                                &run.text_fields,
+                                entity_id,
+                                value_offset,
+                            )
+                        })
+                        .flatten();
+                    run.string_values[index].name_field = name.as_ref().map(|(offset, _)| *offset);
+                    run.string_values[index].name = name.map(|(_, name)| name);
+                }
+                for index in 0..run.integer_values.len() {
+                    let entity_id = run.integer_values[index].entity_id;
+                    let value_offset = run.integer_values[index].byte_offset;
+                    let name = (run
+                        .integer_values
+                        .iter()
+                        .filter(|value| value.entity_id == entity_id)
+                        .count()
+                        == 1)
+                        .then(|| {
+                            legacy_value_name(
+                                &run.role_selectors,
+                                &run.text_fields,
+                                entity_id,
+                                value_offset,
+                            )
+                        })
+                        .flatten();
+                    run.integer_values[index].name_field = name.as_ref().map(|(offset, _)| *offset);
+                    run.integer_values[index].name = name.map(|(_, name)| name);
+                }
             }
         }
         legacy_entity_runs.sort_by_key(|run| run.byte_offset);

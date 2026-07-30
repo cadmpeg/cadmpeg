@@ -423,7 +423,7 @@ fn parse_run_before(
             parse_scalar_values(data, start, end, identity.entity_id)
         })
         .collect::<Vec<_>>();
-    bind_scalar_names(&text_fields, &mut scalar_values);
+    bind_scalar_names(data, &role_selectors, &text_fields, &mut scalar_values);
     let mut string_values = identities
         .iter()
         .enumerate()
@@ -435,7 +435,7 @@ fn parse_run_before(
             parse_string_values(data, start, end, identity.entity_id)
         })
         .collect::<Vec<_>>();
-    bind_string_names(&text_fields, &mut string_values);
+    bind_string_names(data, &role_selectors, &text_fields, &mut string_values);
     let mut integer_values = identities
         .iter()
         .enumerate()
@@ -447,7 +447,7 @@ fn parse_run_before(
             parse_integer_values(data, start, end, identity.entity_id)
         })
         .collect::<Vec<_>>();
-    bind_integer_names(&text_fields, &mut integer_values);
+    bind_integer_names(data, &role_selectors, &text_fields, &mut integer_values);
     Some(LegacyEntityRun {
         catalog_offset,
         schema_program: parse_schema_program(data, catalog_offset, directory_offset),
@@ -672,7 +672,12 @@ fn parse_scalar_values(
     values
 }
 
-fn bind_scalar_names(fields: &[LegacyTextField], values: &mut [LegacyScalarValue]) {
+fn bind_scalar_names(
+    data: &[u8],
+    roles: &[LegacyRoleSelector],
+    fields: &[LegacyTextField],
+    values: &mut [LegacyScalarValue],
+) {
     let mut counts = std::collections::HashMap::new();
     for value in values.iter() {
         *counts.entry(value.entity_id).or_insert(0usize) += 1;
@@ -681,7 +686,7 @@ fn bind_scalar_names(fields: &[LegacyTextField], values: &mut [LegacyScalarValue
         if counts.get(&value.entity_id) != Some(&1) {
             continue;
         }
-        if let Some(name) = unique_co_owned_name(fields, value.entity_id) {
+        if let Some(name) = unique_value_name(data, roles, fields, value.entity_id, value.offset) {
             value.name_offset = Some(name.offset);
             value.name = Some(name.value.clone());
         }
@@ -718,7 +723,12 @@ fn parse_string_values(
         .collect()
 }
 
-fn bind_string_names(fields: &[LegacyTextField], values: &mut [LegacyStringValue]) {
+fn bind_string_names(
+    data: &[u8],
+    roles: &[LegacyRoleSelector],
+    fields: &[LegacyTextField],
+    values: &mut [LegacyStringValue],
+) {
     let mut counts = std::collections::HashMap::new();
     for value in values.iter() {
         *counts.entry(value.entity_id).or_insert(0usize) += 1;
@@ -727,7 +737,7 @@ fn bind_string_names(fields: &[LegacyTextField], values: &mut [LegacyStringValue
         if counts.get(&value.entity_id) != Some(&1) {
             continue;
         }
-        if let Some(name) = unique_co_owned_name(fields, value.entity_id) {
+        if let Some(name) = unique_value_name(data, roles, fields, value.entity_id, value.offset) {
             value.name_offset = Some(name.offset);
             value.name = Some(name.value.clone());
         }
@@ -774,7 +784,12 @@ fn parse_integer_values(
         .collect()
 }
 
-fn bind_integer_names(fields: &[LegacyTextField], values: &mut [LegacyIntegerValue]) {
+fn bind_integer_names(
+    data: &[u8],
+    roles: &[LegacyRoleSelector],
+    fields: &[LegacyTextField],
+    values: &mut [LegacyIntegerValue],
+) {
     let mut counts = std::collections::HashMap::new();
     for value in values.iter() {
         *counts.entry(value.entity_id).or_insert(0usize) += 1;
@@ -783,20 +798,66 @@ fn bind_integer_names(fields: &[LegacyTextField], values: &mut [LegacyIntegerVal
         if counts.get(&value.entity_id) != Some(&1) {
             continue;
         }
-        if let Some(name) = unique_co_owned_name(fields, value.entity_id) {
+        if let Some(name) = unique_value_name(data, roles, fields, value.entity_id, value.offset) {
             value.name_offset = Some(name.offset);
             value.name = Some(name.value.clone());
         }
     }
 }
 
-fn unique_co_owned_name(fields: &[LegacyTextField], entity_id: u32) -> Option<&LegacyTextField> {
+fn unique_value_name<'a>(
+    data: &[u8],
+    roles: &[LegacyRoleSelector],
+    fields: &'a [LegacyTextField],
+    entity_id: u32,
+    value_offset: usize,
+) -> Option<&'a LegacyTextField> {
     let mut names = fields.iter().filter(|field| {
         field.entity_id == entity_id
             && field
                 .role
                 .as_ref()
                 .is_some_and(|role| role.name.literal() == Some("name"))
+    });
+    if let Some(name) = names.next() {
+        return names.next().is_none().then_some(name);
+    }
+    unique_evaluated_value_name(data, roles, fields, entity_id, value_offset)
+}
+
+fn unique_evaluated_value_name<'a>(
+    data: &[u8],
+    roles: &[LegacyRoleSelector],
+    fields: &'a [LegacyTextField],
+    entity_id: u32,
+    value_offset: usize,
+) -> Option<&'a LegacyTextField> {
+    const EVALUATION_FIELD: &[u8] = b"\xe8\xc4\x17\x01\xfe\xfe";
+
+    let mut evaluation_roles = roles.iter().filter(|role| {
+        role.entity_id == entity_id
+            && role.field_code == Some(0x17c4)
+            && role
+                .end_offset()
+                .and_then(|offset| offset.checked_add(EVALUATION_FIELD.len()))
+                == Some(value_offset)
+            && role
+                .end_offset()
+                .and_then(|offset| data.get(offset..value_offset))
+                == Some(EVALUATION_FIELD)
+    });
+    let evaluation_role = evaluation_roles.next()?;
+    if evaluation_roles.next().is_some() {
+        return None;
+    }
+    let mut names = fields.iter().filter(|field| {
+        field.entity_id == entity_id
+            && field.offset < evaluation_role.offset
+            && valid_role_name(&field.value)
+            && field
+                .role
+                .as_ref()
+                .is_some_and(|role| role.field_code == Some(0x1200))
     });
     let name = names.next()?;
     names.next().is_none().then_some(name)
@@ -1943,6 +2004,39 @@ mod tests {
             Some(run.text_fields[0].offset)
         );
         assert_eq!(run.string_values[1].value, "");
+        assert!(run.string_values[1].name.is_none());
+    }
+
+    #[test]
+    fn evaluation_fields_bind_selected_role_names_to_typed_values() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(&[0x58, 0xd1, 8]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[7, b'R', b'e', b's', b'u', b'l', b't', 0xfe]);
+        bytes.extend_from_slice(&[0x5f, 0xd1, 9, 0xe8, 0xc4, 0x17, 0x01, 0xfe, 0xfe]);
+        bytes.extend_from_slice(STRING_OPEN);
+        bytes.extend_from_slice(&[5, b'D', b'o', b'n', b'e']);
+        identity(&mut bytes, 2);
+        bytes.extend_from_slice(&[0x58, 0xd1, 10]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[6, b'C', b'o', b'u', b'n', b't', 0xfe]);
+        bytes.extend_from_slice(&[6, b'V', b'a', b'l', b'b', b'y', 0xd1, 11]);
+        bytes.extend_from_slice(&[0xe8, 0xc4, 0x17, 0x01, 0xfe, 0xfe]);
+        bytes.extend_from_slice(INTEGER_OPEN);
+        bytes.push(0x8c);
+        identity(&mut bytes, 3);
+        bytes.extend_from_slice(&[0x58, 0xd1, 12]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[9, b'C', b'o', b'n', b's', b't', b'a', b'n', b't', 0xfe]);
+        bytes.extend_from_slice(STRING_OPEN);
+        bytes.extend_from_slice(&[5, b'D', b'a', b't', b'a']);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let run = &parse_runs(&bytes)[0];
+        assert_eq!(run.string_values[0].name.as_deref(), Some("Result"));
+        assert_eq!(run.integer_values[0].name.as_deref(), Some("Count"));
+        assert_eq!(run.string_values[1].value, "Data");
         assert!(run.string_values[1].name.is_none());
     }
 

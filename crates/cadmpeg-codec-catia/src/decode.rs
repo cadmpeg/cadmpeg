@@ -310,6 +310,43 @@ fn finish_decode(
         .filter_map(|run| run.schema_program.as_ref())
         .map(|program| program.identifiers.len())
         .sum();
+    let legacy_evaluated_value_name_count = native
+        .legacy_entity_runs
+        .iter()
+        .map(|run| {
+            let evaluation_name_bound = |entity_id, value_offset| {
+                run.role_selectors.iter().any(|role| {
+                    role.entity_id == entity_id
+                        && role.field_code == Some(0x17c4)
+                        && role.end_offset().and_then(|offset| offset.checked_add(6))
+                            == Some(value_offset)
+                })
+            };
+            run.scalar_values
+                .iter()
+                .filter(|value| {
+                    value.name.is_some()
+                        && evaluation_name_bound(value.entity_id, value.byte_offset)
+                })
+                .count()
+                + run
+                    .string_values
+                    .iter()
+                    .filter(|value| {
+                        value.name.is_some()
+                            && evaluation_name_bound(value.entity_id, value.byte_offset)
+                    })
+                    .count()
+                + run
+                    .integer_values
+                    .iter()
+                    .filter(|value| {
+                        value.name.is_some()
+                            && evaluation_name_bound(value.entity_id, value.byte_offset)
+                    })
+                    .count()
+        })
+        .sum();
     let (
         legacy_identity_lead_81_count,
         legacy_identity_lead_82_count,
@@ -1525,6 +1562,10 @@ fn finish_decode(
         (
             "decoded_legacy_schema_identifier_count".to_string(),
             legacy_schema_identifier_count,
+        ),
+        (
+            "decoded_legacy_evaluated_value_name_count".to_string(),
+            legacy_evaluated_value_name_count,
         ),
         (
             "decoded_legacy_identity_lead_81_count".to_string(),

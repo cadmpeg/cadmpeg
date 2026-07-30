@@ -90,8 +90,10 @@ current scores require those matrices and representative fixtures.
   fields retain both `FE`-closed values and values carrying an inline `E3`
   paged-role tail. Field-bound roles retain literal names or exact unresolved
   schema-selector bytes, and every immediately bound role retains its field
-  code. Consecutive field-bound roles retain the intervening schema-field code
-  and exact payload.
+  code. Exact `1200` name fields followed by `17C4` evaluation fields bind
+  evaluated scalar, string, and integer names without resolving either role
+  selector. Consecutive field-bound roles retain the intervening schema-field
+  code and exact payload.
   Inclusive-length UTF-8 string packets and inline or wide signed-integer
   packets transfer as typed parameters when
   their name and terminal type resolve uniquely.
