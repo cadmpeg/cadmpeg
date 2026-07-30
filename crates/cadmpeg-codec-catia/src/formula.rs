@@ -1078,11 +1078,7 @@ impl FormulaExpressionParser<'_, '_> {
 
     fn same_value_type(left: &EvaluatedFormulaValue, right: &EvaluatedFormulaValue) -> Option<()> {
         match (left, right) {
-            (EvaluatedFormulaValue::Scalar(left), EvaluatedFormulaValue::Scalar(right))
-                if left.dimension == right.dimension =>
-            {
-                Some(())
-            }
+            (EvaluatedFormulaValue::Scalar(_), EvaluatedFormulaValue::Scalar(_)) => Some(()),
             (EvaluatedFormulaValue::Boolean(_), EvaluatedFormulaValue::Boolean(_))
             | (EvaluatedFormulaValue::String(_), EvaluatedFormulaValue::String(_)) => Some(()),
             _ => None,
@@ -1987,11 +1983,10 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_ternaries_require_boolean_predicates_and_equal_branch_types() {
+    fn formula_ternaries_require_boolean_predicates_and_common_branch_types() {
         let bindings = BTreeMap::new();
         for expression in [
             "1 ? 2 ; 3",
-            "true ? 1mm ; 1rad",
             "false ? false ; 1",
             "true ? 1 ;",
             "true ? 1 : 2",
@@ -2002,6 +1997,17 @@ mod parser_tests {
         ] {
             assert!(
                 evaluate_formula_expression(expression, &bindings).is_none(),
+                "{expression}"
+            );
+        }
+        for (expression, expected_dimension) in [
+            ("true ? 1mm ; 1rad", FormulaDimension::LENGTH),
+            ("false ? 1mm ; 1rad", FormulaDimension::ANGLE),
+        ] {
+            assert!(
+                evaluate_formula_expression(expression, &bindings)
+                    .and_then(EvaluatedFormulaValue::scalar)
+                    .is_some_and(|value| value.dimension == expected_dimension),
                 "{expression}"
             );
         }
