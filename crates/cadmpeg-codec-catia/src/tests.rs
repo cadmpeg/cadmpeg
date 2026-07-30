@@ -3857,6 +3857,17 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         Some((&crate::native::CatiaLegacyRoleName::Selector(0xcf), 4768))
     );
 
+    let mut invalid_relation_pair = native.clone();
+    let prelude = invalid_relation_pair.legacy_entity_runs[0].text_fields[3].clone();
+    invalid_relation_pair.legacy_entity_runs[0].relations[1].expression_offset =
+        prelude.byte_offset;
+    invalid_relation_pair.legacy_entity_runs[0].relations[1].expression = prelude.value;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_relation_pair
+        .store(&mut namespace)
+        .expect("store invalid selected relation pair");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+
     let mut invalid = native;
     invalid.legacy_entity_runs[0].role_selectors[3].name =
         crate::native::CatiaLegacyRoleName::Selector(0);

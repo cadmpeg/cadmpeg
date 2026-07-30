@@ -3954,7 +3954,7 @@ fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelat
         .as_ref()
         .filter(|role| role.name.literal() == Some("param"))
         .map(|role| role.selector);
-    relation.expression_offset < relation.signature_offset
+    valid_legacy_relation_field_pair(run, expression_field, signature_field)
         && relation.body_selector == body_selector
         && relation.parameter_selector == parameter_selector
         && relation.parameter_entity_id == parameter_entity_id
@@ -3976,6 +3976,61 @@ fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelat
                 .output
                 .as_ref()
                 .map(|output| (output.parameter.as_str(), output.value_type.as_str()))
+}
+
+#[cfg(test)]
+fn valid_legacy_relation_field_pair(
+    run: &CatiaLegacyEntityRun,
+    expression: &CatiaLegacyTextField,
+    signature: &CatiaLegacyTextField,
+) -> bool {
+    let fields = run
+        .text_fields
+        .iter()
+        .filter(|field| field.entity_id == expression.entity_id)
+        .collect::<Vec<_>>();
+    let mut body_fields = fields.iter().copied().filter(|field| {
+        field
+            .role
+            .as_ref()
+            .is_some_and(|role| role.name.literal() == Some("body"))
+    });
+    let body = body_fields.next();
+    let unique_body = body_fields.next().is_none();
+    let mut parameter_fields = fields.iter().copied().filter(|field| {
+        field
+            .role
+            .as_ref()
+            .is_some_and(|role| role.name.literal() == Some("param"))
+    });
+    let parameter = parameter_fields.next();
+    let unique_parameter = parameter_fields.next().is_none();
+    let role_bound = unique_body
+        && unique_parameter
+        && body == Some(expression)
+        && parameter == Some(signature)
+        && expression.byte_offset < signature.byte_offset;
+    let selected_role_bound = matches!(
+        fields.as_slice(),
+        [prelude, selected_expression, selected_signature]
+            if prelude.value.is_empty()
+                && prelude.role.is_none()
+                && prelude.encoding == CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
+                && selected_expression.encoding
+                    == CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
+                && selected_signature.encoding
+                    == CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
+                && selected_expression.role.as_ref().is_some_and(|role| {
+                    matches!(&role.name, CatiaLegacyRoleName::Selector(_))
+                })
+                && selected_signature.role.as_ref().is_some_and(|role| {
+                    matches!(&role.name, CatiaLegacyRoleName::Selector(_))
+                })
+                && *selected_expression == expression
+                && *selected_signature == signature
+    );
+    let complete_pair = matches!(fields.as_slice(), [first, second] if *first == expression && *second == signature);
+    role_bound || selected_role_bound || complete_pair
 }
 
 #[cfg(test)]
