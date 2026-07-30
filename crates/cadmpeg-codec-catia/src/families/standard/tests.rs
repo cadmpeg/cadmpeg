@@ -19,7 +19,7 @@ use crate::families::standard::topology::{
 };
 use crate::solve::incidence::{
     compact_boundary_domain_viable, prune_face_configuration_support,
-    reconstruct_incidence_candidates,
+    prune_ordered_face_endpoint_support, reconstruct_incidence_candidates,
 };
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::mesh_quotient::{
@@ -663,9 +663,9 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
     let edge_faces = vec![[0, 0]; choices.len()];
     let face_edges = vec![(0..choices.len()).collect::<Vec<_>>()];
     let mut explicit_point_supports = vec![HashMap::new(); choices.len()];
-    for edge in 0..2 {
-        explicit_point_supports[edge].insert(0, vec![[0, 1]]);
-        explicit_point_supports[edge].insert(1, vec![[0, 1]]);
+    for supports in explicit_point_supports.iter_mut().take(2) {
+        supports.insert(0, vec![[0, 1]]);
+        supports.insert(1, vec![[0, 1]]);
     }
     let point_support_edges = vec![HashMap::from([(0, vec![0, 1]), (1, vec![0, 1])])];
     let budget = MeshConstraintBudget::new(16);
@@ -1219,6 +1219,43 @@ fn incidence_face_configuration_support_retains_shared_edge_correlations() {
     assert!(prune_face_configuration_support(&mut incompatible, &budget));
     assert_eq!(incompatible, preserved);
     assert!(budget.exhausted.get());
+}
+
+#[test]
+fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: None,
+    };
+    let domains = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let mut choices = vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_ordered_face_endpoint_support(
+        &domains,
+        &mut choices,
+        &budget,
+    ));
+    assert_eq!(choices, vec![vec![[0, 1], [0, 2]], vec![[0, 1], [0, 2]]]);
+
+    let mut unpruned = vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]];
+    let exhausted = MeshConstraintBudget::new(0);
+    assert!(prune_ordered_face_endpoint_support(
+        &domains,
+        &mut unpruned,
+        &exhausted,
+    ));
+    assert_eq!(
+        unpruned,
+        vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]]
+    );
+    assert!(exhausted.exhausted.get());
 }
 
 #[test]

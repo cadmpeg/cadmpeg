@@ -578,6 +578,81 @@ pub(crate) fn prune_face_configuration_support(
     }
 }
 
+pub(crate) fn prune_ordered_face_endpoint_support(
+    domains: &[MeshFaceBoundaryDomain],
+    choices: &mut [Vec<[usize; 2]>],
+    budget: &MeshConstraintBudget,
+) -> bool {
+    loop {
+        let mut changed = false;
+        for domain in domains {
+            let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
+                continue;
+            };
+            let mut edges = assignments
+                .iter()
+                .flat_map(|assignment| assignment.boundaries.iter().flatten())
+                .map(|use_| use_.edge)
+                .collect::<Vec<_>>();
+            edges.sort_unstable();
+            edges.dedup();
+            if edges
+                .iter()
+                .any(|edge| choices.get(*edge).is_none_or(Vec::is_empty))
+            {
+                continue;
+            }
+            let selected = vec![None; choices.len()];
+            let Some(configurations) =
+                mesh_face_endpoint_configurations(assignments, choices, &selected, budget)
+            else {
+                if budget.exhausted.get() {
+                    return true;
+                }
+                continue;
+            };
+            if configurations.is_empty() {
+                return false;
+            }
+            let mut supported = HashMap::<usize, HashSet<[usize; 2]>>::new();
+            for configuration in configurations {
+                for (edge, pair) in configuration {
+                    if !budget.charge() {
+                        return true;
+                    }
+                    supported.entry(edge).or_default().insert(pair);
+                }
+            }
+            for edge in edges {
+                let Some(edge_supported) = supported.get(&edge) else {
+                    continue;
+                };
+                let mut retained = Vec::with_capacity(choices[edge].len());
+                for pair in choices[edge].iter().copied() {
+                    if !budget.charge() {
+                        return true;
+                    }
+                    let mut canonical = pair;
+                    canonical.sort_unstable();
+                    if edge_supported.contains(&canonical) {
+                        retained.push(pair);
+                    }
+                }
+                if retained.is_empty() {
+                    return false;
+                }
+                if retained.len() != choices[edge].len() {
+                    choices[edge] = retained;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            return true;
+        }
+    }
+}
+
 impl Iterator for IncidenceCandidatePairs {
     type Item = [usize; 2];
 
@@ -2810,7 +2885,7 @@ where
         }) {
             return None;
         }
-        let coordinate_domains = if choices.iter().any(|candidates| candidates.len() != 1) {
+        let mut coordinate_domains = if choices.iter().any(|candidates| candidates.len() != 1) {
             if let Some(quotient) = mesh_quotient {
                 let mut quotient = quotient.clone();
                 let preparation_limit =
@@ -2832,9 +2907,42 @@ where
         } else {
             None
         };
-        let choices = coordinate_domains
+        let base_choices = coordinate_domains
             .as_ref()
-            .map_or(choices, MeshCoordinateRootDomains::edge_candidates);
+            .map_or(choices, MeshCoordinateRootDomains::edge_candidates)
+            .to_vec();
+        let mut narrowed_choices = base_choices.clone();
+        if let Some(domains) = mesh_assignments {
+            let face_support_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            if !prune_ordered_face_endpoint_support(
+                domains,
+                &mut narrowed_choices,
+                &face_support_budget,
+            ) {
+                rejection = IncidenceRejection::ChoicePruning;
+                return None;
+            }
+            if face_support_budget.exhausted.get() {
+                narrowed_choices.clone_from(&base_choices);
+            } else if let Some(domains) = coordinate_domains.take() {
+                let refinement_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+                match domains.refine_candidates(&narrowed_choices, Some(&refinement_budget)) {
+                    Some(refined) => {
+                        narrowed_choices = refined.edge_candidates().to_vec();
+                        coordinate_domains = Some(refined);
+                    }
+                    None if refinement_budget.exhausted.get() => {
+                        narrowed_choices.clone_from(&base_choices);
+                        coordinate_domains = Some(domains);
+                    }
+                    None => {
+                        rejection = IncidenceRejection::ChoicePruning;
+                        return None;
+                    }
+                }
+            }
+        }
+        let choices = narrowed_choices.as_slice();
         let mut components =
             incidence_choice_components(choices, edge_faces, mesh_assignments, mesh_quotient);
         if let Some(constraint) = partial_solution_valid {
