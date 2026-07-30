@@ -2619,12 +2619,8 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
     assert!(domains.edge_candidates()[0].is_empty());
     assert_eq!(domains.edge_candidate_points(0), Some(vec![0, 1]));
     assert_eq!(
-        domains.edge_candidates_containing(0, Some(0)),
-        Some(vec![[0, 1]])
-    );
-    assert_eq!(
         domains
-            .implicit_edge_candidates(0, None)
+            .implicit_edge_candidates(0, Some(0))
             .expect("implicit candidates")
             .collect::<Vec<_>>(),
         vec![[0, 1]]

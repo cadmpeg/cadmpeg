@@ -479,6 +479,22 @@ enum IncidenceBranch {
     },
 }
 
+enum IncidenceCandidatePairs {
+    Options(std::vec::IntoIter<[usize; 2]>),
+    Implicit(MeshImplicitEdgeCandidates),
+}
+
+impl Iterator for IncidenceCandidatePairs {
+    type Item = [usize; 2];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Options(options) => options.next(),
+            Self::Implicit(candidates) => candidates.next(),
+        }
+    }
+}
+
 impl Iterator for IncidenceBranch {
     type Item = (usize, [usize; 2]);
 
@@ -799,17 +815,21 @@ impl IncidenceComponentSearch<'_, '_> {
         edge: usize,
         required_point: Option<usize>,
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
-    ) -> Vec<[usize; 2]> {
-        coordinate_domains
+    ) -> IncidenceCandidatePairs {
+        if let Some(candidates) = coordinate_domains
             .filter(|_| self.choices[edge].is_empty())
-            .and_then(|domains| domains.edge_candidates_containing(edge, required_point))
-            .unwrap_or_else(|| {
-                self.choices[edge]
-                    .iter()
-                    .copied()
-                    .filter(|pair| required_point.is_none_or(|point| pair.contains(&point)))
-                    .collect()
-            })
+            .and_then(|domains| domains.implicit_edge_candidates(edge, required_point))
+        {
+            return IncidenceCandidatePairs::Implicit(candidates);
+        }
+        IncidenceCandidatePairs::Options(
+            self.choices[edge]
+                .iter()
+                .copied()
+                .filter(|pair| required_point.is_none_or(|point| pair.contains(&point)))
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
     }
 
     fn refine_coordinate_domains(
@@ -910,7 +930,6 @@ impl IncidenceComponentSearch<'_, '_> {
                                     Some(point),
                                     self.coordinate_domains,
                                 )
-                                .into_iter()
                                 .any(|supporting_pair| {
                                     supporting_pair.contains(&point)
                                         && supporting_pair_fits(supporting_edge, supporting_pair)
@@ -994,7 +1013,6 @@ impl IncidenceComponentSearch<'_, '_> {
                                         Some(point),
                                         self.coordinate_domains,
                                     )
-                                    .into_iter()
                                     .any(|supporting_pair| {
                                         supporting_pair.contains(&point)
                                             && supporting_pair_fits(
@@ -1067,7 +1085,6 @@ impl IncidenceComponentSearch<'_, '_> {
             .filter(|&edge| self.active[edge] && self.assignment[edge].is_none())
             .flat_map(|edge| {
                 self.candidate_pairs(edge, Some(point), coordinate_domains)
-                    .into_iter()
                     .map(move |pair| (edge, pair))
             })
             .filter(|(edge, pair)| {
@@ -1099,7 +1116,6 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             let mut viable = self
                 .candidate_pairs(edge, None, coordinate_domains)
-                .into_iter()
                 .filter(|pair| viable(edge, *pair));
             let pair = viable.next()?;
             if viable.next().is_none() {
@@ -1287,12 +1303,32 @@ impl IncidenceComponentSearch<'_, '_> {
         self.advance_ordered_faces(faces, states).is_some()
     }
 
-    pub(crate) fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
-        let mesh_assignments = self.mesh_assignments?;
-        let mut faces = mesh_assignments
+    fn component_faces(&self) -> Vec<usize> {
+        let mut faces = self
+            .edges
             .iter()
-            .enumerate()
-            .filter_map(|(face, domain)| {
+            .flat_map(|edge| self.edge_faces[*edge])
+            .collect::<Vec<_>>();
+        faces.sort_unstable();
+        faces.dedup();
+        faces
+    }
+
+    #[cfg(test)]
+    pub(crate) fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
+        self.face_configuration_options_for(&self.component_faces())
+    }
+
+    fn face_configuration_options_for(
+        &self,
+        component_faces: &[usize],
+    ) -> Option<MeshFaceEndpointConfigurations> {
+        let mesh_assignments = self.mesh_assignments?;
+        let mut faces = component_faces
+            .iter()
+            .copied()
+            .filter_map(|face| {
+                let domain = mesh_assignments.get(face)?;
                 let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
                     return None;
                 };
@@ -1362,6 +1398,7 @@ impl IncidenceComponentSearch<'_, '_> {
         options: MeshFaceEndpointConfigurations,
         quotient_states: &[MeshQuotientGaugeState],
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        component_faces: &[usize],
     ) {
         for option in options {
             let mut assigned = Vec::new();
@@ -1400,7 +1437,11 @@ impl IncidenceComponentSearch<'_, '_> {
                 if let Some(next_states) =
                     self.advance_ordered_faces(affected_faces, quotient_states.to_vec())
                 {
-                    self.search_with_quotient(&next_states, next_coordinate_domains.as_ref());
+                    self.search_with_quotient(
+                        &next_states,
+                        next_coordinate_domains.as_ref(),
+                        component_faces,
+                    );
                 }
             }
             for (edge, pair) in assigned.into_iter().rev() {
@@ -1417,13 +1458,15 @@ impl IncidenceComponentSearch<'_, '_> {
         let quotient_states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
             vec![(quotient.clone(), HashSet::new())]
         });
-        self.search_with_quotient(&quotient_states, self.coordinate_domains);
+        let component_faces = self.component_faces();
+        self.search_with_quotient(&quotient_states, self.coordinate_domains, &component_faces);
     }
 
     fn search_with_quotient(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState],
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        component_faces: &[usize],
     ) {
         if self.exhausted || self.stopped {
             return;
@@ -1441,7 +1484,7 @@ impl IncidenceComponentSearch<'_, '_> {
             return;
         }
         let solutions_before = self.solutions.len();
-        self.search_state(quotient_states, coordinate_domains);
+        self.search_state(quotient_states, coordinate_domains, component_faces);
         if !self.exhausted && self.solutions.len() == solutions_before {
             self.dead_states.insert(state);
         }
@@ -1451,6 +1494,7 @@ impl IncidenceComponentSearch<'_, '_> {
         &mut self,
         quotient_states: &[MeshQuotientGaugeState],
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        component_faces: &[usize],
     ) {
         const MAX_SOLUTIONS: usize = 256;
         if self.exhausted || self.stopped {
@@ -1460,14 +1504,19 @@ impl IncidenceComponentSearch<'_, '_> {
             self.exhausted = true;
             return;
         }
-        let face_options = self.face_configuration_options();
+        let face_options = self.face_configuration_options_for(component_faces);
         if self.budget.exhausted.get() {
             self.exhausted = true;
             return;
         }
         if let Some(options) = face_options {
             if !options.is_empty() {
-                self.search_face_configurations(options, quotient_states, coordinate_domains);
+                self.search_face_configurations(
+                    options,
+                    quotient_states,
+                    coordinate_domains,
+                    component_faces,
+                );
             }
             return;
         }
@@ -1542,7 +1591,11 @@ impl IncidenceComponentSearch<'_, '_> {
                 if let Some(next_states) =
                     self.advance_ordered_faces(faces, quotient_states.to_vec())
                 {
-                    self.search_with_quotient(&next_states, next_coordinate_domains.as_ref());
+                    self.search_with_quotient(
+                        &next_states,
+                        next_coordinate_domains.as_ref(),
+                        component_faces,
+                    );
                 }
             }
             self.assignment[edge] = None;

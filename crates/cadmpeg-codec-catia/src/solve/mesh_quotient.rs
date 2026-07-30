@@ -366,60 +366,6 @@ impl MeshCoordinateRootDomains {
         Some(points)
     }
 
-    pub(crate) fn edge_candidates_containing(
-        &self,
-        edge: usize,
-        required_point: Option<usize>,
-    ) -> Option<Vec<[usize; 2]>> {
-        let candidates = self.edge_candidates.get(edge)?;
-        if !candidates.is_empty() {
-            return Some(
-                candidates
-                    .iter()
-                    .copied()
-                    .filter(|pair| required_point.is_none_or(|point| pair.contains(&point)))
-                    .collect(),
-            );
-        }
-        let &[left, right] = self.edges.get(edge)?;
-        let mut pairs = Vec::new();
-        if let Some(point) = required_point {
-            if self.domains[left].binary_search(&point).is_ok() {
-                pairs.extend(
-                    self.domains[right]
-                        .iter()
-                        .copied()
-                        .filter(|right_point| left == right || *right_point != point)
-                        .map(|right| [point, right]),
-                );
-            }
-            if right != left && self.domains[right].binary_search(&point).is_ok() {
-                pairs.extend(
-                    self.domains[left]
-                        .iter()
-                        .copied()
-                        .filter(|left_point| *left_point != point)
-                        .map(|left| [left, point]),
-                );
-            }
-        } else {
-            for &left_point in &self.domains[left] {
-                for &right_point in &self.domains[right] {
-                    if left != right && left_point == right_point {
-                        continue;
-                    }
-                    pairs.push([left_point, right_point]);
-                }
-            }
-        }
-        for pair in &mut pairs {
-            pair.sort_unstable();
-        }
-        pairs.sort_unstable();
-        pairs.dedup();
-        Some(pairs)
-    }
-
     pub(crate) fn implicit_edge_candidates(
         &self,
         edge: usize,
