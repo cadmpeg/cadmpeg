@@ -1532,8 +1532,10 @@ fn direct_curve_parameter_near_point(
         CurveGeometry::Nurbs(curve) => {
             nurbs_curve_parameter_near_point(curve, point, tolerance, seed)?
         }
+        CurveGeometry::Polyline {
+            points, parameters, ..
+        } => polyline_parameter_near_point(points, parameters.as_deref(), point, tolerance, seed)?,
         CurveGeometry::Transformed { .. }
-        | CurveGeometry::Polyline { .. }
         | CurveGeometry::Degenerate { .. }
         | CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
@@ -1545,6 +1547,71 @@ fn direct_curve_parameter_near_point(
         + (evaluated.z - point.z).powi(2))
     .sqrt();
     (parameter.is_finite() && error.is_finite() && error <= tolerance).then_some(parameter)
+}
+
+fn polyline_parameter_near_point(
+    points: &[Point3],
+    parameters: Option<&[f64]>,
+    point: Point3,
+    tolerance: f64,
+    seed: f64,
+) -> Option<f64> {
+    if points.len() < 2 {
+        return None;
+    }
+    let implicit;
+    let parameters = if let Some(parameters) = parameters {
+        (parameters.len() == points.len()).then_some(parameters)?
+    } else {
+        implicit = (0..points.len())
+            .map(|index| index as f64)
+            .collect::<Vec<_>>();
+        &implicit
+    };
+    let mut candidates = Vec::new();
+    for (segment, parameter_range) in parameters.windows(2).enumerate() {
+        let [parameter_start, parameter_end] = [parameter_range[0], parameter_range[1]];
+        let parameter_width = parameter_end - parameter_start;
+        if !parameter_start.is_finite() || !parameter_end.is_finite() || parameter_width == 0.0 {
+            continue;
+        }
+        let start = points[segment];
+        let end = points[segment + 1];
+        let direction = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+        let offset = Vector3::new(point.x - start.x, point.y - start.y, point.z - start.z);
+        let length = direction.x.hypot(direction.y).hypot(direction.z);
+        if !length.is_finite() {
+            continue;
+        }
+        let fraction = if length == 0.0 {
+            if offset.x.hypot(offset.y).hypot(offset.z) > tolerance {
+                continue;
+            }
+            ((seed - parameter_start) / parameter_width).clamp(0.0, 1.0)
+        } else {
+            let unit = Vector3::new(
+                direction.x / length,
+                direction.y / length,
+                direction.z / length,
+            );
+            (offset.dot(unit) / length).clamp(0.0, 1.0)
+        };
+        let candidate = parameter_start + fraction * parameter_width;
+        let mapped = Point3::new(
+            start.x + fraction * direction.x,
+            start.y + fraction * direction.y,
+            start.z + fraction * direction.z,
+        );
+        let error = (mapped.x - point.x)
+            .hypot(mapped.y - point.y)
+            .hypot(mapped.z - point.z);
+        if candidate.is_finite() && error.is_finite() && error <= tolerance {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+        .into_iter()
+        .min_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()))
 }
 
 fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Point3> {
@@ -2587,6 +2654,66 @@ mod tests {
             let inverse = super::model_curve_parameter_near_point(&ir, &id, point, parameter)
                 .expect("direct analytic inverse");
             assert!((inverse - parameter).abs() < 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
+        let cases = [
+            (
+                CurveGeometry::Polyline {
+                    points: vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    parameters: None,
+                    chordal_deflection: 0.0,
+                },
+                Point3::new(0.5, 0.0, 0.0),
+                0.5,
+                0.5,
+            ),
+            (
+                CurveGeometry::Polyline {
+                    points: vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    parameters: Some(vec![4.0, 2.0, 0.0]),
+                    chordal_deflection: 0.0,
+                },
+                Point3::new(1.0, 0.5, 0.0),
+                1.0,
+                1.0,
+            ),
+            (
+                CurveGeometry::Polyline {
+                    points: vec![
+                        Point3::new(2.0, 3.0, 4.0),
+                        Point3::new(2.0, 3.0, 4.0),
+                        Point3::new(5.0, 3.0, 4.0),
+                    ],
+                    parameters: Some(vec![0.0, 1.0, 2.0]),
+                    chordal_deflection: 0.0,
+                },
+                Point3::new(2.0, 3.0, 4.0),
+                0.7,
+                0.7,
+            ),
+        ];
+        for (index, (geometry, point, seed, expected)) in cases.into_iter().enumerate() {
+            let id = CurveId(format!("test:polyline-inverse:{index}"));
+            let mut ir = CadIr::empty(crate::units::Units::default());
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry,
+                source_object: None,
+            });
+            let inverse = super::model_curve_parameter_near_point(&ir, &id, point, seed)
+                .expect("polyline inverse");
+            assert!((inverse - expected).abs() < 1.0e-12);
         }
     }
 
