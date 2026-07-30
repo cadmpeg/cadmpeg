@@ -394,20 +394,38 @@ fn parse_synchronous_states(
 ) -> Vec<LegacyRelationSynchronousState> {
     roles
         .iter()
-        .filter(|role| role.name.literal() == Some("synchrone"))
         .filter_map(|role| {
             let at = role.end_offset()?;
-            let end = at.checked_add(6)?;
             let interval_end = identities
                 .iter()
                 .find(|identity| identity.offset > role.offset)
                 .map_or(catalog_offset, |identity| identity.offset);
+            let (state, end) = match &role.name {
+                LegacyRoleName::Literal(name) if name == "synchrone" => {
+                    let end = at.checked_add(6)?;
+                    let [0xe8, 0x00, 0x1c, 0x01, state, 0xfe] = *data.get(at..end)? else {
+                        return None;
+                    };
+                    (state, end)
+                }
+                LegacyRoleName::Selector(_) => {
+                    let end = at.checked_add(5)?;
+                    let [0xe8, 0x00, 0x1c, 0x01, state] = *data.get(at..end)? else {
+                        return None;
+                    };
+                    if !roles
+                        .iter()
+                        .any(|next| next.entity_id == role.entity_id && next.offset == end)
+                    {
+                        return None;
+                    }
+                    (state, end)
+                }
+                LegacyRoleName::Literal(_) => return None,
+            };
             if end > interval_end {
                 return None;
             }
-            let [0xe8, 0x00, 0x1c, 0x01, state, 0xfe] = *data.get(at..end)? else {
-                return None;
-            };
             let synchronous = match state {
                 0x81 => false,
                 0x82 => true,
@@ -1131,6 +1149,9 @@ mod tests {
                 ),
             ]
         );
+        assert_eq!(run.synchronous_states.len(), 1);
+        assert_eq!(run.synchronous_states[0].selector, 4668);
+        assert!(run.synchronous_states[0].synchronous);
     }
 
     #[test]

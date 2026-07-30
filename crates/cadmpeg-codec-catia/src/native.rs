@@ -4145,7 +4145,16 @@ fn validate_legacy_entity_runs(
                         .filter(|role| {
                             role.byte_offset == state.role_byte_offset
                                 && role.entity_id == state.entity_id
-                                && role.name.literal() == Some("synchrone")
+                                && (role.name.literal() == Some("synchrone")
+                                    || (matches!(&role.name, CatiaLegacyRoleName::Selector(_))
+                                        && legacy_role_selector_end(role)
+                                            .and_then(|end| end.checked_add(5))
+                                            .is_some_and(|next_role_offset| {
+                                                run.role_selectors.iter().any(|next| {
+                                                    next.entity_id == state.entity_id
+                                                        && next.byte_offset == next_role_offset
+                                                })
+                                            })))
                                 && role.selector == state.selector
                         })
                         .count()

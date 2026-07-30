@@ -3891,6 +3891,8 @@ fn decode_retains_legacy_relation_synchronous_states() {
         bytes.extend(selector.to_le_bytes());
         bytes.extend([0xe8, 0x00, 0x1c, 0x01, state, 0xfe]);
     }
+    bytes.extend([0xa3, 0xe3, 0x3c, 0xe8, 0x00, 0x1c, 0x01, 0x82]);
+    bytes.extend([0xa4, 0xe3, 0x3d, 0xe8, 0x34, 0x17, 0x01, 0xfe]);
     bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
 
     let decoded = CatiaCodec
@@ -3899,11 +3901,11 @@ fn decode_retains_legacy_relation_synchronous_states() {
 
     assert_eq!(
         decoded.report.coverage["decoded_legacy_synchronous_state_count"],
-        2
+        3
     );
     assert_eq!(
         decoded.report.coverage["decoded_legacy_synchronous_relation_count"],
-        1
+        2
     );
     assert_eq!(
         decoded.report.coverage["decoded_legacy_asynchronous_relation_count"],
@@ -3923,8 +3925,18 @@ fn decode_retains_legacy_relation_synchronous_states() {
             .iter()
             .map(|state| (state.selector, state.synchronous))
             .collect::<Vec<_>>(),
-        [(15108, false), (15109, true)]
+        [(15108, false), (15109, true), (4669, true)]
     );
+
+    let mut missing_selected_successor = native.clone();
+    missing_selected_successor.legacy_entity_runs[0]
+        .role_selectors
+        .pop();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    missing_selected_successor
+        .store(&mut namespace)
+        .expect("store selected state without successor role");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
     let mut invalid = native;
     invalid.legacy_entity_runs[0].synchronous_states[0].selector += 1;
