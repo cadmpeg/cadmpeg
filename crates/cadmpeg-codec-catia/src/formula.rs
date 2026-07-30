@@ -1212,16 +1212,22 @@ impl FormulaExpressionParser<'_, '_> {
         let mut value = self.source[start..self.at].parse::<f64>().ok()?;
         let unit_boundary = self.at;
         self.skip_whitespace();
-        let dimension = if self.remaining().starts_with("mm") {
-            self.at += 2;
-            FormulaDimension::LENGTH
-        } else if self.remaining().starts_with("cm") {
-            self.at += 2;
-            value *= 10.0;
-            FormulaDimension::LENGTH
-        } else if self.remaining().starts_with('m') {
-            self.at += 1;
-            value *= 1_000.0;
+        let dimension = if let Some((unit, millimetres)) = [
+            ("micron", 0.001),
+            ("mile", 1_609_344.0),
+            ("yard", 914.4),
+            ("mm", 1.0),
+            ("cm", 10.0),
+            ("km", 1_000_000.0),
+            ("ft", 304.8),
+            ("in", 25.4),
+            ("m", 1_000.0),
+        ]
+        .into_iter()
+        .find(|(unit, _)| self.remaining().starts_with(unit))
+        {
+            self.at += unit.len();
+            value *= millimetres;
             FormulaDimension::LENGTH
         } else if self.remaining().starts_with("rad") {
             self.at += 3;
@@ -1363,6 +1369,27 @@ mod parser_tests {
                 accepted,
                 "{argument_count}"
             );
+        }
+    }
+
+    #[test]
+    fn formula_length_literals_normalize_every_admitted_unit_to_millimetres() {
+        let bindings = BTreeMap::new();
+        for (literal, expected) in [
+            ("1micron", 0.001),
+            ("1mile", 1_609_344.0),
+            ("1yard", 914.4),
+            ("1mm", 1.0),
+            ("1cm", 10.0),
+            ("1km", 1_000_000.0),
+            ("1ft", 304.8),
+            ("1in", 25.4),
+            ("1m", 1_000.0),
+        ] {
+            let actual =
+                evaluate_formula_expression(literal, &bindings).expect("complete length literal");
+            assert_eq!(actual.value, expected, "{literal}");
+            assert!(actual.dimension == FormulaDimension::LENGTH, "{literal}");
         }
     }
 }

@@ -12422,6 +12422,34 @@ fn decode_distinguishes_common_and_natural_logarithms() {
 }
 
 #[test]
+fn decode_normalizes_every_admitted_formula_length_unit_to_millimetres() {
+    let expected = 0.001 + 1_609_344.0 + 914.4 + 1.0 + 10.0 + 1_000_000.0 + 304.8 + 25.4 + 1_000.0;
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "LENGTH",
+                Some(expected),
+                "1micron+1mile+1yard+1mm+1cm+1km+1ft+1in+1m",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode complete length-unit formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("length-unit formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(expected)
+        ))
+    );
+}
+
+#[test]
 fn decode_evaluates_exponential_and_hyperbolic_functions() {
     let decoded = CatiaCodec
         .decode(

@@ -109,7 +109,8 @@ current scores require those matrices and representative fixtures.
   expression of an unset parameter when its result type agrees.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, trigonometric calls, absolute values, and
-  square roots.
+  square roots. Length literals normalize `micron`, `mm`, `cm`, `m`, `km`,
+  `in`, `ft`, `yard`, and `mile` to millimetres.
   Complete constraint-range productions are counted separately as dimension or
   complex-constraint ranges and finite or unset evaluations. Coverage retains
   the total exact incoming reference occurrences and partitions ranges with
