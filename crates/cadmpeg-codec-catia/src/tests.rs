@@ -9207,6 +9207,39 @@ fn decode_retains_outer_object_graph_order_and_references() {
 }
 
 #[test]
+fn unresolved_modeling_scope_accounts_for_every_retained_object_record() {
+    let (mut bytes, _) = outer_container_object_graph_catpart();
+    let class_offset = bytes
+        .windows(b"CATPrtCont".len())
+        .position(|window| window == b"CATPrtCont")
+        .expect("part-container declaration");
+    bytes[class_offset..class_offset + b"CATPrtCont".len()].copy_from_slice(b"CATFooCont");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode object graph without a declared part container");
+
+    assert_eq!(decoded.report.coverage["decoded_object_graph_count"], 1);
+    assert_eq!(decoded.report.coverage["decoded_object_record_count"], 2);
+    assert_eq!(decoded.report.coverage["modeling_object_graph_count"], 0);
+    assert_eq!(decoded.report.coverage["modeling_object_record_count"], 0);
+    assert_eq!(
+        decoded.report.coverage["retained_unscoped_object_graph_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["retained_unscoped_object_record_count"],
+        2
+    );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+            && loss.message.contains("1 retained object graph(s)")
+            && loss.message.contains("2 field record(s)")
+    }));
+}
+
+#[test]
 fn decode_links_design_objects_through_their_owner_record_group() {
     let decoded = CatiaCodec
         .decode(

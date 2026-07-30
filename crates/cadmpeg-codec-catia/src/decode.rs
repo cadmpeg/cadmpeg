@@ -94,6 +94,22 @@ fn finish_decode(
         .iter()
         .map(|graph| graph.records.len())
         .sum();
+    let modeling_scope_is_unresolved = modeling_graph_scope.as_ref().is_some_and(HashSet::is_empty);
+    let retained_unscoped_object_graph_count = modeling_graph_scope.as_ref().map_or(0, |scope| {
+        native
+            .object_graphs
+            .iter()
+            .filter(|graph| !scope.contains(graph.id.as_str()))
+            .count()
+    });
+    let retained_unscoped_object_record_count = modeling_graph_scope.as_ref().map_or(0, |scope| {
+        native
+            .object_graphs
+            .iter()
+            .filter(|graph| !scope.contains(graph.id.as_str()))
+            .map(|graph| graph.records.len())
+            .sum()
+    });
     let resolved_storage_record_count = native
         .object_graphs
         .iter()
@@ -1216,6 +1232,14 @@ fn finish_decode(
             modeling_object_records.len(),
         ),
         (
+            "retained_unscoped_object_graph_count".to_string(),
+            retained_unscoped_object_graph_count,
+        ),
+        (
+            "retained_unscoped_object_record_count".to_string(),
+            retained_unscoped_object_record_count,
+        ),
+        (
             "decoded_storage_record_link_count".to_string(),
             resolved_storage_record_count,
         ),
@@ -1809,12 +1833,19 @@ fn finish_decode(
             provenance: None,
         });
     }
-    if modeling_graph_scope.as_ref().is_some_and(HashSet::is_empty) {
+    if modeling_scope_is_unresolved {
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
-            message: "CATIA outer declarations do not unambiguously select one object graph physically contained by the declared CATPrtCont stream; modeling feature, formula, sketch, constraint, configuration, and history authorship remains unresolved.".to_string(),
+            message: format!(
+                "CATIA outer declarations do not unambiguously select one object graph physically \
+                 contained by the declared CATPrtCont stream; \
+                 {retained_unscoped_object_graph_count} retained object graph(s) with \
+                 {retained_unscoped_object_record_count} field record(s) remain outside the \
+                 modeling scope, and feature, formula, sketch, constraint, configuration, and \
+                 history authorship remains unresolved."
+            ),
             provenance: None,
         });
     }

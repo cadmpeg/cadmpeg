@@ -44,7 +44,9 @@ current scores require those matrices and representative fixtures.
   stream descriptors. Alias-row ordinals resolve only through the unique object
   graph contained by the declared part stream. Feature and formula authorship
   and unresolved design accounting use that same modeling scope without
-  restricting cross-graph reference targets. Other application feature
+  restricting cross-graph reference targets. When the declarations do not
+  select one part graph, coverage counts every retained object graph and field
+  record outside the unresolved modeling scope. Other application feature
   containers remain independently retained.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
