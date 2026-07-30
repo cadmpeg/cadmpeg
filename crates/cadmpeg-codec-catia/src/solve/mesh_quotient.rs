@@ -58,11 +58,18 @@ pub(crate) enum CoordinateRootClosure {
     Exhausted,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MeshCandidateAmbiguity {
+    CoordinateRootClosure,
+    EndpointResolution,
+    DistinctTopologySolutions,
+}
+
 #[derive(Debug)]
 pub(crate) enum MeshCandidateSolve {
     Solved(StandardTopology, Vec<usize>),
     Rejected(MeshCandidateRejection),
-    Ambiguous,
+    Ambiguous(MeshCandidateAmbiguity),
     Exhausted,
 }
 
@@ -5870,7 +5877,7 @@ where
             && edge_class_assignment_is_canonical(&class_constraint.ordered, pairs)
     };
     let mut incidence_solution = None;
-    let mut incidence_ambiguous = false;
+    let mut incidence_ambiguity = None;
     let mut incidence_exhausted = false;
     let pair_solutions = visit_incidence_endpoint_pair_solutions(
         &edge_rows,
@@ -5912,7 +5919,7 @@ where
                 MeshEndpointResolve::Solved(topology, assignment) => (topology, assignment),
                 MeshEndpointResolve::Rejected => return ControlFlow::Continue(()),
                 MeshEndpointResolve::Ambiguous => {
-                    incidence_ambiguous = true;
+                    incidence_ambiguity = Some(MeshCandidateAmbiguity::EndpointResolution);
                     return ControlFlow::Break(());
                 }
                 MeshEndpointResolve::Exhausted => {
@@ -5928,7 +5935,7 @@ where
                         edge_classes,
                     ) =>
                 {
-                    incidence_ambiguous = true;
+                    incidence_ambiguity = Some(MeshCandidateAmbiguity::DistinctTopologySolutions);
                     ControlFlow::Break(())
                 }
                 None => {
@@ -5939,11 +5946,11 @@ where
             }
         },
     );
-    if incidence_ambiguous {
-        return MeshCandidateSolve::Ambiguous;
+    if let Some(ambiguity) = incidence_ambiguity {
+        return MeshCandidateSolve::Ambiguous(ambiguity);
     }
     if matches!(pair_solutions, IncidenceSolve::Ambiguous) {
-        return MeshCandidateSolve::Ambiguous;
+        return MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::CoordinateRootClosure);
     }
     if incidence_exhausted || matches!(pair_solutions, IncidenceSolve::Exhausted) {
         return MeshCandidateSolve::Exhausted;
@@ -5980,7 +5987,9 @@ where
         Some(MeshEndpointResolve::Solved(topology, assignment)) => {
             MeshCandidateSolve::Solved(topology, assignment)
         }
-        Some(MeshEndpointResolve::Ambiguous) => MeshCandidateSolve::Ambiguous,
+        Some(MeshEndpointResolve::Ambiguous) => {
+            MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::EndpointResolution)
+        }
         Some(MeshEndpointResolve::Exhausted) => MeshCandidateSolve::Exhausted,
         Some(MeshEndpointResolve::Rejected) | None => MeshCandidateSolve::Rejected(
             MeshCandidateRejection::EndpointIncidence(incidence_rejection),

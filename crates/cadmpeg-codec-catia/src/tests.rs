@@ -3611,6 +3611,17 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         1
     );
     assert_eq!(
+        [
+            "standard_topology_mesh_ambiguity_coordinate_root_closure_count",
+            "standard_topology_mesh_ambiguity_endpoint_resolution_count",
+            "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
+        ]
+        .into_iter()
+        .map(|key| result.report.coverage[key])
+        .sum::<usize>(),
+        result.report.coverage["standard_topology_failure_ambiguous_solution_count"]
+    );
+    assert_eq!(
         result.report.coverage["standard_topology_empty_endpoint_domain_count"]
             + result.report.coverage["standard_topology_singleton_endpoint_domain_count"]
             + result.report.coverage["standard_topology_multiple_endpoint_domain_count"],
@@ -3758,6 +3769,17 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             .map(|(_, count)| count)
             .sum::<usize>(),
         0
+    );
+    assert_eq!(
+        [
+            "standard_topology_mesh_ambiguity_coordinate_root_closure_count",
+            "standard_topology_mesh_ambiguity_endpoint_resolution_count",
+            "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
+        ]
+        .into_iter()
+        .map(|key| decoded.report.coverage[key])
+        .sum::<usize>(),
+        decoded.report.coverage["standard_topology_failure_ambiguous_solution_count"]
     );
     assert_eq!(
         decoded.report.coverage["standard_topology_empty_endpoint_domain_count"]

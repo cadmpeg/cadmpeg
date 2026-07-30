@@ -1760,6 +1760,25 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             usize::from(incidence_rejection == Some(rejection)),
         );
     }
+    for (key, ambiguity) in [
+        (
+            "standard_topology_mesh_ambiguity_coordinate_root_closure_count",
+            mesh_quotient::MeshCandidateAmbiguity::CoordinateRootClosure,
+        ),
+        (
+            "standard_topology_mesh_ambiguity_endpoint_resolution_count",
+            mesh_quotient::MeshCandidateAmbiguity::EndpointResolution,
+        ),
+        (
+            "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
+            mesh_quotient::MeshCandidateAmbiguity::DistinctTopologySolutions,
+        ),
+    ] {
+        report.coverage.insert(
+            key.to_string(),
+            usize::from(topology_diagnostics.mesh_ambiguity == Some(ambiguity)),
+        );
+    }
     report.coverage.insert(
         "refined_consolidated_analytic_surface_count".to_string(),
         refined_analytic_surfaces.len(),
@@ -1822,6 +1841,7 @@ struct StandardTopologyDiagnostics {
     multiple_endpoint_domains: usize,
     endpoint_domain_choices: usize,
     mesh_rejection: Option<mesh_quotient::MeshCandidateRejection>,
+    mesh_ambiguity: Option<mesh_quotient::MeshCandidateAmbiguity>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3433,7 +3453,7 @@ fn attach_standard_topology(
                 .is_some_and(|options| options[edge].len() > 1)
         })
         .collect::<Vec<_>>();
-    let mut mesh_search_ambiguous = false;
+    let mut mesh_search_ambiguity = None;
     let mut mesh_search_exhausted = false;
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
@@ -3496,8 +3516,9 @@ fn attach_standard_topology(
                 diagnostics.mesh_rejection = Some(rejection);
                 None
             }
-            mesh_quotient::MeshCandidateSolve::Ambiguous => {
-                mesh_search_ambiguous = true;
+            mesh_quotient::MeshCandidateSolve::Ambiguous(ambiguity) => {
+                diagnostics.mesh_ambiguity = Some(ambiguity);
+                mesh_search_ambiguity = Some(ambiguity);
                 None
             }
             mesh_quotient::MeshCandidateSolve::Exhausted => {
@@ -3522,7 +3543,7 @@ fn attach_standard_topology(
     } else {
         return Err(if mesh_search_exhausted {
             StandardTopologyFailure::TopologySearchExhausted
-        } else if mesh_search_ambiguous {
+        } else if mesh_search_ambiguity.is_some() {
             StandardTopologyFailure::AmbiguousTopologySolution
         } else {
             StandardTopologyFailure::NoTopologySolution
@@ -6201,7 +6222,8 @@ mod route_tests {
     fn mesh_retry_runs_only_after_exact_rejection() {
         use crate::solve::incidence::IncidenceRejection;
         use crate::solve::mesh_quotient::{
-            MeshCandidateRejection, MeshCandidateSolve, MeshEndpointIncidenceRejection,
+            MeshCandidateAmbiguity, MeshCandidateRejection, MeshCandidateSolve,
+            MeshEndpointIncidenceRejection,
         };
 
         let called = Cell::new(false);
@@ -6220,10 +6242,13 @@ mod route_tests {
             MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure),
             || {
                 called.set(true);
-                MeshCandidateSolve::Ambiguous
+                MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::EndpointResolution)
             },
         );
-        assert!(matches!(outcome, MeshCandidateSolve::Ambiguous));
+        assert!(matches!(
+            outcome,
+            MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::EndpointResolution)
+        ));
         assert!(called.get());
     }
 
